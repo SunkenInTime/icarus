@@ -116,7 +116,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   child: Container(
                     height: 40,
                     color: Settings.sideBarColor,
-                    child: const Row(),
+                    child: const TabBar(
+                      tabs: [],
+                    ),
                   ),
                 ),
                 const SideBarUI(),
