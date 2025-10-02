@@ -111,6 +111,14 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   alignment: Alignment.topLeft,
                   child: SaveAndLoadButton(),
                 ),
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Container(
+                    height: 40,
+                    color: Settings.sideBarColor,
+                    child: const Row(),
+                  ),
+                ),
                 const SideBarUI(),
 
                 // Align(

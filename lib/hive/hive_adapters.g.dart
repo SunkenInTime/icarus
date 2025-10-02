@@ -32,6 +32,9 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
       utilityData: fields[12] == null
           ? const []
           : (fields[12] as List).cast<PlacedUtility>(),
+      pages: fields[14] == null
+          ? const []
+          : (fields[14] as List).cast<StrategyPage>(),
       strategySettings: fields[11] as StrategySettings?,
     );
   }
@@ -39,7 +42,7 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
   @override
   void write(BinaryWriter writer, StrategyData obj) {
     writer
-      ..writeByte(14)
+      ..writeByte(15)
       ..writeByte(0)
       ..write(obj.versionNumber)
       ..writeByte(1)
@@ -67,7 +70,9 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
       ..writeByte(12)
       ..write(obj.utilityData)
       ..writeByte(13)
-      ..write(obj.folderID);
+      ..write(obj.folderID)
+      ..writeByte(14)
+      ..write(obj.pages);
   }
 
   @override
@@ -978,6 +983,64 @@ class FolderColorAdapter extends TypeAdapter<FolderColor> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is FolderColorAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
+  @override
+  final typeId = 20;
+
+  @override
+  StrategyPage read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return StrategyPage(
+      id: fields[0] as String,
+      name: fields[2] as String,
+      drawingData: (fields[3] as List).cast<DrawingElement>(),
+      agentData: (fields[4] as List).cast<PlacedAgent>(),
+      abilityData: (fields[5] as List).cast<PlacedAbility>(),
+      textData: (fields[6] as List).cast<PlacedText>(),
+      imageData: (fields[7] as List).cast<PlacedImage>(),
+      utilityData: (fields[8] as List).cast<PlacedUtility>(),
+      sortIndex: (fields[1] as num).toInt(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, StrategyPage obj) {
+    writer
+      ..writeByte(9)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.sortIndex)
+      ..writeByte(2)
+      ..write(obj.name)
+      ..writeByte(3)
+      ..write(obj.drawingData)
+      ..writeByte(4)
+      ..write(obj.agentData)
+      ..writeByte(5)
+      ..write(obj.abilityData)
+      ..writeByte(6)
+      ..write(obj.textData)
+      ..writeByte(7)
+      ..write(obj.imageData)
+      ..writeByte(8)
+      ..write(obj.utilityData);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StrategyPageAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

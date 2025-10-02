@@ -17,6 +17,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:hive_ce/hive.dart';
@@ -38,10 +39,12 @@ class StrategyData extends HiveObject {
   final List<PlacedText> textData;
   final List<PlacedImage> imageData;
   final List<PlacedUtility> utilityData;
+  final List<StrategyPage> pages;
   final MapValue mapData;
   final DateTime lastEdited;
   final bool isAttack;
   final StrategySettings strategySettings;
+
   String? folderID;
 
   StrategyData({
@@ -58,8 +61,45 @@ class StrategyData extends HiveObject {
     required this.lastEdited,
     required this.folderID,
     this.utilityData = const [],
+    this.pages = const [],
     StrategySettings? strategySettings,
   }) : strategySettings = strategySettings ?? StrategySettings();
+
+  StrategyData copyWith({
+    String? id,
+    String? name,
+    int? versionNumber,
+    List<DrawingElement>? drawingData,
+    List<PlacedAgent>? agentData,
+    List<PlacedAbility>? abilityData,
+    List<PlacedText>? textData,
+    List<PlacedImage>? imageData,
+    List<PlacedUtility>? utilityData,
+    List<StrategyPage>? pages,
+    MapValue? mapData,
+    DateTime? lastEdited,
+    bool? isAttack,
+    StrategySettings? strategySettings,
+    String? folderID,
+  }) {
+    return StrategyData(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      versionNumber: versionNumber ?? this.versionNumber,
+      drawingData: drawingData ?? this.drawingData,
+      agentData: agentData ?? this.agentData,
+      abilityData: abilityData ?? this.abilityData,
+      textData: textData ?? this.textData,
+      imageData: imageData ?? this.imageData,
+      utilityData: utilityData ?? this.utilityData,
+      pages: pages ?? this.pages,
+      mapData: mapData ?? this.mapData,
+      lastEdited: lastEdited ?? this.lastEdited,
+      isAttack: isAttack ?? this.isAttack,
+      strategySettings: strategySettings ?? this.strategySettings,
+      folderID: folderID ?? this.folderID,
+    );
+  }
 }
 
 class StrategyState {
@@ -94,6 +134,8 @@ final strategyProvider =
     NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
 
 class StrategyProvider extends Notifier<StrategyState> {
+  String? _activePageID;
+
   @override
   StrategyState build() {
     return StrategyState(
@@ -147,6 +189,53 @@ class StrategyProvider extends Notifier<StrategyState> {
       id: "testID",
       storageDirectory: state.storageDirectory,
     );
+  }
+
+  Future<void> setActivePage(String pageID) async {
+    _activePageID = pageID;
+
+    final doc =
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(state.id);
+    if (doc == null) return;
+    final page = doc.pages.firstWhere((page) => page.id == pageID);
+
+    ref.read(actionProvider.notifier).clearAllActions();
+
+    // Hydrate all area providers with page data
+    ref.read(agentProvider.notifier).fromHive(page.agentData);
+    ref.read(abilityProvider.notifier).fromHive(page.abilityData);
+    ref.read(drawingProvider.notifier).fromHive(page.drawingData);
+    ref.read(textProvider.notifier).fromHive(page.textData);
+    ref.read(placedImageProvider.notifier).fromHive(page.imageData);
+    ref.read(utilityProvider.notifier).fromHive(page.utilityData);
+  }
+
+  Future<void> addPage({required String name}) async {
+    final box =
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(state.id);
+    if (box == null) {
+      throw Exception("No strategy found with ID ${state.id}");
+    }
+
+    final newPage = StrategyPage(
+      id: const Uuid().v4(),
+      name: name,
+      drawingData: [],
+      agentData: [],
+      abilityData: [],
+      textData: [],
+      imageData: [],
+      utilityData: [],
+      sortIndex: box.pages.isNotEmpty ? box.pages.length - 1 : 0,
+    );
+
+    final updatedPages = [...box.pages, newPage];
+    final updatedStrategy = box.copyWith(pages: updatedPages);
+
+    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+        .put(updatedStrategy.id, updatedStrategy);
+
+    // return box.put(newPage.id, newPage);
   }
 
   Future<void> loadFromHive(String id) async {
