@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 
 /// A horizontal, floating set of page chips with a leading Add button.
 /// - Each page is rendered as an InputChip with the page name and an `x` delete affordance.
@@ -7,25 +11,21 @@ import 'package:icarus/providers/strategy_page.dart';
 /// - Tapping the delete on a chip calls [onDelete] (parent can confirm and/or prevent when last page).
 /// - The Add button at the start calls [onAdd].
 /// - No container background is used so the chips appear to “float”.
-class PageChipsBar extends StatelessWidget {
+class PageChipsBar extends ConsumerWidget {
   const PageChipsBar({
     super.key,
-    required this.pages,
-    required this.activePageId,
     required this.onSelect,
     required this.onDelete,
-    required this.onAdd,
     this.maxChipWidth = 160,
     this.spacing = 8,
     this.runSpacing = 8,
     this.padding,
   });
 
-  final List<StrategyPage> pages;
-  final String? activePageId;
+  // final List<StrategyPage> pages;
+  // final String? activePageId;
   final ValueChanged<String> onSelect;
   final ValueChanged<String> onDelete;
-  final VoidCallback onAdd;
 
   /// Constrain chip label width to keep the row tidy
   final double maxChipWidth;
@@ -40,16 +40,39 @@ class PageChipsBar extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final strat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+        .get(ref.watch(strategyProvider).id);
 
+    if (strat == null) {
+      return const SizedBox();
+    }
+    final pages = [
+      ...strat.pages,
+      StrategyPage(
+        id: "new_page",
+        name: "New Page",
+        drawingData: [],
+        agentData: [],
+        abilityData: [],
+        textData: [],
+        imageData: [],
+        utilityData: [],
+        sortIndex: 1,
+      ),
+    ];
+
+    final activePageId = ref.watch(strategyProvider.notifier).activePageID;
     final children = <Widget>[
       // Leading add button as an InputChip for visual consistency
       InputChip(
         avatar: Icon(Icons.add, color: colorScheme.onSecondaryContainer),
         label: const Text('Add'),
-        onPressed: onAdd,
+        onPressed: () {
+          ref.read(strategyProvider.notifier).addPage(name: "new page");
+        },
         backgroundColor: colorScheme.secondaryContainer,
         selectedColor: colorScheme.secondaryContainer,
         labelStyle: theme.textTheme.labelLarge?.copyWith(

@@ -134,7 +134,7 @@ final strategyProvider =
     NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
 
 class StrategyProvider extends Notifier<StrategyState> {
-  String? _activePageID;
+  String? activePageID;
 
   @override
   StrategyState build() {
@@ -192,7 +192,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> setActivePage(String pageID) async {
-    _activePageID = pageID;
+    activePageID = pageID;
 
     final doc =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(state.id);

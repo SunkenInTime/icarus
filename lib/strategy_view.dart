@@ -8,6 +8,7 @@ import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/sidebar.dart';
 import 'package:icarus/widgets/map_selector.dart';
+import 'package:icarus/widgets/page_chips.dart';
 import 'package:icarus/widgets/save_and_load_button.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -113,14 +114,12 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                 ),
                 Align(
                   alignment: Alignment.bottomCenter,
-                  child: Container(
-                    height: 40,
-                    color: Settings.sideBarColor,
-                    child: const TabBar(
-                      tabs: [],
-                    ),
+                  child: PageChipsBar(
+                    onSelect: (String value) {},
+                    onDelete: (String value) {},
                   ),
                 ),
+
                 const SideBarUI(),
 
                 // Align(
