@@ -113,7 +113,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   child: SaveAndLoadButton(),
                 ),
                 Align(
-                  alignment: Alignment.bottomCenter,
+                  alignment: Alignment.bottomLeft,
                   child: PageChipsBar(
                     onSelect: (String value) {},
                     onDelete: (String value) {},

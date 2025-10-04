@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
@@ -67,18 +68,23 @@ class PageChipsBar extends ConsumerWidget {
     final activePageId = ref.watch(strategyProvider.notifier).activePageID;
     final children = <Widget>[
       // Leading add button as an InputChip for visual consistency
-      InputChip(
-        avatar: Icon(Icons.add, color: colorScheme.onSecondaryContainer),
-        label: const Text('Add'),
-        onPressed: () {
-          ref.read(strategyProvider.notifier).addPage(name: "new page");
-        },
-        backgroundColor: colorScheme.secondaryContainer,
-        selectedColor: colorScheme.secondaryContainer,
-        labelStyle: theme.textTheme.labelLarge?.copyWith(
-          color: colorScheme.onSecondaryContainer,
+      IconButton.filled(
+        color: Colors.deepPurple,
+        onPressed: () {},
+        icon: const Icon(
+          Icons.add,
+          color: Colors.white,
+        ),
+        style: ButtonStyle(
+          shape: WidgetStateProperty.all(
+            RoundedRectangleBorder(
+              side: const BorderSide(color: Settings.highlightColor, width: 1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         ),
       ),
+
       ...pages.map((p) {
         final isSelected = p.id == activePageId;
         final chipBg = isSelected
@@ -90,28 +96,41 @@ class PageChipsBar extends ConsumerWidget {
             : theme.chipTheme.labelStyle?.color ??
                 theme.colorScheme.onSurfaceVariant;
 
-        return InputChip(
-          label: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxChipWidth),
-            child: Text(
-              p.name,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          tooltip: p.name,
-          onPressed: () => onSelect(p.id),
-          onDeleted: () => onDelete(p.id),
-          deleteIcon: const Icon(Icons.close, size: 18),
+        // return SizedBox(
+        //   height: 40,
+        //   child: InputChip(
+        //     label: ConstrainedBox(
+        //       constraints:
+        //           BoxConstraints(maxWidth: maxChipWidth, minHeight: 40),
+        //       child: Text(
+        //         p.name,
+        //         overflow: TextOverflow.ellipsis,
+        //       ),
+        //     ),
+        //     tooltip: p.name,
+        //     onPressed: () => onSelect(p.id),
+        //     onDeleted: () => onDelete(p.id),
+        //     deleteIcon: const Icon(Icons.close, size: 18),
+        //     selected: isSelected,
+        //     backgroundColor: Settings.sideBarColor,
+        //     selectedColor: Colors.deepPurple,
+        //     labelStyle: theme.textTheme.labelLarge?.copyWith(color: chipFg),
+        //     side: const BorderSide(color: Settings.highlightColor, width: 1.2),
+        //     shape: RoundedRectangleBorder(
+        //       borderRadius: BorderRadius.circular(8),
+        //     ),
+        //     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        //     visualDensity: VisualDensity.compact,
+        //   ),
+        // );
+
+        return PageTab(
+          label: p.name,
           selected: isSelected,
-          backgroundColor: chipBg,
-          selectedColor: chipBg,
-          labelStyle: theme.textTheme.labelLarge?.copyWith(color: chipFg),
-          side: isSelected
-              ? BorderSide(color: colorScheme.primary, width: 1.2)
-              : BorderSide(color: colorScheme.outlineVariant),
-          shape: const StadiumBorder(),
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          visualDensity: VisualDensity.compact,
+          onTap: () => onSelect(p.id),
+          onDelete: () => onDelete(p.id),
+          maxWidth: maxChipWidth,
+          height: 40,
         );
       })
     ].intersperse(SizedBox(width: spacing)).toList();
@@ -124,6 +143,73 @@ class PageChipsBar extends ConsumerWidget {
         scrollDirection: Axis.horizontal,
         clipBehavior: Clip.none,
         child: Row(children: children),
+      ),
+    );
+  }
+}
+
+class PageTab extends StatelessWidget {
+  const PageTab({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    required this.onDelete,
+    required this.maxWidth,
+    required this.height,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onDelete;
+  final double maxWidth;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bg =
+        selected ? theme.colorScheme.primaryContainer : Settings.sideBarColor;
+    final fg = selected
+        ? theme.colorScheme.onPrimaryContainer
+        : theme.colorScheme.onSurfaceVariant;
+
+    return Material(
+      color: bg,
+      elevation: selected ? 2 : 0,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: Settings.highlightColor, width: 1.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            minWidth: 56,
+            maxWidth: maxWidth,
+            minHeight: height,
+            maxHeight: height,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelLarge?.copyWith(color: fg),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // _DeleteIconButton(onPressed: onDelete, color: fg),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
