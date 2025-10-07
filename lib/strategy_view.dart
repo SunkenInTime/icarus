@@ -112,11 +112,11 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   alignment: Alignment.topLeft,
                   child: SaveAndLoadButton(),
                 ),
-                Align(
+                const Align(
                   alignment: Alignment.bottomLeft,
-                  child: PageChipsBar(
-                    onSelect: (String value) {},
-                    onDelete: (String value) {},
+                  child: Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: PagesBar(),
                   ),
                 ),
 

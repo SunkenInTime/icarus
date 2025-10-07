@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
@@ -31,7 +33,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   }
 
   Future<void> _navigateToStrategy() async {
-    if (_isLoading) return;
+    if (_isLoading) {
+      log("Is loading");
+      return;
+    }
+    log("Navigating");
 
     setState(() => _isLoading = true);
     _showLoadingOverlay();
@@ -40,10 +46,10 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       await ref
           .read(strategyProvider.notifier)
           .loadFromHive(widget.strategyData.id);
-
+      log("Right after load from hive");
       if (!mounted) return;
       Navigator.pop(context); // Remove loading overlay
-
+      log("About to push");
       await Navigator.push(
         context,
         PageRouteBuilder(

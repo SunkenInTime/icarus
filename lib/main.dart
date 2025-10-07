@@ -33,6 +33,7 @@ Future<void> main() async {
   await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
   await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
 
+  await StrategyProvider.migrateAllStrategies();
   // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
   await windowManager.ensureInitialized();
   WindowOptions windowOptions = const WindowOptions(

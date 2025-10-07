@@ -5,8 +5,10 @@ import 'dart:io';
 import 'package:cross_file/cross_file.dart';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -191,51 +193,121 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  Future<void> setActivePage(String pageID) async {
-    activePageID = pageID;
+  // --- MIGRATION: create a first page from legacy flat fields ----------------
 
-    final doc =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(state.id);
+  static Future<void> migrateAllStrategies() async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    for (final strat in box.values) {
+      await migrateLegacyToSinglePage(strat.id);
+    }
+    log("MIGRATION COMPLETE");
+  }
+
+  static Future<void> migrateLegacyToSinglePage(String strategyID) async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(strategyID);
+    if (strat == null) return;
+
+    // Already migrated
+    if (strat.pages.isNotEmpty) return;
+    log("Migrating legacy strategy to single page");
+    // Copy ability data & apply legacy adjustment (same logic you had in load)
+    final abilityData = [...strat.abilityData];
+    if (strat.versionNumber < 7) {
+      for (final a in abilityData) {
+        if (a.data.abilityData! is SquareAbility) {
+          a.position = a.position.translate(0, -7.5);
+        }
+      }
+    }
+
+    final firstPage = StrategyPage(
+      id: const Uuid().v4(),
+      name: "Page 1",
+      drawingData: [...strat.drawingData],
+      agentData: [...strat.agentData],
+      abilityData: abilityData,
+      textData: [...strat.textData],
+      imageData: [...strat.imageData],
+      utilityData: [...strat.utilityData],
+      sortIndex: 0,
+    );
+
+    final updated = strat.copyWith(
+      pages: [firstPage],
+      agentData: [],
+      abilityData: [],
+      drawingData: [],
+      utilityData: [],
+      textData: [],
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+
+    await box.put(updated.id, updated);
+  }
+
+  // Switch active page: flush old page first, then hydrate new
+  Future<void> setActivePage(String pageID) async {
+    if (pageID == activePageID) return;
+
+    // Flush current before switching
+    await _syncCurrentPageToHive();
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final doc = box.get(state.id);
     if (doc == null) return;
-    final page = doc.pages.firstWhere((page) => page.id == pageID);
+
+    final page = doc.pages.firstWhere(
+      (p) => p.id == pageID,
+      orElse: () => doc.pages.first,
+    );
+
+    activePageID = page.id;
 
     ref.read(actionProvider.notifier).clearAllActions();
-
-    // Hydrate all area providers with page data
     ref.read(agentProvider.notifier).fromHive(page.agentData);
     ref.read(abilityProvider.notifier).fromHive(page.abilityData);
     ref.read(drawingProvider.notifier).fromHive(page.drawingData);
     ref.read(textProvider.notifier).fromHive(page.textData);
     ref.read(placedImageProvider.notifier).fromHive(page.imageData);
     ref.read(utilityProvider.notifier).fromHive(page.utilityData);
+
+    // Defer path rebuild until next frame (layout complete)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref
+          .read(drawingProvider.notifier)
+          .rebuildAllPaths(CoordinateSystem.instance);
+    });
   }
 
   Future<void> addPage({required String name}) async {
-    final box =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(state.id);
-    if (box == null) {
-      throw Exception("No strategy found with ID ${state.id}");
-    }
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(state.id);
+    if (strat == null) return;
+
+    // Flush current page so its edits are not lost
+    await _syncCurrentPageToHive();
 
     final newPage = StrategyPage(
       id: const Uuid().v4(),
       name: name,
-      drawingData: [],
-      agentData: [],
-      abilityData: [],
-      textData: [],
-      imageData: [],
-      utilityData: [],
-      sortIndex: box.pages.isNotEmpty ? box.pages.length - 1 : 0,
+      drawingData: const [],
+      agentData: const [],
+      abilityData: const [],
+      textData: const [],
+      imageData: const [],
+      utilityData: const [],
+      sortIndex: strat.pages.length, // corrected
     );
 
-    final updatedPages = [...box.pages, newPage];
-    final updatedStrategy = box.copyWith(pages: updatedPages);
+    final updated = strat.copyWith(
+      pages: [...strat.pages, newPage],
+      lastEdited: DateTime.now(),
+    );
+    await box.put(updated.id, updated);
 
-    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .put(updatedStrategy.id, updatedStrategy);
-
-    // return box.put(newPage.id, newPage);
+    await setActivePage(newPage.id);
   }
 
   Future<void> loadFromHive(String id) async {
@@ -254,30 +326,23 @@ class StrategyProvider extends Notifier<StrategyState> {
         .read(placedImageProvider.notifier)
         .deleteUnusedImages(newStrat.id, newStrat.imageData);
 
-    ref.read(agentProvider.notifier).fromHive(newStrat.agentData);
+    final firstPage = newStrat.pages.first;
+    log(firstPage.toString());
+    ref.read(agentProvider.notifier).fromHive(firstPage.agentData);
+    ref.read(abilityProvider.notifier).fromHive(firstPage.abilityData);
+    ref.read(drawingProvider.notifier).fromHive(firstPage.drawingData);
 
-    final List<PlacedAbility> updatedAbility = [...newStrat.abilityData];
-    if (newStrat.versionNumber < 7) {
-      log("Updating ability positions for version < 7");
-      for (PlacedAbility ability in updatedAbility) {
-        if (ability.data.abilityData! is SquareAbility) {
-          ability.position = ability.position.translate(0, -7.5);
-        }
-      }
-    }
-
-    ref.read(abilityProvider.notifier).fromHive(updatedAbility);
-    ref.read(drawingProvider.notifier).fromHive(newStrat.drawingData);
     ref
         .read(mapProvider.notifier)
         .fromHive(newStrat.mapData, newStrat.isAttack);
-    ref.read(textProvider.notifier).fromHive(newStrat.textData);
-    ref.read(placedImageProvider.notifier).fromHive(newStrat.imageData);
+
+    ref.read(textProvider.notifier).fromHive(firstPage.textData);
+    ref.read(placedImageProvider.notifier).fromHive(firstPage.imageData);
 
     ref
         .read(strategySettingsProvider.notifier)
         .fromHive(newStrat.strategySettings);
-    ref.read(utilityProvider.notifier).fromHive(newStrat.utilityData);
+    ref.read(utilityProvider.notifier).fromHive(firstPage.utilityData);
 
     final newDir = await setStorageDirectory(newStrat.id);
 
@@ -386,6 +451,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<String> createNewStrategy(String name) async {
     final newID = const Uuid().v4();
+    final pageID = const Uuid().v4();
     final newStrategy = StrategyData(
       drawingData: [],
       agentData: [],
@@ -397,6 +463,19 @@ class StrategyProvider extends Notifier<StrategyState> {
       versionNumber: Settings.versionNumber,
       id: newID,
       name: name,
+      pages: [
+        StrategyPage(
+          id: pageID,
+          name: "Page 1",
+          drawingData: [],
+          agentData: [],
+          abilityData: [],
+          textData: [],
+          imageData: [],
+          utilityData: [],
+          sortIndex: 0,
+        )
+      ],
       lastEdited: DateTime.now(),
       strategySettings: StrategySettings(),
       folderID: ref.read(folderProvider),
@@ -470,41 +549,56 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> saveToHive(String id) async {
-    final drawingData = ref.read(drawingProvider).elements;
-    final agentData = ref.read(agentProvider);
-    final abilityData = ref.read(abilityProvider);
-    final textData = ref.read(textProvider);
-    final mapData = ref.read(mapProvider);
-    final imageData = ref.read(placedImageProvider).images;
-    final strategySettings = ref.read(strategySettingsProvider);
-    final utilityData = ref.read(utilityProvider);
+    // final drawingData = ref.read(drawingProvider).elements;
+    // final agentData = ref.read(agentProvider);
+    // final abilityData = ref.read(abilityProvider);
+    // final textData = ref.read(textProvider);
+    // final mapData = ref.read(mapProvider);
+    // final imageData = ref.read(placedImageProvider).images;
+    // final strategySettings = ref.read(strategySettingsProvider);
+    // final utilityData = ref.read(utilityProvider);
+    await _syncCurrentPageToHive();
 
     final StrategyData? savedStrat =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
 
-    final currentStategy = StrategyData(
-      drawingData: drawingData,
-      agentData: agentData,
-      abilityData: abilityData,
-      textData: textData,
-      imageData: imageData,
-      mapData: mapData.currentMap,
-      isAttack: mapData.isAttack,
-      utilityData: utilityData,
-      versionNumber: Settings.versionNumber,
-      id: id,
-      name: state.stratName ?? "placeholder",
+    if (savedStrat == null) return;
+
+    final currentStategy = savedStrat.copyWith(
       lastEdited: DateTime.now(),
-      strategySettings: strategySettings,
-      folderID: savedStrat?.folderID,
     );
 
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put(currentStategy.id, currentStategy);
+
     state = state.copyWith(
       isSaved: true,
     );
     log("Save to hive was called");
+  }
+
+  // Flush currently active page (uses activePageID). Safe if null/missing.
+  Future<void> _syncCurrentPageToHive() async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(state.id);
+    if (strat == null || strat.pages.isEmpty) return;
+
+    final pageId = activePageID ?? strat.pages.first.id;
+    final idx = strat.pages.indexWhere((p) => p.id == pageId);
+    if (idx == -1) return;
+
+    final updatedPage = strat.pages[idx].copyWith(
+      drawingData: ref.read(drawingProvider).elements,
+      agentData: ref.read(agentProvider),
+      abilityData: ref.read(abilityProvider),
+      textData: ref.read(textProvider),
+      imageData: ref.read(placedImageProvider).images,
+      utilityData: ref.read(utilityProvider),
+    );
+
+    final newPages = [...strat.pages]..[idx] = updatedPage;
+    final updated = strat.copyWith(pages: newPages, lastEdited: DateTime.now());
+    await box.put(updated.id, updated);
   }
 
   void moveToFolder({required String strategyID, required String? parentID}) {

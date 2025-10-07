@@ -226,7 +226,7 @@ class DrawingPainter extends CustomPainter {
       } else if (elements[i] is FreeDrawing) {
         FreeDrawing freeDrawing = elements[i] as FreeDrawing;
         List<Offset> points = freeDrawing.listOfPoints;
-        if (points.length < 2) return;
+        if (points.length < 2) continue;
 
         if (freeDrawing.isDotted) {
           final space = coordinateSystem.scale(10);
@@ -237,7 +237,7 @@ class DrawingPainter extends CustomPainter {
         }
 
         if (freeDrawing.hasArrow) {
-          if (points.length < 2) return;
+          if (points.length < 2) continue;
 
           final from =
               coordinateSystem.coordinateToScreen(points[points.length - 2]);
