@@ -555,7 +555,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     // final textData = ref.read(textProvider);
     // final mapData = ref.read(mapProvider);
     // final imageData = ref.read(placedImageProvider).images;
-    // final strategySettings = ref.read(strategySettingsProvider);
+    final strategySettings = ref.read(strategySettingsProvider);
     // final utilityData = ref.read(utilityProvider);
     await _syncCurrentPageToHive();
 
@@ -564,12 +564,13 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     if (savedStrat == null) return;
 
-    final currentStategy = savedStrat.copyWith(
+    final currentStrategy = savedStrat.copyWith(
       lastEdited: DateTime.now(),
+      strategySettings: strategySettings,
     );
 
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .put(currentStategy.id, currentStategy);
+        .put(currentStrategy.id, currentStrategy);
 
     state = state.copyWith(
       isSaved: true,
