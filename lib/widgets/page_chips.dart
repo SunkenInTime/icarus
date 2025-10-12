@@ -198,8 +198,10 @@ class _CollapsedPill extends StatelessWidget {
             child: Text(
               activeName,
               overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(color: Colors.white, fontWeight: FontWeight.w600),
+              style: theme.textTheme.titleMedium?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14),
             ),
           ),
           IconButton(

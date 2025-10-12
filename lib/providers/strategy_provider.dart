@@ -185,6 +185,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> clearCurrentStrategy() async {
+    activePageID = null;
     state = StrategyState(
       isSaved: true,
       stratName: null,
@@ -322,11 +323,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
     ref.read(actionProvider.notifier).clearAllActions();
+
     await ref
         .read(placedImageProvider.notifier)
         .deleteUnusedImages(newStrat.id, newStrat.imageData);
 
     final firstPage = newStrat.pages.first;
+
     log(firstPage.toString());
     ref.read(agentProvider.notifier).fromHive(firstPage.agentData);
     ref.read(abilityProvider.notifier).fromHive(firstPage.abilityData);
@@ -343,7 +346,8 @@ class StrategyProvider extends Notifier<StrategyState> {
         .read(strategySettingsProvider.notifier)
         .fromHive(newStrat.strategySettings);
     ref.read(utilityProvider.notifier).fromHive(firstPage.utilityData);
-
+    activePageID = firstPage.id;
+    // await setActivePage(firstPage.id);
     final newDir = await setStorageDirectory(newStrat.id);
 
     state = StrategyState(
