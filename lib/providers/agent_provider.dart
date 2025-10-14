@@ -120,12 +120,18 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
     return jsonEncode(jsonList);
   }
 
+  static String objectToJson(List<PlacedAgent> agents) {
+    final List<Map<String, dynamic>> jsonList =
+        agents.map((agent) => agent.toJson()).toList();
+    return jsonEncode(jsonList);
+  }
+
   void fromHive(List<PlacedAgent> hiveAgents) {
     poppedAgents = [];
     state = hiveAgents;
   }
 
-  List<PlacedAgent> fromJson(String jsonString) {
+  static List<PlacedAgent> fromJson(String jsonString) {
     final List<dynamic> jsonList = jsonDecode(jsonString);
     return jsonList
         .map((json) => PlacedAgent.fromJson(json as Map<String, dynamic>))

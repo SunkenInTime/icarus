@@ -115,6 +115,14 @@ class DrawingProvider extends Notifier<DrawingState> {
     return jsonEncode(jsonList);
   }
 
+  static String objectToJson(List<DrawingElement> elements) {
+    final List<Map<String, dynamic>> jsonList = elements
+        .whereType<FreeDrawing>()
+        .map((element) => element.toJson())
+        .toList();
+    return jsonEncode(jsonList);
+  }
+
   void fromHive(List<DrawingElement> hiveDrawings) {
     final coordinateSystem = CoordinateSystem.instance;
     final newDrawings = hiveDrawings.map((drawing) {
@@ -129,7 +137,7 @@ class DrawingProvider extends Notifier<DrawingState> {
     _triggerRepaint();
   }
 
-  List<DrawingElement> fromJson(String jsonString) {
+  static List<DrawingElement> fromJson(String jsonString) {
     final List<dynamic> jsonList = jsonDecode(jsonString);
     // dev.log(jsonList.toString());
     // final coordinateSystem = CoordinateSystem.instance;

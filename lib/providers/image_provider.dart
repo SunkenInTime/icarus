@@ -196,7 +196,7 @@ class ImageProvider extends Notifier<ImageState> {
     return jsonEncode(jsonList);
   }
 
-  Future<List<PlacedImage>> fromJson(
+  static Future<List<PlacedImage>> fromJson(
       {required String jsonString, required String strategyID}) async {
     final List<dynamic> jsonList = jsonDecode(jsonString);
 
@@ -251,6 +251,10 @@ class ImageProvider extends Notifier<ImageState> {
     // Write the file.
     final file = File(filePath);
     await file.writeAsBytes(imageBytes);
+  }
+
+  static List<PlacedImage> deepCopyWith(List<PlacedImage> images) {
+    return images.map((image) => image.copyWith()).toList();
   }
 
   void fromHive(List<PlacedImage> hiveImages) {
@@ -328,6 +332,7 @@ class PlacedImageSerializer {
 
       json['fileExtension'] = fileExtension;
     }
+
     final placedImage = PlacedImage.fromJson(json);
 
     // Compute the final file path to write the image.

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'package:cross_file/cross_file.dart';
-
+import 'image_provider.dart' as PlacedImageProvider;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -290,17 +290,24 @@ class StrategyProvider extends Notifier<StrategyState> {
     // Flush current page so its edits are not lost
     await _syncCurrentPageToHive();
 
-    final newPage = StrategyPage(
+    //TODO Make this function of the index
+    final newPage = strat.pages.last.copyWith(
       id: const Uuid().v4(),
       name: name,
-      drawingData: const [],
-      agentData: const [],
-      abilityData: const [],
-      textData: const [],
-      imageData: const [],
-      utilityData: const [],
-      sortIndex: strat.pages.length, // corrected
+      sortIndex: strat.pages.length,
     );
+
+    // final newPage = StrategyPage(
+    //   id: const Uuid().v4(),
+    //   name: name,
+    //   drawingData: ,
+    //   agentData: const [],
+    //   abilityData: const [],
+    //   textData: const [],
+    //   imageData: const [],
+    //   utilityData: const [],
+    //   sortIndex: strat.pages.length, // corrected
+    // );
 
     final updated = strat.copyWith(
       pages: [...strat.pages, newPage],
@@ -387,23 +394,18 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final newID = const Uuid().v4();
 
-    final List<DrawingElement> drawingData = ref
-        .read(drawingProvider.notifier)
-        .fromJson(jsonEncode(json["drawingData"]));
-    List<PlacedAgent> agentData = ref
-        .read(agentProvider.notifier)
-        .fromJson(jsonEncode(json["agentData"]));
+    final List<DrawingElement> drawingData =
+        DrawingProvider.fromJson(jsonEncode(json["drawingData"]));
+    List<PlacedAgent> agentData =
+        AgentProvider.fromJson(jsonEncode(json["agentData"]));
 
-    final List<PlacedAbility> abilityData = ref
-        .read(abilityProvider.notifier)
-        .fromJson(jsonEncode(json["abilityData"]));
+    final List<PlacedAbility> abilityData =
+        AbilityProvider.fromJson(jsonEncode(json["abilityData"]));
 
-    final mapData =
-        ref.read(mapProvider.notifier).fromJson(jsonEncode(json["mapData"]));
-    final textData =
-        ref.read(textProvider.notifier).fromJson(jsonEncode(json["textData"]));
+    final mapData = MapProvider.fromJson(jsonEncode(json["mapData"]));
+    final textData = TextProvider.fromJson(jsonEncode(json["textData"]));
 
-    final imageData = await ref.read(placedImageProvider.notifier).fromJson(
+    final imageData = await PlacedImageProvider.ImageProvider.fromJson(
         jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID);
 
     final StrategySettings settingsData;
@@ -424,9 +426,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     if (json["utilityData"] != null) {
-      utilityData = ref
-          .read(utilityProvider.notifier)
-          .fromJson(jsonEncode(json["utilityData"]));
+      utilityData = UtilityProvider.fromJson(jsonEncode(json["utilityData"]));
     } else {
       utilityData = [];
     }

@@ -142,10 +142,16 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     return jsonEncode(jsonList);
   }
 
-  List<PlacedUtility> fromJson(String jsonString) {
+  static List<PlacedUtility> fromJson(String jsonString) {
     final List<dynamic> jsonList = jsonDecode(jsonString);
     return jsonList
         .map((json) => PlacedUtility.fromJson(json as Map<String, dynamic>))
         .toList();
+  }
+
+  static String objectToJson(List<PlacedUtility> utilities) {
+    final List<Map<String, dynamic>> jsonList =
+        utilities.map((utility) => utility.toJson()).toList();
+    return jsonEncode(jsonList);
   }
 }

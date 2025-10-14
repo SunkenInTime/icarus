@@ -9,6 +9,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/widgets/custom_text_field.dart';
 
 class PagesBar extends ConsumerStatefulWidget {
   const PagesBar({super.key});
@@ -37,10 +38,10 @@ class _PagesBarState extends ConsumerState<PagesBar>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Rename page"),
-        content: TextField(
-          autofocus: true,
+        content: CustomTextField(
+          // autofocus: true,
           controller: controller,
-          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+          // onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
         actions: [
           TextButton(

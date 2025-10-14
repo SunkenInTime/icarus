@@ -3,6 +3,12 @@ import 'package:http/retry.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/utility_provider.dart';
 
 class StrategyPage extends HiveObject {
   final String id;
@@ -42,12 +48,21 @@ class StrategyPage extends HiveObject {
       id: id ?? this.id,
       sortIndex: sortIndex ?? this.sortIndex,
       name: name ?? this.name,
-      drawingData: drawingData ?? this.drawingData,
-      agentData: agentData ?? this.agentData,
-      abilityData: abilityData ?? this.abilityData,
-      textData: textData ?? this.textData,
-      imageData: imageData ?? this.imageData,
-      utilityData: utilityData ?? this.utilityData,
+      drawingData: DrawingProvider.fromJson(
+          DrawingProvider.objectToJson(drawingData ?? this.drawingData)),
+      agentData: AgentProvider.fromJson(AgentProvider.objectToJson(
+        agentData ?? this.agentData,
+      )),
+      abilityData: AbilityProvider.fromJson(AbilityProvider.objectToJson(
+        abilityData ?? this.abilityData,
+      )),
+      textData: TextProvider.fromJson(TextProvider.objectToJson(
+        textData ?? this.textData,
+      )),
+      imageData: ImageProvider.deepCopyWith(imageData ?? this.imageData),
+      utilityData: UtilityProvider.fromJson(UtilityProvider.objectToJson(
+        utilityData ?? this.utilityData,
+      )),
     );
   }
 }

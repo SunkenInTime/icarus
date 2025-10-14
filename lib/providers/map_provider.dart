@@ -49,7 +49,7 @@ class MapProvider extends Notifier<MapState> {
     return '"${Maps.mapNames[state.currentMap]}"';
   }
 
-  MapValue fromJson(String json) {
+  static MapValue fromJson(String json) {
     final mapName = jsonDecode(json);
 
     final mapValue =
