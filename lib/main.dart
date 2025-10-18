@@ -36,7 +36,7 @@ Future<void> main() async {
   // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
   await windowManager.ensureInitialized();
   WindowOptions windowOptions = const WindowOptions(
-    title: "Icarus: Valorant Strategies & Line ups",
+    title: "Icarus: Valorant Strategies & Line ups 1.7.5",
   );
 
   drawingCursor = await CustomMouseCursor.icon(

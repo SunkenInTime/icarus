@@ -3,7 +3,7 @@ description: "A new Flutter project."
 
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.7.2+12 #version number
+version: 1.7.5+13 #version number
 
 environment:
   sdk: '>=3.4.3 <4.0.0'
@@ -57,7 +57,7 @@ msix_config:
   identity_name: DaraA.IcarusValorantStrategiesLineups
   publisher: CN=39055448-F6AA-42E9-91F6-9CF8828C444C
   logo_path: E:\Projects\icarus\windows\runner\resources\app_icon.ico
-  msix_version: 1.7.2.0 #verion number
+  msix_version: 1.7.5.0 #verion number
   store: true
 
 flutter:
