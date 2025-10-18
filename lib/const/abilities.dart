@@ -11,7 +11,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_icon_widget.dart';
 
-abstract class Ability {
+sealed class Ability {
   Offset getAnchorPoint([double? mapScale, double? abilitySize]);
   Widget createWidget(String? id, bool isAlly, double mapScale,
       [double? rotation, double? length]);

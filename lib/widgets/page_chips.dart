@@ -29,7 +29,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
   }
 
   Future<void> _selectPage(String id) async {
-    await ref.read(strategyProvider.notifier).setActivePage(id);
+    await ref.read(strategyProvider.notifier).setActivePageAnimated(id);
   }
 
   Future<void> _renamePage(StrategyData strat, StrategyPage page) async {

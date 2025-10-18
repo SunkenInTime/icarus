@@ -11,10 +11,12 @@ import 'package:icarus/providers/ability_bar_provider.dart';
 
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
+import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:screenshot/screenshot.dart';
 
 class InteractiveMap extends ConsumerStatefulWidget {
@@ -103,22 +105,24 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                       ),
                     ),
                   //Agents
+
                   Positioned.fill(
-                    child: PlacedWidgetBuilder(),
+                    child: Opacity(
+                      opacity: ref.watch(transitionProvider).active ? 1 : 0,
+                      child: PageTransitionOverlay(),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: Opacity(
+                      opacity: ref.watch(transitionProvider).active ? 0 : 1,
+                      child: PlacedWidgetBuilder(),
+                    ),
                   ),
 
                   //Painting
                   Positioned.fill(
                     child: InteractivePainter(),
                   ),
-                  // TODO: Later
-                  // Positioned.fill(
-                  //   child: MouseRegion(
-                  //     onHover: (event) {
-                  //       // if(ref.watch(interactionStateProvider).)
-                  //     },
-                  //   ),
-                  // )
                 ],
               ),
             ),

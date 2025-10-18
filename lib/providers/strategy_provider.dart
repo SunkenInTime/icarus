@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'package:cross_file/cross_file.dart';
+import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/transition_provider.dart';
 import 'image_provider.dart' as PlacedImageProvider;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -280,6 +282,70 @@ class StrategyProvider extends Notifier<StrategyState> {
           .read(drawingProvider.notifier)
           .rebuildAllPaths(CoordinateSystem.instance);
     });
+  }
+
+// Add these inside StrategyProvider
+  Future<void> setActivePageAnimated(String pageID) async {
+    // Flush current edits so prev snapshot is accurate
+    await _syncCurrentPageToHive();
+
+    final prev = _snapshotAllPlaced();
+
+    // Load target page (hydrates providers)
+    await setActivePage(pageID);
+
+    // After layout, snapshot next and start transition
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final next = _snapshotAllPlaced();
+      final entries = _diffToTransitions(prev, next);
+      if (entries.isNotEmpty) {
+        ref
+            .read(transitionProvider.notifier)
+            .start(entries, duration: const Duration(seconds: 2));
+      }
+    });
+  }
+
+  Map<String, PlacedWidget> _snapshotAllPlaced() {
+    final map = <String, PlacedWidget>{};
+    for (final a in ref.read(agentProvider)) map[a.id] = a;
+    for (final ab in ref.read(abilityProvider)) map[ab.id] = ab;
+    for (final t in ref.read(textProvider)) map[t.id] = t;
+    for (final img in ref.read(placedImageProvider).images) map[img.id] = img;
+    for (final u in ref.read(utilityProvider)) map[u.id] = u;
+    return map;
+  }
+
+  List<PageTransitionEntry> _diffToTransitions(
+    Map<String, PlacedWidget> prev,
+    Map<String, PlacedWidget> next,
+  ) {
+    final entries = <PageTransitionEntry>[];
+
+    // Move / appear
+    next.forEach((id, to) {
+      final from = prev[id];
+      if (from != null) {
+        if (from.position != to.position ||
+            PageTransitionEntry.rotationOf(from) !=
+                PageTransitionEntry.rotationOf(to)) {
+          entries.add(PageTransitionEntry.move(from: from, to: to));
+        } else {
+          // Unchanged: optionally include as no-op (or skip)
+        }
+      } else {
+        entries.add(PageTransitionEntry.appear(to: to));
+      }
+    });
+
+    // Disappear
+    prev.forEach((id, from) {
+      if (!next.containsKey(id)) {
+        entries.add(PageTransitionEntry.disappear(from: from));
+      }
+    });
+
+    return entries;
   }
 
   Future<void> addPage({required String name}) async {
