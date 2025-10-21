@@ -21,41 +21,41 @@ class PageTransitionOverlay extends ConsumerStatefulWidget {
 
 class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     with TickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _animation;
-
+  AnimationController? _controller;
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    );
-    _animation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeInOut,
-    );
-    _controller.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          setState(() {});
-          if (mounted) {
-            ref.read(transitionProvider.notifier).complete();
-          }
-        });
-      }
-    });
+
+    // _controller!.forward(from: 0);
   }
 
   void _ensureController(Duration duration) {
-    if (_controller.duration != duration) {
-      _controller.duration = duration;
+    if (_controller == null) {
+      _controller = AnimationController(vsync: this, duration: duration)
+        ..addListener(() {
+          // ref.read(transitionProvider.notifier).setProgress(_controller!.value);
+          setState(() {});
+        })
+        ..addStatusListener((status) {
+          if (status == AnimationStatus.completed) {
+            // Defer provider write until after the frame.
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                ref.read(transitionProvider.notifier).complete();
+              }
+            });
+          }
+        });
+      return;
+    }
+    if (_controller!.duration != duration) {
+      _controller!.duration = duration;
     }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -63,10 +63,21 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
   Widget build(BuildContext context) {
     final coord = CoordinateSystem.instance;
     final state = ref.watch(transitionProvider);
+    // if (!state.active) {
+    //   _controller?.stop();
+    //   log("Has stopped");
+    //   return const SizedBox.shrink();
+    // }
+
+    log("Anim Ran");
 
     _ensureController(state.duration);
+    // // Start/restart when a transition becomes active and we're not currently animating
+    // if (!_controller!.isAnimating) {
+    //   _controller!.forward(from: 0);
+    // }
 
-    final t = _animation.value;
+    final t = Curves.easeInOut.transform(_controller!.value);
     log(t.toString());
     // Partition for clarity
     final moving = <PageTransitionEntry>[];
@@ -95,7 +106,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
             width: 70,
             child: CustomButton(
               onPressed: () {
-                _controller.forward(from: 0);
+                _controller!.forward(from: 0);
               },
               height: 80,
               icon: const Icon(Icons.play_arrow),
@@ -105,49 +116,44 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
             ),
           ),
         ),
-        AnimatedBuilder(
-          animation: _animation,
-          builder: (context, child) {
-            return Positioned.fill(
-              child: IgnorePointer(
-                ignoring: true,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    // Disappear: fixed at start position, fade out
-                    for (final e in disappearing)
-                      _overlayItem(
-                        key: ValueKey('disappear_${e.id}'),
-                        w: e.from!,
-                        pos: coord.coordinateToScreen(e.startPos),
-                        opacity: 1 - t,
-                        rotation: e.startRotation,
-                      ),
-                    // Move: lerp start -> end
-                    for (final e in moving)
-                      _overlayItem(
-                        key: ValueKey('move_${e.id}'),
-                        w: e.to!, // build with final data (visual)
-                        pos: Offset.lerp(coord.coordinateToScreen(e.startPos),
-                                coord.coordinateToScreen(e.endPos), t) ??
-                            coord.coordinateToScreen(e.endPos),
-                        opacity: 1,
-                        rotation: _lerpAngle(e.startRotation, e.endRotation, t),
-                      ),
-                    // Appear: fixed at end position, fade in
-                    for (final e in appearing)
-                      _overlayItem(
-                        key: ValueKey('appear_${e.id}'),
-                        w: e.to!,
-                        pos: coord.coordinateToScreen(e.endPos),
-                        opacity: t,
-                        rotation: e.endRotation,
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: true,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                // Disappear: fixed at start position, fade out
+                for (final e in disappearing)
+                  _overlayItem(
+                    key: ValueKey('disappear_${e.id}'),
+                    widget: e.from!,
+                    pos: coord.coordinateToScreen(e.startPos),
+                    opacity: 1 - t,
+                    rotation: e.startRotation,
+                  ),
+                // Move: lerp start -> end
+                for (final e in moving)
+                  _overlayItem(
+                    key: ValueKey('move_${e.id}'),
+                    widget: e.to!, // build with final data (visual)
+                    pos: Offset.lerp(coord.coordinateToScreen(e.startPos),
+                            coord.coordinateToScreen(e.endPos), t) ??
+                        coord.coordinateToScreen(e.endPos),
+                    opacity: 1,
+                    rotation: _lerpAngle(e.startRotation, e.endRotation, t),
+                  ),
+                // Appear: fixed at end position, fade in
+                for (final e in appearing)
+                  _overlayItem(
+                    key: ValueKey('appear_${e.id}'),
+                    widget: e.to!,
+                    pos: coord.coordinateToScreen(e.endPos),
+                    opacity: t,
+                    rotation: e.endRotation,
+                  ),
+              ],
+            ),
+          ),
         ),
       ],
     );
@@ -160,14 +166,15 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
 
   Widget _overlayItem({
     required Key key,
-    required PlacedWidget w,
+    required PlacedWidget widget,
     required Offset pos,
     required double opacity,
     double? rotation,
   }) {
     //TODO: Set map scale
     log("jsf");
-    Widget child = PlacedWidgetPreview.build(w, 1); // central factory (below)
+    Widget child =
+        PlacedWidgetPreview.build(widget, 1); // central factory (below)
     if (rotation != null)
       child = Transform.rotate(angle: rotation, child: child);
     return Positioned(
