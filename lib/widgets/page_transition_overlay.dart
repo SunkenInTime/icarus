@@ -8,6 +8,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/transition_provider.dart';
+import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 
 class PageTransitionOverlay extends ConsumerStatefulWidget {
@@ -20,41 +21,41 @@ class PageTransitionOverlay extends ConsumerStatefulWidget {
 
 class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     with TickerProviderStateMixin {
-  AnimationController? _controller;
+  late AnimationController _controller;
+  late Animation<double> _animation;
+
   @override
   void initState() {
     super.initState();
-
-    _controller!.forward(from: 0);
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    );
+    _animation = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOut,
+    );
+    _controller.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          setState(() {});
+          if (mounted) {
+            ref.read(transitionProvider.notifier).complete();
+          }
+        });
+      }
+    });
   }
 
   void _ensureController(Duration duration) {
-    if (_controller == null) {
-      _controller = AnimationController(vsync: this, duration: duration)
-        ..addListener(() {
-          // ref.read(transitionProvider.notifier).setProgress(_controller!.value);
-          setState(() {});
-        })
-        ..addStatusListener((status) {
-          if (status == AnimationStatus.completed) {
-            // Defer provider write until after the frame.
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                ref.read(transitionProvider.notifier).complete();
-              }
-            });
-          }
-        });
-      return;
-    }
-    if (_controller!.duration != duration) {
-      _controller!.duration = duration;
+    if (_controller.duration != duration) {
+      _controller.duration = duration;
     }
   }
 
   @override
   void dispose() {
-    _controller?.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -62,20 +63,10 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
   Widget build(BuildContext context) {
     final coord = CoordinateSystem.instance;
     final state = ref.watch(transitionProvider);
-    if (!state.active) {
-      _controller?.stop();
-      log("Has stopped");
-      return const SizedBox.shrink();
-    }
-    log("Anim Ran");
 
     _ensureController(state.duration);
-    // // Start/restart when a transition becomes active and we're not currently animating
-    // if (!_controller!.isAnimating) {
-    //   _controller!.forward(from: 0);
-    // }
 
-    final t = Curves.easeInOut.transform(_controller!.value);
+    final t = _animation.value;
     log(t.toString());
     // Partition for clarity
     final moving = <PageTransitionEntry>[];
@@ -97,42 +88,68 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
 
     log('Transition t=$t, moving=${moving.length}, appearing=${appearing.length}, disappearing=${disappearing.length}');
 
-    return IgnorePointer(
-      ignoring: true,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // Disappear: fixed at start position, fade out
-          for (final e in disappearing)
-            _overlayItem(
-              key: ValueKey('disappear_${e.id}'),
-              w: e.from!,
-              pos: coord.coordinateToScreen(e.startPos),
-              opacity: 1 - t,
-              rotation: e.startRotation,
+    return Stack(
+      children: [
+        Align(
+          child: SizedBox(
+            width: 70,
+            child: CustomButton(
+              onPressed: () {
+                _controller.forward(from: 0);
+              },
+              height: 80,
+              icon: const Icon(Icons.play_arrow),
+              label: '',
+              labelColor: Colors.white,
+              backgroundColor: Colors.deepPurpleAccent,
             ),
-          // Move: lerp start -> end
-          for (final e in moving)
-            _overlayItem(
-              key: ValueKey('move_${e.id}'),
-              w: e.to!, // build with final data (visual)
-              pos: Offset.lerp(coord.coordinateToScreen(e.startPos),
-                      coord.coordinateToScreen(e.endPos), t) ??
-                  coord.coordinateToScreen(e.endPos),
-              opacity: 1,
-              rotation: _lerpAngle(e.startRotation, e.endRotation, t),
-            ),
-          // Appear: fixed at end position, fade in
-          for (final e in appearing)
-            _overlayItem(
-              key: ValueKey('appear_${e.id}'),
-              w: e.to!,
-              pos: coord.coordinateToScreen(e.endPos),
-              opacity: t,
-              rotation: e.endRotation,
-            ),
-        ],
-      ),
+          ),
+        ),
+        AnimatedBuilder(
+          animation: _animation,
+          builder: (context, child) {
+            return Positioned.fill(
+              child: IgnorePointer(
+                ignoring: true,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    // Disappear: fixed at start position, fade out
+                    for (final e in disappearing)
+                      _overlayItem(
+                        key: ValueKey('disappear_${e.id}'),
+                        w: e.from!,
+                        pos: coord.coordinateToScreen(e.startPos),
+                        opacity: 1 - t,
+                        rotation: e.startRotation,
+                      ),
+                    // Move: lerp start -> end
+                    for (final e in moving)
+                      _overlayItem(
+                        key: ValueKey('move_${e.id}'),
+                        w: e.to!, // build with final data (visual)
+                        pos: Offset.lerp(coord.coordinateToScreen(e.startPos),
+                                coord.coordinateToScreen(e.endPos), t) ??
+                            coord.coordinateToScreen(e.endPos),
+                        opacity: 1,
+                        rotation: _lerpAngle(e.startRotation, e.endRotation, t),
+                      ),
+                    // Appear: fixed at end position, fade in
+                    for (final e in appearing)
+                      _overlayItem(
+                        key: ValueKey('appear_${e.id}'),
+                        w: e.to!,
+                        pos: coord.coordinateToScreen(e.endPos),
+                        opacity: t,
+                        rotation: e.endRotation,
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 

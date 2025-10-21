@@ -107,10 +107,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                   //Agents
 
                   Positioned.fill(
-                    child: Opacity(
-                      opacity: ref.watch(transitionProvider).active ? 1 : 0,
-                      child: PageTransitionOverlay(),
-                    ),
+                    child: PageTransitionOverlay(),
                   ),
                   Positioned.fill(
                     child: Opacity(
