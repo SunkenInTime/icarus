@@ -9,6 +9,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 
 class PagesBar extends ConsumerStatefulWidget {
@@ -29,6 +30,9 @@ class _PagesBarState extends ConsumerState<PagesBar>
   }
 
   Future<void> _selectPage(String id) async {
+    await Future.microtask(() {
+      ref.read(transitionProvider.notifier).setHideView(true);
+    });
     await ref.read(strategyProvider.notifier).setActivePageAnimated(id);
   }
 

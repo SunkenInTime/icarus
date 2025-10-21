@@ -25,8 +25,8 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
   @override
   void initState() {
     super.initState();
-
-    // _controller!.forward(from: 0);
+    _ensureController(const Duration(seconds: 2));
+    _controller!.forward(from: 0);
   }
 
   void _ensureController(Duration duration) {
@@ -37,11 +37,17 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           setState(() {});
         })
         ..addStatusListener((status) {
+          log("Status is${status.toString()}");
           if (status == AnimationStatus.completed) {
             // Defer provider write until after the frame.
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                ref.read(transitionProvider.notifier).complete();
+            // log("Completed");
+            final notifier = ref.read(transitionProvider.notifier);
+            log("Calling complete");
+            Future.microtask(() {
+              try {
+                notifier.complete();
+              } catch (e, st) {
+                log('Error calling complete: $e\n$st');
               }
             });
           }
@@ -71,7 +77,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
 
     log("Anim Ran");
 
-    _ensureController(state.duration);
+    // _ensureController(state.duration);
     // // Start/restart when a transition becomes active and we're not currently animating
     // if (!_controller!.isAnimating) {
     //   _controller!.forward(from: 0);
@@ -101,21 +107,21 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
 
     return Stack(
       children: [
-        Align(
-          child: SizedBox(
-            width: 70,
-            child: CustomButton(
-              onPressed: () {
-                _controller!.forward(from: 0);
-              },
-              height: 80,
-              icon: const Icon(Icons.play_arrow),
-              label: '',
-              labelColor: Colors.white,
-              backgroundColor: Colors.deepPurpleAccent,
-            ),
-          ),
-        ),
+        // Align(
+        //   child: SizedBox(
+        //     width: 70,
+        //     child: CustomButton(
+        //       onPressed: () {
+        //         _controller!.forward(from: 0);
+        //       },
+        //       height: 80,
+        //       icon: const Icon(Icons.play_arrow),
+        //       label: '',
+        //       labelColor: Colors.white,
+        //       backgroundColor: Colors.deepPurpleAccent,
+        //     ),
+        //   ),
+        // ),
         Positioned.fill(
           child: IgnorePointer(
             ignoring: true,

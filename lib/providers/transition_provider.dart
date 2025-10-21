@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -8,8 +10,9 @@ class PageTransitionState {
     required this.entries,
     required this.progress,
     required this.duration,
+    required this.hideView,
   });
-
+  final bool hideView;
   final bool active;
   final List<PageTransitionEntry> entries;
   final double progress;
@@ -20,8 +23,10 @@ class PageTransitionState {
     List<PageTransitionEntry>? items,
     double? progress,
     Duration? duration,
+    bool? hideView,
   }) =>
       PageTransitionState(
+        hideView: hideView ?? this.hideView,
         active: active ?? this.active,
         entries: items ?? entries,
         progress: progress ?? this.progress,
@@ -29,7 +34,11 @@ class PageTransitionState {
       );
 
   static const idle = PageTransitionState(
-      active: false, entries: [], progress: 0, duration: Duration(seconds: 2));
+      active: false,
+      entries: [],
+      progress: 0,
+      duration: Duration(seconds: 2),
+      hideView: false);
 }
 
 final transitionProvider =
@@ -50,6 +59,7 @@ class TransitionProvider extends Notifier<PageTransitionState> {
   void start(List<PageTransitionEntry> entries,
       {Duration duration = const Duration(seconds: 2)}) {
     state = PageTransitionState(
+      hideView: true,
       active: true,
       entries: entries,
       progress: 0,
@@ -57,7 +67,12 @@ class TransitionProvider extends Notifier<PageTransitionState> {
     );
   }
 
+  void setHideView(bool hide) {
+    state = state.copyWith(hideView: hide);
+  }
+
   void complete() {
-    state = PageTransitionState.idle;
+    log("Transition Complete Called");
+    state = state.copyWith(active: false, progress: 1, hideView: false);
   }
 }
