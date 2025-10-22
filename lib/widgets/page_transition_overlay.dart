@@ -5,10 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/custom_button.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 
 class PageTransitionOverlay extends ConsumerStatefulWidget {
@@ -25,7 +29,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
   @override
   void initState() {
     super.initState();
-    _ensureController(const Duration(seconds: 2));
+    _ensureController(const Duration(milliseconds: 400));
     _controller!.forward(from: 0);
   }
 
@@ -89,6 +93,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     final moving = <PageTransitionEntry>[];
     final appearing = <PageTransitionEntry>[];
     final disappearing = <PageTransitionEntry>[];
+    final none = <PageTransitionEntry>[];
     for (final e in state.entries) {
       switch (e.kind) {
         case TransitionKind.move:
@@ -99,6 +104,9 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           break;
         case TransitionKind.disappear:
           disappearing.add(e);
+          break;
+        case TransitionKind.none:
+          none.add(e);
           break;
       }
     }
@@ -128,6 +136,15 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
             child: Stack(
               clipBehavior: Clip.none,
               children: [
+                // None: unchanged items rendered at fixed position
+                for (final e in none)
+                  _overlayItem(
+                    key: ValueKey('none_${e.id}'),
+                    widget: e.to!,
+                    pos: coord.coordinateToScreen(e.endPos),
+                    opacity: 1,
+                    rotation: e.endRotation,
+                  ),
                 // Disappear: fixed at start position, fade out
                 for (final e in disappearing)
                   _overlayItem(
@@ -178,11 +195,23 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     double? rotation,
   }) {
     //TODO: Set map scale
+    final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap]!;
+    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
     log("jsf");
     Widget child =
-        PlacedWidgetPreview.build(widget, 1); // central factory (below)
+        PlacedWidgetPreview.build(widget, mapScale); // central factory (below)
     if (rotation != null)
-      child = Transform.rotate(angle: rotation, child: child);
+      child = Transform.rotate(
+        angle: rotation,
+        alignment: Alignment.topLeft,
+        origin: (widget as PlacedAbility)
+            .data
+            .abilityData!
+            .getAnchorPoint(mapScale, abilitySize)
+            .scale(CoordinateSystem.instance.scaleFactor,
+                CoordinateSystem.instance.scaleFactor),
+        child: child,
+      );
     return Positioned(
       key: key,
       left: pos.dx,

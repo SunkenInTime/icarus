@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:icarus/const/placed_classes.dart';
 
-enum TransitionKind { move, appear, disappear }
+enum TransitionKind { move, appear, disappear, none }
 
 /// One entry describing how a single PlacedWidget should animate.
 class PageTransitionEntry {
@@ -18,6 +18,12 @@ class PageTransitionEntry {
       : kind = TransitionKind.disappear,
         id = from!.id,
         to = null;
+  // For unchanged items we still want to render during the transition
+  // so they remain visible while the base view is hidden.
+  PageTransitionEntry.none({required this.to})
+      : kind = TransitionKind.none,
+        id = to!.id,
+        from = null;
 
   final String id;
   final TransitionKind kind;

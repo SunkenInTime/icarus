@@ -301,7 +301,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       if (entries.isNotEmpty) {
         ref
             .read(transitionProvider.notifier)
-            .start(entries, duration: const Duration(seconds: 2));
+            .start(entries, duration: const Duration(seconds: 1));
+      } else {
+        ref.read(transitionProvider.notifier).complete();
       }
     });
   }
@@ -331,7 +333,8 @@ class StrategyProvider extends Notifier<StrategyState> {
                 PageTransitionEntry.rotationOf(to)) {
           entries.add(PageTransitionEntry.move(from: from, to: to));
         } else {
-          // Unchanged: optionally include as no-op (or skip)
+          // Unchanged: include as 'none' so it stays visible while base view is hidden
+          entries.add(PageTransitionEntry.none(to: to));
         }
       } else {
         entries.add(PageTransitionEntry.appear(to: to));
