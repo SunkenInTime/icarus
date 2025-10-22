@@ -14,5 +14,8 @@ DEV LOG HERE: https://youtu.be/dDn2rafvjMQ?si=mm1Sz-XrjvNQiRWE
 ## Support
 This project in completely free on open source and your support helps maintain it!!
 
+## Contributing
+If you would like to contribute, please fork the repository and submit a pull request with your proposed changes.
+
 
 <a href="https://www.buymeacoffee.com/daradoescode" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
