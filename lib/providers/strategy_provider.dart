@@ -161,13 +161,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     log("Setting unsaved is being called");
 
     state = state.copyWith(isSaved: false);
-    _saveTimer?.cancel();
-    _saveTimer = Timer(Settings.autoSaveOffset, () async {
-      //Find some way to tell the user that it is saving now()
-      if (state.stratName == null) return;
-      ref.read(autoSaveProvider.notifier).ping();
-      await saveToHive(state.id);
-    });
+    // _saveTimer?.cancel();
+    // _saveTimer = Timer(Settings.autoSaveOffset, () async {
+    //   //Find some way to tell the user that it is saving now()
+    //   if (state.stratName == null) return;
+    //   ref.read(autoSaveProvider.notifier).ping();
+    //   await saveToHive(state.id);
+    // });
   }
 
   Future<Directory> setStorageDirectory(String strategyID) async {

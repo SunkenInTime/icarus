@@ -30,9 +30,6 @@ class _PagesBarState extends ConsumerState<PagesBar>
   }
 
   Future<void> _selectPage(String id) async {
-    await Future.microtask(() {
-      ref.read(transitionProvider.notifier).setHideView(true);
-    });
     await ref.read(strategyProvider.notifier).setActivePageAnimated(id);
   }
 

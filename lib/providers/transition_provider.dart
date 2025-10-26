@@ -2,6 +2,7 @@ import 'dart:developer';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 
 class PageTransitionState {
@@ -11,26 +12,30 @@ class PageTransitionState {
     required this.progress,
     required this.duration,
     required this.hideView,
+    required this.allWidgets,
   });
   final bool hideView;
   final bool active;
   final List<PageTransitionEntry> entries;
+  final List<PlacedWidget> allWidgets;
   final double progress;
   final Duration duration;
 
   PageTransitionState copyWith({
     bool? active,
-    List<PageTransitionEntry>? items,
+    List<PageTransitionEntry>? entries,
     double? progress,
     Duration? duration,
     bool? hideView,
+    List<PlacedWidget>? allWidgets,
   }) =>
       PageTransitionState(
         hideView: hideView ?? this.hideView,
         active: active ?? this.active,
-        entries: items ?? entries,
+        entries: entries ?? this.entries,
         progress: progress ?? this.progress,
         duration: duration ?? this.duration,
+        allWidgets: allWidgets ?? this.allWidgets,
       );
 
   static const idle = PageTransitionState(
@@ -38,7 +43,8 @@ class PageTransitionState {
       entries: [],
       progress: 0,
       duration: Duration(seconds: 2),
-      hideView: false);
+      hideView: false,
+      allWidgets: []);
 }
 
 final transitionProvider =
@@ -58,7 +64,7 @@ class TransitionProvider extends Notifier<PageTransitionState> {
 
   void start(List<PageTransitionEntry> entries,
       {Duration duration = const Duration(seconds: 2)}) {
-    state = PageTransitionState(
+    state = state.copyWith(
       hideView: true,
       active: true,
       entries: entries,
@@ -69,6 +75,10 @@ class TransitionProvider extends Notifier<PageTransitionState> {
 
   void setHideView(bool hide) {
     state = state.copyWith(hideView: hide);
+  }
+
+  void setAllWidgets(List<PlacedWidget> widgets) {
+    state = state.copyWith(allWidgets: widgets);
   }
 
   void complete() {

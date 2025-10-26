@@ -1,6 +1,7 @@
 import 'dart:developer' show log;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
@@ -29,8 +30,18 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
   @override
   void initState() {
     super.initState();
-    _ensureController(const Duration(milliseconds: 400));
-    _controller!.forward(from: 0);
+    _ensureController(const Duration(milliseconds: 200));
+
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      // This code will execute after the widget has been rendered
+      // and its layout information is available.
+      if (mounted) {
+        // Check if the widget is still mounted
+        ref.read(transitionProvider.notifier).setHideView(true);
+
+        _controller!.forward(from: 0);
+      }
+    });
   }
 
   void _ensureController(Duration duration) {
@@ -113,72 +124,51 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
 
     log('Transition t=$t, moving=${moving.length}, appearing=${appearing.length}, disappearing=${disappearing.length}');
 
-    return Stack(
-      children: [
-        // Align(
-        //   child: SizedBox(
-        //     width: 70,
-        //     child: CustomButton(
-        //       onPressed: () {
-        //         _controller!.forward(from: 0);
-        //       },
-        //       height: 80,
-        //       icon: const Icon(Icons.play_arrow),
-        //       label: '',
-        //       labelColor: Colors.white,
-        //       backgroundColor: Colors.deepPurpleAccent,
-        //     ),
-        //   ),
-        // ),
-        Positioned.fill(
-          child: IgnorePointer(
-            ignoring: true,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // None: unchanged items rendered at fixed position
-                for (final e in none)
-                  _overlayItem(
-                    key: ValueKey('none_${e.id}'),
-                    widget: e.to!,
-                    pos: coord.coordinateToScreen(e.endPos),
-                    opacity: 1,
-                    rotation: e.endRotation,
-                  ),
-                // Disappear: fixed at start position, fade out
-                for (final e in disappearing)
-                  _overlayItem(
-                    key: ValueKey('disappear_${e.id}'),
-                    widget: e.from!,
-                    pos: coord.coordinateToScreen(e.startPos),
-                    opacity: 1 - t,
-                    rotation: e.startRotation,
-                  ),
-                // Move: lerp start -> end
-                for (final e in moving)
-                  _overlayItem(
-                    key: ValueKey('move_${e.id}'),
-                    widget: e.to!, // build with final data (visual)
-                    pos: Offset.lerp(coord.coordinateToScreen(e.startPos),
-                            coord.coordinateToScreen(e.endPos), t) ??
-                        coord.coordinateToScreen(e.endPos),
-                    opacity: 1,
-                    rotation: _lerpAngle(e.startRotation, e.endRotation, t),
-                  ),
-                // Appear: fixed at end position, fade in
-                for (final e in appearing)
-                  _overlayItem(
-                    key: ValueKey('appear_${e.id}'),
-                    widget: e.to!,
-                    pos: coord.coordinateToScreen(e.endPos),
-                    opacity: t,
-                    rotation: e.endRotation,
-                  ),
-              ],
+    return IgnorePointer(
+      ignoring: true,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // None: unchanged items rendered at fixed position
+          for (final e in none)
+            _overlayItem(
+              key: ValueKey('none_${e.id}'),
+              widget: e.to!,
+              pos: coord.coordinateToScreen(e.endPos),
+              opacity: 1,
+              rotation: e.endRotation,
             ),
-          ),
-        ),
-      ],
+          // Disappear: fixed at start position, fade out
+          for (final e in disappearing)
+            _overlayItem(
+              key: ValueKey('disappear_${e.id}'),
+              widget: e.from!,
+              pos: coord.coordinateToScreen(e.startPos),
+              opacity: 1 - t,
+              rotation: e.startRotation,
+            ),
+          // Move: lerp start -> end
+          for (final e in moving)
+            _overlayItem(
+              key: ValueKey('move_${e.id}'),
+              widget: e.to!, // build with final data (visual)
+              pos: Offset.lerp(coord.coordinateToScreen(e.startPos),
+                      coord.coordinateToScreen(e.endPos), t) ??
+                  coord.coordinateToScreen(e.endPos),
+              opacity: 1,
+              rotation: _lerpAngle(e.startRotation, e.endRotation, t),
+            ),
+          // Appear: fixed at end position, fade in
+          for (final e in appearing)
+            _overlayItem(
+              key: ValueKey('appear_${e.id}'),
+              widget: e.to!,
+              pos: coord.coordinateToScreen(e.endPos),
+              opacity: t,
+              rotation: e.endRotation,
+            ),
+        ],
+      ),
     );
   }
 
@@ -293,4 +283,37 @@ class PlacedWidgetPreview {
     // }
     return const SizedBox.shrink();
   }
+}
+
+class TemporaryWidgetBuilder extends ConsumerWidget {
+  const TemporaryWidgetBuilder({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final coord = CoordinateSystem.instance;
+    final state = ref.watch(transitionProvider);
+    return IgnorePointer(
+      ignoring: true,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // None: unchanged items rendered at fixed position
+          for (final widget in state.allWidgets)
+            _overlayItem(
+              key: ValueKey('all_${e.id}'),
+              widget: e,
+              pos: coord.coordinateToScreen(e.position),
+              opacity: 1,
+              rotation: e.rotation,
+            ),
+        ],
+      ),
+    );
+
+
+  }
+  
+    Widget _widgetView({required PlacedWidget widget}) {
+      return Positioned(child: child)
+    }
 }
