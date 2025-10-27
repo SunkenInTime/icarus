@@ -105,16 +105,27 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                       ),
                     ),
                   //Agents
+
                   Positioned.fill(
                     child: ref.watch(transitionProvider).hideView
                         ? SizedBox.shrink()
                         : PlacedWidgetBuilder(),
                   ),
+
+                  // Positioned.fill(child: child)
                   Positioned.fill(
                     child: ref.watch(transitionProvider).active
                         ? PageTransitionOverlay()
                         : SizedBox.shrink(),
                   ),
+                  Positioned.fill(
+                    child: ref.watch(transitionProvider).hideView &&
+                            !ref.watch(transitionProvider).active
+                        ? TemporaryWidgetBuilder()
+                        : SizedBox.shrink(),
+                  ),
+
+                  //Agents
 
                   //Painting
                   Positioned.fill(

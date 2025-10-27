@@ -286,10 +286,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
 // Add these inside StrategyProvider
   Future<void> setActivePageAnimated(String pageID) async {
-    // Flush current edits so prev snapshot is accurate
-    await _syncCurrentPageToHive();
-
     final prev = _snapshotAllPlaced();
+    ref.read(transitionProvider.notifier).setAllWidgets(prev.values.toList());
+    ref.read(transitionProvider.notifier).setHideView(true);
 
     // Load target page (hydrates providers)
     await setActivePage(pageID);
@@ -353,12 +352,12 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> addPage({required String name}) async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final strat = box.get(state.id);
-    if (strat == null) return;
 
     // Flush current page so its edits are not lost
     await _syncCurrentPageToHive();
 
+    final strat = box.get(state.id);
+    if (strat == null) return;
     //TODO Make this function of the index
     final newPage = strat.pages.last.copyWith(
       id: const Uuid().v4(),
@@ -654,12 +653,19 @@ class StrategyProvider extends Notifier<StrategyState> {
   // Flush currently active page (uses activePageID). Safe if null/missing.
   Future<void> _syncCurrentPageToHive() async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    log("Syncing current page to hive for strategy ${state.id}");
     final strat = box.get(state.id);
-    if (strat == null || strat.pages.isEmpty) return;
+    if (strat == null || strat.pages.isEmpty) {
+      log("No strategy or pages found for syncing.");
+      return;
+    }
 
     final pageId = activePageID ?? strat.pages.first.id;
     final idx = strat.pages.indexWhere((p) => p.id == pageId);
-    if (idx == -1) return;
+    if (idx == -1) {
+      log("Active page ID $pageId not found in strategy ${strat.id}");
+      return;
+    }
 
     final updatedPage = strat.pages[idx].copyWith(
       drawingData: ref.read(drawingProvider).elements,

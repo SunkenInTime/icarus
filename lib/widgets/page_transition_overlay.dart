@@ -290,30 +290,47 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final coord = CoordinateSystem.instance;
     final state = ref.watch(transitionProvider);
+    final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap]!;
+    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
     return IgnorePointer(
       ignoring: true,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          // None: unchanged items rendered at fixed position
           for (final widget in state.allWidgets)
-            _overlayItem(
-              key: ValueKey('all_${e.id}'),
-              widget: e,
-              pos: coord.coordinateToScreen(e.position),
-              opacity: 1,
-              rotation: e.rotation,
+            _widgetView(
+              widget: widget,
+              mapScale: mapScale,
+              abilitySize: abilitySize,
             ),
         ],
       ),
     );
-
-
   }
-  
-    Widget _widgetView({required PlacedWidget widget}) {
-      return Positioned(child: child)
-    }
+
+  Widget _widgetView(
+      {required PlacedWidget widget,
+      required double mapScale,
+      required double abilitySize}) {
+    final coord = CoordinateSystem.instance;
+    final scaledPosition = coord.coordinateToScreen(widget.position);
+
+    return Positioned(
+      left: scaledPosition.dx,
+      top: scaledPosition.dy,
+      child: (widget is PlacedAbility && widget.rotation != 0)
+          ? Transform.rotate(
+              angle: widget.rotation,
+              alignment: Alignment.topLeft,
+              origin: (widget)
+                  .data
+                  .abilityData!
+                  .getAnchorPoint(mapScale, abilitySize)
+                  .scale(coord.scaleFactor, coord.scaleFactor),
+              child: PlacedWidgetPreview.build(widget, mapScale),
+            )
+          : PlacedWidgetPreview.build(widget, mapScale),
+    );
+  }
 }
