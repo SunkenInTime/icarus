@@ -152,6 +152,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Timer? _saveTimer;
 
+  bool _saveInProgress = false;
+  bool _pendingSave = false;
+
   //Used For Images
   void setFromState(StrategyState newState) {
     state = newState;
@@ -161,13 +164,46 @@ class StrategyProvider extends Notifier<StrategyState> {
     log("Setting unsaved is being called");
 
     state = state.copyWith(isSaved: false);
-    // _saveTimer?.cancel();
-    // _saveTimer = Timer(Settings.autoSaveOffset, () async {
-    //   //Find some way to tell the user that it is saving now()
-    //   if (state.stratName == null) return;
-    //   ref.read(autoSaveProvider.notifier).ping();
-    //   await saveToHive(state.id);
-    // });
+    _saveTimer?.cancel();
+    _saveTimer = Timer(Settings.autoSaveOffset, () async {
+      //Find some way to tell the user that it is saving now()
+      if (state.stratName == null) return;
+      // ref.read(autoSaveProvider.notifier).ping();
+      //I want to say if it's not saved then save it
+      // But what if there is an edge case where it is not saved but this saves it
+      // and what if two saves happen at the same time? because I called it somewhere else
+      await _performSave(state.id);
+    });
+  }
+
+  // For manual “Save now” actions
+  Future<void> forceSaveNow(String id) async {
+    _saveTimer?.cancel();
+    await _performSave(id);
+  }
+
+  // Ensures only one save runs at a time; coalesces a pending one
+  Future<void> _performSave(String id) async {
+    if (_saveInProgress) {
+      _pendingSave = true;
+      return;
+    }
+
+    _saveInProgress = true;
+    try {
+      ref.read(autoSaveProvider.notifier).ping(); // UI: “Saving…”
+      await saveToHive(id);
+    } finally {
+      _saveInProgress = false;
+      if (_pendingSave) {
+        _pendingSave = false;
+        // Small debounce to coalesce rapid edits during the previous save
+        _saveTimer?.cancel();
+        _saveTimer = Timer(const Duration(milliseconds: 500), () {
+          _performSave(id);
+        });
+      }
+    }
   }
 
   Future<Directory> setStorageDirectory(String strategyID) async {
@@ -560,7 +596,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> exportFile(String id) async {
-    await saveToHive(id);
+    await forceSaveNow(id);
     String fetchedImageData =
         await ref.read(placedImageProvider.notifier).toJson(id);
     // Json has no trailing commas

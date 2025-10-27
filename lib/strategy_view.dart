@@ -59,7 +59,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                       onPressed: () async {
                         await ref
                             .read(strategyProvider.notifier)
-                            .saveToHive(ref.read(strategyProvider).id);
+                            .forceSaveNow(ref.read(strategyProvider).id);
 
                         if (!context.mounted) return;
                         Navigator.pop(context);
@@ -146,7 +146,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
 
     await ref
         .read(strategyProvider.notifier)
-        .saveToHive(ref.read(strategyProvider).id);
+        .forceSaveNow(ref.read(strategyProvider).id);
     log("Window close");
     await windowManager.close(); // Close the window/app
   }

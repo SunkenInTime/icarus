@@ -2,14 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
 import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 
 class PagesBar extends ConsumerStatefulWidget {
@@ -30,6 +27,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
   }
 
   Future<void> _selectPage(String id) async {
+    if (id == ref.read(strategyProvider.notifier).activePageID) return;
     await ref.read(strategyProvider.notifier).setActivePageAnimated(id);
   }
 

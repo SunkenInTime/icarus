@@ -125,8 +125,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                         : SizedBox.shrink(),
                   ),
 
-                  //Agents
-
                   //Painting
                   Positioned.fill(
                     child: InteractivePainter(),

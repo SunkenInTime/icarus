@@ -114,7 +114,7 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
         // manual save path shows a SnackBar
         await ref
             .read(strategyProvider.notifier)
-            .saveToHive(ref.read(strategyProvider).id);
+            .forceSaveNow(ref.read(strategyProvider).id);
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

@@ -9,12 +9,16 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/custom_button.dart';
+import 'package:icarus/widgets/delete_area.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 
 class PageTransitionOverlay extends ConsumerStatefulWidget {
   const PageTransitionOverlay({super.key});
@@ -129,6 +133,10 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
+          const Align(
+            alignment: Alignment.topRight,
+            child: DeleteArea(),
+          ),
           // None: unchanged items rendered at fixed position
           for (final e in none)
             _overlayItem(
@@ -190,11 +198,11 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     log("jsf");
     Widget child =
         PlacedWidgetPreview.build(widget, mapScale); // central factory (below)
-    if (rotation != null)
+    if (rotation != null && widget is PlacedAbility)
       child = Transform.rotate(
         angle: rotation,
         alignment: Alignment.topLeft,
-        origin: (widget as PlacedAbility)
+        origin: (widget)
             .data
             .abilityData!
             .getAnchorPoint(mapScale, abilitySize)
@@ -264,23 +272,22 @@ class PlacedWidgetPreview {
       }
     }
 
-    // if (w is PlacedText) {
-    //   return PlacedTextBuilder(size: w.size, placedText: w, onDragEnd: (_) {});
-    // }
+    if (w is PlacedText) {
+      return TextWidget(text: w.text, id: w.id, size: w.size);
+    }
 
-    // if (w is PlacedImage) {
-    //   return PlacedImageBuilder(
-    //       placedImage: w, scale: w.scale, onDragEnd: (_) {});
-    // }
-    // if (w is PlacedUtility) {
-    //   return UtilityWidgetBuilder(
-    //     rotation: w.rotation,
-    //     length: w.length,
-    //     utility: w,
-    //     id: w.id,
-    //     onDragEnd: (_) {},
-    //   );
-    // }
+    if (w is PlacedImage) {
+      return ImageWidget(
+        fileExtension: w.fileExtension,
+        aspectRatio: w.aspectRatio,
+        link: w.link,
+        scale: w.scale,
+        id: w.id,
+      );
+    }
+    if (w is PlacedUtility) {
+      return UtilityData.utilityWidgets[w.type]!.createWidget(w.id);
+    }
     return const SizedBox.shrink();
   }
 }
@@ -298,6 +305,10 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
+          const Align(
+            alignment: Alignment.topRight,
+            child: DeleteArea(),
+          ),
           for (final widget in state.allWidgets)
             _widgetView(
               widget: widget,
