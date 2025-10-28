@@ -42,10 +42,10 @@ Future<void> main() async {
 
   drawingCursor = await CustomMouseCursor.icon(
     CustomIcons.drawcursor,
+
     size: 12, hotX: 6, hotY: 6, color: Colors.white,
     // hotX: 22,
     // hotY: 17,
-    // color: Colors.pinkAccent,
   );
 
   erasingCursor = await CustomMouseCursor.icon(

@@ -59,7 +59,7 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
         child: MouseRegion(
           cursor:
               ref.watch(interactionStateProvider) == InteractionState.drawing
-                  ? drawingCursor!
+                  ? ref.watch(penProvider).drawCursor
                   : erasingCursor!,
           child: GestureDetector(
             onPanStart: (details) {
