@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce/hive.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 
 class PagesBar extends ConsumerStatefulWidget {
@@ -43,13 +43,17 @@ class _PagesBarState extends ConsumerState<PagesBar>
           // onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
         actions: [
-          TextButton(
+          CustomButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text("Cancel"),
+            height: 40,
+            label: "Cancel",
+            backgroundColor: Settings.highlightColor,
           ),
-          FilledButton(
+          CustomButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text("Save"),
+            height: 40,
+            icon: const Icon(Icons.edit),
+            label: "Rename",
           ),
         ],
       ),
