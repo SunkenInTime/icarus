@@ -435,9 +435,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     ref.read(actionProvider.notifier).clearAllActions();
 
+    List<PlacedImage> pageImageData = [];
+    for (final page in newStrat.pages) {
+      pageImageData.addAll(page.imageData);
+    }
     await ref
         .read(placedImageProvider.notifier)
-        .deleteUnusedImages(newStrat.id, newStrat.imageData);
+        .deleteUnusedImages(newStrat.id, pageImageData);
 
     final firstPage = newStrat.pages.first;
 

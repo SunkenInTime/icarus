@@ -1,5 +1,6 @@
 import 'dart:developer';
 import 'dart:io';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -82,7 +83,10 @@ class ImageWidget extends ConsumerWidget {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(3),
-                        child: buildThumb(),
+                        child: Hero(
+                          tag: 'image_$id',
+                          child: buildThumb(),
+                        ),
                       ),
                     ),
                   ),
@@ -104,23 +108,20 @@ void _showImageFullScreenOverlay({
   File? file,
   String? networkLink,
 }) {
-  showGeneralDialog(
-    context: context,
-    barrierDismissible: true,
-    barrierLabel: 'Close',
-    barrierColor: Colors.black87,
-    transitionDuration: const Duration(milliseconds: 200),
-    pageBuilder: (ctx, _, __) {
-      return _ImageFullScreenOverlay(
-        heroTag: heroTag,
-        aspectRatio: aspectRatio,
-        file: file,
-        networkLink: networkLink,
-      );
-    },
-    transitionBuilder: (ctx, anim, _, child) {
-      return FadeTransition(opacity: anim, child: child);
-    },
+  Navigator.of(context).push(
+    PageRouteBuilder(
+      opaque: false,
+      transitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (ctx, anim, __) => FadeTransition(
+        opacity: anim,
+        child: _ImageFullScreenOverlay(
+          heroTag: heroTag,
+          aspectRatio: aspectRatio,
+          file: file,
+          networkLink: networkLink,
+        ),
+      ),
+    ),
   );
 }
 
@@ -147,41 +148,56 @@ class _ImageFullScreenOverlay extends StatelessWidget {
 
     return Material(
       color: Colors.transparent,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Stack(
-            children: [
-              Positioned.fill(
-                  child: GestureDetector(
-                onTap: () => Navigator.of(context).maybePop(),
-              )),
-              Center(
-                child: InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 8,
-                  child: AspectRatio(
-                    aspectRatio: aspectRatio,
-                    child: Hero(
-                      tag: heroTag,
-                      child: image,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
+              child: Container(color: Colors.black54),
+            ),
+          ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: GestureDetector(
+                      onTap: () => Navigator.of(context).maybePop(),
                     ),
                   ),
-                ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      InteractiveViewer(
+                        minScale: 0.5,
+                        maxScale: 8,
+                        child: AspectRatio(
+                          aspectRatio: aspectRatio,
+                          child: Hero(
+                            tag: heroTag,
+                            child: image,
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: IconButton.filled(
+                          style: IconButton.styleFrom(
+                              backgroundColor: Colors.white),
+                          icon: const Icon(Icons.close, color: Colors.black),
+                          tooltip: 'Close',
+                          onPressed: () => Navigator.of(context).maybePop(),
+                        ),
+                      )
+                    ],
+                  ),
+                ],
               ),
-              Positioned(
-                right: 12,
-                top: 12,
-                child: IconButton.filled(
-                  style: IconButton.styleFrom(backgroundColor: Colors.black54),
-                  icon: const Icon(Icons.close, color: Colors.white),
-                  tooltip: 'Close',
-                  onPressed: () => Navigator.of(context).maybePop(),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

@@ -80,6 +80,7 @@ class ImageProvider extends Notifier<ImageState> {
         String fileName = path.basenameWithoutExtension(entity.path);
         if (!fileIDs.contains(fileName)) {
           try {
+            log('Deleting unused image file: ${entity.path}');
             await entity.delete();
           } catch (e) {
             log(e.toString());

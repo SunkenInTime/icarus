@@ -31,6 +31,8 @@ class MapProvider extends Notifier<MapState> {
     return MapState(currentMap: MapValue.ascent, isAttack: true);
   }
 
+  double get mapScale => Maps.mapScale[state.currentMap]!;
+
   void updateMap(MapValue map) => state = state.copyWith(currentMap: map);
 
   void fromHive(MapValue map, bool isAttack) {

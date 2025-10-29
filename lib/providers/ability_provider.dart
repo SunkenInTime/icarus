@@ -3,8 +3,11 @@ import 'dart:developer' show log;
 import 'dart:ui' show Offset;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 
 final abilityProvider =
     NotifierProvider<AbilityProvider, List<PlacedAbility>>(AbilityProvider.new);
@@ -40,6 +43,25 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     final index = PlacedWidget.getIndexByID(id, newState);
 
     if (index < 0) return;
+
+    final ability = newState[index];
+
+    final coordinateSystem = CoordinateSystem.instance;
+    final mapScale = ref.read(mapProvider.notifier).mapScale;
+
+    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
+
+    final centerOffset =
+        ability.data.abilityData!.getAnchorPoint(mapScale, abilitySize);
+
+    final centerPosition =
+        Offset(position.dx + centerOffset.dx, position.dy + centerOffset.dy);
+
+    if (coordinateSystem.isOutOfBounds(centerPosition)) {
+      removeAbility(id);
+      return;
+    }
+
     newState[index].updatePosition(position);
 
     final temp = newState.removeAt(index);

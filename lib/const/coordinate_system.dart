@@ -116,7 +116,7 @@ class CoordinateSystem {
   }
 
   bool isOutOfBounds(Offset offset) {
-    const int tolerance = 10;
+    const int tolerance = 50;
     return offset.dx > normalizedWidth - tolerance ||
         offset.dy > normalizedHeight - tolerance ||
         offset.dx < 0 + tolerance ||

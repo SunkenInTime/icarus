@@ -3,7 +3,9 @@ import 'dart:developer';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 
 import '../const/placed_classes.dart';
 
@@ -45,7 +47,18 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);
+    // ADD a check that if the position is not outt of the screen
 
+    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
+
+    final centerPosition =
+        Offset(position.dx + abilitySize / 2, position.dy + abilitySize / 2);
+    final coordinateSystem = CoordinateSystem.instance;
+
+    if (coordinateSystem.isOutOfBounds(centerPosition)) {
+      removeAgent(id);
+      return;
+    }
     if (index < 0) return;
     newState[index].updatePosition(position);
 
