@@ -23,7 +23,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
   StrategyData? _strategy(Box<StrategyData> box, String id) => box.get(id);
 
   Future<void> _addPage() async {
-    await ref.read(strategyProvider.notifier).addPage(name: "New Page");
+    await ref.read(strategyProvider.notifier).addPage();
   }
 
   Future<void> _selectPage(String id) async {

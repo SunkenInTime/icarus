@@ -386,7 +386,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     return entries;
   }
 
-  Future<void> addPage({required String name}) async {
+  Future<void> addPage([String? name]) async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
     // Flush current page so its edits are not lost
@@ -394,6 +394,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final strat = box.get(state.id);
     if (strat == null) return;
+
+    name ??= "Page ${strat.pages.length + 1}";
     //TODO Make this function of the index
     final newPage = strat.pages.last.copyWith(
       id: const Uuid().v4(),
@@ -419,7 +421,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
     await box.put(updated.id, updated);
 
-    await setActivePage(newPage.id);
+    await setActivePageAnimated(newPage.id);
   }
 
   Future<void> loadFromHive(String id) async {
@@ -601,26 +603,31 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> exportFile(String id) async {
     await forceSaveNow(id);
-    String fetchedImageData =
-        await ref.read(placedImageProvider.notifier).toJson(id);
+
+    final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
+    if (strategy == null) return;
+
+    String pageJson;
+
+    final pages = await Future.wait(
+      strategy.pages.map((page) => page.toJson(strategy.id)),
+    );
+
+    // Now pages is List<Map<String, dynamic>>
+    pageJson = jsonEncode(pages);
+
     // Json has no trailing commas
     String data = '''
                 {
                 "versionNumber": "${Settings.versionNumber}",
-                "drawingData": ${ref.read(drawingProvider.notifier).toJson()},
-                "agentData": ${ref.read(agentProvider.notifier).toJson()},
-                "abilityData": ${ref.read(abilityProvider.notifier).toJson()},
-                "textData": ${ref.read(textProvider.notifier).toJson()},
                 "mapData": ${ref.read(mapProvider.notifier).toJson()},
-                "imageData":$fetchedImageData,
                 "settingsData":${ref.read(strategySettingsProvider.notifier).toJson()},
                 "isAttack": "${ref.read(mapProvider).isAttack.toString()}",
-                "utilityData": ${ref.read(utilityProvider.notifier).toJson()}
+                "pages": $pageJson
                 }
               ''';
 
     File file;
-    // log("File name: ${state.fileName}");
 
     String? outputFile = await FilePicker.platform.saveFile(
       type: FileType.custom,

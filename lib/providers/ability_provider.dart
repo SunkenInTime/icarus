@@ -62,6 +62,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
       return;
     }
 
+    log("Updating position of ability $id to $position, center at $centerPosition");
     newState[index].updatePosition(position);
 
     final temp = newState.removeAt(index);

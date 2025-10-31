@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:http/retry.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -9,6 +11,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:json_annotation/json_annotation.dart';
 
 class StrategyPage extends HiveObject {
   final String id;
@@ -64,5 +67,23 @@ class StrategyPage extends HiveObject {
         utilityData ?? this.utilityData,
       )),
     );
+  }
+
+  Future<Map<String, dynamic>> toJson(String strategyID) async {
+    String fetchedImageData =
+        await ImageProvider.objectToJson(imageData, strategyID);
+    String data = '''
+               {
+               "id": "$id",
+               "drawingData": ${DrawingProvider.objectToJson(drawingData)},
+               "agentData": ${AgentProvider.objectToJson(agentData)},
+               "abilityData": ${AbilityProvider.objectToJson(abilityData)},
+               "textData": ${TextProvider.objectToJson(textData)},
+               "imageData":$fetchedImageData,
+               "utilityData": ${UtilityProvider.objectToJson(utilityData)}
+               }
+             ''';
+
+    return jsonDecode(data);
   }
 }

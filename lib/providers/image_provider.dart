@@ -197,6 +197,15 @@ class ImageProvider extends Notifier<ImageState> {
     return jsonEncode(jsonList);
   }
 
+  static Future<String> objectToJson(
+      List<PlacedImage> images, String strategyID) async {
+    final List<Map<String, dynamic>> jsonList = await Future.wait(
+      images.map((image) => PlacedImageSerializer.toJson(image, strategyID)),
+    );
+
+    return jsonEncode(jsonList);
+  }
+
   static Future<List<PlacedImage>> fromJson(
       {required String jsonString, required String strategyID}) async {
     final List<dynamic> jsonList = jsonDecode(jsonString);
