@@ -1,3 +1,5 @@
+// ignore_for_file: unused_import, unnecessary_import
+
 import 'dart:typed_data' show Uint8List;
 import 'dart:ui' show Offset;
 
