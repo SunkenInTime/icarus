@@ -59,11 +59,12 @@ class StrategyData extends HiveObject {
   @Deprecated('Use pages instead')
   final bool isAttack;
 
+  @Deprecated('Use pages instead')
+  final StrategySettings strategySettings;
+
   final List<StrategyPage> pages;
   final MapValue mapData;
   final DateTime lastEdited;
-
-  final StrategySettings strategySettings;
 
   String? folderID;
 
@@ -82,7 +83,8 @@ class StrategyData extends HiveObject {
     required this.lastEdited,
     required this.folderID,
     this.pages = const [],
-    StrategySettings? strategySettings,
+    @Deprecated('Use pages instead') StrategySettings? strategySettings,
+    // ignore: deprecated_member_use_from_same_package
   }) : strategySettings = strategySettings ?? StrategySettings();
 
   StrategyData copyWith({
@@ -123,6 +125,7 @@ class StrategyData extends HiveObject {
       lastEdited: lastEdited ?? this.lastEdited,
       // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       isAttack: isAttack ?? this.isAttack,
+      // ignore: deprecated_member_use_from_same_package
       strategySettings: strategySettings ?? this.strategySettings,
       folderID: folderID ?? this.folderID,
     );
@@ -298,6 +301,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       utilityData: [...strat.utilityData],
       // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       isAttack: strat.isAttack,
+      // ignore: deprecated_member_use_from_same_package
+      settings: strat.strategySettings,
       sortIndex: 0,
     );
 
@@ -341,6 +346,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(placedImageProvider.notifier).fromHive(page.imageData);
     ref.read(utilityProvider.notifier).fromHive(page.utilityData);
     ref.read(mapProvider.notifier).setAttack(page.isAttack);
+    ref.read(strategySettingsProvider.notifier).fromHive(page.settings);
 
     // Defer path rebuild until next frame (layout complete)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -491,9 +497,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(textProvider.notifier).fromHive(firstPage.textData);
     ref.read(placedImageProvider.notifier).fromHive(firstPage.imageData);
 
-    ref
-        .read(strategySettingsProvider.notifier)
-        .fromHive(newStrat.strategySettings);
+    ref.read(strategySettingsProvider.notifier).fromHive(firstPage.settings);
     ref.read(utilityProvider.notifier).fromHive(firstPage.utilityData);
     activePageID = firstPage.id;
     // await setActivePage(firstPage.id);
@@ -598,6 +602,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       utilityData: utilityData,
       // ignore: deprecated_member_use_from_same_package, deprecated_member_use
       isAttack: isAttack,
+      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+      strategySettings: settingsData,
 
       pages: pages,
       id: newID,
@@ -605,7 +611,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       mapData: mapData,
       versionNumber: versionNumber,
       lastEdited: DateTime.now(),
-      strategySettings: settingsData,
+
       folderID: null,
     );
 
@@ -636,9 +642,12 @@ class StrategyProvider extends Notifier<StrategyState> {
           utilityData: [],
           sortIndex: 0,
           isAttack: true,
+          settings: StrategySettings(),
         )
       ],
       lastEdited: DateTime.now(),
+
+      // ignore: deprecated_member_use_from_same_package
       strategySettings: StrategySettings(),
       folderID: ref.read(folderProvider),
     );
@@ -723,7 +732,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     // final textData = ref.read(textProvider);
     // final mapData = ref.read(mapProvider);
     // final imageData = ref.read(placedImageProvider).images;
-    final strategySettings = ref.read(strategySettingsProvider);
     // final utilityData = ref.read(utilityProvider);
     await _syncCurrentPageToHive();
 
@@ -734,7 +742,6 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final currentStrategy = savedStrat.copyWith(
       lastEdited: DateTime.now(),
-      strategySettings: strategySettings,
     );
 
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
@@ -771,6 +778,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       imageData: ref.read(placedImageProvider).images,
       utilityData: ref.read(utilityProvider),
       isAttack: ref.read(mapProvider).isAttack,
+      settings: ref.read(strategySettingsProvider),
     );
 
     final newPages = [...strat.pages]..[idx] = updatedPage;

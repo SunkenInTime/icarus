@@ -7,6 +7,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 
@@ -21,6 +22,7 @@ class StrategyPage extends HiveObject {
   final List<PlacedImage> imageData;
   final List<PlacedUtility> utilityData;
   final bool isAttack;
+  final StrategySettings settings;
 
   StrategyPage({
     required this.id,
@@ -33,6 +35,7 @@ class StrategyPage extends HiveObject {
     required this.utilityData,
     required this.sortIndex,
     required this.isAttack,
+    required this.settings,
   });
 
   StrategyPage copyWith({
@@ -46,6 +49,7 @@ class StrategyPage extends HiveObject {
     List<PlacedImage>? imageData,
     List<PlacedUtility>? utilityData,
     bool? isAttack,
+    StrategySettings? settings,
   }) {
     return StrategyPage(
       id: id ?? this.id,
@@ -66,6 +70,7 @@ class StrategyPage extends HiveObject {
       utilityData: UtilityProvider.fromJson(UtilityProvider.objectToJson(
         utilityData ?? this.utilityData,
       )),
+      settings: settings?.copyWith() ?? this.settings.copyWith(),
       isAttack: isAttack ?? this.isAttack,
     );
   }
@@ -84,7 +89,8 @@ class StrategyPage extends HiveObject {
                "textData": ${TextProvider.objectToJson(textData)},
                "imageData":$fetchedImageData,
                "utilityData": ${UtilityProvider.objectToJson(utilityData)},
-               "isAttack": "${isAttack.toString()}"
+               "isAttack": "${isAttack.toString()}",
+               "settings": ${StrategySettingsProvider.objectToJson(settings)}
                }
              ''';
 
@@ -129,6 +135,7 @@ class StrategyPage extends HiveObject {
       imageData: imageData,
       utilityData: UtilityProvider.fromJson(jsonEncode(json['utilityData'])),
       isAttack: isAttack,
+      settings: StrategySettings.fromJson(json['settings']),
     );
   }
 }

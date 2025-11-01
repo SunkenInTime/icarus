@@ -1017,13 +1017,14 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       utilityData: (fields[8] as List).cast<PlacedUtility>(),
       sortIndex: (fields[1] as num).toInt(),
       isAttack: fields[9] as bool,
+      settings: fields[10] as StrategySettings,
     );
   }
 
   @override
   void write(BinaryWriter writer, StrategyPage obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -1043,7 +1044,9 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(8)
       ..write(obj.utilityData)
       ..writeByte(9)
-      ..write(obj.isAttack);
+      ..write(obj.isAttack)
+      ..writeByte(10)
+      ..write(obj.settings);
   }
 
   @override

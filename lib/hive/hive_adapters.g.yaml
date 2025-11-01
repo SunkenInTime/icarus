@@ -329,7 +329,7 @@ types:
         index: 6
   StrategyPage:
     typeId: 20
-    nextIndex: 10
+    nextIndex: 11
     fields:
       id:
         index: 0
@@ -351,3 +351,5 @@ types:
         index: 8
       isAttack:
         index: 9
+      settings:
+        index: 10

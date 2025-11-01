@@ -64,6 +64,11 @@ class StrategySettingsProvider extends Notifier<StrategySettings> {
     return jsonString;
   }
 
+  static String objectToJson(StrategySettings settings) {
+    final jsonString = jsonEncode(settings.toJson());
+    return jsonString;
+  }
+
   void updateAgentSize(double size) {
     state = state.copyWith(agentSize: size);
   }
