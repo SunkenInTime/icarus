@@ -47,6 +47,10 @@ class MapProvider extends Notifier<MapState> {
     state = state.copyWith(isAttack: !state.isAttack);
   }
 
+  void setAttack(bool isAttack) {
+    state = state.copyWith(isAttack: isAttack);
+  }
+
   String toJson() {
     return '"${Maps.mapNames[state.currentMap]}"';
   }

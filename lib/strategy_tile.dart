@@ -24,6 +24,18 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   Color _highlightColor = Settings.highlightColor;
   bool _isLoading = false;
 
+  String getAttack() {
+    bool isAttack = widget.strategyData.pages.first.isAttack;
+    bool isMixed = false;
+    if (widget.strategyData.pages.any((page) => page.isAttack != isAttack)) {
+      isMixed = true;
+    }
+    if (isMixed) {
+      return "Mixed";
+    }
+    return isAttack ? "Attack" : "Defend";
+  }
+
   Set<AgentType> get _agentsOnMap {
     final Set<AgentType> agents = {};
     for (final agent in widget.strategyData.agentData) {
@@ -232,11 +244,13 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          widget.strategyData.isAttack ? "Attack" : "Defense",
+          getAttack(),
           style: TextStyle(
-            color: widget.strategyData.isAttack
-                ? Colors.redAccent
-                : Colors.lightBlueAccent,
+            color: (getAttack() == "Mixed")
+                ? Colors.orangeAccent
+                : (getAttack() == "Attack")
+                    ? Colors.redAccent
+                    : Colors.lightBlueAccent,
           ),
         ),
         const SizedBox(height: 5),

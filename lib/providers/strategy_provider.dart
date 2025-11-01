@@ -37,34 +37,50 @@ class StrategyData extends HiveObject {
   final String id;
   String name;
   final int versionNumber;
+
+  @Deprecated('Use pages instead')
   final List<DrawingElement> drawingData;
+
+  @Deprecated('Use pages instead')
   final List<PlacedAgent> agentData;
+
+  @Deprecated('Use pages instead')
   final List<PlacedAbility> abilityData;
+
+  @Deprecated('Use pages instead')
   final List<PlacedText> textData;
+
+  @Deprecated('Use pages instead')
   final List<PlacedImage> imageData;
+
+  @Deprecated('Use pages instead')
   final List<PlacedUtility> utilityData;
+
+  @Deprecated('Use pages instead')
+  final bool isAttack;
+
   final List<StrategyPage> pages;
   final MapValue mapData;
   final DateTime lastEdited;
-  final bool isAttack;
+
   final StrategySettings strategySettings;
 
   String? folderID;
 
   StrategyData({
-    this.isAttack = true,
+    @Deprecated('Use pages instead') this.isAttack = true,
+    @Deprecated('Use pages instead') this.drawingData = const [],
+    @Deprecated('Use pages instead') this.agentData = const [],
+    @Deprecated('Use pages instead') this.abilityData = const [],
+    @Deprecated('Use pages instead') this.textData = const [],
+    @Deprecated('Use pages instead') this.imageData = const [],
+    @Deprecated('Use pages instead') this.utilityData = const [],
     required this.id,
     required this.name,
-    required this.drawingData,
-    required this.agentData,
-    required this.abilityData,
-    required this.textData,
-    required this.imageData,
     required this.mapData,
     required this.versionNumber,
     required this.lastEdited,
     required this.folderID,
-    this.utilityData = const [],
     this.pages = const [],
     StrategySettings? strategySettings,
   }) : strategySettings = strategySettings ?? StrategySettings();
@@ -90,15 +106,22 @@ class StrategyData extends HiveObject {
       id: id ?? this.id,
       name: name ?? this.name,
       versionNumber: versionNumber ?? this.versionNumber,
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       drawingData: drawingData ?? this.drawingData,
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       agentData: agentData ?? this.agentData,
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       abilityData: abilityData ?? this.abilityData,
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       textData: textData ?? this.textData,
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       imageData: imageData ?? this.imageData,
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       utilityData: utilityData ?? this.utilityData,
       pages: pages ?? this.pages,
       mapData: mapData ?? this.mapData,
       lastEdited: lastEdited ?? this.lastEdited,
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       isAttack: isAttack ?? this.isAttack,
       strategySettings: strategySettings ?? this.strategySettings,
       folderID: folderID ?? this.folderID,
@@ -169,9 +192,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       //Find some way to tell the user that it is saving now()
       if (state.stratName == null) return;
       // ref.read(autoSaveProvider.notifier).ping();
-      //I want to say if it's not saved then save it
-      // But what if there is an edge case where it is not saved but this saves it
-      // and what if two saves happen at the same time? because I called it somewhere else
       await _performSave(state.id);
     });
   }
@@ -251,6 +271,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (strat.pages.isNotEmpty) return;
     log("Migrating legacy strategy to single page");
     // Copy ability data & apply legacy adjustment (same logic you had in load)
+
+    // ignore: deprecated_member_use, deprecated_member_use_from_same_package
     final abilityData = [...strat.abilityData];
     if (strat.versionNumber < 7) {
       for (final a in abilityData) {
@@ -263,12 +285,19 @@ class StrategyProvider extends Notifier<StrategyState> {
     final firstPage = StrategyPage(
       id: const Uuid().v4(),
       name: "Page 1",
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       drawingData: [...strat.drawingData],
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       agentData: [...strat.agentData],
       abilityData: abilityData,
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       textData: [...strat.textData],
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       imageData: [...strat.imageData],
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       utilityData: [...strat.utilityData],
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
+      isAttack: strat.isAttack,
       sortIndex: 0,
     );
 
@@ -311,6 +340,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(textProvider.notifier).fromHive(page.textData);
     ref.read(placedImageProvider.notifier).fromHive(page.imageData);
     ref.read(utilityProvider.notifier).fromHive(page.utilityData);
+    ref.read(mapProvider.notifier).setAttack(page.isAttack);
 
     // Defer path rebuild until next frame (layout complete)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -454,7 +484,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     ref
         .read(mapProvider.notifier)
-        .fromHive(newStrat.mapData, newStrat.isAttack);
+        .fromHive(newStrat.mapData, newStrat.pages.first.isAttack);
 
     ref.read(textProvider.notifier).fromHive(firstPage.textData);
     ref.read(placedImageProvider.notifier).fromHive(firstPage.imageData);
@@ -505,15 +535,15 @@ class StrategyProvider extends Notifier<StrategyState> {
     final newID = const Uuid().v4();
 
     final List<DrawingElement> drawingData =
-        DrawingProvider.fromJson(jsonEncode(json["drawingData"]));
+        DrawingProvider.fromJson(jsonEncode(json["drawingData"] ?? []));
     List<PlacedAgent> agentData =
-        AgentProvider.fromJson(jsonEncode(json["agentData"]));
+        AgentProvider.fromJson(jsonEncode(json["agentData"] ?? []));
 
     final List<PlacedAbility> abilityData =
-        AbilityProvider.fromJson(jsonEncode(json["abilityData"]));
+        AbilityProvider.fromJson(jsonEncode(json["abilityData"] ?? []));
 
     final mapData = MapProvider.fromJson(jsonEncode(json["mapData"]));
-    final textData = TextProvider.fromJson(jsonEncode(json["textData"]));
+    final textData = TextProvider.fromJson(jsonEncode(json["textData"] ?? []));
 
     final imageData = await PlacedImageProvider.ImageProvider.fromJson(
         jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID);
@@ -529,6 +559,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     } else {
       settingsData = StrategySettings();
     }
+
     if (json["isAttack"] != null) {
       isAttack = json["isAttack"] == "true" ? true : false;
     } else {
@@ -543,36 +574,50 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final versionNumber = int.tryParse(json["versionNumber"].toString()) ??
         Settings.versionNumber;
+
+    bool needsMigration = (versionNumber < 10);
+    final List<StrategyPage> pages = json["pages"] != null
+        ? await StrategyPage.listFromJson(
+            json: jsonEncode(json["pages"]), strategyID: newID)
+        : [];
+
     final newStrategy = StrategyData(
-        id: newID,
-        name: path.basenameWithoutExtension(file.name),
-        drawingData: drawingData,
-        agentData: agentData,
-        abilityData: abilityData,
-        textData: textData,
-        imageData: imageData,
-        mapData: mapData,
-        versionNumber: versionNumber,
-        lastEdited: DateTime.now(),
-        isAttack: isAttack,
-        strategySettings: settingsData,
-        utilityData: utilityData,
-        folderID: null);
+      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+      drawingData: drawingData,
+      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+      agentData: agentData,
+      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+      abilityData: abilityData,
+      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+      textData: textData,
+      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+      imageData: imageData,
+      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+      utilityData: utilityData,
+      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+      isAttack: isAttack,
+
+      pages: pages,
+      id: newID,
+      name: path.basenameWithoutExtension(file.name),
+      mapData: mapData,
+      versionNumber: versionNumber,
+      lastEdited: DateTime.now(),
+      strategySettings: settingsData,
+      folderID: null,
+    );
 
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put(newStrategy.id, newStrategy);
+    if (needsMigration) {
+      await migrateLegacyToSinglePage(newStrategy.id);
+    }
   }
 
   Future<String> createNewStrategy(String name) async {
     final newID = const Uuid().v4();
     final pageID = const Uuid().v4();
     final newStrategy = StrategyData(
-      drawingData: [],
-      agentData: [],
-      abilityData: [],
-      textData: [],
-      imageData: [],
-      utilityData: [],
       mapData: MapValue.ascent,
       versionNumber: Settings.versionNumber,
       id: newID,
@@ -588,6 +633,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           imageData: [],
           utilityData: [],
           sortIndex: 0,
+          isAttack: true,
         )
       ],
       lastEdited: DateTime.now(),
@@ -624,6 +670,7 @@ class StrategyProvider extends Notifier<StrategyState> {
                 "settingsData":${ref.read(strategySettingsProvider.notifier).toJson()},
                 "isAttack": "${ref.read(mapProvider).isAttack.toString()}",
                 "pages": $pageJson
+
                 }
               ''';
 
@@ -721,6 +768,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       textData: ref.read(textProvider),
       imageData: ref.read(placedImageProvider).images,
       utilityData: ref.read(utilityProvider),
+      isAttack: ref.read(mapProvider).isAttack,
     );
 
     final newPages = [...strat.pages]..[idx] = updatedPage;

@@ -36,10 +36,6 @@ final strategySettingsProvider =
     NotifierProvider<StrategySettingsProvider, StrategySettings>(
         StrategySettingsProvider.new);
 
-// final strategySettingsProvider = Provider<StrategySettings>((ref) {
-//   return StrategySettings();
-// });
-
 class StrategySettingsProvider extends Notifier<StrategySettings> {
   @override
   StrategySettings build() {

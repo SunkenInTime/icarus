@@ -52,7 +52,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
           CustomButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
             height: 40,
-            icon: const Icon(Icons.edit),
+            icon: const Icon(Icons.close),
             label: "Rename",
           ),
         ],

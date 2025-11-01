@@ -18,20 +18,29 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
     };
     return StrategyData(
       isAttack: fields[10] == null ? true : fields[10] as bool,
+      drawingData: fields[1] == null
+          ? const []
+          : (fields[1] as List).cast<DrawingElement>(),
+      agentData: fields[2] == null
+          ? const []
+          : (fields[2] as List).cast<PlacedAgent>(),
+      abilityData: fields[3] == null
+          ? const []
+          : (fields[3] as List).cast<PlacedAbility>(),
+      textData:
+          fields[4] == null ? const [] : (fields[4] as List).cast<PlacedText>(),
+      imageData: fields[5] == null
+          ? const []
+          : (fields[5] as List).cast<PlacedImage>(),
+      utilityData: fields[12] == null
+          ? const []
+          : (fields[12] as List).cast<PlacedUtility>(),
       id: fields[7] as String,
       name: fields[8] as String,
-      drawingData: (fields[1] as List).cast<DrawingElement>(),
-      agentData: (fields[2] as List).cast<PlacedAgent>(),
-      abilityData: (fields[3] as List).cast<PlacedAbility>(),
-      textData: (fields[4] as List).cast<PlacedText>(),
-      imageData: (fields[5] as List).cast<PlacedImage>(),
       mapData: fields[6] as MapValue,
       versionNumber: (fields[0] as num).toInt(),
       lastEdited: fields[9] as DateTime,
       folderID: fields[13] as String?,
-      utilityData: fields[12] == null
-          ? const []
-          : (fields[12] as List).cast<PlacedUtility>(),
       pages: fields[14] == null
           ? const []
           : (fields[14] as List).cast<StrategyPage>(),
@@ -1007,13 +1016,14 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       imageData: (fields[7] as List).cast<PlacedImage>(),
       utilityData: (fields[8] as List).cast<PlacedUtility>(),
       sortIndex: (fields[1] as num).toInt(),
+      isAttack: fields[9] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, StrategyPage obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -1031,7 +1041,9 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(7)
       ..write(obj.imageData)
       ..writeByte(8)
-      ..write(obj.utilityData);
+      ..write(obj.utilityData)
+      ..writeByte(9)
+      ..write(obj.isAttack);
   }
 
   @override

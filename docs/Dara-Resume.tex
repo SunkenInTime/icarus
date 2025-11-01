@@ -1,0 +1,228 @@
+%-------------------------
+% Resume in LaTeX (adapted from template)
+% Author: Oluwadarasimi (Dara) Adedeji
+% License: MIT
+%------------------------
+
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+% Font setup: Prefer Arial on XeLaTeX/LuaLaTeX; fall back to Helvetica-like on pdfLaTeX (Overleaf-safe)
+\usepackage{iftex}
+\ifPDFTeX
+  % pdfLaTeX path (default on Overleaf): use Helvetica-like font
+  \usepackage[scaled=0.95]{helvet}
+  \renewcommand{\familydefault}{\sfdefault}
+\else
+  % XeLaTeX/LuaLaTeX path: use real Arial if available, else TeX Gyre Heros (Helvetica clone)
+  \usepackage{fontspec}
+  \defaultfontfeatures{Ligatures=TeX}
+  \IfFontExistsTF{Arial}{%
+    \setmainfont{Arial}
+    \setsansfont{Arial}
+  }{%
+    \setmainfont{TeX Gyre Heros}
+    \setsansfont{TeX Gyre Heros}
+  }
+\fi
+% NOTE: glyphtounicode file may not be present locally; comment in if available
+% \input{glyphtounicode}
+
+%----------FONT OPTIONS----------
+% sans-serif
+% \usepackage[sfdefault]{FiraSans}
+% \usepackage[sfdefault]{roboto}
+% \usepackage[sfdefault]{noto-sans}
+% \usepackage[default]{sourcesanspro}
+
+% serif
+% \usepackage{CormorantGaramond}
+% \usepackage{charter}
+
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Adjust margins
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+% Ensure that generated pdf is machine readable/ATS parsable
+\pdfgentounicode=1
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+%-------------------------------------------
+%%%%%%  RESUME STARTS HERE  %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+
+%----------HEADING----------
+\begin{center}
+    \textbf{\Huge \scshape Oluwadarasimi (Dara) Adedeji} \\ \vspace{1pt}
+    \small \href{https://me.daracloud.uk}{\underline{me.daracloud.uk}} $|$ \href{mailto:daraadedeji07@gmail.com}{\underline{daraadedeji07@gmail.com}} $|$ 
+    \href{https://github.com/SunkenInTime}{\underline{github.com/SunkenInTime}}
+\end{center}
+
+%-----------EDUCATION-----------
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {University of Maryland, Baltimore}{Baltimore, MD}
+      {Bachelor of Science in Computer Science}{May 2029}
+    \resumeSubheading
+      {Howard Community College (Dual Enrollment)}{Columbia, MD}
+      {Dual Enrollment Coursework in Computer Science and Mathematics}{Aug. 2023 -- May 2025}
+    \resumeSubheading
+      {Reservoir High School}{Fulton, MD}
+      {High School Diploma}{June 2025}
+  \resumeSubHeadingListEnd
+
+%-----------PROJECTS-----------
+\section{Projects}
+  \resumeSubHeadingListStart
+    \resumeProjectHeading
+      {\textbf{\href{https://github.com/SunkenInTime/icarus}{\underline{Icarus}}} $|$ \emph{Dart, Flutter, Riverpod, SVG, Hive}}{Open Source}
+      \resumeItemListStart
+        \resumeItem{\textbf{Contribution merged into the official Flutter repository}: \href{https://github.com/flutter/flutter/pull/163934}{\underline{PR \#163934}}}
+        \resumeItem{\textbf{1,000+ users} and \textbf{40+ GitHub stars}; organic adoption via community engagement and technical content}
+        \resumeItem{Reduced rendering time by \textbf{\textasciitilde50\%} through Riverpod-driven state optimizations for high-refresh-rate performance}
+        \resumeItem{Engineered custom coordinate systems, SVG-based map scaling, and drag-and-drop planning for precision strategy design}
+        \resumeItem{Built robust undo/redo and path-smoothing to improve accuracy of user-drawn input; implemented local-first storage with a roadmap for cloud sync}
+      \resumeItemListEnd
+
+    \resumeProjectHeading
+      {\textbf{HC Grade Aid} $|$ \emph{Flutter, Provider, Firebase}}{Student Tool}
+      \resumeItemListStart
+        \resumeItem{\textbf{200+ active student users in the first semester}, validating demand and usability}
+        \resumeItem{Partnering with HCPSS for potential \textbf{district-wide adoption impacting 20,000+ students}}
+        \resumeItem{Implemented weighted grade logic for AP/Honors with accurate GPA and semester projections}
+      \resumeItemListEnd
+  \resumeSubHeadingListEnd
+
+%-----------EXPERIENCE-----------
+\section{Experience}
+  \resumeSubHeadingListStart
+
+    \resumeSubheading
+      {Amazon}{May 2026}
+      {Software Development Engineer Intern (Incoming)}{Seattle, WA}
+      \resumeItemListStart
+        \resumeItem{Secured via the Amazon Future Engineer Scholarship; scheduled for Summer 2026}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {Hack The Nest}{Aug. 2025}
+      {Director of Technology Services}{Columbia, MD}
+      \resumeItemListStart
+        \resumeItem{DMV high school hackathon with \textbf{250+ participants}; led technology operations and judging workflows}
+        \resumeItem{Built a \textbf{QR code check-in system}, reducing registration wait times and improving event flow}
+        \resumeItem{Developed a \textbf{background AI tool} to audit GitHub repos for track adherence and detect potential foul play}
+        \resumeItem{Coordinated outreach to secure sponsorships and partnerships; deployed tools and CI to streamline organizer workflows}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {Independent Creator}{Aug. 2025 -- Present}
+      {Social Media Influencer}{Remote}
+      \resumeItemListStart
+        \resumeItem{\textbf{124,000+ Reddit views} and \textbf{1,000+ YouTube views} for Icarus content; grew TikTok to \textbf{1,000+ in one month}}
+        \resumeItem{Used educational content and livestreams to engage community and drive interest in open-source projects}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {Howard County Hour of Code}{Feb. 2025 -- Apr. 2025}
+      {Article Writer and Web Developer (Volunteer)}{Howard County, MD}
+      \resumeItemListStart
+        \resumeItem{Authored approachable articles for middle and high school students on software development with Flutter}
+        \resumeItem{Maintained Firebase backend: added content, implemented site updates, and ensured data integrity}
+      \resumeItemListEnd
+
+  \resumeSubHeadingListEnd
+
+%-----------TECHNICAL SKILLS-----------
+\section{Technical Skills}
+\begin{itemize}[leftmargin=0.15in, label={}]
+  \small{\item{
+    \textbf{Languages}{: C\#, Dart, Java, Lua, Python, HTML, CSS, JavaScript} \\
+    \textbf{Frameworks \& Applications}{: Flutter, React, Unity, Hugo, Jaspr, Blender, Docker, Linux, Firebase, Supabase, MongoDB} \\
+  }}
+\end{itemize}
+
+%-----------CERTIFICATIONS & AWARDS-----------
+\section{Certifications and Awards}
+\begin{itemize}[leftmargin=0.15in, label={}]
+  \small{\item{
+    \textbf{Amazon Future Engineer Scholarship Recipient} — Apr. 2025 \\
+    Awarded to top high school seniors pursuing computer science; includes a \$40,000 scholarship and a guaranteed paid Amazon internship for Summer 2026 \\
+    \textbf{County Executive's STEM Award} — June 2024 \\
+    \textbf{Lockheed Martin Code Quest Participant} — May 2024 \\
+    \textbf{Lockheed Martin Cyber Quest Participant} — May 2024, May 2023 \\
+    \textbf{County Executive's STEM Award} — June 2023 \\
+  }}
+\end{itemize}
+
+%-------------------------------------------
+\end{document}

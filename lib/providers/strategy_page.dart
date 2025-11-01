@@ -1,9 +1,7 @@
 import 'dart:convert';
 
 import 'package:hive_ce_flutter/hive_flutter.dart';
-import 'package:http/retry.dart';
 import 'package:icarus/const/drawing_element.dart';
-import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -11,7 +9,6 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:json_annotation/json_annotation.dart';
 
 class StrategyPage extends HiveObject {
   final String id;
@@ -23,6 +20,7 @@ class StrategyPage extends HiveObject {
   final List<PlacedText> textData;
   final List<PlacedImage> imageData;
   final List<PlacedUtility> utilityData;
+  final bool isAttack;
 
   StrategyPage({
     required this.id,
@@ -34,6 +32,7 @@ class StrategyPage extends HiveObject {
     required this.imageData,
     required this.utilityData,
     required this.sortIndex,
+    required this.isAttack,
   });
 
   StrategyPage copyWith({
@@ -46,6 +45,7 @@ class StrategyPage extends HiveObject {
     List<PlacedText>? textData,
     List<PlacedImage>? imageData,
     List<PlacedUtility>? utilityData,
+    bool? isAttack,
   }) {
     return StrategyPage(
       id: id ?? this.id,
@@ -66,6 +66,7 @@ class StrategyPage extends HiveObject {
       utilityData: UtilityProvider.fromJson(UtilityProvider.objectToJson(
         utilityData ?? this.utilityData,
       )),
+      isAttack: isAttack ?? this.isAttack,
     );
   }
 
@@ -75,15 +76,59 @@ class StrategyPage extends HiveObject {
     String data = '''
                {
                "id": "$id",
+               "sortIndex": "$sortIndex",
+               "name": "$name",
                "drawingData": ${DrawingProvider.objectToJson(drawingData)},
                "agentData": ${AgentProvider.objectToJson(agentData)},
                "abilityData": ${AbilityProvider.objectToJson(abilityData)},
                "textData": ${TextProvider.objectToJson(textData)},
                "imageData":$fetchedImageData,
-               "utilityData": ${UtilityProvider.objectToJson(utilityData)}
+               "utilityData": ${UtilityProvider.objectToJson(utilityData)},
+               "isAttack": "${isAttack.toString()}"
                }
              ''';
 
     return jsonDecode(data);
+  }
+
+  static Future<List<StrategyPage>> listFromJson(
+      {required String json, required String strategyID}) async {
+    List<StrategyPage> pages = [];
+    List<dynamic> listJson = jsonDecode(json);
+
+    for (final item in listJson) {
+      final page = await fromJson(json: item, strategyID: strategyID);
+      pages.add(page);
+    }
+
+    final reindexed = [
+      for (var i = 0; i < pages.length; i++) pages[i].copyWith(sortIndex: i),
+    ];
+
+    return reindexed;
+  }
+
+  static Future<StrategyPage> fromJson(
+      {required Map<String, dynamic> json, required String strategyID}) async {
+    final imageData = await ImageProvider.fromJson(
+        jsonString: jsonEncode(json['imageData']), strategyID: strategyID);
+    bool isAttack;
+    if (json['isAttack'] == "true") {
+      isAttack = true;
+    } else {
+      isAttack = false;
+    }
+    return StrategyPage(
+      id: json['id'],
+      sortIndex: int.parse(json['sortIndex']),
+      name: json['name'],
+      drawingData: DrawingProvider.fromJson(jsonEncode(json['drawingData'])),
+      agentData: AgentProvider.fromJson(jsonEncode(json['agentData'])),
+      abilityData: AbilityProvider.fromJson(jsonEncode(json['abilityData'])),
+      textData: TextProvider.fromJson(jsonEncode(json['textData'])),
+      imageData: imageData,
+      utilityData: UtilityProvider.fromJson(jsonEncode(json['utilityData'])),
+      isAttack: isAttack,
+    );
   }
 }
