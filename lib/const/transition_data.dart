@@ -40,6 +40,15 @@ class PageTransitionEntry {
     return null;
   }
 
+  static double? lengthOf(PlacedWidget w) {
+    if (w is PlacedAbility) return w.length;
+    if (w is PlacedUtility) return w.length;
+    return null;
+  }
+
   double? get startRotation => from != null ? rotationOf(from!) : null;
   double? get endRotation => to != null ? rotationOf(to!) : null;
+
+  double? get startLength => from != null ? lengthOf(from!) : null;
+  double? get endLength => to != null ? lengthOf(to!) : null;
 }

@@ -13,9 +13,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
-import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/delete_area.dart';
-import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
@@ -144,6 +142,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
               widget: e.to!,
               pos: coord.coordinateToScreen(e.endPos),
               opacity: 1,
+              length: e.endLength,
               rotation: e.endRotation,
             ),
           // Disappear: fixed at start position, fade out
@@ -153,6 +152,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
               widget: e.from!,
               pos: coord.coordinateToScreen(e.startPos),
               opacity: 1 - t,
+              length: e.startLength,
               rotation: e.startRotation,
             ),
           // Move: lerp start -> end
@@ -164,6 +164,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
                       coord.coordinateToScreen(e.endPos), t) ??
                   coord.coordinateToScreen(e.endPos),
               opacity: 1,
+              length: _lerpLength(e.startLength, e.endLength, t),
               rotation: _lerpAngle(e.startRotation, e.endRotation, t),
             ),
           // Appear: fixed at end position, fade in
@@ -185,19 +186,25 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     return a + (b - a) * t;
   }
 
+  double? _lerpLength(double? a, double? b, double t) {
+    if (a == null || b == null) return null;
+    return a + (b - a) * t;
+  }
+
   Widget _overlayItem({
     required Key key,
     required PlacedWidget widget,
     required Offset pos,
     required double opacity,
+    double? length,
     double? rotation,
   }) {
     //TODO: Set map scale
     final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap]!;
     final abilitySize = ref.read(strategySettingsProvider).abilitySize;
     log("jsf");
-    Widget child =
-        PlacedWidgetPreview.build(widget, mapScale); // central factory (below)
+    Widget child = PlacedWidgetPreview.build(
+        widget, mapScale, length); // central factory (below)
     if (rotation != null && widget is PlacedAbility)
       child = Transform.rotate(
         angle: rotation,
@@ -244,7 +251,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
 // I believe part of this work would involve modifying the PlacedWidgetBuilder to accept modified data from a source other than the provider, so that we can use it to render the widgets in their transition states or we could simply copy and paste and make our edits
 
 class PlacedWidgetPreview {
-  static Widget build(PlacedWidget w, double mapScale) {
+  static Widget build(PlacedWidget w, double mapScale, double? length) {
     if (w is PlacedAgent) {
       return AgentWidget(
           isAlly: w.isAlly, id: w.id, agent: AgentData.agents[w.type]!);
@@ -264,11 +271,13 @@ class PlacedWidgetPreview {
           return ability.createWidget(w.id, w.isAlly, mapScale);
         case SquareAbility():
           return ability.createWidget(
-              w.id, w.isAlly, mapScale, w.rotation, w.length);
+              w.id, w.isAlly, mapScale, w.rotation, length ?? w.length);
         case CenterSquareAbility():
-          return ability.createWidget(w.id, w.isAlly, mapScale);
+          return ability.createWidget(
+              w.id, w.isAlly, mapScale, length ?? w.length);
         case RotatableImageAbility():
-          return ability.createWidget(w.id, w.isAlly, mapScale);
+          return ability.createWidget(
+              w.id, w.isAlly, mapScale, length ?? w.length);
       }
     }
 
@@ -339,9 +348,9 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
                   .abilityData!
                   .getAnchorPoint(mapScale, abilitySize)
                   .scale(coord.scaleFactor, coord.scaleFactor),
-              child: PlacedWidgetPreview.build(widget, mapScale),
+              child: PlacedWidgetPreview.build(widget, mapScale, widget.length),
             )
-          : PlacedWidgetPreview.build(widget, mapScale),
+          : PlacedWidgetPreview.build(widget, mapScale, null),
     );
   }
 }

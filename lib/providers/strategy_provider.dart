@@ -395,7 +395,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       if (from != null) {
         if (from.position != to.position ||
             PageTransitionEntry.rotationOf(from) !=
-                PageTransitionEntry.rotationOf(to)) {
+                PageTransitionEntry.rotationOf(to) ||
+            PageTransitionEntry.lengthOf(from) !=
+                PageTransitionEntry.lengthOf(to)) {
           entries.add(PageTransitionEntry.move(from: from, to: to));
         } else {
           // Unchanged: include as 'none' so it stays visible while base view is hidden
