@@ -144,11 +144,17 @@ class TextProvider extends Notifier<List<PlacedText>> {
     state = hiveText;
   }
 
-  List<PlacedText> fromJson(String jsonString) {
+  static List<PlacedText> fromJson(String jsonString) {
     final List<dynamic> jsonList = jsonDecode(jsonString);
     return jsonList
         .map((json) => PlacedText.fromJson(json as Map<String, dynamic>))
         .toList();
+  }
+
+  static String objectToJson(List<PlacedText> texts) {
+    final List<Map<String, dynamic>> jsonList =
+        texts.map((text) => text.toJson()).toList();
+    return jsonEncode(jsonList);
   }
 
   void clearAll() {

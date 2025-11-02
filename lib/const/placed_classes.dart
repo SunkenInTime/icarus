@@ -131,6 +131,35 @@ class PlacedImage extends PlacedWidget {
     this.link = link;
   }
 
+  /// Returns a new independent [PlacedImage] object. None of the internal
+  /// action history / redo stacks from the base [PlacedWidget] are carried
+  /// over, ensuring this is a clean clone (useful when duplicating pages or
+  /// creating a new page from existing data).
+  ///
+  /// Supply any parameter to override the corresponding value.
+  PlacedImage copyWith({
+    String? id,
+    Offset? position,
+    double? aspectRatio,
+    double? scale,
+    String? fileExtension,
+    bool? isDeleted,
+    String? link,
+  }) {
+    final cloned = PlacedImage(
+      position: position ?? this.position,
+      id: id ?? this.id,
+      aspectRatio: aspectRatio ?? this.aspectRatio,
+      scale: scale ?? this.scale,
+      fileExtension: fileExtension ?? this.fileExtension,
+    );
+    // Base class field
+    // cloned.isDeleted = isDeleted ?? this.isDeleted;
+    // Mutable field specific to PlacedImage
+    cloned.link = this.link;
+    return cloned;
+  }
+
   factory PlacedImage.fromJson(Map<String, dynamic> json) =>
       _$PlacedImageFromJson(json);
 

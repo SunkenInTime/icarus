@@ -31,6 +31,8 @@ class MapProvider extends Notifier<MapState> {
     return MapState(currentMap: MapValue.ascent, isAttack: true);
   }
 
+  double get mapScale => Maps.mapScale[state.currentMap]!;
+
   void updateMap(MapValue map) => state = state.copyWith(currentMap: map);
 
   void fromHive(MapValue map, bool isAttack) {
@@ -45,11 +47,15 @@ class MapProvider extends Notifier<MapState> {
     state = state.copyWith(isAttack: !state.isAttack);
   }
 
+  void setAttack(bool isAttack) {
+    state = state.copyWith(isAttack: isAttack);
+  }
+
   String toJson() {
     return '"${Maps.mapNames[state.currentMap]}"';
   }
 
-  MapValue fromJson(String json) {
+  static MapValue fromJson(String json) {
     final mapName = jsonDecode(json);
 
     final mapValue =

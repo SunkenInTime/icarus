@@ -106,6 +106,7 @@ class FolderContent extends ConsumerWidget {
                           if (item is FolderItem) {
                             return FolderTile(folder: item.folder);
                           } else if (item is StrategyItem) {
+                            //Error causing line
                             return StrategyTile(strategyData: item.strategy);
                           }
                           return const SizedBox.shrink();

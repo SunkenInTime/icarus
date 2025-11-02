@@ -96,7 +96,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
 
               final String id = ref.read(strategyProvider).id;
 
-              await ref.read(strategyProvider.notifier).saveToHive(id);
+              await ref.read(strategyProvider.notifier).forceSaveNow(id);
 
               final newStrat =
                   Hive.box<StrategyData>(HiveBoxNames.strategiesBox)

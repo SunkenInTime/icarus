@@ -15,20 +15,20 @@ enum MapValue {
 
 class Maps {
   static List<MapValue> availableMaps = [
-    MapValue.ascent,
     MapValue.bind,
     MapValue.haven,
     MapValue.icebox,
-    MapValue.lotus,
+    MapValue.pearl,
     MapValue.corrode,
     MapValue.fracture,
+    MapValue.split,
   ];
 
   static List<MapValue> outofplayMaps = [
-    MapValue.split,
     MapValue.sunset,
-    MapValue.pearl,
     MapValue.abyss,
+    MapValue.ascent,
+    MapValue.lotus,
   ];
 
   static Map<MapValue, String> mapNames = {

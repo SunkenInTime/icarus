@@ -115,7 +115,7 @@ class DrawingProvider extends Notifier<DrawingState> {
     return jsonEncode(jsonList);
   }
 
-  String toJsonFromData(List<DrawingElement> elements) {
+  static String objectToJson(List<DrawingElement> elements) {
     final List<Map<String, dynamic>> jsonList = elements
         .whereType<FreeDrawing>()
         .map((element) => element.toJson())
@@ -137,7 +137,7 @@ class DrawingProvider extends Notifier<DrawingState> {
     _triggerRepaint();
   }
 
-  List<DrawingElement> fromJson(String jsonString) {
+  static List<DrawingElement> fromJson(String jsonString) {
     final List<dynamic> jsonList = jsonDecode(jsonString);
     // dev.log(jsonList.toString());
     // final coordinateSystem = CoordinateSystem.instance;

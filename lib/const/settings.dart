@@ -36,7 +36,7 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 14; //version number here +1 for each release
+  static const int versionNumber = 15;
 
   static ThemeData appTheme = ThemeData(
       colorScheme: const ColorScheme.dark(

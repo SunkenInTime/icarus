@@ -36,10 +36,6 @@ final strategySettingsProvider =
     NotifierProvider<StrategySettingsProvider, StrategySettings>(
         StrategySettingsProvider.new);
 
-// final strategySettingsProvider = Provider<StrategySettings>((ref) {
-//   return StrategySettings();
-// });
-
 class StrategySettingsProvider extends Notifier<StrategySettings> {
   @override
   StrategySettings build() {
@@ -65,6 +61,11 @@ class StrategySettingsProvider extends Notifier<StrategySettings> {
 
   String toJson() {
     final jsonString = jsonEncode(state.toJson());
+    return jsonString;
+  }
+
+  static String objectToJson(StrategySettings settings) {
+    final jsonString = jsonEncode(settings.toJson());
     return jsonString;
   }
 

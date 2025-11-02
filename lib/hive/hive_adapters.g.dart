@@ -18,20 +18,32 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
     };
     return StrategyData(
       isAttack: fields[10] == null ? true : fields[10] as bool,
+      drawingData: fields[1] == null
+          ? const []
+          : (fields[1] as List).cast<DrawingElement>(),
+      agentData: fields[2] == null
+          ? const []
+          : (fields[2] as List).cast<PlacedAgent>(),
+      abilityData: fields[3] == null
+          ? const []
+          : (fields[3] as List).cast<PlacedAbility>(),
+      textData:
+          fields[4] == null ? const [] : (fields[4] as List).cast<PlacedText>(),
+      imageData: fields[5] == null
+          ? const []
+          : (fields[5] as List).cast<PlacedImage>(),
+      utilityData: fields[12] == null
+          ? const []
+          : (fields[12] as List).cast<PlacedUtility>(),
       id: fields[7] as String,
       name: fields[8] as String,
-      drawingData: (fields[1] as List).cast<DrawingElement>(),
-      agentData: (fields[2] as List).cast<PlacedAgent>(),
-      abilityData: (fields[3] as List).cast<PlacedAbility>(),
-      textData: (fields[4] as List).cast<PlacedText>(),
-      imageData: (fields[5] as List).cast<PlacedImage>(),
       mapData: fields[6] as MapValue,
       versionNumber: (fields[0] as num).toInt(),
       lastEdited: fields[9] as DateTime,
       folderID: fields[13] as String?,
-      utilityData: fields[12] == null
+      pages: fields[14] == null
           ? const []
-          : (fields[12] as List).cast<PlacedUtility>(),
+          : (fields[14] as List).cast<StrategyPage>(),
       strategySettings: fields[11] as StrategySettings?,
     );
   }
@@ -39,7 +51,7 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
   @override
   void write(BinaryWriter writer, StrategyData obj) {
     writer
-      ..writeByte(14)
+      ..writeByte(15)
       ..writeByte(0)
       ..write(obj.versionNumber)
       ..writeByte(1)
@@ -67,7 +79,9 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
       ..writeByte(12)
       ..write(obj.utilityData)
       ..writeByte(13)
-      ..write(obj.folderID);
+      ..write(obj.folderID)
+      ..writeByte(14)
+      ..write(obj.pages);
   }
 
   @override
@@ -982,6 +996,70 @@ class FolderColorAdapter extends TypeAdapter<FolderColor> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is FolderColorAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
+  @override
+  final typeId = 20;
+
+  @override
+  StrategyPage read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return StrategyPage(
+      id: fields[0] as String,
+      name: fields[2] as String,
+      drawingData: (fields[3] as List).cast<DrawingElement>(),
+      agentData: (fields[4] as List).cast<PlacedAgent>(),
+      abilityData: (fields[5] as List).cast<PlacedAbility>(),
+      textData: (fields[6] as List).cast<PlacedText>(),
+      imageData: (fields[7] as List).cast<PlacedImage>(),
+      utilityData: (fields[8] as List).cast<PlacedUtility>(),
+      sortIndex: (fields[1] as num).toInt(),
+      isAttack: fields[9] as bool,
+      settings: fields[10] as StrategySettings,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, StrategyPage obj) {
+    writer
+      ..writeByte(11)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.sortIndex)
+      ..writeByte(2)
+      ..write(obj.name)
+      ..writeByte(3)
+      ..write(obj.drawingData)
+      ..writeByte(4)
+      ..write(obj.agentData)
+      ..writeByte(5)
+      ..write(obj.abilityData)
+      ..writeByte(6)
+      ..write(obj.textData)
+      ..writeByte(7)
+      ..write(obj.imageData)
+      ..writeByte(8)
+      ..write(obj.utilityData)
+      ..writeByte(9)
+      ..write(obj.isAttack)
+      ..writeByte(10)
+      ..write(obj.settings);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StrategyPageAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

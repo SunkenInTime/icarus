@@ -1,7 +1,10 @@
+import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/color_option.dart';
+import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/main.dart';
 
 enum PenMode { line, freeDraw, square }
 
@@ -14,7 +17,7 @@ class PenState {
   final double opacity;
   final double thickness;
   final PenMode penMode;
-
+  final CustomMouseCursor drawCursor;
   final List<ColorOption> listOfColors;
 
   PenState({
@@ -25,6 +28,7 @@ class PenState {
     required this.opacity,
     required this.thickness,
     required this.penMode,
+    required this.drawCursor,
   });
 
   PenState copyWith({
@@ -35,6 +39,7 @@ class PenState {
     double? thickness,
     PenMode? penMode,
     List<ColorOption>? listOfColors,
+    CustomMouseCursor? drawCursor,
   }) {
     return PenState(
       listOfColors: listOfColors ?? this.listOfColors,
@@ -44,6 +49,7 @@ class PenState {
       isDotted: isDotted ?? this.isDotted,
       opacity: opacity ?? this.opacity,
       thickness: thickness ?? this.thickness,
+      drawCursor: drawCursor ?? this.drawCursor,
     );
   }
 }
@@ -61,6 +67,7 @@ class PenProvider extends Notifier<PenState> {
       isDotted: false,
       opacity: 1,
       thickness: Settings.brushSize,
+      drawCursor: drawingCursor!,
     );
   }
 
@@ -82,7 +89,7 @@ class PenProvider extends Notifier<PenState> {
     );
   }
 
-  void setColor(int index) {
+  void setColor(int index) async {
     List<ColorOption> newColors = [...state.listOfColors];
     Color selectedColor = Colors.white;
     for (final (currentIndex, color) in newColors.indexed) {
@@ -94,7 +101,15 @@ class PenProvider extends Notifier<PenState> {
       }
     }
 
-    state = state.copyWith(listOfColors: newColors, color: selectedColor);
+    final newCursor = await CustomMouseCursor.icon(
+      CustomIcons.drawcursor,
+      size: 12,
+      hotX: 6,
+      hotY: 6,
+      color: selectedColor,
+    );
+    state = state.copyWith(
+        listOfColors: newColors, color: selectedColor, drawCursor: newCursor);
   }
 
   void toggleArrow() {

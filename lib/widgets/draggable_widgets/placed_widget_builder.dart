@@ -125,15 +125,6 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                           //Basically makes sure that if more than half is of the screen it gets deleted
                           Offset virtualOffset =
                               coordinateSystem.screenToCoordinate(localOffset);
-                          double safeArea = agentSize / 2;
-
-                          if (coordinateSystem.isOutOfBounds(
-                              virtualOffset.translate(safeArea, safeArea))) {
-                            ref
-                                .read(agentProvider.notifier)
-                                .removeAgent(agent.id);
-                            return;
-                          }
 
                           ref
                               .read(agentProvider.notifier)

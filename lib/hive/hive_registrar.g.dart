@@ -25,6 +25,7 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(PlacedUtilityAdapter());
     registerAdapter(PlacedWidgetAdapter());
     registerAdapter(StrategyDataAdapter());
+    registerAdapter(StrategyPageAdapter());
     registerAdapter(StrategySettingsAdapter());
     registerAdapter(UtilityTypeAdapter());
   }
@@ -49,6 +50,7 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(PlacedUtilityAdapter());
     registerAdapter(PlacedWidgetAdapter());
     registerAdapter(StrategyDataAdapter());
+    registerAdapter(StrategyPageAdapter());
     registerAdapter(StrategySettingsAdapter());
     registerAdapter(UtilityTypeAdapter());
   }

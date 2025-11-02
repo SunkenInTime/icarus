@@ -7,8 +7,9 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/sidebar.dart';
-
+import 'package:icarus/widgets/delete_capture.dart';
 import 'package:icarus/widgets/map_selector.dart';
+import 'package:icarus/widgets/page_chips.dart';
 import 'package:icarus/widgets/save_and_load_button.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -41,7 +42,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   //   // await windowManager.setPreventClose(true);
   //   setState(() {});
   // }
-  final ScreenshotController screenshotController = ScreenshotController();
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -59,7 +59,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                       onPressed: () async {
                         await ref
                             .read(strategyProvider.notifier)
-                            .saveToHive(ref.read(strategyProvider).id);
+                            .forceSaveNow(ref.read(strategyProvider).id);
 
                         if (!context.mounted) return;
                         Navigator.pop(context);
@@ -99,20 +99,27 @@ class _StrategyViewState extends ConsumerState<StrategyView>
               ],
             ),
           ),
-          Expanded(
+          const Expanded(
             child: Stack(
               children: [
+                Positioned.fill(child: DeleteCapture()),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: InteractiveMap(
-                    screenshotController: screenshotController,
-                  ),
+                  child: InteractiveMap(),
                 ),
-                const Align(
+                Align(
                   alignment: Alignment.topLeft,
                   child: SaveAndLoadButton(),
                 ),
-                const SideBarUI(),
+                Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: PagesBar(),
+                  ),
+                ),
+
+                SideBarUI(),
 
                 // Align(
                 //   alignment: Alignment.centerLeft,
@@ -138,7 +145,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
 
     await ref
         .read(strategyProvider.notifier)
-        .saveToHive(ref.read(strategyProvider).id);
+        .forceSaveNow(ref.read(strategyProvider).id);
     log("Window close");
     await windowManager.close(); // Close the window/app
   }

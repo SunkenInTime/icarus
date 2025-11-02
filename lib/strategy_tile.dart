@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
@@ -22,6 +24,18 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   Color _highlightColor = Settings.highlightColor;
   bool _isLoading = false;
 
+  String getAttack() {
+    bool isAttack = widget.strategyData.pages.first.isAttack;
+    bool isMixed = false;
+    if (widget.strategyData.pages.any((page) => page.isAttack != isAttack)) {
+      isMixed = true;
+    }
+    if (isMixed) {
+      return "Mixed";
+    }
+    return isAttack ? "Attack" : "Defend";
+  }
+
   Set<AgentType> get _agentsOnMap {
     final Set<AgentType> agents = {};
     for (final agent in widget.strategyData.agentData) {
@@ -31,7 +45,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   }
 
   Future<void> _navigateToStrategy() async {
-    if (_isLoading) return;
+    if (_isLoading) {
+      log("Is loading");
+      return;
+    }
+    log("Navigating");
 
     setState(() => _isLoading = true);
     _showLoadingOverlay();
@@ -40,10 +58,10 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       await ref
           .read(strategyProvider.notifier)
           .loadFromHive(widget.strategyData.id);
-
+      log("Right after load from hive");
       if (!mounted) return;
       Navigator.pop(context); // Remove loading overlay
-
+      log("About to push");
       await Navigator.push(
         context,
         PageRouteBuilder(
@@ -226,11 +244,13 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          widget.strategyData.isAttack ? "Attack" : "Defense",
+          getAttack(),
           style: TextStyle(
-            color: widget.strategyData.isAttack
-                ? Colors.redAccent
-                : Colors.lightBlueAccent,
+            color: (getAttack() == "Mixed")
+                ? Colors.orangeAccent
+                : (getAttack() == "Attack")
+                    ? Colors.redAccent
+                    : Colors.lightBlueAccent,
           ),
         ),
         const SizedBox(height: 5),
