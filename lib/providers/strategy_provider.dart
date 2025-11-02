@@ -767,66 +767,25 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> duplicateStrategy(String strategyID) async {
     final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final originalStrategy = strategyBox.get(strategyID);
-
     if (originalStrategy == null) {
       log("Original strategy with ID $strategyID not found.");
       return;
     }
+    final newPages = originalStrategy.pages
+        .map((page) => page.copyWith(id: const Uuid().v4()))
+        .toList();
 
     final newID = const Uuid().v4();
-
-    // Create deep copies using JSON serialization/deserialization
-    final drawingDataJson = ref
-        .read(drawingProvider.notifier)
-        .toJsonFromData(originalStrategy.drawingData);
-    final agentDataJson = ref
-        .read(agentProvider.notifier)
-        .toJsonFromData(originalStrategy.agentData);
-    final abilityDataJson = ref
-        .read(abilityProvider.notifier)
-        .toJsonFromData(originalStrategy.abilityData);
-    final textDataJson = ref
-        .read(textProvider.notifier)
-        .toJsonFromData(originalStrategy.textData);
-    final utilityDataJson = ref
-        .read(utilityProvider.notifier)
-        .toJsonFromData(originalStrategy.utilityData);
-
-    // Convert back from JSON to create deep copies
-    final newDrawingData =
-        ref.read(drawingProvider.notifier).fromJson(drawingDataJson);
-    final newAgentData =
-        ref.read(agentProvider.notifier).fromJson(agentDataJson);
-    final newAbilityData =
-        ref.read(abilityProvider.notifier).fromJson(abilityDataJson);
-    final newTextData = ref.read(textProvider.notifier).fromJson(textDataJson);
-    final newUtilityData =
-        ref.read(utilityProvider.notifier).fromJson(utilityDataJson);
-
-    // Handle image data separately since it needs the new strategy ID
-    final imageDataJson = await ref
-        .read(placedImageProvider.notifier)
-        .toJsonFromData(originalStrategy.imageData, strategyID);
-    final newImageData = await ref
-        .read(placedImageProvider.notifier)
-        .fromJson(jsonString: imageDataJson, strategyID: newID);
 
     final duplicatedStrategy = StrategyData(
       id: newID,
       name: "${originalStrategy.name} (Copy)",
-      drawingData: newDrawingData,
-      agentData: newAgentData,
-      abilityData: newAbilityData,
-      textData: newTextData,
-      imageData: newImageData,
-      utilityData: newUtilityData,
       mapData: originalStrategy
           .mapData, // MapValue is likely an enum, so this should be safe
       versionNumber: originalStrategy.versionNumber,
       lastEdited: DateTime.now(),
-      strategySettings: originalStrategy.strategySettings.copyWith(),
       folderID: originalStrategy.folderID,
-      isAttack: originalStrategy.isAttack,
+      pages: newPages,
     );
 
     await strategyBox.put(duplicatedStrategy.id, duplicatedStrategy);
