@@ -320,6 +320,58 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
   }
 
+  static Future<StrategyData> migrateLegacyObjectToSinglePage(
+      StrategyData strat) async {
+    // Already migrated
+    if (strat.pages.isNotEmpty) return strat;
+    log("Migrating legacy strategy to single page");
+    // Copy ability data & apply legacy adjustment (same logic you had in load)
+
+    // ignore: deprecated_member_use, deprecated_member_use_from_same_package
+    final abilityData = [...strat.abilityData];
+    if (strat.versionNumber < 7) {
+      for (final a in abilityData) {
+        if (a.data.abilityData! is SquareAbility) {
+          a.position = a.position.translate(0, -7.5);
+        }
+      }
+    }
+
+    final firstPage = StrategyPage(
+      id: const Uuid().v4(),
+      name: "Page 1",
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
+      drawingData: [...strat.drawingData],
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
+      agentData: [...strat.agentData],
+      abilityData: abilityData,
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
+      textData: [...strat.textData],
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
+      imageData: [...strat.imageData],
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
+      utilityData: [...strat.utilityData],
+      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
+      isAttack: strat.isAttack,
+      // ignore: deprecated_member_use_from_same_package
+      settings: strat.strategySettings,
+      sortIndex: 0,
+    );
+
+    final updated = strat.copyWith(
+      pages: [firstPage],
+      agentData: [],
+      abilityData: [],
+      drawingData: [],
+      utilityData: [],
+      textData: [],
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+
+    return updated;
+  }
+
   // Switch active page: flush old page first, then hydrate new
   Future<void> setActivePage(String pageID) async {
     if (pageID == activePageID) return;
@@ -581,13 +633,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     final versionNumber = int.tryParse(json["versionNumber"].toString()) ??
         Settings.versionNumber;
 
-    bool needsMigration = (versionNumber < 10);
+    bool needsMigration = (versionNumber < 15);
     final List<StrategyPage> pages = json["pages"] != null
         ? await StrategyPage.listFromJson(
             json: jsonEncode(json["pages"]), strategyID: newID)
         : [];
 
-    final newStrategy = StrategyData(
+    StrategyData newStrategy = StrategyData(
       // ignore: deprecated_member_use_from_same_package, deprecated_member_use
       drawingData: drawingData,
       // ignore: deprecated_member_use_from_same_package, deprecated_member_use
@@ -614,12 +666,11 @@ class StrategyProvider extends Notifier<StrategyState> {
 
       folderID: null,
     );
-
+    if (needsMigration) {
+      newStrategy = await migrateLegacyObjectToSinglePage(newStrategy);
+    }
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put(newStrategy.id, newStrategy);
-    if (needsMigration) {
-      await migrateLegacyToSinglePage(newStrategy.id);
-    }
   }
 
   Future<String> createNewStrategy(String name) async {

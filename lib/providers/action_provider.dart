@@ -142,6 +142,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
     ref.read(drawingProvider.notifier).clearAll();
     ref.read(textProvider.notifier).clearAll();
     ref.read(placedImageProvider.notifier).clearAll();
+    ref.read(utilityProvider.notifier).clearAll();
     ref.read(strategyProvider.notifier).setUnsaved();
     state = [];
   }

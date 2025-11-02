@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -7,8 +5,10 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/utility_provider.dart';
 
 class DeleteArea extends ConsumerWidget {
   const DeleteArea({super.key});
@@ -46,13 +46,42 @@ class DeleteArea extends ConsumerWidget {
                     ref.read(agentProvider.notifier).removeAgent(placedData.id);
                     ref.read(actionProvider.notifier).addAction(action);
                   } else if (placedData is PlacedAbility) {
+                    final action = UserAction(
+                        type: ActionType.deletion,
+                        id: placedData.id,
+                        group: ActionGroup.ability);
                     ref
                         .read(abilityProvider.notifier)
                         .removeAbility(placedData.id);
+                    ref.read(actionProvider.notifier).addAction(action);
                   } else if (placedData is PlacedText) {
+                    final action = UserAction(
+                        type: ActionType.deletion,
+                        id: placedData.id,
+                        group: ActionGroup.text);
                     ref.read(textProvider.notifier).removeText(placedData.id);
+                    ref.read(actionProvider.notifier).addAction(action);
+                  } else if (placedData is PlacedImage) {
+                    final action = UserAction(
+                      type: ActionType.deletion,
+                      id: placedData.id,
+                      group: ActionGroup.image,
+                    );
+                    ref
+                        .read(placedImageProvider.notifier)
+                        .removeImage(placedData.id);
+                    ref.read(actionProvider.notifier).addAction(action);
+                  } else if (placedData is PlacedUtility) {
+                    final action = UserAction(
+                      type: ActionType.deletion,
+                      id: placedData.id,
+                      group: ActionGroup.utility,
+                    );
+                    ref
+                        .read(utilityProvider.notifier)
+                        .removeUtility(placedData.id);
+                    ref.read(actionProvider.notifier).addAction(action);
                   }
-                  log("I worked");
                 },
               ),
             ),
