@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -77,7 +78,7 @@ class StrategyPage extends HiveObject {
 
   Future<Map<String, dynamic>> toJson(String strategyID) async {
     String fetchedImageData =
-        await ImageProvider.objectToJson(imageData, strategyID);
+        kIsWeb ? "[]" : await ImageProvider.objectToJson(imageData, strategyID);
     String data = '''
                {
                "id": "$id",
@@ -116,8 +117,11 @@ class StrategyPage extends HiveObject {
 
   static Future<StrategyPage> fromJson(
       {required Map<String, dynamic> json, required String strategyID}) async {
-    final imageData = await ImageProvider.fromJson(
-        jsonString: jsonEncode(json['imageData']), strategyID: strategyID);
+    final List<PlacedImage> imageData = !kIsWeb
+        ? await ImageProvider.fromJson(
+            jsonString: jsonEncode(json['imageData']), strategyID: strategyID)
+        : [];
+
     bool isAttack;
     if (json['isAttack'] == "true") {
       isAttack = true;

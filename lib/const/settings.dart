@@ -38,6 +38,8 @@ class Settings {
   static const Duration autoSaveOffset = Duration(seconds: 15);
   static const int versionNumber = 15;
 
+  static final Uri windowsStoreLink = Uri.parse(
+      "https://apps.microsoft.com/detail/9PBWHHZRQFW6?hl=en-us&gl=US&ocid=pdpshare");
   static ThemeData appTheme = ThemeData(
       colorScheme: const ColorScheme.dark(
         // primary: Color.fromARGB(255, 129, 75, 223),

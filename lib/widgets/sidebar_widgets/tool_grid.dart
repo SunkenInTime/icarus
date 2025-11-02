@@ -1,8 +1,5 @@
-import 'dart:async' show Completer;
-import 'dart:typed_data';
-import 'dart:ui' as ui;
-
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/svg.dart';
@@ -16,7 +13,6 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/custom_expansion_tile.dart';
 import 'package:icarus/widgets/sidebar_widgets/delete_options.dart';
 import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
-import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 
 class ToolGrid extends ConsumerWidget {
@@ -128,6 +124,17 @@ class ToolGrid extends ConsumerWidget {
               IconButton(
                 tooltip: "Add Image",
                 onPressed: () async {
+                  if (kIsWeb) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'This feature is only supported in the Windows version.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+
                   ref
                       .read(interactionStateProvider.notifier)
                       .update(InteractionState.navigation);

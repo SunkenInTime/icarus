@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 
+// ignore: must_be_immutable
 class RotatableWidget extends ConsumerStatefulWidget {
   final Widget child;
   final double rotation;

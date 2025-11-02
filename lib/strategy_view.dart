@@ -8,10 +8,11 @@ import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/sidebar.dart';
 import 'package:icarus/widgets/delete_capture.dart';
+import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/page_chips.dart';
 import 'package:icarus/widgets/save_and_load_button.dart';
-import 'package:screenshot/screenshot.dart';
+
 import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -71,6 +72,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                     ),
                     const SizedBox(width: 5),
                     const MapSelector(),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8.0),
+                      child: DemoTag(),
+                    )
                   ],
                 ),
                 Row(

@@ -1,18 +1,16 @@
 name: icarus
 description: "A new Flutter project."
 
-publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
-version: 1.7.6+14 #version number
+version: 1.8.0+15 #version number
 
 environment:
-  sdk: '>=3.4.3 <4.0.0'
-
+  sdk: ">=3.4.3 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  
 
   cupertino_icons: ^1.0.6
   flutter_svg: ^2.0.14
@@ -36,13 +34,11 @@ dependencies:
   screenshot: ^3.0.0
   custom_sliding_segmented_control: ^1.8.5
   flutter_colorpicker: ^1.1.0
-  
- 
-      
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  hive_ce_generator:  ^1.8.2
+  hive_ce_generator: ^1.8.2
   # riverpod_generator: ^2.6.4
   build_runner: ^2.4.14
   json_serializable: ^6.9.3
@@ -52,19 +48,19 @@ dev_dependencies:
   # dart run msix:create
   # flutter pub run build_runner build --delete-conflicting-outputs
 msix_config:
-  display_name: 'Icarus: Valorant Strategies & Line ups'
+  display_name: "Icarus: Valorant Strategies & Line ups"
   publisher_display_name: Dara A
   identity_name: DaraA.IcarusValorantStrategiesLineups
   publisher: CN=39055448-F6AA-42E9-91F6-9CF8828C444C
   logo_path: E:\Projects\icarus\windows\runner\resources\app_icon.ico
-  msix_version: 1.7.6.0 #verion number
+  msix_version: 1.8.0.0 #verion number
   store: true
 
 flutter:
   fonts:
-   - family: CustomIcons
-     fonts:
-      - asset: assets/fonts/CustomIcons.ttf
+    - family: CustomIcons
+      fonts:
+        - asset: assets/fonts/CustomIcons.ttf
   assets:
     - assets/
     - assets/maps/
@@ -100,5 +96,3 @@ flutter:
     - assets/agents/Veto/
 
   uses-material-design: true
-
- 

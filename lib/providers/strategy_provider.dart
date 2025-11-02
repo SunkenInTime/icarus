@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'package:cross_file/cross_file.dart';
+import 'package:flutter/foundation.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'image_provider.dart' as PlacedImageProvider;
@@ -527,13 +528,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     ref.read(actionProvider.notifier).clearAllActions();
 
-    List<PlacedImage> pageImageData = [];
-    for (final page in newStrat.pages) {
-      pageImageData.addAll(page.imageData);
-    }
-    await ref
-        .read(placedImageProvider.notifier)
-        .deleteUnusedImages(newStrat.id, pageImageData);
+    // List<PlacedImage> pageImageData = [];
+    // for (final page in newStrat.pages) {
+    //   pageImageData.addAll(page.imageData);
+    // }
+    // await ref
+    //     .read(placedImageProvider.notifier)
+    //     .deleteUnusedImages(newStrat.id, pageImageData);
 
     final firstPage = newStrat.pages.first;
 
@@ -553,6 +554,15 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(utilityProvider.notifier).fromHive(firstPage.utilityData);
     activePageID = firstPage.id;
     // await setActivePage(firstPage.id);
+    if (kIsWeb) {
+      state = StrategyState(
+        isSaved: true,
+        stratName: newStrat.name,
+        id: newStrat.id,
+        storageDirectory: null,
+      );
+      return;
+    }
     final newDir = await setStorageDirectory(newStrat.id);
 
     state = StrategyState(
@@ -584,7 +594,12 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> _loadFromXFile(XFile file) async {
-    if (path.extension(file.path) != ".ica") return;
+    //TODO: Check if this matters on windows
+    // if (path.extension(file.path) != ".ica") {
+    //   log("File extension: ${file.path}");
+    //   log("Not a .ica file, skipping");
+    //   return;
+    // }
 
     final data = await file.readAsString();
 
@@ -603,8 +618,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     final mapData = MapProvider.fromJson(jsonEncode(json["mapData"]));
     final textData = TextProvider.fromJson(jsonEncode(json["textData"] ?? []));
 
-    final imageData = await PlacedImageProvider.ImageProvider.fromJson(
-        jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID);
+    final List<PlacedImage> imageData = !kIsWeb
+        ? await PlacedImageProvider.ImageProvider.fromJson(
+            jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID)
+        : [];
 
     final StrategySettings settingsData;
     final bool isAttack;
@@ -713,7 +730,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     await forceSaveNow(id);
 
     final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
-    if (strategy == null) return;
+    if (strategy == null) {
+      log("Couldn't find strategy to export");
+      return;
+    }
 
     String pageJson;
 
@@ -736,19 +756,19 @@ class StrategyProvider extends Notifier<StrategyState> {
                 }
               ''';
 
-    File file;
+    final Uint8List bytes = Uint8List.fromList(utf8.encode(data));
 
-    String? outputFile = await FilePicker.platform.saveFile(
+    await FilePicker.platform.saveFile(
       type: FileType.custom,
       dialogTitle: 'Please select an output file:',
       fileName: "${state.stratName ?? "new strategy"}.ica",
       allowedExtensions: [".ica"],
+      bytes: bytes,
     );
 
-    if (outputFile == null) return;
-    file = File(outputFile);
+    // if (outputFile == null) return;
+    // file = File(outputFile);
 
-    file.writeAsStringSync(data);
     // state = state.copyWith(fileName: file.path, isSaved: true);
   }
 

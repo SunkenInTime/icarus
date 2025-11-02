@@ -1,6 +1,7 @@
 import 'dart:developer';
 
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
@@ -24,9 +25,15 @@ CustomMouseCursor? erasingCursor;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final directory = await getApplicationSupportDirectory();
-  log("App Support Directory: ${directory.path}");
-  await Hive.initFlutter(directory.path);
+  if (kIsWeb) {
+    // On web, Hive uses IndexedDB; no path needed.
+    await Hive.initFlutter();
+  } else {
+    // On mobile/desktop, you can still choose an explicit directory.
+    final dir = await getApplicationSupportDirectory();
+    // log("App Support Directory: ${dir.path}");
+    await Hive.initFlutter(dir.path);
+  }
 
   Hive.registerAdapters();
 
@@ -35,10 +42,6 @@ Future<void> main() async {
 
   await StrategyProvider.migrateAllStrategies();
   // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
-  await windowManager.ensureInitialized();
-  WindowOptions windowOptions = const WindowOptions(
-    title: "Icarus: Valorant Strategies & Line ups 1.7.5",
-  );
 
   drawingCursor = await CustomMouseCursor.icon(
     CustomIcons.drawcursor,
@@ -61,10 +64,18 @@ Future<void> main() async {
   //   hotX: 12,
   //   hotY: 4,
   // );
-  windowManager.waitUntilReadyToShow(windowOptions, () async {
-    await windowManager.show();
-    await windowManager.focus();
-  });
+  //
+
+  if (!kIsWeb) {
+    await windowManager.ensureInitialized();
+    WindowOptions windowOptions = const WindowOptions(
+      title: "Icarus: Valorant Strategies & Line ups 1.7.5",
+    );
+    windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  }
 
   runApp(const ProviderScope(child: MyApp()));
 }
@@ -95,6 +106,6 @@ class MyHomePage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return const HomeView();
+    return const FolderNavigator();
   }
 }

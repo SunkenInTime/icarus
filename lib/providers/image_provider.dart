@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui';
 import 'package:cross_file/cross_file.dart' show XFile;
+import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'dart:ui' as ui;
 import 'dart:async' show Completer;
@@ -53,6 +54,7 @@ class ImageProvider extends Notifier<ImageState> {
       fileIDs.add(image.id);
     }
 
+    if (kIsWeb) return;
     // Get the system's application support directory.
     final directory = await getApplicationSupportDirectory();
 
@@ -264,6 +266,7 @@ class ImageProvider extends Notifier<ImageState> {
   ) async {
     final strategyID = ref.read(strategyProvider).id;
     // Get the system's application support directory.
+    if (kIsWeb) return;
     final directory = await getApplicationSupportDirectory();
 
     // Create a custom directory inside the application support directory.

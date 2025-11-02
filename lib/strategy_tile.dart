@@ -82,6 +82,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         ),
       );
     } catch (e) {
+      log("Error loading strategy: $e");
       if (mounted) Navigator.pop(context); // Remove loading overlay
     } finally {
       if (mounted) setState(() => _isLoading = false);

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -8,6 +9,8 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/current_path_bar.dart';
 import 'package:icarus/widgets/custom_button.dart';
+import 'package:icarus/widgets/demo_dialog.dart';
+import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
@@ -21,14 +24,33 @@ class FolderNavigator extends ConsumerStatefulWidget {
 }
 
 class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
+  bool _warnedOnce = false;
   void _checkUpdate() async {
     await UpdateChecker.checkForUpdate(context);
   }
 
   @override
   void initState() {
-    _checkUpdate();
     super.initState();
+    _checkUpdate();
+
+    // Show the demo warning only once after the first frame on web.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_warnedOnce) {
+        _warnedOnce = true;
+        _warnDemo();
+      }
+    });
+  }
+
+  void _warnDemo() async {
+    if (!kIsWeb) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return const DemoDialog();
+      },
+    );
   }
 
   @override
@@ -99,6 +121,10 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         actionsPadding: const EdgeInsets.only(right: 24),
 
         actions: [
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8.0),
+            child: DemoTag(),
+          ),
           Row(
             spacing: 15,
             children: [
