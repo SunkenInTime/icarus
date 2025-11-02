@@ -105,6 +105,7 @@ const _$AgentTypeEnumMap = {
   AgentType.vyse: 'vyse',
   AgentType.tejo: 'tejo',
   AgentType.waylay: 'waylay',
+  AgentType.veto: 'veto',
 };
 
 PlacedAbility _$PlacedAbilityFromJson(Map<String, dynamic> json) =>

@@ -23,6 +23,7 @@ class CoordinateSystem {
   // Use screenshot dimensions when isScreenshot is true; otherwise use play area size
   Size get _effectiveSize => isScreenshot ? screenShotSize : _playAreaSize;
 
+  Size get effectiveSize => _effectiveSize;
   // The normalized coordinate space will maintain this aspect ratio
   final double normalizedHeight = 1000.0;
   late final double normalizedWidth = normalizedHeight * 1.24;

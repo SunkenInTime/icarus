@@ -9,6 +9,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
@@ -92,6 +93,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 _isLoading = true;
               });
               CoordinateSystem.instance.setIsScreenshot(true);
+
               final String id = ref.read(strategyProvider).id;
 
               await ref.read(strategyProvider.notifier).forceSaveNow(id);
@@ -108,35 +110,32 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 return;
               }
               final newController = ScreenshotController();
-              newController
-                  .captureFromWidget(
-                targetSize: CoordinateSystem.screenShotSize,
-                ProviderScope(
-                  child: MediaQuery(
-                    data: const MediaQueryData(
-                        size: CoordinateSystem.screenShotSize),
-                    child: MaterialApp(
-                      theme: Settings.appTheme,
-                      debugShowCheckedModeBanner: false,
-                      home: ScreenshotView(
-                          isAttack: newStrat.isAttack,
-                          mapValue: newStrat.mapData,
-                          agents: newStrat.agentData,
-                          abilities: newStrat.abilityData,
-                          text: newStrat.textData,
-                          images: newStrat.imageData,
-                          drawings: newStrat.drawingData,
-                          utilities: newStrat.utilityData,
-                          strategySettings: newStrat.strategySettings,
-                          strategyState: ref.read(strategyProvider)),
+
+              try {
+                final image = await newController.captureFromWidget(
+                  targetSize: CoordinateSystem.screenShotSize,
+                  ProviderScope(
+                    child: MediaQuery(
+                      data: const MediaQueryData(
+                          size: CoordinateSystem.screenShotSize),
+                      child: MaterialApp(
+                        theme: Settings.appTheme,
+                        debugShowCheckedModeBanner: false,
+                        home: ScreenshotView(
+                            isAttack: newStrat.isAttack,
+                            mapValue: newStrat.mapData,
+                            agents: newStrat.agentData,
+                            abilities: newStrat.abilityData,
+                            text: newStrat.textData,
+                            images: newStrat.imageData,
+                            drawings: newStrat.drawingData,
+                            utilities: newStrat.utilityData,
+                            strategySettings: newStrat.strategySettings,
+                            strategyState: ref.read(strategyProvider)),
+                      ),
                     ),
                   ),
-                ),
-              )
-                  .then((Uint8List? image) async {
-                if (image == null) return;
-                File file;
-                // log("File name: ${state.fileName}");
+                );
                 setState(() {
                   _isLoading = false;
                 });
@@ -147,18 +146,20 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                       "${ref.read(strategyProvider).stratName ?? "new image"}.png",
                   allowedExtensions: ['png'],
                 );
-
-                if (outputFile == null) return;
-
-                file = File(outputFile);
-
-                file.writeAsBytes(image);
+                if (outputFile != null) {
+                  final file = File(outputFile);
+                  await file.writeAsBytes(image);
+                }
+              } catch (e, st) {
+                log('$e\n$st');
+              } finally {
                 ref.read(screenshotProvider.notifier).setIsScreenShot(false);
-              }).catchError((onError) {
-                log(onError);
-              });
-
-              CoordinateSystem.instance.setIsScreenshot(false);
+                CoordinateSystem.instance.setIsScreenshot(false);
+                ref
+                    .read(drawingProvider.notifier)
+                    .rebuildAllPaths(CoordinateSystem.instance);
+              }
+              // CoordinateSystem.instance.setIsScreenshot(false);
             },
             icon: _isLoading
                 ? const SizedBox(

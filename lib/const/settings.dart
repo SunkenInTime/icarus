@@ -32,6 +32,7 @@ class Settings {
   static const Color enemyOutlineColor = Color.fromARGB(139, 255, 82, 82);
   static const Color allyOutlineColor = Color.fromARGB(106, 105, 240, 175);
 
+  static const Color backgroundColor = Color(0xFF1B1B1B);
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);

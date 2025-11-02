@@ -318,6 +318,15 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
               onPressed: () => _showRenameDialog(),
             ),
             _buildMenuItem(
+              icon: Icons.copy,
+              label: "Duplicate",
+              onPressed: () async {
+                await ref
+                    .read(strategyProvider.notifier)
+                    .duplicateStrategy(widget.strategyData.id);
+              },
+            ),
+            _buildMenuItem(
               icon: Icons.upload,
               label: "Export",
               onPressed: () => _exportStrategy(),

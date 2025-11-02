@@ -141,27 +141,8 @@ class ToolGrid extends ConsumerWidget {
 
                   if (result == null) return;
                   final data = result.files.first.xFile;
-                  final String newExtension = path.extension(data.path);
 
-                  final Uint8List newImage = await data.readAsBytes();
-
-                  final imageID = const Uuid().v4();
-                  final imageBytes = newImage;
-                  final fileExtension = newExtension;
-
-                  await ref
-                      .read(placedImageProvider.notifier)
-                      .saveSecureImage(imageBytes, imageID, fileExtension);
-
-                  final image = PlacedImage(
-                    fileExtension: fileExtension,
-                    position: const Offset(500, 500),
-                    id: imageID,
-                    aspectRatio: await getImageAspectRatio(imageBytes),
-                    scale: 200,
-                  );
-
-                  ref.read(placedImageProvider.notifier).addImage(image);
+                  ref.read(placedImageProvider.notifier).addImage(data);
                   // showImageDialog();
                 },
                 icon: const Icon(Icons.image_outlined),
@@ -204,17 +185,5 @@ class ToolGrid extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  Future<double> getImageAspectRatio(Uint8List imageData) async {
-    final completer = Completer<ui.Image>();
-    ui.decodeImageFromList(
-      imageData,
-      (ui.Image img) {
-        completer.complete(img);
-      },
-    );
-    final ui.Image image = await completer.future;
-    return image.width / image.height;
   }
 }

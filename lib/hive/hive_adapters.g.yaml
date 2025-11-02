@@ -141,7 +141,7 @@ types:
         index: 11
   AgentType:
     typeId: 7
-    nextIndex: 27
+    nextIndex: 28
     fields:
       jett:
         index: 0
@@ -197,6 +197,8 @@ types:
         index: 25
       waylay:
         index: 26
+      veto:
+        index: 27
   Offset:
     typeId: 8
     nextIndex: 2

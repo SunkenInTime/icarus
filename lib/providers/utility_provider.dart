@@ -136,6 +136,12 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     state = [];
   }
 
+  String toJsonFromData(List<PlacedUtility> elements) {
+    final List<Map<String, dynamic>> jsonList =
+        elements.map((utility) => utility.toJson()).toList();
+    return jsonEncode(jsonList);
+  }
+
   String toJson() {
     final List<Map<String, dynamic>> jsonList =
         state.map((utility) => utility.toJson()).toList();

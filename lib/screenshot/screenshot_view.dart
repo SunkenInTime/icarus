@@ -46,6 +46,7 @@ class ScreenshotView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    CoordinateSystem.instance.setIsScreenshot(true);
     ref.read(strategyProvider.notifier).setFromState(strategyState);
     ref.read(agentProvider.notifier).fromHive(agents);
     ref.read(screenshotProvider.notifier).setIsScreenShot(true);
@@ -59,6 +60,9 @@ class ScreenshotView extends ConsumerWidget {
     ref.read(strategySettingsProvider.notifier).fromHive(strategySettings);
     ref.read(utilityProvider.notifier).fromHive(utilities);
 
+    ref
+        .read(drawingProvider.notifier)
+        .rebuildAllPaths(CoordinateSystem.instance);
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
     return Container(

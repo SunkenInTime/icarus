@@ -133,6 +133,12 @@ class TextProvider extends Notifier<List<PlacedText>> {
     return jsonEncode(jsonList);
   }
 
+  String toJsonFromData(List<PlacedText> elements) {
+    final List<Map<String, dynamic>> jsonList =
+        elements.map((text) => text.toJson()).toList();
+    return jsonEncode(jsonList);
+  }
+
   void fromHive(List<PlacedText> hiveText) {
     poppedText = [];
     state = hiveText;

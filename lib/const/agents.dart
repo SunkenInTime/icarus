@@ -29,7 +29,8 @@ enum AgentType {
   sage,
   vyse,
   tejo,
-  waylay
+  waylay,
+  veto
 }
 
 enum AgentRole { controller, duelist, initiator, sentinel }
@@ -286,7 +287,7 @@ class AgentData implements DraggableData {
       );
 
       agent.abilities.last.abilityData = SquareAbility(
-        width: 23 * inGameMeters,
+        width: 18 * inGameMeters,
         height: 32 * inGameMeters,
         iconPath: agent.abilities.last.iconPath,
         color: Colors.orangeAccent,
@@ -567,7 +568,7 @@ class AgentData implements DraggableData {
       );
 
       agent.abilities.last.abilityData = SquareAbility(
-        width: 24 * inGameMeters,
+        width: 20 * inGameMeters,
         height: 40 * inGameMeters,
         iconPath: agent.abilities.last.iconPath,
         color: const Color(0xFF680A79),
@@ -617,7 +618,7 @@ class AgentData implements DraggableData {
 
       agent.abilities[1].abilityData = SquareAbility(
         width: 4.3 * inGameMetersDiameter,
-        height: 32.5 * inGameMeters,
+        height: 25 * inGameMeters,
         iconPath: agent.abilities[1].iconPath,
         color: Colors.deepPurple,
       );
@@ -705,7 +706,7 @@ class AgentData implements DraggableData {
 
       agent.abilities[3].abilityData = SquareAbility(
         width: 15 * inGameMeters,
-        height: 48 * inGameMeters,
+        height: 36 * inGameMeters,
         iconPath: agent.abilities[3].iconPath,
         color: Colors.indigo,
       );
@@ -864,11 +865,38 @@ class AgentData implements DraggableData {
       );
 
       agent.abilities.last.abilityData = SquareAbility(
-        width: 18 * inGameMeters,
+        width: 13.5 * inGameMeters,
         height: 36 * inGameMeters,
         iconPath: agent.abilities.last.iconPath,
         distanceBetweenAOE: 3 * inGameMeters,
         color: Colors.deepPurpleAccent,
+      );
+
+      return agent;
+    })(),
+    AgentType.veto: (() {
+      final agent = AgentData(
+          type: AgentType.veto, role: AgentRole.sentinel, name: "Veto");
+
+      agent.abilities.first.abilityData = CircleAbility(
+        iconPath: agent.abilities.first.iconPath,
+        size: 24,
+        outlineColor: Colors.lightBlueAccent,
+        hasCenterDot: true,
+      );
+
+      agent.abilities[1].abilityData = CircleAbility(
+        iconPath: agent.abilities[1].iconPath,
+        size: 6.58,
+        outlineColor: Colors.lightBlueAccent,
+        hasCenterDot: true,
+      );
+
+      agent.abilities[2].abilityData = CircleAbility(
+        iconPath: agent.abilities[2].iconPath,
+        size: 18,
+        outlineColor: Colors.lightBlueAccent,
+        hasCenterDot: true,
       );
 
       return agent;

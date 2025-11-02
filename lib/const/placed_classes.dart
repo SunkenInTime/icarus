@@ -360,3 +360,25 @@ class PlacedUtility extends PlacedWidget {
   @override
   Map<String, dynamic> toJson() => _$PlacedUtilityToJson(this);
 }
+// ...existing code...
+
+// Add this at the end of the file
+extension PlacedWidgetCopy on PlacedWidget {
+  T deepCopy<T extends PlacedWidget>() {
+    final json = toJson();
+
+    if (this is PlacedText) {
+      return PlacedText.fromJson(json) as T;
+    } else if (this is PlacedImage) {
+      return PlacedImage.fromJson(json) as T;
+    } else if (this is PlacedAgent) {
+      return PlacedAgent.fromJson(json) as T;
+    } else if (this is PlacedAbility) {
+      return PlacedAbility.fromJson(json) as T;
+    } else if (this is PlacedUtility) {
+      return PlacedUtility.fromJson(json) as T;
+    } else {
+      return PlacedWidget.fromJson(json) as T;
+    }
+  }
+}

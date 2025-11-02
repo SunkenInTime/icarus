@@ -33,9 +33,11 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
     CoordinateSystem coordinateSystem = CoordinateSystem.instance;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_previousSize != coordinateSystem.playAreaSize) {
+      // During screenshots we already rebuild paths explicitly; avoid racing with capture
+      if (!coordinateSystem.isScreenshot &&
+          _previousSize != coordinateSystem.effectiveSize) {
         ref.read(drawingProvider.notifier).rebuildAllPaths(coordinateSystem);
-        _previousSize = coordinateSystem.playAreaSize;
+        _previousSize = coordinateSystem.effectiveSize;
       }
     });
     // Get the drawing data here in the widget
@@ -275,7 +277,11 @@ class DrawingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(DrawingPainter oldDelegate) {
-    return oldDelegate.updateCounter !=
-        updateCounter; // Repaint when elements change
+    if (oldDelegate.updateCounter != updateCounter ||
+        oldDelegate.coordinateSystem.isScreenshot) {
+      // log("Repainting DrawingPainter");
+      return true;
+    } // Repaint when elements change
+    return false;
   }
 }

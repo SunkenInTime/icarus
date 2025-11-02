@@ -17,6 +17,7 @@ import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
+import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:screenshot/screenshot.dart';
 
 class InteractiveMap extends ConsumerStatefulWidget {
@@ -51,6 +52,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
           width: coordinateSystem.playAreaSize.width,
           height: coordinateSystem.playAreaSize.height,
           color: const Color(0xFF1B1B1B),
+          child: ImageDropTarget(
           child: InteractiveViewer(
             transformationController: controller,
             onInteractionEnd: (details) {
@@ -127,6 +129,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                   child: InteractivePainter(),
                 ),
               ],
+            ),
             ),
           ),
         ),

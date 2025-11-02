@@ -3,8 +3,10 @@ import 'dart:developer';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui';
+import 'package:cross_file/cross_file.dart' show XFile;
 import 'package:image/image.dart' as img;
-
+import 'dart:ui' as ui;
+import 'dart:async' show Completer;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -90,7 +92,35 @@ class ImageProvider extends Notifier<ImageState> {
     }
   }
 
-  void addImage(PlacedImage placedImage) {
+  Future<double> getImageAspectRatio(Uint8List imageData) async {
+    final completer = Completer<ui.Image>();
+    ui.decodeImageFromList(
+      imageData,
+      (ui.Image img) {
+        completer.complete(img);
+      },
+    );
+    final ui.Image image = await completer.future;
+    return image.width / image.height;
+  }
+
+  Future<void> addImage(XFile imageFile) async {
+    final imageID = const Uuid().v4();
+    final String fileExtension = path.extension(imageFile.path);
+    final Uint8List imageBytes = await imageFile.readAsBytes();
+
+    await ref
+        .read(placedImageProvider.notifier)
+        .saveSecureImage(imageBytes, imageID, fileExtension);
+
+    final placedImage = PlacedImage(
+      fileExtension: fileExtension,
+      position: const Offset(500, 500),
+      id: imageID,
+      aspectRatio: await getImageAspectRatio(imageBytes),
+      scale: 200,
+    );
+
     final action = UserAction(
       type: ActionType.addition,
       id: placedImage.id,

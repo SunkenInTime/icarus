@@ -6,7 +6,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy_tile.dart';
-import 'package:icarus/widgets/custom_drop_target.dart';
+import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/folder_tile.dart';
@@ -66,7 +66,7 @@ class FolderContent extends ConsumerWidget {
                   ];
 
                   if (gridItems.isEmpty) {
-                    return const FileImportDropTarget(
+                    return const IcaDropTarget(
                       child: Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -79,7 +79,7 @@ class FolderContent extends ConsumerWidget {
                     );
                   }
 
-                  return FileImportDropTarget(
+                  return IcaDropTarget(
                     child: LayoutBuilder(builder: (context, constraints) {
                       // Calculate how many columns can fit with minimum width
                       const double minTileWidth = 250; // Your minimum width
