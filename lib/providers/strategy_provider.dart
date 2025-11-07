@@ -409,6 +409,48 @@ class StrategyProvider extends Notifier<StrategyState> {
     });
   }
 
+  Future<void> backwardPage() async {
+    if (activePageID == null) return;
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final doc = box.get(state.id);
+    if (doc == null || doc.pages.isEmpty) return;
+
+    // Order pages by their sortIndex to find the "leading" (next) page.
+    final pages = [...doc.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+
+    final currentIndex = pages.indexWhere((p) => p.id == activePageID);
+    if (currentIndex == -1) return;
+    int nextIndex = currentIndex - 1;
+    if (nextIndex < 0)
+      nextIndex = pages.length - 1; // No forward page available.
+
+    final nextPage = pages[nextIndex];
+    await setActivePage(nextPage.id);
+  }
+
+  Future<void> forwardPage() async {
+    if (activePageID == null) return;
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final doc = box.get(state.id);
+    if (doc == null || doc.pages.isEmpty) return;
+
+    // Order pages by their sortIndex to find the "leading" (next) page.
+    final pages = [...doc.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+
+    final currentIndex = pages.indexWhere((p) => p.id == activePageID);
+    if (currentIndex == -1) return;
+
+    int nextIndex = currentIndex + 1;
+    if (nextIndex >= pages.length) nextIndex = 0; // No forward page available.
+
+    final nextPage = pages[nextIndex];
+    await setActivePage(nextPage.id);
+  }
+
 // Add these inside StrategyProvider
   Future<void> setActivePageAnimated(String pageID) async {
     final prev = _snapshotAllPlaced();
@@ -839,6 +881,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (savedStrat == null) return;
 
     final currentStrategy = savedStrat.copyWith(
+      mapData: ref.read(mapProvider).currentMap,
       lastEdited: DateTime.now(),
     );
 

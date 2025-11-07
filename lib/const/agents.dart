@@ -30,7 +30,7 @@ enum AgentType {
   vyse,
   tejo,
   waylay,
-  veto
+  veto,
 }
 
 enum AgentRole { controller, duelist, initiator, sentinel }

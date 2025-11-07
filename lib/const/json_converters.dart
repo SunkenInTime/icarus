@@ -46,6 +46,8 @@ const _agentTypeEnumMap = {
   AgentType.sage: 'sage',
   AgentType.vyse: 'vyse',
   AgentType.tejo: 'tejo',
+  AgentType.waylay: 'waylay',
+  AgentType.veto: 'veto',
 };
 
 class AbilityInfoConverter

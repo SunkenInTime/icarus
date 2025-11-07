@@ -396,8 +396,8 @@ class _ExpandedPanel extends StatelessWidget {
                   splashRadius: 20,
                   tooltip: "Collapse",
                   onPressed: onCollapse,
-                  icon:
-                      const Icon(Icons.keyboard_arrow_up, color: Colors.white),
+                  icon: const Icon(Icons.keyboard_arrow_down,
+                      color: Colors.white),
                 ),
                 const SizedBox(width: 4),
               ],

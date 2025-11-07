@@ -141,7 +141,10 @@ class _ImageFullScreenOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final image = file != null
-        ? Image.file(file!, fit: BoxFit.contain)
+        ? Image.file(
+            file!,
+            fit: BoxFit.contain,
+          )
         : (networkLink != null && networkLink!.isNotEmpty
             ? Image.network(networkLink!, fit: BoxFit.contain)
             : const Placeholder());
@@ -159,42 +162,55 @@ class _ImageFullScreenOverlay extends StatelessWidget {
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(24.0),
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: GestureDetector(
-                      onTap: () => Navigator.of(context).maybePop(),
-                    ),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      InteractiveViewer(
-                        minScale: 0.5,
-                        maxScale: 8,
-                        child: AspectRatio(
-                          aspectRatio: aspectRatio,
-                          child: Hero(
-                            tag: heroTag,
-                            child: image,
-                          ),
-                        ),
+              child: LayoutBuilder(builder: (context, constraints) {
+                final width =
+                    constraints.maxWidth - 100; // typically the screen width
+                final height = width / aspectRatio;
+
+                log("Max width $width");
+
+                return Stack(
+                  children: [
+                    Positioned.fill(
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).maybePop(),
                       ),
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: IconButton.filled(
-                          style: IconButton.styleFrom(
-                              backgroundColor: Colors.white),
-                          icon: const Icon(Icons.close, color: Colors.black),
-                          tooltip: 'Close',
-                          onPressed: () => Navigator.of(context).maybePop(),
-                        ),
-                      )
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                    Align(
+                      alignment: Alignment.center,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          InteractiveViewer(
+                            minScale: 0.5,
+                            maxScale: 8,
+                            child: SizedBox(
+                              width: width,
+                              height: height,
+                              child: Hero(
+                                tag: heroTag,
+                                child: image,
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: IconButton.filled(
+                              style: IconButton.styleFrom(
+                                  backgroundColor: Colors.white),
+                              icon:
+                                  const Icon(Icons.close, color: Colors.black),
+                              tooltip: 'Close',
+                              onPressed: () => Navigator.of(context).maybePop(),
+                            ),
+                          )
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }),
             ),
           ),
         ],

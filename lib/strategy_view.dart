@@ -1,5 +1,6 @@
 import 'dart:developer';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/custom_icons.dart';
@@ -72,10 +73,11 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                     ),
                     const SizedBox(width: 5),
                     const MapSelector(),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8.0),
-                      child: DemoTag(),
-                    )
+                    if (kIsWeb)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8.0),
+                        child: DemoTag(),
+                      )
                   ],
                 ),
                 Row(

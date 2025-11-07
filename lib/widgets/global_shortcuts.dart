@@ -6,6 +6,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -84,6 +85,22 @@ class GlobalShortcuts extends ConsumerWidget {
                 ref
                     .read(interactionStateProvider.notifier)
                     .update(InteractionState.navigation);
+                return null;
+              },
+            ),
+            ForwardPageIntent: CallbackAction<ForwardPageIntent>(
+              onInvoke: (intent) async {
+                log("I triggered");
+
+                await ref.read(strategyProvider.notifier).forwardPage();
+                return null;
+              },
+            ),
+            BackwardPageIntent: CallbackAction<BackwardPageIntent>(
+              onInvoke: (intent) async {
+                log("I triggered");
+
+                await ref.read(strategyProvider.notifier).backwardPage();
                 return null;
               },
             ),

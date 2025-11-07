@@ -18,7 +18,9 @@ class ShortcutInfo {
     LogicalKeySet(LogicalKeyboardKey.keyQ): const ToggleDrawingIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyW): const ToggleErasingIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyT): const AddedTextIntent(),
-    LogicalKeySet(LogicalKeyboardKey.keyA): const NavigationActionIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyS): const NavigationActionIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyA): const ForwardPageIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyD): const BackwardPageIntent(),
   };
 
   // New map to disable global shortcuts when typing
@@ -36,14 +38,17 @@ class ShortcutInfo {
         LogicalKeyboardKey.shift): const DoNothingAndStopPropagationIntent(),
     LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyZ,
         LogicalKeyboardKey.shift): const DoNothingAndStopPropagationIntent(),
-
+    LogicalKeySet(LogicalKeyboardKey.keyA):
+        const DoNothingAndStopPropagationIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyD):
+        const DoNothingAndStopPropagationIntent(),
     // Override Q and W shortcuts
     LogicalKeySet(LogicalKeyboardKey.keyQ):
         const DoNothingAndStopPropagationIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyW):
         const DoNothingAndStopPropagationIntent(),
 
-    LogicalKeySet(LogicalKeyboardKey.keyA):
+    LogicalKeySet(LogicalKeyboardKey.keyS):
         const DoNothingAndStopPropagationIntent(),
 
     LogicalKeySet(LogicalKeyboardKey.enter): const EnterTextIntent(),
@@ -80,4 +85,12 @@ class RedoActionIntent extends Intent {
 
 class NavigationActionIntent extends Intent {
   const NavigationActionIntent();
+}
+
+class ForwardPageIntent extends Intent {
+  const ForwardPageIntent();
+}
+
+class BackwardPageIntent extends Intent {
+  const BackwardPageIntent();
 }

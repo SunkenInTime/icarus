@@ -69,7 +69,7 @@ Future<void> main() async {
   if (!kIsWeb) {
     await windowManager.ensureInitialized();
     WindowOptions windowOptions = const WindowOptions(
-      title: "Icarus: Valorant Strategies & Line ups 1.7.5",
+      title: "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
     );
     windowManager.waitUntilReadyToShow(windowOptions, () async {
       await windowManager.show();

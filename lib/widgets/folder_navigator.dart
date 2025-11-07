@@ -121,10 +121,11 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         actionsPadding: const EdgeInsets.only(right: 24),
 
         actions: [
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8.0),
-            child: DemoTag(),
-          ),
+          if (kIsWeb)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8.0),
+              child: DemoTag(),
+            ),
           Row(
             spacing: 15,
             children: [
