@@ -68,6 +68,7 @@ class StrategyData extends HiveObject {
   final List<StrategyPage> pages;
   final MapValue mapData;
   final DateTime lastEdited;
+  final DateTime createdAt;
 
   String? folderID;
 
@@ -86,9 +87,11 @@ class StrategyData extends HiveObject {
     required this.lastEdited,
     required this.folderID,
     this.pages = const [],
+    DateTime? createdAt,
     @Deprecated('Use pages instead') StrategySettings? strategySettings,
     // ignore: deprecated_member_use_from_same_package
-  }) : strategySettings = strategySettings ?? StrategySettings();
+  })  : strategySettings = strategySettings ?? StrategySettings(),
+        createdAt = createdAt ?? DateTime.now();
 
   StrategyData copyWith({
     String? id,
@@ -106,6 +109,7 @@ class StrategyData extends HiveObject {
     bool? isAttack,
     StrategySettings? strategySettings,
     String? folderID,
+    DateTime? createdAt,
   }) {
     return StrategyData(
       id: id ?? this.id,
@@ -130,6 +134,7 @@ class StrategyData extends HiveObject {
       isAttack: isAttack ?? this.isAttack,
       // ignore: deprecated_member_use_from_same_package
       strategySettings: strategySettings ?? this.strategySettings,
+      createdAt: createdAt ?? this.createdAt,
       folderID: folderID ?? this.folderID,
     );
   }

@@ -44,6 +44,7 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
       pages: fields[14] == null
           ? const []
           : (fields[14] as List).cast<StrategyPage>(),
+      createdAt: fields[15] as DateTime?,
       strategySettings: fields[11] as StrategySettings?,
     );
   }
@@ -51,7 +52,7 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
   @override
   void write(BinaryWriter writer, StrategyData obj) {
     writer
-      ..writeByte(15)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.versionNumber)
       ..writeByte(1)
@@ -81,7 +82,9 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
       ..writeByte(13)
       ..write(obj.folderID)
       ..writeByte(14)
-      ..write(obj.pages);
+      ..write(obj.pages)
+      ..writeByte(15)
+      ..write(obj.createdAt);
   }
 
   @override

@@ -9,6 +9,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/current_path_bar.dart';
 import 'package:icarus/widgets/custom_button.dart';
+import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
@@ -117,7 +118,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     return Scaffold(
       appBar: AppBar(
         title: const CurrentPathBar(),
-        toolbarHeight: 90,
+        toolbarHeight: 70,
         actionsPadding: const EdgeInsets.only(right: 24),
 
         actions: [

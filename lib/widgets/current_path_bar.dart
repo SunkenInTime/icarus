@@ -18,7 +18,7 @@ class CurrentPathBar extends ConsumerWidget {
         ref.read(folderProvider.notifier).getFullPathIDs(currentFolder);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
       child: Row(
         children: [
           // Root folder button
