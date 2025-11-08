@@ -34,6 +34,7 @@ dependencies:
   screenshot: ^3.0.0
   custom_sliding_segmented_control: ^1.8.5
   flutter_colorpicker: ^1.1.0
+  archive: ^4.0.7
 
 dev_dependencies:
   flutter_test:

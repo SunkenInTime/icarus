@@ -8,6 +8,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/image_provider.dart' as PlacedImageProvider;
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
@@ -99,12 +100,15 @@ class StrategyPage extends HiveObject {
   }
 
   static Future<List<StrategyPage>> listFromJson(
-      {required String json, required String strategyID}) async {
+      {required String json,
+      required String strategyID,
+      required bool isZip}) async {
     List<StrategyPage> pages = [];
     List<dynamic> listJson = jsonDecode(json);
 
     for (final item in listJson) {
-      final page = await fromJson(json: item, strategyID: strategyID);
+      final page =
+          await fromJson(json: item, strategyID: strategyID, isZip: isZip);
       pages.add(page);
     }
 
@@ -116,11 +120,21 @@ class StrategyPage extends HiveObject {
   }
 
   static Future<StrategyPage> fromJson(
-      {required Map<String, dynamic> json, required String strategyID}) async {
-    final List<PlacedImage> imageData = !kIsWeb
-        ? await ImageProvider.fromJson(
-            jsonString: jsonEncode(json['imageData']), strategyID: strategyID)
-        : [];
+      {required Map<String, dynamic> json,
+      required String strategyID,
+      required bool isZip}) async {
+    List<PlacedImage> imageData = [];
+
+    if (!kIsWeb) {
+      if (isZip) {
+        imageData = await ImageProvider.fromJson(
+            jsonString: jsonEncode(json['imageData']), strategyID: strategyID);
+      } else {
+        imageData = await PlacedImageProvider.ImageProvider.legacyFromJson(
+            jsonString: jsonEncode(json["imageData"] ?? []),
+            strategyID: strategyID);
+      }
+    }
 
     bool isAttack;
     if (json['isAttack'] == "true") {

@@ -219,26 +219,60 @@ class ImageProvider extends Notifier<ImageState> {
     state = state.copyWith(images: newImages);
   }
 
+  static Future<Directory> getImageFolder(String strategyID) async {
+    // Get the system's application support directory.
+    final Directory appSupportDir = await getApplicationSupportDirectory();
+
+    // Create the custom directory using the strategy ID.
+    final Directory customDirectory =
+        Directory(path.join(appSupportDir.path, strategyID));
+    if (!await customDirectory.exists()) {
+      await customDirectory.create(recursive: true);
+    }
+
+    final Directory imagesDirectory =
+        Directory(path.join(customDirectory.path, 'images'));
+    if (!await imagesDirectory.exists()) {
+      await imagesDirectory.create(recursive: true);
+    }
+
+    return imagesDirectory;
+  }
+
   Future<String> toJson(String strategyID) async {
     // Asynchronously convert each image using the custom serializer.
-    final List<Map<String, dynamic>> jsonList = await Future.wait(
-      state.images
-          .map((image) => PlacedImageSerializer.toJson(image, strategyID)),
-    );
+    final List<Map<String, dynamic>> jsonList =
+        state.images.map((image) => image.toJson()).toList();
 
     return jsonEncode(jsonList);
   }
 
   static Future<String> objectToJson(
       List<PlacedImage> images, String strategyID) async {
-    final List<Map<String, dynamic>> jsonList = await Future.wait(
-      images.map((image) => PlacedImageSerializer.toJson(image, strategyID)),
-    );
+    final List<Map<String, dynamic>> jsonList =
+        images.map((image) => image.toJson()).toList();
 
     return jsonEncode(jsonList);
   }
 
   static Future<List<PlacedImage>> fromJson(
+      {required String jsonString, required String strategyID}) async {
+    final List<dynamic> jsonList = jsonDecode(jsonString);
+
+    // Use the custom deserializer for each JSON map.
+    // final images = await Future.wait(
+    //   jsonList.map((json) => PlacedImageSerializer.fromJson(
+    //       json as Map<String, dynamic>, strategyID)),
+    // );
+
+    final images = jsonList
+        .map((json) => PlacedImage.fromJson(json as Map<String, dynamic>))
+        .toList();
+
+    return images;
+  }
+
+  static Future<List<PlacedImage>> legacyFromJson(
       {required String jsonString, required String strategyID}) async {
     final List<dynamic> jsonList = jsonDecode(jsonString);
 

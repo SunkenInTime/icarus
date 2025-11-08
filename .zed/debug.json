@@ -1,13 +1,9 @@
-// Project-local debug tasks
-//
-// For more documentation on how to configure debug tasks,
-// see: https://zed.dev/docs/debugger
 [
   {
     "label": "Debug Flutter App",
-    "adapter": "Dart",
+    "adapter": "Dart", // DO NOT EDIT
     "type": "flutter",
     "program": "lib/main.dart",
-    "args": ["--web-port=9090", "-d", "macos"]
+    "args": ["--web-port=9090"]
   }
 ]

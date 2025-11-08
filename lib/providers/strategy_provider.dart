@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
+import 'package:archive/archive.dart';
+import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -242,6 +244,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (!await customDirectory.exists()) {
       await customDirectory.create(recursive: true);
     }
+
     log(customDirectory.path);
     return customDirectory;
   }
@@ -635,19 +638,81 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
   }
 
-  Future<void> _loadFromXFile(XFile file) async {
-    //TODO: Check if this matters on windows
-    // if (path.extension(file.path) != ".ica") {
-    //   log("File extension: ${file.path}");
-    //   log("Not a .ica file, skipping");
-    //   return;
-    // }
+  Future<Directory> getTempDirectory(String strategyID) async {
+    final tempDirectory = await getTemporaryDirectory();
 
-    final data = await file.readAsString();
+    Directory tempDir = await Directory(
+            path.join(tempDirectory.path, "xyz.icarus-strats", strategyID))
+        .create(recursive: true);
+    return tempDir;
+  }
 
-    Map<String, dynamic> json = jsonDecode(data);
+  Future<void> cleanUpTempDirectory(String strategyID) async {
+    final tempDirectory = await getTempDirectory(strategyID);
+    await tempDirectory.delete(recursive: true);
+  }
 
+  /// Returns true if the file is a ZIP (by checking the magic number)
+  Future<bool> isZipFile(File file) async {
+    // Read the first 4 bytes of the file
+    final raf = file.openSync(mode: FileMode.read);
+    final header = raf.readSync(4);
+    await raf.close();
+
+    // ZIP files start with 'PK\x03\x04'
+    return header.length == 4 &&
+        header[0] == 0x50 && // 'P'
+        header[1] == 0x4B && // 'K'
+        header[2] == 0x03 &&
+        header[3] == 0x04;
+  }
+
+  Future<void> _loadFromXFile(XFile xFile) async {
     final newID = const Uuid().v4();
+
+    bool isZip = await isZipFile(File(xFile.path));
+
+    log("Is ZIP file: $isZip");
+    final bytes = await xFile.readAsBytes();
+    String jsonData = "";
+    if (isZip) {
+      // Decode the Zip file
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      final imageFolder =
+          await PlacedImageProvider.ImageProvider.getImageFolder(newID);
+
+      final tempDirectory = await getTempDirectory(newID);
+
+      await extractArchiveToDisk(archive, tempDirectory.path);
+
+      final tempDirectoryList = tempDirectory.listSync();
+
+      try {
+        for (final fileEntity in tempDirectoryList) {
+          if (fileEntity is File) {
+            log(fileEntity.path);
+            if (path.extension(fileEntity.path) == ".json") {
+              log("Found JSON file");
+              jsonData = await fileEntity.readAsString();
+            } else if (path.extension(fileEntity.path) != ".ica") {
+              final fileName = path.basename(fileEntity.path);
+              await fileEntity.copy(path.join(imageFolder.path, fileName));
+            }
+          }
+        }
+        if (jsonData.isEmpty) {
+          throw Exception("No .ica file found");
+        }
+      } catch (e) {
+        log(e.toString());
+        return;
+      }
+    } else {
+      jsonData = await xFile.readAsString();
+    }
+
+    Map<String, dynamic> json = jsonDecode(jsonData);
 
     final List<DrawingElement> drawingData =
         DrawingProvider.fromJson(jsonEncode(json["drawingData"] ?? []));
@@ -660,10 +725,17 @@ class StrategyProvider extends Notifier<StrategyState> {
     final mapData = MapProvider.fromJson(jsonEncode(json["mapData"]));
     final textData = TextProvider.fromJson(jsonEncode(json["textData"] ?? []));
 
-    final List<PlacedImage> imageData = !kIsWeb
-        ? await PlacedImageProvider.ImageProvider.fromJson(
-            jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID)
-        : [];
+    List<PlacedImage> imageData = [];
+    if (!kIsWeb) {
+      if (isZip) {
+        imageData = await PlacedImageProvider.ImageProvider.fromJson(
+            jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID);
+      } else {
+        log('Legacy image data loading');
+        imageData = await PlacedImageProvider.ImageProvider.legacyFromJson(
+            jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID);
+      }
+    }
 
     final StrategySettings settingsData;
     final bool isAttack;
@@ -695,7 +767,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     bool needsMigration = (versionNumber < 15);
     final List<StrategyPage> pages = json["pages"] != null
         ? await StrategyPage.listFromJson(
-            json: jsonEncode(json["pages"]), strategyID: newID)
+            json: jsonEncode(json["pages"]),
+            strategyID: newID,
+            isZip: isZip,
+          )
         : [];
 
     StrategyData newStrategy = StrategyData(
@@ -718,7 +793,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
       pages: pages,
       id: newID,
-      name: path.basenameWithoutExtension(file.name),
+      name: path.basenameWithoutExtension(xFile.name),
       mapData: mapData,
       versionNumber: versionNumber,
       lastEdited: DateTime.now(),
@@ -730,6 +805,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put(newStrategy.id, newStrategy);
+
+    await cleanUpTempDirectory(newStrategy.id);
   }
 
   Future<String> createNewStrategy(String name) async {
@@ -787,6 +864,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     pageJson = jsonEncode(pages);
 
     // Json has no trailing commas
+    //
+
+    //TODO: Awful implmentation
     String data = '''
                 {
                 "versionNumber": "${Settings.versionNumber}",
@@ -794,21 +874,42 @@ class StrategyProvider extends Notifier<StrategyState> {
                 "settingsData":${ref.read(strategySettingsProvider.notifier).toJson()},
                 "isAttack": "${ref.read(mapProvider).isAttack.toString()}",
                 "pages": $pageJson
-
                 }
               ''';
 
-    final Uint8List bytes = Uint8List.fromList(utf8.encode(data));
+    // final Uint8List bytes = Uint8List.fromList(utf8.encode(data));
 
-    await FilePicker.platform.saveFile(
+    final jsonArchiveFile =
+        ArchiveFile.bytes("${strategy.name}.json", utf8.encode(data));
+
+    final outputFile = await FilePicker.platform.saveFile(
       type: FileType.custom,
       dialogTitle: 'Please select an output file:',
       fileName: "${state.stratName ?? "new strategy"}.ica",
       allowedExtensions: [".ica"],
-      bytes: bytes,
     );
 
-    // if (outputFile == null) return;
+    if (outputFile == null) return;
+
+    final zipEncoder = ZipFileEncoder()..create(outputFile);
+
+    final directory = await getApplicationSupportDirectory();
+    final customDirectory = Directory(path.join(directory.path, strategy.id));
+    final filePath = path.join(customDirectory.path, 'images');
+    final imagesDirectory = Directory(filePath);
+
+    // Nothing to zip if the directory doesn't exist
+    if (!await imagesDirectory.exists()) return;
+
+    await for (final entity in imagesDirectory.list()) {
+      if (entity is File) {
+        await zipEncoder.addFile(entity);
+      }
+    }
+
+    zipEncoder.addArchiveFile(jsonArchiveFile);
+    await zipEncoder.close();
+
     // file = File(outputFile);
 
     // state = state.copyWith(fileName: file.path, isSaved: true);

@@ -38,9 +38,13 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
 
   Set<AgentType> get _agentsOnMap {
     final Set<AgentType> agents = {};
-    for (final agent in widget.strategyData.agentData) {
-      agents.add(agent.type);
+
+    for (final pages in widget.strategyData.pages) {
+      for (final agent in pages.agentData) {
+        agents.add(agent.type);
+      }
     }
+
     return agents;
   }
 

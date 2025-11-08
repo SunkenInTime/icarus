@@ -31,7 +31,9 @@ Future<void> main() async {
   } else {
     // On mobile/desktop, you can still choose an explicit directory.
     final dir = await getApplicationSupportDirectory();
-    // log("App Support Directory: ${dir.path}");
+    final tempDir = await getTemporaryDirectory();
+    log("App Support Directory: ${dir.path}");
+    log("Temporary Directory: ${tempDir.path}");
     await Hive.initFlutter(dir.path);
   }
 
