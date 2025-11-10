@@ -136,7 +136,7 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
           borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
         ),
         filled: true,
-        fillColor: Settings.abilityBGColor,
+        fillColor: Settings.sideBarColor,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8.0),
           borderSide: BorderSide.none,
@@ -148,17 +148,17 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
         ),
         prefixIcon: Padding(
           padding: compact
-              ? const EdgeInsets.only(left: 8, right: 4)
+              ? const EdgeInsets.only(left: 8, right: 8)
               : const EdgeInsets.only(left: 12, right: 8),
           child: Icon(
             Icons.search,
-            color: Colors.white54,
+            color: Colors.white,
             size: compact ? 18 : 20,
           ),
         ),
         prefixIconConstraints: BoxConstraints(
-          minWidth: compact ? 32 : 40,
-          minHeight: compact ? 32 : 40,
+          minWidth: compact ? 40 : 40,
+          minHeight: compact ? 40 : 40,
         ),
         suffixIcon: _hasText
             ? IconButton(

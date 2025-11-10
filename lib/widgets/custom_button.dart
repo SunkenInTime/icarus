@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 
 class CustomButton extends ConsumerWidget {
   const CustomButton({
@@ -30,10 +31,20 @@ class CustomButton extends ConsumerWidget {
       alignment: Alignment.center,
       padding: padding,
       backgroundColor: WidgetStateProperty.all(backgroundColor),
-      shape: WidgetStateProperty.all(
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8.0),
-        ),
+      shape: WidgetStateProperty.resolveWith<OutlinedBorder>(
+        (Set<WidgetState> states) {
+          if (states.contains(WidgetState.hovered)) {
+            return RoundedRectangleBorder(
+              side:
+                  const BorderSide(color: Colors.deepPurpleAccent, width: 2.0),
+              borderRadius: BorderRadius.circular(8.0),
+            );
+          }
+          return RoundedRectangleBorder(
+            side: const BorderSide(color: Settings.highlightColor, width: 2.0),
+            borderRadius: BorderRadius.circular(8.0),
+          );
+        },
       ),
       overlayColor: WidgetStateProperty.resolveWith<Color?>(
         (Set<WidgetState> states) {

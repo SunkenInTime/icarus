@@ -44,36 +44,44 @@ class FolderContent extends ConsumerWidget {
         Positioned.fill(
           child: Column(
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      CustomButton(
-                        height: 20,
-                        label: "Filter",
-                        backgroundColor: Settings.backgroundColor,
-                        onPressed: () {},
-                        icon: Icon(Icons.settings),
-                      ),
-                      CustomButton(
-                        height: 20,
-                        label: "Sort by",
-                        backgroundColor: Settings.backgroundColor,
-                        onPressed: () {},
-                        icon: Icon(Icons.sort),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(
-                    height: 40,
-                    child: SearchTextField(
-                      collapsedWidth: 40,
-                      expandedWidth: 250,
-                      compact: true,
+              Padding(
+                padding: const EdgeInsets.only(top: 4.0, left: 16, right: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      spacing: 8,
+                      children: [
+                        CustomButton(
+                          height: 40,
+                          width: 96,
+                          label: "Filter",
+                          backgroundColor: Settings.sideBarColor,
+                          onPressed: () {},
+                          icon: const Icon(Icons.filter_alt),
+                        ),
+                        CustomButton(
+                          height: 40,
+                          width: 96,
+                          label: "Sort by",
+                          padding: WidgetStateProperty.all(
+                              const EdgeInsets.symmetric(horizontal: 8)),
+                          backgroundColor: Settings.sideBarColor,
+                          onPressed: () {},
+                          icon: const Icon(Icons.sort),
+                        ),
+                      ],
                     ),
-                  ),
-                ],
+                    const SizedBox(
+                      height: 40,
+                      child: SearchTextField(
+                        collapsedWidth: 40,
+                        expandedWidth: 250,
+                        compact: true,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               Expanded(
                 child: ValueListenableBuilder<Box<StrategyData>>(
