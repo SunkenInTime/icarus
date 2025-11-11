@@ -13,6 +13,7 @@ class CustomButton extends ConsumerWidget {
     this.width,
     this.padding,
     this.fontWeight,
+    this.isDynamicWidth = false,
     super.key,
   });
 
@@ -25,11 +26,15 @@ class CustomButton extends ConsumerWidget {
   final Color backgroundColor;
   final FontWeight? fontWeight;
   final WidgetStateProperty<EdgeInsetsGeometry>? padding;
+  final bool isDynamicWidth;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final style = ButtonStyle(
       alignment: Alignment.center,
       padding: padding,
+      // Allow narrow widths when dynamic width is requested
+      minimumSize:
+          isDynamicWidth ? WidgetStateProperty.all(Size(0, height)) : null,
       backgroundColor: WidgetStateProperty.all(backgroundColor),
       shape: WidgetStateProperty.resolveWith<OutlinedBorder>(
         (Set<WidgetState> states) {
@@ -61,21 +66,24 @@ class CustomButton extends ConsumerWidget {
       style: TextStyle(color: labelColor, fontWeight: fontWeight),
     );
 
+    final button = icon != null
+        ? TextButton.icon(
+            onPressed: onPressed,
+            icon: icon!,
+            label: labelText,
+            style: style,
+          )
+        : TextButton(
+            onPressed: onPressed,
+            style: style,
+            child: labelText,
+          );
+
+    // When dynamic, size to content; otherwise respect explicit width
     return SizedBox(
       height: height,
-      width: width,
-      child: icon != null
-          ? TextButton.icon(
-              onPressed: onPressed,
-              icon: icon!,
-              label: labelText,
-              style: style,
-            )
-          : TextButton(
-              onPressed: onPressed,
-              style: style,
-              child: labelText,
-            ),
+      width: isDynamicWidth ? null : width,
+      child: isDynamicWidth ? IntrinsicWidth(child: button) : button,
     );
   }
 }

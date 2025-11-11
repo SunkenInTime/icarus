@@ -5,6 +5,7 @@ import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy_tile.dart';
 import 'package:icarus/widgets/custom_button.dart';
@@ -27,6 +28,34 @@ class FolderContent extends ConsumerWidget {
   final foldersListenable = Provider<ValueListenable<Box<Folder>>>((ref) {
     return Hive.box<Folder>(HiveBoxNames.foldersBox).listenable();
   });
+
+  Widget _buildMenuItem({
+    required String label,
+    required VoidCallback onPressed,
+    required bool isSelected,
+  }) {
+    final color = isSelected ? Colors.white : Colors.grey;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: MenuItemButton(
+        onPressed: onPressed,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            isSelected
+                ? Icon(Icons.check, color: color)
+                : const SizedBox(
+                    width: 24,
+                    height: 24,
+                  ),
+            const SizedBox(width: 8),
+            Text(label, style: TextStyle(color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // Move all your existing grid logic here from FolderView
@@ -60,15 +89,93 @@ class FolderContent extends ConsumerWidget {
                           onPressed: () {},
                           icon: const Icon(Icons.filter_alt),
                         ),
-                        CustomButton(
-                          height: 40,
-                          width: 96,
-                          label: "Sort by",
-                          padding: WidgetStateProperty.all(
-                              const EdgeInsets.symmetric(horizontal: 8)),
-                          backgroundColor: Settings.sideBarColor,
-                          onPressed: () {},
-                          icon: const Icon(Icons.sort),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: MenuAnchor(
+                            menuChildren: [
+                              Consumer(
+                                builder: (context, ref, _) {
+                                  final filter =
+                                      ref.watch(strategyFilterProvider);
+                                  final notifier =
+                                      ref.read(strategyFilterProvider.notifier);
+
+                                  return Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      const SizedBox(height: 8),
+                                      // Sort By section
+                                      for (final sb in SortBy.values)
+                                        _buildMenuItem(
+                                          label: StrategyFilterProvider
+                                              .sortByLabels[sb]!,
+                                          isSelected: filter.sortBy == sb,
+                                          onPressed: () {
+                                            notifier.setSortBy(sb);
+                                          },
+                                        ),
+
+                                      const Padding(
+                                        padding: EdgeInsets.only(bottom: 8.0),
+                                        child: Divider(
+                                          height: 1,
+                                          color: Settings.highlightColor,
+                                        ),
+                                      ),
+
+                                      // Sort Order section
+                                      for (final so in SortOrder.values)
+                                        _buildMenuItem(
+                                          label: StrategyFilterProvider
+                                              .sortOrderLabels[so]!,
+                                          isSelected: filter.sortOrder == so,
+                                          onPressed: () {
+                                            notifier.setSortOrder(so);
+                                          },
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ],
+                            builder: (context, controller, _) {
+                              // Watch the state (not the notifier) so the button rebuilds on change
+                              final sortBy = ref.watch(
+                                strategyFilterProvider.select((s) => s.sortBy),
+                              );
+
+                              // Derive icon + label from the watched state
+                              final label =
+                                  StrategyFilterProvider.sortByLabels[sortBy]!;
+                              final icon = switch (sortBy) {
+                                SortBy.alphabetical => Icons.sort_by_alpha,
+                                SortBy.dateCreated => Icons.calendar_today,
+                                SortBy.dateUpdated => Icons.update,
+                              };
+
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8.0),
+                                child: CustomButton(
+                                  height: 40,
+                                  width: 96,
+                                  isDynamicWidth: true,
+                                  label: label,
+                                  padding: WidgetStateProperty.all(
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 8)),
+                                  backgroundColor: Settings.sideBarColor,
+                                  onPressed: () {
+                                    controller.isOpen
+                                        ? controller.close()
+                                        : controller.open();
+                                  },
+                                  icon: Icon(icon),
+                                ),
+                              );
+                            },
+                          ),
                         ),
                       ],
                     ),
@@ -92,18 +199,37 @@ class FolderContent extends ConsumerWidget {
                       valueListenable: foldersBoxListenable,
                       builder: (context, folderBox, _) {
                         final folders = folderBox.values.toList();
-                        folders.sort(
-                            (a, b) => a.dateCreated.compareTo(b.dateCreated));
 
                         final strategies = strategyBox.values.toList();
-                        strategies.sort(
-                            (a, b) => b.lastEdited.compareTo(a.lastEdited));
 
                         // Filter strategies and folders by the current folder
                         strategies.removeWhere(
                             (strategy) => strategy.folderID != folder?.id);
                         folders.removeWhere(
                             (listFolder) => listFolder.parentID != folder?.id);
+
+                        final filter = ref.watch(strategyFilterProvider);
+
+                        // Pick the comparator once based on sortBy
+                        Comparator<StrategyData> sortByComparator =
+                            switch (filter.sortBy) {
+                          SortBy.alphabetical => (a, b) => a.name
+                              .toLowerCase()
+                              .compareTo(b.name.toLowerCase()),
+                          SortBy.dateCreated => (a, b) =>
+                              a.createdAt.compareTo(b.createdAt),
+                          SortBy.dateUpdated => (a, b) =>
+                              a.lastEdited.compareTo(b.lastEdited),
+                        };
+
+                        final direction =
+                            filter.sortOrder == SortOrder.ascending ? 1 : -1;
+
+                        strategies.sort(
+                          (a, b) => direction * sortByComparator(a, b),
+                        );
+                        folders.sort(
+                            (a, b) => a.dateCreated.compareTo(b.dateCreated));
 
                         List<GridItem> gridItems = [
                           ...folders.map((folder) => FolderItem(folder)),

@@ -91,7 +91,7 @@ class StrategyData extends HiveObject {
     @Deprecated('Use pages instead') StrategySettings? strategySettings,
     // ignore: deprecated_member_use_from_same_package
   })  : strategySettings = strategySettings ?? StrategySettings(),
-        createdAt = createdAt ?? DateTime.now();
+        createdAt = createdAt ?? lastEdited;
 
   StrategyData copyWith({
     String? id,
