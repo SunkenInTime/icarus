@@ -61,6 +61,38 @@ class Settings {
           // ),
         ),
       ),
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          backgroundColor:
+              const WidgetStatePropertyAll<Color>(Settings.sideBarColor),
+          padding: const WidgetStatePropertyAll<EdgeInsets>(EdgeInsets.all(8)),
+          shape: WidgetStatePropertyAll<OutlinedBorder>(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: const BorderSide(color: Settings.highlightColor, width: 2),
+            ),
+          ),
+        ),
+      ),
+      menuButtonTheme: MenuButtonThemeData(
+        style: ButtonStyle(
+          shape: WidgetStateProperty.resolveWith<OutlinedBorder?>(
+            (Set<WidgetState> states) {
+              if (states.contains(WidgetState.hovered)) {
+                return RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: const BorderSide(
+                      color: Settings.highlightColor, width: 2),
+                );
+              }
+              return RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide.none,
+              );
+            },
+          ),
+        ),
+      ),
       dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(22),

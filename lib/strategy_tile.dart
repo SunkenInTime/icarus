@@ -317,10 +317,13 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         padding: const EdgeInsets.all(8.0),
         child: MenuAnchor(
           menuChildren: [
-            _buildMenuItem(
-              icon: Icons.text_fields,
-              label: "Rename",
-              onPressed: () => _showRenameDialog(),
+            Padding(
+              padding: const EdgeInsets.only(top: 8.0),
+              child: _buildMenuItem(
+                icon: Icons.text_fields,
+                label: "Rename",
+                onPressed: () => _showRenameDialog(),
+              ),
             ),
             _buildMenuItem(
               icon: Icons.copy,
@@ -349,7 +352,9 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                   controller.isOpen ? controller.close() : controller.open(),
               icon: const Icon(
                 Icons.more_vert_outlined,
-                shadows: [Shadow(blurRadius: 8)],
+                shadows: [
+                  Shadow(blurRadius: 8),
+                ],
               ),
             );
           },
@@ -364,15 +369,18 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     required VoidCallback onPressed,
     Color? color,
   }) {
-    return MenuItemButton(
-      onPressed: onPressed,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(width: 8),
-          Text(label, style: TextStyle(color: color)),
-        ],
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: MenuItemButton(
+        onPressed: onPressed,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(width: 8),
+            Text(label, style: TextStyle(color: color)),
+          ],
+        ),
       ),
     );
   }

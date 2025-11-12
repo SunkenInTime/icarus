@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 
 class CustomButton extends ConsumerWidget {
   const CustomButton({
@@ -12,6 +13,7 @@ class CustomButton extends ConsumerWidget {
     this.width,
     this.padding,
     this.fontWeight,
+    this.isDynamicWidth = false,
     super.key,
   });
 
@@ -24,16 +26,30 @@ class CustomButton extends ConsumerWidget {
   final Color backgroundColor;
   final FontWeight? fontWeight;
   final WidgetStateProperty<EdgeInsetsGeometry>? padding;
+  final bool isDynamicWidth;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final style = ButtonStyle(
       alignment: Alignment.center,
       padding: padding,
+      // Allow narrow widths when dynamic width is requested
+      minimumSize:
+          isDynamicWidth ? WidgetStateProperty.all(Size(0, height)) : null,
       backgroundColor: WidgetStateProperty.all(backgroundColor),
-      shape: WidgetStateProperty.all(
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8.0),
-        ),
+      shape: WidgetStateProperty.resolveWith<OutlinedBorder>(
+        (Set<WidgetState> states) {
+          if (states.contains(WidgetState.hovered)) {
+            return RoundedRectangleBorder(
+              side:
+                  const BorderSide(color: Colors.deepPurpleAccent, width: 2.0),
+              borderRadius: BorderRadius.circular(8.0),
+            );
+          }
+          return RoundedRectangleBorder(
+            side: const BorderSide(color: Settings.highlightColor, width: 2.0),
+            borderRadius: BorderRadius.circular(8.0),
+          );
+        },
       ),
       overlayColor: WidgetStateProperty.resolveWith<Color?>(
         (Set<WidgetState> states) {
@@ -50,21 +66,24 @@ class CustomButton extends ConsumerWidget {
       style: TextStyle(color: labelColor, fontWeight: fontWeight),
     );
 
+    final button = icon != null
+        ? TextButton.icon(
+            onPressed: onPressed,
+            icon: icon!,
+            label: labelText,
+            style: style,
+          )
+        : TextButton(
+            onPressed: onPressed,
+            style: style,
+            child: labelText,
+          );
+
+    // When dynamic, size to content; otherwise respect explicit width
     return SizedBox(
       height: height,
-      width: width,
-      child: icon != null
-          ? TextButton.icon(
-              onPressed: onPressed,
-              icon: icon!,
-              label: labelText,
-              style: style,
-            )
-          : TextButton(
-              onPressed: onPressed,
-              style: style,
-              child: labelText,
-            ),
+      width: isDynamicWidth ? null : width,
+      child: isDynamicWidth ? IntrinsicWidth(child: button) : button,
     );
   }
 }
