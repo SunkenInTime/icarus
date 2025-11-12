@@ -27,6 +27,7 @@ class SearchTextField extends ConsumerStatefulWidget {
     this.duration = const Duration(milliseconds: 250),
     this.curve = Curves.easeOutCubic,
     this.compact = false,
+    this.onChanged,
   });
 
   final TextEditingController? controller;
@@ -37,14 +38,28 @@ class SearchTextField extends ConsumerStatefulWidget {
   final Duration duration;
   final Curve curve;
   final bool compact;
-
+  final ValueChanged<String>? onChanged;
   @override
   ConsumerState<SearchTextField> createState() => _SearchTextFieldState();
 }
 
+/// Manages the search text for the strategy browser.
+final strategySearchQueryProvider =
+    AutoDisposeNotifierProvider<StrategySearchQueryNotifier, String>(
+        StrategySearchQueryNotifier.new);
+
+class StrategySearchQueryNotifier extends AutoDisposeNotifier<String> {
+  @override
+  String build() => "";
+
+  void update(String value) {
+    if (value == state) return;
+    state = value;
+  }
+}
+
 class _SearchTextFieldState extends ConsumerState<SearchTextField> {
-  late final TextEditingController _controller =
-      widget.controller ?? TextEditingController();
+  late final TextEditingController _controller = TextEditingController();
   late final FocusNode _focusNode = FocusNode();
   bool _hovering = false;
 
@@ -59,6 +74,7 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
   }
 
   void _handleTextChanged() {
+    ref.read(strategySearchQueryProvider.notifier).update(_controller.text);
     // Expansion depends on whether text is empty; trigger rebuild.
     setState(() {});
   }
@@ -79,6 +95,7 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
   }
 
   void _clear() {
+    ref.read(strategySearchQueryProvider.notifier).update("");
     _controller.clear();
     // After clearing, collapse if not hovering (will rebuild).
     setState(() {});
@@ -120,6 +137,9 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
       controller: _controller,
       focusNode: _focusNode,
       textInputAction: TextInputAction.search,
+      // onChanged: (String value) {
+      //   ref.read(strategySearchQueryProvider.notifier).update(value);
+      // },
       onSubmitted: widget.onSubmitted,
       style: textStyle,
       cursorColor: Settings.highlightColor,

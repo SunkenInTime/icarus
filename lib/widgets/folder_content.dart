@@ -29,6 +29,8 @@ class FolderContent extends ConsumerWidget {
     return Hive.box<Folder>(HiveBoxNames.foldersBox).listenable();
   });
 
+  final TextEditingController searchController = TextEditingController();
+
   Widget _buildMenuItem({
     required String label,
     required VoidCallback onPressed,
@@ -81,14 +83,15 @@ class FolderContent extends ConsumerWidget {
                     Row(
                       spacing: 8,
                       children: [
-                        CustomButton(
-                          height: 40,
-                          width: 96,
-                          label: "Filter",
-                          backgroundColor: Settings.sideBarColor,
-                          onPressed: () {},
-                          icon: const Icon(Icons.filter_alt),
-                        ),
+                        //TODO: Implement filter button
+                        // CustomButton(
+                        //   height: 40,
+                        //   width: 96,
+                        //   label: "Filter",
+                        //   backgroundColor: Settings.sideBarColor,
+                        //   onPressed: () {},
+                        //   icon: const Icon(Icons.filter_alt),
+                        // ),
                         Padding(
                           padding: const EdgeInsets.only(top: 8.0),
                           child: MenuAnchor(
@@ -179,12 +182,14 @@ class FolderContent extends ConsumerWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(
+                    SizedBox(
                       height: 40,
                       child: SearchTextField(
+                        controller: searchController,
                         collapsedWidth: 40,
                         expandedWidth: 250,
                         compact: true,
+                        onChanged: (value) {},
                       ),
                     ),
                   ],
@@ -202,12 +207,21 @@ class FolderContent extends ConsumerWidget {
 
                         final strategies = strategyBox.values.toList();
 
+                      final search = ref.watch(strategySearchQueryProvider).trim().toLowerCase();
                         // Filter strategies and folders by the current folder
                         strategies.removeWhere(
                             (strategy) => strategy.folderID != folder?.id);
                         folders.removeWhere(
                             (listFolder) => listFolder.parentID != folder?.id);
 
+                        if (search.isNotEmpty) {
+                          strategies.retainWhere(
+                            (strategy) => strategy.name.toLowerCase().contains(search),
+                          );
+                          folders.retainWhere(
+                            (listFolder) => listFolder.name.toLowerCase().contains(search),
+                          );
+                        }
                         final filter = ref.watch(strategyFilterProvider);
 
                         // Pick the comparator once based on sortBy
