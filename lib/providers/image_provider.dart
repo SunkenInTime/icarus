@@ -247,8 +247,7 @@ class ImageProvider extends Notifier<ImageState> {
     return jsonEncode(jsonList);
   }
 
-  static Future<String> objectToJson(
-      List<PlacedImage> images, String strategyID) async {
+  static String objectToJson(List<PlacedImage> images, String strategyID) {
     final List<Map<String, dynamic>> jsonList =
         images.map((image) => image.toJson()).toList();
 

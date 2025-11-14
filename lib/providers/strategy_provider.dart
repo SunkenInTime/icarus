@@ -850,61 +850,138 @@ class StrategyProvider extends Notifier<StrategyState> {
     return newStrategy.id;
   }
 
-  Future<void> exportFile(String id) async {
-    await forceSaveNow(id);
+  //Get all of the stratgies in the folder
+  // Stop if there's nothing there
+  // Call export and get the individual files
+  // and then we put them all into one massive zip file
 
+  Future<void> exportFolder(String folderID) async {
+    final folder = Hive.box<Folder>(HiveBoxNames.foldersBox).get(folderID);
+    if (folder == null) {
+      log("Couldn't find folder to export");
+      return;
+    }
+
+    final directoryToZip =
+        await Directory.systemTemp.createTemp('strategy_export');
+
+    try {
+      await zipFolder(directoryToZip, folderID);
+
+      final outputFile = await FilePicker.platform.saveFile(
+        type: FileType.custom,
+        dialogTitle: 'Please select an output file:',
+        fileName: "${sanitizeFileName(folder.name)}.zip",
+        allowedExtensions: ['zip'], // no leading dot
+      );
+
+      if (outputFile == null) return;
+
+      final encoder = ZipFileEncoder();
+      encoder.create(outputFile);
+      await encoder.addDirectory(directoryToZip, includeDirName: false);
+      await encoder.close();
+    } finally {
+      // Best-effort cleanup
+      try {
+        await directoryToZip.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> zipFolder(Directory directoryToZip, String folderID) async {
+    final Folder? currentFolder =
+        ref.read(folderProvider.notifier).findFolderByID(folderID);
+    if (currentFolder == null) return;
+    final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+        .values
+        .where((strategy) => strategy.folderID == folderID)
+        .toList();
+
+    final subFolders =
+        ref.read(folderProvider.notifier).findFolderChildren(folderID);
+    final sanitizedName = sanitizeFileName(currentFolder.name);
+    Directory folderExportDirectory =
+        Directory(path.join(directoryToZip.path, sanitizedName));
+    int counter = 1;
+    while (await folderExportDirectory.exists()) {
+      folderExportDirectory = Directory(
+          path.join(directoryToZip.path, "${sanitizedName}_$counter"));
+      counter++;
+    }
+
+    // Create the folder
+    await folderExportDirectory.create(recursive: true);
+
+    // Export each strategy
+    for (final strategy in strategies) {
+      await zipStrategy(id: strategy.id, saveDir: folderExportDirectory);
+    }
+
+    for (final subFolder in subFolders) {
+      await zipFolder(folderExportDirectory, subFolder.id);
+    }
+  }
+
+  static String sanitizeFileName(String input) {
+    final sanitized = input.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
+    return sanitized.isEmpty ? 'untitled' : sanitized;
+  }
+
+  Future<void> zipStrategy({
+    required String id,
+    Directory? saveDir, // used when outputFilePath is not provided
+    String? outputFilePath, // exact .ica path from FilePicker
+  }) async {
     final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
     if (strategy == null) {
       log("Couldn't find strategy to export");
       return;
     }
 
-    String pageJson;
+    final pages = strategy.pages.map((p) => p.toJson(strategy.id)).toList();
+    final pageJson = jsonEncode(pages);
+    final data = '''
+                  {
+                  "versionNumber": "${Settings.versionNumber}",
+                  "mapData": ${ref.read(mapProvider.notifier).toJson()},
+                  "settingsData":${ref.read(strategySettingsProvider.notifier).toJson()},
+                  "isAttack": "${ref.read(mapProvider).isAttack.toString()}",
+                  "pages": $pageJson
+                  }
+                ''';
 
-    final pages = await Future.wait(
-      strategy.pages.map((page) => page.toJson(strategy.id)),
-    );
+    final sanitizedStrategyName = sanitizeFileName(strategy.name);
 
-    // Now pages is List<Map<String, dynamic>>
-    pageJson = jsonEncode(pages);
-
-    // Json has no trailing commas
-    //
-
-    //TODO: Awful implmentation
-    String data = '''
-                {
-                "versionNumber": "${Settings.versionNumber}",
-                "mapData": ${ref.read(mapProvider.notifier).toJson()},
-                "settingsData":${ref.read(strategySettingsProvider.notifier).toJson()},
-                "isAttack": "${ref.read(mapProvider).isAttack.toString()}",
-                "pages": $pageJson
-                }
-              ''';
-
-    // final Uint8List bytes = Uint8List.fromList(utf8.encode(data));
+    // Resolve output path and base name
+    late final String outPath;
+    late final String archiveBase;
+    if (outputFilePath != null) {
+      outPath = outputFilePath;
+      archiveBase = path.basenameWithoutExtension(outPath);
+    } else {
+      final base = sanitizedStrategyName;
+      var candidate = base;
+      var n = 1;
+      while (File(path.join(saveDir!.path, "$candidate.ica")).existsSync()) {
+        candidate = "${base}_$n";
+        n++;
+      }
+      archiveBase = candidate;
+      outPath = path.join(saveDir!.path, "$archiveBase.ica");
+    }
 
     final jsonArchiveFile =
-        ArchiveFile.bytes("${strategy.name}.json", utf8.encode(data));
+        ArchiveFile.bytes("$archiveBase.json", utf8.encode(data));
 
-    final outputFile = await FilePicker.platform.saveFile(
-      type: FileType.custom,
-      dialogTitle: 'Please select an output file:',
-      fileName: "${state.stratName ?? "new strategy"}.ica",
-      allowedExtensions: [".ica"],
-    );
+    final zipEncoder = ZipFileEncoder()..create(outPath);
 
-    if (outputFile == null) return;
-
-    final zipEncoder = ZipFileEncoder()..create(outputFile);
-
-    final directory = await getApplicationSupportDirectory();
-    final customDirectory = Directory(path.join(directory.path, strategy.id));
-    final filePath = path.join(customDirectory.path, 'images');
-    final imagesDirectory = Directory(filePath);
-
-    // Nothing to zip if the directory doesn't exist
-    if (!await imagesDirectory.exists()) return;
+    final supportDirectory = await getApplicationSupportDirectory();
+    final customDirectory =
+        Directory(path.join(supportDirectory.path, strategy.id));
+    final imagesDirectory =
+        Directory(path.join(customDirectory.path, 'images'));
+    await imagesDirectory.create(recursive: true);
 
     await for (final entity in imagesDirectory.list()) {
       if (entity is File) {
@@ -914,10 +991,20 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     zipEncoder.addArchiveFile(jsonArchiveFile);
     await zipEncoder.close();
+  }
 
-    // file = File(outputFile);
+  Future<void> exportFile(String id) async {
+    await forceSaveNow(id);
 
-    // state = state.copyWith(fileName: file.path, isSaved: true);
+    final outputFile = await FilePicker.platform.saveFile(
+      type: FileType.custom,
+      dialogTitle: 'Please select an output file:',
+      fileName: "${state.stratName ?? "new strategy"}.ica",
+      allowedExtensions: [".ica"],
+    );
+
+    if (outputFile == null) return;
+    await zipStrategy(id: id, outputFilePath: outputFile);
   }
 
   Future<void> renameStrategy(String strategyID, String newName) async {

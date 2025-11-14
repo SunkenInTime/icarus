@@ -77,9 +77,9 @@ class StrategyPage extends HiveObject {
     );
   }
 
-  Future<Map<String, dynamic>> toJson(String strategyID) async {
+  Map<String, dynamic> toJson(String strategyID) {
     String fetchedImageData =
-        kIsWeb ? "[]" : await ImageProvider.objectToJson(imageData, strategyID);
+        kIsWeb ? "[]" : ImageProvider.objectToJson(imageData, strategyID);
     String data = '''
                {
                "id": "$id",
