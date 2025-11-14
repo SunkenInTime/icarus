@@ -50,6 +50,28 @@ class _FolderTileState extends ConsumerState<FolderTile>
     super.dispose();
   }
 
+  Widget _buildMenuItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    Color? color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: MenuItemButton(
+        onPressed: onPressed,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(width: 8),
+            Text(label, style: TextStyle(color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -148,7 +170,12 @@ class _FolderTileState extends ConsumerState<FolderTile>
                                   const EdgeInsets.symmetric(horizontal: 8.0),
                               child: MenuAnchor(
                                 menuChildren: [
-                                  MenuItemButton(
+                                  const SizedBox(
+                                    height: 8,
+                                  ),
+                                  _buildMenuItem(
+                                    icon: Icons.text_fields,
+                                    label: "Edit",
                                     onPressed: () async {
                                       if (widget.isDemo) return;
 
@@ -160,33 +187,19 @@ class _FolderTileState extends ConsumerState<FolderTile>
                                           );
                                         },
                                       );
-                                      // await showDialog(
-                                      //   context: context,
-                                      //   builder: (context) {
-                                      //     return RenameStrategyDialog(
-                                      //       strategyId: widget.strategyData.id,
-                                      //       currentName: widget.strategyData.name,
-                                      //     );
-                                      //   },
-                                      // );
-
-                                      // await ref.read(strategyProvider.notifier).
                                     },
-                                    child: const Row(
-                                      children: [
-                                        Icon(
-                                          Icons.text_fields,
-                                        ),
-                                        SizedBox(
-                                          width: 2,
-                                        ),
-                                        Text(
-                                          "Edit",
-                                        )
-                                      ],
-                                    ),
                                   ),
-                                  MenuItemButton(
+                                  _buildMenuItem(
+                                      icon: Icons.file_upload,
+                                      label: "Export",
+                                      onPressed: () async {
+                                        await ref
+                                            .read(strategyProvider.notifier)
+                                            .exportFolder(widget.folder.id);
+                                      }),
+                                  _buildMenuItem(
+                                    icon: Icons.delete,
+                                    label: "Delete",
                                     onPressed: () async {
                                       ConfirmAlertDialog.show(
                                               context: context,
@@ -206,22 +219,7 @@ class _FolderTileState extends ConsumerState<FolderTile>
                                         }
                                       });
                                     },
-                                    child: const Row(
-                                      children: [
-                                        Icon(
-                                          Icons.delete,
-                                          color: Colors.redAccent,
-                                        ),
-                                        SizedBox(
-                                          width: 2,
-                                        ),
-                                        Text(
-                                          "Delete",
-                                          style: TextStyle(
-                                              color: Colors.redAccent),
-                                        )
-                                      ],
-                                    ),
+                                    color: Colors.red,
                                   ),
                                 ],
                                 builder: (context, controller, child) {

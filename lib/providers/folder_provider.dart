@@ -160,6 +160,15 @@ class FolderProvider extends Notifier<String?> {
     return pathIDs;
   }
 
+  // I want to be able
+
+  List<Folder> findFolderChildren(String id) {
+    return Hive.box<Folder>(HiveBoxNames.foldersBox)
+        .values
+        .where((f) => f.parentID == id)
+        .toList();
+  }
+
   Folder? findFolderByID(String id) {
     return Hive.box<Folder>(HiveBoxNames.foldersBox).get(id);
   }
