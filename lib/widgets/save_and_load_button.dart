@@ -109,6 +109,15 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 return;
               }
               final newController = ScreenshotController();
+              final currentPageID =
+                  ref.read(strategyProvider.notifier).activePageID;
+
+              if (currentPageID == null) return;
+
+              final activePage = newStrat.pages.firstWhere(
+                (p) => p.id == currentPageID,
+                orElse: () => newStrat.pages.first,
+              );
 
               try {
                 final image = await newController.captureFromWidget(
@@ -121,15 +130,15 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                         theme: Settings.appTheme,
                         debugShowCheckedModeBanner: false,
                         home: ScreenshotView(
-                            isAttack: newStrat.isAttack,
+                            isAttack: activePage.isAttack,
                             mapValue: newStrat.mapData,
-                            agents: newStrat.agentData,
-                            abilities: newStrat.abilityData,
-                            text: newStrat.textData,
-                            images: newStrat.imageData,
-                            drawings: newStrat.drawingData,
-                            utilities: newStrat.utilityData,
-                            strategySettings: newStrat.strategySettings,
+                            agents: activePage.agentData,
+                            abilities: activePage.abilityData,
+                            text: activePage.textData,
+                            images: activePage.imageData,
+                            drawings: activePage.drawingData,
+                            utilities: activePage.utilityData,
+                            strategySettings: activePage.settings,
                             strategyState: ref.read(strategyProvider)),
                       ),
                     ),
