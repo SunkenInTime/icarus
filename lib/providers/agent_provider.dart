@@ -183,31 +183,16 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
   void switchSides() {
     if (state.isEmpty) return;
 
-    final coordinateSystem = CoordinateSystem.instance;
-    final agentSizeSetting = ref.read(strategySettingsProvider).agentSize;
-
-    // Convert screen-pixel agent size into normalized coordinate units.
-    // The agent widget is square in screen pixels, but the normalized space
-    // has a different aspect ratio, so wNorm and hNorm may differ.
-    final agentScreenPx = coordinateSystem.scale(agentSizeSetting);
-    final wNorm = (agentScreenPx / coordinateSystem.effectiveSize.width) *
-        coordinateSystem.normalizedWidth;
-    final hNorm = (agentScreenPx / coordinateSystem.effectiveSize.height) *
-        coordinateSystem.normalizedHeight;
-
-    final newState = <PlacedAgent>[];
-
-    for (final agent in state) {
+    final newState = [...state];
+    for (final agent in newState) {
       // Flip over both axes, accounting for top-left positioning:
       // x' = normalizedWidth  - x - wNorm
       // y' = normalizedHeight - y - hNorm
-      final flippedX =
-          coordinateSystem.normalizedWidth - agent.position.dx - wNorm;
-      final flippedY =
-          coordinateSystem.normalizedHeight - agent.position.dy - hNorm;
+      agent.switchSides(ref.read(strategySettingsProvider).agentSize);
+    }
 
-      agent.position = Offset(flippedX, flippedY);
-      newState.add(agent);
+    for (final agent in poppedAgents) {
+      agent.switchSides(ref.read(strategySettingsProvider).agentSize);
     }
 
     state = newState;

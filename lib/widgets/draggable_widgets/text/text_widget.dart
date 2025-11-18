@@ -10,13 +10,13 @@ class TextWidget extends ConsumerStatefulWidget {
   const TextWidget({
     super.key,
     required this.text,
-    this.isDragged,
+    this.isFeedback = false,
     required this.id,
     required this.size,
   });
   final double size;
   final String text;
-  final bool? isDragged;
+  final bool isFeedback;
   final String id;
   @override
   ConsumerState<ConsumerStatefulWidget> createState() => _TextWidgetState();
@@ -30,6 +30,7 @@ class _TextWidgetState extends ConsumerState<TextWidget> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+      if (widget.isFeedback == true) return;
       RenderObject? renderObject = context.findRenderObject();
       RenderBox? renderBox = renderObject as RenderBox;
       double height = renderBox.size.height;

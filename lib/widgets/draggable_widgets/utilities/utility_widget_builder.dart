@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
 class UtilityWidgetBuilder extends ConsumerStatefulWidget {
@@ -28,6 +29,8 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
   @override
   Widget build(BuildContext context) {
     return Draggable<PlacedUtility>(
+      dragAnchorStrategy:
+          ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
       data: widget.utility,
       // feedback:widget.data
       childWhenDragging: const SizedBox.shrink(),
@@ -42,10 +45,8 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
       onDragEnd: (details) {
         widget.onDragEnd(details);
       },
-      child: ZoomTransform(
-        child: UtilityData.utilityWidgets[widget.utility.type]!
-            .createWidget(id: widget.id),
-      ),
+      child: UtilityData.utilityWidgets[widget.utility.type]!
+          .createWidget(id: widget.id),
     );
   }
 }

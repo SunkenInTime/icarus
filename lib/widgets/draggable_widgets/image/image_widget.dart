@@ -153,6 +153,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+      if (widget.isFeedback) return;
       RenderObject? renderObject = context.findRenderObject();
       RenderBox? renderBox = renderObject as RenderBox;
       // if (renderBox == null) return;
@@ -200,6 +201,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
       },
       child: NotificationListener<SizeChangedLayoutNotification>(
         onNotification: (notification) {
+          if (widget.isFeedback) return true;
           RenderObject? renderObject = context.findRenderObject();
           RenderBox? renderBox = renderObject as RenderBox;
           double height = renderBox.size.height;
