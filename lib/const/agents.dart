@@ -421,7 +421,7 @@ class AgentData implements DraggableData {
 
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
-        size: 4.5,
+        size: 5.5,
         outlineColor: const Color(0xFF6A0EB6),
         hasCenterDot: true,
       );
