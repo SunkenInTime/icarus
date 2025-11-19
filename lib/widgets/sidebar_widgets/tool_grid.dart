@@ -11,6 +11,7 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/custom_expansion_tile.dart';
+import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/sidebar_widgets/delete_options.dart';
 import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
 import 'package:uuid/uuid.dart';
@@ -153,6 +154,28 @@ class ToolGrid extends ConsumerWidget {
                   // showImageDialog();
                 },
                 icon: const Icon(Icons.image_outlined),
+              ),
+              IconButton(
+                tooltip: "Add Line up",
+                onPressed: () async {
+                  if (kIsWeb) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'This feature is only supported in the Windows version.',
+                        ),
+                      ),
+                    );
+                    return;
+                  }
+                  showDialog(
+                    context: context,
+                    builder: (dialogContext) {
+                      return const CreateLineupDialog();
+                    },
+                  );
+                },
+                icon: const Icon(Icons.abc),
               ),
             ],
           ),

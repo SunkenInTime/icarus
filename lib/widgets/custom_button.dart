@@ -14,6 +14,7 @@ class CustomButton extends ConsumerWidget {
     this.padding,
     this.fontWeight,
     this.isDynamicWidth = false,
+    this.isIconRight = false,
     super.key,
   });
 
@@ -27,6 +28,7 @@ class CustomButton extends ConsumerWidget {
   final FontWeight? fontWeight;
   final WidgetStateProperty<EdgeInsetsGeometry>? padding;
   final bool isDynamicWidth;
+  final bool isIconRight;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final style = ButtonStyle(
@@ -67,11 +69,16 @@ class CustomButton extends ConsumerWidget {
     );
 
     final button = icon != null
-        ? TextButton.icon(
+        ? TextButton(
             onPressed: onPressed,
-            icon: icon!,
-            label: labelText,
             style: style,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: isIconRight
+                  ? [labelText, const SizedBox(width: 8), icon!]
+                  : [icon!, const SizedBox(width: 8), labelText],
+            ),
           )
         : TextButton(
             onPressed: onPressed,
