@@ -34,9 +34,73 @@ class LineUp extends HiveObject {
   }
 }
 
-class LineUpProvider extends Notifier<List<LineUp>> {
+class LineUpState {
+  final List<LineUp> lineUps;
+  final PlacedAgent? currentAgent;
+  final PlacedAbility? currentAbility;
+  final String? currentYoutubeLink;
+  final List<String>? currentImageIDs;
+
+  LineUpState({
+    this.currentAgent,
+    this.currentAbility,
+    this.currentYoutubeLink,
+    this.currentImageIDs,
+    required this.lineUps,
+  });
+
+  LineUpState copyWith({
+    List<LineUp>? lineUps,
+    PlacedAgent? currentAgent,
+    PlacedAbility? currentAbility,
+    String? currentYoutubeLink,
+    List<String>? currentImageIDs,
+  }) {
+    return LineUpState(
+      lineUps: lineUps ?? List<LineUp>.from(this.lineUps),
+      currentAgent: currentAgent ?? this.currentAgent,
+      currentAbility: currentAbility ?? this.currentAbility,
+      currentYoutubeLink: currentYoutubeLink ?? this.currentYoutubeLink,
+      currentImageIDs: currentImageIDs ??
+          (this.currentImageIDs != null
+              ? List<String>.from(this.currentImageIDs!)
+              : null),
+    );
+  }
+}
+
+class LineUpProvider extends Notifier<LineUpState> {
   @override
-  List<LineUp> build() {
-    return [];
+  LineUpState build() {
+    return LineUpState(lineUps: []);
+  }
+
+  void addLineUp(LineUp lineUp) {
+    state = state.copyWith(
+      lineUps: [...state.lineUps, lineUp],
+    );
+  }
+
+  void setAgent(PlacedAgent agent) {
+    state = state.copyWith(currentAgent: agent);
+  }
+
+  void setAbility(PlacedAbility ability) {
+    if (state.currentAgent == null) return;
+    state = state.copyWith(currentAbility: ability);
+  }
+
+  void setYoutubeLink(String youtubeLink) {
+    if (state.currentAgent == null) return;
+    state = state.copyWith(currentYoutubeLink: youtubeLink);
+  }
+
+  void setImageIDs(List<String> imageIDs) {
+    if (state.currentAgent == null) return;
+    state = state.copyWith(currentImageIDs: imageIDs);
+  }
+
+  void removeLineUp(String id) {
+    // state = state.where((lineUp) => lineUp.id != id).toList();
   }
 }

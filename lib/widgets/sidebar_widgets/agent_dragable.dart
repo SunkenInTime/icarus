@@ -18,52 +18,43 @@ class AgentDragable extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
-    return Padding(
-      padding: const EdgeInsets.all(1.0),
-      child: Center(
-        child: SizedBox(
-          child: IgnorePointer(
-            ignoring:
-                ref.watch(interactionStateProvider) == InteractionState.drag,
-            child: Draggable(
-              data: agent,
-              onDragStarted: () {
-                ref
-                    .read(interactionStateProvider.notifier)
-                    .update(InteractionState.drag);
-              },
-              onDraggableCanceled: (velocity, offset) {
-                ref
-                    .read(interactionStateProvider.notifier)
-                    .update(InteractionState.navigation);
-              },
-              onDragCompleted: () {
-                ref
-                    .read(interactionStateProvider.notifier)
-                    .update(InteractionState.navigation);
-              },
-              feedback: Opacity(
-                opacity: Settings.feedbackOpacity,
-                child: ZoomTransform(child: AgentFeedback(agent: agent)),
-              ),
-              dragAnchorStrategy: (draggable, context, position) => Offset(
-                (agentSize / 2),
-                (agentSize / 2),
-              ).scale(
-                  ref.read(screenZoomProvider), ref.read(screenZoomProvider)),
-              child: RepaintBoundary(
-                child: InkWell(
-                  onTap: () {
-                    ref.read(abilityBarProvider.notifier).updateData(agent);
-                  },
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: Image.asset(
-                      agent.iconPath,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
+    return IgnorePointer(
+      ignoring: ref.watch(interactionStateProvider) == InteractionState.drag,
+      child: Draggable(
+        data: agent,
+        onDragStarted: () {
+          ref
+              .read(interactionStateProvider.notifier)
+              .update(InteractionState.drag);
+        },
+        onDraggableCanceled: (velocity, offset) {
+          ref
+              .read(interactionStateProvider.notifier)
+              .update(InteractionState.navigation);
+        },
+        onDragCompleted: () {
+          ref
+              .read(interactionStateProvider.notifier)
+              .update(InteractionState.navigation);
+        },
+        feedback: Opacity(
+          opacity: Settings.feedbackOpacity,
+          child: ZoomTransform(child: AgentFeedback(agent: agent)),
+        ),
+        dragAnchorStrategy: (draggable, context, position) => Offset(
+          (agentSize / 2),
+          (agentSize / 2),
+        ).scale(ref.read(screenZoomProvider), ref.read(screenZoomProvider)),
+        child: RepaintBoundary(
+          child: InkWell(
+            onTap: () {
+              ref.read(abilityBarProvider.notifier).updateData(agent);
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.asset(
+                agent.iconPath,
+                fit: BoxFit.cover,
               ),
             ),
           ),

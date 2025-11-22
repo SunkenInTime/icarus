@@ -105,9 +105,9 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                                     gridDelegate:
                                         const SliverGridDelegateWithFixedCrossAxisCount(
                                       crossAxisCount: 4,
-                                      mainAxisExtent: 100,
-                                      crossAxisSpacing: 4,
-                                      mainAxisSpacing: 15,
+                                      // mainAxisExtent: 100,
+                                      crossAxisSpacing: 8,
+                                      mainAxisSpacing: 8,
                                     ),
                                     controller: gridScrollController,
                                     // padding: const EdgeInsets.only(right: 8),
