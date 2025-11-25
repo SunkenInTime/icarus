@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/line_proiveder.dart';
 import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
@@ -19,6 +21,22 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   AgentData? _selectedAgent;
   AbilityInfo? _selectedAbility;
   final TextEditingController _youtubeLinkController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    final state = ref.read(lineUpProvider);
+    if (state.currentAgent != null) {
+      try {
+        _selectedAgent = AgentData.agents[state.currentAgent!.type];
+      } catch (e) {
+        // Handle case where agent is not found
+      }
+    }
+    if (state.currentAbility != null) {
+      _selectedAbility = state.currentAbility!.data;
+    }
+  }
 
   @override
   void dispose() {
@@ -68,12 +86,41 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                   onAgentSelected: (agent) {
                     setState(() {
                       _selectedAgent = agent;
+
+                      PlacedAgent placedAgent = PlacedAgent(
+                        type: agent.type,
+                        isAlly: true,
+                        position: Offset.zero,
+                        id: "",
+                      );
+                      ref.read(lineUpProvider.notifier).setAgent(placedAgent);
+                      ref.read(lineUpProvider.notifier).setSelectingPosition(
+                            true,
+                            type: PlacingType.agent,
+                          );
+                      Navigator.of(context).pop();
+
                       _selectedAbility = null;
                     });
                   },
                   onAbilitySelected: (ability) {
                     setState(() {
                       _selectedAbility = ability;
+
+                      final  placedAbility = PlacedAbility(
+                        data: ability,
+                        position: Offset.zero,
+                        id: "",
+                      );
+
+                      ref
+                          .read(lineUpProvider.notifier)
+                          .setAbility(placedAbility);
+                      ref.read(lineUpProvider.notifier).setSelectingPosition(
+                            true,
+                            type: PlacingType.ability,
+                      );
+                      Navigator.of(context).pop();
                     });
                   },
                 )
@@ -104,7 +151,21 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
               ),
               const SizedBox(width: 16),
             ],
-            if (_currentPage == 0)
+            if (_currentPage == 0) ...[
+              // CustomButton(
+              //   onPressed: isNextEnabled
+              //       ? () {
+
+              //         }
+              //       : null,
+              //   height: 40,
+              //   width: 140,
+              //   label: "Set Position",
+              //   icon: const Icon(Icons.location_on, color: Colors.white),
+              //   backgroundColor:
+              //       isNextEnabled ? Colors.blue : Colors.grey.withOpacity(0.3),
+              // ),
+              const SizedBox(width: 16),
               AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 child: CustomButton(
@@ -120,8 +181,8 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                       : Colors.grey.withOpacity(0.3),
                   labelColor: isNextEnabled ? Colors.white : Colors.white38,
                 ),
-              )
-            else
+              ),
+            ] else
               CustomButton(
                 onPressed: () {
                   // TODO: Implement creation logic

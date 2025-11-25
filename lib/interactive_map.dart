@@ -8,16 +8,16 @@ import 'package:flutter_svg/svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
-
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/dot_painter.dart';
-
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
+import 'package:icarus/widgets/lineup_position_widget.dart';
+import 'package:icarus/const/line_proiveder.dart';
 
 class InteractiveMap extends ConsumerStatefulWidget {
   const InteractiveMap({
@@ -127,6 +127,10 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                   Positioned.fill(
                     child: InteractivePainter(),
                   ),
+                  if (ref.watch(lineUpProvider).isSelectingPosition)
+                    Positioned.fill(
+                      child: LineupPositionWidget(),
+                    ),
                 ],
               ),
             ),
