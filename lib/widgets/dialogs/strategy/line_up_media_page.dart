@@ -1,3 +1,5 @@
+import 'dart:io' show File;
+
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
@@ -105,13 +107,14 @@ class _LineupMediaPageState extends State<LineupMediaPage> {
   }
 
   Widget _buildImageTile(int index) {
+    final file = File(widget.imagePaths[index]);
     return Stack(
       children: [
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
             image: DecorationImage(
-              image: AssetImage(widget.imagePaths[index]), // Placeholder
+              image: FileImage(file), // Placeholder
               fit: BoxFit.cover,
             ),
           ),

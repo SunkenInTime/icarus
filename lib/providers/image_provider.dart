@@ -17,7 +17,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 final placedImageProvider =
-    NotifierProvider<ImageProvider, ImageState>(ImageProvider.new);
+    NotifierProvider<PlacedImageProvider, ImageState>(PlacedImageProvider.new);
 
 class ImageState {
   ImageState({
@@ -35,7 +35,7 @@ class ImageState {
   }
 }
 
-class ImageProvider extends Notifier<ImageState> {
+class PlacedImageProvider extends Notifier<ImageState> {
   List<PlacedImage> poppedImages = [];
 
   @override

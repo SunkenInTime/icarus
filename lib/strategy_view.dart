@@ -13,7 +13,7 @@ import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/page_chips.dart';
 import 'package:icarus/widgets/save_and_load_button.dart';
-import 'package:icarus/const/line_proiveder.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 
 import 'package:url_launcher/url_launcher.dart';

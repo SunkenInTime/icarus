@@ -8,7 +8,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/image_provider.dart' as PlacedImageProvider;
+import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
@@ -68,7 +68,7 @@ class StrategyPage extends HiveObject {
       textData: TextProvider.fromJson(TextProvider.objectToJson(
         textData ?? this.textData,
       )),
-      imageData: ImageProvider.deepCopyWith(imageData ?? this.imageData),
+      imageData: PlacedImageProvider.deepCopyWith(imageData ?? this.imageData),
       utilityData: UtilityProvider.fromJson(UtilityProvider.objectToJson(
         utilityData ?? this.utilityData,
       )),
@@ -79,7 +79,7 @@ class StrategyPage extends HiveObject {
 
   Map<String, dynamic> toJson(String strategyID) {
     String fetchedImageData =
-        kIsWeb ? "[]" : ImageProvider.objectToJson(imageData, strategyID);
+        kIsWeb ? "[]" : PlacedImageProvider.objectToJson(imageData, strategyID);
     String data = '''
                {
                "id": "$id",
@@ -127,10 +127,10 @@ class StrategyPage extends HiveObject {
 
     if (!kIsWeb) {
       if (isZip) {
-        imageData = await ImageProvider.fromJson(
+        imageData = await PlacedImageProvider.fromJson(
             jsonString: jsonEncode(json['imageData']), strategyID: strategyID);
       } else {
-        imageData = await PlacedImageProvider.ImageProvider.legacyFromJson(
+        imageData = await PlacedImageProvider.legacyFromJson(
             jsonString: jsonEncode(json["imageData"] ?? []),
             strategyID: strategyID);
       }

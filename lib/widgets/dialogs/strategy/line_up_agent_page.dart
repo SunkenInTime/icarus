@@ -2,13 +2,13 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:flutter/material.dart';
 
-class LineupSelectionPage extends StatelessWidget {
+class LineUpAgentPage extends StatelessWidget {
   final AgentData? selectedAgent;
   final AbilityInfo? selectedAbility;
   final ValueChanged<AgentData> onAgentSelected;
   final ValueChanged<AbilityInfo> onAbilitySelected;
 
-  const LineupSelectionPage({
+  const LineUpAgentPage({
     super.key,
     required this.selectedAgent,
     required this.selectedAbility,

@@ -1,13 +1,21 @@
+import 'dart:io' show Directory;
+import 'dart:typed_data' show Uint8List;
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/line_proiveder.dart';
+import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
+import 'package:icarus/widgets/dialogs/strategy/line_up_agent_page.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
-import 'package:icarus/widgets/dialogs/strategy/line_up_selection.dart';
+import 'package:path/path.dart' as path;
+import 'package:uuid/uuid.dart';
 
 class CreateLineupDialog extends ConsumerStatefulWidget {
   const CreateLineupDialog({super.key});
@@ -21,7 +29,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   AgentData? _selectedAgent;
   AbilityInfo? _selectedAbility;
   final TextEditingController _youtubeLinkController = TextEditingController();
-
+  final List<String> _imagePaths = [];
   @override
   void initState() {
     super.initState();
@@ -80,7 +88,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
             return FadeTransition(opacity: animation, child: child);
           },
           child: _currentPage == 0
-              ? LineupSelectionPage(
+              ? LineUpAgentPage(
                   selectedAgent: _selectedAgent,
                   selectedAbility: _selectedAbility,
                   onAgentSelected: (agent) {
@@ -107,7 +115,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                     setState(() {
                       _selectedAbility = ability;
 
-                      final  placedAbility = PlacedAbility(
+                      final placedAbility = PlacedAbility(
                         data: ability,
                         position: Offset.zero,
                         id: "",
@@ -119,20 +127,48 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                       ref.read(lineUpProvider.notifier).setSelectingPosition(
                             true,
                             type: PlacingType.ability,
-                      );
+                          );
                       Navigator.of(context).pop();
                     });
                   },
                 )
               : LineupMediaPage(
                   youtubeLinkController: _youtubeLinkController,
-                  imagePaths: const [
-                    "assets/agents/Astra/1.webp",
-                    "assets/agents/Astra/2.webp",
-                    "assets/agents/Astra/3.webp",
-                  ],
-                  onAddImage: () {},
-                  onRemoveImage: (index) {},
+                  imagePaths: _imagePaths,
+                  onAddImage: () async {
+                    FilePickerResult? result =
+                        await FilePicker.platform.pickFiles(
+                      allowMultiple: false,
+                      type: FileType.custom,
+                      allowedExtensions: ["png", "jpg", "gif", "webp"],
+                    );
+
+                    if (result == null) return;
+                    final imageFile = result.files.first.xFile;
+                    final String fileExtension = path.extension(imageFile.path);
+                    final Uint8List imageBytes = await imageFile.readAsBytes();
+                    final id = const Uuid().v4();
+                    final Directory imageFolderPath =
+                        await PlacedImageProvider.getImageFolder(
+                            ref.read(strategyProvider).id);
+
+                    final String fileName = "$id$fileExtension";
+                    final String fullImagePath =
+                        path.join(imageFolderPath.path, fileName);
+
+                    await ref
+                        .read(placedImageProvider.notifier)
+                        .saveSecureImage(imageBytes, id, fileExtension);
+
+                    setState(() {
+                      _imagePaths.add(fullImagePath);
+                    });
+                  },
+                  onRemoveImage: (index) {
+                    setState(() {
+                      _imagePaths.removeAt(index);
+                    });
+                  },
                 ),
         ),
       ),
@@ -185,8 +221,15 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
             ] else
               CustomButton(
                 onPressed: () {
-                  // TODO: Implement creation logic
-                  Navigator.of(context).pop();
+                  final id = const Uuid().v4();
+                  final LineUp currentLineUp = LineUp(
+                    id: id,
+                    agent: ref.read(lineUpProvider).currentAgent!,
+                    ability: ref.read(lineUpProvider).currentAbility!,
+                    youtubeLink: _youtubeLinkController.text,
+                    imageIDs: _imagePaths,
+                  );
+                  ref.read(lineUpProvider.notifier).addLineUp(currentLineUp);
                 },
                 height: 40,
                 width: 100,

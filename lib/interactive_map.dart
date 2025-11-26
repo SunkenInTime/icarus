@@ -17,7 +17,7 @@ import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/lineup_position_widget.dart';
-import 'package:icarus/const/line_proiveder.dart';
+import 'package:icarus/const/line_provider.dart';
 
 class InteractiveMap extends ConsumerStatefulWidget {
   const InteractiveMap({

@@ -685,7 +685,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       final archive = ZipDecoder().decodeBytes(bytes);
 
       final imageFolder =
-          await PlacedImageProvider.ImageProvider.getImageFolder(newID);
+          await PlacedImageProvider.PlacedImageProvider.getImageFolder(newID);
 
       final tempDirectory = await getTempDirectory(newID);
 
@@ -733,12 +733,14 @@ class StrategyProvider extends Notifier<StrategyState> {
     List<PlacedImage> imageData = [];
     if (!kIsWeb) {
       if (isZip) {
-        imageData = await PlacedImageProvider.ImageProvider.fromJson(
+        imageData = await PlacedImageProvider.PlacedImageProvider.fromJson(
             jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID);
       } else {
         log('Legacy image data loading');
-        imageData = await PlacedImageProvider.ImageProvider.legacyFromJson(
-            jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID);
+        imageData =
+            await PlacedImageProvider.PlacedImageProvider.legacyFromJson(
+                jsonString: jsonEncode(json["imageData"] ?? []),
+                strategyID: newID);
       }
     }
 
