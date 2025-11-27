@@ -151,3 +151,18 @@ class LineUpProvider extends Notifier<LineUpState> {
 
 final lineUpProvider =
     NotifierProvider<LineUpProvider, LineUpState>(LineUpProvider.new);
+
+class HoveredLineUpProvider extends Notifier<String?> {
+  @override
+  String? build() {
+    return null;
+  }
+
+  void setHoveredLineUpId(String? id) {
+    state = id;
+  }
+}
+
+/// Tracks which LineUp is currently hovered for unified highlight.
+final hoveredLineUpIdProvider =
+    NotifierProvider<HoveredLineUpProvider, String?>(HoveredLineUpProvider.new);

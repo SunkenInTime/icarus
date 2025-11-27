@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -40,8 +41,11 @@ class AgentWidget extends ConsumerWidget {
           color: isAlly ? Settings.allyBGColor : Settings.enemyBGColor,
 
           border: Border.all(
-            color:
-                isAlly ? Settings.allyOutlineColor : Settings.enemyOutlineColor,
+            color: ref.watch(hoveredLineUpIdProvider) == id
+                ? const Color(0xFFFFFFFF)
+                : isAlly
+                    ? Settings.allyOutlineColor
+                    : Settings.enemyOutlineColor,
           ),
           borderRadius: const BorderRadius.all(
             Radius.circular(3),

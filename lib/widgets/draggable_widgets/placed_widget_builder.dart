@@ -1,9 +1,9 @@
 import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -24,6 +24,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.d
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/utility_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/line_up_widget.dart';
 import 'package:uuid/uuid.dart';
 
 class PlacedWidgetBuilder extends ConsumerStatefulWidget {
@@ -253,6 +254,13 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                         },
                       ),
                     ),
+                  Positioned.fill(
+                      child: Stack(
+                    children: [
+                      for (final lineUp in ref.watch(lineUpProvider).lineUps)
+                        LineUpWidget(lineUp: lineUp)
+                    ],
+                  )),
                 ],
               ),
             );
