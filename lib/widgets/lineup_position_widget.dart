@@ -30,7 +30,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
     final mapScale = ref.watch(mapProvider.notifier).mapScale;
 
     return MouseRegion(
-      cursor: SystemMouseCursors.none,
+      // cursor: SystemMouseCursors.none,
       onHover: (details) {
         setState(() {
           _pointer = details.localPosition;
@@ -42,7 +42,8 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
             ref.read(lineUpProvider.notifier).updatePosition(CoordinateSystem
                 .instance
                 .screenToCoordinate(details.localPosition -
-                    Offset(normalizedAgentScale, normalizedAgentScale)));
+                    Offset(
+                        normalizedAgentScale / 2, normalizedAgentScale / 2)));
           } else if (placingType == PlacingType.ability) {
             ref.read(lineUpProvider.notifier).updatePosition(
                   CoordinateSystem.instance
