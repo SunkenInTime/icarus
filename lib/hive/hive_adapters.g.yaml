@@ -51,7 +51,7 @@ types:
         index: 2
   PlacedAgent:
     typeId: 2
-    nextIndex: 5
+    nextIndex: 6
     fields:
       type:
         index: 0
@@ -63,9 +63,11 @@ types:
         index: 3
       position:
         index: 4
+      lineUpID:
+        index: 5
   PlacedAbility:
     typeId: 3
-    nextIndex: 7
+    nextIndex: 8
     fields:
       data:
         index: 0
@@ -81,6 +83,8 @@ types:
         index: 5
       length:
         index: 6
+      lineUpID:
+        index: 7
   PlacedText:
     typeId: 4
     nextIndex: 5

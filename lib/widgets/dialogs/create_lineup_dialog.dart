@@ -224,8 +224,14 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                   final id = const Uuid().v4();
                   final LineUp currentLineUp = LineUp(
                     id: id,
-                    agent: ref.read(lineUpProvider).currentAgent!,
-                    ability: ref.read(lineUpProvider).currentAbility!,
+                    agent: ref
+                        .read(lineUpProvider)
+                        .currentAgent!
+                        .copyWith(lineUpID: id),
+                    ability: ref
+                        .read(lineUpProvider)
+                        .currentAbility!
+                        .copyWith(lineUpID: id),
                     youtubeLink: _youtubeLinkController.text,
                     imageIDs: _imagePaths,
                   );

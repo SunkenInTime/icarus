@@ -15,8 +15,10 @@ class AgentWidget extends ConsumerWidget {
     required this.agent,
     required this.id,
     required this.isAlly,
+    this.lineUpId,
   });
 
+  final String? lineUpId;
   final String? id;
   final bool isAlly;
   final AgentData agent;
@@ -26,6 +28,7 @@ class AgentWidget extends ConsumerWidget {
     final coordinateSystem = CoordinateSystem.instance;
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
     return MouseWatch(
+      lineUpId: lineUpId,
       cursor: SystemMouseCursors.click,
       onDeleteKeyPressed: () {
         if (id == null) return;
@@ -35,17 +38,28 @@ class AgentWidget extends ConsumerWidget {
         ref.read(actionProvider.notifier).addAction(action);
         ref.read(agentProvider.notifier).removeAgent(id!);
       },
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
         decoration: BoxDecoration(
           // color: const Color(0xFF1B1B1B),
-          color: isAlly ? Settings.allyBGColor : Settings.enemyBGColor,
+          color: (ref.watch(hoveredLineUpIdProvider) == lineUpId &&
+                  lineUpId != null)
+              ? Colors.deepPurpleAccent
+              : isAlly
+                  ? Settings.allyBGColor
+                  : Settings.enemyBGColor,
 
           border: Border.all(
-            color: ref.watch(hoveredLineUpIdProvider) == id
-                ? const Color(0xFFFFFFFF)
+            color: (ref.watch(hoveredLineUpIdProvider) == lineUpId &&
+                    lineUpId != null)
+                ? Colors.deepPurple
                 : isAlly
                     ? Settings.allyOutlineColor
                     : Settings.enemyOutlineColor,
+            // width: (ref.watch(hoveredLineUpIdProvider) == lineUpId &&
+            //         lineUpId != null)
+            //     ? 2.0
+            //     : 1.0,
           ),
           borderRadius: const BorderRadius.all(
             Radius.circular(3),

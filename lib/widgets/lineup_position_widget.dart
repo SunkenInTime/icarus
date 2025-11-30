@@ -25,6 +25,8 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
     final agent = ref.watch(lineUpProvider).currentAgent;
     final ability = ref.watch(lineUpProvider).currentAbility;
     final abilityScale = ref.watch(strategySettingsProvider).abilitySize;
+    final normalizedAgentScale = ref.watch(strategySettingsProvider).agentSize *
+        CoordinateSystem.instance.scaleFactor;
     final mapScale = ref.watch(mapProvider.notifier).mapScale;
 
     return MouseRegion(
@@ -36,19 +38,27 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
       },
       child: GestureDetector(
         onTapUp: (details) {
-          ref.read(lineUpProvider.notifier).updatePosition(CoordinateSystem
-              .instance
-              .screenToCoordinate(details.localPosition));
+          if (placingType == PlacingType.agent) {
+            ref.read(lineUpProvider.notifier).updatePosition(CoordinateSystem
+                .instance
+                .screenToCoordinate(details.localPosition -
+                    Offset(normalizedAgentScale, normalizedAgentScale)));
+          } else if (placingType == PlacingType.ability) {
+            ref.read(lineUpProvider.notifier).updatePosition(
+                  CoordinateSystem.instance
+                          .screenToCoordinate(details.localPosition) -
+                      ability!.data.abilityData!.getAnchorPoint(
+                          mapScale: mapScale, abilitySize: abilityScale),
+                );
+          }
         },
         child: Stack(
           children: [
             Container(color: Colors.transparent),
             (placingType == PlacingType.agent)
                 ? Positioned(
-                    left: _pointer.dx -
-                        ref.watch(strategySettingsProvider).agentSize / 2,
-                    top: _pointer.dy -
-                        ref.watch(strategySettingsProvider).agentSize / 2,
+                    left: _pointer.dx - normalizedAgentScale / 2,
+                    top: _pointer.dy - normalizedAgentScale / 2,
                     child: IgnorePointer(
                       child: AgentWidget(
                         agent: AgentData.agents[agent!.type]!,
@@ -60,19 +70,21 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                 : Positioned(
                     left: _pointer.dx -
                         ability!.data.abilityData!
-                            .getAnchorPoint(mapScale, abilityScale)
+                            .getAnchorPoint(
+                                mapScale: mapScale, abilitySize: abilityScale)
                             .scale(CoordinateSystem.instance.scaleFactor,
                                 CoordinateSystem.instance.scaleFactor)
                             .dx,
                     top: _pointer.dy -
-                        ability!.data.abilityData!
-                            .getAnchorPoint(mapScale, abilityScale)
+                        ability.data.abilityData!
+                            .getAnchorPoint(
+                                mapScale: mapScale, abilitySize: abilityScale)
                             .scale(CoordinateSystem.instance.scaleFactor,
                                 CoordinateSystem.instance.scaleFactor)
                             .dy,
                     child: IgnorePointer(
-                        child: ability.data.abilityData!
-                            .createWidget("", true, mapScale)),
+                        child: ability.data.abilityData!.createWidget(
+                            id: "", isAlly: true, mapScale: mapScale)),
                   ),
           ],
         ),

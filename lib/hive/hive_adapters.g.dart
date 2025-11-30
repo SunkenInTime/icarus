@@ -153,13 +153,14 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
       position: fields[4] as Offset,
       id: fields[2] as String,
       isAlly: fields[1] == null ? true : fields[1] as bool,
+      lineUpID: fields[5] as String?,
     )..isDeleted = fields[3] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedAgent obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -169,7 +170,9 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
       ..writeByte(3)
       ..write(obj.isDeleted)
       ..writeByte(4)
-      ..write(obj.position);
+      ..write(obj.position)
+      ..writeByte(5)
+      ..write(obj.lineUpID);
   }
 
   @override
@@ -199,6 +202,7 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       id: fields[3] as String,
       isAlly: fields[1] == null ? true : fields[1] as bool,
       length: fields[6] == null ? 0 : (fields[6] as num).toDouble(),
+      lineUpID: fields[7] as String?,
     )
       ..rotation = (fields[2] as num).toDouble()
       ..isDeleted = fields[4] as bool;
@@ -207,7 +211,7 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
   @override
   void write(BinaryWriter writer, PlacedAbility obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.data)
       ..writeByte(1)
@@ -221,7 +225,9 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       ..writeByte(5)
       ..write(obj.position)
       ..writeByte(6)
-      ..write(obj.length);
+      ..write(obj.length)
+      ..writeByte(7)
+      ..write(obj.lineUpID);
   }
 
   @override

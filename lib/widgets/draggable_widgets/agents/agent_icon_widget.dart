@@ -6,21 +6,26 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
 class AgentIconWidget extends ConsumerWidget {
-  const AgentIconWidget(
-      {super.key,
-      required this.imagePath,
-      required this.size,
-      this.index,
-      required this.id});
+  const AgentIconWidget({
+    super.key,
+    required this.imagePath,
+    required this.size,
+    this.index,
+    required this.id,
+    this.lineUpId,
+  });
+
   final double size;
   final String imagePath;
   final int? index;
   final String? id;
+  final String? lineUpId;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
 
     return MouseWatch(
+      lineUpId: lineUpId,
       cursor: SystemMouseCursors.click,
       onDeleteKeyPressed: () {
         if (id == null) return;

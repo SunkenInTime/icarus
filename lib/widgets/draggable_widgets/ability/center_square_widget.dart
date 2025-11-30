@@ -14,6 +14,7 @@ class CenterSquareWidget extends ConsumerWidget {
     this.rotation,
     required this.id,
     required this.isAlly,
+    this.lineUpId,
   });
   final double width;
   final double height;
@@ -22,6 +23,7 @@ class CenterSquareWidget extends ConsumerWidget {
   final double? rotation;
   final String? id;
   final bool isAlly;
+  final String? lineUpId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -53,6 +55,7 @@ class CenterSquareWidget extends ConsumerWidget {
             child: Align(
               alignment: Alignment.center,
               child: AbilityWidget(
+                lineUpId: lineUpId,
                 iconPath: iconPath,
                 id: id,
                 isAlly: isAlly,

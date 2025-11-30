@@ -24,6 +24,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.d
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/utility_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/line_up_line_painter.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
 import 'package:uuid/uuid.dart';
 
@@ -76,7 +77,8 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                         Offset virtualOffset =
                             coordinateSystem.screenToCoordinate(localOffset);
                         Offset safeArea = ability.data.abilityData!
-                            .getAnchorPoint(mapScale, abilitySize);
+                            .getAnchorPoint(
+                                mapScale: mapScale, abilitySize: abilitySize);
 
                         if (coordinateSystem.isOutOfBounds(virtualOffset
                             .translate(safeArea.dx, safeArea.dy))) {
@@ -254,13 +256,17 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                         },
                       ),
                     ),
+                  const Positioned.fill(
+                    child: LineUpLinePainter(),
+                  ),
                   Positioned.fill(
-                      child: Stack(
-                    children: [
-                      for (final lineUp in ref.watch(lineUpProvider).lineUps)
-                        LineUpWidget(lineUp: lineUp)
-                    ],
-                  )),
+                    child: Stack(
+                      children: [
+                        for (final lineUp in ref.watch(lineUpProvider).lineUps)
+                          LineUpWidget(lineUp: lineUp)
+                      ],
+                    ),
+                  ),
                 ],
               ),
             );

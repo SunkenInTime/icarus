@@ -182,24 +182,53 @@ class Uint8ListConverter {
 @JsonSerializable()
 class PlacedAgent extends PlacedWidget {
   final AgentType type;
+
   @JsonKey(defaultValue: true)
   bool isAlly;
+
+  final String? lineUpID;
 
   PlacedAgent({
     required this.type,
     required super.position,
     required super.id,
     this.isAlly = true, // Default parameter value
+    this.lineUpID,
   });
 
   factory PlacedAgent.fromJson(Map<String, dynamic> json) =>
       _$PlacedAgentFromJson(json);
   @override
   Map<String, dynamic> toJson() => _$PlacedAgentToJson(this);
+
+  PlacedAgent copyWith({
+    AgentType? type,
+    Offset? position,
+    String? id,
+    bool? isAlly,
+    String? lineUpID,
+  }) {
+    return PlacedAgent(
+      type: type ?? this.type,
+      position: position ?? this.position,
+      id: id ?? this.id,
+      isAlly: isAlly ?? this.isAlly,
+      lineUpID: lineUpID ?? this.lineUpID,
+    );
+  }
 }
 
 @JsonSerializable()
 class PlacedAbility extends PlacedWidget {
+  PlacedAbility({
+    required this.data,
+    required super.position,
+    required super.id,
+    this.isAlly = true,
+    this.length = 0,
+    this.lineUpID,
+  });
+
   @AbilityInfoConverter()
   final AbilityInfo data;
 
@@ -209,6 +238,8 @@ class PlacedAbility extends PlacedWidget {
   double rotation = 0;
 
   double length = 0;
+
+  final String? lineUpID;
 
   void updateRotation(double newRotation, double newLength) {
     rotation = newRotation;
@@ -262,13 +293,24 @@ class PlacedAbility extends PlacedWidget {
     }
   }
 
-  PlacedAbility({
-    required this.data,
-    required super.position,
-    required super.id,
-    this.isAlly = true,
-    this.length = 0,
-  });
+  PlacedAbility copyWith({
+    AbilityInfo? data,
+    Offset? position,
+    double? rotation,
+    double? length,
+    String? id,
+    bool? isAlly,
+    String? lineUpID,
+  }) {
+    return PlacedAbility(
+      id: id ?? this.id,
+      data: data ?? this.data,
+      position: position ?? this.position,
+      isAlly: isAlly ?? this.isAlly,
+      lineUpID: lineUpID ?? this.lineUpID,
+      length: length ?? this.length,
+    );
+  }
 
   factory PlacedAbility.fromJson(Map<String, dynamic> json) =>
       _$PlacedAbilityFromJson(json);

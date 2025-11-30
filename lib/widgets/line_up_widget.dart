@@ -18,13 +18,11 @@ class LineUpWidget extends ConsumerWidget {
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
 
-    final isHovered = ref.watch(hoveredLineUpIdProvider) == lineUp.id;
-
     // Compute screen positions
     final agentScreen =
         coordinateSystem.coordinateToScreen(lineUp.agent.position);
     final abilityAnchor = lineUp.ability.data.abilityData!
-        .getAnchorPoint(mapScale, abilitySize)
+        .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
         .scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
     final abilityScreen =
         coordinateSystem.coordinateToScreen(lineUp.ability.position);
@@ -36,23 +34,11 @@ class LineUpWidget extends ConsumerWidget {
         Positioned(
           left: agentScreen.dx,
           top: agentScreen.dy,
-          child: MouseRegion(
-            onEnter: (_) => ref
-                .read(hoveredLineUpIdProvider.notifier)
-                .setHoveredLineUpId(lineUp.id),
-            onExit: (_) {
-              // Only clear if this lineup is currently set
-              if (ref.read(hoveredLineUpIdProvider) == lineUp.id) {
-                ref
-                    .read(hoveredLineUpIdProvider.notifier)
-                    .setHoveredLineUpId(null);
-              }
-            },
-            child: AgentWidget(
-              agent: AgentData.agents[lineUp.agent.type]!,
-              isAlly: true,
-              id: lineUp.id,
-            ),
+          child: AgentWidget(
+            lineUpId: lineUp.id,
+            agent: AgentData.agents[lineUp.agent.type]!,
+            isAlly: true,
+            id: lineUp.id,
           ),
         ),
 
@@ -60,32 +46,11 @@ class LineUpWidget extends ConsumerWidget {
         Positioned(
           left: abilityScreen.dx,
           top: abilityScreen.dy,
-          child: MouseRegion(
-            onEnter: (_) => ref
-                .read(hoveredLineUpIdProvider.notifier)
-                .setHoveredLineUpId(lineUp.id),
-            onExit: (_) {
-              // Only clear if this lineup is currently set
-              if (ref.read(hoveredLineUpIdProvider) == lineUp.id) {
-                ref
-                    .read(hoveredLineUpIdProvider.notifier)
-                    .setHoveredLineUpId(null);
-              }
-            },
-            child: Container(
-              decoration: isHovered
-                  ? BoxDecoration(
-                      border:
-                          Border.all(color: const Color(0xFFFFFFFF), width: 2),
-                      borderRadius: const BorderRadius.all(Radius.circular(3)),
-                    )
-                  : null,
-              child: lineUp.ability.data.abilityData!.createWidget(
-                null,
-                true,
-                mapScale,
-              ),
-            ),
+          child: lineUp.ability.data.abilityData!.createWidget(
+            id: null,
+            isAlly: true,
+            mapScale: mapScale,
+            lineUpId: lineUp.id,
           ),
         ),
       ],

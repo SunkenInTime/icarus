@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/shortcut_info.dart';
 
 class MouseWatch extends ConsumerStatefulWidget {
@@ -9,7 +10,10 @@ class MouseWatch extends ConsumerStatefulWidget {
     required this.child,
     super.key,
     this.cursor = SystemMouseCursors.basic,
+    this.lineUpId,
   });
+
+  final String? lineUpId;
   final Widget child;
   final VoidCallback? onDeleteKeyPressed;
   final SystemMouseCursor cursor;
@@ -34,12 +38,25 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
       child: MouseRegion(
         cursor: widget.cursor,
         onEnter: (_) {
+          if (widget.lineUpId != null) {
+            ref
+                .read(hoveredLineUpIdProvider.notifier)
+                .setHoveredLineUpId(widget.lineUpId);
+          }
+
           setState(() {
             isMouseInRegion = true;
             _focusNode.requestFocus();
           });
         },
         onExit: (_) {
+          if (widget.lineUpId != null) {
+            if (ref.read(hoveredLineUpIdProvider) == widget.lineUpId) {
+              ref
+                  .read(hoveredLineUpIdProvider.notifier)
+                  .setHoveredLineUpId(null);
+            }
+          }
           setState(() {
             isMouseInRegion = false;
             // _focusNode.unfocus();

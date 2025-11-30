@@ -212,7 +212,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
         origin: (widget)
             .data
             .abilityData!
-            .getAnchorPoint(mapScale, abilitySize)
+            .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
             .scale(CoordinateSystem.instance.scaleFactor,
                 CoordinateSystem.instance.scaleFactor),
         child: child,
@@ -264,20 +264,33 @@ class PlacedWidgetPreview {
 
       switch (ability) {
         case BaseAbility():
-          return ability.createWidget(w.id, w.isAlly, mapScale);
+          return ability.createWidget(
+              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
         case ImageAbility():
-          return ability.createWidget(w.id, w.isAlly, mapScale);
+          return ability.createWidget(
+              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
         case CircleAbility():
-          return ability.createWidget(w.id, w.isAlly, mapScale);
+          return ability.createWidget(
+              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
         case SquareAbility():
           return ability.createWidget(
-              w.id, w.isAlly, mapScale, w.rotation, length ?? w.length);
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              rotation: w.rotation,
+              length: length ?? w.length);
         case CenterSquareAbility():
           return ability.createWidget(
-              w.id, w.isAlly, mapScale, length ?? w.length);
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              length: length ?? w.length);
         case RotatableImageAbility():
           return ability.createWidget(
-              w.id, w.isAlly, mapScale, length ?? w.length);
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              length: length ?? w.length);
       }
     }
 
@@ -346,7 +359,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
               origin: (widget)
                   .data
                   .abilityData!
-                  .getAnchorPoint(mapScale, abilitySize)
+                  .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
                   .scale(coord.scaleFactor, coord.scaleFactor),
               child: PlacedWidgetPreview.build(widget, mapScale, widget.length),
             )

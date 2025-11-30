@@ -56,7 +56,8 @@ class AbiilityBar extends ConsumerWidget {
 
                   log("info.abilityData: $abilitySize");
                   return info.abilityData!
-                      .getAnchorPoint(mapScale, abilitySize)
+                      .getAnchorPoint(
+                          mapScale: mapScale, abilitySize: abilitySize)
                       .scale(scaleFactor, scaleFactor);
                 },
                 feedback: Opacity(
@@ -64,9 +65,9 @@ class AbiilityBar extends ConsumerWidget {
                   child: ZoomTransform(
                     child:
                         activeAgent.abilities[index].abilityData!.createWidget(
-                      null,
-                      ref.watch(teamProvider),
-                      mapScale,
+                      id: null,
+                      isAlly: ref.watch(teamProvider),
+                      mapScale: mapScale,
                     ),
                   ),
                 ),

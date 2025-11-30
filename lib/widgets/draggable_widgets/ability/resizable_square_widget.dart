@@ -6,21 +6,24 @@ import 'package:icarus/widgets/custom_border_container.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 
 class ResizableSquareWidget extends ConsumerWidget {
-  const ResizableSquareWidget(
-      {super.key,
-      required this.color,
-      required this.width,
-      required this.maxLength,
-      required this.minLength,
-      required this.iconPath,
-      required this.distanceBetweenAOE,
-      required this.length,
-      this.id,
-      required this.isAlly,
-      required this.isWall,
-      required this.isTransparent,
-      required this.hasTopborder,
-      required this.hasSideBorders});
+  const ResizableSquareWidget({
+    super.key,
+    required this.color,
+    required this.width,
+    required this.maxLength,
+    required this.minLength,
+    required this.iconPath,
+    required this.distanceBetweenAOE,
+    required this.length,
+    this.id,
+    required this.isAlly,
+    required this.isWall,
+    required this.isTransparent,
+    required this.hasTopborder,
+    required this.hasSideBorders,
+    this.lineUpId,
+  });
+
   final Color color;
   final double width;
   final double maxLength;
@@ -34,6 +37,8 @@ class ResizableSquareWidget extends ConsumerWidget {
   final bool isTransparent;
   final bool hasTopborder;
   final bool hasSideBorders;
+  final String? lineUpId;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
@@ -96,6 +101,7 @@ class ResizableSquareWidget extends ConsumerWidget {
             bottom: 0,
             left: (scaledWidth - scaledAbilitySize) / 2,
             child: AbilityWidget(
+              lineUpId: lineUpId,
               iconPath: iconPath,
               id: id,
               isAlly: isAlly,

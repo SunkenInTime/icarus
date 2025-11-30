@@ -105,12 +105,12 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           opacity: Settings.feedbackOpacity,
           child: ZoomTransform(
               child: widget.ability.data.abilityData!
-                  .createWidget(null, isAlly, mapScale)),
+                  .createWidget(id: null, isAlly: isAlly, mapScale: mapScale)),
         ),
         childWhenDragging: const SizedBox.shrink(),
         onDragEnd: widget.onDragEnd,
         child: widget.ability.data.abilityData!
-            .createWidget(widget.id, isAlly, mapScale),
+            .createWidget(id: widget.id, isAlly: isAlly, mapScale: mapScale),
       );
     }
 
@@ -123,7 +123,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       final double? buttonTop;
       if (isCenterSquare) {
         buttonTop = widget.ability.data.abilityData!
-                .getAnchorPoint(mapScale, abilitySize)
+                .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
                 .dy -
             abilitySize -
             30;
@@ -155,7 +155,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           rotation: localRotation!,
           isDragging: isDragging,
           origin: widget.ability.data.abilityData!
-              .getAnchorPoint(mapScale, abilitySize),
+              .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize),
           onPanStart: (details) {
             log("Rotation Start");
             // ref.read(abilityProvider.notifier).updateRotationHistory(index);
@@ -163,7 +163,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
 
             final box = context.findRenderObject() as RenderBox;
             final bottomCenter = widget.ability.data.abilityData!
-                .getAnchorPoint(mapScale, abilitySize)
+                .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
                 .scale(
                     coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
 
@@ -224,7 +224,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               final RenderBox renderObject =
                   context.findRenderObject()! as RenderBox;
               final anchorPoint = widget.ability.data.abilityData!
-                  .getAnchorPoint(mapScale, abilitySize)
+                  .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
                   .scale(coordinateSystem.scaleFactor,
                       coordinateSystem.scaleFactor);
               Offset rotatedPos = rotateOffset(
@@ -242,7 +242,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                 angle: localRotation!,
                 alignment: Alignment.topLeft,
                 origin: widget.ability.data.abilityData!
-                    .getAnchorPoint(mapScale, abilitySize)
+                    .getAnchorPoint(
+                        mapScale: mapScale, abilitySize: abilitySize)
                     .scale(
                         coordinateSystem.scaleFactor *
                             ref.watch(screenZoomProvider),
@@ -253,8 +254,12 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                       .watch(abilityProvider)[index]
                       .data
                       .abilityData!
-                      .createWidget(widget.id, isAlly, mapScale, localRotation!,
-                          localLength!),
+                      .createWidget(
+                          id: widget.id,
+                          isAlly: isAlly,
+                          mapScale: mapScale,
+                          rotation: localRotation!,
+                          length: localLength!),
                 ),
               ),
             ),
@@ -276,7 +281,11 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                 .data
                 .abilityData!
                 .createWidget(
-                    widget.id, isAlly, mapScale, localRotation!, localLength),
+                    id: widget.id,
+                    isAlly: isAlly,
+                    mapScale: mapScale,
+                    rotation: localRotation!,
+                    length: localLength!),
           ),
         ),
       );
@@ -292,12 +301,12 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           opacity: Settings.feedbackOpacity,
           child: ZoomTransform(
               child: widget.ability.data.abilityData!
-                  .createWidget(null, isAlly, mapScale)),
+                  .createWidget(id: null, isAlly: isAlly, mapScale: mapScale)),
         ),
         childWhenDragging: const SizedBox.shrink(),
         onDragEnd: widget.onDragEnd,
         child: widget.ability.data.abilityData!
-            .createWidget(widget.id, isAlly, mapScale),
+            .createWidget(id: widget.id, isAlly: isAlly, mapScale: mapScale),
       ),
     );
   }
