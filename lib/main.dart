@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_portal/flutter_portal.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/custom_icons.dart';
@@ -88,16 +89,18 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlobalShortcuts(
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        title: 'Icarus',
-        theme: Settings.appTheme,
-        routes: {
-          Routes.folderNavigator: (context) => const FolderNavigator(),
-          Routes.strategyView: (context) => const StrategyView(),
-          Routes.settings: (context) => const SettingsTab(),
-        },
-        home: const MyHomePage(),
+      child: Portal(
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'Icarus',
+          theme: Settings.appTheme,
+          routes: {
+            Routes.folderNavigator: (context) => const FolderNavigator(),
+            Routes.strategyView: (context) => const StrategyView(),
+            Routes.settings: (context) => const SettingsTab(),
+          },
+          home: const MyHomePage(),
+        ),
       ),
     );
   }

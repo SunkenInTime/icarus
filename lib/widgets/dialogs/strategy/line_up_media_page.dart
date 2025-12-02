@@ -9,13 +9,14 @@ class LineupMediaPage extends StatefulWidget {
   final List<String> imagePaths; // Placeholder for actual image data
   final VoidCallback onAddImage;
   final Function(int index) onRemoveImage;
-
+  final TextEditingController notesController;
   const LineupMediaPage({
     super.key,
     required this.youtubeLinkController,
     required this.imagePaths,
     required this.onAddImage,
     required this.onRemoveImage,
+    required this.notesController,
   });
 
   @override
@@ -54,9 +55,9 @@ class _LineupMediaPageState extends State<LineupMediaPage> {
           padding: EdgeInsets.symmetric(vertical: 8.0),
           child: Text("Notes", style: TextStyle(color: Colors.white)),
         ),
-        const CustomTextField(
+        CustomTextField(
           hintText: "Add any notes here...",
-
+          controller: widget.notesController,
           // onEnterPressed: (intent) {
           //   // Handle enter pressed if needed
           // },

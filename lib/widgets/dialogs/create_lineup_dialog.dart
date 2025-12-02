@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:io' show Directory;
 import 'dart:typed_data' show Uint8List;
 
@@ -74,6 +75,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
           width: 600,
           height: 504,
           child: LineupMediaPage(
+            notesController: _notesController,
             youtubeLinkController: _youtubeLinkController,
             imagePaths: _imagePaths,
             onAddImage: () async {
@@ -119,6 +121,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                 onPressed: canSave
                     ? () {
                         final id = const Uuid().v4();
+                        log("notes : ${_notesController.text}");
                         final LineUp currentLineUp = LineUp(
                           id: id,
                           agent: ref

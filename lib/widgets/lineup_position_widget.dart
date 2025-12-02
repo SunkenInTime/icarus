@@ -7,6 +7,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/ability_bar_provider.dart';
 
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -166,12 +167,16 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
 
           if (details.data is AgentData) {
             PlacedAgent placedAgent = PlacedAgent(
-                id: uuid.v4(),
-                type: (details.data as AgentData).type,
-                position: normalizedPosition,
-                isAlly: ref.read(teamProvider));
+              id: uuid.v4(),
+              type: (details.data as AgentData).type,
+              position: normalizedPosition,
+              isAlly: ref.read(teamProvider),
+            );
 
             ref.read(lineUpProvider.notifier).setAgent(placedAgent);
+            ref
+                .read(abilityBarProvider.notifier)
+                .updateData(AgentData.agents[placedAgent.type]!);
           } else if (details.data is AbilityInfo) {
             PlacedAbility placedAbility = PlacedAbility(
               id: uuid.v4(),

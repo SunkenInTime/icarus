@@ -662,7 +662,7 @@ class AgentData implements DraggableData {
         role: AgentRole.controller,
         name: "Clove",
       )..abilities[2] = AbilityInfo(
-          type: AgentType.brimstone,
+          type: AgentType.clove,
           index: 2,
           name: "Sky Smoke",
           iconPath: 'assets/agents/Clove/3.webp',

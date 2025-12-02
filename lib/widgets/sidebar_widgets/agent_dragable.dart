@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
@@ -57,11 +58,22 @@ class AgentDragable extends ConsumerWidget {
             onTap: () {
               ref.read(abilityBarProvider.notifier).updateData(agent);
             },
+            onHover: (value) {},
             child: ClipRRect(
               borderRadius: BorderRadius.circular(6),
-              child: Image.asset(
-                agent.iconPath,
-                fit: BoxFit.cover,
+              child: ColoredBox(
+                color: ref.watch(interactionStateProvider) ==
+                        InteractionState.lineUpPlacing
+                    ? (ref.watch(lineUpProvider).currentAgent != null &&
+                            ref.watch(lineUpProvider).currentAgent!.type ==
+                                agent.type)
+                        ? Colors.deepPurpleAccent
+                        : const Color.fromARGB(255, 31, 26, 31)
+                    : const Color.fromARGB(255, 31, 26, 31),
+                child: Image.asset(
+                  agent.iconPath,
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
           ),
