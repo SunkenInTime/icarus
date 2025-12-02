@@ -41,18 +41,16 @@ class AgentWidget extends ConsumerWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         decoration: BoxDecoration(
-          // color: const Color(0xFF1B1B1B),
           color: (ref.watch(hoveredLineUpIdProvider) == lineUpId &&
                   lineUpId != null)
-              ? Colors.deepPurpleAccent
+              ? Colors.deepPurple
               : isAlly
                   ? Settings.allyBGColor
                   : Settings.enemyBGColor,
-
           border: Border.all(
             color: (ref.watch(hoveredLineUpIdProvider) == lineUpId &&
                     lineUpId != null)
-                ? Colors.deepPurple
+                ? Colors.deepPurpleAccent
                 : isAlly
                     ? Settings.allyOutlineColor
                     : Settings.enemyOutlineColor,

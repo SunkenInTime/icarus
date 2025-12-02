@@ -16,14 +16,14 @@ class LineUp extends HiveObject {
   final PlacedAbility ability;
   final String youtubeLink;
   final String notes;
-  final List<String> imageIDs;
+  final List<SimpleImageData> images;
 
   LineUp({
     required this.id,
     required this.agent,
     required this.ability,
     required this.youtubeLink,
-    required this.imageIDs,
+    required this.images,
     required this.notes,
   });
 
@@ -32,7 +32,7 @@ class LineUp extends HiveObject {
     PlacedAgent? agent,
     PlacedAbility? ability,
     String? youtubeLink,
-    List<String>? imageIDs,
+    List<SimpleImageData>? images,
     String? notes,
   }) {
     return LineUp(
@@ -40,8 +40,28 @@ class LineUp extends HiveObject {
       agent: agent ?? this.agent,
       ability: ability ?? this.ability,
       youtubeLink: youtubeLink ?? this.youtubeLink,
-      imageIDs: imageIDs ?? List<String>.from(this.imageIDs),
+      images: images ?? List<SimpleImageData>.from(this.images),
       notes: notes ?? this.notes,
+    );
+  }
+}
+
+class SimpleImageData extends HiveObject {
+  final String id;
+  final String fileExtension;
+
+  SimpleImageData({
+    required this.id,
+    required this.fileExtension,
+  });
+
+  SimpleImageData copyWith({
+    String? id,
+    String? fileExtension,
+  }) {
+    return SimpleImageData(
+      id: id ?? this.id,
+      fileExtension: fileExtension ?? this.fileExtension,
     );
   }
 }
@@ -177,6 +197,10 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   void removeLineUp(String id) {
     // state = state.where((lineUp) => lineUp.id != id).toList();
+  }
+
+  int getIndexById(String id) {
+    return state.lineUps.indexWhere((lineUp) => lineUp.id == id);
   }
 }
 

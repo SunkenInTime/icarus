@@ -1,29 +1,48 @@
-import 'dart:io' show File;
+import 'dart:io' show File, Directory;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
+import 'package:path/path.dart' as path;
+import 'package:provider/provider.dart';
 
-class LineupMediaPage extends StatefulWidget {
+class LineupMediaPage extends ConsumerStatefulWidget {
   final TextEditingController youtubeLinkController;
-  final List<String> imagePaths; // Placeholder for actual image data
+  final List<SimpleImageData> images; // Placeholder for actual image data
   final VoidCallback onAddImage;
   final Function(int index) onRemoveImage;
   final TextEditingController notesController;
   const LineupMediaPage({
     super.key,
     required this.youtubeLinkController,
-    required this.imagePaths,
+    required this.images,
     required this.onAddImage,
     required this.onRemoveImage,
     required this.notesController,
   });
 
   @override
-  State<LineupMediaPage> createState() => _LineupMediaPageState();
+  ConsumerState<LineupMediaPage> createState() => _LineupMediaPageState();
 }
 
-class _LineupMediaPageState extends State<LineupMediaPage> {
+class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
+  late final Directory imageFolderPath;
+
+  Future<void> _setImageDirectory(String strategyID) async {
+    imageFolderPath = await PlacedImageProvider.getImageFolder(strategyID);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    final strategyID = ref.read(strategyProvider).id;
+    _setImageDirectory(strategyID);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -46,9 +65,8 @@ class _LineupMediaPageState extends State<LineupMediaPage> {
               border: Border.all(color: Settings.highlightColor),
             ),
             padding: const EdgeInsets.all(12),
-            child: widget.imagePaths.isEmpty
-                ? _buildEmptyState()
-                : _buildImageGrid(),
+            child:
+                widget.images.isEmpty ? _buildEmptyState() : _buildImageGrid(),
           ),
         ),
         const Padding(
@@ -94,9 +112,9 @@ class _LineupMediaPageState extends State<LineupMediaPage> {
         crossAxisSpacing: 8,
         childAspectRatio: 1,
       ),
-      itemCount: widget.imagePaths.length + 1, // +1 for the Add button
+      itemCount: widget.images.length + 1, // +1 for the Add button
       itemBuilder: (context, index) {
-        if (index == widget.imagePaths.length) {
+        if (index == widget.images.length) {
           return _buildAddButton();
         }
         return _buildImageTile(index);
@@ -119,7 +137,9 @@ class _LineupMediaPageState extends State<LineupMediaPage> {
   }
 
   Widget _buildImageTile(int index) {
-    final file = File(widget.imagePaths[index]);
+    final String fullImagePath = path.join(imageFolderPath.path,
+        widget.images[index].id + widget.images[index].fileExtension);
+    final file = File(fullImagePath);
     return Stack(
       children: [
         Container(

@@ -42,6 +42,7 @@ class BaseAbility extends Ability {
       isAlly: isAlly,
       iconPath: iconPath,
       id: id,
+      lineUpId: lineUpId,
     );
   }
 

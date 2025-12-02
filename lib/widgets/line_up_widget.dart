@@ -48,49 +48,11 @@ class _LineUpWidgetState extends ConsumerState<LineUpWidget> {
         Positioned(
           left: agentScreen.dx,
           top: agentScreen.dy,
-          child: PortalTarget(
-            anchor: const Aligned(
-              follower: Alignment.bottomCenter,
-              target: Alignment.topCenter,
-            ),
-            visible: isHovering,
-            portalFollower: Padding(
-              padding: const EdgeInsets.only(bottom: 4.0),
-              child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 200),
-                  child: Container(
-                    padding: const EdgeInsets.all(8.0),
-                    decoration: BoxDecoration(
-                      color: Colors.black87,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Text(
-                      widget.lineUp.notes,
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                  )),
-            ),
-            child: MouseRegion(
-              onEnter: (event) {
-                setState(() {
-                  isHovering = true;
-                });
-
-                log("Showing overlay for lineup ${widget.lineUp.id}");
-              },
-              onExit: (event) {
-                setState(() {
-                  isHovering = false;
-                });
-                log("Hiding overlay for lineup ${widget.lineUp.id}");
-              },
-              child: AgentWidget(
-                lineUpId: widget.lineUp.id,
-                agent: AgentData.agents[widget.lineUp.agent.type]!,
-                isAlly: true,
-                id: widget.lineUp.id,
-              ),
-            ),
+          child: AgentWidget(
+            lineUpId: widget.lineUp.id,
+            agent: AgentData.agents[widget.lineUp.agent.type]!,
+            isAlly: true,
+            id: widget.lineUp.id,
           ),
         ),
 

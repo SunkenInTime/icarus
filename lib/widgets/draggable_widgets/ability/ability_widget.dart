@@ -38,7 +38,8 @@ class AbilityWidget extends ConsumerWidget {
         ref.read(actionProvider.notifier).addAction(action);
         ref.read(abilityProvider.notifier).removeAbility(id!);
       },
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
         width: coordinateSystem.scale(abilitySize),
         height: coordinateSystem.scale(abilitySize),
         padding: EdgeInsets.all(coordinateSystem.scale(3)),
@@ -46,14 +47,21 @@ class AbilityWidget extends ConsumerWidget {
           borderRadius: const BorderRadius.all(
             Radius.circular(3),
           ),
-          color: Settings.abilityBGColor,
+          color: (ref.watch(hoveredLineUpIdProvider) == lineUpId &&
+                  lineUpId != null)
+              ? Colors.deepPurple
+              : Settings.abilityBGColor,
           border: Border.all(
             color: (ref.watch(hoveredLineUpIdProvider) == lineUpId &&
                     lineUpId != null)
-                ? const Color(0xFFFFFFFF)
+                ? Colors.deepPurpleAccent
                 : isAlly
                     ? Settings.allyOutlineColor
                     : Settings.enemyOutlineColor,
+            // width: (ref.watch(hoveredLineUpIdProvider) == lineUpId &&
+            //         lineUpId != null)
+            //     ? 2.0
+            //     : 1.0,
           ),
         ),
         child: ClipRRect(

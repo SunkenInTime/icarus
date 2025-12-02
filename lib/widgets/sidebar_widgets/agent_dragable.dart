@@ -62,13 +62,9 @@ class AgentDragable extends ConsumerWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: ColoredBox(
-                color: ref.watch(interactionStateProvider) ==
-                        InteractionState.lineUpPlacing
-                    ? (ref.watch(lineUpProvider).currentAgent != null &&
-                            ref.watch(lineUpProvider).currentAgent!.type ==
-                                agent.type)
-                        ? Colors.deepPurpleAccent
-                        : const Color.fromARGB(255, 31, 26, 31)
+                color: (ref.watch(abilityBarProvider) != null &&
+                        ref.watch(abilityBarProvider)!.type == agent.type)
+                    ? Colors.deepPurpleAccent
                     : const Color.fromARGB(255, 31, 26, 31),
                 child: Image.asset(
                   agent.iconPath,

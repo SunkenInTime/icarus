@@ -28,7 +28,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   AbilityInfo? _selectedAbility;
   final TextEditingController _youtubeLinkController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
-  final List<String> _imagePaths = [];
+  final List<SimpleImageData> _imagePaths = [];
   @override
   void initState() {
     super.initState();
@@ -77,7 +77,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
           child: LineupMediaPage(
             notesController: _notesController,
             youtubeLinkController: _youtubeLinkController,
-            imagePaths: _imagePaths,
+            images: _imagePaths,
             onAddImage: () async {
               FilePickerResult? result = await FilePicker.platform.pickFiles(
                 allowMultiple: false,
@@ -90,20 +90,16 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
               final String fileExtension = path.extension(imageFile.path);
               final Uint8List imageBytes = await imageFile.readAsBytes();
               final id = const Uuid().v4();
-              final Directory imageFolderPath =
-                  await PlacedImageProvider.getImageFolder(
-                      ref.read(strategyProvider).id);
 
-              final String fileName = "$id$fileExtension";
-              final String fullImagePath =
-                  path.join(imageFolderPath.path, fileName);
+              final SimpleImageData imageData =
+                  SimpleImageData(id: id, fileExtension: fileExtension);
 
               await ref
                   .read(placedImageProvider.notifier)
                   .saveSecureImage(imageBytes, id, fileExtension);
 
               setState(() {
-                _imagePaths.add(fullImagePath);
+                _imagePaths.add(imageData);
               });
             },
             onRemoveImage: (index) {
@@ -133,7 +129,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                               .currentAbility!
                               .copyWith(lineUpID: id),
                           youtubeLink: _youtubeLinkController.text,
-                          imageIDs: _imagePaths,
+                          images: _imagePaths,
                           notes: _notesController.text,
                         );
                         ref
