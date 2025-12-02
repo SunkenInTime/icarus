@@ -4,6 +4,8 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'dart:ui';
 
+import 'package:icarus/providers/interaction_state_provider.dart';
+
 enum PlacingType { agent, ability }
 
 const _noChange = Object();
@@ -13,6 +15,7 @@ class LineUp extends HiveObject {
   final PlacedAgent agent;
   final PlacedAbility ability;
   final String youtubeLink;
+  final String notes;
   final List<String> imageIDs;
 
   LineUp({
@@ -21,6 +24,7 @@ class LineUp extends HiveObject {
     required this.ability,
     required this.youtubeLink,
     required this.imageIDs,
+    required this.notes,
   });
 
   LineUp copyWith({
@@ -29,6 +33,7 @@ class LineUp extends HiveObject {
     PlacedAbility? ability,
     String? youtubeLink,
     List<String>? imageIDs,
+    String? notes,
   }) {
     return LineUp(
       id: id ?? this.id,
@@ -36,6 +41,7 @@ class LineUp extends HiveObject {
       ability: ability ?? this.ability,
       youtubeLink: youtubeLink ?? this.youtubeLink,
       imageIDs: imageIDs ?? List<String>.from(this.imageIDs),
+      notes: notes ?? this.notes,
     );
   }
 }
@@ -104,13 +110,18 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void setAgent(PlacedAgent agent) {
-    state = state.copyWith(currentAbility: null);
     state = state.copyWith(currentAgent: agent, currentAbility: null);
   }
 
   void setAbility(PlacedAbility ability) {
+    //TODO: Evaluate if this check is  UX friendly
     if (state.currentAgent == null) return;
-    state = state.copyWith(currentAbility: ability);
+
+    if (ability.data.type == state.currentAgent!.type) {
+      state = state.copyWith(currentAbility: ability);
+    } else {
+      throw Exception("Ability type does not match the current agent type");
+    }
   }
 
   void setYoutubeLink(String youtubeLink) {
@@ -130,19 +141,39 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
-  void updatePosition(Offset position) {
-    if (state.placingType == PlacingType.agent && state.currentAgent != null) {
-      state.currentAgent!.position = position;
-      // Force state update to notify listeners
-      state = state.copyWith(currentAgent: state.currentAgent);
-    } else if (state.placingType == PlacingType.ability &&
-        state.currentAbility != null) {
-      state.currentAbility!.position = position;
-      // Force state update to notify listeners
-      state = state.copyWith(currentAbility: state.currentAbility);
-    }
-    setSelectingPosition(false);
+  void clearCurrentPlacing() {
+    state = state.copyWith(
+      currentAgent: null,
+      currentAbility: null,
+      currentYoutubeLink: null,
+      currentImageIDs: null,
+      isSelectingPosition: false,
+      placingType: null,
+    );
   }
+
+  void updateAgentPosition(Offset position) {
+    if (state.currentAgent != null) {
+      final updatedAgent = state.currentAgent!..updatePosition(position);
+      state = state.copyWith(currentAgent: updatedAgent);
+    }
+  }
+
+  void updateAbilityPosition(Offset position) {
+    if (state.currentAbility != null) {
+      final updatedAbility = state.currentAbility!..updatePosition(position);
+      state = state.copyWith(currentAbility: updatedAbility);
+    }
+  }
+
+  void updateRotation(double rotation, double length) {
+    if (state.currentAbility != null) {
+      final updatedAbility = state.currentAbility!
+        ..updateRotation(rotation, length);
+      state = state.copyWith(currentAbility: updatedAbility);
+    }
+  }
+  //Have a hover glow on what agent is selectabel in the sidebar list
 
   void removeLineUp(String id) {
     // state = state.where((lineUp) => lineUp.id != id).toList();

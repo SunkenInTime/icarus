@@ -15,15 +15,11 @@ class LineUpWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
     final mapScale = ref.watch(mapProvider.notifier).mapScale;
-    final agentSize = ref.watch(strategySettingsProvider).agentSize;
-    final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
 
     // Compute screen positions
     final agentScreen =
         coordinateSystem.coordinateToScreen(lineUp.agent.position);
-    final abilityAnchor = lineUp.ability.data.abilityData!
-        .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
-        .scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
+
     final abilityScreen =
         coordinateSystem.coordinateToScreen(lineUp.ability.position);
 

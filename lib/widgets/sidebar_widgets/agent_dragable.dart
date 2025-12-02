@@ -9,6 +9,19 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_feedback_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
+final dragNotifier = NotifierProvider<DragNotifier, bool>(DragNotifier.new);
+
+class DragNotifier extends Notifier<bool> {
+  @override
+  bool build() {
+    return false;
+  }
+
+  void updateDragState(bool isDragging) {
+    state = isDragging;
+  }
+}
+
 class AgentDragable extends ConsumerWidget {
   const AgentDragable({
     super.key,
@@ -19,23 +32,17 @@ class AgentDragable extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
     return IgnorePointer(
-      ignoring: ref.watch(interactionStateProvider) == InteractionState.drag,
+      ignoring: ref.watch(dragNotifier) == true,
       child: Draggable(
         data: agent,
         onDragStarted: () {
-          ref
-              .read(interactionStateProvider.notifier)
-              .update(InteractionState.drag);
+          ref.read(dragNotifier.notifier).updateDragState(true);
         },
         onDraggableCanceled: (velocity, offset) {
-          ref
-              .read(interactionStateProvider.notifier)
-              .update(InteractionState.navigation);
+          ref.read(dragNotifier.notifier).updateDragState(false);
         },
         onDragCompleted: () {
-          ref
-              .read(interactionStateProvider.notifier)
-              .update(InteractionState.navigation);
+          ref.read(dragNotifier.notifier).updateDragState(false);
         },
         feedback: Opacity(
           opacity: Settings.feedbackOpacity,

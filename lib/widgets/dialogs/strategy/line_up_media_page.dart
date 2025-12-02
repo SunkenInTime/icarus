@@ -50,6 +50,17 @@ class _LineupMediaPageState extends State<LineupMediaPage> {
                 : _buildImageGrid(),
           ),
         ),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8.0),
+          child: Text("Notes", style: TextStyle(color: Colors.white)),
+        ),
+        const CustomTextField(
+          hintText: "Add any notes here...",
+
+          // onEnterPressed: (intent) {
+          //   // Handle enter pressed if needed
+          // },
+        ),
       ],
     );
   }

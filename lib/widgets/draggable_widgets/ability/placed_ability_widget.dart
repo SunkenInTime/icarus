@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -23,6 +24,7 @@ class PlacedAbilityWidget extends ConsumerStatefulWidget {
   final PlacedWidget data;
   final double rotation;
   final double length;
+  final bool isLineUp;
   const PlacedAbilityWidget({
     super.key,
     required this.ability,
@@ -31,6 +33,7 @@ class PlacedAbilityWidget extends ConsumerStatefulWidget {
     required this.data,
     required this.rotation,
     required this.length,
+    this.isLineUp = false,
   });
 
   @override
@@ -76,42 +79,47 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     final coordinateSystem = CoordinateSystem.instance;
 
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+
     if (localRotation == null) {
       return const SizedBox.shrink();
     }
 
     final index =
         PlacedWidget.getIndexByID(widget.id, ref.watch(abilityProvider));
-    final bool isAlly = ref.watch(abilityProvider)[index].isAlly;
+    final bool isAlly = widget.ability.isAlly;
 
+    final abilityRef = widget.isLineUp
+        ? ref.watch(lineUpProvider).currentAbility!
+        : ref.watch(abilityProvider)[index];
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1;
     //Linking the local rotation with global rotation for things like undo redo
-    if (ref.watch(abilityProvider)[index].rotation != localRotation! &&
-        rotationOrigin == Offset.zero) {
-      localRotation = ref.read(abilityProvider)[index].rotation;
-    }
+    if (!widget.isLineUp) {
+      if (abilityRef.rotation != localRotation! &&
+          rotationOrigin == Offset.zero) {
+        localRotation = ref.read(abilityProvider)[index].rotation;
+      }
 
-    if (ref.watch(abilityProvider)[index].length != localLength! &&
-        lengthOrigin == Offset.zero) {
-      localLength = ref.read(abilityProvider)[index].length;
-    }
+      if (abilityRef.length != localLength! && lengthOrigin == Offset.zero) {
+        localLength = ref.read(abilityProvider)[index].length;
+      }
 
-    if (index < 0) {
-      return Draggable<PlacedWidget>(
-        dragAnchorStrategy:
-            ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
-        data: widget.data,
-        feedback: Opacity(
-          opacity: Settings.feedbackOpacity,
-          child: ZoomTransform(
-              child: widget.ability.data.abilityData!
-                  .createWidget(id: null, isAlly: isAlly, mapScale: mapScale)),
-        ),
-        childWhenDragging: const SizedBox.shrink(),
-        onDragEnd: widget.onDragEnd,
-        child: widget.ability.data.abilityData!
-            .createWidget(id: widget.id, isAlly: isAlly, mapScale: mapScale),
-      );
+      if (index < 0) {
+        return Draggable<PlacedWidget>(
+          dragAnchorStrategy:
+              ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
+          data: widget.data,
+          feedback: Opacity(
+            opacity: Settings.feedbackOpacity,
+            child: ZoomTransform(
+                child: widget.ability.data.abilityData!.createWidget(
+                    id: null, isAlly: isAlly, mapScale: mapScale)),
+          ),
+          childWhenDragging: const SizedBox.shrink(),
+          onDragEnd: widget.onDragEnd,
+          child: widget.ability.data.abilityData!
+              .createWidget(id: widget.id, isAlly: isAlly, mapScale: mapScale),
+        );
+      }
     }
 
     if (widget.ability.data.abilityData is SquareAbility ||
@@ -209,9 +217,15 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             }
           },
           onPanEnd: (details) {
-            ref
-                .read(abilityProvider.notifier)
-                .updateRotation(index, localRotation!, localLength ?? 0);
+            if (widget.isLineUp) {
+              ref
+                  .read(lineUpProvider.notifier)
+                  .updateRotation(localRotation!, localLength ?? 0);
+            } else {
+              ref
+                  .read(abilityProvider.notifier)
+                  .updateRotation(index, localRotation!, localLength ?? 0);
+            }
 
             setState(() {
               rotationOrigin = Offset.zero;
@@ -250,16 +264,12 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                         coordinateSystem.scaleFactor *
                             ref.watch(screenZoomProvider)),
                 child: ZoomTransform(
-                  child: ref
-                      .watch(abilityProvider)[index]
-                      .data
-                      .abilityData!
-                      .createWidget(
-                          id: widget.id,
-                          isAlly: isAlly,
-                          mapScale: mapScale,
-                          rotation: localRotation!,
-                          length: localLength!),
+                  child: abilityRef.data.abilityData!.createWidget(
+                      id: widget.id,
+                      isAlly: isAlly,
+                      mapScale: mapScale,
+                      rotation: localRotation!,
+                      length: localLength!),
                 ),
               ),
             ),
@@ -276,16 +286,12 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               widget.onDragEnd(details);
             },
             // dragAnchorStrategy: pointDragAnchorStrategy,
-            child: ref
-                .watch(abilityProvider)[index]
-                .data
-                .abilityData!
-                .createWidget(
-                    id: widget.id,
-                    isAlly: isAlly,
-                    mapScale: mapScale,
-                    rotation: localRotation!,
-                    length: localLength!),
+            child: abilityRef.data.abilityData!.createWidget(
+                id: widget.id,
+                isAlly: isAlly,
+                mapScale: mapScale,
+                rotation: localRotation!,
+                length: localLength!),
           ),
         ),
       );

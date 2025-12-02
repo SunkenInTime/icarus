@@ -53,7 +53,8 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
           builder: (context, candidateData, rejectedData) {
             return IgnorePointer(
               ignoring: interactionState == InteractionState.drawing ||
-                  interactionState == InteractionState.erasing,
+                  interactionState == InteractionState.erasing ||
+                  interactionState == InteractionState.lineUpPlacing,
               child: Stack(
                 children: [
                   const Align(
@@ -277,6 +278,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
             Offset normalizedPosition =
                 coordinateSystem.screenToCoordinate(localOffset);
             const uuid = Uuid();
+
             if (details.data is AgentData) {
               PlacedAgent placedAgent = PlacedAgent(
                   id: uuid.v4(),
@@ -284,6 +286,11 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                   position: normalizedPosition,
                   isAlly: ref.read(teamProvider));
 
+              if (ref.read(interactionStateProvider) ==
+                  InteractionState.lineUpPlacing) {
+                ref.read(lineUpProvider.notifier).setAgent(placedAgent);
+                return;
+              }
               ref.read(agentProvider.notifier).addAgent(placedAgent);
             } else if (details.data is AbilityInfo) {
               PlacedAbility placedAbility = PlacedAbility(
@@ -292,6 +299,12 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 position: normalizedPosition,
                 isAlly: ref.read(teamProvider),
               );
+
+              if (ref.read(interactionStateProvider) ==
+                  InteractionState.lineUpPlacing) {
+                ref.read(lineUpProvider.notifier).setAbility(placedAbility);
+                return;
+              }
 
               ref.read(abilityProvider.notifier).addAbility(placedAbility);
             }

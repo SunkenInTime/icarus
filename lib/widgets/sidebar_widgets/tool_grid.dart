@@ -168,12 +168,16 @@ class ToolGrid extends ConsumerWidget {
                     );
                     return;
                   }
-                  showDialog(
-                    context: context,
-                    builder: (dialogContext) {
-                      return const CreateLineupDialog();
-                    },
-                  );
+
+                  ref
+                      .read(interactionStateProvider.notifier)
+                      .update(InteractionState.lineUpPlacing);
+                  // showDialog(
+                  //   context: context,
+                  //   builder: (dialogContext) {
+                  //     return const CreateLineupDialog();
+                  //   },
+                  // );
                 },
                 icon: const Icon(Icons.abc),
               ),

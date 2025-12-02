@@ -8,6 +8,7 @@ import 'package:flutter_svg/svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -107,7 +108,13 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                   Positioned.fill(
                     child: ref.watch(transitionProvider).hideView
                         ? SizedBox.shrink()
-                        : PlacedWidgetBuilder(),
+                        : Opacity(
+                            opacity: ref.watch(interactionStateProvider) ==
+                                    InteractionState.lineUpPlacing
+                                ? 0.5
+                                : 1.0,
+                            child: PlacedWidgetBuilder(),
+                          ),
                   ),
 
                   // Positioned.fill(child: child)
@@ -127,7 +134,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                   Positioned.fill(
                     child: InteractivePainter(),
                   ),
-                  if (ref.watch(lineUpProvider).isSelectingPosition)
+                  if (ref.watch(interactionStateProvider) ==
+                      InteractionState.lineUpPlacing)
                     Positioned.fill(
                       child: LineupPositionWidget(),
                     ),

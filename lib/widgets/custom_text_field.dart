@@ -9,11 +9,15 @@ class CustomTextField extends ConsumerWidget {
     this.controller,
     this.hintText,
     this.textAlign,
+    this.minLines,
+    this.maxLines,
     // required this.onEnterPressed,
   });
   final TextEditingController? controller;
   final String? hintText;
   final TextAlign? textAlign;
+  final int? minLines;
+  final int? maxLines;
   // final Function(EnterTextIntent intent) onEnterPressed;
 
   @override
@@ -23,6 +27,8 @@ class CustomTextField extends ConsumerWidget {
       child: TextField(
         controller: controller,
         textAlign: textAlign ?? TextAlign.start,
+        minLines: minLines,
+        maxLines: maxLines ?? 1,
         decoration: InputDecoration(
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(8.0),
