@@ -646,7 +646,6 @@ class AgentData implements DraggableData {
         width: 1.5 * inGameMeters,
       );
 
-      //TODO: Figure out the radius of the orb
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 6.5,

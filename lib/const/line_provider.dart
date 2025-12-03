@@ -4,12 +4,15 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'dart:ui';
 
-import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:json_annotation/json_annotation.dart';
+
+part "line_provider.g.dart";
 
 enum PlacingType { agent, ability }
 
 const _noChange = Object();
 
+@JsonSerializable()
 class LineUp extends HiveObject {
   final String id;
   final PlacedAgent agent;
@@ -44,8 +47,13 @@ class LineUp extends HiveObject {
       notes: notes ?? this.notes,
     );
   }
+
+  factory LineUp.fromJson(Map<String, dynamic> json) => _$LineUpFromJson(json);
+
+  Map<String, dynamic> toJson() => _$LineUpToJson(this);
 }
 
+@JsonSerializable()
 class SimpleImageData extends HiveObject {
   final String id;
   final String fileExtension;
@@ -64,6 +72,11 @@ class SimpleImageData extends HiveObject {
       fileExtension: fileExtension ?? this.fileExtension,
     );
   }
+
+  factory SimpleImageData.fromJson(Map<String, dynamic> json) =>
+      _$SimpleImageDataFromJson(json);
+
+  Map<String, dynamic> toJson() => _$SimpleImageDataToJson(this);
 }
 
 class LineUpState {
@@ -71,18 +84,14 @@ class LineUpState {
   final PlacedAgent? currentAgent;
   final PlacedAbility? currentAbility;
   final String? currentYoutubeLink;
-  final List<String>? currentImageIDs;
   final bool isSelectingPosition;
-  final PlacingType? placingType;
 
   LineUpState({
     this.currentAgent,
     this.currentAbility,
     this.currentYoutubeLink,
-    this.currentImageIDs,
     required this.lineUps,
     this.isSelectingPosition = false,
-    this.placingType,
   });
 
   LineUpState copyWith({
@@ -90,7 +99,6 @@ class LineUpState {
     Object? currentAgent = _noChange,
     Object? currentAbility = _noChange,
     Object? currentYoutubeLink = _noChange,
-    Object? currentImageIDs = _noChange,
     bool? isSelectingPosition,
     PlacingType? placingType,
   }) {
@@ -105,13 +113,7 @@ class LineUpState {
       currentYoutubeLink: identical(currentYoutubeLink, _noChange)
           ? this.currentYoutubeLink
           : currentYoutubeLink as String?,
-      currentImageIDs: identical(currentImageIDs, _noChange)
-          ? (this.currentImageIDs != null
-              ? List<String>.from(this.currentImageIDs!)
-              : null)
-          : (currentImageIDs as List<String>?),
       isSelectingPosition: isSelectingPosition ?? this.isSelectingPosition,
-      placingType: placingType ?? this.placingType,
     );
   }
 }
@@ -149,11 +151,6 @@ class LineUpProvider extends Notifier<LineUpState> {
     state = state.copyWith(currentYoutubeLink: youtubeLink);
   }
 
-  void setImageIDs(List<String> imageIDs) {
-    if (state.currentAgent == null) return;
-    state = state.copyWith(currentImageIDs: imageIDs);
-  }
-
   void setSelectingPosition(bool isSelecting, {PlacingType? type}) {
     state = state.copyWith(
       isSelectingPosition: isSelecting,
@@ -166,9 +163,7 @@ class LineUpProvider extends Notifier<LineUpState> {
       currentAgent: null,
       currentAbility: null,
       currentYoutubeLink: null,
-      currentImageIDs: null,
       isSelectingPosition: false,
-      placingType: null,
     );
   }
 
@@ -197,6 +192,12 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   void removeLineUp(String id) {
     // state = state.where((lineUp) => lineUp.id != id).toList();
+  }
+
+  void fromHive(List<LineUp> lineUps) {
+    state = state.copyWith(
+      lineUps: lineUps,
+    );
   }
 
   int getIndexById(String id) {

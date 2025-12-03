@@ -112,7 +112,8 @@ class _ImageCarouselState extends ConsumerState<ImageCarousel> {
               Positioned(
                 right: 8,
                 child: IconButton(
-                  icon: const Icon(Icons.arrow_forward_ios, color: Colors.white),
+                  icon:
+                      const Icon(Icons.arrow_forward_ios, color: Colors.white),
                   onPressed: () {
                     _pageController.nextPage(
                       duration: const Duration(milliseconds: 300),

@@ -350,7 +350,6 @@ class DrawingProvider extends Notifier<DrawingState> {
     return BoundingBox(min: Offset(minX, minY), max: Offset(maxX, maxY));
   }
 
-  //TODO: Fix ts later
   void startLine(Offset start) {
     final listOfElements = state.elements;
 

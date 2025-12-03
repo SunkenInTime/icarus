@@ -1031,13 +1031,15 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       sortIndex: (fields[1] as num).toInt(),
       isAttack: fields[9] as bool,
       settings: fields[10] as StrategySettings,
+      lineUps:
+          fields[11] == null ? const [] : (fields[11] as List).cast<LineUp>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, StrategyPage obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -1059,7 +1061,9 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(9)
       ..write(obj.isAttack)
       ..writeByte(10)
-      ..write(obj.settings);
+      ..write(obj.settings)
+      ..writeByte(11)
+      ..write(obj.lineUps);
   }
 
   @override
@@ -1069,6 +1073,92 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is StrategyPageAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class LineUpAdapter extends TypeAdapter<LineUp> {
+  @override
+  final typeId = 21;
+
+  @override
+  LineUp read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return LineUp(
+      id: fields[0] as String,
+      agent: fields[1] as PlacedAgent,
+      ability: fields[2] as PlacedAbility,
+      youtubeLink: fields[3] as String,
+      images: (fields[5] as List).cast<SimpleImageData>(),
+      notes: fields[4] as String,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, LineUp obj) {
+    writer
+      ..writeByte(6)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.agent)
+      ..writeByte(2)
+      ..write(obj.ability)
+      ..writeByte(3)
+      ..write(obj.youtubeLink)
+      ..writeByte(4)
+      ..write(obj.notes)
+      ..writeByte(5)
+      ..write(obj.images);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LineUpAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class SimpleImageDataAdapter extends TypeAdapter<SimpleImageData> {
+  @override
+  final typeId = 22;
+
+  @override
+  SimpleImageData read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return SimpleImageData(
+      id: fields[0] as String,
+      fileExtension: fields[1] as String,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, SimpleImageData obj) {
+    writer
+      ..writeByte(2)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.fileExtension);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SimpleImageDataAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

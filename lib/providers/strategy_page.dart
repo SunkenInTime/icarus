@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -24,6 +25,7 @@ class StrategyPage extends HiveObject {
   final List<PlacedImage> imageData;
   final List<PlacedUtility> utilityData;
   final bool isAttack;
+  final List<LineUp> lineUps;
   final StrategySettings settings;
 
   StrategyPage({
@@ -38,6 +40,7 @@ class StrategyPage extends HiveObject {
     required this.sortIndex,
     required this.isAttack,
     required this.settings,
+    this.lineUps = const [],
   });
 
   StrategyPage copyWith({
@@ -52,6 +55,7 @@ class StrategyPage extends HiveObject {
     List<PlacedUtility>? utilityData,
     bool? isAttack,
     StrategySettings? settings,
+    List<LineUp>? lineUps,
   }) {
     return StrategyPage(
       id: id ?? this.id,
@@ -74,6 +78,7 @@ class StrategyPage extends HiveObject {
       )),
       settings: settings?.copyWith() ?? this.settings.copyWith(),
       isAttack: isAttack ?? this.isAttack,
+      lineUps: lineUps ?? List<LineUp>.from(this.lineUps),
     );
   }
 
@@ -93,6 +98,7 @@ class StrategyPage extends HiveObject {
                "utilityData": ${UtilityProvider.objectToJson(utilityData)},
                "isAttack": "${isAttack.toString()}",
                "settings": ${StrategySettingsProvider.objectToJson(settings)}
+               
                }
              ''';
 
