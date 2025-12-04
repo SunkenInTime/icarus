@@ -19,6 +19,7 @@ import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:window_manager/window_manager.dart';
 
 CustomMouseCursor? drawingCursor;
@@ -88,19 +89,46 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // return ShadApp.custom(
+    //   themeMode: ThemeMode.dark,
+    //   darkTheme: ShadThemeData(
+    //     brightness: Brightness.dark,
+    //     colorScheme: const ShadSlateColorScheme.dark(),
+    //   ),
+    //   appBuilder: (context) {
+    //     return MaterialApp(
+    //       theme: Theme.of(context),
+    //       builder: (context, child) {
+    //         return ShadAppBuilder(child: child!);
+    //       },
+    //     );
+    //   },
+    // );
     return GlobalShortcuts(
       child: Portal(
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          title: 'Icarus',
-          theme: Settings.appTheme,
-          routes: {
-            Routes.folderNavigator: (context) => const FolderNavigator(),
-            Routes.strategyView: (context) => const StrategyView(),
-            Routes.settings: (context) => const SettingsTab(),
-          },
-          home: const MyHomePage(),
-        ),
+        child: ShadApp.custom(
+            themeMode: ThemeMode.dark,
+            darkTheme: ShadThemeData(
+              brightness: Brightness.dark,
+              colorScheme: const ShadSlateColorScheme.dark(),
+            ),
+            appBuilder: (context) {
+              return MaterialApp(
+                debugShowCheckedModeBanner: false,
+                title: 'Icarus',
+                theme: Settings.appTheme,
+                // theme: Theme.of(context),
+                home: const MyHomePage(),
+                routes: {
+                  Routes.folderNavigator: (context) => const FolderNavigator(),
+                  Routes.strategyView: (context) => const StrategyView(),
+                  Routes.settings: (context) => const SettingsTab(),
+                },
+                builder: (context, child) {
+                  return ShadAppBuilder(child: child!);
+                },
+              );
+            }),
       ),
     );
   }

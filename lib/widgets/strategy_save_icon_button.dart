@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// The save button that animates on auto-save pings.
 class AutoSaveButton extends ConsumerStatefulWidget {
@@ -53,21 +55,31 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
       _rotationController.stop();
       setState(() => _phase = _Phase.success);
 
-      // show the snack bar here, outside build
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Center(
-            child: Text(
-              "Auto‐save complete",
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-          duration: Duration(seconds: 2),
-          backgroundColor: Settings.sideBarColor,
-          behavior: SnackBarBehavior.floating,
-          width: 200,
+      final sonner = ShadSonner.of(context);
+      final id = Random().nextInt(1000);
+      sonner.show(
+        ShadToast(
+          backgroundColor: Colors.greenAccent,
+          id: id,
+          title: const Text('Auto-Save Complete'),
         ),
       );
+
+      // // show the snack bar here, outside build
+      // ScaffoldMessenger.of(context).showSnackBar(
+      //   const SnackBar(
+      //     content: Center(
+      //       child: Text(
+      //         "Auto‐save complete",
+      //         style: TextStyle(color: Colors.white),
+      //       ),
+      //     ),
+      //     duration: Duration(seconds: 2),
+      //     backgroundColor: Settings.sideBarColor,
+      //     behavior: SnackBarBehavior.floating,
+      //     width: 200,
+      //   ),
+      // );
 
       // after 1s go back to idle
       Timer(const Duration(seconds: 1), () {

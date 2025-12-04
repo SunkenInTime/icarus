@@ -36,6 +36,7 @@ dependencies:
   flutter_colorpicker: ^1.1.0
   archive: ^4.0.7
   flutter_portal: ^1.1.4
+  shadcn_ui: ^0.27.1
 
 dev_dependencies:
   flutter_test:
