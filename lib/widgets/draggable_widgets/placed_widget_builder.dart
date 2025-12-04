@@ -63,6 +63,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                   ),
                   for (PlacedAbility ability in ref.watch(abilityProvider))
                     PlacedAbilityWidget(
+                      key: ValueKey(ability.id),
                       rotation: ability.rotation,
                       data: ability,
                       ability: ability,
@@ -98,6 +99,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                     ),
                   for (PlacedAgent agent in ref.watch(agentProvider))
                     Positioned(
+                      key: ValueKey(agent.id),
                       left: coordinateSystem
                           .coordinateToScreen(agent.position)
                           .dx,
@@ -145,6 +147,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                     ),
                   for (PlacedText placedText in ref.watch(textProvider))
                     Positioned(
+                      key: ValueKey(placedText.id),
                       left: coordinateSystem
                           .coordinateToScreen(placedText.position)
                           .dx,
@@ -183,6 +186,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                   for (PlacedImage placedImage
                       in ref.watch(placedImageProvider).images)
                     Positioned(
+                        key: ValueKey(placedImage.id),
                         left: coordinateSystem
                             .coordinateToScreen(placedImage.position)
                             .dx,
@@ -220,6 +224,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                   for (PlacedUtility placedUtility
                       in ref.watch(utilityProvider))
                     Positioned(
+                      key: ValueKey(placedUtility.id),
                       left: coordinateSystem
                           .coordinateToScreen(placedUtility.position)
                           .dx,

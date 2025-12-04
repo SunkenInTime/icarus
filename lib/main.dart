@@ -104,31 +104,48 @@ class MyApp extends StatelessWidget {
     //     );
     //   },
     // );
+    // return GlobalShortcuts(
+    //   child: Portal(
+    //     child: ShadApp.custom(
+    //         themeMode: ThemeMode.dark,
+    //         darkTheme: ShadThemeData(
+    //           brightness: Brightness.dark,
+    //           colorScheme: const ShadSlateColorScheme.dark(),
+    //         ),
+    //         appBuilder: (context) {
+    //           return MaterialApp(
+    //             debugShowCheckedModeBanner: false,
+    //             title: 'Icarus',
+    //             theme: Settings.appTheme,
+    //             // theme: Theme.of(context),
+    //             home: const MyHomePage(),
+    //             routes: {
+    //               Routes.folderNavigator: (context) => const FolderNavigator(),
+    //               Routes.strategyView: (context) => const StrategyView(),
+    //               Routes.settings: (context) => const SettingsTab(),
+    //             },
+    //             builder: (context, child) {
+    //               return ShadAppBuilder(child: child!);
+    //             },
+    //           );
+    //         }),
+    //   ),
+    // );
+
     return GlobalShortcuts(
       child: Portal(
-        child: ShadApp.custom(
-            themeMode: ThemeMode.dark,
-            darkTheme: ShadThemeData(
-              brightness: Brightness.dark,
-              colorScheme: const ShadSlateColorScheme.dark(),
-            ),
-            appBuilder: (context) {
-              return MaterialApp(
-                debugShowCheckedModeBanner: false,
-                title: 'Icarus',
-                theme: Settings.appTheme,
-                // theme: Theme.of(context),
-                home: const MyHomePage(),
-                routes: {
-                  Routes.folderNavigator: (context) => const FolderNavigator(),
-                  Routes.strategyView: (context) => const StrategyView(),
-                  Routes.settings: (context) => const SettingsTab(),
-                },
-                builder: (context, child) {
-                  return ShadAppBuilder(child: child!);
-                },
-              );
-            }),
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'Icarus',
+          theme: Settings.appTheme,
+          // theme: Theme.of(context),
+          home: const MyHomePage(),
+          routes: {
+            Routes.folderNavigator: (context) => const FolderNavigator(),
+            Routes.strategyView: (context) => const StrategyView(),
+            Routes.settings: (context) => const SettingsTab(),
+          },
+        ),
       ),
     );
   }

@@ -41,8 +41,8 @@ class AgentWidget extends ConsumerWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         decoration: BoxDecoration(
-          color: (ref.watch(hoveredLineUpIdProvider) == lineUpId &&
-                  lineUpId != null)
+          color: (lineUpId != null &&
+                  ref.watch(hoveredLineUpIdProvider) == lineUpId)
               ? Colors.deepPurple
               : isAlly
                   ? Settings.allyBGColor
