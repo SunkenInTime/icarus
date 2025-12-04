@@ -97,8 +97,8 @@ class StrategyPage extends HiveObject {
                "imageData":$fetchedImageData,
                "utilityData": ${UtilityProvider.objectToJson(utilityData)},
                "isAttack": "${isAttack.toString()}",
-               "settings": ${StrategySettingsProvider.objectToJson(settings)}
-               
+               "settings": ${StrategySettingsProvider.objectToJson(settings)},
+               "lineUpData": ${LineUpProvider.objectToJson(lineUps)}
                }
              ''';
 
@@ -160,6 +160,7 @@ class StrategyPage extends HiveObject {
       utilityData: UtilityProvider.fromJson(jsonEncode(json['utilityData'])),
       isAttack: isAttack,
       settings: StrategySettings.fromJson(json['settings']),
+      lineUps: LineUpProvider.fromJson(jsonEncode(json['lineUpData'])),
     );
   }
 }

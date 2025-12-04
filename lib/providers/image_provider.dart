@@ -46,12 +46,8 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   Future<void> deleteUnusedImages(
-      String strategyID, List<PlacedImage> localImages) async {
-    List<String> fileIDs = [];
-
-    for (PlacedImage image in localImages) {
-      fileIDs.add(image.id);
-    }
+      String strategyID, List<String> localImages) async {
+    List<String> fileIDs = localImages;
 
     if (kIsWeb) return;
     // Get the system's application support directory.

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/agents.dart';
@@ -198,6 +200,16 @@ class LineUpProvider extends Notifier<LineUpState> {
     state = state.copyWith(
       lineUps: lineUps,
     );
+  }
+
+  static String objectToJson(List<LineUp> lineUps) {
+    return jsonEncode(lineUps.map((lineUp) => lineUp.toJson()).toList());
+  }
+
+  static List<LineUp> fromJson(String json) {
+    return (jsonDecode(json) as List<dynamic>)
+        .map((e) => LineUp.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   int getIndexById(String id) {

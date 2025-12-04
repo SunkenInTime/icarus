@@ -583,9 +583,20 @@ class StrategyProvider extends Notifier<StrategyState> {
     for (final page in newStrat.pages) {
       pageImageData.addAll(page.imageData);
     }
-    await ref
-        .read(placedImageProvider.notifier)
-        .deleteUnusedImages(newStrat.id, pageImageData);
+    if (!kIsWeb) {
+      List<String> allImageIds = [];
+      for (final page in newStrat.pages) {
+        allImageIds.addAll(page.imageData.map((image) => image.id));
+        for (final lineUp in page.lineUps) {
+          List<String> lineUpImages = [];
+          lineUpImages.addAll(lineUp.images.map((image) => image.id));
+          allImageIds.addAll(lineUpImages);
+        }
+      }
+      await ref
+          .read(placedImageProvider.notifier)
+          .deleteUnusedImages(newStrat.id, allImageIds);
+    }
 
     final firstPage = newStrat.pages.first;
 
