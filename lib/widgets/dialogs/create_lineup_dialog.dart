@@ -48,8 +48,8 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
 
   @override
   void dispose() {
-    _youtubeLinkController.dispose();
-    _notesController.dispose();
+    // _youtubeLinkController.dispose();
+    // _notesController.dispose();
     super.dispose();
   }
 

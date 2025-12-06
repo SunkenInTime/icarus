@@ -32,6 +32,23 @@ class AbiilityBar extends ConsumerWidget {
           borderRadius: const BorderRadius.horizontal(
             left: Radius.circular(24),
           ),
+          border: Border(
+            left: BorderSide(
+              strokeAlign: BorderSide.strokeAlignOutside,
+              color: Settings.tacticalVioletTheme.border,
+              width: 1,
+            ),
+            top: BorderSide(
+              strokeAlign: BorderSide.strokeAlignOutside,
+              color: Settings.tacticalVioletTheme.border,
+              width: 1,
+            ),
+            bottom: BorderSide(
+              strokeAlign: BorderSide.strokeAlignOutside,
+              color: Settings.tacticalVioletTheme.border,
+              width: 1,
+            ),
+          ),
           boxShadow: const [Settings.cardForegroundBackdrop]),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,

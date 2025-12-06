@@ -153,8 +153,15 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
 
                   //Painting
                   Positioned.fill(
-                    child: InteractivePainter(),
+                    child: Opacity(
+                      opacity: ref.watch(interactionStateProvider) ==
+                              InteractionState.lineUpPlacing
+                          ? 0.5
+                          : 1.0,
+                      child: InteractivePainter(),
+                    ),
                   ),
+
                   if (ref.watch(interactionStateProvider) ==
                       InteractionState.lineUpPlacing)
                     Positioned.fill(

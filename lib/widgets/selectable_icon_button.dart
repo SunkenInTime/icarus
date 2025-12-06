@@ -25,6 +25,8 @@ class SelectableIconButton extends ConsumerWidget {
         icon: icon,
         backgroundColor:
             isSelected ? Settings.tacticalVioletTheme.primary : null,
+        hoverBackgroundColor:
+            isSelected ? Settings.tacticalVioletTheme.primary : null,
         onPressed: onPressed,
       ),
     );

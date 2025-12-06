@@ -169,27 +169,34 @@ class ToolGrid extends ConsumerWidget {
                     icon: const Icon(Icons.image_outlined),
                   ),
                 ),
-                ShadTooltip(
-                  builder: (context) => const Text("Add Lineup"),
-                  child: ShadIconButton.secondary(
-                    onPressed: () async {
-                      if (kIsWeb) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'This feature is only supported in the Windows version.',
-                            ),
+                SelectableIconButton(
+                  tooltip: "Add Lineup",
+                  onPressed: () async {
+                    if (kIsWeb) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'This feature is only supported in the Windows version.',
                           ),
-                        );
-                        return;
-                      }
+                        ),
+                      );
+                      return;
+                    }
 
+                    if (ref.watch(interactionStateProvider) ==
+                        InteractionState.lineUpPlacing) {
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.navigation);
+                    } else {
                       ref
                           .read(interactionStateProvider.notifier)
                           .update(InteractionState.lineUpPlacing);
-                    },
-                    icon: const Icon(Icons.abc),
-                  ),
+                    }
+                  },
+                  icon: const Icon(LucideIcons.bookOpen400),
+                  isSelected: ref.watch(interactionStateProvider) ==
+                      InteractionState.lineUpPlacing,
                 ),
                 ShadTooltip(
                   builder: (context) => const Text("Spike"),
