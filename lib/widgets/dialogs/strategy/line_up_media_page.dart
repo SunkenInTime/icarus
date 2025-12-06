@@ -44,6 +44,13 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   }
 
   @override
+  void dispose() {
+    widget.youtubeLinkController.dispose();
+    widget.notesController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -60,9 +67,9 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
         Expanded(
           child: Container(
             decoration: BoxDecoration(
-              color: Settings.abilityBGColor,
+              color: Settings.tacticalVioletTheme.card,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Settings.highlightColor),
+              border: Border.all(color: Settings.tacticalVioletTheme.border),
             ),
             padding: const EdgeInsets.all(12),
             child:
@@ -87,18 +94,22 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   Widget _buildEmptyState() {
     return GestureDetector(
       onTap: widget.onAddImage,
-      child: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.add_photo_alternate_outlined,
-                size: 48, color: Colors.white54),
-            SizedBox(height: 8),
-            Text(
-              "Click here to add images",
-              style: TextStyle(color: Colors.white54),
-            ),
-          ],
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.add_photo_alternate_outlined,
+                  size: 48, color: Settings.tacticalVioletTheme.cardForeground),
+              const SizedBox(height: 8),
+              Text(
+                "Click here to add images",
+                style: TextStyle(
+                    color: Settings.tacticalVioletTheme.cardForeground),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -125,13 +136,16 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   Widget _buildAddButton() {
     return GestureDetector(
       onTap: widget.onAddImage,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.white24),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Settings.tacticalVioletTheme.secondary,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Settings.tacticalVioletTheme.border),
+          ),
+          child: const Icon(Icons.add, color: Colors.white),
         ),
-        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
@@ -156,13 +170,16 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
           right: 4,
           child: GestureDetector(
             onTap: () => widget.onRemoveImage(index),
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(
-                color: Colors.black54,
-                shape: BoxShape.circle,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.close, size: 14, color: Colors.white),
               ),
-              child: const Icon(Icons.close, size: 14, color: Colors.white),
             ),
           ),
         ),

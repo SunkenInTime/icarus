@@ -229,9 +229,9 @@ class StrategyProvider extends Notifier<StrategyState> {
         _pendingSave = false;
         // Small debounce to coalesce rapid edits during the previous save
         _saveTimer?.cancel();
-        _saveTimer = Timer(const Duration(milliseconds: 500), () {
-          _performSave(id);
-        });
+        // _saveTimer = Timer(const Duration(milliseconds: 500), () {
+        //   _performSave(id);
+        // });
       }
     }
   }

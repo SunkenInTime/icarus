@@ -25,6 +25,7 @@ import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/utility_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/line_up_line_painter.dart';
+import 'package:icarus/widgets/current_line_up_painter.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
 import 'package:uuid/uuid.dart';
 
@@ -44,6 +45,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    final lineUps = ref.watch(lineUpProvider).lineUps;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -268,8 +270,10 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                   Positioned.fill(
                     child: Stack(
                       children: [
-                        for (final lineUp in ref.watch(lineUpProvider).lineUps)
-                          LineUpWidget(lineUp: lineUp)
+                        for (final lineUp in lineUps)
+                          LineUpAgentWidget(lineUp: lineUp),
+                        for (final lineUp in lineUps)
+                          LineUpAbilityWidget(lineUp: lineUp),
                       ],
                     ),
                   ),

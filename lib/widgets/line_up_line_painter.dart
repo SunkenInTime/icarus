@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -7,6 +9,18 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 
+final lineUpCanvasResizeProvider =
+    NotifierProvider<LineUpCanvasResizeNotifier, int>(
+  LineUpCanvasResizeNotifier.new,
+);
+
+class LineUpCanvasResizeNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void increment() => state++;
+}
+
 class LineUpLinePainter extends ConsumerStatefulWidget {
   const LineUpLinePainter({super.key});
   @override
@@ -15,22 +29,49 @@ class LineUpLinePainter extends ConsumerStatefulWidget {
 }
 
 class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
+  Size? _previousSize;
+
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
-      ignoring: true,
-      child: CustomPaint(
-        painter: LinePainter(
-          hoveredLineUpId: ref.watch(hoveredLineUpIdProvider),
-          lineUps: ref.watch(lineUpProvider).lineUps,
-          coordinateSystem: CoordinateSystem.instance,
-          abilitySize: ref.watch(strategySettingsProvider).abilitySize,
-          agentSize: ref.watch(strategySettingsProvider).agentSize,
-          mapScale: ref.watch(mapProvider.notifier).mapScale,
-          currentAgent: ref.watch(lineUpProvider).currentAgent,
-          currentAbility: ref.watch(lineUpProvider).currentAbility,
-        ),
-      ),
+    final coordinateSystem = CoordinateSystem.instance;
+
+    // Use LayoutBuilder to get the actual rendered size of this canvas.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final currentSize = constraints.biggest;
+
+        // Skip screenshots; only bump when size actually changes.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (coordinateSystem.isScreenshot) return;
+          if (_previousSize == currentSize) return;
+          _previousSize = currentSize;
+          ref.read(lineUpCanvasResizeProvider.notifier).increment();
+          log("LineUp Canvas resized to $currentSize");
+        });
+
+        final resizeCounter = ref.watch(lineUpCanvasResizeProvider);
+
+        return IgnorePointer(
+          ignoring: true,
+          child: RepaintBoundary(
+            child: CustomPaint(
+              painter: LinePainter(
+                resizeCounter: resizeCounter,
+                hoveredLineUpId: ref.watch(hoveredLineUpIdProvider),
+                lineUps: ref.watch(lineUpProvider).lineUps,
+                coordinateSystem: CoordinateSystem.instance,
+                abilitySize: ref.watch(strategySettingsProvider).abilitySize,
+                agentSize: ref.watch(strategySettingsProvider).agentSize,
+                mapScale: ref.watch(mapProvider.notifier).mapScale,
+                currentAgent: ref.watch(lineUpProvider).currentAgent,
+                currentAbility: ref.watch(lineUpProvider).currentAbility,
+              ),
+              // Ensure it expands to the available area so constraints.biggest is meaningful.
+              size: Size.infinite,
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -44,9 +85,11 @@ class LinePainter extends CustomPainter {
   final double mapScale;
   final PlacedAgent? currentAgent;
   final PlacedAbility? currentAbility;
+  final int resizeCounter;
 
   LinePainter({
     super.repaint,
+    required this.resizeCounter,
     required this.hoveredLineUpId,
     required this.lineUps,
     required this.coordinateSystem,
@@ -70,20 +113,7 @@ class LinePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..isAntiAlias = true;
 
-    if (currentAgent != null && currentAbility != null) {
-      final startPosition =
-          coordinateSystem.coordinateToScreen(currentAgent!.position) +
-              Offset((agentSize / 2), (agentSize / 2));
-
-      final endPosition = coordinateSystem
-              .coordinateToScreen(currentAbility!.position) +
-          currentAbility!.data.abilityData!
-              .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
-              .scale(
-                  coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
-
-      canvas.drawLine(startPosition, endPosition, highlightPaint);
-    }
+    // Current lineup highlight moved to CurrentLineUpPainter.
     for (final lineUp in lineUps) {
       final startPosition =
           coordinateSystem.coordinateToScreen(lineUp.agent.position) +
@@ -114,8 +144,9 @@ class LinePainter extends CustomPainter {
               coordinateSystem.effectiveSize ||
           oldDelegate.abilitySize != abilitySize ||
           oldDelegate.agentSize != agentSize ||
-          oldDelegate.mapScale != mapScale;
+          oldDelegate.mapScale != mapScale ||
+          oldDelegate.resizeCounter != resizeCounter;
     }
-    return true;
+    return false;
   }
 }

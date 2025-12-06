@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/color_option.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 
 class Settings {
   static const double agentSize = 35;
@@ -149,4 +150,32 @@ class Settings {
     blurRadius: 12,
     offset: Offset(0, 4), // Slight downward shift
   );
+
+  static void showToast(
+      {required String message, required Color backgroundColor}) {
+    toastification.showCustom(
+      autoCloseDuration: const Duration(seconds: 3),
+      alignment: Alignment.bottomCenter,
+      builder: (context, holder) {
+        return Container(
+          margin: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Settings.tacticalVioletTheme.border,
+            ),
+          ),
+          child: Text(
+            message,
+            style: ShadTheme.of(context)
+                .textTheme
+                .small
+                .copyWith(color: Colors.white),
+          ),
+        );
+      },
+    );
+  }
 }

@@ -57,16 +57,6 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
       _rotationController.stop();
       setState(() => _phase = _Phase.success);
 
-      final sonner = ShadSonner.of(context);
-      final id = Random().nextInt(1000);
-      sonner.show(
-        ShadToast(
-          backgroundColor: Colors.greenAccent,
-          id: id,
-          title: const Text('Auto-Save Complete'),
-        ),
-      );
-
       // // show the snack bar here, outside build
       // ScaffoldMessenger.of(context).showSnackBar(
       //   const SnackBar(
@@ -134,21 +124,31 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
               .forceSaveNow(ref.read(strategyProvider).id);
           if (!context.mounted) return;
 
-          toastification.show(
+          toastification.showCustom(
             context: context,
-            title: Text('Save Complete',
-                style: ShadTheme.of(context).textTheme.small),
-            autoCloseDuration: const Duration(seconds: 5),
-            type: ToastificationType.success,
-            foregroundColor: Colors.white,
-            backgroundColor: Settings.tacticalVioletTheme.card,
-            padding: EdgeInsets.zero,
-            borderSide: BorderSide(
-              color: Settings.tacticalVioletTheme.border,
-            ),
-            closeButton:
-                const ToastCloseButton(showType: CloseButtonShowType.none),
-            style: ToastificationStyle.simple,
+            autoCloseDuration: const Duration(seconds: 3),
+            alignment: Alignment.bottomCenter,
+            builder: (context, holder) {
+              return Container(
+                margin: const EdgeInsets.all(16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Settings.tacticalVioletTheme.card,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Settings.tacticalVioletTheme.border,
+                  ),
+                ),
+                child: Text(
+                  'Save Complete',
+                  style: ShadTheme.of(context)
+                      .textTheme
+                      .small
+                      .copyWith(color: Colors.white),
+                ),
+              );
+            },
           );
           // ScaffoldMessenger.of(context).showSnackBar(
           //   const SnackBar(

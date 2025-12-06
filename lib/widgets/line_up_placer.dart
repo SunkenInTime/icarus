@@ -14,11 +14,13 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/team_provider.dart';
+import 'package:icarus/widgets/current_line_up_painter.dart';
 import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
 class LineupPositionWidget extends ConsumerStatefulWidget {
@@ -41,6 +43,9 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
         builder: (context, candidateData, rejectedData) {
           return Stack(
             children: [
+              const Positioned.fill(
+                child: CurrentLineUpPainter(),
+              ),
               if (lineUp.currentAbility != null)
                 PlacedAbilityWidget(
                   rotation: lineUp.currentAbility!.rotation,
@@ -129,29 +134,57 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                 alignment: Alignment.bottomRight,
                 child: Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: CustomButton(
-                    icon: const Icon(Icons.arrow_forward),
-                    isDynamicWidth: true,
-                    isIconRight: true,
-                    label: "Next",
-                    isDisabled: lineUp.currentAgent == null ||
-                        lineUp.currentAbility == null,
-                    disabledTooltip: lineUp.currentAgent == null
-                        ? "Place an agent to continue"
-                        : lineUp.currentAbility == null
-                            ? "Place an ability to continue"
-                            : null,
-                    height: 40,
-                    // width: 140,
-                    onPressed: () {
-                      // ref.read(lineUpProvider.notifier).clearCurrentPlacing();
-                      showDialog(
-                        context: context,
-                        builder: (dialogContext) {
-                          return const CreateLineupDialog();
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ShadTooltip(
+                        builder: (_) => const Text("Cancel"),
+                        child: ShadIconButton.secondary(
+                          width: 40,
+                          height: 40,
+                          icon: const Icon(LucideIcons.x),
+                          onPressed: () {
+                            ref
+                                .read(interactionStateProvider.notifier)
+                                .update(InteractionState.navigation);
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Builder(
+                        builder: (context) {
+                          final hasAgent = lineUp.currentAgent != null;
+                          final hasAbility = lineUp.currentAbility != null;
+                          final isDisabled = !hasAgent || !hasAbility;
+                          final tooltipMessage = !hasAgent && !hasAbility
+                              ? "Place an agent and ability to continue"
+                              : !hasAgent
+                                  ? "Place an agent to continue"
+                                  : !hasAbility
+                                      ? "Place an ability to continue"
+                                      : "Finalize lineup details";
+
+                          return ShadTooltip(
+                            builder: (_) => Text(tooltipMessage),
+                            child: ShadGestureDetector(
+                              child: ShadButton(
+                                trailing: const Icon(LucideIcons.arrowRight),
+                                enabled: !isDisabled,
+                                onPressed: () {
+                                  showShadDialog(
+                                    context: context,
+                                    builder: (dialogContext) {
+                                      return const CreateLineupDialog();
+                                    },
+                                  );
+                                },
+                                child: const Text("Next"),
+                              ),
+                            ),
+                          );
                         },
-                      );
-                    },
+                      ),
+                    ],
                   ),
                 ),
               )

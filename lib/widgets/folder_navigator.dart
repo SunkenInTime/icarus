@@ -47,7 +47,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
   void _warnDemo() async {
     if (!kIsWeb) return;
-    await showDialog<void>(
+    await showShadDialog<void>(
       context: context,
       builder: (context) {
         return const DemoDialog();

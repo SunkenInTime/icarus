@@ -187,12 +187,6 @@ class ToolGrid extends ConsumerWidget {
                       ref
                           .read(interactionStateProvider.notifier)
                           .update(InteractionState.lineUpPlacing);
-                      // showDialog(
-                      //   context: context,
-                      //   builder: (dialogContext) {
-                      //     return const CreateLineupDialog();
-                      //   },
-                      // );
                     },
                     icon: const Icon(Icons.abc),
                   ),

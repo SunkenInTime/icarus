@@ -28,9 +28,11 @@ class AbiilityBar extends ConsumerWidget {
       width: 90,
       height: (activeAgent.abilities.length * 71),
       decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.card,
-        borderRadius: const BorderRadius.horizontal(left: Radius.circular(24)),
-      ),
+          color: Settings.tacticalVioletTheme.card,
+          borderRadius: const BorderRadius.horizontal(
+            left: Radius.circular(24),
+          ),
+          boxShadow: const [Settings.cardForegroundBackdrop]),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [

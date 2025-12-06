@@ -202,7 +202,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   }
 
   Future<void> _showRenameDialog() async {
-    await showDialog<void>(
+    await showShadDialog<void>(
       context: context,
       builder: (_) => RenameStrategyDialog(
         strategyId: widget.strategyData.id,

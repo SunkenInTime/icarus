@@ -68,6 +68,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
     final updated =
         strat.copyWith(pages: updatedPages, lastEdited: DateTime.now());
     await box.put(updated.id, updated);
+    controller.dispose();
   }
 
   Future<void> _deletePage(StrategyData strat, StrategyPage page) async {

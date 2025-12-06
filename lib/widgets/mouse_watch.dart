@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_portal/flutter_portal.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/widgets/image_caroseul.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class MouseWatch extends ConsumerStatefulWidget {
   const MouseWatch({
@@ -88,14 +90,14 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     );
 
     return RepaintBoundary(
-      child: !hasLineUpNote
+      child: lineUpId == null
           ? content
           : PortalTarget(
               anchor: const Aligned(
                 follower: Alignment.bottomCenter,
                 target: Alignment.topCenter,
               ),
-              visible: isMouseInRegion,
+              visible: isMouseInRegion && hasLineUpNote,
               portalFollower: Padding(
                 padding: const EdgeInsets.only(bottom: 4.0),
                 child: ConstrainedBox(
@@ -112,16 +114,32 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
                       ),
                     )),
               ),
-              child: GestureDetector(
-                child: content,
-                onTap: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => ImageCarousel(
-                      images: lineUp!.images,
+              child: ShadContextMenuRegion(
+                items: [
+                  ShadContextMenuItem(
+                    leading: Icon(
+                      Icons.delete,
+                      color: Settings.tacticalVioletTheme.destructive,
                     ),
-                  );
-                },
+                    child: const Text('Delete'),
+                    onPressed: () {
+                      ref
+                          .read(lineUpProvider.notifier)
+                          .deleteLineUpById(lineUpId);
+                    },
+                  ),
+                ],
+                child: GestureDetector(
+                  child: content,
+                  onTap: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => ImageCarousel(
+                        images: lineUp!.images,
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
     );

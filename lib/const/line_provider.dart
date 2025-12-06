@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'dart:ui';
 
 import 'package:json_annotation/json_annotation.dart';
@@ -138,13 +139,21 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void setAbility(PlacedAbility ability) {
-    //TODO: Evaluate if this check is  UX friendly
-    if (state.currentAgent == null) return;
+    if (state.currentAgent == null) {
+      Settings.showToast(
+        message: "Please select an agent first.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
 
     if (ability.data.type == state.currentAgent!.type) {
       state = state.copyWith(currentAbility: ability);
     } else {
-      throw Exception("Ability type does not match the current agent type");
+      Settings.showToast(
+        message: "Ability does not match the selected agent.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
     }
   }
 
@@ -214,6 +223,12 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   int getIndexById(String id) {
     return state.lineUps.indexWhere((lineUp) => lineUp.id == id);
+  }
+
+  void deleteLineUpById(String id) {
+    state = state.copyWith(
+      lineUps: state.lineUps.where((lineUp) => lineUp.id != id).toList(),
+    );
   }
 }
 

@@ -14,6 +14,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
 import 'package:path/path.dart' as path;
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
 class CreateLineupDialog extends ConsumerStatefulWidget {
@@ -48,6 +49,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   @override
   void dispose() {
     _youtubeLinkController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -63,15 +65,41 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
               .update(InteractionState.navigation);
         }
       },
-      child: AlertDialog(
-        backgroundColor: Settings.sideBarColor,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
-          side: const BorderSide(color: Settings.highlightColor, width: 2),
+      child: ShadDialog(
+        title: const Text(
+          "Create Line Up",
         ),
-        titlePadding: const EdgeInsets.all(16),
-        title: const _DialogHeader(),
-        content: SizedBox(
+        actions: [
+          ShadButton(
+            onPressed: () async {
+              if (!canSave) return;
+              final id = const Uuid().v4();
+              log("notes : ${_notesController.text}");
+              final LineUp currentLineUp = LineUp(
+                id: id,
+                agent: ref
+                    .read(lineUpProvider)
+                    .currentAgent!
+                    .copyWith(lineUpID: id),
+                ability: ref
+                    .read(lineUpProvider)
+                    .currentAbility!
+                    .copyWith(lineUpID: id),
+                youtubeLink: _youtubeLinkController.text,
+                images: _imagePaths,
+                notes: _notesController.text,
+              );
+              ref.read(lineUpProvider.notifier).addLineUp(currentLineUp);
+
+              ref
+                  .read(interactionStateProvider.notifier)
+                  .update(InteractionState.navigation);
+              Navigator.of(context).pop();
+            },
+            child: const Text("Done"),
+          )
+        ],
+        child: SizedBox(
           width: 600,
           height: 504,
           child: LineupMediaPage(
@@ -109,50 +137,6 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
             },
           ),
         ),
-        actions: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              CustomButton(
-                onPressed: canSave
-                    ? () {
-                        final id = const Uuid().v4();
-                        log("notes : ${_notesController.text}");
-                        final LineUp currentLineUp = LineUp(
-                          id: id,
-                          agent: ref
-                              .read(lineUpProvider)
-                              .currentAgent!
-                              .copyWith(lineUpID: id),
-                          ability: ref
-                              .read(lineUpProvider)
-                              .currentAbility!
-                              .copyWith(lineUpID: id),
-                          youtubeLink: _youtubeLinkController.text,
-                          images: _imagePaths,
-                          notes: _notesController.text,
-                        );
-                        ref
-                            .read(lineUpProvider.notifier)
-                            .addLineUp(currentLineUp);
-
-                        ref
-                            .read(interactionStateProvider.notifier)
-                            .update(InteractionState.navigation);
-                        Navigator.of(context).pop();
-                      }
-                    : null,
-                height: 40,
-                width: 100,
-                label: "Done",
-                icon: const Icon(Icons.check, color: Colors.white),
-                backgroundColor: Colors.deepPurpleAccent,
-                isDisabled: !canSave,
-                disabledTooltip: "Agent and Ability must be selected",
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }

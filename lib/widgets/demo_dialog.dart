@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/custom_button.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:url_launcher/url_launcher.dart' show launchUrl;
 
 class DemoDialog extends ConsumerWidget {
@@ -9,9 +10,9 @@ class DemoDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return AlertDialog(
+    return ShadDialog.alert(
       title: const Text('Demo Version'),
-      content: const SizedBox(
+      description: const SizedBox(
         width: 400,
         child: Text(
           'You are running the web version of this application, which has limited functionality. '
@@ -19,24 +20,21 @@ class DemoDialog extends ConsumerWidget {
         ),
       ),
       actions: [
-        CustomButton(
-          icon: const Icon(
+        ShadButton.secondary(
+          leading: const Icon(
             Icons.close,
           ),
           onPressed: () {
             Navigator.of(context).pop();
           },
-          height: 40,
-          label: 'Close',
-          backgroundColor: Settings.highlightColor,
+          child: const Text('Close'),
         ),
-        CustomButton(
-          icon: const Icon(Icons.download),
+        ShadButton(
+          leading: const Icon(Icons.download),
           onPressed: () async {
             await launchUrl(Settings.windowsStoreLink);
           },
-          height: 40,
-          label: 'Download',
+          child: const Text('Download'),
         )
       ],
     );
