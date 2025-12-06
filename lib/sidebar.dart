@@ -40,7 +40,7 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
             width: sideBarSize + 20,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(30),
-              color: Settings.sideBarColor,
+              color: Settings.tacticalVioletTheme.card,
               border: Border.all(
                 color: const Color.fromRGBO(210, 214, 219, 0.1),
                 width: 2,
@@ -49,6 +49,9 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
             child: Column(
               children: [
                 const ToolGrid(),
+                const SizedBox(
+                  height: 16,
+                ),
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Padding(
@@ -60,12 +63,20 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.only(left: 8.0, right: 8.0, top: 8),
+                  padding:
+                      const EdgeInsets.only(left: 16.0, right: 16.0, top: 8),
                   child: Column(
+                    mainAxisAlignment: MainAxisAlignment.start,
                     children: [
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [AgentFilter(), const TeamPicker()],
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: AgentFilter(),
+                          ),
+                          const TeamPicker()
+                        ],
                       ),
                       const RolePicker()
                     ],
@@ -84,11 +95,11 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                           thumbVisibility: true,
                           thumbColor: const Color(0xFF353435),
                           scrollbarOrientation: ScrollbarOrientation.left,
-                          thickness: 10,
+                          thickness: 5,
                           radius: const Radius.circular(10),
                           controller: gridScrollController,
                           crossAxisMargin: 3,
-                          mainAxisMargin: 10,
+                          mainAxisMargin: 5,
                           child: Align(
                             alignment: Alignment.topRight,
                             child: SizedBox(

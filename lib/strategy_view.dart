@@ -15,6 +15,7 @@ import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/save_and_load_button.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
@@ -68,7 +69,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
               children: [
                 Row(
                   children: [
-                    IconButton(
+                    ShadIconButton.ghost(
+                      foregroundColor: Colors.white,
                       onPressed: () async {
                         await ref
                             .read(strategyProvider.notifier)

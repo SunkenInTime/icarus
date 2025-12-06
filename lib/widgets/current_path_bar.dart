@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class CurrentPathBar extends ConsumerWidget {
   const CurrentPathBar({super.key});
@@ -18,26 +20,34 @@ class CurrentPathBar extends ConsumerWidget {
         ref.read(folderProvider.notifier).getFullPathIDs(currentFolder);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
-      child: Row(
-        children: [
-          // Root folder button
-          FolderTab(
-            folder: null, // Represents root
-            isActive: currentFolderId == null,
-          ),
-          // Path folders
-          for (int i = 0; i < pathIds.length; i++) ...[
-            const Icon(Icons.chevron_right, size: 16, color: Colors.grey),
-            FolderTab(
-              folder:
-                  ref.read(folderProvider.notifier).findFolderByID(pathIds[i]),
-              isActive: i == pathIds.length - 1,
+        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+        // ignore: prefer_const_constructors
+        child: Row(
+          children: [
+            Expanded(
+              child: ShadBreadcrumb(
+                lastItemTextColor: Settings.tacticalVioletTheme.foreground,
+                textStyle: ShadTheme.of(context).textTheme.lead,
+                children: [
+                  FolderTab(
+                    folder: null, // Represents root
+                    isActive: currentFolder == null,
+                  ),
+
+                  // Path folders
+                  for (int i = 0; i < pathIds.length; i++) ...[
+                    FolderTab(
+                      folder: ref
+                          .read(folderProvider.notifier)
+                          .findFolderByID(pathIds[i]),
+                      isActive: i == pathIds.length - 1,
+                    ),
+                  ],
+                ],
+              ),
             ),
           ],
-        ],
-      ),
-    );
+        ));
   }
 }
 
@@ -53,40 +63,16 @@ class FolderTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final displayName = folder?.name ?? "Strategies";
+    final displayName = folder?.name ?? "Home";
 
-    return InkWell(
-      onTap: isActive
-          ? null
-          : () {
-              // Navigate to this folder
-              ref.read(folderProvider.notifier).updateID(folder?.id);
-            },
-      borderRadius: BorderRadius.circular(16),
-      child: DragTarget<GridItem>(
+    return ShadBreadcrumbLink(
+      textStyle: ShadTheme.of(context).textTheme.lead,
+      normalColor: isActive ? Settings.tacticalVioletTheme.foreground : null,
+      child: DragTarget(
         builder: (context, candidateData, rejectedData) {
-          final bool isHovering = candidateData.isNotEmpty;
-
           return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color:
-                  isHovering ? Colors.deepPurpleAccent.withOpacity(0.2) : null,
-              borderRadius: BorderRadius.circular(32),
-              border: Border.all(
-                color:
-                    isHovering ? Colors.deepPurpleAccent : Colors.transparent,
-                width: 2,
-              ),
-            ),
-            child: Text(
-              displayName,
-              style: TextStyle(
-                color: isActive || isHovering ? Colors.white : Colors.grey[700],
-                fontWeight: isActive ? FontWeight.normal : FontWeight.normal,
-                fontSize: 22,
-              ),
-            ),
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(displayName),
           );
         },
         onAcceptWithDetails: (details) {
@@ -104,6 +90,9 @@ class FolderTab extends ConsumerWidget {
           }
         },
       ),
+      onPressed: () {
+        ref.read(folderProvider.notifier).updateID(folder?.id);
+      },
     );
   }
 }

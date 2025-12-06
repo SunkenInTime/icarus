@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/widgets/custom_button.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ConfirmAlertDialog extends ConsumerWidget {
   const ConfirmAlertDialog({
@@ -9,7 +9,6 @@ class ConfirmAlertDialog extends ConsumerWidget {
     required this.content,
     this.confirmText = "Confirm",
     this.cancelText = "Cancel",
-    this.confirmColor,
     this.isDestructive = false,
   });
 
@@ -17,40 +16,37 @@ class ConfirmAlertDialog extends ConsumerWidget {
   final String content;
   final String confirmText;
   final String cancelText;
-  final Color? confirmColor;
   final bool isDestructive; // For dangerous actions like delete
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final Color buttonColor = confirmColor ??
-        (isDestructive ? Colors.redAccent : Colors.deepPurpleAccent);
-
-    return AlertDialog(
+    return ShadDialog.alert(
       title: Text(title),
-      content: Text(content),
+      description: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Text(content),
+      ),
       actions: [
-        CustomButton(
-          icon: const Icon(
-            Icons.close,
-            color: Colors.white,
-          ),
-          onPressed: () => Navigator.of(context).pop(false),
-          height: 40,
-          label: cancelText,
-          labelColor: Colors.white,
-          backgroundColor: Colors.transparent,
+        ShadButton.secondary(
+          child: Text(cancelText),
+          onPressed: () {
+            Navigator.of(context).pop(false);
+          },
         ),
-        CustomButton(
-          icon: const Icon(
-            Icons.delete,
-            color: Colors.white,
+        if (isDestructive)
+          ShadButton.destructive(
+            child: Text(confirmText),
+            onPressed: () {
+              Navigator.of(context).pop(true);
+            },
+          )
+        else
+          ShadButton(
+            child: Text(confirmText),
+            onPressed: () {
+              Navigator.of(context).pop(true);
+            },
           ),
-          onPressed: () => Navigator.of(context).pop(true),
-          height: 40,
-          label: confirmText,
-          labelColor: Colors.white,
-          backgroundColor: buttonColor,
-        ),
       ],
     );
   }
@@ -62,17 +58,15 @@ class ConfirmAlertDialog extends ConsumerWidget {
     required String content,
     String confirmText = "Confirm",
     String cancelText = "Cancel",
-    Color? confirmColor,
     bool isDestructive = false,
   }) async {
-    final result = await showDialog<bool>(
+    final result = await showShadDialog<bool>(
       context: context,
       builder: (context) => ConfirmAlertDialog(
         title: title,
         content: content,
         confirmText: confirmText,
         cancelText: cancelText,
-        confirmColor: confirmColor,
         isDestructive: isDestructive,
       ),
     );

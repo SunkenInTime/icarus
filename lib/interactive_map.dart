@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -19,6 +20,7 @@ import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/lineup_position_widget.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class InteractiveMap extends ConsumerStatefulWidget {
   const InteractiveMap({
@@ -51,7 +53,19 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
         Container(
           width: coordinateSystem.playAreaSize.width,
           height: coordinateSystem.playAreaSize.height,
-          color: const Color(0xFF1B1B1B),
+          // color: ShadTheme.of(context).colorScheme.card,
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment.center,
+              radius: 1.5,
+              colors: [
+                Color(0xff18181b), // Zinc-900 (Darker center - under the map)
+                ShadTheme.of(context)
+                    .colorScheme
+                    .background, // Zinc-950 (Dark edges - under the UI)
+              ],
+            ),
+          ),
           child: ImageDropTarget(
             child: InteractiveViewer(
               transformationController: controller,

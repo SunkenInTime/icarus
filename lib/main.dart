@@ -20,6 +20,7 @@ import 'package:icarus/widgets/global_shortcuts.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 import 'package:window_manager/window_manager.dart';
 
 CustomMouseCursor? drawingCursor;
@@ -104,31 +105,82 @@ class MyApp extends StatelessWidget {
     //     );
     //   },
     // );
+
     return GlobalShortcuts(
-      child: Portal(
-        child: ShadApp.custom(
-            themeMode: ThemeMode.dark,
-            darkTheme: ShadThemeData(
-              brightness: Brightness.dark,
-              colorScheme: const ShadVioletColorScheme.dark(),
-            ),
-            appBuilder: (context) {
-              return MaterialApp(
-                debugShowCheckedModeBanner: false,
-                title: 'Icarus',
-                // theme: Settings.appTheme,
-                theme: Theme.of(context),
-                home: const MyHomePage(),
-                routes: {
-                  Routes.folderNavigator: (context) => const FolderNavigator(),
-                  Routes.strategyView: (context) => const StrategyView(),
-                  Routes.settings: (context) => const SettingsTab(),
-                },
-                builder: (context, child) {
-                  return ShadAppBuilder(child: child!);
-                },
-              );
-            }),
+      child: ToastificationWrapper(
+        child: Portal(
+          child: ShadApp.custom(
+              themeMode: ThemeMode.dark,
+              darkTheme: ShadThemeData(
+                brightness: Brightness.dark,
+                colorScheme: Settings.tacticalVioletTheme,
+                breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
+              ),
+              appBuilder: (context) {
+                return MaterialApp(
+                  debugShowCheckedModeBanner: false,
+                  title: 'Icarus',
+                  // theme: Settings.appTheme,
+                  theme: Theme.of(context).copyWith(
+                    menuTheme: MenuThemeData(
+                      style: MenuStyle(
+                        backgroundColor: WidgetStatePropertyAll<Color>(
+                            Settings.tacticalVioletTheme.card),
+                        padding: const WidgetStatePropertyAll<EdgeInsets>(
+                            EdgeInsets.all(8)),
+                        shape: WidgetStatePropertyAll<OutlinedBorder>(
+                          RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(
+                              color: Settings.tacticalVioletTheme.border,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    menuButtonTheme: MenuButtonThemeData(
+                      style: ButtonStyle(
+                        shape: WidgetStateProperty.resolveWith<OutlinedBorder?>(
+                          (Set<WidgetState> states) {
+                            if (states.contains(WidgetState.hovered)) {
+                              return RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                side: const BorderSide(
+                                    color: Settings.highlightColor, width: 2),
+                              );
+                            }
+                            return RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              side: BorderSide.none,
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  home: const MyHomePage(),
+                  routes: {
+                    Routes.folderNavigator: (context) =>
+                        const FolderNavigator(),
+                    Routes.strategyView: (context) => const StrategyView(),
+                    Routes.settings: (context) => const SettingsTab(),
+                  },
+                  builder: (context, child) {
+                    return ToastificationConfigProvider(
+                      config: const ToastificationConfig(
+                        alignment: Alignment.bottomCenter,
+                        // itemWidth: 440,
+                        animationDuration: Duration(milliseconds: 500),
+                        blockBackgroundInteraction: false,
+                      ),
+                      child: ShadAppBuilder(child: child!),
+                    );
+                  },
+                );
+              }),
+        ),
       ),
     );
 

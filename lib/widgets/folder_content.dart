@@ -7,7 +7,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/strategy_tile.dart';
+import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
@@ -168,7 +168,8 @@ class FolderContent extends ConsumerWidget {
                                   padding: WidgetStateProperty.all(
                                       const EdgeInsets.symmetric(
                                           horizontal: 8)),
-                                  backgroundColor: Settings.sideBarColor,
+                                  backgroundColor:
+                                      Settings.tacticalVioletTheme.card,
                                   onPressed: () {
                                     controller.isOpen
                                         ? controller.close()
@@ -207,7 +208,10 @@ class FolderContent extends ConsumerWidget {
 
                         final strategies = strategyBox.values.toList();
 
-                      final search = ref.watch(strategySearchQueryProvider).trim().toLowerCase();
+                        final search = ref
+                            .watch(strategySearchQueryProvider)
+                            .trim()
+                            .toLowerCase();
                         // Filter strategies and folders by the current folder
                         strategies.removeWhere(
                             (strategy) => strategy.folderID != folder?.id);
@@ -216,10 +220,12 @@ class FolderContent extends ConsumerWidget {
 
                         if (search.isNotEmpty) {
                           strategies.retainWhere(
-                            (strategy) => strategy.name.toLowerCase().contains(search),
+                            (strategy) =>
+                                strategy.name.toLowerCase().contains(search),
                           );
                           folders.retainWhere(
-                            (listFolder) => listFolder.name.toLowerCase().contains(search),
+                            (listFolder) =>
+                                listFolder.name.toLowerCase().contains(search),
                           );
                         }
                         final filter = ref.watch(strategyFilterProvider);

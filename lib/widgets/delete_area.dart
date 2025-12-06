@@ -26,12 +26,26 @@ class DeleteArea extends ConsumerWidget {
                 builder: (context, candidateData, rejectedData) {
                   return AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
-                    color: candidateData.isNotEmpty
-                        ? Colors.red
-                        : Settings.sideBarColor,
-                    child: const Icon(
+                    decoration: BoxDecoration(
+                      color: candidateData.isNotEmpty
+                          ? Settings.tacticalVioletTheme.destructive
+                          : Settings.tacticalVioletTheme.destructive
+                              .withOpacity(0.1),
+                      border: Border.all(
+                        color: candidateData.isNotEmpty
+                            ? Settings.tacticalVioletTheme.destructive
+                            : Settings.tacticalVioletTheme.destructive
+                                .withOpacity(0.2),
+                        width: 2,
+                      ),
+                    ),
+                    child: Icon(
+                      color: candidateData.isNotEmpty
+                          ? Settings.tacticalVioletTheme.foreground
+                          : Settings.tacticalVioletTheme.destructive,
                       Icons.delete_outline,
-                      color: Color.fromARGB(255, 245, 245, 245),
+                      size: 24,
+                      // color: Color.fromARGB(255, 245, 245, 245),
                     ),
                   );
                 },

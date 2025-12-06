@@ -64,8 +64,8 @@ class AgentDragable extends ConsumerWidget {
               child: ColoredBox(
                 color: (ref.watch(abilityBarProvider) != null &&
                         ref.watch(abilityBarProvider)!.type == agent.type)
-                    ? Colors.deepPurpleAccent
-                    : const Color.fromARGB(255, 31, 26, 31),
+                    ? Settings.tacticalVioletTheme.primary
+                    : Settings.tacticalVioletTheme.secondary,
                 child: Image.asset(
                   agent.iconPath,
                   fit: BoxFit.cover,

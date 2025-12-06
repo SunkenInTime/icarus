@@ -9,6 +9,7 @@ import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_tile.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderEditDialog extends ConsumerStatefulWidget {
   const FolderEditDialog({
@@ -50,24 +51,62 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
-          side: const BorderSide(color: Settings.highlightColor, width: 2),
+    return ShadDialog(
+      title: Text(widget.folder != null ? "Edit Folder" : "Add Folder"),
+      actions: [
+        SizedBox(
+          width: 250,
+          child: CustomTextField(
+            hintText: "Folder Name",
+            controller: _folderNameController,
+          ),
         ),
-        backgroundColor: Settings.sideBarColor,
-        title: const Text("Add Folder"),
-        contentPadding: const EdgeInsets.all(16),
-        content: Column(
+        // const SizedBox(width: 30),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          child: ShadButton(
+            leading: const Icon(Icons.check),
+            onPressed: () async {
+              if (widget.folder != null) {
+                ref.read(folderProvider.notifier).editFolder(
+                      folder: widget.folder!,
+                      newName: _folderNameController.text.isEmpty
+                          ? "New Folder"
+                          : _folderNameController.text,
+                      newIcon: _selectedIcon,
+                      newColor: _selectedColor,
+                      newCustomColor: _customColor,
+                    );
+                if (context.mounted) Navigator.of(context).pop();
+                return;
+              }
+              await ref.read(folderProvider.notifier).createFolder(
+                    name: _folderNameController.text.isEmpty
+                        ? "New Folder"
+                        : _folderNameController.text,
+                    icon: _selectedIcon,
+                    color: _selectedColor,
+                    customColor: _customColor,
+                  );
+
+              if (context.mounted) Navigator.of(context).pop();
+            },
+            child: const Text("Done"),
+          ),
+        )
+      ],
+      child: SizedBox(
+        width: 358,
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
               height: 300,
               width: 358,
               decoration: BoxDecoration(
-                color: Settings.abilityBGColor,
+                color: Settings.tacticalVioletTheme.card,
                 border: Border.all(
-                  color: Settings.highlightColor,
+                  color: Settings.tacticalVioletTheme.border,
                   width: 1,
                 ),
                 borderRadius: BorderRadius.circular(12),
@@ -133,31 +172,34 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                       showDialog(
                         context: context,
                         builder: (context) {
-                          return AlertDialog(
-                            backgroundColor: Settings.sideBarColor,
+                          return ShadDialog(
                             title: const Text("Pick a custom color"),
-                            content: SingleChildScrollView(
-                              child: ColorPicker(
-                                pickerColor:
-                                    Folder.folderColorMap[_selectedColor]!,
-                                onColorChanged: (color) {
-                                  setState(() {
-                                    _selectedColor = FolderColor.custom;
-                                    _customColor = color;
-                                  });
-                                },
-                                showLabel: true,
-                                pickerAreaHeightPercent: 0.8,
-                              ),
-                            ),
                             actions: <Widget>[
-                              TextButton(
+                              ShadButton(
                                 child: const Text('Done'),
                                 onPressed: () {
                                   Navigator.of(context).pop();
                                 },
                               ),
                             ],
+                            child: Material(
+                              child: SizedBox(
+                                width: 300,
+                                child: ColorPicker(
+                                  portraitOnly: true,
+                                  pickerColor:
+                                      Folder.folderColorMap[_selectedColor] ??
+                                          _customColor!,
+                                  onColorChanged: (color) {
+                                    setState(() {
+                                      _selectedColor = FolderColor.custom;
+                                      _customColor = color;
+                                    });
+                                  },
+                                  pickerAreaHeightPercent: 0.8,
+                                ),
+                              ),
+                            ),
                           );
                         },
                       );
@@ -171,10 +213,10 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
               width: 358,
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: Settings.highlightColor,
+                  color: Settings.tacticalVioletTheme.border,
                   width: 1,
                 ),
-                color: Settings.abilityBGColor,
+                color: Settings.tacticalVioletTheme.card,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: GridView.builder(
@@ -202,70 +244,14 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                       selectedIcon: Icon(
                         Folder.folderIcons[index],
                         size: 24,
-                        color: Colors.deepPurpleAccent,
+                        color: Settings.tacticalVioletTheme.primary,
                       ));
                 },
               ),
             ),
           ],
         ),
-        actions: [
-          SizedBox(
-            width: 358,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: SizedBox(
-                      height: 40,
-                      child: CustomTextField(
-                        hintText: "Folder Name",
-                        textAlign: TextAlign.center,
-                        controller: _folderNameController,
-                      )),
-                ),
-                const SizedBox(width: 30),
-                CustomButton(
-                  padding: WidgetStateProperty.all(
-                    const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                  ),
-                  onPressed: () async {
-                    if (widget.folder != null) {
-                      ref.read(folderProvider.notifier).editFolder(
-                            folder: widget.folder!,
-                            newName: _folderNameController.text.isEmpty
-                                ? "New Folder"
-                                : _folderNameController.text,
-                            newIcon: _selectedIcon,
-                            newColor: _selectedColor,
-                            newCustomColor: _customColor,
-                          );
-                      if (context.mounted) Navigator.of(context).pop();
-                      return;
-                    }
-                    await ref.read(folderProvider.notifier).createFolder(
-                          name: _folderNameController.text.isEmpty
-                              ? "New Folder"
-                              : _folderNameController.text,
-                          icon: _selectedIcon,
-                          color: _selectedColor,
-                          customColor: _customColor,
-                        );
-
-                    if (context.mounted) Navigator.of(context).pop();
-                  },
-                  height: 40,
-                  width: 80,
-                  icon: const Icon(Icons.check, color: Colors.white),
-                  label: "Done",
-                  fontWeight: FontWeight.normal,
-                  labelColor: Colors.white,
-                  backgroundColor: Colors.deepPurple,
-                ),
-              ],
-            ),
-          )
-        ]);
+      ),
+    );
   }
 }

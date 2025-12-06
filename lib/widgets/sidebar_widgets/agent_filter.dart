@@ -1,8 +1,8 @@
-import 'package:custom_sliding_segmented_control/custom_sliding_segmented_control.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class AgentFilter extends ConsumerWidget {
   AgentFilter({super.key});
@@ -15,47 +15,34 @@ class AgentFilter extends ConsumerWidget {
   ];
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return CustomSlidingSegmentedControl<FilterState>(
-      height: 32,
-      initialValue: FilterState.all,
-      decoration: BoxDecoration(
-        color: const Color(0xFF313131),
-        border: Border.all(color: const Color(0xFF1A161A)),
-        borderRadius: BorderRadius.circular(24.0),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0xFF1A161A),
-            blurRadius: 4.0,
-            spreadRadius: -1.0,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-
-      thumbDecoration: BoxDecoration(
-        color: const Color(0xFF673AB7),
-        borderRadius: BorderRadius.circular(42),
-      ),
-
-      children: const {
-        FilterState.all: FilterText(
-          text: "All",
-          filterState: FilterState.all,
+    return ShadTabs<FilterState>(
+      tabBarConstraints: const BoxConstraints(maxWidth: 240),
+      value: ref.watch(agentFilterProvider).currentFilter,
+      // padding: EdgeInsets.zero,
+      tabs: const [
+        ShadTab<FilterState>(
+          value: FilterState.all,
+          child: Text("All"),
         ),
-        FilterState.onMap: FilterText(
-          text: "On Map",
-          filterState: FilterState.onMap,
+        ShadTab<FilterState>(
+          value: FilterState.onMap,
+          // label: Text("On Map"),
+          child: Text("On Map"),
         ),
-        FilterState.role: FilterText(
-          text: "Role",
-          filterState: FilterState.role,
+        ShadTab<FilterState>(
+          value: FilterState.role,
+          // label: Text("Role"),
+          child: Text("Role"),
         ),
-      },
-      innerPadding: const EdgeInsets.all(4),
-      // groupValue: ref.watch(agentFilterProvider).currentFilter,
-      onValueChanged: (value) {
+      ],
+      onChanged: (value) {
         ref.read(agentFilterProvider.notifier).updateFilterState(value);
       },
+      //   selectedValue: ref.watch(agentFilterProvider).currentFilter,
+      //   onValueChanged: (value) {
+      //     ref.read(agentFilterProvider.notifier).updateFilterState(value);
+      //   },
+      //  child:
     );
   }
 }

@@ -15,6 +15,7 @@ import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
 import 'package:screenshot/screenshot.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class SaveAndLoadButton extends ConsumerStatefulWidget {
   const SaveAndLoadButton({super.key});
@@ -32,152 +33,139 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
       padding: const EdgeInsets.all(8.0),
       child: Row(
         children: [
-          IconButton(
-            onPressed: () async {
-              // // Navigator.of(context).pushNamed(Routes.settings);
-              // Navigator.of(context).push(
-              //   PageRouteBuilder(
-              //     opaque: false,
-              //     // barrierColor: Colors.black54,
-              //     pageBuilder: (_, __, ___) => const SettingsTab(),
-              //   ),
-              // );
+          ShadTooltip(
+            builder: (context) => const Text("Settings"),
+            child: ShadIconButton.ghost(
+              foregroundColor: Colors.white,
+              onPressed: () async {
+                // // Navigator.of(context).pushNamed(Routes.settings);
+                // Navigator.of(context).push(
+                //   PageRouteBuilder(
+                //     opaque: false,
+                //     // barrierColor: Colors.black54,
+                //     pageBuilder: (_, __, ___) => const SettingsTab(),
+                //   ),
+                // );
 
-              Navigator.of(context).push(
-                PageRouteBuilder(
-                  opaque: false,
-                  transitionDuration: const Duration(milliseconds: 250),
-                  reverseTransitionDuration: const Duration(milliseconds: 200),
-                  pageBuilder: (context, animation, secondaryAnimation) {
-                    return const SettingsTab();
-                  },
-                  transitionsBuilder:
-                      (context, animation, secondaryAnimation, child) {
-                    // Slide from right to left on push, and left to right on pop
-                    final offsetAnimation = Tween<Offset>(
-                      begin: const Offset(
-                          -1, 0.0), // start off-screen to the right
-                      end: Offset.zero, // end at normal position
-                    ).animate(CurvedAnimation(
-                      parent: animation,
-                      curve: Curves.easeOutCubic,
-                      reverseCurve: Curves.easeOutCubic,
-                    ));
-
-                    return SlideTransition(
-                      position: offsetAnimation,
-                      child: child,
-                    );
-                  },
-                ),
-              );
-            },
-            icon: const Icon(Icons.settings),
+                showShadSheet(
+                  side: ShadSheetSide.left,
+                  context: context,
+                  builder: (context) => const SettingsTab(),
+                );
+              },
+              icon: const Icon(Icons.settings),
+            ),
           ),
           const AutoSaveButton(),
-          IconButton(
-            tooltip: "Export",
-            onPressed: () async {
-              await ref
-                  .read(strategyProvider.notifier)
-                  .exportFile(ref.read(strategyProvider).id);
-            },
-            icon: const Icon(Icons.file_upload),
+          ShadTooltip(
+            builder: (context) => const Text("Export"),
+            child: ShadIconButton.ghost(
+              foregroundColor: Colors.white,
+              onPressed: () async {
+                await ref
+                    .read(strategyProvider.notifier)
+                    .exportFile(ref.read(strategyProvider).id);
+              },
+              icon: const Icon(Icons.file_upload),
+            ),
           ),
-          IconButton(
-            tooltip: "Screenshot",
-            onPressed: () async {
-              if (_isLoading) return;
-              setState(() {
-                _isLoading = true;
-              });
-              CoordinateSystem.instance.setIsScreenshot(true);
+          ShadTooltip(
+            builder: (context) => const Text("Screenshot"),
+            child: ShadIconButton.ghost(
+              foregroundColor: Colors.white,
+              onPressed: () async {
+                if (_isLoading) return;
+                setState(() {
+                  _isLoading = true;
+                });
+                CoordinateSystem.instance.setIsScreenshot(true);
 
-              final String id = ref.read(strategyProvider).id;
+                final String id = ref.read(strategyProvider).id;
 
-              await ref.read(strategyProvider.notifier).forceSaveNow(id);
+                await ref.read(strategyProvider.notifier).forceSaveNow(id);
 
-              final newStrat =
-                  Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-                      .values
-                      .where((StrategyData strategy) {
-                return strategy.id == id;
-              }).firstOrNull;
+                final newStrat =
+                    Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+                        .values
+                        .where((StrategyData strategy) {
+                  return strategy.id == id;
+                }).firstOrNull;
 
-              if (newStrat == null) {
-                log("Couldn't find save");
-                return;
-              }
-              final newController = ScreenshotController();
-              final currentPageID =
-                  ref.read(strategyProvider.notifier).activePageID;
+                if (newStrat == null) {
+                  log("Couldn't find save");
+                  return;
+                }
+                final newController = ScreenshotController();
+                final currentPageID =
+                    ref.read(strategyProvider.notifier).activePageID;
 
-              if (currentPageID == null) return;
+                if (currentPageID == null) return;
 
-              final activePage = newStrat.pages.firstWhere(
-                (p) => p.id == currentPageID,
-                orElse: () => newStrat.pages.first,
-              );
+                final activePage = newStrat.pages.firstWhere(
+                  (p) => p.id == currentPageID,
+                  orElse: () => newStrat.pages.first,
+                );
 
-              try {
-                final image = await newController.captureFromWidget(
-                  targetSize: CoordinateSystem.screenShotSize,
-                  ProviderScope(
-                    child: MediaQuery(
-                      data: const MediaQueryData(
-                          size: CoordinateSystem.screenShotSize),
-                      child: MaterialApp(
-                        theme: Settings.appTheme,
-                        debugShowCheckedModeBanner: false,
-                        home: ScreenshotView(
-                            isAttack: activePage.isAttack,
-                            mapValue: newStrat.mapData,
-                            agents: activePage.agentData,
-                            abilities: activePage.abilityData,
-                            text: activePage.textData,
-                            images: activePage.imageData,
-                            drawings: activePage.drawingData,
-                            utilities: activePage.utilityData,
-                            strategySettings: activePage.settings,
-                            strategyState: ref.read(strategyProvider)),
+                try {
+                  final image = await newController.captureFromWidget(
+                    targetSize: CoordinateSystem.screenShotSize,
+                    ProviderScope(
+                      child: MediaQuery(
+                        data: const MediaQueryData(
+                            size: CoordinateSystem.screenShotSize),
+                        child: MaterialApp(
+                          theme: Settings.appTheme,
+                          debugShowCheckedModeBanner: false,
+                          home: ScreenshotView(
+                              isAttack: activePage.isAttack,
+                              mapValue: newStrat.mapData,
+                              agents: activePage.agentData,
+                              abilities: activePage.abilityData,
+                              text: activePage.textData,
+                              images: activePage.imageData,
+                              drawings: activePage.drawingData,
+                              utilities: activePage.utilityData,
+                              strategySettings: activePage.settings,
+                              strategyState: ref.read(strategyProvider)),
+                        ),
                       ),
                     ),
-                  ),
-                );
-                setState(() {
-                  _isLoading = false;
-                });
-                String? outputFile = await FilePicker.platform.saveFile(
-                  type: FileType.custom,
-                  dialogTitle: 'Please select an output file:',
-                  fileName:
-                      "${ref.read(strategyProvider).stratName ?? "new image"}.png",
-                  allowedExtensions: ['png'],
-                );
-                if (outputFile != null) {
-                  final file = File(outputFile);
-                  await file.writeAsBytes(image);
+                  );
+                  setState(() {
+                    _isLoading = false;
+                  });
+                  String? outputFile = await FilePicker.platform.saveFile(
+                    type: FileType.custom,
+                    dialogTitle: 'Please select an output file:',
+                    fileName:
+                        "${ref.read(strategyProvider).stratName ?? "new image"}.png",
+                    allowedExtensions: ['png'],
+                  );
+                  if (outputFile != null) {
+                    final file = File(outputFile);
+                    await file.writeAsBytes(image);
+                  }
+                } catch (e, st) {
+                  log('$e\n$st');
+                } finally {
+                  ref.read(screenshotProvider.notifier).setIsScreenShot(false);
+                  CoordinateSystem.instance.setIsScreenshot(false);
+                  ref
+                      .read(drawingProvider.notifier)
+                      .rebuildAllPaths(CoordinateSystem.instance);
                 }
-              } catch (e, st) {
-                log('$e\n$st');
-              } finally {
-                ref.read(screenshotProvider.notifier).setIsScreenShot(false);
-                CoordinateSystem.instance.setIsScreenshot(false);
-                ref
-                    .read(drawingProvider.notifier)
-                    .rebuildAllPaths(CoordinateSystem.instance);
-              }
-              // CoordinateSystem.instance.setIsScreenshot(false);
-            },
-            icon: _isLoading
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.camera_alt_outlined),
+                // CoordinateSystem.instance.setIsScreenshot(false);
+              },
+              icon: _isLoading
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.camera_alt_outlined),
+            ),
           ),
         ],
       ),

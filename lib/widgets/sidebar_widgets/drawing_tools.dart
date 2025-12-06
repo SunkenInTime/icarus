@@ -30,7 +30,7 @@ class _DrawingToolsState extends ConsumerState<DrawingTools> {
             : SingleChildScrollView(
                 physics: const NeverScrollableScrollPhysics(),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.only(left: 16, right: 16, top: 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/color_option.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class Settings {
   static const double agentSize = 35;
@@ -17,7 +18,7 @@ class Settings {
   static const PhysicalKeyboardKey deleteKey = PhysicalKeyboardKey.keyX;
 
   static const Color sideBarColor = Color(0xFF141114);
-  static const Color highlightColor = Color(0xFF272528);
+  static const Color highlightColor = Color(0xff27272a);
   static List<ColorOption> penColors = [
     ColorOption(color: Colors.white, isSelected: true),
     ColorOption(color: Colors.red, isSelected: false),
@@ -109,4 +110,43 @@ class Settings {
           // ),
         ),
       ));
+  static const ShadColorScheme tacticalVioletTheme = ShadColorScheme(
+    // --- THE GRAYS (UNCHANGED) ---
+    // These are the "Zinc" cool grays you liked.
+    background: Color(0xff09090b),
+    foreground: Color(0xfffafafa),
+    card: Color(0xff18181b),
+    cardForeground: Color(0xfffafafa),
+    popover: Color(0xff18181b),
+    popoverForeground: Color(0xfffafafa),
+    secondary: Color(0xff27272a),
+    secondaryForeground: Color(0xfffafafa),
+    muted: Color(0xff27272a),
+    mutedForeground: Color(0xffa1a1aa),
+    accent: Color(0xff27272a),
+    accentForeground: Color(0xfffafafa),
+    border: Color(0xff27272a),
+    input: Color(0xff27272a),
+
+    // --- THE NEW PURPLE (UPDATED) ---
+    // Violet-700: Higher contrast, deeper, premium look.
+    primary: Color(0xff7c3aed),
+    primaryForeground: Color(0xfff9fafb), // Pure white text pops perfectly here
+
+    // Updated ring to match the new primary
+    ring: Color(0xff7c3aed),
+
+    // Selection can stay a bit darker (Violet-800) or match primary
+    selection: Color(0xff4c1d95),
+
+    // --- ERROR STATE ---
+    destructive: Color(0xffef4444),
+    destructiveForeground: Color(0xfffafafa),
+  );
+
+  static const cardForegroundBackdrop = BoxShadow(
+    color: Colors.black54, // High opacity because the background is dark
+    blurRadius: 12,
+    offset: Offset(0, 4), // Slight downward shift
+  );
 }

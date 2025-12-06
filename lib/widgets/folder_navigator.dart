@@ -15,6 +15,7 @@ import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderNavigator extends ConsumerStatefulWidget {
   const FolderNavigator({super.key});
@@ -130,19 +131,19 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           Row(
             spacing: 15,
             children: [
-              CustomButton(
+              ShadButton.secondary(
                 onPressed: () async {
                   await ref
                       .read(strategyProvider.notifier)
                       .loadFromFilePicker();
                 },
-                height: 40,
-                icon: const Icon(Icons.file_download, color: Colors.white),
-                label: "Import .ica",
-                labelColor: Colors.white,
-                backgroundColor: Settings.highlightColor,
+                leading: const Icon(Icons.file_download),
+                child: const Text('Import .ica'),
               ),
-              CustomButton(
+
+              ShadButton.secondary(
+                leading: const Icon(LucideIcons.folderPlus),
+                child: const Text('Add Folder'),
                 onPressed: () async {
                   await showDialog<String>(
                     context: context,
@@ -150,24 +151,22 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                       return const FolderEditDialog();
                     },
                   );
-
-                  // await ref.read(folderProvider.notifier).createFolder();
                 },
-                height: 40,
-                icon: const Icon(Icons.create_new_folder_rounded,
-                    color: Colors.white),
-                label: "Add Folder",
-                labelColor: Colors.white,
-                backgroundColor: Settings.highlightColor,
               ),
-              CustomButton(
+
+              ShadButton(
                 onPressed: showCreateDialog,
-                height: 40,
-                icon: const Icon(Icons.add, color: Colors.white),
-                label: "Create Strategy",
-                labelColor: Colors.white,
-                backgroundColor: Colors.deepPurple,
+                leading: const Icon(Icons.add),
+                child: const Text('Create Strategy'),
               ),
+              // CustomButton(
+              //   onPressed: showCreateDialog,
+              //   height: 40,
+              //   icon: const Icon(Icons.add, color: Colors.white),
+              //   label: "Create Strategy",
+              //   labelColor: Colors.white,
+              //   backgroundColor: Colors.deepPurple,
+              // ),
             ],
           )
         ],

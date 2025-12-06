@@ -249,14 +249,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.3"
-  custom_sliding_segmented_control:
-    dependency: "direct main"
-    description:
-      name: custom_sliding_segmented_control
-      sha256: bc747b1500284bff36fc8c61774c9a3ca35c1dca4d570141c8a2569b4f984bf3
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.8.5"
   dart_style:
     dependency: transitive
     description:
@@ -281,6 +273,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.6.1"
+  equatable:
+    dependency: transitive
+    description:
+      name: equatable
+      sha256: "567c64b3cb4cf82397aac55f4f0cbd3ca20d77c6c03bedbc4ceaddc08904aef7"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.0.7"
   extended_image:
     dependency: transitive
     description:
@@ -517,6 +517,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.2"
+  iconsax_flutter:
+    dependency: transitive
+    description:
+      name: iconsax_flutter
+      sha256: d14b4cec8586025ac15276bdd40f6eea308cb85748135965bb6255f14beb2564
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.1"
   image:
     dependency: "direct main"
     description:
@@ -741,6 +749,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.0"
+  pausable_timer:
+    dependency: transitive
+    description:
+      name: pausable_timer
+      sha256: "6ef1a95441ec3439de6fb63f39a011b67e693198e7dae14e20675c3c00e86074"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.1.0+3"
   petitparser:
     dependency: transitive
     description:
@@ -889,10 +905,10 @@ packages:
     dependency: "direct main"
     description:
       name: shadcn_ui
-      sha256: "282ab24f39a2dc7d384ca6f27b587cb71ccd85d3c8dc1300a1e407fafd217396"
+      sha256: bdeac6f563a1851e1d88fddb1a381e4d418a2a51d87811e8159eabac6b906e31
       url: "https://pub.dev"
     source: hosted
-    version: "0.27.1"
+    version: "0.40.3"
   shelf:
     dependency: transitive
     description:
@@ -1002,6 +1018,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.7.6"
+  theme_extensions_builder_annotation:
+    dependency: transitive
+    description:
+      name: theme_extensions_builder_annotation
+      sha256: e14648a3318842992f14b207cb811df48a1d6f0bd742b77bcbf1b74557493c00
+      url: "https://pub.dev"
+    source: hosted
+    version: "7.1.0"
   timing:
     dependency: transitive
     description:
@@ -1010,6 +1034,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
+  toastification:
+    dependency: "direct main"
+    description:
+      name: toastification
+      sha256: "69db2bff425b484007409650d8bcd5ed1ce2e9666293ece74dcd917dacf23112"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.0.3"
   two_dimensional_scrollables:
     dependency: transitive
     description:
@@ -1235,5 +1267,5 @@ packages:
     source: hosted
     version: "2.1.0"
 sdks:
-  dart: ">=3.8.0-0 <4.0.0"
-  flutter: ">=3.29.0"
+  dart: ">=3.8.0 <4.0.0"
+  flutter: ">=3.35.0"

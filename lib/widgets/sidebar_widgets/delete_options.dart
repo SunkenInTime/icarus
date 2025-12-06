@@ -4,6 +4,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DeleteOptions extends ConsumerStatefulWidget {
   const DeleteOptions({super.key});
@@ -27,15 +28,7 @@ class _DeleteOptionsState extends ConsumerState<DeleteOptions> {
             SizedBox(
               height: 50,
               width: 300,
-              child: TextButton(
-                style: ButtonStyle(
-                  backgroundColor: WidgetStateProperty.all(Colors.deepPurple),
-                  shape: WidgetStateProperty.all(
-                    RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8.0),
-                    ),
-                  ),
-                ),
+              child: ShadButton(
                 onPressed: () {
                   ConfirmAlertDialog.show(
                     context: context,
@@ -44,7 +37,6 @@ class _DeleteOptionsState extends ConsumerState<DeleteOptions> {
                         "Are you sure you want to clear all items? This cannot be undone.",
                     confirmText: "Clear All",
                     cancelText: "Cancel",
-                    confirmColor: Colors.redAccent,
                     isDestructive: true,
                   ).then((confirmed) {
                     if (confirmed) {
