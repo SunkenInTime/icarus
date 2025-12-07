@@ -222,6 +222,69 @@ class ToolGrid extends ConsumerWidget {
                     ),
                   ),
                 ),
+                ShadTooltip(
+                  builder: (context) => const Text("View Cone 180°"),
+                  child: ShadIconButton.secondary(
+                    onPressed: () {
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.navigation);
+                      const uuid = Uuid();
+
+                      ref.read(utilityProvider.notifier).addUtility(
+                            PlacedUtility(
+                              position: const Offset(500, 500),
+                              id: uuid.v4(),
+                              type: UtilityType.viewCone180,
+                              angle: 180,
+                            ),
+                          );
+                    },
+                    icon: const Icon(LucideIcons.eye, size: 20),
+                  ),
+                ),
+                ShadTooltip(
+                  builder: (context) => const Text("View Cone 90°"),
+                  child: ShadIconButton.secondary(
+                    onPressed: () {
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.navigation);
+                      const uuid = Uuid();
+
+                      ref.read(utilityProvider.notifier).addUtility(
+                            PlacedUtility(
+                              position: const Offset(500, 500),
+                              id: uuid.v4(),
+                              type: UtilityType.viewCone90,
+                              angle: 90,
+                            ),
+                          );
+                    },
+                    icon: const Icon(LucideIcons.scanEye, size: 20),
+                  ),
+                ),
+                ShadTooltip(
+                  builder: (context) => const Text("View Cone 40°"),
+                  child: ShadIconButton.secondary(
+                    onPressed: () {
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.navigation);
+                      const uuid = Uuid();
+
+                      ref.read(utilityProvider.notifier).addUtility(
+                            PlacedUtility(
+                              position: const Offset(500, 500),
+                              id: uuid.v4(),
+                              type: UtilityType.viewCone40,
+                              angle: 40,
+                            ),
+                          );
+                    },
+                    icon: const Icon(LucideIcons.focus, size: 20),
+                  ),
+                ),
               ],
             ),
           ),

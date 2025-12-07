@@ -142,6 +142,8 @@ PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
       position: const OffsetConverter()
           .fromJson(json['position'] as Map<String, dynamic>),
       id: json['id'] as String,
+      angle: (json['angle'] as num?)?.toDouble() ?? 0.0,
+      attachedAgentId: json['attachedAgentId'] as String?,
     )
       ..isDeleted = json['isDeleted'] as bool? ?? false
       ..rotation = (json['rotation'] as num).toDouble()
@@ -155,8 +157,13 @@ Map<String, dynamic> _$PlacedUtilityToJson(PlacedUtility instance) =>
       'type': _$UtilityTypeEnumMap[instance.type]!,
       'rotation': instance.rotation,
       'length': instance.length,
+      'angle': instance.angle,
+      'attachedAgentId': instance.attachedAgentId,
     };
 
 const _$UtilityTypeEnumMap = {
   UtilityType.spike: 'spike',
+  UtilityType.viewCone180: 'viewCone180',
+  UtilityType.viewCone90: 'viewCone90',
+  UtilityType.viewCone40: 'viewCone40',
 };

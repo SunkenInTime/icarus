@@ -265,7 +265,7 @@ types:
         index: 1
   PlacedUtility:
     typeId: 15
-    nextIndex: 6
+    nextIndex: 8
     fields:
       type:
         index: 0
@@ -279,12 +279,22 @@ types:
         index: 4
       position:
         index: 5
+      angle:
+        index: 6
+      attachedAgentId:
+        index: 7
   UtilityType:
     typeId: 16
-    nextIndex: 1
+    nextIndex: 4
     fields:
       spike:
         index: 0
+      viewCone180:
+        index: 1
+      viewCone90:
+        index: 2
+      viewCone40:
+        index: 3
   Folder:
     typeId: 17
     nextIndex: 7

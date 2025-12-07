@@ -391,10 +391,18 @@ class PlacedUtility extends PlacedWidget {
     }
   }
 
+  @JsonKey(defaultValue: 0.0)
+  double angle;
+
+  @JsonKey(defaultValue: null)
+  String? attachedAgentId;
+
   PlacedUtility({
     required this.type,
     required super.position,
     required super.id,
+    this.angle = 0.0,
+    this.attachedAgentId,
   });
 
   factory PlacedUtility.fromJson(Map<String, dynamic> json) =>

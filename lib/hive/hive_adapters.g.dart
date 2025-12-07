@@ -786,6 +786,8 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       type: fields[0] as UtilityType,
       position: fields[5] as Offset,
       id: fields[3] as String,
+      angle: fields[6] == null ? 0.0 : (fields[6] as num).toDouble(),
+      attachedAgentId: fields[7] as String?,
     )
       ..rotation = (fields[1] as num).toDouble()
       ..length = (fields[2] as num).toDouble()
@@ -795,7 +797,7 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
   @override
   void write(BinaryWriter writer, PlacedUtility obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -807,7 +809,11 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       ..writeByte(4)
       ..write(obj.isDeleted)
       ..writeByte(5)
-      ..write(obj.position);
+      ..write(obj.position)
+      ..writeByte(6)
+      ..write(obj.angle)
+      ..writeByte(7)
+      ..write(obj.attachedAgentId);
   }
 
   @override
@@ -830,6 +836,12 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
     switch (reader.readByte()) {
       case 0:
         return UtilityType.spike;
+      case 1:
+        return UtilityType.viewCone180;
+      case 2:
+        return UtilityType.viewCone90;
+      case 3:
+        return UtilityType.viewCone40;
       default:
         return UtilityType.spike;
     }
@@ -840,6 +852,12 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
     switch (obj) {
       case UtilityType.spike:
         writer.writeByte(0);
+      case UtilityType.viewCone180:
+        writer.writeByte(1);
+      case UtilityType.viewCone90:
+        writer.writeByte(2);
+      case UtilityType.viewCone40:
+        writer.writeByte(3);
     }
   }
 

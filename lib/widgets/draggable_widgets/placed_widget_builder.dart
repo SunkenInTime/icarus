@@ -23,6 +23,8 @@ import 'package:icarus/widgets/delete_area.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/utility_widget_builder.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/placed_view_cone_widget.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/line_up_line_painter.dart';
 import 'package:icarus/widgets/current_line_up_painter.dart';
@@ -223,8 +225,45 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                                 .updatePosition(virtualOffset, placedImage.id);
                           },
                         )),
+                  // Render view cone utilities with rotation/length controls
                   for (PlacedUtility placedUtility
-                      in ref.watch(utilityProvider))
+                      in ref.watch(utilityProvider).where(
+                            (u) => UtilityData.isViewCone(u.type),
+                          ))
+                    PlacedViewConeWidget(
+                      key: ValueKey(placedUtility.id),
+                      utility: placedUtility,
+                      id: placedUtility.id,
+                      rotation: placedUtility.rotation,
+                      length: placedUtility.length,
+                      onDragEnd: (details) {
+                        RenderBox renderBox =
+                            context.findRenderObject() as RenderBox;
+                        Offset localOffset =
+                            renderBox.globalToLocal(details.offset);
+
+                        Offset virtualOffset =
+                            coordinateSystem.screenToCoordinate(localOffset);
+                        double safeArea = agentSize / 2;
+
+                        // if (coordinateSystem.isOutOfBounds(
+                        //     virtualOffset.translate(safeArea, safeArea))) {
+                        //   ref
+                        //       .read(utilityProvider.notifier)
+                        //       .removeUtility(placedUtility.id);
+                        //   return;
+                        // }
+
+                        ref
+                            .read(utilityProvider.notifier)
+                            .updatePosition(virtualOffset, placedUtility.id);
+                      },
+                    ),
+                  // Render non-view-cone utilities (like spike)
+                  for (PlacedUtility placedUtility
+                      in ref.watch(utilityProvider).where(
+                            (u) => !UtilityData.isViewCone(u.type),
+                          ))
                     Positioned(
                       key: ValueKey(placedUtility.id),
                       left: coordinateSystem
