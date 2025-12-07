@@ -1,6 +1,7 @@
 import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -17,6 +18,7 @@ enum ActionGroup {
   text,
   image,
   utility,
+  lineUp,
 }
 
 enum ActionType {
@@ -92,6 +94,8 @@ class ActionProvider extends Notifier<List<UserAction>> {
         ref.read(placedImageProvider.notifier).redoAction(poppedAction);
       case ActionGroup.utility:
         ref.read(utilityProvider.notifier).redoAction(poppedAction);
+      case ActionGroup.lineUp:
+        ref.read(lineUpProvider.notifier).redoAction(poppedAction);
     }
 
     final newState = [...state];
@@ -122,6 +126,8 @@ class ActionProvider extends Notifier<List<UserAction>> {
         ref.read(placedImageProvider.notifier).undoAction(currentAction);
       case ActionGroup.utility:
         ref.read(utilityProvider.notifier).undoAction(currentAction);
+      case ActionGroup.lineUp:
+        ref.read(lineUpProvider.notifier).undoAction(currentAction);
     }
     // log("Undo action was called");
     final newState = [...state];
@@ -167,6 +173,8 @@ class ActionProvider extends Notifier<List<UserAction>> {
         ref.read(placedImageProvider.notifier).clearAll();
       case ActionGroup.utility:
         ref.read(utilityProvider.notifier).clearAll();
+      case ActionGroup.lineUp:
+        ref.read(lineUpProvider.notifier).clearAll();
     }
     // Optionally, you may want to notify or update strategy provider state.
     ref.read(strategyProvider.notifier).setUnsaved();

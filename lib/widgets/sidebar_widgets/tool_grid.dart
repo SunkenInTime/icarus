@@ -10,12 +10,64 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:icarus/widgets/custom_expansion_tile.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/delete_options.dart';
 import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
+
+enum _ContextBarMode { drawing, deleting, none }
+
+class BottomContextBar extends ConsumerWidget {
+  const BottomContextBar({super.key});
+
+  static const double _expandedHeight = 150.0;
+  static const Duration _animationDuration = Duration(milliseconds: 200);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final interactionState = ref.watch(interactionStateProvider);
+
+    final mode = switch (interactionState) {
+      InteractionState.drawing => _ContextBarMode.drawing,
+      InteractionState.deleting => _ContextBarMode.deleting,
+      _ => _ContextBarMode.none,
+    };
+
+    final isExpanded = mode != _ContextBarMode.none;
+
+    return ClipRect(
+      child: AnimatedContainer(
+        duration: _animationDuration,
+        curve: Curves.easeInOut,
+        height: isExpanded ? _expandedHeight : 0,
+        child: SingleChildScrollView(
+          child: AnimatedSwitcher(
+            duration: _animationDuration,
+            switchInCurve: Curves.easeIn,
+            switchOutCurve: Curves.easeOut,
+            transitionBuilder: (child, animation) {
+              return FadeTransition(
+                opacity: animation,
+                child: child,
+              );
+            },
+            child: _buildContent(mode),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent(_ContextBarMode mode) {
+    return switch (mode) {
+      _ContextBarMode.drawing => const DrawingTools(key: ValueKey('drawing')),
+      _ContextBarMode.deleting =>
+        const DeleteOptions(key: ValueKey('deleting')),
+      _ContextBarMode.none => const SizedBox.shrink(key: ValueKey('none')),
+    };
+  }
+}
 
 class ToolGrid extends ConsumerWidget {
   const ToolGrid({super.key});
@@ -288,8 +340,7 @@ class ToolGrid extends ConsumerWidget {
               ],
             ),
           ),
-          const DrawingTools(),
-          const DeleteOptions(),
+          const BottomContextBar(),
         ],
       ),
     );

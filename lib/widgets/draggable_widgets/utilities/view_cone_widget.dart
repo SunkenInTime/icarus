@@ -3,12 +3,12 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
-import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ViewConeWidget extends ConsumerWidget {
   final String? id;
@@ -53,8 +53,10 @@ class ViewConeWidget extends ConsumerWidget {
     final containerWidth = scaledLength * 2;
     final containerHeight = scaledLength;
 
-    final totalHeight = (300 + 7.5 + 10) * coord.scaleFactor;
-    final totalWidth = (300 * 2) * coord.scaleFactor;
+    final totalHeight =
+        (ViewConeUtility.maxLength + 7.5 + (Settings.utilityIconSize / 2)) *
+            coord.scaleFactor;
+    final totalWidth = (ViewConeUtility.maxLength * 2) * coord.scaleFactor;
 
     return SizedBox(
       width: totalWidth,
@@ -67,7 +69,7 @@ class ViewConeWidget extends ConsumerWidget {
             ),
           ),
           Positioned(
-            bottom: 10 * coord.scaleFactor,
+            bottom: Settings.utilityIconSize / 2 * coord.scaleFactor,
             left: (totalWidth - containerWidth) / 2,
             child: IgnorePointer(
               child: SizedBox(
@@ -78,8 +80,6 @@ class ViewConeWidget extends ConsumerWidget {
                   painter: ViewConePainter(
                     angle: angle,
                     length: scaledLength,
-                    color: Colors.blue.withValues(alpha: 0.3),
-                    borderColor: Colors.blue,
                   ),
                 ),
               ),
@@ -87,7 +87,8 @@ class ViewConeWidget extends ConsumerWidget {
           ),
           Positioned(
             bottom: 0,
-            left: (totalWidth - 10 * coord.scaleFactor) / 2,
+            left:
+                (totalWidth - Settings.utilityIconSize * coord.scaleFactor) / 2,
             child: MouseWatch(
               onDeleteKeyPressed: () {
                 if (id == null) return;
@@ -101,9 +102,16 @@ class ViewConeWidget extends ConsumerWidget {
               },
               cursor: SystemMouseCursors.click,
               child: Container(
-                color: Settings.tacticalVioletTheme.secondary,
-                width: 10 * coord.scaleFactor,
-                height: 10 * coord.scaleFactor,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: Settings.tacticalVioletTheme.border,
+                  ),
+                  color: Settings.tacticalVioletTheme.card,
+                ),
+                width: Settings.utilityIconSize * coord.scaleFactor,
+                height: Settings.utilityIconSize * coord.scaleFactor,
+                child: const Icon(LucideIcons.eye),
               ),
             ),
           ),
@@ -122,29 +130,15 @@ class ViewConeWidget extends ConsumerWidget {
 
 class ViewConePainter extends CustomPainter {
   final double angle;
-
   final double length;
-  final Color color;
-  final Color borderColor;
 
   ViewConePainter({
     required this.angle,
     required this.length,
-    required this.color,
-    required this.borderColor,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
-    final borderPaint = Paint()
-      ..color = borderColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
     // Convert angle to radians
     final angleRad = angle * (pi / 180);
 
@@ -157,25 +151,41 @@ class ViewConePainter extends CustomPainter {
     // Apex position: (width/2, height) = (length, length)
     final apex = Offset(size.width / 2, size.height);
 
-    final path = Path();
-    path.moveTo(apex.dx, apex.dy);
-    path.arcTo(
+    // Create clipping path for the wedge
+    final clipPath = Path();
+    clipPath.moveTo(apex.dx, apex.dy);
+    clipPath.arcTo(
       Rect.fromCircle(center: apex, radius: length),
       startAngle,
       angleRad,
       false,
     );
-    path.close();
+    clipPath.close();
 
-    canvas.drawPath(path, paint);
-    canvas.drawPath(path, borderPaint);
+    // Save canvas state and apply clip
+    canvas.save();
+    canvas.clipPath(clipPath);
+
+    // Draw radial gradient circle (will be clipped to wedge)
+    final gradientPaint = Paint()
+      ..shader = RadialGradient(
+        center: Alignment.center,
+        radius: 1.0,
+        colors: [
+          const Color.fromARGB(255, 147, 147, 147).withValues(alpha: 0.5),
+          Colors.transparent,
+        ],
+        stops: const [0.0, 1.0],
+      ).createShader(Rect.fromCircle(center: apex, radius: length));
+
+    canvas.drawCircle(apex, length, gradientPaint);
+
+    // Restore canvas state
+    canvas.restore();
   }
 
   @override
   bool shouldRepaint(covariant ViewConePainter oldDelegate) {
-    return oldDelegate.angle != angle ||
-        oldDelegate.length != length ||
-        oldDelegate.color != color ||
-        oldDelegate.borderColor != borderColor;
+    return oldDelegate.angle != angle || oldDelegate.length != length;
   }
 }

@@ -135,7 +135,7 @@ class StrategyTileDetails extends StatelessWidget {
       decoration: BoxDecoration(
           color: ShadTheme.of(context).colorScheme.card,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Settings.highlightColor),
+          border: Border.all(color: Settings.tacticalVioletTheme.border),
           boxShadow: const [Settings.cardForegroundBackdrop]),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
@@ -204,7 +204,7 @@ class StrategyTileDragPreview extends StatelessWidget {
       height: 50,
       width: 220,
       decoration: BoxDecoration(
-        color: Settings.sideBarColor,
+        color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.deepPurpleAccent, width: 2),
       ),
@@ -246,9 +246,9 @@ class _AgentIcon extends StatelessWidget {
       height: 27,
       width: 27,
       decoration: BoxDecoration(
-        color: Settings.sideBarColor,
+        color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Settings.highlightColor),
+        border: Border.all(color: Settings.tacticalVioletTheme.border),
       ),
       child: Image.asset(AgentData.agents[agentType]!.iconPath),
     );
@@ -264,9 +264,9 @@ class _MoreAgentsIndicator extends StatelessWidget {
       height: 27,
       width: 27,
       decoration: BoxDecoration(
-        color: Settings.sideBarColor,
+        color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Settings.highlightColor),
+        border: Border.all(color: Settings.tacticalVioletTheme.border),
       ),
       child: const Icon(
         Icons.more_horiz,

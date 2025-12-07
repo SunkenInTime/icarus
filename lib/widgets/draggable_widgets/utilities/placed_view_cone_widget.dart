@@ -40,10 +40,6 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
   double? localLength;
   bool isDragging = false;
 
-  // Minimum and maximum length constraints
-  static const double minLength = 20;
-  static const double maxLength = 300;
-
   @override
   void initState() {
     super.initState();
@@ -108,7 +104,7 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
         isDragging: isDragging,
         origin: anchorPoint,
         // Position the rotation handle at the top (where the cone extends to)
-        buttonTop: anchorPoint.dy - localLength! - 7.5 - 5,
+        buttonTop: anchorPoint.dy - localLength! - 7.5,
         buttonLeft: anchorPoint.dx - 7.5,
         onPanStart: (details) {
           // Save rotation history for undo/redo
@@ -142,7 +138,10 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
               ref.watch(screenZoomProvider);
 
           // Clamp length to valid range
-          newLength = newLength.clamp(minLength, maxLength);
+          newLength = newLength.clamp(
+            ViewConeUtility.minLength,
+            ViewConeUtility.maxLength,
+          );
 
           setState(() {
             localRotation = newRotation;

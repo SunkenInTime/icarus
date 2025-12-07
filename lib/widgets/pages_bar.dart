@@ -42,7 +42,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
         actions: [
           ShadButton.secondary(
             onPressed: () => Navigator.of(ctx).pop(),
-            backgroundColor: Settings.highlightColor,
+            backgroundColor: Settings.tacticalVioletTheme.border,
             child: const Text("Cancel"),
           ),
           ShadButton(
@@ -386,7 +386,7 @@ class _ExpandedPanel extends StatelessWidget {
                     ),
             ),
           ),
-          const Divider(height: 1, color: Settings.highlightColor),
+          Divider(height: 1, color: Settings.tacticalVioletTheme.border),
           SizedBox(
             height: 48,
             child: Row(
@@ -444,8 +444,8 @@ class _PageRow extends StatelessWidget {
       color: bg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(
-          color: Settings.highlightColor,
+        side: BorderSide(
+          color: Settings.tacticalVioletTheme.border,
           width: 1,
         ),
       ),

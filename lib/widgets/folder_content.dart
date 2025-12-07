@@ -12,8 +12,7 @@ import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/dot_painter.dart';
-import 'package:icarus/widgets/folder_navigator.dart';
-import 'package:icarus/widgets/folder_tile.dart';
+import 'package:icarus/widgets/folder_pill.dart';
 // ... your existing imports
 
 class FolderContent extends ConsumerWidget {
@@ -120,11 +119,13 @@ class FolderContent extends ConsumerWidget {
                                           },
                                         ),
 
-                                      const Padding(
-                                        padding: EdgeInsets.only(bottom: 8.0),
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 8.0),
                                         child: Divider(
                                           height: 1,
-                                          color: Settings.highlightColor,
+                                          color: Settings
+                                              .tacticalVioletTheme.border,
                                         ),
                                       ),
 
@@ -251,13 +252,8 @@ class FolderContent extends ConsumerWidget {
                         folders.sort(
                             (a, b) => a.dateCreated.compareTo(b.dateCreated));
 
-                        List<GridItem> gridItems = [
-                          ...folders.map((folder) => FolderItem(folder)),
-                          ...strategies
-                              .map((strategy) => StrategyItem(strategy)),
-                        ];
-
-                        if (gridItems.isEmpty) {
+                        // Check if both folders and strategies are empty
+                        if (folders.isEmpty && strategies.isEmpty) {
                           return const IcaDropTarget(
                             child: Center(
                               child: Column(
@@ -287,27 +283,63 @@ class FolderContent extends ConsumerWidget {
                             crossAxisCount = crossAxisCount
                                 .clamp(1, double.infinity)
                                 .toInt();
-                            return GridView.builder(
-                              itemCount: gridItems.length,
-                              padding: const EdgeInsets.all(16),
-                              gridDelegate:
-                                  SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: crossAxisCount,
-                                mainAxisExtent: 250,
-                                crossAxisSpacing: 20,
-                                mainAxisSpacing: 20,
-                              ),
-                              itemBuilder: (context, index) {
-                                final item = gridItems[index];
-                                if (item is FolderItem) {
-                                  return FolderTile(folder: item.folder);
-                                } else if (item is StrategyItem) {
-                                  //Error causing line
-                                  return StrategyTile(
-                                      strategyData: item.strategy);
-                                }
-                                return const SizedBox.shrink();
-                              },
+
+                            return CustomScrollView(
+                              slivers: [
+                                // Folder pills section (wrap row)
+                                if (folders.isNotEmpty)
+                                  SliverToBoxAdapter(
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                          16, 16, 16, 8),
+                                      child: Wrap(
+                                        spacing: 10,
+                                        runSpacing: 10,
+                                        children: folders
+                                            .map((f) => FolderPill(folder: f))
+                                            .toList(),
+                                      ),
+                                    ),
+                                  ),
+
+                                // Strategies grid
+                                if (strategies.isNotEmpty)
+                                  SliverPadding(
+                                    padding: const EdgeInsets.all(16),
+                                    sliver: SliverGrid(
+                                      gridDelegate:
+                                          SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: crossAxisCount,
+                                        mainAxisExtent: 250,
+                                        crossAxisSpacing: 20,
+                                        mainAxisSpacing: 20,
+                                      ),
+                                      delegate: SliverChildBuilderDelegate(
+                                        (context, index) {
+                                          return StrategyTile(
+                                              strategyData: strategies[index]);
+                                        },
+                                        childCount: strategies.length,
+                                      ),
+                                    ),
+                                  )
+                                else if (folders.isNotEmpty)
+                                  // Show placeholder when only folders exist
+                                  const SliverFillRemaining(
+                                    hasScrollBody: false,
+                                    child: Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.only(top: 48),
+                                        child: Text(
+                                          'No strategies in this folder',
+                                          style: TextStyle(
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             );
                           }),
                         );

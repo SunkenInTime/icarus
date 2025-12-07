@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/image_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 
@@ -70,6 +71,9 @@ class ViewConeUtility extends Utilities {
   final double angle;
   final double defaultLength;
 
+  static const double maxLength = 300;
+  static const double minLength = 40;
+
   ViewConeUtility({
     required this.angle,
     this.defaultLength = 50,
@@ -89,7 +93,7 @@ class ViewConeUtility extends Utilities {
   /// The length determines where the bottom center is positioned
   @override
   Offset getAnchorPoint() {
-    return const Offset(300, 300 + 7.5 + 5);
+    return const Offset(maxLength, maxLength + 7.5);
   }
 
   // /// Get anchor point with length - bottom center of the view cone

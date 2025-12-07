@@ -20,6 +20,7 @@ class Settings {
 
   static const Color sideBarColor = Color(0xFF141114);
   static const Color highlightColor = Color(0xff27272a);
+
   static List<ColorOption> penColors = [
     ColorOption(color: Colors.white, isSelected: true),
     ColorOption(color: Colors.red, isSelected: false),
@@ -34,7 +35,6 @@ class Settings {
   static const Color enemyOutlineColor = Color.fromARGB(139, 255, 82, 82);
   static const Color allyOutlineColor = Color.fromARGB(106, 105, 240, 175);
 
-  static const Color backgroundColor = Color(0xFF1B1B1B);
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
@@ -178,4 +178,7 @@ class Settings {
       },
     );
   }
+
+  static double utilityIconSize = 20;
+  static double erasingSize = 15;
 }

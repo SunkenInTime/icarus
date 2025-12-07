@@ -15,14 +15,11 @@ class BoundingBox extends HiveObject {
 
   BoundingBox({required this.min, required this.max});
 
-  bool isWithin(Offset position) {
-    if (position.dx >= min.dx &&
-        position.dx <= max.dx &&
-        position.dy >= min.dy &&
-        position.dy <= max.dy) {
-      return true;
-    }
-    return false;
+  bool isWithinOrNear(Offset position, double threshold) {
+    return position.dx >= min.dx - threshold &&
+        position.dx <= max.dx + threshold &&
+        position.dy >= min.dy - threshold &&
+        position.dy <= max.dy + threshold;
   }
 
   Map<String, dynamic> toJson() => _$BoundingBoxToJson(this);

@@ -21,8 +21,19 @@ class StrategyTile extends ConsumerStatefulWidget {
 }
 
 class _StrategyTileState extends ConsumerState<StrategyTile> {
-  Color _highlightColor = Settings.highlightColor;
+  Color _highlightColor = Settings.tacticalVioletTheme.border;
   bool _isLoading = false;
+
+  final ShadPopoverController _menuController = ShadPopoverController();
+  final ShadContextMenuController _contextMenuController =
+      ShadContextMenuController();
+
+  @override
+  void dispose() {
+    _menuController.dispose();
+    _contextMenuController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,8 +53,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         cursor: SystemMouseCursors.click,
         onEnter: (_) =>
             setState(() => _highlightColor = Settings.tacticalVioletTheme.ring),
-        onExit: (_) =>
-            setState(() => _highlightColor = Settings.highlightColor),
+        onExit: (_) => setState(
+            () => _highlightColor = Settings.tacticalVioletTheme.border),
         child: AbsorbPointer(
           absorbing: _isLoading,
           child: GestureDetector(
@@ -73,54 +84,20 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                 Align(
                   alignment: Alignment.topRight,
                   child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: MenuAnchor(
-                      menuChildren: [
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: MenuItemButton(
-                            onPressed: _showRenameDialog,
-                            child: const _MenuRow(
-                              icon: Icons.text_fields,
-                              label: 'Rename',
-                            ),
-                          ),
+                    padding: const EdgeInsets.all(16),
+                    child: ShadContextMenuRegion(
+                      controller: _contextMenuController,
+                      items: _buildMenuItems(),
+                      child: ShadIconButton.secondary(
+                        width: 28,
+                        height: 28,
+                        onPressed: () {
+                          _contextMenuController.toggle();
+                        },
+                        icon: const Icon(
+                          Icons.more_vert_outlined,
                         ),
-                        MenuItemButton(
-                          onPressed: _duplicateStrategy,
-                          child: const _MenuRow(
-                            icon: Icons.copy,
-                            label: 'Duplicate',
-                          ),
-                        ),
-                        MenuItemButton(
-                          onPressed: _exportStrategy,
-                          child: const _MenuRow(
-                            icon: Icons.upload,
-                            label: 'Export',
-                          ),
-                        ),
-                        MenuItemButton(
-                          onPressed: _showDeleteDialog,
-                          child: const _MenuRow(
-                            icon: Icons.delete,
-                            label: 'Delete',
-                            color: Colors.redAccent,
-                          ),
-                        ),
-                      ],
-                      builder: (context, controller, _) {
-                        return IconButton(
-                          onPressed: () => controller.isOpen
-                              ? controller.close()
-                              : controller.open(),
-                          icon: const Icon(
-                            Icons.more_vert_outlined,
-                            shadows: [Shadow(blurRadius: 8)],
-                            size: 24,
-                          ),
-                        );
-                      },
+                      ),
                     ),
                   ),
                 ),
@@ -132,7 +109,33 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     );
   }
 
+  List<ShadContextMenuItem> _buildMenuItems() {
+    return [
+      ShadContextMenuItem(
+        leading: const Icon(LucideIcons.pencil),
+        child: const Text('Rename'),
+        onPressed: () => _showRenameDialog(),
+      ),
+      ShadContextMenuItem(
+        leading: const Icon(LucideIcons.copy),
+        child: const Text('Duplicate'),
+        onPressed: () => _duplicateStrategy(),
+      ),
+      ShadContextMenuItem(
+        leading: const Icon(LucideIcons.upload),
+        child: const Text('Export'),
+        onPressed: () => _exportStrategy(),
+      ),
+      ShadContextMenuItem(
+        leading: const Icon(LucideIcons.trash2, color: Colors.redAccent),
+        child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+        onPressed: () => _showDeleteDialog(),
+      ),
+    ];
+  }
+
   Future<void> _openStrategy(BuildContext context) async {
+    log('StrategyTile: opening strategy');
     if (_isLoading) {
       log('StrategyTile: already loading');
       return;

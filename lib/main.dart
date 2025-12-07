@@ -1,6 +1,5 @@
 import 'dart:developer';
 
-import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_portal/flutter_portal.dart';
@@ -23,9 +22,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 import 'package:window_manager/window_manager.dart';
 
-CustomMouseCursor? drawingCursor;
-CustomMouseCursor? erasingCursor;
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) {
@@ -47,29 +43,6 @@ Future<void> main() async {
 
   await StrategyProvider.migrateAllStrategies();
   // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
-
-  drawingCursor = await CustomMouseCursor.icon(
-    CustomIcons.drawcursor,
-
-    size: 12, hotX: 6, hotY: 6, color: Colors.white,
-    // hotX: 22,
-    // hotY: 17,
-  );
-
-  erasingCursor = await CustomMouseCursor.icon(
-    CustomIcons.eraser,
-    size: 12, hotX: 6, hotY: 6, color: Colors.white,
-    // hotX: 22,
-    // hotY: 17,
-    // color: Colors.pinkAccent,
-  );
-
-  // drawingCursor = await CustomMouseCursor.asset(
-  //   "assets/drawCursor.webp",
-  //   hotX: 12,
-  //   hotY: 4,
-  // );
-  //
 
   if (!kIsWeb) {
     await windowManager.ensureInitialized();
@@ -146,8 +119,9 @@ class MyApp extends StatelessWidget {
                             if (states.contains(WidgetState.hovered)) {
                               return RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
-                                side: const BorderSide(
-                                    color: Settings.highlightColor, width: 2),
+                                side: BorderSide(
+                                    color: Settings.tacticalVioletTheme.border,
+                                    width: 2),
                               );
                             }
                             return RoundedRectangleBorder(

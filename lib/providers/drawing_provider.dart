@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -183,12 +184,13 @@ class DrawingProvider extends Notifier<DrawingState> {
 
     for (final (index, drawing) in state.elements.indexed) {
       if (drawing is FreeDrawing) {
-        if (drawing.boundingBox!.isWithin(mousePos)) {
+        if (drawing.boundingBox!
+            .isWithinOrNear(mousePos, Settings.erasingSize)) {
           for (int i = 0; i < drawing.listOfPoints.length - 1; i++) {
             double distance = distanceToLineSegment(
                 mousePos, drawing.listOfPoints[i], drawing.listOfPoints[i + 1]);
 
-            if (distance < 100) {
+            if (distance < Settings.erasingSize) {
               indicesToDelete.add(index);
               break;
             }

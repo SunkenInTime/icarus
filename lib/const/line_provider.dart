@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'dart:ui';
 
 import 'package:json_annotation/json_annotation.dart';
@@ -122,13 +124,17 @@ class LineUpState {
 }
 
 class LineUpProvider extends Notifier<LineUpState> {
-  AgentType tempAgent = AgentType.brimstone;
+  final List<LineUp> _poppedLineUps = [];
   @override
   LineUpState build() {
     return LineUpState(lineUps: []);
   }
 
   void addLineUp(LineUp lineUp) {
+    final action = UserAction(
+        type: ActionType.addition, id: lineUp.id, group: ActionGroup.lineUp);
+    ref.read(actionProvider.notifier).addAction(action);
+
     state = state.copyWith(
       lineUps: [...state.lineUps, lineUp],
     );
@@ -194,16 +200,14 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   void updateRotation(double rotation, double length) {
     if (state.currentAbility != null) {
-      final updatedAbility = state.currentAbility!
-        ..updateRotation(rotation, length);
+      final updatedAbility =
+          state.currentAbility!.copyWith(rotation: rotation, length: length);
+
+      log("Updated ability: ${updatedAbility.rotation} ${updatedAbility.length}");
       state = state.copyWith(currentAbility: updatedAbility);
     }
   }
   //Have a hover glow on what agent is selectabel in the sidebar list
-
-  void removeLineUp(String id) {
-    // state = state.where((lineUp) => lineUp.id != id).toList();
-  }
 
   void fromHive(List<LineUp> lineUps) {
     state = state.copyWith(
@@ -226,9 +230,61 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void deleteLineUpById(String id) {
+    //Although this is technically not starndard with the way
+    //Deletetions are handled by the other providers/widgets
+    //This is because the only way to delete a line up is through
+    //the right click menu, and not through the delete key.
+
+    final action = UserAction(
+        type: ActionType.deletion, id: id, group: ActionGroup.lineUp);
+    ref.read(actionProvider.notifier).addAction(action);
+
+    _poppedLineUps.add(state.lineUps.firstWhere((lineUp) => lineUp.id == id));
+
     state = state.copyWith(
       lineUps: state.lineUps.where((lineUp) => lineUp.id != id).toList(),
     );
+  }
+
+  void undoAction(UserAction action) {
+    switch (action.type) {
+      case ActionType.addition:
+        deleteLineUpById(action.id);
+      case ActionType.deletion:
+        if (_poppedLineUps.isEmpty) return;
+        final newState = state.copyWith(
+          lineUps: [...state.lineUps, _poppedLineUps.removeLast()],
+        );
+        state = newState;
+      case ActionType.edit:
+      //Do nothing
+    }
+  }
+
+  void redoAction(UserAction action) {
+    switch (action.type) {
+      case ActionType.addition:
+        final index =
+            _poppedLineUps.indexWhere((lineUp) => lineUp.id == action.id);
+        state = state.copyWith(
+          lineUps: [...state.lineUps, _poppedLineUps.removeAt(index)],
+        );
+      case ActionType.deletion:
+        final newState = state.copyWith(
+          lineUps: [...state.lineUps],
+        );
+        final index =
+            newState.lineUps.indexWhere((lineUp) => lineUp.id == action.id);
+        _poppedLineUps.add(newState.lineUps.removeAt(index));
+        state = newState;
+      case ActionType.edit:
+      //Do nothing
+    }
+  }
+
+  void clearAll() {
+    _poppedLineUps.clear();
+    state = state.copyWith(lineUps: []);
   }
 }
 

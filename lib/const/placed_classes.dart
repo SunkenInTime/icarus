@@ -227,6 +227,7 @@ class PlacedAbility extends PlacedWidget {
     this.isAlly = true,
     this.length = 0,
     this.lineUpID,
+    this.rotation = 0,
   });
 
   @AbilityInfoConverter()
@@ -235,9 +236,9 @@ class PlacedAbility extends PlacedWidget {
   @JsonKey(defaultValue: true)
   final bool isAlly;
 
-  double rotation = 0;
+  double rotation;
 
-  double length = 0;
+  double length;
 
   final String? lineUpID;
 
@@ -309,6 +310,7 @@ class PlacedAbility extends PlacedWidget {
       isAlly: isAlly ?? this.isAlly,
       lineUpID: lineUpID ?? this.lineUpID,
       length: length ?? this.length,
+      rotation: rotation ?? this.rotation,
     );
   }
 

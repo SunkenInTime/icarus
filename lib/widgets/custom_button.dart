@@ -51,8 +51,8 @@ class CustomButton extends ConsumerWidget {
         (Set<WidgetState> states) {
           if (states.contains(WidgetState.disabled)) {
             return RoundedRectangleBorder(
-              side:
-                  const BorderSide(color: Settings.highlightColor, width: 2.0),
+              side: BorderSide(
+                  color: Settings.tacticalVioletTheme.border, width: 2.0),
               borderRadius: BorderRadius.circular(8.0),
             );
           }
@@ -64,7 +64,8 @@ class CustomButton extends ConsumerWidget {
             );
           }
           return RoundedRectangleBorder(
-            side: const BorderSide(color: Settings.highlightColor, width: 2.0),
+            side: BorderSide(
+                color: Settings.tacticalVioletTheme.border, width: 2.0),
             borderRadius: BorderRadius.circular(8.0),
           );
         },

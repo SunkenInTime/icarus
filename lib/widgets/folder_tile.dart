@@ -116,7 +116,7 @@ class _FolderTileState extends ConsumerState<FolderTile>
                             child: CustomPaint(
                               painter: CustomFolderPainter(
                                 strokeColor: _colorAnimation.value ??
-                                    Settings.highlightColor,
+                                    Settings.tacticalVioletTheme.border,
                                 backgroundColor: widget.folder.customColor ??
                                     Folder.folderColorMap[widget.folder.color]!,
                               ),
@@ -284,7 +284,7 @@ class _FolderTileState extends ConsumerState<FolderTile>
           height: 50,
           width: 220,
           decoration: BoxDecoration(
-            color: Settings.sideBarColor,
+            color: Settings.tacticalVioletTheme.card,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.deepPurpleAccent, width: 2),
           ),
