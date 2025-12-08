@@ -13,6 +13,7 @@ import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_pill.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 // ... your existing imports
 
 class FolderContent extends ConsumerWidget {
@@ -91,96 +92,53 @@ class FolderContent extends ConsumerWidget {
                         //   onPressed: () {},
                         //   icon: const Icon(Icons.filter_alt),
                         // ),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: MenuAnchor(
-                            menuChildren: [
-                              Consumer(
-                                builder: (context, ref, _) {
-                                  final filter =
-                                      ref.watch(strategyFilterProvider);
-                                  final notifier =
-                                      ref.read(strategyFilterProvider.notifier);
 
-                                  return Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      const SizedBox(height: 8),
-                                      // Sort By section
-                                      for (final sb in SortBy.values)
-                                        _buildMenuItem(
-                                          label: StrategyFilterProvider
-                                              .sortByLabels[sb]!,
-                                          isSelected: filter.sortBy == sb,
-                                          onPressed: () {
-                                            notifier.setSortBy(sb);
-                                          },
-                                        ),
-
-                                      Padding(
-                                        padding:
-                                            const EdgeInsets.only(bottom: 8.0),
-                                        child: Divider(
-                                          height: 1,
-                                          color: Settings
-                                              .tacticalVioletTheme.border,
-                                        ),
-                                      ),
-
-                                      // Sort Order section
-                                      for (final so in SortOrder.values)
-                                        _buildMenuItem(
-                                          label: StrategyFilterProvider
-                                              .sortOrderLabels[so]!,
-                                          isSelected: filter.sortOrder == so,
-                                          onPressed: () {
-                                            notifier.setSortOrder(so);
-                                          },
-                                        ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ],
-                            builder: (context, controller, _) {
-                              // Watch the state (not the notifier) so the button rebuilds on change
-                              final sortBy = ref.watch(
-                                strategyFilterProvider.select((s) => s.sortBy),
-                              );
-
-                              // Derive icon + label from the watched state
-                              final label =
-                                  StrategyFilterProvider.sortByLabels[sortBy]!;
-                              final icon = switch (sortBy) {
-                                SortBy.alphabetical => Icons.sort_by_alpha,
-                                SortBy.dateCreated => Icons.calendar_today,
-                                SortBy.dateUpdated => Icons.update,
-                              };
-
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 8.0),
-                                child: CustomButton(
-                                  height: 40,
-                                  width: 96,
-                                  isDynamicWidth: true,
-                                  label: label,
-                                  padding: WidgetStateProperty.all(
-                                      const EdgeInsets.symmetric(
-                                          horizontal: 8)),
-                                  backgroundColor:
-                                      Settings.tacticalVioletTheme.card,
-                                  onPressed: () {
-                                    controller.isOpen
-                                        ? controller.close()
-                                        : controller.open();
-                                  },
-                                  icon: Icon(icon),
-                                ),
-                              );
-                            },
+                        ShadSelect<SortBy>(
+                          decoration: ShadDecoration(
+                            color: Settings.tacticalVioletTheme.card,
+                            shadows: const [Settings.cardForegroundBackdrop],
                           ),
+                          initialValue:
+                              ref.watch(strategyFilterProvider).sortBy,
+                          selectedOptionBuilder: (context, value) =>
+                              Text(StrategyFilterProvider.sortByLabels[value]!),
+                          options: [
+                            for (final sb in SortBy.values)
+                              ShadOption(
+                                value: sb,
+                                child: Text(
+                                    StrategyFilterProvider.sortByLabels[sb]!),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            ref
+                                .read(strategyFilterProvider.notifier)
+                                .setSortBy(value!);
+                          },
+                        ),
+
+                        ShadSelect<SortOrder>(
+                          decoration: ShadDecoration(
+                            color: Settings.tacticalVioletTheme.card,
+                            shadows: const [Settings.cardForegroundBackdrop],
+                          ),
+                          initialValue:
+                              ref.watch(strategyFilterProvider).sortOrder,
+                          selectedOptionBuilder: (context, value) => Text(
+                              StrategyFilterProvider.sortOrderLabels[value]!),
+                          options: [
+                            for (final so in SortOrder.values)
+                              ShadOption(
+                                value: so,
+                                child: Text(StrategyFilterProvider
+                                    .sortOrderLabels[so]!),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            ref
+                                .read(strategyFilterProvider.notifier)
+                                .setSortOrder(value!);
+                          },
                         ),
                       ],
                     ),
