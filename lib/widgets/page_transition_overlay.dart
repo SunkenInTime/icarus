@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -17,6 +18,8 @@ import 'package:icarus/widgets/delete_area.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
+import 'package:icarus/widgets/line_up_line_painter.dart';
+import 'package:icarus/widgets/line_up_widget.dart';
 
 class PageTransitionOverlay extends ConsumerStatefulWidget {
   const PageTransitionOverlay({super.key});
@@ -135,6 +138,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
             alignment: Alignment.topRight,
             child: DeleteArea(),
           ),
+
           // None: unchanged items rendered at fixed position
           for (final e in none)
             _overlayItem(
