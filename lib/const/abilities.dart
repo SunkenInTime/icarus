@@ -12,9 +12,16 @@ import 'package:icarus/widgets/draggable_widgets/ability/rotatable_image_widget.
 import 'package:icarus/widgets/draggable_widgets/agents/agent_icon_widget.dart';
 
 sealed class Ability {
-  Offset getAnchorPoint([double? mapScale, double? abilitySize]);
-  Widget createWidget(String? id, bool isAlly, double mapScale,
-      [double? rotation, double? length]);
+  Offset getAnchorPoint({double? mapScale, double? abilitySize});
+
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    String? lineUpId,
+  });
 }
 
 class BaseAbility extends Ability {
@@ -23,17 +30,26 @@ class BaseAbility extends Ability {
   BaseAbility({required this.iconPath});
 
   @override
-  Widget createWidget(String? id, bool isAlly, double mapScale,
-      [double? rotation, double? length]) {
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    String? lineUpId,
+  }) {
     return AbilityWidget(
       isAlly: isAlly,
       iconPath: iconPath,
       id: id,
+      lineUpId: lineUpId,
     );
   }
 
   @override
-  Offset getAnchorPoint([double? mapScale, double? abilitySize]) {
+  Offset getAnchorPoint({double? mapScale, double? abilitySize}) {
+    assert(abilitySize != null, 'abilitySize must be provided');
+    // abilitySize is required, so no need for !
     return Offset(abilitySize! / 2, abilitySize / 2);
   }
 }
@@ -43,10 +59,18 @@ class ImageAbility extends Ability {
   final double size;
 
   ImageAbility({required this.imagePath, required this.size});
+
   @override
-  Widget createWidget(String? id, bool isAlly, double mapScale,
-      [double? rotation, double? length]) {
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    String? lineUpId,
+  }) {
     return AgentIconWidget(
+      lineUpId: lineUpId,
       imagePath: imagePath,
       size: size * mapScale,
       id: id,
@@ -54,11 +78,9 @@ class ImageAbility extends Ability {
   }
 
   @override
-  Offset getAnchorPoint([
-    double? mapScale,
-    double? abilitySize,
-  ]) {
-    return Offset(size / 2, size / 2);
+  Offset getAnchorPoint({double? mapScale, double? abilitySize}) {
+    assert(mapScale != null, 'mapScale must be provided');
+    return Offset(size * mapScale! / 2, size * mapScale / 2);
   }
 }
 
@@ -85,16 +107,23 @@ class CircleAbility extends Ability {
   final double? perimeterSize;
 
   @override
-  Offset getAnchorPoint([
+  Offset getAnchorPoint({
     double? mapScale,
     double? abilitySize,
-  ]) {
+  }) {
+    assert(mapScale != null, 'mapScale must be provided');
     return Offset((size * mapScale!) / 2, (size * mapScale) / 2);
   }
 
   @override
-  Widget createWidget(String? id, bool isAlly, double mapScale,
-      [double? rotation, double? length]) {
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    String? lineUpId,
+  }) {
     return CustomCircleWidget(
       iconPath: iconPath,
       size: size * mapScale,
@@ -106,6 +135,7 @@ class CircleAbility extends Ability {
       innerSize: perimeterSize != null ? perimeterSize! * mapScale : null,
       id: id,
       isAlly: isAlly,
+      lineUpId: lineUpId,
     );
   }
 }
@@ -136,10 +166,10 @@ class SquareAbility extends Ability {
   });
 
   @override
-  Offset getAnchorPoint([
+  Offset getAnchorPoint({
     double? mapScale,
     double? abilitySize,
-  ]) {
+  }) {
     if (abilitySize == null) {
       log("Warning: abilitySize is null in SquareAbility.getAnchorPoint");
       abilitySize = Settings.abilitySize;
@@ -155,9 +185,16 @@ class SquareAbility extends Ability {
   }
 
   @override
-  Widget createWidget(String? id, bool isAlly, double mapScale,
-      [double? rotation, double? length]) {
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    String? lineUpId,
+  }) {
     return CustomSquareWidget(
+      lineUpId: lineUpId,
       color: color,
       width: width * mapScale,
       height: height * mapScale,
@@ -189,7 +226,7 @@ class CenterSquareAbility extends Ability {
   });
 
   @override
-  Offset getAnchorPoint([double? mapScale, double? abilitySize]) {
+  Offset getAnchorPoint({double? mapScale, double? abilitySize}) {
     return Offset(
       (abilitySize!) / 2,
       (height * mapScale!) / 2,
@@ -197,8 +234,14 @@ class CenterSquareAbility extends Ability {
   }
 
   @override
-  Widget createWidget(String? id, bool isAlly, double mapScale,
-      [double? rotation, double? length]) {
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    String? lineUpId,
+  }) {
     return CenterSquareWidget(
       color: color,
       width: width * mapScale,
@@ -207,6 +250,7 @@ class CenterSquareAbility extends Ability {
       rotation: rotation,
       id: id,
       isAlly: isAlly,
+      lineUpId: lineUpId,
     );
   }
 }
@@ -223,13 +267,19 @@ class RotatableImageAbility extends Ability {
   });
 
   @override
-  Offset getAnchorPoint([double? mapScale, double? abilitySize]) {
+  Offset getAnchorPoint({double? mapScale, double? abilitySize}) {
     return Offset(width * mapScale! / 2, (height * mapScale / 2) + 30);
   }
 
   @override
-  Widget createWidget(String? id, bool isAlly, double mapScale,
-      [double? rotation, double? length]) {
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    String? lineUpId,
+  }) {
     return RotatableImageWidget(
       imagePath: imagePath,
       height: height * mapScale,
@@ -258,8 +308,14 @@ class ResizableSquareAbility extends SquareAbility {
   });
 
   @override
-  Widget createWidget(String? id, bool isAlly, double mapScale,
-      [double? rotation, double? length]) {
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    String? lineUpId,
+  }) {
     return ResizableSquareWidget(
       isWall: isWall,
       color: color,
@@ -274,6 +330,7 @@ class ResizableSquareAbility extends SquareAbility {
       hasTopborder: hasTopborder,
       hasSideBorders: hasSideBorders,
       isTransparent: isTransparent,
+      lineUpId: lineUpId,
     );
   }
 
@@ -285,7 +342,10 @@ class ResizableSquareAbility extends SquareAbility {
   }
 
   @override
-  Offset getAnchorPoint([double? mapScale, double? abilitySize]) {
+  Offset getAnchorPoint({
+    double? mapScale,
+    double? abilitySize,
+  }) {
     return Offset(
       (isWall ? abilitySize! * 2 : width * mapScale!) / 2,
       (height * mapScale!) +

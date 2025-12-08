@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class RenameStrategyDialog extends ConsumerStatefulWidget {
   final String strategyId;
@@ -36,22 +37,16 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return ShadDialog(
       title: const Text("Rename Strategy"),
-      content: CustomTextField(
-        // onEnterPressed: (intent) {},
-        hintText: widget.currentName,
-        controller: _textController,
-        textAlign: TextAlign.start,
-      ),
       actions: [
-        TextButton(
+        ShadButton.secondary(
           onPressed: () {
             Navigator.of(context).pop(); // Close the dialog
           },
           child: const Text("Cancel"),
         ),
-        CustomButton(
+        ShadButton(
           onPressed: () async {
             final strategyName = _textController.text;
             if (strategyName.isNotEmpty) {
@@ -70,15 +65,18 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
             }
           },
           height: 35,
-          icon: const Icon(Icons.text_fields, color: Colors.white),
-          label: "Rename",
-          labelColor: Colors.white,
-          backgroundColor: Colors.deepPurple,
+          leading: const Icon(Icons.text_fields),
+          child: const Text("Rename"),
         ),
       ],
-      shape: RoundedRectangleBorder(
-        borderRadius:
-            BorderRadius.circular(12.0), // Rounded corners for the dialog
+      child: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: CustomTextField(
+          // onEnterPressed: (intent) {},
+          hintText: widget.currentName,
+          controller: _textController,
+          textAlign: TextAlign.start,
+        ),
       ),
     );
   }

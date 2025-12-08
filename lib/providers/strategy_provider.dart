@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
-import 'package:archive/archive.dart';
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/transition_provider.dart';
-import 'image_provider.dart' as PlacedImageProvider;
+import 'image_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,7 +22,6 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -230,9 +229,9 @@ class StrategyProvider extends Notifier<StrategyState> {
         _pendingSave = false;
         // Small debounce to coalesce rapid edits during the previous save
         _saveTimer?.cancel();
-        _saveTimer = Timer(const Duration(milliseconds: 500), () {
-          _performSave(id);
-        });
+        // _saveTimer = Timer(const Duration(milliseconds: 500), () {
+        //   _performSave(id);
+        // });
       }
     }
   }
@@ -408,6 +407,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(utilityProvider.notifier).fromHive(page.utilityData);
     ref.read(mapProvider.notifier).setAttack(page.isAttack);
     ref.read(strategySettingsProvider.notifier).fromHive(page.settings);
+    ref.read(lineUpProvider.notifier).fromHive(page.lineUps);
 
     // Defer path rebuild until next frame (layout complete)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -578,32 +578,43 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     ref.read(actionProvider.notifier).clearAllActions();
 
-    // List<PlacedImage> pageImageData = [];
-    // for (final page in newStrat.pages) {
-    //   pageImageData.addAll(page.imageData);
-    // }
-    // await ref
-    //     .read(placedImageProvider.notifier)
-    //     .deleteUnusedImages(newStrat.id, pageImageData);
+    //TODO: FIX THIS LATER BOI
+    List<PlacedImage> pageImageData = [];
+    for (final page in newStrat.pages) {
+      pageImageData.addAll(page.imageData);
+    }
+    if (!kIsWeb) {
+      List<String> allImageIds = [];
+      for (final page in newStrat.pages) {
+        allImageIds.addAll(page.imageData.map((image) => image.id));
+        for (final lineUp in page.lineUps) {
+          List<String> lineUpImages = [];
+          lineUpImages.addAll(lineUp.images.map((image) => image.id));
+          allImageIds.addAll(lineUpImages);
+        }
+      }
+      await ref
+          .read(placedImageProvider.notifier)
+          .deleteUnusedImages(newStrat.id, allImageIds);
+    }
 
     final firstPage = newStrat.pages.first;
 
+    // We clear previous data to avoid artifacts when loading a new strategy
     log(firstPage.toString());
     ref.read(agentProvider.notifier).fromHive(firstPage.agentData);
     ref.read(abilityProvider.notifier).fromHive(firstPage.abilityData);
     ref.read(drawingProvider.notifier).fromHive(firstPage.drawingData);
-
     ref
         .read(mapProvider.notifier)
         .fromHive(newStrat.mapData, newStrat.pages.first.isAttack);
-
     ref.read(textProvider.notifier).fromHive(firstPage.textData);
     ref.read(placedImageProvider.notifier).fromHive(firstPage.imageData);
-
+    ref.read(lineUpProvider.notifier).fromHive(firstPage.lineUps);
     ref.read(strategySettingsProvider.notifier).fromHive(firstPage.settings);
     ref.read(utilityProvider.notifier).fromHive(firstPage.utilityData);
     activePageID = firstPage.id;
-    // await setActivePage(firstPage.id);
+
     if (kIsWeb) {
       state = StrategyState(
         isSaved: true,
@@ -684,8 +695,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       // Decode the Zip file
       final archive = ZipDecoder().decodeBytes(bytes);
 
-      final imageFolder =
-          await PlacedImageProvider.ImageProvider.getImageFolder(newID);
+      final imageFolder = await PlacedImageProvider.getImageFolder(newID);
 
       final tempDirectory = await getTempDirectory(newID);
 
@@ -733,11 +743,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     List<PlacedImage> imageData = [];
     if (!kIsWeb) {
       if (isZip) {
-        imageData = await PlacedImageProvider.ImageProvider.fromJson(
+        imageData = await PlacedImageProvider.fromJson(
             jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID);
       } else {
         log('Legacy image data loading');
-        imageData = await PlacedImageProvider.ImageProvider.legacyFromJson(
+        imageData = await PlacedImageProvider.legacyFromJson(
             jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID);
       }
     }
@@ -832,6 +842,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           textData: [],
           imageData: [],
           utilityData: [],
+          lineUps: [],
           sortIndex: 0,
           isAttack: true,
           settings: StrategySettings(),
@@ -968,7 +979,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         n++;
       }
       archiveBase = candidate;
-      outPath = path.join(saveDir!.path, "$archiveBase.ica");
+      outPath = path.join(saveDir.path, "$archiveBase.ica");
     }
 
     final jsonArchiveFile =
@@ -1113,6 +1124,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       utilityData: ref.read(utilityProvider),
       isAttack: ref.read(mapProvider).isAttack,
       settings: ref.read(strategySettingsProvider),
+      lineUps: ref.read(lineUpProvider).lineUps,
     );
 
     final newPages = [...strat.pages]..[idx] = updatedPage;

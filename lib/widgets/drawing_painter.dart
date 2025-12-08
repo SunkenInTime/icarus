@@ -11,6 +11,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
+import 'package:icarus/widgets/cursor_circle.dart';
 
 class InteractivePainter extends ConsumerStatefulWidget {
   const InteractivePainter({super.key});
@@ -22,7 +23,7 @@ class InteractivePainter extends ConsumerStatefulWidget {
 
 class _InteractivePainterState extends ConsumerState<InteractivePainter> {
   Size? _previousSize;
-
+  Offset? _visualMousePosition;
   @override
   void initState() {
     super.initState();
@@ -59,10 +60,22 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
       ignoring: isNavigating,
       child: RepaintBoundary(
         child: MouseRegion(
-          cursor:
-              ref.watch(interactionStateProvider) == InteractionState.drawing
-                  ? ref.watch(penProvider).drawCursor
-                  : erasingCursor!,
+          cursor: SystemMouseCursors.none,
+          onEnter: (event) {
+            setState(() {
+              _visualMousePosition = event.localPosition;
+            });
+          },
+          onExit: (event) {
+            setState(() {
+              _visualMousePosition = null;
+            });
+          },
+          onHover: (event) {
+            setState(() {
+              _visualMousePosition = event.localPosition;
+            });
+          },
           child: GestureDetector(
             onPanStart: (details) {
               log("Pan start detected");
@@ -70,12 +83,12 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
               final hasArrow = ref.watch(penProvider).hasArrow;
               final isDotted = ref.watch(penProvider).isDotted;
               log(currentColor.toString());
-              switch (currentInteractionState) {
-                // case InteractionState.drawLine:
-                //   Offset lineStart =
-                //       coordinateSystem.screenToCoordinate(details.localPosition);
-                //   ref.read(drawingProvider.notifier).startLine(lineStart);
 
+              setState(() {
+                _visualMousePosition = details.localPosition;
+              });
+
+              switch (currentInteractionState) {
                 case InteractionState.drawing:
                   ref.read(drawingProvider.notifier).startFreeDrawing(
                         details.localPosition,
@@ -94,32 +107,14 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                 default:
               }
             },
-            // onTapDown: (details) {
-            //   switch (currentInteractionState) {
-            //     // case InteractionState.drawLine:
-            //     //   Offset lineStart =
-            //     //       coordinateSystem.screenToCoordinate(details.localPosition);
-            //     //   ref.read(drawingProvider.notifier).startLine(lineStart);
 
-            //     case InteractionState.drawing:
-            //       ref
-            //           .read(drawingProvider.notifier)
-            //           .startSimpleTap(details.localPosition, coordinateSystem);
-
-            //     case InteractionState.erasing:
-            //       final normalizedPosition = CoordinateSystem.instance
-            //           .screenToCoordinate(details.localPosition);
-            //       ref.read(drawingProvider.notifier).onErase(normalizedPosition);
-            //     default:
-            //   }
             // },
             onPanUpdate: (details) {
-              switch (currentInteractionState) {
-                // case InteractionState.drawLine:
-                //   Offset lineEnd =
-                //       coordinateSystem.screenToCoordinate(details.localPosition);
+              setState(() {
+                _visualMousePosition = details.localPosition;
+              });
 
-                //   ref.read(drawingProvider.notifier).updateCurrentLine(lineEnd);
+              switch (currentInteractionState) {
                 case InteractionState.drawing:
                   ref.read(drawingProvider.notifier).updateFreeDrawing(
                       details.localPosition, coordinateSystem);
@@ -133,11 +128,10 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
               }
             },
             onPanEnd: (details) {
+              setState(() {
+                _visualMousePosition = details.localPosition;
+              });
               switch (currentInteractionState) {
-                // case InteractionState.drawLine:
-                //   Offset lineEnd =
-                //       coordinateSystem.screenToCoordinate(details.localPosition);
-                //   ref.read(drawingProvider.notifier).finishCurrentLine(lineEnd);
                 case InteractionState.drawing:
                   ref.read(drawingProvider.notifier).finishFreeDrawing(
                       details.localPosition, coordinateSystem);
@@ -150,8 +144,51 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                 default:
               }
             },
-            child: CustomPaint(
-              painter: drawingPainter,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: drawingPainter,
+                  ),
+                ),
+                if (_visualMousePosition != null &&
+                    ref.watch(interactionStateProvider) ==
+                        InteractionState.drawing)
+                  Positioned(
+                    left: _visualMousePosition!.dx - (14 / 2),
+                    top: _visualMousePosition!.dy - (14 / 2),
+                    child: IgnorePointer(
+                      ignoring: true,
+                      child: CursorCircle(
+                        size: 14,
+                        ringThickness: 1,
+                        gap: 1,
+                        ringColor: Colors.white,
+                        fillColor: ref.watch(penProvider).color,
+                      ),
+                    ),
+                  ),
+                if (_visualMousePosition != null &&
+                    ref.watch(interactionStateProvider) ==
+                        InteractionState.erasing)
+                  Positioned(
+                    left: _visualMousePosition!.dx -
+                        (coordinateSystem.scale(Settings.erasingSize * 2) / 2),
+                    top: _visualMousePosition!.dy -
+                        (coordinateSystem.scale(Settings.erasingSize * 2) / 2),
+                    child: IgnorePointer(
+                      ignoring: true,
+                      child: CursorCircle(
+                        size: coordinateSystem.scale(Settings.erasingSize * 2),
+                        ringThickness: 1,
+                        gap: 1,
+                        ringColor: Settings.tacticalVioletTheme.destructive,
+                        fillColor: Settings.tacticalVioletTheme.destructive
+                            .withOpacity(0.5),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         ),

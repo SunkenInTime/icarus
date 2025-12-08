@@ -6,21 +6,25 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
 class RotatableImageWidget extends ConsumerWidget {
-  const RotatableImageWidget(
-      {super.key,
-      required this.imagePath,
-      required this.height,
-      required this.width,
-      required this.id});
+  const RotatableImageWidget({
+    super.key,
+    required this.imagePath,
+    required this.height,
+    required this.width,
+    required this.id,
+    this.lineUpId,
+  });
   final String imagePath;
   final double height;
   final double width;
   final String? id;
+  final String? lineUpId;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
 
     return MouseWatch(
+      lineUpId: lineUpId,
       cursor: SystemMouseCursors.click,
       onDeleteKeyPressed: () {
         if (id == null) return;

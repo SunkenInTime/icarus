@@ -16,8 +16,10 @@ class CustomCircleWidget extends ConsumerWidget {
     this.fillColor,
     required this.id,
     required this.isAlly,
+    this.lineUpId,
   });
 
+  final String? lineUpId;
   final bool isAlly;
   final String? id;
   final String iconPath;
@@ -124,6 +126,7 @@ class CustomCircleWidget extends ConsumerWidget {
       child: Align(
         alignment: Alignment.center,
         child: AbilityWidget(
+          lineUpId: lineUpId,
           iconPath: iconPath,
           id: id,
           isAlly: isAlly,

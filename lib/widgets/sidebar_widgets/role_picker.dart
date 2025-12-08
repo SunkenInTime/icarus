@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 
 class RolePicker extends ConsumerWidget {
@@ -21,7 +22,7 @@ class RolePicker extends ConsumerWidget {
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeIn,
           child: Padding(
-            padding: const EdgeInsets.only(left: 8.0, right: 8.0, top: 2),
+            padding: const EdgeInsets.only(right: 8.0, top: 2),
             child: Row(
               spacing: 1,
               children: [
@@ -31,10 +32,10 @@ class RolePicker extends ConsumerWidget {
                     height: 36,
                     child: IconButton(
                       style: IconButton.styleFrom(
-                        backgroundColor:
-                            role == ref.watch(agentFilterProvider).currentRole
-                                ? Colors.deepPurpleAccent.withAlpha(51)
-                                : Colors.transparent,
+                        backgroundColor: role ==
+                                ref.watch(agentFilterProvider).currentRole
+                            ? Settings.tacticalVioletTheme.primary.withAlpha(51)
+                            : Colors.transparent,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class CreateStrategyDialog extends ConsumerStatefulWidget {
   const CreateStrategyDialog({super.key});
@@ -23,24 +24,11 @@ class _NameStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return ShadDialog(
       title: const Text("Create Strategy"),
-      content: SizedBox(
-        width: 300,
-        child: CustomTextField(
-          // onEnterPressed: (intent) {},
-          hintText: "Enter strategy name",
-          controller: _textController,
-        ),
-      ),
       actions: [
-        TextButton(
-          onPressed: () {
-            Navigator.of(context).pop(); // Close the dialog
-          },
-          child: const Text("Cancel"),
-        ),
-        CustomButton(
+        ShadButton(
+          child: const Text("Create"),
           onPressed: () async {
             final strategyName = _textController.text;
             if (strategyName.isNotEmpty) {
@@ -58,16 +46,16 @@ class _NameStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
               );
             }
           },
-          height: 35,
-          icon: const Icon(
-            Icons.draw,
-            color: Colors.white,
-          ),
-          label: "Create",
-          labelColor: Colors.white,
-          backgroundColor: Colors.deepPurple,
         )
       ],
+      child: SizedBox(
+        width: 300,
+        child: CustomTextField(
+          // onEnterPressed: (intent) {},
+          hintText: "Enter strategy name",
+          controller: _textController,
+        ),
+      ),
     );
   }
 }

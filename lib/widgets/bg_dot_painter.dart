@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/const/settings.dart';
 
 class BGDotGrid extends StatelessWidget {
   final Size size;
@@ -34,7 +35,7 @@ class DotPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color.fromRGBO(210, 214, 219, 0.1)
+      ..color = Settings.tacticalVioletTheme.border.withOpacity(0.2)
       ..style = PaintingStyle.fill;
 
     // Calculate how many dots we need in each direction

@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DemoTag extends ConsumerWidget {
   const DemoTag({super.key});
@@ -14,7 +15,7 @@ class DemoTag extends ConsumerWidget {
 
     return InkWell(
       onTap: () async {
-        await showDialog<void>(
+        await showShadDialog<void>(
           context: context,
           builder: (context) {
             return const DemoDialog();

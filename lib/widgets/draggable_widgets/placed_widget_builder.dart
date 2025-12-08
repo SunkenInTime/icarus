@@ -1,9 +1,9 @@
 import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -23,7 +23,12 @@ import 'package:icarus/widgets/delete_area.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/utility_widget_builder.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/placed_view_cone_widget.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/line_up_line_painter.dart';
+import 'package:icarus/widgets/current_line_up_painter.dart';
+import 'package:icarus/widgets/line_up_widget.dart';
 import 'package:uuid/uuid.dart';
 
 class PlacedWidgetBuilder extends ConsumerStatefulWidget {
@@ -42,6 +47,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    final lineUps = ref.watch(lineUpProvider).lineUps;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -51,7 +57,8 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
           builder: (context, candidateData, rejectedData) {
             return IgnorePointer(
               ignoring: interactionState == InteractionState.drawing ||
-                  interactionState == InteractionState.erasing,
+                  interactionState == InteractionState.erasing ||
+                  interactionState == InteractionState.lineUpPlacing,
               child: Stack(
                 children: [
                   const Align(
@@ -60,6 +67,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                   ),
                   for (PlacedAbility ability in ref.watch(abilityProvider))
                     PlacedAbilityWidget(
+                      key: ValueKey(ability.id),
                       rotation: ability.rotation,
                       data: ability,
                       ability: ability,
@@ -75,7 +83,8 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                         Offset virtualOffset =
                             coordinateSystem.screenToCoordinate(localOffset);
                         Offset safeArea = ability.data.abilityData!
-                            .getAnchorPoint(mapScale, abilitySize);
+                            .getAnchorPoint(
+                                mapScale: mapScale, abilitySize: abilitySize);
 
                         if (coordinateSystem.isOutOfBounds(virtualOffset
                             .translate(safeArea.dx, safeArea.dy))) {
@@ -94,6 +103,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                     ),
                   for (PlacedAgent agent in ref.watch(agentProvider))
                     Positioned(
+                      key: ValueKey(agent.id),
                       left: coordinateSystem
                           .coordinateToScreen(agent.position)
                           .dx,
@@ -141,6 +151,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                     ),
                   for (PlacedText placedText in ref.watch(textProvider))
                     Positioned(
+                      key: ValueKey(placedText.id),
                       left: coordinateSystem
                           .coordinateToScreen(placedText.position)
                           .dx,
@@ -179,6 +190,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                   for (PlacedImage placedImage
                       in ref.watch(placedImageProvider).images)
                     Positioned(
+                        key: ValueKey(placedImage.id),
                         left: coordinateSystem
                             .coordinateToScreen(placedImage.position)
                             .dx,
@@ -213,9 +225,47 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                                 .updatePosition(virtualOffset, placedImage.id);
                           },
                         )),
+                  // Render view cone utilities with rotation/length controls
                   for (PlacedUtility placedUtility
-                      in ref.watch(utilityProvider))
+                      in ref.watch(utilityProvider).where(
+                            (u) => UtilityData.isViewCone(u.type),
+                          ))
+                    PlacedViewConeWidget(
+                      key: ValueKey(placedUtility.id),
+                      utility: placedUtility,
+                      id: placedUtility.id,
+                      rotation: placedUtility.rotation,
+                      length: placedUtility.length,
+                      onDragEnd: (details) {
+                        RenderBox renderBox =
+                            context.findRenderObject() as RenderBox;
+                        Offset localOffset =
+                            renderBox.globalToLocal(details.offset);
+
+                        Offset virtualOffset =
+                            coordinateSystem.screenToCoordinate(localOffset);
+                        double safeArea = agentSize / 2;
+
+                        // if (coordinateSystem.isOutOfBounds(
+                        //     virtualOffset.translate(safeArea, safeArea))) {
+                        //   ref
+                        //       .read(utilityProvider.notifier)
+                        //       .removeUtility(placedUtility.id);
+                        //   return;
+                        // }
+
+                        ref
+                            .read(utilityProvider.notifier)
+                            .updatePosition(virtualOffset, placedUtility.id);
+                      },
+                    ),
+                  // Render non-view-cone utilities (like spike)
+                  for (PlacedUtility placedUtility
+                      in ref.watch(utilityProvider).where(
+                            (u) => !UtilityData.isViewCone(u.type),
+                          ))
                     Positioned(
+                      key: ValueKey(placedUtility.id),
                       left: coordinateSystem
                           .coordinateToScreen(placedUtility.position)
                           .dx,
@@ -253,6 +303,19 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                         },
                       ),
                     ),
+                  const Positioned.fill(
+                    child: LineUpLinePainter(),
+                  ),
+                  Positioned.fill(
+                    child: Stack(
+                      children: [
+                        for (final lineUp in lineUps)
+                          LineUpAgentWidget(lineUp: lineUp),
+                        for (final lineUp in lineUps)
+                          LineUpAbilityWidget(lineUp: lineUp),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             );
@@ -263,6 +326,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
             Offset normalizedPosition =
                 coordinateSystem.screenToCoordinate(localOffset);
             const uuid = Uuid();
+
             if (details.data is AgentData) {
               PlacedAgent placedAgent = PlacedAgent(
                   id: uuid.v4(),
@@ -270,6 +334,11 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                   position: normalizedPosition,
                   isAlly: ref.read(teamProvider));
 
+              if (ref.read(interactionStateProvider) ==
+                  InteractionState.lineUpPlacing) {
+                ref.read(lineUpProvider.notifier).setAgent(placedAgent);
+                return;
+              }
               ref.read(agentProvider.notifier).addAgent(placedAgent);
             } else if (details.data is AbilityInfo) {
               PlacedAbility placedAbility = PlacedAbility(
@@ -278,6 +347,12 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 position: normalizedPosition,
                 isAlly: ref.read(teamProvider),
               );
+
+              if (ref.read(interactionStateProvider) ==
+                  InteractionState.lineUpPlacing) {
+                ref.read(lineUpProvider.notifier).setAbility(placedAbility);
+                return;
+              }
 
               ref.read(abilityProvider.notifier).addAbility(placedAbility);
             }

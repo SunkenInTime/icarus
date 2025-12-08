@@ -142,21 +142,22 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
       // },
       onSubmitted: widget.onSubmitted,
       style: textStyle,
-      cursorColor: Settings.highlightColor,
+      cursorColor: Settings.tacticalVioletTheme.primary,
       decoration: InputDecoration(
         isDense: compact,
         contentPadding: contentPadding,
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8.0),
           borderSide:
-              const BorderSide(color: Settings.highlightColor, width: 1),
+              BorderSide(color: Settings.tacticalVioletTheme.border, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8.0),
-          borderSide: const BorderSide(color: Colors.deepPurple, width: 2),
+          borderSide:
+              BorderSide(color: Settings.tacticalVioletTheme.ring, width: 2),
         ),
         filled: true,
-        fillColor: Settings.sideBarColor,
+        fillColor: Settings.tacticalVioletTheme.card,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8.0),
           borderSide: BorderSide.none,

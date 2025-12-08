@@ -14,6 +14,9 @@ class CustomButton extends ConsumerWidget {
     this.padding,
     this.fontWeight,
     this.isDynamicWidth = false,
+    this.isIconRight = false,
+    this.isDisabled = false,
+    this.disabledTooltip,
     super.key,
   });
 
@@ -27,6 +30,9 @@ class CustomButton extends ConsumerWidget {
   final FontWeight? fontWeight;
   final WidgetStateProperty<EdgeInsetsGeometry>? padding;
   final bool isDynamicWidth;
+  final bool isIconRight;
+  final bool isDisabled;
+  final String? disabledTooltip;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final style = ButtonStyle(
@@ -35,9 +41,21 @@ class CustomButton extends ConsumerWidget {
       // Allow narrow widths when dynamic width is requested
       minimumSize:
           isDynamicWidth ? WidgetStateProperty.all(Size(0, height)) : null,
-      backgroundColor: WidgetStateProperty.all(backgroundColor),
+      backgroundColor: WidgetStateProperty.resolveWith<Color>((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return Settings.sideBarColor;
+        }
+        return backgroundColor;
+      }),
       shape: WidgetStateProperty.resolveWith<OutlinedBorder>(
         (Set<WidgetState> states) {
+          if (states.contains(WidgetState.disabled)) {
+            return RoundedRectangleBorder(
+              side: BorderSide(
+                  color: Settings.tacticalVioletTheme.border, width: 2.0),
+              borderRadius: BorderRadius.circular(8.0),
+            );
+          }
           if (states.contains(WidgetState.hovered)) {
             return RoundedRectangleBorder(
               side:
@@ -46,7 +64,8 @@ class CustomButton extends ConsumerWidget {
             );
           }
           return RoundedRectangleBorder(
-            side: const BorderSide(color: Settings.highlightColor, width: 2.0),
+            side: BorderSide(
+                color: Settings.tacticalVioletTheme.border, width: 2.0),
             borderRadius: BorderRadius.circular(8.0),
           );
         },
@@ -63,27 +82,46 @@ class CustomButton extends ConsumerWidget {
 
     final labelText = Text(
       label,
-      style: TextStyle(color: labelColor, fontWeight: fontWeight),
+      style: TextStyle(
+        color: isDisabled ? Colors.white70 : labelColor,
+        fontWeight: fontWeight,
+      ),
     );
 
+    final effectiveOnPressed = isDisabled ? null : onPressed;
+
     final button = icon != null
-        ? TextButton.icon(
-            onPressed: onPressed,
-            icon: icon!,
-            label: labelText,
+        ? TextButton(
+            onPressed: effectiveOnPressed,
             style: style,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: isIconRight
+                  ? [labelText, const SizedBox(width: 8), icon!]
+                  : [icon!, const SizedBox(width: 8), labelText],
+            ),
           )
         : TextButton(
-            onPressed: onPressed,
+            onPressed: effectiveOnPressed,
             style: style,
             child: labelText,
           );
 
     // When dynamic, size to content; otherwise respect explicit width
-    return SizedBox(
+    Widget content = SizedBox(
       height: height,
       width: isDynamicWidth ? null : width,
       child: isDynamicWidth ? IntrinsicWidth(child: button) : button,
     );
+
+    if (isDisabled && disabledTooltip != null) {
+      return Tooltip(
+        message: disabledTooltip!,
+        child: content,
+      );
+    }
+
+    return content;
   }
 }

@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui';
 import 'package:cross_file/cross_file.dart' show XFile;
 import 'package:flutter/foundation.dart';
@@ -17,7 +16,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 final placedImageProvider =
-    NotifierProvider<ImageProvider, ImageState>(ImageProvider.new);
+    NotifierProvider<PlacedImageProvider, ImageState>(PlacedImageProvider.new);
 
 class ImageState {
   ImageState({
@@ -35,7 +34,7 @@ class ImageState {
   }
 }
 
-class ImageProvider extends Notifier<ImageState> {
+class PlacedImageProvider extends Notifier<ImageState> {
   List<PlacedImage> poppedImages = [];
 
   @override
@@ -47,12 +46,8 @@ class ImageProvider extends Notifier<ImageState> {
   }
 
   Future<void> deleteUnusedImages(
-      String strategyID, List<PlacedImage> localImages) async {
-    List<String> fileIDs = [];
-
-    for (PlacedImage image in localImages) {
-      fileIDs.add(image.id);
-    }
+      String strategyID, List<String> localImages) async {
+    List<String> fileIDs = localImages;
 
     if (kIsWeb) return;
     // Get the system's application support directory.

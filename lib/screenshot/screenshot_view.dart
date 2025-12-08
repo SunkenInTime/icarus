@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
@@ -32,6 +33,7 @@ class ScreenshotView extends ConsumerWidget {
     required this.strategySettings,
     required this.isAttack,
     required this.strategyState,
+    required this.lineUps,
   });
   final StrategyState strategyState;
   final MapValue mapValue;
@@ -43,6 +45,7 @@ class ScreenshotView extends ConsumerWidget {
   final List<PlacedUtility> utilities;
   final StrategySettings strategySettings;
   final bool isAttack;
+  final List<LineUp> lineUps;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -59,6 +62,8 @@ class ScreenshotView extends ConsumerWidget {
 
     ref.read(strategySettingsProvider.notifier).fromHive(strategySettings);
     ref.read(utilityProvider.notifier).fromHive(utilities);
+
+    ref.read(lineUpProvider.notifier).fromHive(lineUps);
 
     ref
         .read(drawingProvider.notifier)

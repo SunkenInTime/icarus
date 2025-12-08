@@ -66,6 +66,7 @@ PlacedAgent _$PlacedAgentFromJson(Map<String, dynamic> json) => PlacedAgent(
           .fromJson(json['position'] as Map<String, dynamic>),
       id: json['id'] as String,
       isAlly: json['isAlly'] as bool? ?? true,
+      lineUpID: json['lineUpID'] as String?,
     )..isDeleted = json['isDeleted'] as bool? ?? false;
 
 Map<String, dynamic> _$PlacedAgentToJson(PlacedAgent instance) =>
@@ -75,6 +76,7 @@ Map<String, dynamic> _$PlacedAgentToJson(PlacedAgent instance) =>
       'position': const OffsetConverter().toJson(instance.position),
       'type': _$AgentTypeEnumMap[instance.type]!,
       'isAlly': instance.isAlly,
+      'lineUpID': instance.lineUpID,
     };
 
 const _$AgentTypeEnumMap = {
@@ -117,9 +119,9 @@ PlacedAbility _$PlacedAbilityFromJson(Map<String, dynamic> json) =>
       id: json['id'] as String,
       isAlly: json['isAlly'] as bool? ?? true,
       length: (json['length'] as num?)?.toDouble() ?? 0,
-    )
-      ..isDeleted = json['isDeleted'] as bool? ?? false
-      ..rotation = (json['rotation'] as num).toDouble();
+      lineUpID: json['lineUpID'] as String?,
+      rotation: (json['rotation'] as num?)?.toDouble() ?? 0,
+    )..isDeleted = json['isDeleted'] as bool? ?? false;
 
 Map<String, dynamic> _$PlacedAbilityToJson(PlacedAbility instance) =>
     <String, dynamic>{
@@ -130,6 +132,7 @@ Map<String, dynamic> _$PlacedAbilityToJson(PlacedAbility instance) =>
       'isAlly': instance.isAlly,
       'rotation': instance.rotation,
       'length': instance.length,
+      'lineUpID': instance.lineUpID,
     };
 
 PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
@@ -138,6 +141,8 @@ PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
       position: const OffsetConverter()
           .fromJson(json['position'] as Map<String, dynamic>),
       id: json['id'] as String,
+      angle: (json['angle'] as num?)?.toDouble() ?? 0.0,
+      attachedAgentId: json['attachedAgentId'] as String?,
     )
       ..isDeleted = json['isDeleted'] as bool? ?? false
       ..rotation = (json['rotation'] as num).toDouble()
@@ -151,8 +156,13 @@ Map<String, dynamic> _$PlacedUtilityToJson(PlacedUtility instance) =>
       'type': _$UtilityTypeEnumMap[instance.type]!,
       'rotation': instance.rotation,
       'length': instance.length,
+      'angle': instance.angle,
+      'attachedAgentId': instance.attachedAgentId,
     };
 
 const _$UtilityTypeEnumMap = {
   UtilityType.spike: 'spike',
+  UtilityType.viewCone180: 'viewCone180',
+  UtilityType.viewCone90: 'viewCone90',
+  UtilityType.viewCone40: 'viewCone40',
 };

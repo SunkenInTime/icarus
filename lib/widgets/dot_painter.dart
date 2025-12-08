@@ -50,6 +50,7 @@
 // }
 import 'package:flutter/material.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/settings.dart';
 
 class DotGrid extends StatelessWidget {
   const DotGrid({
@@ -75,7 +76,7 @@ class DotPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color.fromRGBO(210, 214, 219, 0.1)
+      ..color = Settings.tacticalVioletTheme.border.withOpacity(0.7)
       ..style = PaintingStyle.fill;
 
     // Calculate how many dots we need in each direction

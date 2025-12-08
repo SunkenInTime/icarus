@@ -52,10 +52,10 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
       link: _link,
       child: Container(
         decoration: BoxDecoration(
-          color: Settings.sideBarColor,
+          color: Settings.tacticalVioletTheme.card,
           borderRadius: const BorderRadius.all(Radius.circular(10)),
           border: Border.all(
-            color: Settings.highlightColor,
+            color: Settings.tacticalVioletTheme.border,
             width: 2,
           ),
         ),
@@ -81,11 +81,11 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                           height: _containerHeight,
                           width: 260,
                           decoration: BoxDecoration(
-                            color: Settings.sideBarColor,
+                            color: Settings.tacticalVioletTheme.card,
                             borderRadius:
                                 const BorderRadius.all(Radius.circular(10)),
                             border: Border.all(
-                              color: Settings.highlightColor,
+                              color: Settings.tacticalVioletTheme.border,
                               width: 2,
                             ),
                           ),

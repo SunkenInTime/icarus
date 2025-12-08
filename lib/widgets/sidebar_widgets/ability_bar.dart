@@ -27,10 +27,29 @@ class AbiilityBar extends ConsumerWidget {
     return Container(
       width: 90,
       height: (activeAgent.abilities.length * 71),
-      decoration: const BoxDecoration(
-        color: Color(0xFF100D10),
-        borderRadius: BorderRadius.horizontal(left: Radius.circular(24)),
-      ),
+      decoration: BoxDecoration(
+          color: Settings.tacticalVioletTheme.card,
+          borderRadius: const BorderRadius.horizontal(
+            left: Radius.circular(24),
+          ),
+          border: Border(
+            left: BorderSide(
+              strokeAlign: BorderSide.strokeAlignOutside,
+              color: Settings.tacticalVioletTheme.border,
+              width: 1,
+            ),
+            top: BorderSide(
+              strokeAlign: BorderSide.strokeAlignOutside,
+              color: Settings.tacticalVioletTheme.border,
+              width: 1,
+            ),
+            bottom: BorderSide(
+              strokeAlign: BorderSide.strokeAlignOutside,
+              color: Settings.tacticalVioletTheme.border,
+              width: 1,
+            ),
+          ),
+          boxShadow: const [Settings.cardForegroundBackdrop]),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
@@ -41,9 +60,9 @@ class AbiilityBar extends ConsumerWidget {
               return Draggable<AbilityInfo>(
                 data: activeAgent.abilities[index],
                 onDragStarted: () {
-                  ref
-                      .read(interactionStateProvider.notifier)
-                      .update(InteractionState.navigation);
+                  // ref
+                  //     .read(interactionStateProvider.notifier)
+                  //     .update(InteractionState.navigation);
                 },
                 dragAnchorStrategy: (draggable, context, position) {
                   final info = draggable.data as AbilityInfo;
@@ -56,7 +75,8 @@ class AbiilityBar extends ConsumerWidget {
 
                   log("info.abilityData: $abilitySize");
                   return info.abilityData!
-                      .getAnchorPoint(mapScale, abilitySize)
+                      .getAnchorPoint(
+                          mapScale: mapScale, abilitySize: abilitySize)
                       .scale(scaleFactor, scaleFactor);
                 },
                 feedback: Opacity(
@@ -64,9 +84,9 @@ class AbiilityBar extends ConsumerWidget {
                   child: ZoomTransform(
                     child:
                         activeAgent.abilities[index].abilityData!.createWidget(
-                      null,
-                      ref.watch(teamProvider),
-                      mapScale,
+                      id: null,
+                      isAlly: ref.watch(teamProvider),
+                      mapScale: mapScale,
                     ),
                   ),
                 ),

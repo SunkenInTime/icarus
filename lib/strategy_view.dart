@@ -10,9 +10,13 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/sidebar.dart';
 import 'package:icarus/widgets/delete_capture.dart';
 import 'package:icarus/widgets/demo_tag.dart';
+import 'package:icarus/widgets/interaction_state_display.dart';
 import 'package:icarus/widgets/map_selector.dart';
-import 'package:icarus/widgets/page_chips.dart';
+import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/save_and_load_button.dart';
+import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
@@ -46,6 +50,15 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   // }
   @override
   Widget build(BuildContext context) {
+    ref.listen(lineUpProvider, (previous, next) {
+      if (previous?.isSelectingPosition == true &&
+          next.isSelectingPosition == false) {
+        showDialog(
+          context: context,
+          builder: (context) => const CreateLineupDialog(),
+        );
+      }
+    });
     return Scaffold(
       body: Column(
         children: [
@@ -57,7 +70,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
               children: [
                 Row(
                   children: [
-                    IconButton(
+                    ShadIconButton.ghost(
+                      foregroundColor: Colors.white,
                       onPressed: () async {
                         await ref
                             .read(strategyProvider.notifier)
@@ -80,6 +94,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                       )
                   ],
                 ),
+                const InteractionStateDisplay(),
                 Row(
                   children: [
                     TextButton(

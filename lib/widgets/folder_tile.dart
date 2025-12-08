@@ -36,8 +36,8 @@ class _FolderTileState extends ConsumerState<FolderTile>
     );
 
     _colorAnimation = ColorTween(
-      begin: const Color(0xffD2D6DB).withAlpha((255.0 * 0.102).round()),
-      end: Colors.deepPurpleAccent,
+      begin: Settings.tacticalVioletTheme.border,
+      end: Settings.tacticalVioletTheme.ring,
     ).animate(CurvedAnimation(
       parent: _animationController,
       curve: Curves.easeInOut,
@@ -116,7 +116,7 @@ class _FolderTileState extends ConsumerState<FolderTile>
                             child: CustomPaint(
                               painter: CustomFolderPainter(
                                 strokeColor: _colorAnimation.value ??
-                                    Settings.highlightColor,
+                                    Settings.tacticalVioletTheme.border,
                                 backgroundColor: widget.folder.customColor ??
                                     Folder.folderColorMap[widget.folder.color]!,
                               ),
@@ -140,12 +140,17 @@ class _FolderTileState extends ConsumerState<FolderTile>
                                   child: Container(
                                     height: 42,
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF1A161A),
+                                      color: Settings.tacticalVioletTheme.card,
                                       borderRadius: const BorderRadius.all(
                                           Radius.circular(24)),
                                       border: Border.all(
-                                          color: Settings.highlightColor,
-                                          width: 1),
+                                        color:
+                                            Settings.tacticalVioletTheme.border,
+                                        width: 1,
+                                      ),
+                                      boxShadow: const [
+                                        Settings.cardForegroundBackdrop
+                                      ],
                                     ),
                                     child: Center(
                                       child: Text(
@@ -233,6 +238,7 @@ class _FolderTileState extends ConsumerState<FolderTile>
                                     },
                                     icon: const Icon(
                                       Icons.more_vert_outlined,
+                                      size: 24,
                                       shadows: [Shadow(blurRadius: 8)],
                                     ),
                                   );
@@ -278,7 +284,7 @@ class _FolderTileState extends ConsumerState<FolderTile>
           height: 50,
           width: 220,
           decoration: BoxDecoration(
-            color: Settings.sideBarColor,
+            color: Settings.tacticalVioletTheme.card,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: Colors.deepPurpleAccent, width: 2),
           ),

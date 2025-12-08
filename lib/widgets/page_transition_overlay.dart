@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -135,6 +136,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
             alignment: Alignment.topRight,
             child: DeleteArea(),
           ),
+
           // None: unchanged items rendered at fixed position
           for (final e in none)
             _overlayItem(
@@ -205,18 +207,28 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     log("jsf");
     Widget child = PlacedWidgetPreview.build(
         widget, mapScale, length); // central factory (below)
-    if (rotation != null && widget is PlacedAbility)
+    if (rotation != null && widget is PlacedAbility) {
       child = Transform.rotate(
         angle: rotation,
         alignment: Alignment.topLeft,
         origin: (widget)
             .data
             .abilityData!
-            .getAnchorPoint(mapScale, abilitySize)
+            .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
             .scale(CoordinateSystem.instance.scaleFactor,
                 CoordinateSystem.instance.scaleFactor),
         child: child,
       );
+    } else if (rotation != null && widget is PlacedUtility) {
+      child = Transform.rotate(
+        angle: rotation,
+        alignment: Alignment.topLeft,
+        origin: UtilityData.utilityWidgets[widget.type]!.getAnchorPoint().scale(
+            CoordinateSystem.instance.scaleFactor,
+            CoordinateSystem.instance.scaleFactor),
+        child: child,
+      );
+    }
     return Positioned(
       key: key,
       left: pos.dx,
@@ -264,20 +276,33 @@ class PlacedWidgetPreview {
 
       switch (ability) {
         case BaseAbility():
-          return ability.createWidget(w.id, w.isAlly, mapScale);
+          return ability.createWidget(
+              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
         case ImageAbility():
-          return ability.createWidget(w.id, w.isAlly, mapScale);
+          return ability.createWidget(
+              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
         case CircleAbility():
-          return ability.createWidget(w.id, w.isAlly, mapScale);
+          return ability.createWidget(
+              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
         case SquareAbility():
           return ability.createWidget(
-              w.id, w.isAlly, mapScale, w.rotation, length ?? w.length);
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              rotation: w.rotation,
+              length: length ?? w.length);
         case CenterSquareAbility():
           return ability.createWidget(
-              w.id, w.isAlly, mapScale, length ?? w.length);
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              length: length ?? w.length);
         case RotatableImageAbility():
           return ability.createWidget(
-              w.id, w.isAlly, mapScale, length ?? w.length);
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              length: length ?? w.length);
       }
     }
 
@@ -295,7 +320,8 @@ class PlacedWidgetPreview {
       );
     }
     if (w is PlacedUtility) {
-      return UtilityData.utilityWidgets[w.type]!.createWidget(w.id);
+      return UtilityData.utilityWidgets[w.type]!
+          .createWidget(w.id, w.rotation, length ?? w.length);
     }
     return const SizedBox.shrink();
   }
@@ -346,7 +372,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
               origin: (widget)
                   .data
                   .abilityData!
-                  .getAnchorPoint(mapScale, abilitySize)
+                  .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
                   .scale(coord.scaleFactor, coord.scaleFactor),
               child: PlacedWidgetPreview.build(widget, mapScale, widget.length),
             )

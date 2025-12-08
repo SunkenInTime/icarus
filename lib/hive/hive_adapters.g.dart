@@ -153,13 +153,14 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
       position: fields[4] as Offset,
       id: fields[2] as String,
       isAlly: fields[1] == null ? true : fields[1] as bool,
+      lineUpID: fields[5] as String?,
     )..isDeleted = fields[3] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedAgent obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -169,7 +170,9 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
       ..writeByte(3)
       ..write(obj.isDeleted)
       ..writeByte(4)
-      ..write(obj.position);
+      ..write(obj.position)
+      ..writeByte(5)
+      ..write(obj.lineUpID);
   }
 
   @override
@@ -199,15 +202,15 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       id: fields[3] as String,
       isAlly: fields[1] == null ? true : fields[1] as bool,
       length: fields[6] == null ? 0 : (fields[6] as num).toDouble(),
-    )
-      ..rotation = (fields[2] as num).toDouble()
-      ..isDeleted = fields[4] as bool;
+      lineUpID: fields[7] as String?,
+      rotation: fields[2] == null ? 0 : (fields[2] as num).toDouble(),
+    )..isDeleted = fields[4] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedAbility obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.data)
       ..writeByte(1)
@@ -221,7 +224,9 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       ..writeByte(5)
       ..write(obj.position)
       ..writeByte(6)
-      ..write(obj.length);
+      ..write(obj.length)
+      ..writeByte(7)
+      ..write(obj.lineUpID);
   }
 
   @override
@@ -780,6 +785,8 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       type: fields[0] as UtilityType,
       position: fields[5] as Offset,
       id: fields[3] as String,
+      angle: fields[6] == null ? 0.0 : (fields[6] as num).toDouble(),
+      attachedAgentId: fields[7] as String?,
     )
       ..rotation = (fields[1] as num).toDouble()
       ..length = (fields[2] as num).toDouble()
@@ -789,7 +796,7 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
   @override
   void write(BinaryWriter writer, PlacedUtility obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -801,7 +808,11 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       ..writeByte(4)
       ..write(obj.isDeleted)
       ..writeByte(5)
-      ..write(obj.position);
+      ..write(obj.position)
+      ..writeByte(6)
+      ..write(obj.angle)
+      ..writeByte(7)
+      ..write(obj.attachedAgentId);
   }
 
   @override
@@ -824,6 +835,12 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
     switch (reader.readByte()) {
       case 0:
         return UtilityType.spike;
+      case 1:
+        return UtilityType.viewCone180;
+      case 2:
+        return UtilityType.viewCone90;
+      case 3:
+        return UtilityType.viewCone40;
       default:
         return UtilityType.spike;
     }
@@ -834,6 +851,12 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
     switch (obj) {
       case UtilityType.spike:
         writer.writeByte(0);
+      case UtilityType.viewCone180:
+        writer.writeByte(1);
+      case UtilityType.viewCone90:
+        writer.writeByte(2);
+      case UtilityType.viewCone40:
+        writer.writeByte(3);
     }
   }
 
@@ -1025,13 +1048,15 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       sortIndex: (fields[1] as num).toInt(),
       isAttack: fields[9] as bool,
       settings: fields[10] as StrategySettings,
+      lineUps:
+          fields[11] == null ? const [] : (fields[11] as List).cast<LineUp>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, StrategyPage obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -1053,7 +1078,9 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(9)
       ..write(obj.isAttack)
       ..writeByte(10)
-      ..write(obj.settings);
+      ..write(obj.settings)
+      ..writeByte(11)
+      ..write(obj.lineUps);
   }
 
   @override
@@ -1063,6 +1090,92 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is StrategyPageAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class LineUpAdapter extends TypeAdapter<LineUp> {
+  @override
+  final typeId = 21;
+
+  @override
+  LineUp read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return LineUp(
+      id: fields[0] as String,
+      agent: fields[1] as PlacedAgent,
+      ability: fields[2] as PlacedAbility,
+      youtubeLink: fields[3] as String,
+      images: (fields[5] as List).cast<SimpleImageData>(),
+      notes: fields[4] as String,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, LineUp obj) {
+    writer
+      ..writeByte(6)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.agent)
+      ..writeByte(2)
+      ..write(obj.ability)
+      ..writeByte(3)
+      ..write(obj.youtubeLink)
+      ..writeByte(4)
+      ..write(obj.notes)
+      ..writeByte(5)
+      ..write(obj.images);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LineUpAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class SimpleImageDataAdapter extends TypeAdapter<SimpleImageData> {
+  @override
+  final typeId = 22;
+
+  @override
+  SimpleImageData read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return SimpleImageData(
+      id: fields[0] as String,
+      fileExtension: fields[1] as String,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, SimpleImageData obj) {
+    writer
+      ..writeByte(2)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.fileExtension);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SimpleImageDataAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

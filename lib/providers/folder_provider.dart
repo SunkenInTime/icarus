@@ -44,7 +44,7 @@ class Folder extends HiveObject {
     FolderColor.green: Colors.green,
     FolderColor.orange: Colors.orange,
     FolderColor.purple: Colors.purple,
-    FolderColor.generic: Settings.sideBarColor,
+    FolderColor.generic: Settings.tacticalVioletTheme.card,
   };
 
   static List<FolderColor> folderColors = [

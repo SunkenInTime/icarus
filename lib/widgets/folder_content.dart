@@ -7,13 +7,13 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/strategy_tile.dart';
+import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/dot_painter.dart';
-import 'package:icarus/widgets/folder_navigator.dart';
-import 'package:icarus/widgets/folder_tile.dart';
+import 'package:icarus/widgets/folder_pill.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 // ... your existing imports
 
 class FolderContent extends ConsumerWidget {
@@ -92,93 +92,53 @@ class FolderContent extends ConsumerWidget {
                         //   onPressed: () {},
                         //   icon: const Icon(Icons.filter_alt),
                         // ),
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: MenuAnchor(
-                            menuChildren: [
-                              Consumer(
-                                builder: (context, ref, _) {
-                                  final filter =
-                                      ref.watch(strategyFilterProvider);
-                                  final notifier =
-                                      ref.read(strategyFilterProvider.notifier);
 
-                                  return Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      const SizedBox(height: 8),
-                                      // Sort By section
-                                      for (final sb in SortBy.values)
-                                        _buildMenuItem(
-                                          label: StrategyFilterProvider
-                                              .sortByLabels[sb]!,
-                                          isSelected: filter.sortBy == sb,
-                                          onPressed: () {
-                                            notifier.setSortBy(sb);
-                                          },
-                                        ),
-
-                                      const Padding(
-                                        padding: EdgeInsets.only(bottom: 8.0),
-                                        child: Divider(
-                                          height: 1,
-                                          color: Settings.highlightColor,
-                                        ),
-                                      ),
-
-                                      // Sort Order section
-                                      for (final so in SortOrder.values)
-                                        _buildMenuItem(
-                                          label: StrategyFilterProvider
-                                              .sortOrderLabels[so]!,
-                                          isSelected: filter.sortOrder == so,
-                                          onPressed: () {
-                                            notifier.setSortOrder(so);
-                                          },
-                                        ),
-                                    ],
-                                  );
-                                },
-                              ),
-                            ],
-                            builder: (context, controller, _) {
-                              // Watch the state (not the notifier) so the button rebuilds on change
-                              final sortBy = ref.watch(
-                                strategyFilterProvider.select((s) => s.sortBy),
-                              );
-
-                              // Derive icon + label from the watched state
-                              final label =
-                                  StrategyFilterProvider.sortByLabels[sortBy]!;
-                              final icon = switch (sortBy) {
-                                SortBy.alphabetical => Icons.sort_by_alpha,
-                                SortBy.dateCreated => Icons.calendar_today,
-                                SortBy.dateUpdated => Icons.update,
-                              };
-
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 8.0),
-                                child: CustomButton(
-                                  height: 40,
-                                  width: 96,
-                                  isDynamicWidth: true,
-                                  label: label,
-                                  padding: WidgetStateProperty.all(
-                                      const EdgeInsets.symmetric(
-                                          horizontal: 8)),
-                                  backgroundColor: Settings.sideBarColor,
-                                  onPressed: () {
-                                    controller.isOpen
-                                        ? controller.close()
-                                        : controller.open();
-                                  },
-                                  icon: Icon(icon),
-                                ),
-                              );
-                            },
+                        ShadSelect<SortBy>(
+                          decoration: ShadDecoration(
+                            color: Settings.tacticalVioletTheme.card,
+                            shadows: const [Settings.cardForegroundBackdrop],
                           ),
+                          initialValue:
+                              ref.watch(strategyFilterProvider).sortBy,
+                          selectedOptionBuilder: (context, value) =>
+                              Text(StrategyFilterProvider.sortByLabels[value]!),
+                          options: [
+                            for (final sb in SortBy.values)
+                              ShadOption(
+                                value: sb,
+                                child: Text(
+                                    StrategyFilterProvider.sortByLabels[sb]!),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            ref
+                                .read(strategyFilterProvider.notifier)
+                                .setSortBy(value!);
+                          },
+                        ),
+
+                        ShadSelect<SortOrder>(
+                          decoration: ShadDecoration(
+                            color: Settings.tacticalVioletTheme.card,
+                            shadows: const [Settings.cardForegroundBackdrop],
+                          ),
+                          initialValue:
+                              ref.watch(strategyFilterProvider).sortOrder,
+                          selectedOptionBuilder: (context, value) => Text(
+                              StrategyFilterProvider.sortOrderLabels[value]!),
+                          options: [
+                            for (final so in SortOrder.values)
+                              ShadOption(
+                                value: so,
+                                child: Text(StrategyFilterProvider
+                                    .sortOrderLabels[so]!),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            ref
+                                .read(strategyFilterProvider.notifier)
+                                .setSortOrder(value!);
+                          },
                         ),
                       ],
                     ),
@@ -207,7 +167,10 @@ class FolderContent extends ConsumerWidget {
 
                         final strategies = strategyBox.values.toList();
 
-                      final search = ref.watch(strategySearchQueryProvider).trim().toLowerCase();
+                        final search = ref
+                            .watch(strategySearchQueryProvider)
+                            .trim()
+                            .toLowerCase();
                         // Filter strategies and folders by the current folder
                         strategies.removeWhere(
                             (strategy) => strategy.folderID != folder?.id);
@@ -216,10 +179,12 @@ class FolderContent extends ConsumerWidget {
 
                         if (search.isNotEmpty) {
                           strategies.retainWhere(
-                            (strategy) => strategy.name.toLowerCase().contains(search),
+                            (strategy) =>
+                                strategy.name.toLowerCase().contains(search),
                           );
                           folders.retainWhere(
-                            (listFolder) => listFolder.name.toLowerCase().contains(search),
+                            (listFolder) =>
+                                listFolder.name.toLowerCase().contains(search),
                           );
                         }
                         final filter = ref.watch(strategyFilterProvider);
@@ -245,13 +210,8 @@ class FolderContent extends ConsumerWidget {
                         folders.sort(
                             (a, b) => a.dateCreated.compareTo(b.dateCreated));
 
-                        List<GridItem> gridItems = [
-                          ...folders.map((folder) => FolderItem(folder)),
-                          ...strategies
-                              .map((strategy) => StrategyItem(strategy)),
-                        ];
-
-                        if (gridItems.isEmpty) {
+                        // Check if both folders and strategies are empty
+                        if (folders.isEmpty && strategies.isEmpty) {
                           return const IcaDropTarget(
                             child: Center(
                               child: Column(
@@ -281,27 +241,63 @@ class FolderContent extends ConsumerWidget {
                             crossAxisCount = crossAxisCount
                                 .clamp(1, double.infinity)
                                 .toInt();
-                            return GridView.builder(
-                              itemCount: gridItems.length,
-                              padding: const EdgeInsets.all(16),
-                              gridDelegate:
-                                  SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: crossAxisCount,
-                                mainAxisExtent: 250,
-                                crossAxisSpacing: 20,
-                                mainAxisSpacing: 20,
-                              ),
-                              itemBuilder: (context, index) {
-                                final item = gridItems[index];
-                                if (item is FolderItem) {
-                                  return FolderTile(folder: item.folder);
-                                } else if (item is StrategyItem) {
-                                  //Error causing line
-                                  return StrategyTile(
-                                      strategyData: item.strategy);
-                                }
-                                return const SizedBox.shrink();
-                              },
+
+                            return CustomScrollView(
+                              slivers: [
+                                // Folder pills section (wrap row)
+                                if (folders.isNotEmpty)
+                                  SliverToBoxAdapter(
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                          16, 16, 16, 8),
+                                      child: Wrap(
+                                        spacing: 10,
+                                        runSpacing: 10,
+                                        children: folders
+                                            .map((f) => FolderPill(folder: f))
+                                            .toList(),
+                                      ),
+                                    ),
+                                  ),
+
+                                // Strategies grid
+                                if (strategies.isNotEmpty)
+                                  SliverPadding(
+                                    padding: const EdgeInsets.all(16),
+                                    sliver: SliverGrid(
+                                      gridDelegate:
+                                          SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: crossAxisCount,
+                                        mainAxisExtent: 250,
+                                        crossAxisSpacing: 20,
+                                        mainAxisSpacing: 20,
+                                      ),
+                                      delegate: SliverChildBuilderDelegate(
+                                        (context, index) {
+                                          return StrategyTile(
+                                              strategyData: strategies[index]);
+                                        },
+                                        childCount: strategies.length,
+                                      ),
+                                    ),
+                                  )
+                                else if (folders.isNotEmpty)
+                                  // Show placeholder when only folders exist
+                                  const SliverFillRemaining(
+                                    hasScrollBody: false,
+                                    child: Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.only(top: 48),
+                                        child: Text(
+                                          'No strategies in this folder',
+                                          style: TextStyle(
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             );
                           }),
                         );

@@ -2,14 +2,16 @@ import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 
 enum InteractionState {
   navigation,
-  drag,
+  // drag,
   drawing,
   erasing,
   deleting,
+  lineUpPlacing,
 }
 
 final interactionStateProvider =
@@ -32,8 +34,14 @@ class InteractionStateProvider extends Notifier<InteractionState> {
       ref
           .read(drawingProvider.notifier)
           .finishFreeDrawing(null, coordinateSystem);
+    } else if (state == InteractionState.lineUpPlacing) {
+      ref.read(lineUpProvider.notifier).clearCurrentPlacing();
     }
 
     state = newState;
+  }
+
+  void forceUpdateToNavigation() {
+    state = InteractionState.navigation;
   }
 }

@@ -1,7 +1,8 @@
-import 'package:custom_sliding_segmented_control/custom_sliding_segmented_control.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/team_provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class TeamPicker extends ConsumerWidget {
   const TeamPicker({super.key});
@@ -9,49 +10,77 @@ class TeamPicker extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isAlly = ref.watch(teamProvider);
+    final notifier = ref.read(teamProvider.notifier);
 
-    return CustomSlidingSegmentedControl<bool>(
-      height: 32,
-      initialValue: isAlly,
-      decoration: BoxDecoration(
-        color: const Color(0xFF313131),
-        border: Border.all(color: const Color(0xFF1A161A)),
-        borderRadius: BorderRadius.circular(24.0),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0xFF1A161A),
-            blurRadius: 4.0,
-            spreadRadius: -1.0,
-            offset: Offset(0, 2),
+    return SizedBox(
+      width: 50,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          _TeamTextButton(
+            label: 'Ally',
+            isSelected: isAlly,
+            selectedColor: Settings.allyOutlineColor.withOpacity(1),
+            onTap: () => notifier.isAlly(true),
+          ),
+          const SizedBox(height: 4),
+          _TeamTextButton(
+            label: 'Enemy',
+            isSelected: !isAlly,
+            selectedColor: Settings.enemyOutlineColor.withOpacity(1),
+            onTap: () => notifier.isAlly(false),
           ),
         ],
       ),
-      thumbDecoration: BoxDecoration(
-        color: isAlly
-            ? const Color.fromARGB(255, 54, 126, 91)
-            : const Color(0xFFB73636),
-        borderRadius: BorderRadius.circular(42),
+    );
+  }
+}
+
+class _TeamTextButton extends StatefulWidget {
+  final String label;
+  final bool isSelected;
+  final Color selectedColor;
+  final VoidCallback onTap;
+
+  const _TeamTextButton({
+    required this.label,
+    required this.isSelected,
+    required this.selectedColor,
+    required this.onTap,
+  });
+
+  @override
+  State<_TeamTextButton> createState() => _TeamTextButtonState();
+}
+
+class _TeamTextButtonState extends State<_TeamTextButton> {
+  bool isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => isHovered = true),
+      onExit: (_) => setState(() => isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 150),
+          style: ShadTheme.of(context).textTheme.small.copyWith(
+                color: widget.isSelected
+                    ? widget.selectedColor
+                    : (isHovered
+                        ? widget.selectedColor.withOpacity(0.7)
+                        : Settings.tacticalVioletTheme.mutedForeground),
+                // fontSize: 14,
+              ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2.0),
+            child: Text(widget.label),
+          ),
+        ),
       ),
-      children: {
-        true: Text(
-          "Ally",
-          style: TextStyle(
-            color: isAlly ? Colors.white : const Color(0xFF9E9E9E),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        false: Text(
-          "Enemy",
-          style: TextStyle(
-            color: !isAlly ? Colors.white : const Color(0xFF9E9E9E),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      },
-      innerPadding: const EdgeInsets.all(4),
-      onValueChanged: (value) {
-        ref.read(teamProvider.notifier).isAlly(value);
-      },
     );
   }
 }

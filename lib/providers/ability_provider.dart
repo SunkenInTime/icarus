@@ -51,8 +51,8 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
     final abilitySize = ref.read(strategySettingsProvider).abilitySize;
 
-    final centerOffset =
-        ability.data.abilityData!.getAnchorPoint(mapScale, abilitySize);
+    final centerOffset = ability.data.abilityData!
+        .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize);
 
     final centerPosition =
         Offset(position.dx + centerOffset.dx, position.dy + centerOffset.dy);

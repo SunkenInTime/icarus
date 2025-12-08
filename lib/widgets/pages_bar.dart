@@ -6,8 +6,9 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
 import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
+import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class PagesBar extends ConsumerStatefulWidget {
   const PagesBar({super.key});
@@ -33,29 +34,28 @@ class _PagesBarState extends ConsumerState<PagesBar>
 
   Future<void> _renamePage(StrategyData strat, StrategyPage page) async {
     final controller = TextEditingController(text: page.name);
-    final newName = await showDialog<String>(
+    final newName = await showShadDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => ShadDialog(
         title: const Text("Rename page"),
-        content: CustomTextField(
+        description: const Text("Enter a new name for the page:"),
+        actions: [
+          ShadButton.secondary(
+            onPressed: () => Navigator.of(ctx).pop(),
+            backgroundColor: Settings.tacticalVioletTheme.border,
+            child: const Text("Cancel"),
+          ),
+          ShadButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            leading: const Icon(Icons.text_fields),
+            child: const Text("Rename"),
+          ),
+        ],
+        child: CustomTextField(
           // autofocus: true,
           controller: controller,
           // onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
-        actions: [
-          CustomButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            height: 40,
-            label: "Cancel",
-            backgroundColor: Settings.highlightColor,
-          ),
-          CustomButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            height: 40,
-            icon: const Icon(Icons.text_fields),
-            label: "Rename",
-          ),
-        ],
       ),
     );
     if (newName == null || newName.isEmpty || newName == page.name) return;
@@ -68,27 +68,22 @@ class _PagesBarState extends ConsumerState<PagesBar>
     final updated =
         strat.copyWith(pages: updatedPages, lastEdited: DateTime.now());
     await box.put(updated.id, updated);
+    controller.dispose();
   }
 
   Future<void> _deletePage(StrategyData strat, StrategyPage page) async {
     if (strat.pages.length == 1) return; // cannot delete last
-    final confirm = await showDialog<bool>(
+
+    final confirm = await ConfirmAlertDialog.show(
       context: context,
-      builder: (c) => AlertDialog(
-        title: const Text("Delete page"),
-        content: Text("Delete '${page.name}'?"),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c, false),
-              child: const Text("Cancel")),
-          FilledButton(
-              style: FilledButton.styleFrom(
-                  backgroundColor: Colors.red, foregroundColor: Colors.white),
-              onPressed: () => Navigator.pop(c, true),
-              child: const Text("Delete")),
-        ],
-      ),
+      title: "Delete '${page.name}'?",
+      content:
+          "Are you sure you want to delete this page? This action cannot be undone.",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      isDestructive: true,
     );
+
     if (confirm != true) return;
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
@@ -139,10 +134,10 @@ class _PagesBarState extends ConsumerState<PagesBar>
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeInOut,
           decoration: BoxDecoration(
-            color: Settings.sideBarColor,
+            color: Settings.tacticalVioletTheme.card,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: Settings.highlightColor,
+              color: Settings.tacticalVioletTheme.border,
               width: 2,
             ),
           ),
@@ -195,7 +190,7 @@ class _CollapsedPill extends StatelessWidget {
             icon: Icons.add,
             onTap: onAdd,
             tooltip: "Add page",
-            color: Colors.deepPurple,
+            color: Settings.tacticalVioletTheme.primary,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -208,8 +203,8 @@ class _CollapsedPill extends StatelessWidget {
                   fontSize: 14),
             ),
           ),
-          IconButton(
-            splashRadius: 20,
+          ShadIconButton.ghost(
+            foregroundColor: Colors.white,
             onPressed: onToggle,
             icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
           ),
@@ -291,16 +286,14 @@ class _ExpandedPanel extends StatelessWidget {
                         final p = pages[i];
                         final selected = p.id == activePageId;
                         final bg = selected
-                            ? Colors.deepPurple
-                            : const Color(0xFF231C21);
+                            ? Settings.tacticalVioletTheme.primary
+                            : Settings.tacticalVioletTheme.card;
                         return Material(
                           color: bg,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                             side: BorderSide(
-                              color: selected
-                                  ? Settings.highlightColor
-                                  : Settings.highlightColor.withOpacity(.4),
+                              color: Settings.tacticalVioletTheme.border,
                               width: 1,
                             ),
                           ),
@@ -327,26 +320,40 @@ class _ExpandedPanel extends StatelessWidget {
                                         ),
                                       ),
                                     ),
-                                    IconButton(
-                                      tooltip: "Rename",
-                                      splashRadius: 18,
-                                      icon: const Icon(Icons.edit,
-                                          size: 18, color: Colors.white),
-                                      onPressed: () => onRename(p),
+                                    ShadTooltip(
+                                      builder: (context) =>
+                                          const Text("Rename"),
+                                      child: ShadIconButton.ghost(
+                                        hoverForegroundColor: Settings
+                                            .tacticalVioletTheme.primary,
+                                        hoverBackgroundColor:
+                                            Colors.transparent,
+                                        icon: const Icon(Icons.edit,
+                                            size: 18, color: Colors.white),
+                                        onPressed: () => onRename(p),
+                                      ),
                                     ),
-                                    IconButton(
-                                      tooltip: "Delete",
-                                      splashRadius: 18,
-                                      icon: Icon(
-                                        Icons.delete,
-                                        size: 18,
-                                        color: pages.length == 1
+                                    ShadTooltip(
+                                      builder: (context) =>
+                                          const Text("Delete"),
+                                      child: ShadIconButton.ghost(
+                                        // splashRadius: 18,
+                                        hoverBackgroundColor:
+                                            Colors.transparent,
+
+                                        hoverForegroundColor: Settings
+                                            .tacticalVioletTheme.destructive,
+                                        foregroundColor: pages.length == 1
                                             ? Colors.white24
                                             : Colors.white,
+                                        icon: const Icon(
+                                          Icons.delete,
+                                          size: 18,
+                                        ),
+                                        onPressed: pages.length == 1
+                                            ? null
+                                            : () => onDelete(p),
                                       ),
-                                      onPressed: pages.length == 1
-                                          ? null
-                                          : () => onDelete(p),
                                     ),
                                   ],
                                 ),
@@ -379,7 +386,7 @@ class _ExpandedPanel extends StatelessWidget {
                     ),
             ),
           ),
-          const Divider(height: 1, color: Settings.highlightColor),
+          Divider(height: 1, color: Settings.tacticalVioletTheme.border),
           SizedBox(
             height: 48,
             child: Row(
@@ -389,15 +396,14 @@ class _ExpandedPanel extends StatelessWidget {
                   icon: Icons.add,
                   onTap: onAdd,
                   tooltip: "Add page",
-                  color: Colors.deepPurple,
+                  color: Settings.tacticalVioletTheme.primary,
                 ),
                 const Spacer(),
-                IconButton(
-                  splashRadius: 20,
-                  tooltip: "Collapse",
+                ShadIconButton.ghost(
+                  foregroundColor: Colors.white,
                   onPressed: onCollapse,
-                  icon: const Icon(Icons.keyboard_arrow_down,
-                      color: Colors.white),
+                  icon:
+                      const Icon(Icons.keyboard_arrow_up, color: Colors.white),
                 ),
                 const SizedBox(width: 4),
               ],
@@ -431,13 +437,15 @@ class _PageRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bg = active ? Colors.deepPurple : const Color(0xFF231C21);
+    final bg = active
+        ? Settings.tacticalVioletTheme.primary
+        : Settings.tacticalVioletTheme.card;
     return Material(
       color: bg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(
-          color: Settings.highlightColor,
+        side: BorderSide(
+          color: Settings.tacticalVioletTheme.border,
           width: 1,
         ),
       ),
@@ -461,21 +469,29 @@ class _PageRow extends StatelessWidget {
                     ),
                   ),
                 ),
-                IconButton(
-                  tooltip: "Rename",
-                  splashRadius: 18,
-                  icon: const Icon(Icons.edit, size: 18, color: Colors.white),
-                  onPressed: () => onRename(page),
-                ),
-                IconButton(
-                  tooltip: "Delete",
-                  splashRadius: 18,
-                  icon: Icon(
-                    Icons.delete,
-                    size: 18,
-                    color: disableDelete ? Colors.white24 : Colors.white,
+                ShadTooltip(
+                  builder: (context) => const Text("Rename"),
+                  child: ShadIconButton.ghost(
+                    hoverBackgroundColor: Colors.transparent,
+                    foregroundColor: Colors.white,
+                    icon: const Icon(Icons.edit, size: 18, color: Colors.white),
+                    onPressed: () => onRename(page),
                   ),
-                  onPressed: disableDelete ? null : () => onDelete(page),
+                ),
+                ShadTooltip(
+                  builder: (context) => const Text("Delete"),
+                  child: ShadIconButton.ghost(
+                    hoverForegroundColor:
+                        Settings.tacticalVioletTheme.destructive,
+                    hoverBackgroundColor: Colors.transparent,
+                    foregroundColor:
+                        disableDelete ? Colors.white24 : Colors.white,
+                    icon: const Icon(
+                      Icons.delete,
+                      size: 18,
+                    ),
+                    onPressed: disableDelete ? null : () => onDelete(page),
+                  ),
                 ),
               ],
             ),
@@ -502,21 +518,16 @@ class _SquareIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: color,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: Settings.highlightColor, width: 1),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: const SizedBox(
-            width: 36,
-            height: 36,
-            child: Icon(Icons.add, color: Colors.white, size: 18),
+    return ShadTooltip(
+      builder: (context) => Text(tooltip),
+      child: ShadIconButton(
+        icon: const Icon(Icons.add),
+        width: 36,
+        height: 36,
+        onPressed: onTap,
+        decoration: ShadDecoration(
+          border: ShadBorder(
+            radius: BorderRadius.circular(12),
           ),
         ),
       ),

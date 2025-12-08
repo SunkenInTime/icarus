@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 
 /// The save button that animates on auto-save pings.
 class AutoSaveButton extends ConsumerStatefulWidget {
@@ -53,21 +57,21 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
       _rotationController.stop();
       setState(() => _phase = _Phase.success);
 
-      // show the snack bar here, outside build
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Center(
-            child: Text(
-              "Auto‐save complete",
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-          duration: Duration(seconds: 2),
-          backgroundColor: Settings.sideBarColor,
-          behavior: SnackBarBehavior.floating,
-          width: 200,
-        ),
-      );
+      // // show the snack bar here, outside build
+      // ScaffoldMessenger.of(context).showSnackBar(
+      //   const SnackBar(
+      //     content: Center(
+      //       child: Text(
+      //         "Auto‐save complete",
+      //         style: TextStyle(color: Colors.white),
+      //       ),
+      //     ),
+      //     duration: Duration(seconds: 2),
+      //     backgroundColor: Settings.sideBarColor,
+      //     behavior: SnackBarBehavior.floating,
+      //     width: 200,
+      //   ),
+      // );
 
       // after 1s go back to idle
       Timer(const Duration(seconds: 1), () {
@@ -108,29 +112,60 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
         break;
     }
 
-    return IconButton(
-      icon: icon,
-      onPressed: () async {
-        // manual save path shows a SnackBar
-        await ref
-            .read(strategyProvider.notifier)
-            .forceSaveNow(ref.read(strategyProvider).id);
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Center(
-              child: Text(
-                "File Saved",
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
-            duration: Duration(seconds: 2),
-            backgroundColor: Settings.sideBarColor,
-            behavior: SnackBarBehavior.floating,
-            width: 200,
-          ),
-        );
-      },
+    return ShadTooltip(
+      builder: (context) => const Text("Save"),
+      child: ShadIconButton.ghost(
+        foregroundColor: Colors.white,
+        icon: icon,
+        onPressed: () async {
+          // manual save path shows a SnackBar
+          await ref
+              .read(strategyProvider.notifier)
+              .forceSaveNow(ref.read(strategyProvider).id);
+          if (!context.mounted) return;
+
+          toastification.showCustom(
+            context: context,
+            autoCloseDuration: const Duration(seconds: 3),
+            alignment: Alignment.bottomCenter,
+            builder: (context, holder) {
+              return Container(
+                margin: const EdgeInsets.all(16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Settings.tacticalVioletTheme.card,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Settings.tacticalVioletTheme.border,
+                  ),
+                ),
+                child: Text(
+                  'Save Complete',
+                  style: ShadTheme.of(context)
+                      .textTheme
+                      .small
+                      .copyWith(color: Colors.white),
+                ),
+              );
+            },
+          );
+          // ScaffoldMessenger.of(context).showSnackBar(
+          //   const SnackBar(
+          //     content: Center(
+          //       child: Text(
+          //         "File Saved",
+          //         style: TextStyle(color: Colors.white),
+          //       ),
+          //     ),
+          //     duration: Duration(seconds: 2),
+          //     backgroundColor: Settings.sideBarColor,
+          //     behavior: SnackBarBehavior.floating,
+          //     width: 200,
+          //   ),
+          // );
+        },
+      ),
     );
   }
 }

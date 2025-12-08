@@ -1,4 +1,3 @@
-import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/color_option.dart';
@@ -17,7 +16,7 @@ class PenState {
   final double opacity;
   final double thickness;
   final PenMode penMode;
-  final CustomMouseCursor drawCursor;
+
   final List<ColorOption> listOfColors;
 
   PenState({
@@ -28,7 +27,6 @@ class PenState {
     required this.opacity,
     required this.thickness,
     required this.penMode,
-    required this.drawCursor,
   });
 
   PenState copyWith({
@@ -39,7 +37,6 @@ class PenState {
     double? thickness,
     PenMode? penMode,
     List<ColorOption>? listOfColors,
-    CustomMouseCursor? drawCursor,
   }) {
     return PenState(
       listOfColors: listOfColors ?? this.listOfColors,
@@ -49,7 +46,6 @@ class PenState {
       isDotted: isDotted ?? this.isDotted,
       opacity: opacity ?? this.opacity,
       thickness: thickness ?? this.thickness,
-      drawCursor: drawCursor ?? this.drawCursor,
     );
   }
 }
@@ -67,7 +63,6 @@ class PenProvider extends Notifier<PenState> {
       isDotted: false,
       opacity: 1,
       thickness: Settings.brushSize,
-      drawCursor: drawingCursor!,
     );
   }
 
@@ -101,15 +96,7 @@ class PenProvider extends Notifier<PenState> {
       }
     }
 
-    final newCursor = await CustomMouseCursor.icon(
-      CustomIcons.drawcursor,
-      size: 12,
-      hotX: 6,
-      hotY: 6,
-      color: selectedColor,
-    );
-    state = state.copyWith(
-        listOfColors: newColors, color: selectedColor, drawCursor: newCursor);
+    state = state.copyWith(listOfColors: newColors, color: selectedColor);
   }
 
   void toggleArrow() {
