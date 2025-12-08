@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_portal/flutter_portal.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -113,20 +114,37 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                       child: MediaQuery(
                         data: const MediaQueryData(
                             size: CoordinateSystem.screenShotSize),
-                        child: MaterialApp(
-                          theme: Settings.appTheme,
-                          debugShowCheckedModeBanner: false,
-                          home: ScreenshotView(
-                              isAttack: activePage.isAttack,
-                              mapValue: newStrat.mapData,
-                              agents: activePage.agentData,
-                              abilities: activePage.abilityData,
-                              text: activePage.textData,
-                              images: activePage.imageData,
-                              drawings: activePage.drawingData,
-                              utilities: activePage.utilityData,
-                              strategySettings: activePage.settings,
-                              strategyState: ref.read(strategyProvider)),
+                        child: ShadApp.custom(
+                          themeMode: ThemeMode.dark,
+                          darkTheme: ShadThemeData(
+                            brightness: Brightness.dark,
+                            colorScheme: Settings.tacticalVioletTheme,
+                            breadcrumbTheme:
+                                const ShadBreadcrumbTheme(separatorSize: 18),
+                          ),
+                          appBuilder: (context) {
+                            return MaterialApp(
+                              theme: Theme.of(context),
+                              debugShowCheckedModeBanner: false,
+                              home: ScreenshotView(
+                                isAttack: activePage.isAttack,
+                                mapValue: newStrat.mapData,
+                                agents: activePage.agentData,
+                                abilities: activePage.abilityData,
+                                text: activePage.textData,
+                                images: activePage.imageData,
+                                drawings: activePage.drawingData,
+                                utilities: activePage.utilityData,
+                                strategySettings: activePage.settings,
+                                strategyState: ref.read(strategyProvider),
+                                lineUps: activePage.lineUps,
+                              ),
+                              builder: (context, child) {
+                                return Portal(
+                                    child: ShadAppBuilder(child: child!));
+                              },
+                            );
+                          },
                         ),
                       ),
                     ),

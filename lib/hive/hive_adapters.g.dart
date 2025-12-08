@@ -203,9 +203,8 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       isAlly: fields[1] == null ? true : fields[1] as bool,
       length: fields[6] == null ? 0 : (fields[6] as num).toDouble(),
       lineUpID: fields[7] as String?,
-    )
-      ..rotation = (fields[2] as num).toDouble()
-      ..isDeleted = fields[4] as bool;
+      rotation: fields[2] == null ? 0 : (fields[2] as num).toDouble(),
+    )..isDeleted = fields[4] as bool;
   }
 
   @override

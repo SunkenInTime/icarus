@@ -120,9 +120,8 @@ PlacedAbility _$PlacedAbilityFromJson(Map<String, dynamic> json) =>
       isAlly: json['isAlly'] as bool? ?? true,
       length: (json['length'] as num?)?.toDouble() ?? 0,
       lineUpID: json['lineUpID'] as String?,
-    )
-      ..isDeleted = json['isDeleted'] as bool? ?? false
-      ..rotation = (json['rotation'] as num).toDouble();
+      rotation: (json['rotation'] as num?)?.toDouble() ?? 0,
+    )..isDeleted = json['isDeleted'] as bool? ?? false;
 
 Map<String, dynamic> _$PlacedAbilityToJson(PlacedAbility instance) =>
     <String, dynamic>{
