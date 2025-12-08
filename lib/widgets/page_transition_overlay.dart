@@ -209,7 +209,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     log("jsf");
     Widget child = PlacedWidgetPreview.build(
         widget, mapScale, length); // central factory (below)
-    if (rotation != null && widget is PlacedAbility)
+    if (rotation != null && widget is PlacedAbility) {
       child = Transform.rotate(
         angle: rotation,
         alignment: Alignment.topLeft,
@@ -221,6 +221,16 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
                 CoordinateSystem.instance.scaleFactor),
         child: child,
       );
+    } else if (rotation != null && widget is PlacedUtility) {
+      child = Transform.rotate(
+        angle: rotation,
+        alignment: Alignment.topLeft,
+        origin: UtilityData.utilityWidgets[widget.type]!.getAnchorPoint().scale(
+            CoordinateSystem.instance.scaleFactor,
+            CoordinateSystem.instance.scaleFactor),
+        child: child,
+      );
+    }
     return Positioned(
       key: key,
       left: pos.dx,
@@ -312,7 +322,8 @@ class PlacedWidgetPreview {
       );
     }
     if (w is PlacedUtility) {
-      return UtilityData.utilityWidgets[w.type]!.createWidget(w.id);
+      return UtilityData.utilityWidgets[w.type]!
+          .createWidget(w.id, w.rotation, length ?? w.length);
     }
     return const SizedBox.shrink();
   }
