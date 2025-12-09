@@ -38,8 +38,7 @@ class AgentWidget extends ConsumerWidget {
         ref.read(actionProvider.notifier).addAction(action);
         ref.read(agentProvider.notifier).removeAgent(id!);
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
+      child: Container(
         decoration: BoxDecoration(
           color: (lineUpId != null &&
                   ref.watch(hoveredLineUpIdProvider) == lineUpId)

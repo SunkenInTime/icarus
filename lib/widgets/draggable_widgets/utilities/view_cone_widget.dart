@@ -186,6 +186,6 @@ class ViewConePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant ViewConePainter oldDelegate) {
-    return oldDelegate.angle != angle || oldDelegate.length != length;
+    return oldDelegate.length != length;
   }
 }

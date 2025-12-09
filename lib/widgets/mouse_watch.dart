@@ -39,12 +39,12 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
   @override
   Widget build(BuildContext context) {
     final lineUpState = ref.watch(lineUpProvider);
-    final lineUpId = widget.lineUpId;
+
     LineUp? lineUp;
     String? lineUpNotes;
-    if (lineUpId != null) {
-      final index =
-          lineUpState.lineUps.indexWhere((lineUp) => lineUp.id == lineUpId);
+    if (widget.lineUpId != null) {
+      final index = lineUpState.lineUps
+          .indexWhere((lineUp) => lineUp.id == widget.lineUpId);
       if (index != -1) {
         lineUp = lineUpState.lineUps[index];
         lineUpNotes = lineUpState.lineUps[index].notes;
@@ -90,7 +90,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     );
 
     return RepaintBoundary(
-      child: lineUpId == null
+      child: widget.lineUpId == null
           ? content
           : PortalTarget(
               anchor: const Aligned(
@@ -125,7 +125,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
                     onPressed: () {
                       ref
                           .read(lineUpProvider.notifier)
-                          .deleteLineUpById(lineUpId);
+                          .deleteLineUpById(widget.lineUpId!);
                     },
                   ),
                 ],

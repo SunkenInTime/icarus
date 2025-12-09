@@ -8,7 +8,6 @@ import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:path/path.dart' as path;
-import 'package:provider/provider.dart';
 
 class LineupMediaPage extends ConsumerStatefulWidget {
   final TextEditingController youtubeLinkController;

@@ -38,8 +38,7 @@ class AbilityWidget extends ConsumerWidget {
         ref.read(actionProvider.notifier).addAction(action);
         ref.read(abilityProvider.notifier).removeAbility(id!);
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
+      child: Container(
         width: coordinateSystem.scale(abilitySize),
         height: coordinateSystem.scale(abilitySize),
         padding: EdgeInsets.all(coordinateSystem.scale(3)),

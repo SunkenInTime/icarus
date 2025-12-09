@@ -24,7 +24,6 @@ dependencies:
   hive_ce: ^2.10.1
   hive_ce_flutter: ^2.2.0
   path: ^1.9.1
-  provider: ^6.1.4
   path_provider: ^2.1.5
   desktop_drop: ^0.6.0
   cross_file: ^0.3.4+2
