@@ -30,6 +30,8 @@ class MapTile extends ConsumerWidget {
                   child: Opacity(
                     opacity: .8,
                     child: Image.asset(
+                      cacheWidth: 180,
+                      cacheHeight: 53,
                       "assets/maps/thumbnails/${name}_thumbnail.webp",
                       fit: BoxFit.cover,
                     ),

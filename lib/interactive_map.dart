@@ -63,17 +63,17 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
           height: coordinateSystem.playAreaSize.height,
           // color: ShadTheme.of(context).colorScheme.card,
           decoration: BoxDecoration(
-            gradient: RadialGradient(
-              center: Alignment.center,
-              radius: 1.5,
-              colors: [
-                Color(0xff18181b), // Zinc-900 (Darker center - under the map)
-                ShadTheme.of(context)
-                    .colorScheme
-                    .background, // Zinc-950 (Dark edges - under the UI)
-              ],
-            ),
-          ),
+              // gradient: RadialGradient(
+              //   center: Alignment.center,
+              //   radius: 1.5,
+              //   colors: [
+              //     Color(0xff18181b), // Zinc-900 (Darker center - under the map)
+              //     ShadTheme.of(context)
+              //         .colorScheme
+              //         .background, // Zinc-950 (Dark edges - under the UI)
+              //   ],
+              // ),
+              ),
           child: ImageDropTarget(
             child: InteractiveViewer(
               transformationController: controller,

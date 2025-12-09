@@ -53,23 +53,21 @@ class AgentDragable extends ConsumerWidget {
           (agentSize / 2),
           (agentSize / 2),
         ).scale(ref.read(screenZoomProvider), ref.read(screenZoomProvider)),
-        child: RepaintBoundary(
-          child: InkWell(
-            onTap: () {
-              ref.read(abilityBarProvider.notifier).updateData(agent);
-            },
-            onHover: (value) {},
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: ColoredBox(
-                color: (ref.watch(abilityBarProvider) != null &&
-                        ref.watch(abilityBarProvider)!.type == agent.type)
-                    ? Settings.tacticalVioletTheme.primary
-                    : Settings.tacticalVioletTheme.secondary,
-                child: Image.asset(
-                  agent.iconPath,
-                  fit: BoxFit.cover,
-                ),
+        child: InkWell(
+          onTap: () {
+            ref.read(abilityBarProvider.notifier).updateData(agent);
+          },
+          onHover: (value) {},
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: ColoredBox(
+              color: (ref.watch(abilityBarProvider) != null &&
+                      ref.watch(abilityBarProvider)!.type == agent.type)
+                  ? Settings.tacticalVioletTheme.primary
+                  : Settings.tacticalVioletTheme.secondary,
+              child: Image.asset(
+                agent.iconPath,
+                fit: BoxFit.cover,
               ),
             ),
           ),

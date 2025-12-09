@@ -60,22 +60,22 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
       ignoring: isNavigating,
       child: RepaintBoundary(
         child: MouseRegion(
-          cursor: SystemMouseCursors.none,
-          onEnter: (event) {
-            setState(() {
-              _visualMousePosition = event.localPosition;
-            });
-          },
-          onExit: (event) {
-            setState(() {
-              _visualMousePosition = null;
-            });
-          },
-          onHover: (event) {
-            setState(() {
-              _visualMousePosition = event.localPosition;
-            });
-          },
+          // cursor: SystemMouseCursors.none,
+          // onEnter: (event) {
+          //   setState(() {
+          //     _visualMousePosition = event.localPosition;
+          //   });
+          // },
+          // onExit: (event) {
+          //   setState(() {
+          //     _visualMousePosition = null;
+          //   });
+          // },
+          // onHover: (event) {
+          //   setState(() {
+          //     _visualMousePosition = event.localPosition;
+          //   });
+          // },
           child: GestureDetector(
             onPanStart: (details) {
               log("Pan start detected");
@@ -84,9 +84,9 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
               final isDotted = ref.watch(penProvider).isDotted;
               log(currentColor.toString());
 
-              setState(() {
-                _visualMousePosition = details.localPosition;
-              });
+              // setState(() {
+              //   _visualMousePosition = details.localPosition;
+              // });
 
               switch (currentInteractionState) {
                 case InteractionState.drawing:

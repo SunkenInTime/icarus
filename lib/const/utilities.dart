@@ -18,8 +18,8 @@ class UtilityData {
   static Map<UtilityType, Utilities> utilityWidgets = {
     UtilityType.spike: ImageUtility(imagePath: 'assets/spike.svg', size: 20),
     UtilityType.viewCone180: ViewConeUtility(angle: 103, defaultLength: 50),
-    UtilityType.viewCone90: ViewConeUtility(angle: 90, defaultLength: 50),
-    UtilityType.viewCone40: ViewConeUtility(angle: 40, defaultLength: 50),
+    UtilityType.viewCone90: ViewConeUtility(angle: 60, defaultLength: 50),
+    UtilityType.viewCone40: ViewConeUtility(angle: 20, defaultLength: 50),
   };
 
   /// Helper to check if a utility type is a view cone
@@ -33,11 +33,11 @@ class UtilityData {
   static double getViewConeAngle(UtilityType type) {
     switch (type) {
       case UtilityType.viewCone180:
-        return 180;
+        return 103;
       case UtilityType.viewCone90:
-        return 90;
+        return 60;
       case UtilityType.viewCone40:
-        return 40;
+        return 20;
       default:
         return 0;
     }

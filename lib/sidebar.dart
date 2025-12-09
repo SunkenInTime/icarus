@@ -107,32 +107,30 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                               child: ScrollConfiguration(
                                 behavior: ScrollConfiguration.of(context)
                                     .copyWith(scrollbars: false),
-                                child: RepaintBoundary(
-                                  child: GridView.builder(
-                                    scrollDirection: Axis.vertical,
-                                    shrinkWrap: true,
-                                    padding: const EdgeInsets.only(
-                                        top: 10, right: 10),
-                                    gridDelegate:
-                                        const SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: 4,
-                                      // mainAxisExtent: 100,
-                                      crossAxisSpacing: 8,
-                                      mainAxisSpacing: 8,
-                                    ),
-                                    controller: gridScrollController,
-                                    // padding: const EdgeInsets.only(right: 8),
-                                    physics: const BouncingScrollPhysics(),
-                                    itemCount: agentList.length,
-
-                                    itemBuilder: (context, index) {
-                                      final agent =
-                                          AgentData.agents[agentList[index]]!;
-                                      return AgentDragable(
-                                        agent: agent,
-                                      );
-                                    },
+                                child: GridView.builder(
+                                  scrollDirection: Axis.vertical,
+                                  // shrinkWrap: true,
+                                  padding:
+                                      const EdgeInsets.only(top: 10, right: 10),
+                                  gridDelegate:
+                                      const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 4,
+                                    // mainAxisExtent: 100,
+                                    crossAxisSpacing: 8,
+                                    mainAxisSpacing: 8,
                                   ),
+                                  controller: gridScrollController,
+                                  // padding: const EdgeInsets.only(right: 8),
+                                  physics: const BouncingScrollPhysics(),
+                                  itemCount: agentList.length,
+
+                                  itemBuilder: (context, index) {
+                                    final agent =
+                                        AgentData.agents[agentList[index]]!;
+                                    return AgentDragable(
+                                      agent: agent,
+                                    );
+                                  },
                                 ),
                               ),
                             ),

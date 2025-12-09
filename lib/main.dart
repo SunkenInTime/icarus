@@ -80,81 +80,74 @@ class MyApp extends StatelessWidget {
     // );
 
     return GlobalShortcuts(
+      child: ShadApp(
+        themeMode: ThemeMode.dark,
+        darkTheme: ShadThemeData(
+          brightness: Brightness.dark,
+          colorScheme: Settings.tacticalVioletTheme,
+          breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
+        ),
+        home: const MyHomePage(),
+        routes: {
+          Routes.folderNavigator: (context) => const FolderNavigator(),
+          Routes.strategyView: (context) => const StrategyView(),
+          Routes.settings: (context) => const SettingsTab(),
+        },
+      ),
+    );
+    return GlobalShortcuts(
       child: ToastificationWrapper(
-        child: Portal(
-          child: ShadApp.custom(
-              themeMode: ThemeMode.dark,
-              darkTheme: ShadThemeData(
-                brightness: Brightness.dark,
-                colorScheme: Settings.tacticalVioletTheme,
-                breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
-              ),
-              appBuilder: (context) {
-                return MaterialApp(
-                  debugShowCheckedModeBanner: false,
-                  title: 'Icarus',
-                  // theme: Settings.appTheme,
-                  theme: Theme.of(context).copyWith(
-                    menuTheme: MenuThemeData(
-                      style: MenuStyle(
-                        backgroundColor: WidgetStatePropertyAll<Color>(
-                            Settings.tacticalVioletTheme.card),
-                        padding: const WidgetStatePropertyAll<EdgeInsets>(
-                            EdgeInsets.all(8)),
-                        shape: WidgetStatePropertyAll<OutlinedBorder>(
-                          RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                            side: BorderSide(
-                              color: Settings.tacticalVioletTheme.border,
-                              width: 2,
-                            ),
+        child: ShadApp.custom(
+            themeMode: ThemeMode.dark,
+            darkTheme: ShadThemeData(
+              brightness: Brightness.dark,
+              colorScheme: Settings.tacticalVioletTheme,
+              breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
+            ),
+            appBuilder: (context) {
+              return MaterialApp(
+                debugShowCheckedModeBanner: false,
+                title: 'Icarus',
+                // theme: Settings.appTheme,
+                theme: Theme.of(context).copyWith(
+                  menuTheme: MenuThemeData(
+                    style: MenuStyle(
+                      backgroundColor: WidgetStatePropertyAll<Color>(
+                          Settings.tacticalVioletTheme.card),
+                      padding: const WidgetStatePropertyAll<EdgeInsets>(
+                          EdgeInsets.all(8)),
+                      shape: WidgetStatePropertyAll<OutlinedBorder>(
+                        RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(
+                            color: Settings.tacticalVioletTheme.border,
+                            width: 2,
                           ),
                         ),
                       ),
                     ),
-                    menuButtonTheme: MenuButtonThemeData(
-                      style: ButtonStyle(
-                        shape: WidgetStateProperty.resolveWith<OutlinedBorder?>(
-                          (Set<WidgetState> states) {
-                            if (states.contains(WidgetState.hovered)) {
-                              return RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                                side: BorderSide(
-                                    color: Settings.tacticalVioletTheme.border,
-                                    width: 2),
-                              );
-                            }
-                            return RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              side: BorderSide.none,
-                            );
-                          },
-                        ),
-                      ),
-                    ),
                   ),
+                ),
 
-                  home: const MyHomePage(),
-                  routes: {
-                    Routes.folderNavigator: (context) =>
-                        const FolderNavigator(),
-                    Routes.strategyView: (context) => const StrategyView(),
-                    Routes.settings: (context) => const SettingsTab(),
-                  },
-                  builder: (context, child) {
-                    return ToastificationConfigProvider(
-                      config: const ToastificationConfig(
-                        alignment: Alignment.bottomCenter,
-                        // itemWidth: 440,
-                        animationDuration: Duration(milliseconds: 500),
-                        blockBackgroundInteraction: false,
-                      ),
-                      child: ShadAppBuilder(child: child!),
-                    );
-                  },
-                );
-              }),
-        ),
+                home: const MyHomePage(),
+                routes: {
+                  Routes.folderNavigator: (context) => const FolderNavigator(),
+                  Routes.strategyView: (context) => const StrategyView(),
+                  Routes.settings: (context) => const SettingsTab(),
+                },
+                builder: (context, child) {
+                  return ToastificationConfigProvider(
+                    config: const ToastificationConfig(
+                      alignment: Alignment.bottomCenter,
+                      // itemWidth: 440,
+                      animationDuration: Duration(milliseconds: 500),
+                      blockBackgroundInteraction: false,
+                    ),
+                    child: ShadAppBuilder(child: child!),
+                  );
+                },
+              );
+            }),
       ),
     );
 

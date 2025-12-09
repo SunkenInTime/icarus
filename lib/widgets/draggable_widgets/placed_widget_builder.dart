@@ -140,12 +140,10 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                               .read(agentProvider.notifier)
                               .updatePosition(virtualOffset, agent.id);
                         },
-                        child: RepaintBoundary(
-                          child: AgentWidget(
-                            isAlly: agent.isAlly,
-                            id: agent.id,
-                            agent: AgentData.agents[agent.type]!,
-                          ),
+                        child: AgentWidget(
+                          isAlly: agent.isAlly,
+                          id: agent.id,
+                          agent: AgentData.agents[agent.type]!,
                         ),
                       ),
                     ),

@@ -92,13 +92,9 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     return RepaintBoundary(
       child: widget.lineUpId == null
           ? content
-          : PortalTarget(
-              anchor: const Aligned(
-                follower: Alignment.bottomCenter,
-                target: Alignment.topCenter,
-              ),
+          : ShadPortal(
               visible: isMouseInRegion && hasLineUpNote,
-              portalFollower: Padding(
+              portalBuilder: (context) => Padding(
                 padding: const EdgeInsets.only(bottom: 4.0),
                 child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 200),
@@ -114,6 +110,16 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
                       ),
                     )),
               ),
+
+              anchor: const ShadAnchor(
+                childAlignment: Alignment.bottomCenter,
+                overlayAlignment: Alignment.topCenter,
+              ),
+
+              // const Aligned(
+              //   follower: Alignment.bottomCenter,
+              //   target: Alignment.topCenter,
+              // ),
               child: ShadContextMenuRegion(
                 items: [
                   ShadContextMenuItem(
