@@ -46,6 +46,30 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
               const Positioned.fill(
                 child: CurrentLineUpPainter(),
               ),
+              if (lineUp.currentAgent == null)
+                Align(
+                  alignment: Alignment.center,
+                  child: Container(
+                    margin: const EdgeInsets.all(16),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Settings.tacticalVioletTheme.primary,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Settings.tacticalVioletTheme.border,
+                      ),
+                      boxShadow: const [Settings.cardForegroundBackdrop],
+                    ),
+                    child: Text(
+                      "Drag an agent to the map to start placing",
+                      style: ShadTheme.of(context)
+                          .textTheme
+                          .small
+                          .copyWith(color: Colors.white),
+                    ),
+                  ),
+                ),
               if (lineUp.currentAbility != null)
                 PlacedAbilityWidget(
                   rotation: lineUp.currentAbility!.rotation,

@@ -91,19 +91,27 @@ class MyApp extends StatelessWidget {
     // );
 
     return GlobalShortcuts(
-      child: ShadApp(
-        themeMode: ThemeMode.dark,
-        darkTheme: ShadThemeData(
-          brightness: Brightness.dark,
-          colorScheme: Settings.tacticalVioletTheme,
-          breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
+      child: ToastificationWrapper(
+        config: const ToastificationConfig(
+          alignment: Alignment.bottomCenter,
+          // itemWidth: 440,
+          animationDuration: Duration(milliseconds: 500),
+          blockBackgroundInteraction: false,
         ),
-        home: const MyHomePage(),
-        routes: {
-          Routes.folderNavigator: (context) => const FolderNavigator(),
-          Routes.strategyView: (context) => const StrategyView(),
-          Routes.settings: (context) => const SettingsTab(),
-        },
+        child: ShadApp(
+          themeMode: ThemeMode.dark,
+          darkTheme: ShadThemeData(
+            brightness: Brightness.dark,
+            colorScheme: Settings.tacticalVioletTheme,
+            breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
+          ),
+          home: const MyHomePage(),
+          routes: {
+            Routes.folderNavigator: (context) => const FolderNavigator(),
+            Routes.strategyView: (context) => const StrategyView(),
+            Routes.settings: (context) => const SettingsTab(),
+          },
+        ),
       ),
     );
     // return GlobalShortcuts(

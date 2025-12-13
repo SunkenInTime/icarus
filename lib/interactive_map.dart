@@ -135,7 +135,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                         : Opacity(
                             opacity: ref.watch(interactionStateProvider) ==
                                     InteractionState.lineUpPlacing
-                                ? 0.5
+                                ? 0.2
                                 : 1.0,
                             child: PlacedWidgetBuilder(),
                           ),
@@ -159,7 +159,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                     child: Opacity(
                       opacity: ref.watch(interactionStateProvider) ==
                               InteractionState.lineUpPlacing
-                          ? 0.5
+                          ? 0.2
                           : 1.0,
                       child: InteractivePainter(),
                     ),

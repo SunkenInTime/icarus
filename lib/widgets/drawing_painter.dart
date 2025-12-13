@@ -173,6 +173,9 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                 ),
                 Consumer(
                   builder: (context, ref, child) {
+                    if (currentInteractionState != InteractionState.erasing)
+                      return const SizedBox.shrink();
+
                     final visualPosition = ref.watch(visualPositionProvider);
 
                     if (visualPosition == null) return const SizedBox.shrink();

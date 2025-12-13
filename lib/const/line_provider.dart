@@ -283,6 +283,7 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void clearAll() {
+    log("Clearing all line ups");
     _poppedLineUps.clear();
     state = state.copyWith(lineUps: []);
   }
