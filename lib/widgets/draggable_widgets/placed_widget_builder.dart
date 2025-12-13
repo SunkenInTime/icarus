@@ -27,7 +27,6 @@ import 'package:icarus/widgets/draggable_widgets/utilities/placed_view_cone_widg
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/line_up_line_painter.dart';
-import 'package:icarus/widgets/current_line_up_painter.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
 import 'package:uuid/uuid.dart';
 
@@ -43,11 +42,10 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
   @override
   Widget build(BuildContext context) {
     final coordinateSystem = CoordinateSystem.instance;
-    final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap];
+    final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1.0;
 
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
-    final lineUps = ref.watch(lineUpProvider).lineUps;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -55,266 +53,54 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
         log(ref.watch(mapProvider).isAttack.toString());
         return DragTarget<DraggableData>(
           builder: (context, candidateData, rejectedData) {
-            return IgnorePointer(
-              ignoring: interactionState == InteractionState.drawing ||
-                  interactionState == InteractionState.erasing ||
-                  interactionState == InteractionState.lineUpPlacing,
-              child: Stack(
-                children: [
-                  const Align(
-                    alignment: Alignment.topRight,
-                    child: DeleteArea(),
-                  ),
-                  for (PlacedAbility ability in ref.watch(abilityProvider))
-                    PlacedAbilityWidget(
-                      key: ValueKey(ability.id),
-                      rotation: ability.rotation,
-                      data: ability,
-                      ability: ability,
-                      id: ability.id,
-                      length: ability.length,
-                      onDragEnd: (details) {
-                        RenderBox renderBox =
-                            context.findRenderObject() as RenderBox;
-                        Offset localOffset =
-                            renderBox.globalToLocal(details.offset);
-                        // Updating info
-
-                        Offset virtualOffset =
-                            coordinateSystem.screenToCoordinate(localOffset);
-                        Offset safeArea = ability.data.abilityData!
-                            .getAnchorPoint(
-                                mapScale: mapScale, abilitySize: abilitySize);
-
-                        if (coordinateSystem.isOutOfBounds(virtualOffset
-                            .translate(safeArea.dx, safeArea.dy))) {
-                          ref
-                              .read(abilityProvider.notifier)
-                              .removeAbility(ability.id);
-                          return;
-                        }
-
-                        log(renderBox.size.toString());
-
-                        ref.read(abilityProvider.notifier).updatePosition(
-                            coordinateSystem.screenToCoordinate(localOffset),
-                            ability.id);
-                      },
+            return RepaintBoundary(
+              child: IgnorePointer(
+                ignoring: interactionState == InteractionState.drawing ||
+                    interactionState == InteractionState.erasing ||
+                    interactionState == InteractionState.lineUpPlacing,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Align(
+                      alignment: Alignment.topRight,
+                      child: DeleteArea(),
                     ),
-                  for (PlacedAgent agent in ref.watch(agentProvider))
-                    Positioned(
-                      key: ValueKey(agent.id),
-                      left: coordinateSystem
-                          .coordinateToScreen(agent.position)
-                          .dx,
-                      top: coordinateSystem
-                          .coordinateToScreen(agent.position)
-                          .dy,
-                      child: Draggable<PlacedWidget>(
-                        data: agent,
-                        dragAnchorStrategy: ref
-                            .read(screenZoomProvider.notifier)
-                            .zoomDragAnchorStrategy,
-                        feedback: Opacity(
-                          opacity: Settings.feedbackOpacity,
-                          child: ZoomTransform(
-                            child: AgentWidget(
-                              isAlly: agent.isAlly,
-                              id: "",
-                              agent: AgentData.agents[agent.type]!,
-                            ),
-                          ),
-                        ),
-                        childWhenDragging: const SizedBox.shrink(),
-                        onDragEnd: (details) {
-                          RenderBox renderBox =
-                              context.findRenderObject() as RenderBox;
-                          Offset localOffset =
-                              renderBox.globalToLocal(details.offset);
-
-                          //Basically makes sure that if more than half is of the screen it gets deleted
-                          Offset virtualOffset =
-                              coordinateSystem.screenToCoordinate(localOffset);
-
-                          ref
-                              .read(agentProvider.notifier)
-                              .updatePosition(virtualOffset, agent.id);
-                        },
-                        child: AgentWidget(
-                          isAlly: agent.isAlly,
-                          id: agent.id,
-                          agent: AgentData.agents[agent.type]!,
-                        ),
+                    _AbilityList(
+                      coordinateSystem: coordinateSystem,
+                      mapScale: mapScale,
+                      abilitySize: abilitySize,
+                    ),
+                    _AgentList(coordinateSystem: coordinateSystem),
+                    _TextList(
+                      coordinateSystem: coordinateSystem,
+                      agentSize: agentSize,
+                    ),
+                    _PlacedImageList(
+                      coordinateSystem: coordinateSystem,
+                      agentSize: agentSize,
+                    ),
+                    _ViewConeUtilityList(
+                      coordinateSystem: coordinateSystem,
+                      agentSize: agentSize,
+                    ),
+                    _UtilityList(
+                      coordinateSystem: coordinateSystem,
+                      agentSize: agentSize,
+                    ),
+                    const Positioned.fill(
+                      child: LineUpLinePainter(),
+                    ),
+                    const Positioned.fill(
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          _LineUpAgents(),
+                          _LineUpAbilities(),
+                        ],
                       ),
                     ),
-                  for (PlacedText placedText in ref.watch(textProvider))
-                    Positioned(
-                      key: ValueKey(placedText.id),
-                      left: coordinateSystem
-                          .coordinateToScreen(placedText.position)
-                          .dx,
-                      top: coordinateSystem
-                          .coordinateToScreen(placedText.position)
-                          .dy,
-                      child: PlacedTextBuilder(
-                        size: placedText.size,
-                        placedText: placedText,
-                        onDragEnd: (details) {
-                          RenderBox renderBox =
-                              context.findRenderObject() as RenderBox;
-                          Offset localOffset =
-                              renderBox.globalToLocal(details.offset);
-
-                          //Basically makes sure that if more than half is of the screen it gets deleted
-                          Offset virtualOffset =
-                              coordinateSystem.screenToCoordinate(localOffset);
-                          double safeArea = agentSize / 2;
-
-                          if (coordinateSystem.isOutOfBounds(
-                              virtualOffset.translate(safeArea, safeArea))) {
-                            ref
-                                .read(textProvider.notifier)
-                                .removeText(placedText.id);
-
-                            return;
-                          }
-
-                          ref
-                              .read(textProvider.notifier)
-                              .updatePosition(virtualOffset, placedText.id);
-                        },
-                      ),
-                    ),
-                  for (PlacedImage placedImage
-                      in ref.watch(placedImageProvider).images)
-                    Positioned(
-                        key: ValueKey(placedImage.id),
-                        left: coordinateSystem
-                            .coordinateToScreen(placedImage.position)
-                            .dx,
-                        top: coordinateSystem
-                            .coordinateToScreen(placedImage.position)
-                            .dy,
-                        child: PlacedImageBuilder(
-                          placedImage: placedImage,
-                          scale: placedImage.scale,
-                          onDragEnd: (details) {
-                            RenderBox renderBox =
-                                context.findRenderObject() as RenderBox;
-                            Offset localOffset =
-                                renderBox.globalToLocal(details.offset);
-
-                            //Basically makes sure that if more than half is of the screen it gets deleted
-                            Offset virtualOffset = coordinateSystem
-                                .screenToCoordinate(localOffset);
-                            double safeArea = agentSize / 2;
-
-                            if (coordinateSystem.isOutOfBounds(
-                                virtualOffset.translate(safeArea, safeArea))) {
-                              ref
-                                  .read(placedImageProvider.notifier)
-                                  .removeImage(placedImage.id);
-
-                              return;
-                            }
-
-                            ref
-                                .read(placedImageProvider.notifier)
-                                .updatePosition(virtualOffset, placedImage.id);
-                          },
-                        )),
-                  // Render view cone utilities with rotation/length controls
-                  for (PlacedUtility placedUtility
-                      in ref.watch(utilityProvider).where(
-                            (u) => UtilityData.isViewCone(u.type),
-                          ))
-                    PlacedViewConeWidget(
-                      key: ValueKey(placedUtility.id),
-                      utility: placedUtility,
-                      id: placedUtility.id,
-                      rotation: placedUtility.rotation,
-                      length: placedUtility.length,
-                      onDragEnd: (details) {
-                        RenderBox renderBox =
-                            context.findRenderObject() as RenderBox;
-                        Offset localOffset =
-                            renderBox.globalToLocal(details.offset);
-
-                        Offset virtualOffset =
-                            coordinateSystem.screenToCoordinate(localOffset);
-                        double safeArea = agentSize / 2;
-
-                        // if (coordinateSystem.isOutOfBounds(
-                        //     virtualOffset.translate(safeArea, safeArea))) {
-                        //   ref
-                        //       .read(utilityProvider.notifier)
-                        //       .removeUtility(placedUtility.id);
-                        //   return;
-                        // }
-
-                        ref
-                            .read(utilityProvider.notifier)
-                            .updatePosition(virtualOffset, placedUtility.id);
-                      },
-                    ),
-                  // Render non-view-cone utilities (like spike)
-                  for (PlacedUtility placedUtility
-                      in ref.watch(utilityProvider).where(
-                            (u) => !UtilityData.isViewCone(u.type),
-                          ))
-                    Positioned(
-                      key: ValueKey(placedUtility.id),
-                      left: coordinateSystem
-                          .coordinateToScreen(placedUtility.position)
-                          .dx,
-                      top: coordinateSystem
-                          .coordinateToScreen(placedUtility.position)
-                          .dy,
-                      child: UtilityWidgetBuilder(
-                        rotation: placedUtility.rotation,
-                        length: placedUtility.length,
-                        utility: placedUtility,
-                        id: placedUtility.id,
-                        onDragEnd: (details) {
-                          RenderBox renderBox =
-                              context.findRenderObject() as RenderBox;
-                          Offset localOffset =
-                              renderBox.globalToLocal(details.offset);
-
-                          //Basically makes sure that if more than half is of the screen it gets deleted
-                          Offset virtualOffset =
-                              coordinateSystem.screenToCoordinate(localOffset);
-                          double safeArea = agentSize / 2;
-
-                          if (coordinateSystem.isOutOfBounds(
-                              virtualOffset.translate(safeArea, safeArea))) {
-                            ref
-                                .read(utilityProvider.notifier)
-                                .removeUtility(placedUtility.id);
-
-                            return;
-                          }
-
-                          ref
-                              .read(utilityProvider.notifier)
-                              .updatePosition(virtualOffset, placedUtility.id);
-                        },
-                      ),
-                    ),
-                  const Positioned.fill(
-                    child: LineUpLinePainter(),
-                  ),
-                  Positioned.fill(
-                    child: Stack(
-                      children: [
-                        for (final lineUp in lineUps)
-                          LineUpAgentWidget(lineUp: lineUp),
-                        for (final lineUp in lineUps)
-                          LineUpAbilityWidget(lineUp: lineUp),
-                      ],
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             );
           },
@@ -360,6 +146,345 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
           },
         );
       },
+    );
+  }
+}
+
+class _AbilityList extends ConsumerWidget {
+  const _AbilityList({
+    required this.coordinateSystem,
+    required this.mapScale,
+    required this.abilitySize,
+  });
+
+  final CoordinateSystem coordinateSystem;
+  final double mapScale;
+  final double abilitySize;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final abilities = ref.watch(abilityProvider);
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (final ability in abilities)
+          PlacedAbilityWidget(
+            key: ValueKey(ability.id),
+            rotation: ability.rotation,
+            data: ability,
+            ability: ability,
+            id: ability.id,
+            length: ability.length,
+            onDragEnd: (details) {
+              final renderBox = context.findRenderObject() as RenderBox;
+              final localOffset = renderBox.globalToLocal(details.offset);
+              final virtualOffset =
+                  coordinateSystem.screenToCoordinate(localOffset);
+              final safeArea = ability.data.abilityData!
+                  .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize);
+
+              if (coordinateSystem.isOutOfBounds(
+                  virtualOffset.translate(safeArea.dx, safeArea.dy))) {
+                ref.read(abilityProvider.notifier).removeAbility(ability.id);
+                return;
+              }
+
+              log(renderBox.size.toString());
+
+              ref
+                  .read(abilityProvider.notifier)
+                  .updatePosition(virtualOffset, ability.id);
+            },
+          ),
+      ],
+    );
+  }
+}
+
+class _AgentList extends ConsumerWidget {
+  const _AgentList({required this.coordinateSystem});
+
+  final CoordinateSystem coordinateSystem;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final agents = ref.watch(agentProvider);
+    final zoomDragAnchorStrategy =
+        ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (final agent in agents)
+          Positioned(
+            key: ValueKey(agent.id),
+            left: coordinateSystem.coordinateToScreen(agent.position).dx,
+            top: coordinateSystem.coordinateToScreen(agent.position).dy,
+            child: Draggable<PlacedWidget>(
+              data: agent,
+              dragAnchorStrategy: zoomDragAnchorStrategy,
+              feedback: Opacity(
+                opacity: Settings.feedbackOpacity,
+                child: ZoomTransform(
+                  child: AgentWidget(
+                    isAlly: agent.isAlly,
+                    id: "",
+                    agent: AgentData.agents[agent.type]!,
+                  ),
+                ),
+              ),
+              childWhenDragging: const SizedBox.shrink(),
+              onDragEnd: (details) {
+                final renderBox = context.findRenderObject() as RenderBox;
+                final localOffset = renderBox.globalToLocal(details.offset);
+                final virtualOffset =
+                    coordinateSystem.screenToCoordinate(localOffset);
+
+                ref
+                    .read(agentProvider.notifier)
+                    .updatePosition(virtualOffset, agent.id);
+              },
+              child: AgentWidget(
+                isAlly: agent.isAlly,
+                id: agent.id,
+                agent: AgentData.agents[agent.type]!,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _TextList extends ConsumerWidget {
+  const _TextList({
+    required this.coordinateSystem,
+    required this.agentSize,
+  });
+
+  final CoordinateSystem coordinateSystem;
+  final double agentSize;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final placedTexts = ref.watch(textProvider);
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (final placedText in placedTexts)
+          Positioned(
+            key: ValueKey(placedText.id),
+            left: coordinateSystem.coordinateToScreen(placedText.position).dx,
+            top: coordinateSystem.coordinateToScreen(placedText.position).dy,
+            child: PlacedTextBuilder(
+              size: placedText.size,
+              placedText: placedText,
+              onDragEnd: (details) {
+                final renderBox = context.findRenderObject() as RenderBox;
+                final localOffset = renderBox.globalToLocal(details.offset);
+                final virtualOffset =
+                    coordinateSystem.screenToCoordinate(localOffset);
+                final safeArea = agentSize / 2;
+
+                if (coordinateSystem.isOutOfBounds(
+                    virtualOffset.translate(safeArea, safeArea))) {
+                  ref.read(textProvider.notifier).removeText(placedText.id);
+                  return;
+                }
+
+                ref
+                    .read(textProvider.notifier)
+                    .updatePosition(virtualOffset, placedText.id);
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _PlacedImageList extends ConsumerWidget {
+  const _PlacedImageList({
+    required this.coordinateSystem,
+    required this.agentSize,
+  });
+
+  final CoordinateSystem coordinateSystem;
+  final double agentSize;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final images = ref.watch(placedImageProvider).images;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (final placedImage in images)
+          Positioned(
+            key: ValueKey(placedImage.id),
+            left: coordinateSystem.coordinateToScreen(placedImage.position).dx,
+            top: coordinateSystem.coordinateToScreen(placedImage.position).dy,
+            child: PlacedImageBuilder(
+              placedImage: placedImage,
+              scale: placedImage.scale,
+              onDragEnd: (details) {
+                final renderBox = context.findRenderObject() as RenderBox;
+                final localOffset = renderBox.globalToLocal(details.offset);
+                final virtualOffset =
+                    coordinateSystem.screenToCoordinate(localOffset);
+                final safeArea = agentSize / 2;
+
+                if (coordinateSystem.isOutOfBounds(
+                    virtualOffset.translate(safeArea, safeArea))) {
+                  ref
+                      .read(placedImageProvider.notifier)
+                      .removeImage(placedImage.id);
+                  return;
+                }
+
+                ref
+                    .read(placedImageProvider.notifier)
+                    .updatePosition(virtualOffset, placedImage.id);
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _ViewConeUtilityList extends ConsumerWidget {
+  const _ViewConeUtilityList({
+    required this.coordinateSystem,
+    required this.agentSize,
+  });
+
+  final CoordinateSystem coordinateSystem;
+  final double agentSize;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final utilities = ref
+        .watch(utilityProvider)
+        .where((utility) => UtilityData.isViewCone(utility.type));
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (final placedUtility in utilities)
+          PlacedViewConeWidget(
+            key: ValueKey(placedUtility.id),
+            utility: placedUtility,
+            id: placedUtility.id,
+            rotation: placedUtility.rotation,
+            length: placedUtility.length,
+            onDragEnd: (details) {
+              final renderBox = context.findRenderObject() as RenderBox;
+              final localOffset = renderBox.globalToLocal(details.offset);
+              final virtualOffset =
+                  coordinateSystem.screenToCoordinate(localOffset);
+
+              // if (coordinateSystem.isOutOfBounds(
+              //     virtualOffset.translate(agentSize / 2, agentSize / 2))) {
+              //   ref.read(utilityProvider.notifier).removeUtility(placedUtility.id);
+              //   return;
+              // }
+
+              ref
+                  .read(utilityProvider.notifier)
+                  .updatePosition(virtualOffset, placedUtility.id);
+            },
+          ),
+      ],
+    );
+  }
+}
+
+class _UtilityList extends ConsumerWidget {
+  const _UtilityList({
+    required this.coordinateSystem,
+    required this.agentSize,
+  });
+
+  final CoordinateSystem coordinateSystem;
+  final double agentSize;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final utilities = ref
+        .watch(utilityProvider)
+        .where((utility) => !UtilityData.isViewCone(utility.type));
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (final placedUtility in utilities)
+          Positioned(
+            key: ValueKey(placedUtility.id),
+            left:
+                coordinateSystem.coordinateToScreen(placedUtility.position).dx,
+            top: coordinateSystem.coordinateToScreen(placedUtility.position).dy,
+            child: UtilityWidgetBuilder(
+              rotation: placedUtility.rotation,
+              length: placedUtility.length,
+              utility: placedUtility,
+              id: placedUtility.id,
+              onDragEnd: (details) {
+                final renderBox = context.findRenderObject() as RenderBox;
+                final localOffset = renderBox.globalToLocal(details.offset);
+                final virtualOffset =
+                    coordinateSystem.screenToCoordinate(localOffset);
+                final safeArea = agentSize / 2;
+
+                if (coordinateSystem.isOutOfBounds(
+                    virtualOffset.translate(safeArea, safeArea))) {
+                  ref
+                      .read(utilityProvider.notifier)
+                      .removeUtility(placedUtility.id);
+                  return;
+                }
+
+                ref
+                    .read(utilityProvider.notifier)
+                    .updatePosition(virtualOffset, placedUtility.id);
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _LineUpAgents extends ConsumerWidget {
+  const _LineUpAgents();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lineUps = ref.watch(lineUpProvider).lineUps;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (final lineUp in lineUps) LineUpAgentWidget(lineUp: lineUp),
+      ],
+    );
+  }
+}
+
+class _LineUpAbilities extends ConsumerWidget {
+  const _LineUpAbilities();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lineUps = ref.watch(lineUpProvider).lineUps;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (final lineUp in lineUps) LineUpAbilityWidget(lineUp: lineUp),
+      ],
     );
   }
 }

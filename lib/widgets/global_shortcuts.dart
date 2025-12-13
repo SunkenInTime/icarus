@@ -6,6 +6,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -56,7 +57,7 @@ class GlobalShortcuts extends ConsumerWidget {
               },
             ),
             ToggleErasingIntent: CallbackAction<ToggleErasingIntent>(
-              onInvoke: (intent) {
+              onInvoke: (intent) async {
                 if (ref.read(interactionStateProvider) ==
                     InteractionState.erasing) {
                   ref
@@ -66,6 +67,7 @@ class GlobalShortcuts extends ConsumerWidget {
                   ref
                       .read(interactionStateProvider.notifier)
                       .update(InteractionState.erasing);
+                  await ref.read(penProvider.notifier).buildCursors();
                 }
                 return null;
               },

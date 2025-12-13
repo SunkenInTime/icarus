@@ -1,5 +1,6 @@
 import 'dart:developer';
 
+import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_portal/flutter_portal.dart';
@@ -22,6 +23,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 import 'package:window_manager/window_manager.dart';
 
+late CustomMouseCursor staticDrawingCursor;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) {
@@ -35,6 +38,14 @@ Future<void> main() async {
     log("Temporary Directory: ${tempDir.path}");
     await Hive.initFlutter(dir.path);
   }
+
+  staticDrawingCursor = await CustomMouseCursor.icon(
+    CustomIcons.drawcursor,
+    size: 12,
+    hotX: 6,
+    hotY: 6,
+    color: Colors.white,
+  );
 
   Hive.registerAdapters();
 
@@ -95,61 +106,61 @@ class MyApp extends StatelessWidget {
         },
       ),
     );
-    return GlobalShortcuts(
-      child: ToastificationWrapper(
-        child: ShadApp.custom(
-            themeMode: ThemeMode.dark,
-            darkTheme: ShadThemeData(
-              brightness: Brightness.dark,
-              colorScheme: Settings.tacticalVioletTheme,
-              breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
-            ),
-            appBuilder: (context) {
-              return MaterialApp(
-                debugShowCheckedModeBanner: false,
-                title: 'Icarus',
-                // theme: Settings.appTheme,
-                theme: Theme.of(context).copyWith(
-                  menuTheme: MenuThemeData(
-                    style: MenuStyle(
-                      backgroundColor: WidgetStatePropertyAll<Color>(
-                          Settings.tacticalVioletTheme.card),
-                      padding: const WidgetStatePropertyAll<EdgeInsets>(
-                          EdgeInsets.all(8)),
-                      shape: WidgetStatePropertyAll<OutlinedBorder>(
-                        RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(
-                            color: Settings.tacticalVioletTheme.border,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+    // return GlobalShortcuts(
+    //   child: ToastificationWrapper(
+    //     child: ShadApp.custom(
+    //         themeMode: ThemeMode.dark,
+    //         darkTheme: ShadThemeData(
+    //           brightness: Brightness.dark,
+    //           colorScheme: Settings.tacticalVioletTheme,
+    //           breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
+    //         ),
+    //         appBuilder: (context) {
+    //           return MaterialApp(
+    //             debugShowCheckedModeBanner: false,
+    //             title: 'Icarus',
+    //             // theme: Settings.appTheme,
+    //             theme: Theme.of(context).copyWith(
+    //               menuTheme: MenuThemeData(
+    //                 style: MenuStyle(
+    //                   backgroundColor: WidgetStatePropertyAll<Color>(
+    //                       Settings.tacticalVioletTheme.card),
+    //                   padding: const WidgetStatePropertyAll<EdgeInsets>(
+    //                       EdgeInsets.all(8)),
+    //                   shape: WidgetStatePropertyAll<OutlinedBorder>(
+    //                     RoundedRectangleBorder(
+    //                       borderRadius: BorderRadius.circular(8),
+    //                       side: BorderSide(
+    //                         color: Settings.tacticalVioletTheme.border,
+    //                         width: 2,
+    //                       ),
+    //                     ),
+    //                   ),
+    //                 ),
+    //               ),
+    //             ),
 
-                home: const MyHomePage(),
-                routes: {
-                  Routes.folderNavigator: (context) => const FolderNavigator(),
-                  Routes.strategyView: (context) => const StrategyView(),
-                  Routes.settings: (context) => const SettingsTab(),
-                },
-                builder: (context, child) {
-                  return ToastificationConfigProvider(
-                    config: const ToastificationConfig(
-                      alignment: Alignment.bottomCenter,
-                      // itemWidth: 440,
-                      animationDuration: Duration(milliseconds: 500),
-                      blockBackgroundInteraction: false,
-                    ),
-                    child: ShadAppBuilder(child: child!),
-                  );
-                },
-              );
-            }),
-      ),
-    );
+    //             home: const MyHomePage(),
+    //             routes: {
+    //               Routes.folderNavigator: (context) => const FolderNavigator(),
+    //               Routes.strategyView: (context) => const StrategyView(),
+    //               Routes.settings: (context) => const SettingsTab(),
+    //             },
+    //             builder: (context, child) {
+    //               return ToastificationConfigProvider(
+    //                 config: const ToastificationConfig(
+    //                   alignment: Alignment.bottomCenter,
+    //                   // itemWidth: 440,
+    //                   animationDuration: Duration(milliseconds: 500),
+    //                   blockBackgroundInteraction: false,
+    //                 ),
+    //                 child: ShadAppBuilder(child: child!),
+    //               );
+    //             },
+    //           );
+    //         }),
+    //   ),
+    // );
 
     // return GlobalShortcuts(
     //   child: Portal(

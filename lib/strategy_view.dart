@@ -123,6 +123,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           ),
           const Expanded(
             child: Stack(
+              clipBehavior: Clip.none,
               children: [
                 Positioned.fill(child: DeleteCapture()),
                 Align(
@@ -140,13 +141,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                     child: PagesBar(),
                   ),
                 ),
-
-                SideBarUI(),
-
-                // Align(
-                //   alignment: Alignment.centerLeft,
-                //   child: SettingsTab(),
-                // )
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: SideBarUI(),
+                ),
               ],
             ),
           ),

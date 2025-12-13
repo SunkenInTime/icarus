@@ -1,6 +1,8 @@
+import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/color_option.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/main.dart';
@@ -18,7 +20,8 @@ class PenState {
   final PenMode penMode;
 
   final List<ColorOption> listOfColors;
-
+  final CustomMouseCursor? drawingCursor;
+  final CustomMouseCursor? erasingCursor;
   PenState({
     required this.listOfColors,
     required this.color,
@@ -27,6 +30,8 @@ class PenState {
     required this.opacity,
     required this.thickness,
     required this.penMode,
+    required this.drawingCursor,
+    required this.erasingCursor,
   });
 
   PenState copyWith({
@@ -37,6 +42,8 @@ class PenState {
     double? thickness,
     PenMode? penMode,
     List<ColorOption>? listOfColors,
+    CustomMouseCursor? drawingCursor,
+    CustomMouseCursor? erasingCursor,
   }) {
     return PenState(
       listOfColors: listOfColors ?? this.listOfColors,
@@ -46,6 +53,8 @@ class PenState {
       isDotted: isDotted ?? this.isDotted,
       opacity: opacity ?? this.opacity,
       thickness: thickness ?? this.thickness,
+      drawingCursor: drawingCursor ?? this.drawingCursor,
+      erasingCursor: erasingCursor ?? this.erasingCursor,
     );
   }
 }
@@ -63,6 +72,34 @@ class PenProvider extends Notifier<PenState> {
       isDotted: false,
       opacity: 1,
       thickness: Settings.brushSize,
+      drawingCursor: staticDrawingCursor,
+      erasingCursor: null,
+    );
+  }
+
+  Future<void> buildCursors() async {
+    final coordinateSystem = CoordinateSystem.instance;
+    final erasingSize = coordinateSystem.scale(Settings.erasingSize * 2);
+
+    final drawingCursor = await CustomMouseCursor.icon(
+      CustomIcons.drawcursor,
+      size: 12,
+      hotX: 6,
+      hotY: 6,
+      color: state.color,
+    );
+
+    final erasingCursor = await CustomMouseCursor.icon(
+      CustomIcons.drawcursor,
+      size: erasingSize,
+      hotX: erasingSize ~/ 2,
+      hotY: erasingSize ~/ 2,
+      color: Settings.tacticalVioletTheme.destructive,
+    );
+
+    state = state.copyWith(
+      drawingCursor: drawingCursor,
+      erasingCursor: erasingCursor,
     );
   }
 
@@ -97,6 +134,7 @@ class PenProvider extends Notifier<PenState> {
     }
 
     state = state.copyWith(listOfColors: newColors, color: selectedColor);
+    await buildCursors();
   }
 
   void toggleArrow() {

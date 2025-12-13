@@ -1,9 +1,7 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -98,10 +96,14 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
         break;
 
       case _Phase.loading:
-        _rotationController.repeat();
-        icon = RotationTransition(
-          turns: _rotationController,
-          child: const Icon(Icons.refresh),
+        _rotationController.stop();
+        icon = const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+          ),
         );
         break;
 

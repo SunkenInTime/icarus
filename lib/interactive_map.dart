@@ -11,6 +11,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 
@@ -83,49 +84,50 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                     .updateZoom(controller.value.getMaxScaleOnAxis());
               },
               child: Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  //Dot Grid
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        ref.read(abilityBarProvider.notifier).updateData(null);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(4.0),
-                        child: DotGrid(),
-                      ),
-                    ),
-                  ),
-                  // Map SVG
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        ref.read(abilityBarProvider.notifier).updateData(null);
-                      },
-                      child: SvgPicture.asset(
-                        assetName,
-                        semanticsLabel: 'Map',
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                  ),
-                  if (ref.watch(mapProvider).showSpawnBarrier)
-                    Positioned.fill(
-                      top: 0,
-                      left: isAttack ? -1.5 : 1.5,
-                      child: Transform.flip(
-                        flipX: !isAttack,
-                        flipY: !isAttack,
-                        child: SvgPicture.asset(
-                          barrierAssetName,
-                          semanticsLabel: 'Barrier',
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    ),
-                  //Agents
+                  // //Dot Grid
+                  // Positioned.fill(
+                  //   child: GestureDetector(
+                  //     behavior: HitTestBehavior.translucent,
+                  //     onTap: () {
+                  //       ref.read(abilityBarProvider.notifier).updateData(null);
+                  //     },
+                  //     child: Padding(
+                  //       padding: const EdgeInsets.all(4.0),
+                  //       child: DotGrid(),
+                  //     ),
+                  //   ),
+                  // ),
+                  // // Map SVG
+                  // Positioned.fill(
+                  //   child: GestureDetector(
+                  //     behavior: HitTestBehavior.translucent,
+                  //     onTap: () {
+                  //       ref.read(abilityBarProvider.notifier).updateData(null);
+                  //     },
+                  //     child: SvgPicture.asset(
+                  //       assetName,
+                  //       semanticsLabel: 'Map',
+                  //       fit: BoxFit.contain,
+                  //     ),
+                  //   ),
+                  // ),
+                  // if (ref.watch(mapProvider).showSpawnBarrier)
+                  //   Positioned.fill(
+                  //     top: 0,
+                  //     left: isAttack ? -1.5 : 1.5,
+                  //     child: Transform.flip(
+                  //       flipX: !isAttack,
+                  //       flipY: !isAttack,
+                  //       child: SvgPicture.asset(
+                  //         barrierAssetName,
+                  //         semanticsLabel: 'Barrier',
+                  //         fit: BoxFit.contain,
+                  //       ),
+                  //     ),
+                  //   ),
+                  // //Agents
 
                   Positioned.fill(
                     child: ref.watch(transitionProvider).hideView

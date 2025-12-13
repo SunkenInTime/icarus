@@ -13,6 +13,10 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/widgets/cursor_circle.dart';
 
+final visualPositionProvider = StateProvider<Offset?>((ref) {
+  return null;
+});
+
 class InteractivePainter extends ConsumerStatefulWidget {
   const InteractivePainter({super.key});
 
@@ -23,12 +27,13 @@ class InteractivePainter extends ConsumerStatefulWidget {
 
 class _InteractivePainterState extends ConsumerState<InteractivePainter> {
   Size? _previousSize;
-  Offset? _visualMousePosition;
+
   @override
   void initState() {
     super.initState();
   }
 
+  Offset? _visualMousePosition;
   @override
   Widget build(BuildContext context) {
     CoordinateSystem coordinateSystem = CoordinateSystem.instance;
@@ -60,22 +65,36 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
       ignoring: isNavigating,
       child: RepaintBoundary(
         child: MouseRegion(
-          // cursor: SystemMouseCursors.none,
-          // onEnter: (event) {
-          //   setState(() {
-          //     _visualMousePosition = event.localPosition;
-          //   });
-          // },
-          // onExit: (event) {
-          //   setState(() {
-          //     _visualMousePosition = null;
-          //   });
-          // },
-          // onHover: (event) {
-          //   setState(() {
-          //     _visualMousePosition = event.localPosition;
-          //   });
-          // },
+          cursor: currentInteractionState == InteractionState.drawing
+              ? ref.watch(penProvider).drawingCursor!
+              : currentInteractionState == InteractionState.erasing
+                  ? ref.watch(penProvider).erasingCursor!
+                  : SystemMouseCursors.basic,
+          onEnter: (event) {
+            if (currentInteractionState != InteractionState.erasing) return;
+            // setState(() {
+            //   _visualMousePosition = event.localPosition;
+            // });
+            ref.read(visualPositionProvider.notifier).state =
+                event.localPosition;
+          },
+          onExit: (event) {
+            if (currentInteractionState != InteractionState.erasing) return;
+
+            // setState(() {
+            //   _visualMousePosition = null;
+            // });
+            ref.read(visualPositionProvider.notifier).state = null;
+          },
+          onHover: (event) {
+            if (currentInteractionState != InteractionState.erasing) return;
+
+            // setState(() {
+            //   _visualMousePosition = event.localPosition;
+            // });
+            ref.read(visualPositionProvider.notifier).state =
+                event.localPosition;
+          },
           child: GestureDetector(
             onPanStart: (details) {
               log("Pan start detected");
@@ -83,10 +102,6 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
               final hasArrow = ref.watch(penProvider).hasArrow;
               final isDotted = ref.watch(penProvider).isDotted;
               log(currentColor.toString());
-
-              // setState(() {
-              //   _visualMousePosition = details.localPosition;
-              // });
 
               switch (currentInteractionState) {
                 case InteractionState.drawing:
@@ -104,16 +119,18 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                   ref
                       .read(drawingProvider.notifier)
                       .onErase(normalizedPosition);
+
+                  // setState(() {
+                  //   _visualMousePosition = details.localPosition;
+                  // });
+                  ref.read(visualPositionProvider.notifier).state =
+                      details.localPosition;
                 default:
               }
             },
 
             // },
             onPanUpdate: (details) {
-              setState(() {
-                _visualMousePosition = details.localPosition;
-              });
-
               switch (currentInteractionState) {
                 case InteractionState.drawing:
                   ref.read(drawingProvider.notifier).updateFreeDrawing(
@@ -124,13 +141,16 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                   ref
                       .read(drawingProvider.notifier)
                       .onErase(normalizedPosition);
+
+                  // setState(() {
+                  //   _visualMousePosition = details.localPosition;
+                  // });
+                  ref.read(visualPositionProvider.notifier).state =
+                      details.localPosition;
                 default:
               }
             },
             onPanEnd: (details) {
-              setState(() {
-                _visualMousePosition = details.localPosition;
-              });
               switch (currentInteractionState) {
                 case InteractionState.drawing:
                   ref.read(drawingProvider.notifier).finishFreeDrawing(
@@ -151,43 +171,42 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                     painter: drawingPainter,
                   ),
                 ),
-                if (_visualMousePosition != null &&
-                    ref.watch(interactionStateProvider) ==
-                        InteractionState.drawing)
-                  Positioned(
-                    left: _visualMousePosition!.dx - (14 / 2),
-                    top: _visualMousePosition!.dy - (14 / 2),
-                    child: IgnorePointer(
-                      ignoring: true,
-                      child: CursorCircle(
-                        size: 14,
-                        ringThickness: 1,
-                        gap: 1,
-                        ringColor: Colors.white,
-                        fillColor: ref.watch(penProvider).color,
-                      ),
-                    ),
-                  ),
-                if (_visualMousePosition != null &&
-                    ref.watch(interactionStateProvider) ==
-                        InteractionState.erasing)
-                  Positioned(
-                    left: _visualMousePosition!.dx -
-                        (coordinateSystem.scale(Settings.erasingSize * 2) / 2),
-                    top: _visualMousePosition!.dy -
-                        (coordinateSystem.scale(Settings.erasingSize * 2) / 2),
-                    child: IgnorePointer(
-                      ignoring: true,
-                      child: CursorCircle(
-                        size: coordinateSystem.scale(Settings.erasingSize * 2),
-                        ringThickness: 1,
-                        gap: 1,
-                        ringColor: Settings.tacticalVioletTheme.destructive,
-                        fillColor: Settings.tacticalVioletTheme.destructive
-                            .withOpacity(0.5),
-                      ),
-                    ),
-                  ),
+                Consumer(
+                  builder: (context, ref, child) {
+                    final visualPosition = ref.watch(visualPositionProvider);
+
+                    if (visualPosition == null) return const SizedBox.shrink();
+
+                    return Stack(
+                      children: [
+                        Positioned(
+                          left: visualPosition.dx -
+                              (coordinateSystem
+                                      .scale(Settings.erasingSize * 2) /
+                                  2),
+                          top: visualPosition.dy -
+                              (coordinateSystem
+                                      .scale(Settings.erasingSize * 2) /
+                                  2),
+                          child: IgnorePointer(
+                            ignoring: true,
+                            child: CursorCircle(
+                              size: coordinateSystem
+                                  .scale(Settings.erasingSize * 2),
+                              ringThickness: 1,
+                              gap: 1,
+                              ringColor:
+                                  Settings.tacticalVioletTheme.destructive,
+                              fillColor: Settings
+                                  .tacticalVioletTheme.destructive
+                                  .withOpacity(0.5),
+                            ),
+                          ),
+                        )
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
           ),

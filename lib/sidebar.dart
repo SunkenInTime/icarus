@@ -31,7 +31,8 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
     const double sideBarSize = 325;
     final agentList = ref.watch(agentFilterProvider).agentList;
     return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
+      // mainAxisAlignment: MainAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
       children: [
         const AbiilityBar(),
         Padding(
