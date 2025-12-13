@@ -68,7 +68,7 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
           cursor: currentInteractionState == InteractionState.drawing
               ? ref.watch(penProvider).drawingCursor!
               : currentInteractionState == InteractionState.erasing
-                  ? ref.watch(penProvider).erasingCursor!
+                  ? SystemMouseCursors.none
                   : SystemMouseCursors.basic,
           onEnter: (event) {
             if (currentInteractionState != InteractionState.erasing) return;

@@ -62,9 +62,13 @@ class DrawingTools extends ConsumerWidget {
                   ],
                   onPressed: (index) {
                     if (index == 0) {
-                      ref.read(penProvider.notifier).updateValue(isDotted: false);
+                      ref
+                          .read(penProvider.notifier)
+                          .updateValue(isDotted: false);
                     } else {
-                      ref.read(penProvider.notifier).updateValue(isDotted: true);
+                      ref
+                          .read(penProvider.notifier)
+                          .updateValue(isDotted: true);
                     }
                   },
                 ),
