@@ -6,6 +6,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/line_up_line_painter.dart';
 
 /// Paints the highlight line for the lineup currently being built (agent + ability).
 /// Kept separate from LineUpLinePainter so it can be layered independently.
@@ -16,7 +17,8 @@ class CurrentLineUpPainter extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
     final double abilitySize = ref.watch(strategySettingsProvider).abilitySize;
-    final double agentSize = ref.watch(strategySettingsProvider).agentSize;
+    final double agentSize =
+        coordinateSystem.scale(ref.watch(strategySettingsProvider).agentSize);
     final double mapScale = ref.watch(mapProvider.notifier).mapScale;
     final PlacedAgent? currentAgent = ref.watch(lineUpProvider).currentAgent;
     final PlacedAbility? currentAbility =
@@ -32,6 +34,7 @@ class CurrentLineUpPainter extends ConsumerWidget {
           mapScale: mapScale,
           currentAgent: currentAgent,
           currentAbility: currentAbility,
+          resizeCounter: ref.watch(lineUpCanvasResizeProvider),
         ),
       ),
     );
@@ -45,6 +48,7 @@ class _CurrentLinePainter extends CustomPainter {
   final double mapScale;
   final PlacedAgent? currentAgent;
   final PlacedAbility? currentAbility;
+  final int resizeCounter;
 
   _CurrentLinePainter({
     required this.coordinateSystem,
@@ -53,6 +57,7 @@ class _CurrentLinePainter extends CustomPainter {
     required this.mapScale,
     this.currentAgent,
     this.currentAbility,
+    required this.resizeCounter,
   });
 
   @override
@@ -86,8 +91,7 @@ class _CurrentLinePainter extends CustomPainter {
           oldDelegate.abilitySize != abilitySize ||
           oldDelegate.agentSize != agentSize ||
           oldDelegate.mapScale != mapScale ||
-          oldDelegate.coordinateSystem.effectiveSize !=
-              coordinateSystem.effectiveSize;
+          oldDelegate.resizeCounter != resizeCounter;
     }
     return true;
   }

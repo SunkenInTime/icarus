@@ -7,6 +7,7 @@ import 'package:icarus/widgets/color_picker_button.dart';
 import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/folder_pill.dart';
 import 'package:icarus/widgets/folder_tile.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -101,7 +102,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 300,
+              height: 220,
               width: 358,
               decoration: BoxDecoration(
                 color: Settings.tacticalVioletTheme.card,
@@ -126,16 +127,19 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                       alignment: Alignment.center,
                       child: Padding(
                         padding: const EdgeInsets.all(24.0),
-                        child: FolderTile(
-                          folder: Folder(
-                            icon: _selectedIcon,
-                            name: _folderNameController.text,
-                            id: "null",
-                            dateCreated: DateTime.now(),
-                            color: _selectedColor,
-                            customColor: _customColor,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: FolderPill(
+                            folder: Folder(
+                              icon: _selectedIcon,
+                              name: _folderNameController.text,
+                              id: "null",
+                              dateCreated: DateTime.now(),
+                              color: _selectedColor,
+                              customColor: _customColor,
+                            ),
+                            isDemo: true,
                           ),
-                          isDemo: true,
                         ),
                       ),
                     ),

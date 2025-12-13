@@ -1,3 +1,5 @@
+// ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables
+
 import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -44,7 +46,8 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
     final coordinateSystem = CoordinateSystem.instance;
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1.0;
 
-    final agentSize = ref.watch(strategySettingsProvider).agentSize;
+    final agentSize =
+        coordinateSystem.scale(ref.watch(strategySettingsProvider).agentSize);
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
 
     return LayoutBuilder(
@@ -65,6 +68,10 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                       alignment: Alignment.topRight,
                       child: DeleteArea(),
                     ),
+                    _ViewConeUtilityList(
+                      coordinateSystem: coordinateSystem,
+                      agentSize: agentSize,
+                    ),
                     _AbilityList(
                       coordinateSystem: coordinateSystem,
                       mapScale: mapScale,
@@ -79,10 +86,6 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                       coordinateSystem: coordinateSystem,
                       agentSize: agentSize,
                     ),
-                    _ViewConeUtilityList(
-                      coordinateSystem: coordinateSystem,
-                      agentSize: agentSize,
-                    ),
                     _UtilityList(
                       coordinateSystem: coordinateSystem,
                       agentSize: agentSize,
@@ -90,14 +93,12 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                     const Positioned.fill(
                       child: LineUpLinePainter(),
                     ),
-                    const Positioned.fill(
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          _LineUpAgents(),
-                          _LineUpAbilities(),
-                        ],
-                      ),
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        _LineUpAgents(),
+                        _LineUpAbilities(),
+                      ],
                     ),
                   ],
                 ),

@@ -61,7 +61,9 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
                 lineUps: ref.watch(lineUpProvider).lineUps,
                 coordinateSystem: CoordinateSystem.instance,
                 abilitySize: ref.watch(strategySettingsProvider).abilitySize,
-                agentSize: ref.watch(strategySettingsProvider).agentSize,
+                agentSize: coordinateSystem.scale(
+                  ref.watch(strategySettingsProvider).agentSize,
+                ),
                 mapScale: ref.watch(mapProvider.notifier).mapScale,
                 currentAgent: ref.watch(lineUpProvider).currentAgent,
                 currentAbility: ref.watch(lineUpProvider).currentAbility,
@@ -127,11 +129,12 @@ class LinePainter extends CustomPainter {
                   coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
 
       canvas.drawLine(
-          startPosition,
-          endPosition,
-          (hoveredLineUpId == lineUp.id && hoveredLineUpId != null)
-              ? highlightPaint
-              : paint);
+        startPosition,
+        endPosition,
+        (hoveredLineUpId == lineUp.id && hoveredLineUpId != null)
+            ? highlightPaint
+            : paint,
+      );
     }
   }
 

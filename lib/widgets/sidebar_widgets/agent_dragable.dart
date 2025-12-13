@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
@@ -31,7 +32,6 @@ class AgentDragable extends ConsumerWidget {
   final AgentData agent;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final agentSize = ref.watch(strategySettingsProvider).agentSize;
     return IgnorePointer(
       ignoring: ref.watch(dragNotifier) == true,
       child: Draggable(
@@ -49,10 +49,14 @@ class AgentDragable extends ConsumerWidget {
           opacity: Settings.feedbackOpacity,
           child: ZoomTransform(child: AgentFeedback(agent: agent)),
         ),
-        dragAnchorStrategy: (draggable, context, position) => Offset(
-          (agentSize / 2),
-          (agentSize / 2),
-        ).scale(ref.read(screenZoomProvider), ref.read(screenZoomProvider)),
+        dragAnchorStrategy: (draggable, context, position) {
+          final agentSize = CoordinateSystem.instance
+              .scale(ref.watch(strategySettingsProvider).agentSize);
+          return Offset(
+            (agentSize / 2),
+            (agentSize / 2),
+          ).scale(ref.read(screenZoomProvider), ref.read(screenZoomProvider));
+        },
         child: InkWell(
           onTap: () {
             ref.read(abilityBarProvider.notifier).updateData(agent);
