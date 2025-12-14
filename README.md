@@ -9,7 +9,7 @@ Download: https://apps.microsoft.com/detail/9PBWHHZRQFW6?hl=en-us&gl=US&ocid=pdp
 
 DEV LOG HERE: https://youtu.be/dDn2rafvjMQ?si=mm1Sz-XrjvNQiRWE
 
-<img src=https://l7y6qjyp5m.ufs.sh/f/usun6XPoM0UCnar5XbcjR2aezOZ4lNvPKq05MfxnY3hisyg1>
+<img src="https://l7y6qjyp5m.ufs.sh/f/usun6XPoM0UCpB9qMageWNaYX3kSziMD5UmKObA6uIe7wB0Z">
 
 ## Support
 This project in completely free on open source and your support helps maintain it!!
