@@ -459,6 +459,38 @@ class StrategyProvider extends Notifier<StrategyState> {
     await setActivePage(nextPage.id);
   }
 
+  Future<void> reorderPage(int oldIndex, int newIndex) async {
+    if (oldIndex == newIndex) return;
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(state.id);
+    if (strat == null) return;
+
+    StrategyPage? findPageBySortIndex(int idx) {
+      for (final p in strat.pages) {
+        if (p.sortIndex == idx) return p;
+      }
+      return null;
+    }
+
+    final oldPage = findPageBySortIndex(oldIndex);
+    final newPage = findPageBySortIndex(newIndex);
+    if (oldPage == null || newPage == null) return;
+
+    // Swap the two sortIndex values (old <-> new).
+    final updatedPages = [
+      for (final p in strat.pages)
+        if (p.id == oldPage.id)
+          p.copyWith(sortIndex: newIndex)
+        else if (p.id == newPage.id)
+          p.copyWith(sortIndex: oldIndex)
+        else
+          p,
+    ];
+    final updated =
+        strat.copyWith(pages: updatedPages, lastEdited: DateTime.now());
+    await box.put(updated.id, updated);
+  }
+
 // Add these inside StrategyProvider
   Future<void> setActivePageAnimated(String pageID) async {
     final prev = _snapshotAllPlaced();

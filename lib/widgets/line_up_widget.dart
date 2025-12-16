@@ -57,7 +57,9 @@ class LineUpAbilityWidget extends ConsumerWidget {
               angle: lineUp.ability.rotation,
               alignment: Alignment.topLeft,
               origin: lineUp.ability.data.abilityData!
-                  .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize),
+                  .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
+                  .scale(coordinateSystem.scaleFactor,
+                      coordinateSystem.scaleFactor),
               child: lineUp.ability.data.abilityData!.createWidget(
                 id: null,
                 isAlly: true,

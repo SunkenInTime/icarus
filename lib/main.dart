@@ -74,22 +74,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // return ShadApp.custom(
-    //   themeMode: ThemeMode.dark,
-    //   darkTheme: ShadThemeData(
-    //     brightness: Brightness.dark,
-    //     colorScheme: const ShadSlateColorScheme.dark(),
-    //   ),
-    //   appBuilder: (context) {
-    //     return MaterialApp(
-    //       theme: Theme.of(context),
-    //       builder: (context, child) {
-    //         return ShadAppBuilder(child: child!);
-    //       },
-    //     );
-    //   },
-    // );
-
     return GlobalShortcuts(
       child: ToastificationWrapper(
         config: const ToastificationConfig(

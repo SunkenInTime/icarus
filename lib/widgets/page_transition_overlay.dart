@@ -238,30 +238,6 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
   }
 }
 
-//Have animation controller be a value between 0-1
-// Then the widgets would simply multiply their position by that value
-// So if the widget is at 100, it would be at 0 when the value is 0, and at 100 when the value is 1
-// This would allow for easy transitions between pages without needing to know the exact positions of each widget
-
-// There needs to be 3 stack layers
-// one for the widgets that are appearing
-// one for the widgets that are disappearing
-// one for widgets that are moving/or getting adjusted in some way
-
-// for widgets that are moving or getting adjusted in some way
-// they would need to have a delta postion and a delta size
-// delta position is needed because position needs an x and y
-// delta size is needed for things that only have one axis of movement/like/rotation or scale/length
-
-//For appear/disappear widgets
-// we would just need to use the PlacedWidgetBuilder and wrap an opacity animation around it
-// and have the opacity be controlled by the animation controller value
-
-//This would allow for reuse of widgets as they are as we are simply modifying their percentage of movement/adjustment to simulate actual value changes
-//For multiplying the position/size/rotation/scale values by the animation scale we can use the provider to perform those functions on the PlacedWidget data type and we simply just render them with a modified PlacedWidgetBuilder, that fetches data from that source just like the others.
-
-// I believe part of this work would involve modifying the PlacedWidgetBuilder to accept modified data from a source other than the provider, so that we can use it to render the widgets in their transition states or we could simply copy and paste and make our edits
-
 class PlacedWidgetPreview {
   static Widget build(PlacedWidget w, double mapScale, double? length) {
     if (w is PlacedAgent) {
@@ -362,21 +338,40 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
     final coord = CoordinateSystem.instance;
     final scaledPosition = coord.coordinateToScreen(widget.position);
 
-    return Positioned(
-      left: scaledPosition.dx,
-      top: scaledPosition.dy,
-      child: (widget is PlacedAbility && widget.rotation != 0)
-          ? Transform.rotate(
-              angle: widget.rotation,
-              alignment: Alignment.topLeft,
-              origin: (widget)
-                  .data
-                  .abilityData!
-                  .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
-                  .scale(coord.scaleFactor, coord.scaleFactor),
-              child: PlacedWidgetPreview.build(widget, mapScale, widget.length),
-            )
-          : PlacedWidgetPreview.build(widget, mapScale, null),
-    );
+    if (widget is PlacedUtility && widget.rotation != 0) {
+      return Positioned(
+          left: scaledPosition.dx,
+          top: scaledPosition.dy,
+          child: Transform.rotate(
+            angle: widget.rotation,
+            alignment: Alignment.topLeft,
+            origin: UtilityData.utilityWidgets[widget.type]!
+                .getAnchorPoint()
+                .scale(CoordinateSystem.instance.scaleFactor,
+                    CoordinateSystem.instance.scaleFactor),
+            child: PlacedWidgetPreview.build(widget, mapScale, widget.length),
+          ));
+    } else if (widget is PlacedAbility && widget.rotation != 0) {
+      return Positioned(
+        left: scaledPosition.dx,
+        top: scaledPosition.dy,
+        child: Transform.rotate(
+          angle: widget.rotation,
+          alignment: Alignment.topLeft,
+          origin: (widget)
+              .data
+              .abilityData!
+              .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
+              .scale(coord.scaleFactor, coord.scaleFactor),
+          child: PlacedWidgetPreview.build(widget, mapScale, widget.length),
+        ),
+      );
+    } else {
+      return Positioned(
+        left: scaledPosition.dx,
+        top: scaledPosition.dy,
+        child: PlacedWidgetPreview.build(widget, mapScale, null),
+      );
+    }
   }
 }
