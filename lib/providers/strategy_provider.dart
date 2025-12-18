@@ -461,33 +461,39 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> reorderPage(int oldIndex, int newIndex) async {
     if (oldIndex == newIndex) return;
+
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strat = box.get(state.id);
-    if (strat == null) return;
+    if (strat == null || strat.pages.isEmpty) return;
 
-    StrategyPage? findPageBySortIndex(int idx) {
-      for (final p in strat.pages) {
-        if (p.sortIndex == idx) return p;
-      }
-      return null;
+    // `oldIndex`/`newIndex` are list positions from the UI (ReorderableListView),
+    // not sortIndex values. We move the page and then reindex to keep a dense
+    // 0..N-1 ordering.
+    final ordered = [...strat.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+
+    if (oldIndex < 0 ||
+        oldIndex >= ordered.length ||
+        newIndex < 0 ||
+        newIndex > ordered.length) {
+      return;
     }
 
-    final oldPage = findPageBySortIndex(oldIndex);
-    final newPage = findPageBySortIndex(newIndex);
-    if (oldPage == null || newPage == null) return;
+    // Flutter ReorderableListView reports `newIndex` as the target index in the
+    // list *after* the removal. When dragging down, we need to decrement.
+    var targetIndex = newIndex;
+    if (targetIndex > oldIndex) targetIndex -= 1;
 
-    // Swap the two sortIndex values (old <-> new).
-    final updatedPages = [
-      for (final p in strat.pages)
-        if (p.id == oldPage.id)
-          p.copyWith(sortIndex: newIndex)
-        else if (p.id == newPage.id)
-          p.copyWith(sortIndex: oldIndex)
-        else
-          p,
+    final moved = ordered.removeAt(oldIndex);
+    ordered.insert(targetIndex, moved);
+
+    final reindexed = [
+      for (var i = 0; i < ordered.length; i++)
+        ordered[i].copyWith(sortIndex: i),
     ];
+
     final updated =
-        strat.copyWith(pages: updatedPages, lastEdited: DateTime.now());
+        strat.copyWith(pages: reindexed, lastEdited: DateTime.now());
     await box.put(updated.id, updated);
   }
 
