@@ -55,7 +55,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
         child: CustomTextField(
           // autofocus: true,
           controller: controller,
-          // onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
       ),
     );

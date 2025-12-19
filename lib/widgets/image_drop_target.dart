@@ -2,6 +2,7 @@ import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_provider.dart';
 
 class ImageDropTarget extends ConsumerStatefulWidget {
@@ -30,12 +31,9 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
       },
       onDragDone: (details) async {
         if (kIsWeb) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'This feature is only supported in the Windows version.',
-              ),
-            ),
+          Settings.showToast(
+            message: 'This feature is only supported in the Windows version.',
+            backgroundColor: Settings.tacticalVioletTheme.destructive,
           );
           return;
         }

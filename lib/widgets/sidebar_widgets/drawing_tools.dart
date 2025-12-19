@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/custom_icons.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/pen_provider.dart';
+import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
 
 class DrawingTools extends ConsumerWidget {
@@ -18,7 +20,7 @@ class DrawingTools extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text("Color"),
-          const SizedBox(height: 10),
+          // const SizedBox(height: 10),
           Row(
             children: [
               for (final (index, colorOption) in ref
@@ -40,49 +42,93 @@ class DrawingTools extends ConsumerWidget {
                 ),
             ],
           ),
+          const SizedBox(height: 4),
           const Text("Stroke"),
-          const SizedBox(height: 10),
+          const SizedBox(height: 4),
           Row(
             children: [
-              SizedBox(
-                height: 40,
-                child: ToggleButtons(
-                  borderRadius: const BorderRadius.all(Radius.circular(8)),
-                  isSelected: [!isDotted, isDotted],
-                  fillColor: Colors.transparent,
-                  children: const [
-                    Icon(
-                      CustomIcons.line,
-                      size: 20,
+              Container(
+                  decoration: BoxDecoration(
+                    color: Settings.tacticalVioletTheme.card,
+                    borderRadius: const BorderRadius.all(Radius.circular(8)),
+                    border: Border.all(
+                      color: Settings.tacticalVioletTheme.border,
+                      width: 1,
                     ),
-                    Icon(
-                      CustomIcons.dottedline,
-                      size: 21,
+                    boxShadow: const [
+                      Settings.cardForegroundBackdrop,
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(2.0),
+                    child: Row(
+                      spacing: 4,
+                      children: [
+                        SelectableIconButton(
+                          icon: const Icon(
+                            CustomIcons.line,
+                            size: 20,
+                          ),
+                          isSelected: !isDotted,
+                          onPressed: () {
+                            ref
+                                .read(penProvider.notifier)
+                                .updateValue(isDotted: false);
+                          },
+                        ),
+                        SelectableIconButton(
+                          icon: const Icon(
+                            CustomIcons.dottedline,
+                            size: 20,
+                          ),
+                          isSelected: isDotted,
+                          onPressed: () {
+                            ref
+                                .read(penProvider.notifier)
+                                .updateValue(isDotted: true);
+                          },
+                        ),
+                      ],
+
+                      // ToggleButtons(
+                      //   borderRadius: const BorderRadius.all(Radius.circular(8)),
+                      //   isSelected: [!isDotted, isDotted],
+                      //   fillColor: Colors.transparent,
+                      //   children: const [
+                      //     Icon(
+                      //       CustomIcons.line,
+                      //       size: 20,
+                      //     ),
+                      //     Icon(
+                      //       CustomIcons.dottedline,
+                      //       size: 21,
+                      //     ),
+                      //   ],
+                      //   onPressed: (index) {
+                      //     if (index == 0) {
+                      //       ref
+                      //           .read(penProvider.notifier)
+                      //           .updateValue(isDotted: false);
+                      //     } else {
+                      //       ref
+                      //           .read(penProvider.notifier)
+                      //           .updateValue(isDotted: true);
+                      //     }
+                      //   },
+                      // ),)
                     ),
-                  ],
-                  onPressed: (index) {
-                    if (index == 0) {
-                      ref
-                          .read(penProvider.notifier)
-                          .updateValue(isDotted: false);
-                    } else {
-                      ref
-                          .read(penProvider.notifier)
-                          .updateValue(isDotted: true);
-                    }
-                  },
-                ),
-              ),
+                  )),
               const SizedBox(width: 5),
-              IconButton(
-                isSelected: hasArrow,
-                onPressed: () {
-                  ref.read(penProvider.notifier).toggleArrow();
-                },
+              SelectableIconButton(
                 icon: const Icon(
                   CustomIcons.arrow,
                   size: 20,
                 ),
+                isSelected: hasArrow,
+                onPressed: () {
+                  ref.read(penProvider.notifier).toggleArrow();
+                },
+                tooltip: "Arrow",
               ),
             ],
           ),
