@@ -459,6 +459,44 @@ class StrategyProvider extends Notifier<StrategyState> {
     await setActivePage(nextPage.id);
   }
 
+  Future<void> reorderPage(int oldIndex, int newIndex) async {
+    if (oldIndex == newIndex) return;
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(state.id);
+    if (strat == null || strat.pages.isEmpty) return;
+
+    // `oldIndex`/`newIndex` are list positions from the UI (ReorderableListView),
+    // not sortIndex values. We move the page and then reindex to keep a dense
+    // 0..N-1 ordering.
+    final ordered = [...strat.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+
+    if (oldIndex < 0 ||
+        oldIndex >= ordered.length ||
+        newIndex < 0 ||
+        newIndex > ordered.length) {
+      return;
+    }
+
+    // Flutter ReorderableListView reports `newIndex` as the target index in the
+    // list *after* the removal. When dragging down, we need to decrement.
+    var targetIndex = newIndex;
+    if (targetIndex > oldIndex) targetIndex -= 1;
+
+    final moved = ordered.removeAt(oldIndex);
+    ordered.insert(targetIndex, moved);
+
+    final reindexed = [
+      for (var i = 0; i < ordered.length; i++)
+        ordered[i].copyWith(sortIndex: i),
+    ];
+
+    final updated =
+        strat.copyWith(pages: reindexed, lastEdited: DateTime.now());
+    await box.put(updated.id, updated);
+  }
+
 // Add these inside StrategyProvider
   Future<void> setActivePageAnimated(String pageID) async {
     final prev = _snapshotAllPlaced();

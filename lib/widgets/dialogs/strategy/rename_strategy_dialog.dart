@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
@@ -57,10 +58,9 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
               Navigator.of(context).pop(true); // Close the dialog with success
             } else {
               // Optionally, show an error message if the name is empty
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("Strategy name cannot be empty."),
-                ),
+              Settings.showToast(
+                message: "Strategy name cannot be empty.",
+                backgroundColor: Settings.tacticalVioletTheme.destructive,
               );
             }
           },
@@ -72,11 +72,27 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: CustomTextField(
-          // onEnterPressed: (intent) {},
-          hintText: widget.currentName,
-          controller: _textController,
-          textAlign: TextAlign.start,
-        ),
+            // onEnterPressed: (intent) {},
+            hintText: widget.currentName,
+            controller: _textController,
+            textAlign: TextAlign.start,
+            onSubmitted: (value) async {
+              if (value.isNotEmpty) {
+                await ref
+                    .read(strategyProvider.notifier)
+                    .renameStrategy(widget.strategyId, value);
+                if (!context.mounted) return;
+                Navigator.of(context)
+                    .pop(true); // Close the dialog with success
+              } else {
+                // Optionally, show an error message if the name is empty
+
+                Settings.showToast(
+                  message: "Strategy name cannot be empty.",
+                  backgroundColor: Settings.tacticalVioletTheme.destructive,
+                );
+              }
+            }),
       ),
     );
   }

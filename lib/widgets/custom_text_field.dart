@@ -12,6 +12,7 @@ class CustomTextField extends ConsumerWidget {
     this.textAlign,
     this.minLines,
     this.maxLines,
+    this.onSubmitted,
     // required this.onEnterPressed,
   });
   final TextEditingController? controller;
@@ -19,6 +20,7 @@ class CustomTextField extends ConsumerWidget {
   final TextAlign? textAlign;
   final int? minLines;
   final int? maxLines;
+  final Function(String)? onSubmitted;
   // final Function(EnterTextIntent intent) onEnterPressed;
 
   @override
@@ -31,6 +33,7 @@ class CustomTextField extends ConsumerWidget {
         minLines: minLines,
         maxLines: maxLines ?? 1,
         placeholder: hintText != null ? Text(hintText!) : null,
+        onSubmitted: onSubmitted,
       ),
     );
   }

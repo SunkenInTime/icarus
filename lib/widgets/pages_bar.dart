@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
@@ -54,7 +55,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
         child: CustomTextField(
           // autofocus: true,
           controller: controller,
-          // onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
       ),
     );
@@ -216,7 +217,7 @@ class _CollapsedPill extends StatelessWidget {
 }
 
 /* -------- Expanded panel -------- */
-class _ExpandedPanel extends StatelessWidget {
+class _ExpandedPanel extends ConsumerWidget {
   const _ExpandedPanel({
     required this.pages,
     required this.strategy,
@@ -255,9 +256,12 @@ class _ExpandedPanel extends StatelessWidget {
     return total.clamp(0, _maxPanelHeight);
   }
 
+  Widget proxyDecorator(Widget child, int index, Animation<double> animation) {
+    return child;
+  }
+
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+  Widget build(BuildContext context, WidgetRef ref) {
     final desiredHeight = _computeDesiredHeight(pages.length);
     final needsScroll = desiredHeight >= _maxPanelHeight - 0.5; // approximate
 
@@ -276,114 +280,39 @@ class _ExpandedPanel extends StatelessWidget {
           Flexible(
             child: Padding(
               padding: const EdgeInsets.only(top: _topPadding),
-              child: needsScroll
-                  ? ListView.separated(
-                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
-                      itemCount: pages.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(height: _verticalSpacing),
-                      itemBuilder: (ctx, i) {
-                        final p = pages[i];
-                        final selected = p.id == activePageId;
-                        final bg = selected
-                            ? Settings.tacticalVioletTheme.primary
-                            : Settings.tacticalVioletTheme.card;
-                        return Material(
-                          color: bg,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(
-                              color: Settings.tacticalVioletTheme.border,
-                              width: 1,
-                            ),
-                          ),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(14),
-                            onTap: () => onSelect(p.id),
-                            child: SizedBox(
-                              height: _rowHeight,
-                              child: Padding(
-                                padding: const EdgeInsets.only(left: 12),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        p.name,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.titleMedium
-                                            ?.copyWith(
-                                          color: Colors.white,
-                                          fontWeight: selected
-                                              ? FontWeight.w600
-                                              : FontWeight.w500,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                    ),
-                                    ShadTooltip(
-                                      builder: (context) =>
-                                          const Text("Rename"),
-                                      child: ShadIconButton.ghost(
-                                        hoverForegroundColor: Settings
-                                            .tacticalVioletTheme.primary,
-                                        hoverBackgroundColor:
-                                            Colors.transparent,
-                                        icon: const Icon(Icons.edit,
-                                            size: 18, color: Colors.white),
-                                        onPressed: () => onRename(p),
-                                      ),
-                                    ),
-                                    ShadTooltip(
-                                      builder: (context) =>
-                                          const Text("Delete"),
-                                      child: ShadIconButton.ghost(
-                                        // splashRadius: 18,
-                                        hoverBackgroundColor:
-                                            Colors.transparent,
+              child: ReorderableListView.builder(
+                onReorder: (oldIndex, newIndex) {
+                  ref
+                      .read(strategyProvider.notifier)
+                      .reorderPage(oldIndex, newIndex);
+                },
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                shrinkWrap: needsScroll ? false : true,
+                physics:
+                    needsScroll ? null : const NeverScrollableScrollPhysics(),
+                itemCount: pages.length,
+                buildDefaultDragHandles: false,
+                proxyDecorator: proxyDecorator,
+                itemBuilder: (ctx, i) {
+                  final p = pages[i];
 
-                                        hoverForegroundColor: Settings
-                                            .tacticalVioletTheme.destructive,
-                                        foregroundColor: pages.length == 1
-                                            ? Colors.white24
-                                            : Colors.white,
-                                        icon: const Icon(
-                                          Icons.delete,
-                                          size: 18,
-                                        ),
-                                        onPressed: pages.length == 1
-                                            ? null
-                                            : () => onDelete(p),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    )
-                  : Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (var i = 0; i < pages.length; i++) ...[
-                          Padding(
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 8.0),
-                            child: _PageRow(
-                              page: pages[i],
-                              active: pages[i].id == activePageId,
-                              onSelect: onSelect,
-                              onRename: onRename,
-                              onDelete: onDelete,
-                              disableDelete: pages.length == 1,
-                            ),
-                          ),
-                          // if (i != pages.length - 1)
-                          const SizedBox(height: _verticalSpacing),
-                        ]
-                      ],
+                  return ReorderableDragStartListener(
+                    key: ValueKey(p.id),
+                    index: i,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _PageRow(
+                        page: p,
+                        active: p.id == activePageId,
+                        onSelect: onSelect,
+                        onRename: onRename,
+                        onDelete: onDelete,
+                        disableDelete: pages.length == 1,
+                      ),
                     ),
+                  );
+                },
+              ),
             ),
           ),
           Divider(height: 1, color: Settings.tacticalVioletTheme.border),

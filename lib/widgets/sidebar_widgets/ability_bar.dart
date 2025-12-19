@@ -60,9 +60,14 @@ class AbiilityBar extends ConsumerWidget {
               return Draggable<AbilityInfo>(
                 data: activeAgent.abilities[index],
                 onDragStarted: () {
-                  // ref
-                  //     .read(interactionStateProvider.notifier)
-                  //     .update(InteractionState.navigation);
+                  if (ref.read(interactionStateProvider) ==
+                          InteractionState.drawing ||
+                      ref.read(interactionStateProvider) ==
+                          InteractionState.erasing) {
+                    ref
+                        .read(interactionStateProvider.notifier)
+                        .update(InteractionState.navigation);
+                  }
                 },
                 dragAnchorStrategy: (draggable, context, position) {
                   final info = draggable.data as AbilityInfo;

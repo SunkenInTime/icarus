@@ -9,18 +9,30 @@ class MapState {
   final MapValue currentMap;
   final bool isAttack;
   final bool showSpawnBarrier;
+  final bool showUltOrbs;
+  final bool showRegionNames;
 
-  MapState(
-      {required this.currentMap,
-      required this.isAttack,
-      this.showSpawnBarrier = false});
+  MapState({
+    required this.currentMap,
+    required this.isAttack,
+    this.showSpawnBarrier = false,
+    this.showUltOrbs = false,
+    this.showRegionNames = false,
+  });
 
-  MapState copyWith(
-      {MapValue? currentMap, bool? isAttack, bool? showSpawnBarrier}) {
+  MapState copyWith({
+    MapValue? currentMap,
+    bool? isAttack,
+    bool? showSpawnBarrier,
+    bool? showUltOrbs,
+    bool? showRegionNames,
+  }) {
     return MapState(
       currentMap: currentMap ?? this.currentMap,
       isAttack: isAttack ?? this.isAttack,
       showSpawnBarrier: showSpawnBarrier ?? this.showSpawnBarrier,
+      showUltOrbs: showUltOrbs ?? this.showUltOrbs,
+      showRegionNames: showRegionNames ?? this.showRegionNames,
     );
   }
 }
@@ -41,6 +53,14 @@ class MapProvider extends Notifier<MapState> {
 
   void updateSpawnBarrier(bool value) {
     state = state.copyWith(showSpawnBarrier: value);
+  }
+
+  void updateUltOrbs(bool value) {
+    state = state.copyWith(showUltOrbs: value);
+  }
+
+  void updateRegionNames(bool value) {
+    state = state.copyWith(showRegionNames: value);
   }
 
   void switchSide() {

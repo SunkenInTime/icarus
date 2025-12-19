@@ -37,6 +37,12 @@ class AgentDragable extends ConsumerWidget {
       child: Draggable(
         data: agent,
         onDragStarted: () {
+          if (ref.read(interactionStateProvider) == InteractionState.drawing ||
+              ref.read(interactionStateProvider) == InteractionState.erasing) {
+            ref
+                .read(interactionStateProvider.notifier)
+                .update(InteractionState.navigation);
+          }
           ref.read(dragNotifier.notifier).updateDragState(true);
         },
         onDraggableCanceled: (velocity, offset) {

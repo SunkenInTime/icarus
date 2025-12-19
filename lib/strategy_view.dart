@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/interactive_map.dart';
+import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/sidebar.dart';
 import 'package:icarus/widgets/delete_capture.dart';
@@ -78,6 +80,13 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                             .forceSaveNow(ref.read(strategyProvider).id);
 
                         if (!context.mounted) return;
+                        ref
+                            .read(interactionStateProvider.notifier)
+                            .update(InteractionState.navigation);
+                        ref
+                            .read(agentFilterProvider.notifier)
+                            .updateFilterState(FilterState.all);
+
                         Navigator.pop(context);
                         ref
                             .read(strategyProvider.notifier)

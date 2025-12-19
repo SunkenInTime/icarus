@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
@@ -185,12 +186,11 @@ class ToolGrid extends ConsumerWidget {
                 child: ShadIconButton.secondary(
                   onPressed: () async {
                     if (kIsWeb) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
+                      Settings.showToast(
+                        message:
                             'This feature is only supported in the Windows version.',
-                          ),
-                        ),
+                        backgroundColor:
+                            Settings.tacticalVioletTheme.destructive,
                       );
                       return;
                     }
@@ -219,12 +219,10 @@ class ToolGrid extends ConsumerWidget {
                 tooltip: "Add Lineup",
                 onPressed: () async {
                   if (kIsWeb) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
+                    Settings.showToast(
+                      message:
                           'This feature is only supported in the Windows version.',
-                        ),
-                      ),
+                      backgroundColor: Settings.tacticalVioletTheme.destructive,
                     );
                     return;
                   }

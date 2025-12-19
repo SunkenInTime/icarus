@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -65,6 +66,65 @@ class SettingsTab extends ConsumerWidget {
                     )
                   ],
                 ),
+                // SettingsSection(
+                //   title: "Map",
+                //   children: [
+                //     Row(
+                //       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                //       children: [
+                //         const Text(
+                //           "Show Spawn Barrier",
+                //           style: TextStyle(fontSize: 15),
+                //         ),
+                //         const SizedBox(height: 10),
+                //         ShadCheckbox(
+                //           value: ref.watch(mapProvider).showSpawnBarrier,
+                //           onChanged: (value) {
+                //             ref
+                //                 .read(mapProvider.notifier)
+                //                 .updateSpawnBarrier(value);
+                //           },
+                //         )
+                //       ],
+                //     ),
+                //     const SizedBox(height: 10),
+                //     Row(
+                //       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                //       children: [
+                //         const Text(
+                //           "Show Region Names",
+                //           style: TextStyle(fontSize: 15),
+                //         ),
+                //         const SizedBox(height: 10),
+                //         ShadCheckbox(
+                //           value: ref.watch(mapProvider).showRegionNames,
+                //           onChanged: (value) {
+                //             ref
+                //                 .read(mapProvider.notifier)
+                //                 .updateRegionNames(value);
+                //           },
+                //         )
+                //       ],
+                //     ),
+                //     const SizedBox(height: 10),
+                //     Row(
+                //       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                //       children: [
+                //         const Text(
+                //           "Show Ult Orbs",
+                //           style: TextStyle(fontSize: 15),
+                //         ),
+                //         const SizedBox(height: 10),
+                //         ShadCheckbox(
+                //           value: ref.watch(mapProvider).showUltOrbs,
+                //           onChanged: (value) {
+                //             ref.read(mapProvider.notifier).updateUltOrbs(value);
+                //           },
+                //         )
+                //       ],
+                //     ),
+                //   ],
+                // ),
               ],
             ),
           ),
