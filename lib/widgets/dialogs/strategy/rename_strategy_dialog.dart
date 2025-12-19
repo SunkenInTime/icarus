@@ -58,10 +58,9 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
               Navigator.of(context).pop(true); // Close the dialog with success
             } else {
               // Optionally, show an error message if the name is empty
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("Strategy name cannot be empty."),
-                ),
+              Settings.showToast(
+                message: "Strategy name cannot be empty.",
+                backgroundColor: Settings.tacticalVioletTheme.destructive,
               );
             }
           },
