@@ -89,33 +89,6 @@ class DrawingTools extends ConsumerWidget {
                           },
                         ),
                       ],
-
-                      // ToggleButtons(
-                      //   borderRadius: const BorderRadius.all(Radius.circular(8)),
-                      //   isSelected: [!isDotted, isDotted],
-                      //   fillColor: Colors.transparent,
-                      //   children: const [
-                      //     Icon(
-                      //       CustomIcons.line,
-                      //       size: 20,
-                      //     ),
-                      //     Icon(
-                      //       CustomIcons.dottedline,
-                      //       size: 21,
-                      //     ),
-                      //   ],
-                      //   onPressed: (index) {
-                      //     if (index == 0) {
-                      //       ref
-                      //           .read(penProvider.notifier)
-                      //           .updateValue(isDotted: false);
-                      //     } else {
-                      //       ref
-                      //           .read(penProvider.notifier)
-                      //           .updateValue(isDotted: true);
-                      //     }
-                      //   },
-                      // ),)
                     ),
                   )),
               const SizedBox(width: 5),
