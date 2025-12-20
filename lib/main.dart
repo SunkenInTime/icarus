@@ -1,5 +1,5 @@
 import 'dart:developer';
-
+import 'perf/perf_logger.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -27,6 +27,12 @@ late CustomMouseCursor staticDrawingCursor;
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  const enablePerf = bool.fromEnvironment('PERF', defaultValue: false);
+  if (enablePerf) {
+    PerfLogger.start();
+  }
+
   if (kIsWeb) {
     // On web, Hive uses IndexedDB; no path needed.
     await Hive.initFlutter();
