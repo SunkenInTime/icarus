@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/youtube_handler.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -48,8 +49,8 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
 
   @override
   void dispose() {
-    // _youtubeLinkController.dispose();
-    // _notesController.dispose();
+    _youtubeLinkController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -75,6 +76,11 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
               if (!canSave) return;
               final id = const Uuid().v4();
               log("notes : ${_notesController.text}");
+
+              // log("youtube link : ${_youtubeLinkController.text}");
+              final youtubeId = YoutubeHandler.extractYoutubeIdWithTimestamp(
+                  _youtubeLinkController.text);
+              log("youtube id : $youtubeId");
               final LineUp currentLineUp = LineUp(
                 id: id,
                 agent: ref
@@ -85,10 +91,11 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                     .read(lineUpProvider)
                     .currentAbility!
                     .copyWith(lineUpID: id),
-                youtubeLink: _youtubeLinkController.text,
+                youtubeLink: youtubeId,
                 images: _imagePaths,
                 notes: _notesController.text,
               );
+
               ref.read(lineUpProvider.notifier).addLineUp(currentLineUp);
 
               ref

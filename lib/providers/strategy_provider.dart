@@ -7,6 +7,7 @@ import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/const/youtube_handler.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'image_provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -328,12 +329,31 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
   }
 
-  static Future<StrategyData> migrateLegacyObjectToSinglePage(
-      StrategyData strat) async {
+  static Future<StrategyData> migrateLegacyData(StrategyData strat) async {
     // Already migrated
     if (strat.pages.isNotEmpty) return strat;
+    if (strat.versionNumber >= 23) return strat;
     log("Migrating legacy strategy to single page");
-    // Copy ability data & apply legacy adjustment (same logic you had in load)
+
+    if (strat.versionNumber > 15 && strat.versionNumber < 23) {
+      List<StrategyPage> newPages = [];
+
+      for (final page in strat.pages) {
+        List<LineUp> newLineUps = [];
+        for (final lineUp in page.lineUps) {
+          String youtubeId = "";
+          if (lineUp.youtubeLink.isNotEmpty) {
+            youtubeId = YoutubeHandler.extractYoutubeIdWithTimestamp(
+                lineUp.youtubeLink);
+          }
+          newLineUps.add(lineUp.copyWith(youtubeLink: youtubeId));
+        }
+        newPages.add(page.copyWith(lineUps: newLineUps));
+      }
+
+      final updated = strat.copyWith(pages: newPages);
+      return updated;
+    }
 
     // ignore: deprecated_member_use, deprecated_member_use_from_same_package
     final abilityData = [...strat.abilityData];
@@ -817,7 +837,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final versionNumber = int.tryParse(json["versionNumber"].toString()) ??
         Settings.versionNumber;
 
-    bool needsMigration = (versionNumber < 15);
+    // bool needsMigration = (versionNumber < 15);
     final List<StrategyPage> pages = json["pages"] != null
         ? await StrategyPage.listFromJson(
             json: jsonEncode(json["pages"]),
@@ -853,9 +873,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
       folderID: null,
     );
-    if (needsMigration) {
-      newStrategy = await migrateLegacyObjectToSinglePage(newStrategy);
-    }
+
+    newStrategy = await migrateLegacyData(newStrategy);
+
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put(newStrategy.id, newStrategy);
 

@@ -1,9 +1,10 @@
 import 'dart:developer';
+import 'dart:io';
 
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter_portal/flutter_portal.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/custom_icons.dart';
@@ -11,20 +12,20 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart' show Settings;
 import 'package:icarus/hive/hive_registrar.g.dart';
-import 'package:icarus/home_view.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
 import 'package:icarus/widgets/settings_tab.dart';
+import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 import 'package:window_manager/window_manager.dart';
 
 late CustomMouseCursor staticDrawingCursor;
-
+WebViewEnvironment? webViewEnvironment;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) {
@@ -55,6 +56,7 @@ Future<void> main() async {
   await StrategyProvider.migrateAllStrategies();
   // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
 
+  await _initWebViewEnvironment();
   if (!kIsWeb) {
     await windowManager.ensureInitialized();
     WindowOptions windowOptions = const WindowOptions(
@@ -66,7 +68,29 @@ Future<void> main() async {
     });
   }
 
+  // Ensure WebView2 environment is initialized on Windows before any InAppWebView
+  // widgets are created. This is especially important in testing/dev where the
+  // WebView user-data folder and runtime selection can affect behavior.
+  if (!kIsWeb && Platform.isWindows) {
+    await _initWebViewEnvironment();
+  }
+
   runApp(const ProviderScope(child: MyApp()));
+}
+
+Future<void> _initWebViewEnvironment() async {
+  final dir = await getApplicationSupportDirectory();
+  if (Platform.isWindows) {
+    final availableVersion = await WebViewEnvironment.getAvailableVersion();
+    if (availableVersion == null) {
+      throw Exception("No available version found"); // TODO: Will replace this
+    }
+    webViewEnvironment = await WebViewEnvironment.create(
+      settings: WebViewEnvironmentSettings(
+        userDataFolder: path.join(dir.path, 'webview'),
+      ),
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {

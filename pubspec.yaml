@@ -3,7 +3,7 @@ description: "A new Flutter project."
 
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
-version: 2.3.1+22 #version number
+version: 2.4.0+23 #version number
 
 environment:
   sdk: ">=3.4.3 <4.0.0"
@@ -28,7 +28,7 @@ dependencies:
   desktop_drop: ^0.6.0
   cross_file: ^0.3.4+2
   image: ^4.5.4
-  http: ^1.4.0
+  http: ^1.6.0
   screenshot: ^3.0.0
   flutter_colorpicker: ^1.1.0
   archive: ^4.0.7
@@ -36,6 +36,8 @@ dependencies:
   shadcn_ui: ^0.40.3
   toastification: ^3.0.3
   custom_mouse_cursor: ^1.1.3
+  youtube_player_flutter: ^9.1.3
+  flutter_inappwebview: ^6.1.5
 
 dev_dependencies:
   flutter_test:
@@ -49,13 +51,16 @@ dev_dependencies:
   msix: ^3.16.8
   # dart run msix:create
   # flutter pub run build_runner build --delete-conflicting-outputs
+  # powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 -Bump major
+  # powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 -Bump minor
+  # powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 -Bump patch
 msix_config:
   display_name: "Icarus: Valorant Strategies & Line ups"
   publisher_display_name: Dara A
   identity_name: DaraA.IcarusValorantStrategiesLineups
   publisher: CN=39055448-F6AA-42E9-91F6-9CF8828C444C
   logo_path: E:\Projects\icarus\windows\runner\resources\app_icon.ico
-  msix_version: 2.3.1.0 #verion number #last 0 needs to be there for msix to work
+  msix_version: 2.4.0.0 #verion number #last 0 needs to be there for msix to work
   store: true
 
 flutter:
