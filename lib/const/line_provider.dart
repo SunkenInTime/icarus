@@ -225,8 +225,22 @@ class LineUpProvider extends Notifier<LineUpState> {
         .toList();
   }
 
+  void updateLineUp(LineUp lineUp) {
+    final index = getIndexById(lineUp.id);
+    final newState = [...state.lineUps];
+
+    newState[index] = lineUp;
+    state = state.copyWith(
+      lineUps: newState,
+    );
+  }
+
   int getIndexById(String id) {
     return state.lineUps.indexWhere((lineUp) => lineUp.id == id);
+  }
+
+  LineUp? getLineUpById(String id) {
+    return state.lineUps.firstWhere((lineUp) => lineUp.id == id);
   }
 
   void deleteLineUpById(String id) {

@@ -11,10 +11,17 @@ class YoutubeHandler {
   }
 
   static String extractYoutubeIdWithTimestamp(String youtubeLink) {
-    final uri = Uri.tryParse(youtubeLink);
-    if (uri == null) return youtubeLink;
-    final videoId = uri.pathSegments.first;
-    final timestamp = uri.queryParameters["t"];
-    return "$videoId&t=$timestamp";
+    //Need to check if it isn't already a youtube id
+    if ((youtubeLink.contains("youtu.be") ||
+            youtubeLink.contains("youtube.com")) ==
+        false) {
+      return youtubeLink;
+    } else {
+      final uri = Uri.tryParse(youtubeLink);
+      if (uri == null) return youtubeLink;
+      final videoId = uri.pathSegments.first;
+      final timestamp = uri.queryParameters["t"];
+      return "$videoId&t=$timestamp";
+    }
   }
 }

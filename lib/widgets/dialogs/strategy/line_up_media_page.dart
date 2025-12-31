@@ -30,9 +30,10 @@ class LineupMediaPage extends ConsumerStatefulWidget {
 }
 
 class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
-  late final Directory imageFolderPath;
+  Directory? imageFolderPath;
 
   Future<void> _setImageDirectory(String strategyID) async {
+    if (imageFolderPath != null) return;
     imageFolderPath = await PlacedImageProvider.getImageFolder(strategyID);
   }
 
@@ -40,7 +41,6 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   void initState() {
     super.initState();
     final strategyID = ref.read(strategyProvider).id;
-    _setImageDirectory(strategyID);
   }
 
   @override
@@ -116,21 +116,32 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   }
 
   Widget _buildImageGrid() {
-    return GridView.builder(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 1,
-      ),
-      itemCount: widget.images.length + 1, // +1 for the Add button
-      itemBuilder: (context, index) {
-        if (index == widget.images.length) {
-          return _buildAddButton();
-        }
-        return _buildImageTile(index);
-      },
-    );
+    return FutureBuilder(
+        future: _setImageDirectory(ref.read(strategyProvider).id),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+
+          return GridView.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 1,
+            ),
+            itemCount: widget.images.length + 1, // +1 for the Add button
+            itemBuilder: (context, index) {
+              if (index == widget.images.length) {
+                return _buildAddButton();
+              }
+              return _buildImageTile(index);
+            },
+          );
+        });
   }
 
   Widget _buildAddButton() {
@@ -151,9 +162,10 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   }
 
   Widget _buildImageTile(int index) {
-    final String fullImagePath = path.join(imageFolderPath.path,
+    final String fullImagePath = path.join(imageFolderPath!.path,
         widget.images[index].id + widget.images[index].fileExtension);
     final file = File(fullImagePath);
+
     return Stack(
       children: [
         Container(

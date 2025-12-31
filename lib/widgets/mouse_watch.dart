@@ -154,6 +154,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
                     showDialog(
                       context: context,
                       builder: (context) => LineUpMediaCarousel(
+                        lineUpId: widget.lineUpId!,
                         images: lineUp!.images,
                         youtubeLink: lineUp.youtubeLink,
                       ),

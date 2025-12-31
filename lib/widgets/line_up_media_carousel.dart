@@ -9,19 +9,23 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
+
 import 'package:icarus/widgets/youtube_view.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:youtube_player_flutter/youtube_player_flutter.dart';
 
 class LineUpMediaCarousel extends ConsumerStatefulWidget {
   const LineUpMediaCarousel({
     super.key,
+    required this.lineUpId,
     required this.images,
     required this.youtubeLink,
   });
   final List<SimpleImageData> images;
+  final String lineUpId;
   final String youtubeLink;
+
   @override
   ConsumerState<ConsumerStatefulWidget> createState() => _ImageCarouselState();
 }
@@ -83,7 +87,7 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
         alignment: Alignment.center,
         children: [
           Padding(
-            padding: const EdgeInsets.all(36.0),
+            padding: const EdgeInsets.all(56.0),
             child: PageView.builder(
               controller: _pageController,
               itemCount: widget.images.length +
@@ -140,7 +144,10 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                   },
                 ),
               ),
-            if (_currentIndex < widget.images.length - 1)
+            if (_currentIndex <
+                widget.images.length +
+                    (widget.youtubeLink.isNotEmpty ? 1 : 0) -
+                    1)
               Positioned(
                 right: 8,
                 child: ShadIconButton.secondary(
@@ -171,7 +178,9 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                   padding: const EdgeInsets.all(8.0),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: List.generate(widget.images.length, (index) {
+                    children: List.generate(
+                        widget.images.length +
+                            (widget.youtubeLink.isNotEmpty ? 1 : 0), (index) {
                       return Container(
                         margin: const EdgeInsets.symmetric(horizontal: 4),
                         width: 8,
@@ -208,14 +217,52 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
             top: 24,
             right: 24,
             child: SafeArea(
-              child: ShadIconButton.secondary(
-                icon: const Icon(LucideIcons.x),
-                decoration: ShadDecoration(
-                  border: ShadBorder.all(
-                      color: Settings.tacticalVioletTheme.border),
-                ),
-                // tooltip: 'Close',
-                onPressed: () => Navigator.of(context).pop(),
+              child: Row(
+                spacing: 8,
+                children: [
+                  ShadIconButton.destructive(
+                    icon: const Icon(LucideIcons.trash2),
+                    decoration: ShadDecoration(
+                      border: ShadBorder.all(
+                          color: Settings.tacticalVioletTheme.border),
+                    ),
+                    // tooltip: 'Close',
+                    onPressed: () {
+                      Navigator.of(context).pop();
+
+                      ref
+                          .read(lineUpProvider.notifier)
+                          .deleteLineUpById(widget.lineUpId);
+                    },
+                  ),
+                  ShadButton(
+                    // height: 32,
+                    leading: const Icon(LucideIcons.pencil),
+                    // width: 80,
+                    child: const Text("Edit"),
+                    onPressed: () {
+                      String lineUpId = widget.lineUpId;
+                      Navigator.of(context).pop();
+
+                      log("Editing line up");
+                      showDialog(
+                        context: context,
+                        builder: (context) => CreateLineupDialog(
+                          lineUpId: lineUpId,
+                        ),
+                      );
+                    },
+                  ),
+                  ShadIconButton.secondary(
+                    icon: const Icon(LucideIcons.x),
+                    decoration: ShadDecoration(
+                      border: ShadBorder.all(
+                          color: Settings.tacticalVioletTheme.border),
+                    ),
+                    // tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
               ),
 
               // IconButton.filled(

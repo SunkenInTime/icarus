@@ -19,32 +19,40 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
 class CreateLineupDialog extends ConsumerStatefulWidget {
-  const CreateLineupDialog({super.key});
+  const CreateLineupDialog({super.key, this.lineUpId});
+  final String? lineUpId;
 
   @override
   ConsumerState<CreateLineupDialog> createState() => _CreateLineupDialogState();
 }
 
 class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
-  AgentData? _selectedAgent;
-  AbilityInfo? _selectedAbility;
   final TextEditingController _youtubeLinkController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   final List<SimpleImageData> _imagePaths = [];
+
   @override
   void initState() {
     super.initState();
-    final state = ref.read(lineUpProvider);
-    if (state.currentAgent != null) {
-      try {
-        _selectedAgent = AgentData.agents[state.currentAgent!.type];
-      } catch (e) {
-        // Handle case where agent is not found
-      }
+    if (widget.lineUpId != null) {
+      final lineUp =
+          ref.read(lineUpProvider.notifier).getLineUpById(widget.lineUpId!);
+
+      _youtubeLinkController.text = lineUp!.youtubeLink;
+      _notesController.text = lineUp.notes;
+      _imagePaths.addAll(lineUp.images);
     }
-    if (state.currentAbility != null) {
-      _selectedAbility = state.currentAbility!.data;
-    }
+    // final state = ref.read(lineUpProvider);
+    // if (state.currentAgent != null) {
+    //   try {
+    //     _selectedAgent = AgentData.agents[state.currentAgent!.type];
+    //   } catch (e) {
+    //     // Handle case where agent is not found
+    //   }
+    // }
+    // if (state.currentAbility != null) {
+    //   _selectedAbility = state.currentAbility!.data;
+    // }
   }
 
   @override
@@ -56,7 +64,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final bool canSave = _selectedAgent != null && _selectedAbility != null;
+    // final bool canSave = _selectedAgent != null && _selectedAbility != null;
 
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
@@ -67,36 +75,53 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         }
       },
       child: ShadDialog(
-        title: const Text(
-          "Create Line Up",
+        title: Text(
+          widget.lineUpId != null ? "Edit Line Up" : "Create Line Up",
         ),
         actions: [
           ShadButton(
             onPressed: () async {
-              if (!canSave) return;
-              final id = const Uuid().v4();
-              log("notes : ${_notesController.text}");
+              if (widget.lineUpId != null) {
+                final youtubeId = YoutubeHandler.extractYoutubeIdWithTimestamp(
+                    _youtubeLinkController.text);
 
-              // log("youtube link : ${_youtubeLinkController.text}");
-              final youtubeId = YoutubeHandler.extractYoutubeIdWithTimestamp(
-                  _youtubeLinkController.text);
-              log("youtube id : $youtubeId");
-              final LineUp currentLineUp = LineUp(
-                id: id,
-                agent: ref
-                    .read(lineUpProvider)
-                    .currentAgent!
-                    .copyWith(lineUpID: id),
-                ability: ref
-                    .read(lineUpProvider)
-                    .currentAbility!
-                    .copyWith(lineUpID: id),
-                youtubeLink: youtubeId,
-                images: _imagePaths,
-                notes: _notesController.text,
-              );
+                LineUp lineUp = ref
+                    .read(lineUpProvider.notifier)
+                    .getLineUpById(widget.lineUpId!)!;
 
-              ref.read(lineUpProvider.notifier).addLineUp(currentLineUp);
+                lineUp = lineUp.copyWith(
+                  youtubeLink: youtubeId,
+                  notes: _notesController.text,
+                  images: _imagePaths,
+                );
+
+                ref.read(lineUpProvider.notifier).updateLineUp(lineUp);
+              } else {
+                final id = const Uuid().v4();
+
+                log("notes : ${_notesController.text}");
+
+                // log("youtube link : ${_youtubeLinkController.text}");
+                final youtubeId = YoutubeHandler.extractYoutubeIdWithTimestamp(
+                    _youtubeLinkController.text);
+                log("youtube id : $youtubeId");
+                final LineUp currentLineUp = LineUp(
+                  id: id,
+                  agent: ref
+                      .read(lineUpProvider)
+                      .currentAgent!
+                      .copyWith(lineUpID: id),
+                  ability: ref
+                      .read(lineUpProvider)
+                      .currentAbility!
+                      .copyWith(lineUpID: id),
+                  youtubeLink: youtubeId,
+                  images: _imagePaths,
+                  notes: _notesController.text,
+                );
+
+                ref.read(lineUpProvider.notifier).addLineUp(currentLineUp);
+              }
 
               ref
                   .read(interactionStateProvider.notifier)
