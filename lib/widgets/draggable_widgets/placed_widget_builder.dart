@@ -437,10 +437,13 @@ class _UtilityList extends ConsumerWidget {
                 final localOffset = renderBox.globalToLocal(details.offset);
                 final virtualOffset =
                     coordinateSystem.screenToCoordinate(localOffset);
-                final safeArea = agentSize / 2;
 
-                if (coordinateSystem.isOutOfBounds(
-                    virtualOffset.translate(safeArea, safeArea))) {
+                final safeArea = UtilityData.utilityWidgets[placedUtility.type]!
+                        .getAnchorPoint() /
+                    2;
+
+                if (coordinateSystem.isOutOfBounds(virtualOffset.translate(
+                    safeArea.dx / 2, safeArea.dy / 2))) {
                   ref
                       .read(utilityProvider.notifier)
                       .removeUtility(placedUtility.id);

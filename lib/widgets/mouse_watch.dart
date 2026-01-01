@@ -97,31 +97,20 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
               portalBuilder: (context) => Padding(
                 padding: const EdgeInsets.only(bottom: 4.0),
                 child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 200),
-                    child: Container(
-                      padding: const EdgeInsets.all(8.0),
-                      decoration: BoxDecoration(
-                        color: Colors.black87,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            textAlign: TextAlign.center,
-                            "$lineUpNotes",
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          Text(
-                            "Right click",
-                            style: TextStyle(
-                              color:
-                                  Settings.tacticalVioletTheme.mutedForeground,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )),
+                  constraints: const BoxConstraints(maxWidth: 200),
+                  child: Container(
+                    padding: const EdgeInsets.all(8.0),
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      textAlign: TextAlign.center,
+                      "$lineUpNotes",
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
               ),
 
               anchor: const ShadAnchor(

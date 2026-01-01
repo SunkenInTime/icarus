@@ -31,7 +31,12 @@ class AgentWidget extends ConsumerWidget {
       lineUpId: lineUpId,
       cursor: SystemMouseCursors.click,
       onDeleteKeyPressed: () {
+        if (lineUpId != null) {
+          ref.read(lineUpProvider.notifier).deleteLineUpById(lineUpId!);
+          return;
+        }
         if (id == null) return;
+
         final action = UserAction(
             type: ActionType.deletion, id: id!, group: ActionGroup.agent);
 

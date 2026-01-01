@@ -92,11 +92,13 @@ class ViewConeWidget extends ConsumerWidget {
             child: MouseWatch(
               onDeleteKeyPressed: () {
                 if (id == null) return;
+
                 final action = UserAction(
                   type: ActionType.deletion,
                   id: id!,
                   group: ActionGroup.utility,
                 );
+
                 ref.read(actionProvider.notifier).addAction(action);
                 ref.read(utilityProvider.notifier).removeUtility(id!);
               },
@@ -111,7 +113,7 @@ class ViewConeWidget extends ConsumerWidget {
                 ),
                 width: Settings.utilityIconSize * coord.scaleFactor,
                 height: Settings.utilityIconSize * coord.scaleFactor,
-                child: const Icon(LucideIcons.eye),
+                child: Image.asset('assets/eye.webp'),
               ),
             ),
           ),

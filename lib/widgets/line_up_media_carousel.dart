@@ -264,13 +264,6 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                   ),
                 ],
               ),
-
-              // IconButton.filled(
-              //   style: IconButton.styleFrom(backgroundColor: Colors.white),
-              //   icon: const Icon(Icons.close, color: Colors.black),
-              //   tooltip: 'Close',
-              //   onPressed: () => Navigator.of(context).pop(),
-              // ),
             ),
           ),
         ],
