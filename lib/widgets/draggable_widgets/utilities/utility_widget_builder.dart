@@ -35,8 +35,8 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
       feedback: Opacity(
         opacity: Settings.feedbackOpacity,
         child: ZoomTransform(
-          child: UtilityData.utilityWidgets[widget.utility.type]!
-              .createWidget(null),
+          child:
+              UtilityData.utilityWidgets[widget.utility.type]!.createWidget(),
         ),
       ),
       onDragEnd: (details) {
@@ -44,7 +44,7 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
       },
       child: ZoomTransform(
         child: UtilityData.utilityWidgets[widget.utility.type]!
-            .createWidget(widget.id),
+            .createWidget(id: widget.id),
       ),
     );
   }

@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
-import 'package:icarus/widgets/image_caroseul.dart';
+import 'package:icarus/widgets/line_up_media_carousel.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class MouseWatch extends ConsumerStatefulWidget {
@@ -97,18 +97,20 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
               portalBuilder: (context) => Padding(
                 padding: const EdgeInsets.only(bottom: 4.0),
                 child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 200),
-                    child: Container(
-                      padding: const EdgeInsets.all(8.0),
-                      decoration: BoxDecoration(
-                        color: Colors.black87,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        lineUpNotes!,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                    )),
+                  constraints: const BoxConstraints(maxWidth: 200),
+                  child: Container(
+                    padding: const EdgeInsets.all(8.0),
+                    decoration: BoxDecoration(
+                      color: Colors.black87,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      textAlign: TextAlign.center,
+                      "$lineUpNotes",
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
               ),
 
               anchor: const ShadAnchor(
@@ -140,8 +142,10 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
                   onTap: () {
                     showDialog(
                       context: context,
-                      builder: (context) => ImageCarousel(
+                      builder: (context) => LineUpMediaCarousel(
+                        lineUpId: widget.lineUpId!,
                         images: lineUp!.images,
+                        youtubeLink: lineUp.youtubeLink,
                       ),
                     );
                   },

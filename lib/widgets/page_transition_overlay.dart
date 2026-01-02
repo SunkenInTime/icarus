@@ -296,8 +296,8 @@ class PlacedWidgetPreview {
       );
     }
     if (w is PlacedUtility) {
-      return UtilityData.utilityWidgets[w.type]!
-          .createWidget(w.id, w.rotation, length ?? w.length);
+      return UtilityData.utilityWidgets[w.type]!.createWidget(
+          id: w.id, rotation: w.rotation, length: length ?? w.length);
     }
     return const SizedBox.shrink();
   }

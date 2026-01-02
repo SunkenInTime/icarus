@@ -88,13 +88,13 @@ class LineUpState {
   final List<LineUp> lineUps;
   final PlacedAgent? currentAgent;
   final PlacedAbility? currentAbility;
-  final String? currentYoutubeLink;
+  // final String? currentYoutubeLink;
   final bool isSelectingPosition;
 
   LineUpState({
     this.currentAgent,
     this.currentAbility,
-    this.currentYoutubeLink,
+    // this.currentYoutubeLink,
     required this.lineUps,
     this.isSelectingPosition = false,
   });
@@ -115,9 +115,9 @@ class LineUpState {
       currentAbility: identical(currentAbility, _noChange)
           ? this.currentAbility
           : currentAbility as PlacedAbility?,
-      currentYoutubeLink: identical(currentYoutubeLink, _noChange)
-          ? this.currentYoutubeLink
-          : currentYoutubeLink as String?,
+      // currentYoutubeLink: identical(currentYoutubeLink, _noChange)
+      //     ? this.currentYoutubeLink
+      //     : currentYoutubeLink as String?,
       isSelectingPosition: isSelectingPosition ?? this.isSelectingPosition,
     );
   }
@@ -163,10 +163,10 @@ class LineUpProvider extends Notifier<LineUpState> {
     }
   }
 
-  void setYoutubeLink(String youtubeLink) {
-    if (state.currentAgent == null) return;
-    state = state.copyWith(currentYoutubeLink: youtubeLink);
-  }
+  // void setYoutubeLink(String youtubeLink) {
+  //   if (state.currentAgent == null) return;
+  //   state = state.copyWith(currentYoutubeLink: youtubeLink);
+  // }
 
   void setSelectingPosition(bool isSelecting, {PlacingType? type}) {
     state = state.copyWith(
@@ -225,8 +225,22 @@ class LineUpProvider extends Notifier<LineUpState> {
         .toList();
   }
 
+  void updateLineUp(LineUp lineUp) {
+    final index = getIndexById(lineUp.id);
+    final newState = [...state.lineUps];
+
+    newState[index] = lineUp;
+    state = state.copyWith(
+      lineUps: newState,
+    );
+  }
+
   int getIndexById(String id) {
     return state.lineUps.indexWhere((lineUp) => lineUp.id == id);
+  }
+
+  LineUp? getLineUpById(String id) {
+    return state.lineUps.firstWhere((lineUp) => lineUp.id == id);
   }
 
   void deleteLineUpById(String id) {

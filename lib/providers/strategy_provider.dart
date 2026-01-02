@@ -7,6 +7,7 @@ import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/const/youtube_handler.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'image_provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -262,79 +263,20 @@ class StrategyProvider extends Notifier<StrategyState> {
       storageDirectory: state.storageDirectory,
     );
   }
-
   // --- MIGRATION: create a first page from legacy flat fields ----------------
 
   static Future<void> migrateAllStrategies() async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     for (final strat in box.values) {
-      await migrateLegacyToSinglePage(strat.id);
+      await migrateLegacyData(strat);
     }
-    log("MIGRATION COMPLETE");
   }
 
-  static Future<void> migrateLegacyToSinglePage(String strategyID) async {
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final strat = box.get(strategyID);
-    if (strat == null) return;
-
-    // Already migrated
-    if (strat.pages.isNotEmpty) return;
-    log("Migrating legacy strategy to single page");
-    // Copy ability data & apply legacy adjustment (same logic you had in load)
-
-    // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-    final abilityData = [...strat.abilityData];
-    if (strat.versionNumber < 7) {
-      for (final a in abilityData) {
-        if (a.data.abilityData! is SquareAbility) {
-          a.position = a.position.translate(0, -7.5);
-        }
-      }
-    }
-
-    final firstPage = StrategyPage(
-      id: const Uuid().v4(),
-      name: "Page 1",
-      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-      drawingData: [...strat.drawingData],
-      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-      agentData: [...strat.agentData],
-      abilityData: abilityData,
-      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-      textData: [...strat.textData],
-      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-      imageData: [...strat.imageData],
-      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-      utilityData: [...strat.utilityData],
-      // ignore: deprecated_member_use, deprecated_member_use_from_same_package
-      isAttack: strat.isAttack,
-      // ignore: deprecated_member_use_from_same_package
-      settings: strat.strategySettings,
-      sortIndex: 0,
-    );
-
-    final updated = strat.copyWith(
-      pages: [firstPage],
-      agentData: [],
-      abilityData: [],
-      drawingData: [],
-      utilityData: [],
-      textData: [],
-      versionNumber: Settings.versionNumber,
-      lastEdited: DateTime.now(),
-    );
-
-    await box.put(updated.id, updated);
-  }
-
-  static Future<StrategyData> migrateLegacyObjectToSinglePage(
-      StrategyData strat) async {
+  static Future<StrategyData> migrateLegacyData(StrategyData strat) async {
     // Already migrated
     if (strat.pages.isNotEmpty) return strat;
+    if (strat.versionNumber > 15) return strat;
     log("Migrating legacy strategy to single page");
-    // Copy ability data & apply legacy adjustment (same logic you had in load)
-
     // ignore: deprecated_member_use, deprecated_member_use_from_same_package
     final abilityData = [...strat.abilityData];
     if (strat.versionNumber < 7) {
@@ -817,7 +759,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final versionNumber = int.tryParse(json["versionNumber"].toString()) ??
         Settings.versionNumber;
 
-    bool needsMigration = (versionNumber < 15);
+    // bool needsMigration = (versionNumber < 15);
     final List<StrategyPage> pages = json["pages"] != null
         ? await StrategyPage.listFromJson(
             json: jsonEncode(json["pages"]),
@@ -853,9 +795,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
       folderID: null,
     );
-    if (needsMigration) {
-      newStrategy = await migrateLegacyObjectToSinglePage(newStrategy);
-    }
+
+    newStrategy = await migrateLegacyData(newStrategy);
+
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put(newStrategy.id, newStrategy);
 

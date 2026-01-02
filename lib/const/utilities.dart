@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/image_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 
@@ -44,9 +43,10 @@ class UtilityData {
   }
 }
 
-abstract class Utilities {
-  Offset getAnchorPoint();
-  Widget createWidget(String? id, [double? rotation, double? length]);
+sealed class Utilities {
+  Offset getAnchorPoint({String? id, double? length, double? rotation});
+
+  Widget createWidget({String? id, double? rotation, double? length});
 }
 
 class ImageUtility extends Utilities {
@@ -56,12 +56,12 @@ class ImageUtility extends Utilities {
   ImageUtility({required this.imagePath, required this.size});
 
   @override
-  Widget createWidget(String? id, [double? rotation, double? length]) {
+  Widget createWidget({String? id, double? rotation, double? length}) {
     return ImageUtilityWidget(imagePath: imagePath, size: size, id: id);
   }
 
   @override
-  Offset getAnchorPoint() {
+  Offset getAnchorPoint({String? id, double? length, double? rotation}) {
     return Offset(size / 2, size / 2);
   }
 }
@@ -80,7 +80,7 @@ class ViewConeUtility extends Utilities {
   });
 
   @override
-  Widget createWidget(String? id, [double? rotation, double? length]) {
+  Widget createWidget({String? id, double? rotation, double? length}) {
     return ViewConeWidget(
       id: id,
       angle: angle,
@@ -92,7 +92,7 @@ class ViewConeUtility extends Utilities {
   /// Get the anchor point at the bottom center (apex of the cone)
   /// The length determines where the bottom center is positioned
   @override
-  Offset getAnchorPoint() {
+  Offset getAnchorPoint({String? id, double? length, double? rotation}) {
     return const Offset(maxLength, maxLength + 7.5);
   }
 

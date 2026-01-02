@@ -3,11 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
-import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
-import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
@@ -190,7 +188,8 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
               ),
               child: ZoomTransform(
                 child: UtilityData.utilityWidgets[widget.utility.type]!
-                    .createWidget(null, localRotation, localLength),
+                    .createWidget(
+                        id: null, rotation: localRotation, length: localLength),
               ),
             ),
           ),
@@ -206,8 +205,8 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
             });
             widget.onDragEnd(details);
           },
-          child: UtilityData.utilityWidgets[widget.utility.type]!
-              .createWidget(widget.id, localRotation, localLength),
+          child: UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
+              id: widget.id, rotation: localRotation, length: localLength),
         ),
       ),
     );

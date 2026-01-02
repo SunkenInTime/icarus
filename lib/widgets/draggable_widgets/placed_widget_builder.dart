@@ -20,7 +20,7 @@ import 'package:icarus/providers/team_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
-import 'package:icarus/widgets/draggable_widgets/placed_image_builder.dart';
+import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/delete_area.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
@@ -437,10 +437,13 @@ class _UtilityList extends ConsumerWidget {
                 final localOffset = renderBox.globalToLocal(details.offset);
                 final virtualOffset =
                     coordinateSystem.screenToCoordinate(localOffset);
-                final safeArea = agentSize / 2;
 
-                if (coordinateSystem.isOutOfBounds(
-                    virtualOffset.translate(safeArea, safeArea))) {
+                final safeArea = UtilityData.utilityWidgets[placedUtility.type]!
+                        .getAnchorPoint() /
+                    2;
+
+                if (coordinateSystem.isOutOfBounds(virtualOffset.translate(
+                    safeArea.dx / 2, safeArea.dy / 2))) {
                   ref
                       .read(utilityProvider.notifier)
                       .removeUtility(placedUtility.id);

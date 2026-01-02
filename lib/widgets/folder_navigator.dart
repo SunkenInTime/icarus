@@ -1,9 +1,13 @@
+import 'dart:developer';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
+import 'package:icarus/main.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy_view.dart';
@@ -13,6 +17,7 @@ import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
+import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -40,9 +45,23 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_warnedOnce) {
         _warnedOnce = true;
+        if (Platform.isWindows) {
+          log("Warning webview");
+          _warnWebView();
+        }
         _warnDemo();
       }
     });
+  }
+
+  void _warnWebView() async {
+    if (isWebViewInitialized) return;
+    await showShadDialog<void>(
+      context: context,
+      builder: (context) {
+        return const WebViewDialog();
+      },
+    );
   }
 
   void _warnDemo() async {

@@ -27,10 +27,15 @@ class AbilityWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+
     return MouseWatch(
       lineUpId: lineUpId,
       cursor: SystemMouseCursors.click,
       onDeleteKeyPressed: () {
+        if (lineUpId != null) {
+          ref.read(lineUpProvider.notifier).deleteLineUpById(lineUpId!);
+          return;
+        }
         if (id == null) return;
         final action = UserAction(
             type: ActionType.deletion, id: id!, group: ActionGroup.ability);
