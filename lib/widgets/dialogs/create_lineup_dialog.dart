@@ -82,15 +82,12 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
           ShadButton(
             onPressed: () async {
               if (widget.lineUpId != null) {
-                final youtubeId = YoutubeHandler.extractYoutubeIdWithTimestamp(
-                    _youtubeLinkController.text);
-
                 LineUp lineUp = ref
                     .read(lineUpProvider.notifier)
                     .getLineUpById(widget.lineUpId!)!;
 
                 lineUp = lineUp.copyWith(
-                  youtubeLink: youtubeId,
+                  youtubeLink: _youtubeLinkController.text,
                   notes: _notesController.text,
                   images: _imagePaths,
                 );
@@ -101,10 +98,6 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
 
                 log("notes : ${_notesController.text}");
 
-                // log("youtube link : ${_youtubeLinkController.text}");
-                final youtubeId = YoutubeHandler.extractYoutubeIdWithTimestamp(
-                    _youtubeLinkController.text);
-                log("youtube id : $youtubeId");
                 final LineUp currentLineUp = LineUp(
                   id: id,
                   agent: ref
@@ -115,7 +108,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                       .read(lineUpProvider)
                       .currentAbility!
                       .copyWith(lineUpID: id),
-                  youtubeLink: youtubeId,
+                  youtubeLink: _youtubeLinkController.text,
                   images: _imagePaths,
                   notes: _notesController.text,
                 );

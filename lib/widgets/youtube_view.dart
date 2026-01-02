@@ -2,6 +2,7 @@ import 'dart:developer' show log;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:icarus/const/youtube_handler.dart';
 
 import 'package:icarus/main.dart';
 
@@ -70,7 +71,7 @@ class _YoutubeViewState extends State<YoutubeView>
                 InAppWebViewSettings(allowBackgroundAudioPlaying: false),
             initialUrlRequest: URLRequest(
                 url: WebUri(
-                    "https://embed.icarus-strats.xyz/?v=${widget.youtubeLink}")),
+                    "https://embed.icarus-strats.xyz/?v=${YoutubeHandler.extractYoutubeIdWithTimestamp(widget.youtubeLink)}")),
           ),
         ),
       ],
