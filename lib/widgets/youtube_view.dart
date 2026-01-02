@@ -5,6 +5,8 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:icarus/const/youtube_handler.dart';
 
 import 'package:icarus/main.dart';
+import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // class YoutubeView extends StatelessWidget {
 //   const YoutubeView({
@@ -52,6 +54,16 @@ class _YoutubeViewState extends State<YoutubeView>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+
+    if (!isWebViewInitialized) {
+      // showShadDialog<void>(
+      //   context: context,
+      //   builder: (context) {
+      //     return const WebViewDialog();
+      //   },
+      // );
+      return const WebViewDialog();
+    }
     return Stack(
       children: [
         const Align(

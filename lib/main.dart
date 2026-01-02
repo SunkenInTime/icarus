@@ -26,6 +26,7 @@ import 'package:window_manager/window_manager.dart';
 
 late CustomMouseCursor staticDrawingCursor;
 WebViewEnvironment? webViewEnvironment;
+bool isWebViewInitialized = false;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (kIsWeb) {
@@ -82,9 +83,14 @@ Future<void> _initWebViewEnvironment() async {
   final dir = await getApplicationSupportDirectory();
   if (Platform.isWindows) {
     final availableVersion = await WebViewEnvironment.getAvailableVersion();
+
     if (availableVersion == null) {
-      throw Exception("No available version found"); // TODO: Will replace this
+      isWebViewInitialized = false;
+      return;
     }
+
+    isWebViewInitialized = true;
+
     webViewEnvironment = await WebViewEnvironment.create(
       settings: WebViewEnvironmentSettings(
         userDataFolder: path.join(dir.path, 'webview'),
