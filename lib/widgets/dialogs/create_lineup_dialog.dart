@@ -1,18 +1,12 @@
 import 'dart:developer';
-import 'dart:io' show Directory;
 import 'dart:typed_data' show Uint8List;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/agents.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/line_provider.dart';
-import 'package:icarus/const/youtube_handler.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -163,25 +157,6 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _DialogHeader extends StatelessWidget {
-  const _DialogHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Text("Create Line Up", style: TextStyle(color: Colors.white)),
-        IconButton(
-          onPressed: () => Navigator.of(context).pop(),
-          icon: const Icon(Icons.close, color: Colors.white),
-          tooltip: "Close",
-        ),
-      ],
     );
   }
 }
