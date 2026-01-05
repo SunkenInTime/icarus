@@ -114,10 +114,11 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
             if (details.data is AgentData) {
               PlacedAgent placedAgent = PlacedAgent(
-                  id: uuid.v4(),
-                  type: (details.data as AgentData).type,
-                  position: normalizedPosition,
-                  isAlly: ref.read(teamProvider));
+                id: uuid.v4(),
+                type: (details.data as AgentData).type,
+                position: normalizedPosition,
+                isAlly: ref.read(teamProvider),
+              );
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
@@ -229,6 +230,7 @@ class _AgentList extends ConsumerWidget {
                 opacity: Settings.feedbackOpacity,
                 child: ZoomTransform(
                   child: AgentWidget(
+                    state: agent.state,
                     isAlly: agent.isAlly,
                     id: "",
                     agent: AgentData.agents[agent.type]!,
@@ -247,6 +249,7 @@ class _AgentList extends ConsumerWidget {
                     .updatePosition(virtualOffset, agent.id);
               },
               child: AgentWidget(
+                state: agent.state,
                 isAlly: agent.isAlly,
                 id: agent.id,
                 agent: AgentData.agents[agent.type]!,
