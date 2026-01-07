@@ -121,8 +121,8 @@ class AgentWidget extends ConsumerWidget {
       );
     }
     final bool isLineUp = lineUpId != null;
-    final bool isNoneInteractive =
-        (id == null || id!.isEmpty) && (lineUpId == null);
+
+    final bool isNoneInteractive = (id == null || id!.isEmpty);
 
     final decoration = BoxDecoration(
       color: bgColor,
@@ -139,9 +139,7 @@ class AgentWidget extends ConsumerWidget {
     Widget agentCard;
     // Use Ink + InkWell so the ripple shows on top of the background
 
-    if (isNoneInteractive) {
-      agentCard = agentDisplay;
-    } else if (isLineUp) {
+    if (isLineUp) {
       agentCard = Container(
         decoration: decoration,
         width: scaledSize,
