@@ -186,6 +186,9 @@ class PlacedAgent extends PlacedWidget {
   @JsonKey(defaultValue: true)
   bool isAlly;
 
+  @JsonKey(defaultValue: AgentState.none)
+  AgentState state;
+
   final String? lineUpID;
 
   PlacedAgent({
@@ -194,6 +197,7 @@ class PlacedAgent extends PlacedWidget {
     required super.id,
     this.isAlly = true, // Default parameter value
     this.lineUpID,
+    this.state = AgentState.none,
   });
 
   factory PlacedAgent.fromJson(Map<String, dynamic> json) =>
@@ -207,6 +211,7 @@ class PlacedAgent extends PlacedWidget {
     String? id,
     bool? isAlly,
     String? lineUpID,
+    AgentState? state,
   }) {
     return PlacedAgent(
       type: type ?? this.type,
@@ -214,6 +219,7 @@ class PlacedAgent extends PlacedWidget {
       id: id ?? this.id,
       isAlly: isAlly ?? this.isAlly,
       lineUpID: lineUpID ?? this.lineUpID,
+      state: state ?? this.state,
     );
   }
 }

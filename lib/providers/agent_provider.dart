@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -39,6 +40,21 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
     if (index < 0) return;
     final agent = newState.removeAt(index);
     poppedAgents.add(agent);
+
+    state = newState;
+  }
+
+  void toggleAgentState(String id) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+    newState[index].state = newState[index].state == AgentState.dead
+        ? AgentState.none
+        : AgentState.dead;
+
+    final action =
+        UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent);
+    ref.read(actionProvider.notifier).addAction(action);
 
     state = newState;
   }

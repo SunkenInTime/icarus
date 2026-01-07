@@ -2,6 +2,7 @@ import 'dart:developer';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_portal/flutter_portal.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -39,15 +40,6 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
             child: ShadIconButton.ghost(
               foregroundColor: Colors.white,
               onPressed: () async {
-                // // Navigator.of(context).pushNamed(Routes.settings);
-                // Navigator.of(context).push(
-                //   PageRouteBuilder(
-                //     opaque: false,
-                //     // barrierColor: Colors.black54,
-                //     pageBuilder: (_, __, ___) => const SettingsTab(),
-                //   ),
-                // );
-
                 showShadSheet(
                   side: ShadSheetSide.left,
                   context: context,
@@ -63,6 +55,15 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
             child: ShadIconButton.ghost(
               foregroundColor: Colors.white,
               onPressed: () async {
+                if (kIsWeb) {
+                  Settings.showToast(
+                    message:
+                        'This feature is only supported in the Windows version.',
+                    backgroundColor: Settings.tacticalVioletTheme.destructive,
+                  );
+                  return;
+                }
+
                 await ref
                     .read(strategyProvider.notifier)
                     .exportFile(ref.read(strategyProvider).id);
@@ -75,6 +76,14 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
             child: ShadIconButton.ghost(
               foregroundColor: Colors.white,
               onPressed: () async {
+                if (kIsWeb) {
+                  Settings.showToast(
+                    message:
+                        'This feature is only supported in the Windows version.',
+                    backgroundColor: Settings.tacticalVioletTheme.destructive,
+                  );
+                  return;
+                }
                 if (_isLoading) return;
                 setState(() {
                   _isLoading = true;

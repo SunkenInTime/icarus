@@ -154,13 +154,14 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
       id: fields[2] as String,
       isAlly: fields[1] == null ? true : fields[1] as bool,
       lineUpID: fields[5] as String?,
+      state: fields[6] == null ? AgentState.none : fields[6] as AgentState,
     )..isDeleted = fields[3] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedAgent obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(7)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -172,7 +173,9 @@ class PlacedAgentAdapter extends TypeAdapter<PlacedAgent> {
       ..writeByte(4)
       ..write(obj.position)
       ..writeByte(5)
-      ..write(obj.lineUpID);
+      ..write(obj.lineUpID)
+      ..writeByte(6)
+      ..write(obj.state);
   }
 
   @override
@@ -1176,6 +1179,43 @@ class SimpleImageDataAdapter extends TypeAdapter<SimpleImageData> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is SimpleImageDataAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class AgentStateAdapter extends TypeAdapter<AgentState> {
+  @override
+  final typeId = 23;
+
+  @override
+  AgentState read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return AgentState.dead;
+      case 1:
+        return AgentState.none;
+      default:
+        return AgentState.dead;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, AgentState obj) {
+    switch (obj) {
+      case AgentState.dead:
+        writer.writeByte(0);
+      case AgentState.none:
+        writer.writeByte(1);
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AgentStateAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

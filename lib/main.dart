@@ -55,9 +55,11 @@ Future<void> main() async {
   await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
 
   await StrategyProvider.migrateAllStrategies();
+
   // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
 
   await _initWebViewEnvironment();
+
   if (!kIsWeb) {
     await windowManager.ensureInitialized();
     WindowOptions windowOptions = const WindowOptions(
@@ -69,19 +71,21 @@ Future<void> main() async {
     });
   }
 
+  log("Web");
   // Ensure WebView2 environment is initialized on Windows before any InAppWebView
   // widgets are created. This is especially important in testing/dev where the
   // WebView user-data folder and runtime selection can affect behavior.
-  if (!kIsWeb && Platform.isWindows) {
-    await _initWebViewEnvironment();
-  }
+  // if (!kIsWeb && Platform.isWindows) {
+  //   await _initWebViewEnvironment();
+  // }
 
   runApp(const ProviderScope(child: MyApp()));
 }
 
 Future<void> _initWebViewEnvironment() async {
-  final dir = await getApplicationSupportDirectory();
+  if (kIsWeb) return;
   if (Platform.isWindows) {
+    final dir = await getApplicationSupportDirectory();
     final availableVersion = await WebViewEnvironment.getAvailableVersion();
 
     if (availableVersion == null) {

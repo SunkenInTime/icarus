@@ -33,6 +33,11 @@ enum AgentType {
   veto,
 }
 
+enum AgentState {
+  dead,
+  none,
+}
+
 enum AgentRole { controller, duelist, initiator, sentinel }
 
 const Map<AgentRole, String> agentRoleNames = {

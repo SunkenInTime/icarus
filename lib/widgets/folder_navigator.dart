@@ -45,16 +45,18 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_warnedOnce) {
         _warnedOnce = true;
-        if (Platform.isWindows) {
-          log("Warning webview");
-          _warnWebView();
-        }
+
+        log("Warning webview");
+        _warnWebView();
+
         _warnDemo();
       }
     });
   }
 
   void _warnWebView() async {
+    if (kIsWeb) return;
+    if (!Platform.isWindows) return;
     if (isWebViewInitialized) return;
     await showShadDialog<void>(
       context: context,
@@ -152,6 +154,14 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
             children: [
               ShadButton.secondary(
                 onPressed: () async {
+                  if (kIsWeb) {
+                    Settings.showToast(
+                      message:
+                          'This feature is only supported in the Windows version.',
+                      backgroundColor: Settings.tacticalVioletTheme.destructive,
+                    );
+                    return;
+                  }
                   await ref
                       .read(strategyProvider.notifier)
                       .loadFromFilePicker();

@@ -67,6 +67,8 @@ PlacedAgent _$PlacedAgentFromJson(Map<String, dynamic> json) => PlacedAgent(
       id: json['id'] as String,
       isAlly: json['isAlly'] as bool? ?? true,
       lineUpID: json['lineUpID'] as String?,
+      state: $enumDecodeNullable(_$AgentStateEnumMap, json['state']) ??
+          AgentState.none,
     )..isDeleted = json['isDeleted'] as bool? ?? false;
 
 Map<String, dynamic> _$PlacedAgentToJson(PlacedAgent instance) =>
@@ -76,6 +78,7 @@ Map<String, dynamic> _$PlacedAgentToJson(PlacedAgent instance) =>
       'position': const OffsetConverter().toJson(instance.position),
       'type': _$AgentTypeEnumMap[instance.type]!,
       'isAlly': instance.isAlly,
+      'state': _$AgentStateEnumMap[instance.state]!,
       'lineUpID': instance.lineUpID,
     };
 
@@ -108,6 +111,11 @@ const _$AgentTypeEnumMap = {
   AgentType.tejo: 'tejo',
   AgentType.waylay: 'waylay',
   AgentType.veto: 'veto',
+};
+
+const _$AgentStateEnumMap = {
+  AgentState.dead: 'dead',
+  AgentState.none: 'none',
 };
 
 PlacedAbility _$PlacedAbilityFromJson(Map<String, dynamic> json) =>
