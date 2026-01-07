@@ -1,5 +1,6 @@
 import 'dart:developer';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
@@ -196,6 +197,14 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   }
 
   Future<void> _exportStrategy() async {
+    if (kIsWeb) {
+      Settings.showToast(
+        message: 'This feature is only supported in the Windows version.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+
     await ref
         .read(strategyProvider.notifier)
         .loadFromHive(widget.strategyData.id);

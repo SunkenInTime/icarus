@@ -38,8 +38,8 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 23;
-  static const String versionName = "2.4.0";
+  static const int versionNumber = 24;
+  static const String versionName = "2.5.0";
 
   static final Uri windowsStoreLink = Uri.parse(
       "https://apps.microsoft.com/detail/9PBWHHZRQFW6?hl=en-us&gl=US&ocid=pdpshare");
