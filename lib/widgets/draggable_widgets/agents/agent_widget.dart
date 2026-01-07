@@ -122,7 +122,7 @@ class AgentWidget extends ConsumerWidget {
     }
     final bool isLineUp = lineUpId != null;
     final bool isNoneInteractive =
-        (id == null || id!.isEmpty) & (lineUpId == null);
+        (id == null || id!.isEmpty) && (lineUpId == null);
 
     final decoration = BoxDecoration(
       color: bgColor,

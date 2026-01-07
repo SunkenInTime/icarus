@@ -684,6 +684,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       final tempDirectoryList = tempDirectory.listSync();
 
       try {
+        log("Temp directory list: ${tempDirectoryList.length}.");
+
         for (final fileEntity in tempDirectoryList) {
           if (fileEntity is File) {
             log(fileEntity.path);
@@ -932,12 +934,11 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final pages = strategy.pages.map((p) => p.toJson(strategy.id)).toList();
     final pageJson = jsonEncode(pages);
+
     final data = '''
                   {
                   "versionNumber": "${Settings.versionNumber}",
-                  "mapData": ${ref.read(mapProvider.notifier).toJson()},
-                  "settingsData":${ref.read(strategySettingsProvider.notifier).toJson()},
-                  "isAttack": "${ref.read(mapProvider).isAttack.toString()}",
+                  "mapData": "${Maps.mapNames[strategy.mapData]}",
                   "pages": $pageJson
                   }
                 ''';
@@ -990,7 +991,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final outputFile = await FilePicker.platform.saveFile(
       type: FileType.custom,
       dialogTitle: 'Please select an output file:',
-      fileName: "${state.stratName ?? "new strategy"}.ica",
+      fileName: "${sanitizeFileName(state.stratName ?? "new strategy")}.ica",
       allowedExtensions: [".ica"],
     );
 
