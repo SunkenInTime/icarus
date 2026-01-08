@@ -126,7 +126,7 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
               },
             ),
           ),
-          if (widget.images.length > 1) ...[
+          if (widget.images.isNotEmpty) ...[
             if (_currentIndex > 0)
               Positioned(
                 left: 8,
