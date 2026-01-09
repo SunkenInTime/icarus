@@ -99,18 +99,6 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                                 Expanded(
                                   child: ListView(
                                     children: [
-                                      // Available maps section
-                                      // const Padding(
-                                      //   padding: EdgeInsets.all(8.0),
-                                      //   child: Text(
-                                      //     "Current Rotation",
-                                      //     style: TextStyle(
-                                      //       fontWeight: FontWeight.bold,
-                                      //       color: Colors.white,
-                                      //     ),
-                                      //     textAlign: TextAlign.center,
-                                      //   ),
-                                      // ),
                                       ...Maps.mapNames.keys
                                           .where((mapValue) => Maps
                                               .availableMaps
@@ -132,12 +120,6 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                                         );
                                       }),
 
-                                      // const Divider(
-                                      //   color: Colors.grey,
-                                      //   thickness: 1,
-                                      //   height: 24,
-                                      // ),
-
                                       // Out of play maps section
                                       const Padding(
                                         padding: EdgeInsets.all(8.0),
@@ -158,6 +140,7 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                                           padding: const EdgeInsets.all(4),
                                           child: MapTile(
                                             name: mapName,
+                                            // isActive: mapValue == currentMap,
                                             onTap: () {
                                               ref
                                                   .read(mapProvider.notifier)

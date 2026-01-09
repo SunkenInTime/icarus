@@ -3,7 +3,7 @@ description: "A new Flutter project."
 
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
-version: 2.5.2+26 #version number
+version: 2.5.4+28 #version number
 
 environment:
   sdk: ">=3.4.3 <4.0.0"
@@ -37,6 +37,7 @@ dependencies:
   toastification: ^3.0.3
   custom_mouse_cursor: ^1.1.3
   flutter_inappwebview: ^6.1.5
+  windows_single_instance: ^1.0.0
 
 dev_dependencies:
   flutter_test:
@@ -59,8 +60,9 @@ msix_config:
   identity_name: DaraA.IcarusValorantStrategiesLineups
   publisher: CN=39055448-F6AA-42E9-91F6-9CF8828C444C
   logo_path: E:\Projects\icarus\windows\runner\resources\app_icon.ico
-  msix_version: 2.5.2.0 #verion number #last 0 needs to be there for msix to work
-  store: true
+  msix_version: 2.5.4.0 #verion number #last 0 needs to be there for msix to work
+  file_extension: .ica
+  # store: true
 
 flutter:
   fonts:
