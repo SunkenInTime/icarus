@@ -17,18 +17,19 @@ class Maps {
   static List<MapValue> availableMaps = [
     MapValue.bind,
     MapValue.haven,
-    MapValue.icebox,
     MapValue.pearl,
     MapValue.corrode,
-    MapValue.fracture,
     MapValue.split,
+    MapValue.breeze,
+    MapValue.abyss,
   ];
 
   static List<MapValue> outofplayMaps = [
     MapValue.sunset,
-    MapValue.abyss,
     MapValue.ascent,
     MapValue.lotus,
+    MapValue.icebox,
+    MapValue.fracture,
   ];
 
   static Map<MapValue, String> mapNames = {
@@ -48,7 +49,7 @@ class Maps {
 
   static Map<MapValue, double> mapScale = {
     MapValue.ascent: 1,
-    MapValue.breeze: 1,
+    MapValue.breeze: 1.02,
     MapValue.lotus: 1.25,
     MapValue.icebox: 1.05,
     MapValue.split: 1.18,
