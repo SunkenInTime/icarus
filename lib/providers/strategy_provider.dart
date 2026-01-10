@@ -585,6 +585,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(agentProvider.notifier).fromHive(firstPage.agentData);
     ref.read(abilityProvider.notifier).fromHive(firstPage.abilityData);
     ref.read(drawingProvider.notifier).fromHive(firstPage.drawingData);
+
     ref
         .read(mapProvider.notifier)
         .fromHive(newStrat.mapData, newStrat.pages.first.isAttack);
@@ -612,6 +613,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       id: newStrat.id,
       storageDirectory: newDir.path,
     );
+  }
+
+  Future<void> loadFromFilePath(String filePath) async {
+    await _loadFromXFile(XFile(filePath));
   }
 
   Future<void> loadFromFilePicker() async {

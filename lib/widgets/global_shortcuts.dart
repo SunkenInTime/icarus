@@ -2,6 +2,7 @@ import 'dart:developer';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -9,13 +10,23 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/widgets/dialogs/in_app_debug_dialog.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
-class GlobalShortcuts extends ConsumerWidget {
+class GlobalShortcuts extends ConsumerStatefulWidget {
   const GlobalShortcuts({super.key, required this.child});
   final Widget child;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<GlobalShortcuts> createState() => _GlobalShortcutsState();
+}
+
+class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
+  bool _isDebugDialogOpen = false;
+
+  @override
+  Widget build(BuildContext context) {
     return Focus(
       autofocus: true,
       // canRequestFocus: true,
@@ -106,8 +117,27 @@ class GlobalShortcuts extends ConsumerWidget {
                 return null;
               },
             ),
+            OpenInAppDebugIntent: CallbackAction<OpenInAppDebugIntent>(
+              onInvoke: (intent) async {
+                if (_isDebugDialogOpen) return null;
+
+                final navCtx = appNavigatorKey.currentContext ??
+                    appNavigatorKey.currentState?.overlay?.context;
+                if (navCtx == null) return null;
+
+                _isDebugDialogOpen = true;
+
+                await showShadDialog<void>(
+                  context: navCtx,
+                  builder: (context) => const InAppDebugDialog(),
+                );
+
+                _isDebugDialogOpen = false;
+                return null;
+              },
+            ),
           },
-          child: child,
+          child: widget.child,
         ),
       ),
     );

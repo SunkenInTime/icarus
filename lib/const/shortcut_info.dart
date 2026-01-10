@@ -21,6 +21,7 @@ class ShortcutInfo {
     LogicalKeySet(LogicalKeyboardKey.keyS): const NavigationActionIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyA): const ForwardPageIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyD): const BackwardPageIntent(),
+    LogicalKeySet(LogicalKeyboardKey.f12): const OpenInAppDebugIntent(),
   };
 
   // New map to disable global shortcuts when typing
@@ -93,4 +94,8 @@ class ForwardPageIntent extends Intent {
 
 class BackwardPageIntent extends Intent {
   const BackwardPageIntent();
+}
+
+class OpenInAppDebugIntent extends Intent {
+  const OpenInAppDebugIntent();
 }
