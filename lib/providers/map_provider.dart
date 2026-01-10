@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/providers/agent_provider.dart';
 
 final mapProvider = NotifierProvider<MapProvider, MapState>(MapProvider.new);
 
@@ -64,6 +65,8 @@ class MapProvider extends Notifier<MapState> {
   }
 
   void switchSide() {
+    // Flip all placed agents to mirror positions before toggling the side
+    ref.read(agentProvider.notifier).switchSides();
     state = state.copyWith(isAttack: !state.isAttack);
   }
 
