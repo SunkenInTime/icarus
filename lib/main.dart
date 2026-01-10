@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+
 import 'package:windows_single_instance/windows_single_instance.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -140,13 +141,20 @@ class _MyAppState extends ConsumerState<MyApp> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.data.isEmpty) return;
-      ref.read(inAppDebugProvider.notifier).bulkAddLogs(widget.data);
       log("Data: ${widget.data}");
+
+      ref.read(inAppDebugProvider.notifier).bulkAddLogs(widget.data);
+      ref.read(strategyProvider.notifier).loadFromFilePath(widget.data.first);
     });
 
     _secondInstanceSub = secondInstanceArgsController.stream.listen((args) {
-      ref.read(inAppDebugProvider.notifier).bulkAddLogs(args);
+      if (args.isEmpty) return;
+
       log("Second instance args: $args");
+      log("Data: ${widget.data}");
+
+      ref.read(strategyProvider.notifier).loadFromFilePath(args.first);
+      ref.read(inAppDebugProvider.notifier).bulkAddLogs(args);
     });
   }
 

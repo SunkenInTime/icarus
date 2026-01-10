@@ -126,10 +126,12 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
                 if (navCtx == null) return null;
 
                 _isDebugDialogOpen = true;
+
                 await showShadDialog<void>(
                   context: navCtx,
                   builder: (context) => const InAppDebugDialog(),
                 );
+
                 _isDebugDialogOpen = false;
                 return null;
               },
