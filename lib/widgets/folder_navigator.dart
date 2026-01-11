@@ -186,7 +186,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
               ShadButton(
                 onPressed: showCreateDialog,
                 leading: const Icon(Icons.add),
-                child: const Text('Sigma Button'),
+                child: const Text('Create Strategy'),
               ),
               // CustomButton(
               //   onPressed: showCreateDialog,
