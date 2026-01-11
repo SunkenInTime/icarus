@@ -13,10 +13,11 @@ import 'package:json_annotation/json_annotation.dart';
 
 part "placed_classes.g.dart";
 
-Offset getFlippedPosition(
-    {required Offset position,
-    required Offset scaledSize,
-    bool isRotatable = false}) {
+Offset getFlippedPosition({
+  required Offset position,
+  required Offset scaledSize,
+  bool isRotatable = false,
+}) {
   final coordinateSystem = CoordinateSystem.instance;
   final wNorm = (scaledSize.dx / coordinateSystem.effectiveSize.width) *
       coordinateSystem.normalizedWidth;
@@ -132,6 +133,11 @@ class PlacedText extends PlacedWidget {
       _$PlacedTextFromJson(json);
   @override
   Map<String, dynamic> toJson() => _$PlacedTextToJson(this);
+
+  void switchSides() {
+    position = getFlippedPosition(
+        position: position, scaledSize: const Offset(100, 100));
+  }
 }
 
 @JsonSerializable()

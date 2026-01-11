@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/shortcut_info.dart';
@@ -23,6 +25,7 @@ class _TextWidgetState extends ConsumerState<TextWidget> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
 
+  final GlobalKey _textFieldKey = GlobalKey();
   @override
   void initState() {
     super.initState();
@@ -39,6 +42,12 @@ class _TextWidgetState extends ConsumerState<TextWidget> {
     if (_focusNode.hasFocus) return;
 
     ref.read(textProvider.notifier).editText(_controller.text, widget.id);
+  }
+
+  @override
+  void didUpdateWidget(covariant TextWidget oldWidget) {
+    log("Hey we updated like a freaking boss");
+    super.didUpdateWidget(oldWidget);
   }
 
   @override
