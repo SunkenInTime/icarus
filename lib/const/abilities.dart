@@ -11,9 +11,23 @@ import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_icon_widget.dart';
 
-sealed class Ability {
-  Offset getAnchorPoint({double? mapScale, double? abilitySize});
+bool isRotatable(Ability ability) {
+  switch (ability) {
+    case SquareAbility():
+      return true;
+    case CenterSquareAbility():
+      return true;
+    case RotatableImageAbility():
+      return true;
+    default:
+      return false;
+  }
+}
 
+sealed class Ability {
+  //
+  Offset getAnchorPoint({double? mapScale, double? abilitySize});
+  Offset getSize({double? mapScale, double? abilitySize});
   Widget createWidget({
     String? id,
     required bool isAlly,
@@ -52,6 +66,12 @@ class BaseAbility extends Ability {
     // abilitySize is required, so no need for !
     return Offset(abilitySize! / 2, abilitySize / 2);
   }
+
+  @override
+  Offset getSize({double? mapScale, double? abilitySize}) {
+    assert(abilitySize != null, 'abilitySize must be provided');
+    return Offset(abilitySize!, abilitySize);
+  }
 }
 
 class ImageAbility extends Ability {
@@ -81,6 +101,13 @@ class ImageAbility extends Ability {
   Offset getAnchorPoint({double? mapScale, double? abilitySize}) {
     assert(mapScale != null, 'mapScale must be provided');
     return Offset(size * mapScale! / 2, size * mapScale / 2);
+  }
+
+  @override
+  Offset getSize({double? mapScale, double? abilitySize}) {
+    assert(abilitySize != null, 'abilitySize must be provided');
+    assert(mapScale != null, 'mapScale must be provided');
+    return Offset(size * mapScale!, size * mapScale);
   }
 }
 
@@ -113,6 +140,13 @@ class CircleAbility extends Ability {
   }) {
     assert(mapScale != null, 'mapScale must be provided');
     return Offset((size * mapScale!) / 2, (size * mapScale) / 2);
+  }
+
+  @override
+  Offset getSize({double? mapScale, double? abilitySize}) {
+    assert(abilitySize != null, 'abilitySize must be provided');
+    assert(mapScale != null, 'mapScale must be provided');
+    return Offset(size * mapScale!, size * mapScale);
   }
 
   @override
@@ -180,6 +214,20 @@ class SquareAbility extends Ability {
       (height * mapScale!) +
           (distanceBetweenAOE * mapScale) +
           (abilitySize / 2) +
+          7.5, //This is the resize button offset
+    );
+  }
+
+  @override
+  Offset getSize({double? mapScale, double? abilitySize}) {
+    assert(abilitySize != null, 'abilitySize must be provided');
+    assert(mapScale != null, 'mapScale must be provided');
+
+    return Offset(
+      width * mapScale!,
+      (height * mapScale) +
+          (distanceBetweenAOE * mapScale) +
+          (abilitySize! / 2) +
           7.5,
     );
   }
@@ -234,6 +282,13 @@ class CenterSquareAbility extends Ability {
   }
 
   @override
+  Offset getSize({double? mapScale, double? abilitySize}) {
+    assert(abilitySize != null, 'abilitySize must be provided');
+    assert(mapScale != null, 'mapScale must be provided');
+    return Offset(abilitySize! * mapScale!, height * mapScale / 2);
+  }
+
+  @override
   Widget createWidget({
     String? id,
     required bool isAlly,
@@ -269,6 +324,13 @@ class RotatableImageAbility extends Ability {
   @override
   Offset getAnchorPoint({double? mapScale, double? abilitySize}) {
     return Offset(width * mapScale! / 2, (height * mapScale / 2) + 30);
+  }
+
+  @override
+  Offset getSize({double? mapScale, double? abilitySize}) {
+    assert(abilitySize != null, 'abilitySize must be provided');
+    assert(mapScale != null, 'mapScale must be provided');
+    return Offset(width * mapScale!, (height * mapScale / 2) + 30);
   }
 
   @override

@@ -47,6 +47,7 @@ sealed class Utilities {
   Offset getAnchorPoint({String? id, double? length, double? rotation});
 
   Widget createWidget({String? id, double? rotation, double? length});
+  Offset getSize();
 }
 
 class ImageUtility extends Utilities {
@@ -63,6 +64,11 @@ class ImageUtility extends Utilities {
   @override
   Offset getAnchorPoint({String? id, double? length, double? rotation}) {
     return Offset(size / 2, size / 2);
+  }
+
+  @override
+  Offset getSize() {
+    return Offset(size, size);
   }
 }
 
@@ -96,6 +102,10 @@ class ViewConeUtility extends Utilities {
     return const Offset(maxLength, maxLength + 7.5);
   }
 
+  @override
+  Offset getSize() {
+    return const Offset(maxLength * 2, maxLength + 7.5);
+  }
   // /// Get anchor point with length - bottom center of the view cone
   // /// Similar to how SquareAbility calculates its anchor
   // Offset getAnchorPointWithLength({

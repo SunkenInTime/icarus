@@ -1,14 +1,38 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:json_annotation/json_annotation.dart';
 
 part "placed_classes.g.dart";
+
+Offset getFlippedPosition(
+    {required Offset position,
+    required Offset scaledSize,
+    bool isRotatable = false}) {
+  final coordinateSystem = CoordinateSystem.instance;
+  final wNorm = (scaledSize.dx / coordinateSystem.effectiveSize.width) *
+      coordinateSystem.normalizedWidth;
+  final hNorm = (scaledSize.dy / coordinateSystem.effectiveSize.height) *
+      coordinateSystem.normalizedHeight;
+  final flippedX = coordinateSystem.normalizedWidth - position.dx - wNorm;
+  double flippedY = 0;
+
+  if (isRotatable) {
+    flippedY = coordinateSystem.normalizedHeight - position.dy - hNorm - hNorm;
+  } else {
+    flippedY = coordinateSystem.normalizedHeight - position.dy - hNorm;
+  }
+
+  return Offset(flippedX, flippedY);
+}
 
 /// Converter for [Offset] to and from JSON.
 class BaseOffsetConverter {
@@ -205,6 +229,32 @@ class PlacedAgent extends PlacedWidget {
   @override
   Map<String, dynamic> toJson() => _$PlacedAgentToJson(this);
 
+  @override
+  void switchSides(double agentSize) {
+    final coordinateSystem = CoordinateSystem.instance;
+    final agentScreenPx = coordinateSystem.scale(agentSize);
+
+    position = getFlippedPosition(
+        position: position, scaledSize: Offset(agentScreenPx, agentScreenPx));
+
+    for (final (index, action) in _actionHistory.indexed) {
+      if (action is PositionAction) {
+        _actionHistory[index] = action.copyWith(
+            position: getFlippedPosition(
+                position: action.position,
+                scaledSize: Offset(agentScreenPx, agentScreenPx)));
+      }
+    }
+    for (final (index, action) in _poppedAction.indexed) {
+      if (action is PositionAction) {
+        _poppedAction[index] = action.copyWith(
+            position: getFlippedPosition(
+                position: action.position,
+                scaledSize: Offset(agentScreenPx, agentScreenPx)));
+      }
+    }
+  }
+
   PlacedAgent copyWith({
     AgentType? type,
     Offset? position,
@@ -278,6 +328,51 @@ class PlacedAbility extends PlacedWidget {
     _poppedAction.removeLast();
   }
 
+  void switchSides({required double mapScale, required double abilitySize}) {
+    final fullAbilityWidgetSize =
+        data.abilityData!.getSize(mapScale: mapScale, abilitySize: abilitySize);
+
+    final scaledAbilitySize = fullAbilityWidgetSize.scale(
+        CoordinateSystem.instance.scaleFactor,
+        CoordinateSystem.instance.scaleFactor);
+
+    Offset flippedPosition = getFlippedPosition(
+        position: position,
+        scaledSize: scaledAbilitySize,
+        isRotatable: isRotatable(data.abilityData!));
+    position = flippedPosition;
+
+    if (isRotatable(data.abilityData!)) {
+      rotation = rotation + math.pi;
+    }
+
+    for (final (index, action) in _actionHistory.indexed) {
+      if (action is PositionAction) {
+        _actionHistory[index] = action.copyWith(
+            position: getFlippedPosition(
+                position: action.position,
+                scaledSize: scaledAbilitySize,
+                isRotatable: isRotatable(data.abilityData!)));
+      } else if (action is RotationAction) {
+        _actionHistory[index] = action.copyWith(
+            rotation: action.rotation + math.pi, length: action.length);
+      }
+    }
+
+    for (final (index, action) in _poppedAction.indexed) {
+      if (action is PositionAction) {
+        _poppedAction[index] = action.copyWith(
+            position: getFlippedPosition(
+                position: action.position,
+                scaledSize: scaledAbilitySize,
+                isRotatable: isRotatable(data.abilityData!)));
+      } else if (action is RotationAction) {
+        _poppedAction[index] = action.copyWith(
+            rotation: action.rotation + math.pi, length: action.length);
+      }
+    }
+  }
+
   @override
   void undoAction() {
     if (_actionHistory.isEmpty) return;
@@ -332,12 +427,22 @@ class RotationAction extends WidgetAction {
   final double rotation;
   final double length;
   RotationAction({required this.rotation, required this.length});
+  RotationAction copyWith({double? rotation, double? length}) {
+    return RotationAction(
+      rotation: rotation ?? this.rotation,
+      length: length ?? this.length,
+    );
+  }
 }
 
 class PositionAction extends WidgetAction {
   final Offset position;
 
   PositionAction({required this.position});
+
+  PositionAction copyWith({Offset? position}) {
+    return PositionAction(position: position ?? this.position);
+  }
 }
 
 @JsonSerializable()
@@ -350,6 +455,57 @@ class PlacedUtility extends PlacedWidget {
   void updateRotation(double newRotation, double newLength) {
     rotation = newRotation;
     length = newLength;
+  }
+
+  _getIsRotationUtility(UtilityType type) {
+    return type == UtilityType.viewCone180 ||
+        type == UtilityType.viewCone90 ||
+        type == UtilityType.viewCone40;
+  }
+
+  void switchSides() {
+    final size = UtilityData.utilityWidgets[type]!.getSize();
+    final scaledSize = size.scale(CoordinateSystem.instance.scaleFactor,
+        CoordinateSystem.instance.scaleFactor);
+
+    final flippedPosition = getFlippedPosition(
+        position: position,
+        scaledSize: scaledSize,
+        isRotatable: _getIsRotationUtility(type));
+
+    position = flippedPosition;
+
+    if (_getIsRotationUtility(type)) {
+      rotation = rotation + math.pi;
+    }
+
+    for (final (index, action) in _actionHistory.indexed) {
+      if (action is PositionAction) {
+        Offset actionFlippedPosition = getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledSize,
+            isRotatable: _getIsRotationUtility(type));
+
+        _actionHistory[index] =
+            action.copyWith(position: actionFlippedPosition);
+      } else if (action is RotationAction) {
+        _actionHistory[index] =
+            action.copyWith(rotation: action.rotation + math.pi);
+      }
+    }
+    for (final (index, action) in _poppedAction.indexed) {
+      if (action is PositionAction) {
+        Offset actionFlippedPosition = getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledSize,
+            isRotatable: _getIsRotationUtility(type));
+
+        _poppedAction[index] = action.copyWith(position: actionFlippedPosition);
+      } else if (action is RotationAction) {
+        _poppedAction[index] =
+            action.copyWith(rotation: action.rotation + math.pi);
+      }
+    }
   }
 
   void updateRotationHistory() {
