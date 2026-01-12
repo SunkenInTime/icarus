@@ -227,7 +227,7 @@ class SquareAbility extends Ability {
       isWall ? abilitySize! * 2 : width * mapScale!,
       (height * mapScale!) +
           (distanceBetweenAOE * mapScale) +
-          (abilitySize / 2) +
+          (abilitySize! / 2) +
           7.5,
     );
   }
