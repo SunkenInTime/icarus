@@ -501,9 +501,7 @@ class PlacedUtility extends PlacedWidget {
   }
 
   _getIsRotationUtility(UtilityType type) {
-    return type == UtilityType.viewCone180 ||
-        type == UtilityType.viewCone90 ||
-        type == UtilityType.viewCone40;
+    return UtilityData.isViewCone(type);
   }
 
   void switchSides() {
