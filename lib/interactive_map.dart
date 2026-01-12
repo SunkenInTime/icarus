@@ -161,7 +161,10 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                               InteractionState.lineUpPlacing
                           ? 0.2
                           : 1.0,
-                      child: InteractivePainter(),
+                      child: Transform.flip(
+                          flipX: !isAttack,
+                          flipY: !isAttack,
+                          child: InteractivePainter()),
                     ),
                   ),
 

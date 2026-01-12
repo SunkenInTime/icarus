@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:developer' show log;
+import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -75,23 +77,18 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void switchSides() {
-    // final newState = [...state];
+    if (state.isEmpty) return;
 
-    // for (PlacedAbility ability in newState) {
-    //   final Offset abilitySize = ability.data.abilityData!.getAnchorPoint() +
-    //       ability.data.abilityData!.getAnchorPoint();
-    //   log(abilitySize.toString());
-    //   // ability.position =
-    //   //     Offset(1240 - abilitySize.dx - 6, 1000 - abilitySize.dy - 6) -
-    //   //         ability.position;
-    //   log("Previous position ${ability.position}");
-    //   // ability.position = const Offset(1240, 1000) -
-    //   //     ability.position -
-    //   //     const Offset(6, 6) - //I still have no idea what minusing this 6 works
-    //   //     abilitySize;
-    // }
+    final newState = <PlacedAbility>[...state];
 
-    // state = newState;
+    for (final ability in state) {
+      final mapScale = ref.read(mapProvider.notifier).mapScale;
+      final abilitySizeSetting = ref.read(strategySettingsProvider).abilitySize;
+
+      ability.switchSides(mapScale: mapScale, abilitySize: abilitySizeSetting);
+    }
+
+    state = newState;
   }
 
   void updateRotation(int index, double rotation, double length) {

@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/text_widget_height_provider.dart';
 
 final textProvider =
     NotifierProvider<TextProvider, List<PlacedText>>(TextProvider.new);
 
 class TextProvider extends Notifier<List<PlacedText>> {
   List<PlacedText> poppedText = [];
+
   @override
   List<PlacedText> build() {
     return [];
@@ -45,6 +47,21 @@ class TextProvider extends Notifier<List<PlacedText>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
+  }
+
+  void switchSides() {
+    final newState = [...state];
+    for (final text in newState) {
+      text.switchSides(
+          ref.read(textWidgetHeightProvider.notifier).getOffset(text.id));
+    }
+
+    for (final text in poppedText) {
+      text.switchSides(
+          ref.read(textWidgetHeightProvider.notifier).getOffset(text.id));
+    }
+
+    state = newState;
   }
 
   void editText(String text, String id) {

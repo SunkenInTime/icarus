@@ -181,13 +181,21 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
   }
 
   void switchSides() {
-    // final newState = [...state];
+    if (state.isEmpty) return;
 
-    // for (PlacedAgent agent in newState) {
-    //   agent.position = const Offset(1240 - 36, 1000 - 36) - agent.position;
-    // }
+    final newState = [...state];
+    for (final agent in newState) {
+      // Flip over both axes, accounting for top-left positioning:
+      // x' = normalizedWidth  - x - wNorm
+      // y' = normalizedHeight - y - hNorm
+      agent.switchSides(ref.read(strategySettingsProvider).agentSize);
+    }
 
-    // state = newState;
+    for (final agent in poppedAgents) {
+      agent.switchSides(ref.read(strategySettingsProvider).agentSize);
+    }
+
+    state = newState;
   }
 
   void clearAll() {

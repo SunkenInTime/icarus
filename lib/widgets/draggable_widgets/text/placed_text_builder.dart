@@ -6,6 +6,7 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_scale_controller.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
 class PlacedTextBuilder extends ConsumerStatefulWidget {
   const PlacedTextBuilder({
@@ -29,8 +30,6 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
   bool isDragging = false;
   @override
   void initState() {
-    // TODO: implement initState
-
     localSize ??= widget.size;
     super.initState();
   }
@@ -74,11 +73,13 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         data: widget.placedText,
         feedback: Opacity(
           opacity: 0.8,
-          child: TextWidget(
-            id: widget.placedText.id,
-            text: widget.placedText.text,
-            size: localSize!,
-            isDragged: true,
+          child: ZoomTransform(
+            child: TextWidget(
+              id: widget.placedText.id,
+              text: widget.placedText.text,
+              size: localSize!,
+              isFeedback: true,
+            ),
           ),
         ),
         childWhenDragging: const SizedBox.shrink(),
@@ -99,7 +100,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           id: widget.placedText.id,
           text: widget.placedText.text,
           size: localSize!,
-          isDragged: true,
+          isFeedback: false,
         ),
       ),
     );

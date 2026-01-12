@@ -4,101 +4,11 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:path/path.dart' as path;
-
-class ImageWidget extends ConsumerWidget {
-  const ImageWidget({
-    super.key,
-    required this.link,
-    required this.aspectRatio,
-    required this.scale,
-    required this.fileExtension,
-    required this.id,
-  });
-  final double aspectRatio;
-  final String? link;
-  final double scale;
-  final String? fileExtension;
-  final String id;
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    log(scale.toString());
-    final file = File(path.join(
-      ref.watch(strategyProvider).storageDirectory!,
-      'images',
-      '$id$fileExtension',
-    ));
-    // Build the small image widget used both here and in the hero
-    Widget buildThumb() {
-      if (file.existsSync() && fileExtension != null) {
-        return Image.file(file, fit: BoxFit.cover);
-      }
-      if (link != null && link!.isNotEmpty) {
-        return Image.network(link!, fit: BoxFit.cover);
-      }
-      return const Placeholder();
-    }
-
-    return GestureDetector(
-      onTap: () {
-        _showImageFullScreenOverlay(
-          context: context,
-          heroTag: 'image_$id',
-          file: (file.existsSync() && fileExtension != null) ? file : null,
-          networkLink:
-              (file.existsSync() && fileExtension != null) ? null : link,
-          aspectRatio: aspectRatio,
-        );
-      },
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: scale),
-        child: AspectRatio(
-          aspectRatio: aspectRatio,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // The grey container on left
-              Container(
-                width: 10,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFC5C5C5),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-              const SizedBox(width: 2),
-              Flexible(
-                child: Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                  margin: EdgeInsets.zero,
-                  color: Colors.black,
-                  child: Padding(
-                    padding: const EdgeInsets.all(5),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: const Color.fromARGB(255, 20, 20, 20),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: Hero(
-                          tag: 'image_$id',
-                          child: buildThumb(),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              )
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 // Full-screen overlay launcher
 void _showImageFullScreenOverlay({
@@ -178,34 +88,17 @@ class _ImageFullScreenOverlay extends StatelessWidget {
                     ),
                     Align(
                       alignment: Alignment.center,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          InteractiveViewer(
-                            minScale: 0.5,
-                            maxScale: 8,
-                            child: SizedBox(
-                              width: width,
-                              height: height,
-                              child: Hero(
-                                tag: heroTag,
-                                child: image,
-                              ),
-                            ),
+                      child: InteractiveViewer(
+                        minScale: 0.5,
+                        maxScale: 8,
+                        child: SizedBox(
+                          width: width,
+                          height: height,
+                          child: Hero(
+                            tag: heroTag,
+                            child: image,
                           ),
-                          Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: IconButton.filled(
-                              style: IconButton.styleFrom(
-                                  backgroundColor: Colors.white),
-                              icon:
-                                  const Icon(Icons.close, color: Colors.black),
-                              tooltip: 'Close',
-                              onPressed: () => Navigator.of(context).maybePop(),
-                            ),
-                          )
-                        ],
+                        ),
                       ),
                     ),
                   ],
@@ -213,7 +106,162 @@ class _ImageFullScreenOverlay extends StatelessWidget {
               }),
             ),
           ),
+          Positioned(
+            top: 24,
+            right: 24,
+            child: SafeArea(
+              child: ShadIconButton.secondary(
+                icon: const Icon(LucideIcons.x, color: Colors.white),
+                decoration: ShadDecoration(
+                  border: ShadBorder.all(
+                    color: Settings.tacticalVioletTheme.border,
+                  ),
+                ),
+                onPressed: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class ImageWidget extends ConsumerStatefulWidget {
+  const ImageWidget({
+    super.key,
+    required this.link,
+    required this.aspectRatio,
+    required this.scale,
+    required this.fileExtension,
+    required this.id,
+    this.isFeedback = false,
+  });
+  final double aspectRatio;
+  final String? link;
+  final double scale;
+  final String? fileExtension;
+  final String id;
+  final bool isFeedback;
+
+  @override
+  ConsumerState<ConsumerStatefulWidget> createState() => _ImageWidgetState();
+}
+
+class _ImageWidgetState extends ConsumerState<ImageWidget> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+      if (widget.isFeedback) return;
+      RenderObject? renderObject = context.findRenderObject();
+      RenderBox? renderBox = renderObject as RenderBox;
+      // if (renderBox == null) return;
+      double height = renderBox.size.height;
+      double width = renderBox.size.width;
+
+      Offset offset = Offset(width, height);
+
+      ref.read(imageWidgetSizeProvider.notifier).updateSize(widget.id, offset);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    log(widget.scale.toString());
+    final file = File(path.join(
+      ref.watch(strategyProvider).storageDirectory!,
+      'images',
+      '${widget.id}${widget.fileExtension}',
+    ));
+
+    // Build the small image widget used both here and in the hero
+    Widget buildThumb() {
+      if (file.existsSync() && widget.fileExtension != null) {
+        return Image.file(file, fit: BoxFit.cover);
+      }
+      if (widget.link != null && widget.link!.isNotEmpty) {
+        return Image.network(widget.link!, fit: BoxFit.cover);
+      }
+      return const Placeholder();
+    }
+
+    return GestureDetector(
+      onTap: () {
+        _showImageFullScreenOverlay(
+          context: context,
+          heroTag: 'image_${widget.id}',
+          file:
+              (file.existsSync() && widget.fileExtension != null) ? file : null,
+          networkLink: (file.existsSync() && widget.fileExtension != null)
+              ? null
+              : widget.link,
+          aspectRatio: widget.aspectRatio,
+        );
+      },
+      child: NotificationListener<SizeChangedLayoutNotification>(
+        onNotification: (notification) {
+          if (widget.isFeedback) return true;
+          RenderObject? renderObject = context.findRenderObject();
+          RenderBox? renderBox = renderObject as RenderBox;
+          double height = renderBox.size.height;
+          double width = renderBox.size.width;
+
+          Offset offset = Offset(width, height);
+          WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+            ref
+                .read(imageWidgetSizeProvider.notifier)
+                .updateSize(widget.id, offset);
+          });
+          return true;
+        },
+        child: SizeChangedLayoutNotifier(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: widget.scale),
+            child: AspectRatio(
+              aspectRatio: widget.aspectRatio,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // The grey container on left
+                  Container(
+                    width: 10,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFC5C5C5),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  Flexible(
+                    child: Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      margin: EdgeInsets.zero,
+                      color: Colors.black,
+                      child: Padding(
+                        padding: const EdgeInsets.all(5),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color.fromARGB(255, 20, 20, 20),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: Hero(
+                              tag: 'image_${widget.id}',
+                              child: buildThumb(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

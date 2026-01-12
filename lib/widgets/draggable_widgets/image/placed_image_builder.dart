@@ -85,6 +85,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
           feedback: ZoomTransform(
             child: IgnorePointer(
               child: ImageWidget(
+                isFeedback: true,
                 link: widget.placedImage.link,
                 aspectRatio: widget.placedImage.aspectRatio,
                 scale: localScale!,
