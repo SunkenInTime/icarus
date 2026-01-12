@@ -27,6 +27,11 @@ Offset getFlippedPosition({
   double flippedY = 0;
 
   if (isRotatable) {
+    // Rotatable widgets are rendered with a different anchor (their visual
+    // bounds shift when rotated/flipped). To keep their perceived position
+    // consistent after flipping, we need to compensate for the extra vertical
+    // offset introduced by rotation by subtracting the normalized height a
+    // second time.
     flippedY = coordinateSystem.normalizedHeight - position.dy - hNorm - hNorm;
   } else {
     flippedY = coordinateSystem.normalizedHeight - position.dy - hNorm;
@@ -268,7 +273,6 @@ class PlacedAgent extends PlacedWidget {
   @override
   Map<String, dynamic> toJson() => _$PlacedAgentToJson(this);
 
-  @override
   void switchSides(double agentSize) {
     final coordinateSystem = CoordinateSystem.instance;
     final agentScreenPx = coordinateSystem.scale(agentSize);
@@ -497,9 +501,7 @@ class PlacedUtility extends PlacedWidget {
   }
 
   _getIsRotationUtility(UtilityType type) {
-    return type == UtilityType.viewCone180 ||
-        type == UtilityType.viewCone90 ||
-        type == UtilityType.viewCone40;
+    return UtilityData.isViewCone(type);
   }
 
   void switchSides() {
