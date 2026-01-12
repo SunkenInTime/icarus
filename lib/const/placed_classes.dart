@@ -27,6 +27,11 @@ Offset getFlippedPosition({
   double flippedY = 0;
 
   if (isRotatable) {
+    // Rotatable widgets are rendered with a different anchor (their visual
+    // bounds shift when rotated/flipped). To keep their perceived position
+    // consistent after flipping, we need to compensate for the extra vertical
+    // offset introduced by rotation by subtracting the normalized height a
+    // second time.
     flippedY = coordinateSystem.normalizedHeight - position.dy - hNorm - hNorm;
   } else {
     flippedY = coordinateSystem.normalizedHeight - position.dy - hNorm;
