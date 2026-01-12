@@ -273,7 +273,6 @@ class PlacedAgent extends PlacedWidget {
   @override
   Map<String, dynamic> toJson() => _$PlacedAgentToJson(this);
 
-  @override
   void switchSides(double agentSize) {
     final coordinateSystem = CoordinateSystem.instance;
     final agentScreenPx = coordinateSystem.scale(agentSize);
