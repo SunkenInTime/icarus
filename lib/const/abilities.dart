@@ -285,7 +285,7 @@ class CenterSquareAbility extends Ability {
   Offset getSize({double? mapScale, double? abilitySize}) {
     assert(abilitySize != null, 'abilitySize must be provided');
     assert(mapScale != null, 'mapScale must be provided');
-    return Offset(abilitySize! * mapScale!, height * mapScale / 2);
+    return Offset(abilitySize!, height * mapScale! / 2);
   }
 
   @override

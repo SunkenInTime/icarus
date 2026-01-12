@@ -74,6 +74,9 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     for (final utility in newState) {
       utility.switchSides();
     }
+    for (final utility in poppedUtilities) {
+      utility.switchSides();
+    }
 
     state = newState;
   }
