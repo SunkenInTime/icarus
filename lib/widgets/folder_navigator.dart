@@ -169,7 +169,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 leading: const Icon(Icons.file_download),
                 child: const Text('Import .ica'),
               ),
-
               ShadButton.secondary(
                 leading: const Icon(LucideIcons.folderPlus),
                 child: const Text('Add Folder'),
@@ -182,20 +181,11 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                   );
                 },
               ),
-
               ShadButton(
                 onPressed: showCreateDialog,
                 leading: const Icon(Icons.add),
                 child: const Text('Create Strategy'),
               ),
-              // CustomButton(
-              //   onPressed: showCreateDialog,
-              //   height: 40,
-              //   icon: const Icon(Icons.add, color: Colors.white),
-              //   label: "Create Strategy",
-              //   labelColor: Colors.white,
-              //   backgroundColor: Colors.deepPurple,
-              // ),
             ],
           )
         ],

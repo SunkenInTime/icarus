@@ -134,9 +134,23 @@ class PlacedText extends PlacedWidget {
   @override
   Map<String, dynamic> toJson() => _$PlacedTextToJson(this);
 
-  void switchSides() {
-    position = getFlippedPosition(
-        position: position, scaledSize: const Offset(100, 100));
+  void switchSides(Offset size) {
+    position = getFlippedPosition(position: position, scaledSize: size);
+
+    for (final (index, action) in _actionHistory.indexed) {
+      if (action is PositionAction) {
+        _actionHistory[index] = action.copyWith(
+            position: getFlippedPosition(
+                position: action.position, scaledSize: size));
+      }
+    }
+    for (final (index, action) in _poppedAction.indexed) {
+      if (action is PositionAction) {
+        _poppedAction[index] = action.copyWith(
+            position: getFlippedPosition(
+                position: action.position, scaledSize: size));
+      }
+    }
   }
 }
 
@@ -159,6 +173,25 @@ class PlacedImage extends PlacedWidget {
 
   void updateLink(String link) {
     this.link = link;
+  }
+
+  void switchSides(Offset size) {
+    position = getFlippedPosition(position: position, scaledSize: size);
+
+    for (final (index, action) in _actionHistory.indexed) {
+      if (action is PositionAction) {
+        _actionHistory[index] = action.copyWith(
+            position: getFlippedPosition(
+                position: action.position, scaledSize: size));
+      }
+    }
+    for (final (index, action) in _poppedAction.indexed) {
+      if (action is PositionAction) {
+        _poppedAction[index] = action.copyWith(
+            position: getFlippedPosition(
+                position: action.position, scaledSize: size));
+      }
+    }
   }
 
   /// Returns a new independent [PlacedImage] object. None of the internal
