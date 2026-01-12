@@ -29,6 +29,18 @@ class _TextWidgetState extends ConsumerState<TextWidget> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+      RenderObject? renderObject = context.findRenderObject();
+      RenderBox? renderBox = renderObject as RenderBox;
+      double height = renderBox.size.height;
+      double width = renderBox.size.width;
+      Offset offset = Offset(width, height);
+
+      ref
+          .read(textWidgetHeightProvider.notifier)
+          .updateHeight(widget.id, offset);
+    });
+
     _focusNode.addListener(_onFocusChange);
   }
 

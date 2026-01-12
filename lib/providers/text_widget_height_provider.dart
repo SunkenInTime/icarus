@@ -20,4 +20,8 @@ class TextWidgetHeightProvider extends Notifier<Map<String, Offset>> {
   Offset getOffset(String id) {
     return state[id] ?? Offset.zero;
   }
+
+  void clearAll() {
+    state = {};
+  }
 }

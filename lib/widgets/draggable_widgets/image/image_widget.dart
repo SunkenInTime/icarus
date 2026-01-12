@@ -152,14 +152,15 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
   @override
   void initState() {
     super.initState();
-    RenderObject? renderObject = context.findRenderObject();
-    RenderBox? renderBox = renderObject as RenderBox;
-    // if (renderBox == null) return;
-    double height = renderBox.size.height;
-    double width = renderBox.size.width;
-
-    Offset offset = Offset(width, height);
     WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+      RenderObject? renderObject = context.findRenderObject();
+      RenderBox? renderBox = renderObject as RenderBox;
+      // if (renderBox == null) return;
+      double height = renderBox.size.height;
+      double width = renderBox.size.width;
+
+      Offset offset = Offset(width, height);
+
       ref.read(imageWidgetSizeProvider.notifier).updateSize(widget.id, offset);
     });
   }

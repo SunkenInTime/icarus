@@ -20,4 +20,8 @@ class ImageWidgetSizeProvider extends Notifier<Map<String, Offset>> {
   Offset getSize(String id) {
     return state[id] ?? Offset.zero;
   }
+
+  void clearAll() {
+    state = {};
+  }
 }
