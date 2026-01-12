@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/shortcut_info.dart';
@@ -56,12 +54,6 @@ class _TextWidgetState extends ConsumerState<TextWidget> {
 
     ref.read(textProvider.notifier).editText(_controller.text, widget.id);
   }
-
-  // @override
-  // void didUpdateWidget(covariant TextWidget oldWidget) {
-  //   log("Hey we updated like a freaking boss");
-  //   super.didUpdateWidget(oldWidget);
-  // }
 
   @override
   Widget build(BuildContext context) {

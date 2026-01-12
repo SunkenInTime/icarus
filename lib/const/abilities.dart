@@ -224,10 +224,10 @@ class SquareAbility extends Ability {
     assert(mapScale != null, 'mapScale must be provided');
 
     return Offset(
-      width * mapScale!,
-      (height * mapScale) +
+      isWall ? abilitySize! * 2 : width * mapScale!,
+      (height * mapScale!) +
           (distanceBetweenAOE * mapScale) +
-          (abilitySize! / 2) +
+          (abilitySize / 2) +
           7.5,
     );
   }
@@ -328,7 +328,6 @@ class RotatableImageAbility extends Ability {
 
   @override
   Offset getSize({double? mapScale, double? abilitySize}) {
-    assert(abilitySize != null, 'abilitySize must be provided');
     assert(mapScale != null, 'mapScale must be provided');
     return Offset(width * mapScale!, (height * mapScale / 2) + 30);
   }

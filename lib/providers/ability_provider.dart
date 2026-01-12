@@ -77,14 +77,18 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void switchSides() {
-    if (state.isEmpty) return;
+    if (state.isEmpty && poppedAbility.isEmpty) return;
 
     final newState = <PlacedAbility>[...state];
 
-    for (final ability in state) {
-      final mapScale = ref.read(mapProvider.notifier).mapScale;
-      final abilitySizeSetting = ref.read(strategySettingsProvider).abilitySize;
+    final mapScale = ref.read(mapProvider.notifier).mapScale;
+    final abilitySizeSetting = ref.read(strategySettingsProvider).abilitySize;
 
+    for (final ability in newState) {
+      ability.switchSides(mapScale: mapScale, abilitySize: abilitySizeSetting);
+    }
+
+    for (final ability in poppedAbility) {
       ability.switchSides(mapScale: mapScale, abilitySize: abilitySizeSetting);
     }
 

@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'dart:io';
 import 'dart:ui' show ImageFilter;
 
@@ -168,7 +167,6 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
 
   @override
   Widget build(BuildContext context) {
-    log(widget.scale.toString());
     final file = File(path.join(
       ref.watch(strategyProvider).storageDirectory!,
       'images',
