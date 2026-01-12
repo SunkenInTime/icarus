@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:ui';
 import 'package:cross_file/cross_file.dart' show XFile;
 import 'package:flutter/foundation.dart';
+import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:image/image.dart' as img;
 import 'dart:ui' as ui;
 import 'dart:async' show Completer;
@@ -160,6 +161,19 @@ class PlacedImageProvider extends Notifier<ImageState> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = state.copyWith(images: [...newImages, temp]);
+  }
+
+  void switchSides() {
+    final newImages = [...state.images];
+    for (final image in newImages) {
+      image.switchSides(
+          ref.read(imageWidgetSizeProvider.notifier).getSize(image.id));
+    }
+    for (final image in poppedImages) {
+      image.switchSides(
+          ref.read(imageWidgetSizeProvider.notifier).getSize(image.id));
+    }
+    state = state.copyWith(images: newImages);
   }
 
   void undoAction(UserAction action) {

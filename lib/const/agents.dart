@@ -761,31 +761,38 @@ class AgentData implements DraggableData {
         type: AgentType.harbor,
         role: AgentRole.controller,
         name: "Harbor",
-      )..abilities[1] = AbilityInfo(
-          type: AgentType.brimstone,
-          index: 1,
+      )..abilities[2] = AbilityInfo(
+          type: AgentType.harbor,
+          index: 2,
           name: "Sky Smoke",
-          iconPath: 'assets/agents/Harbor/2.webp',
+          iconPath: 'assets/agents/Harbor/3.webp',
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Harbor/Smoke.webp',
-            size: 4 * inGameMetersDiameter,
+            size: 4.5 * inGameMetersDiameter,
           ),
         );
 
-      agent.abilities.first.abilityData = ResizableSquareAbility(
-        width: 9.75 * inGameMeters,
-        height: 35 * inGameMeters,
-        minLength: 5 * inGameMeters,
+      agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
-        hasTopborder: true,
-        color: Colors.lightBlue,
-      );
-
-      agent.abilities.last.abilityData = CircleAbility(
-        iconPath: agent.abilities.last.iconPath,
-        size: 21.25,
+        size: 6,
         outlineColor: Colors.lightBlue,
         hasCenterDot: true,
+      );
+
+      // agent.abilities.first.abilityData = ResizableSquareAbility(
+      //   width: 9.75 * inGameMeters,
+      //   height: 35 * inGameMeters,
+      //   minLength: 5 * inGameMeters,
+      //   iconPath: agent.abilities.first.iconPath,
+      //   hasTopborder: true,
+      //   color: Colors.lightBlue,
+      // );
+
+      agent.abilities.last.abilityData = SquareAbility(
+        width: 20 * inGameMeters,
+        height: 40 * inGameMeters,
+        iconPath: agent.abilities.last.iconPath,
+        color: Colors.lightBlue,
       );
 
       return agent;

@@ -3,8 +3,11 @@ import 'dart:developer';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 
 final utilityProvider =
     NotifierProvider<UtilityProvider, List<PlacedUtility>>(UtilityProvider.new);
@@ -61,6 +64,19 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     final newState = [...state];
 
     newState[index].updateRotationHistory();
+
+    state = newState;
+  }
+
+  void switchSides() {
+    final newState = [...state];
+
+    for (final utility in newState) {
+      utility.switchSides();
+    }
+    for (final utility in poppedUtilities) {
+      utility.switchSides();
+    }
 
     state = newState;
   }

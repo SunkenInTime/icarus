@@ -7,6 +7,8 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'dart:ui';
 
 import 'package:json_annotation/json_annotation.dart';
@@ -51,6 +53,14 @@ class LineUp extends HiveObject {
       images: images ?? List<SimpleImageData>.from(this.images),
       notes: notes ?? this.notes,
     );
+  }
+
+  void switchSides(
+      {required double agentSize,
+      required double abilitySize,
+      required double mapScale}) {
+    agent.switchSides(agentSize);
+    ability.switchSides(mapScale: mapScale, abilitySize: abilitySize);
   }
 
   factory LineUp.fromJson(Map<String, dynamic> json) => _$LineUpFromJson(json);
@@ -163,10 +173,19 @@ class LineUpProvider extends Notifier<LineUpState> {
     }
   }
 
-  // void setYoutubeLink(String youtubeLink) {
-  //   if (state.currentAgent == null) return;
-  //   state = state.copyWith(currentYoutubeLink: youtubeLink);
-  // }
+  void switchSides() {
+    final agentSize = ref.read(strategySettingsProvider).agentSize;
+    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
+    final mapScale = ref.read(mapProvider.notifier).mapScale;
+    final newState = [...state.lineUps];
+
+    for (final lineUp in newState) {
+      lineUp.switchSides(
+          agentSize: agentSize, abilitySize: abilitySize, mapScale: mapScale);
+    }
+
+    state = state.copyWith(lineUps: newState);
+  }
 
   void setSelectingPosition(bool isSelecting, {PlacingType? type}) {
     state = state.copyWith(

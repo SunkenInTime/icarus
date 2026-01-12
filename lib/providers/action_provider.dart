@@ -7,8 +7,10 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 
 enum ActionGroup {
@@ -150,6 +152,9 @@ class ActionProvider extends Notifier<List<UserAction>> {
     ref.read(placedImageProvider.notifier).clearAll();
     ref.read(utilityProvider.notifier).clearAll();
     ref.read(lineUpProvider.notifier).clearAll();
+
+    ref.read(imageWidgetSizeProvider.notifier).clearAll();
+    ref.read(textWidgetHeightProvider.notifier).clearAll();
     ref.read(strategyProvider.notifier).setUnsaved();
     state = [];
   }
