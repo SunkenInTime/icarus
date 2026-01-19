@@ -405,6 +405,31 @@ class DrawingProvider extends Notifier<DrawingState> {
     state = DrawingState(elements: []);
     _triggerRepaint();
   }
+
+  /// Returns all current items and clears the state (for bulk undo support)
+  List<DrawingElement> getItemsAndClear() {
+    final items = List<DrawingElement>.from(state.elements);
+    poppedElements = [];
+    state = DrawingState(elements: []);
+    _triggerRepaint();
+    return items;
+  }
+
+  /// Restores items from a bulk undo operation
+  void restoreItems(List<dynamic> items) {
+    final elements = items.cast<DrawingElement>();
+    state = state.copyWith(elements: [...state.elements, ...elements]);
+    _triggerRepaint();
+  }
+
+  /// Removes items by matching objects (for bulk redo operation)
+  void removeItems(List<dynamic> items) {
+    final idsToRemove = items.cast<DrawingElement>().map((e) => e.id).toSet();
+    state = state.copyWith(
+      elements: state.elements.where((e) => !idsToRemove.contains(e.id)).toList(),
+    );
+    _triggerRepaint();
+  }
 }
 
 //Yes I used AI to write the algo. I promise you I understand how it works

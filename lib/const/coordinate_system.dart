@@ -1,4 +1,5 @@
 import 'dart:developer';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -122,5 +123,30 @@ class CoordinateSystem {
         offset.dy > normalizedHeight - tolerance ||
         offset.dx < 0 + tolerance ||
         offset.dy < 0 + tolerance;
+  }
+
+  static Offset valorantPercentToContainerPx({
+    required double u, // 0..1
+    required double v, // 0..1 (content-only, excludes top padding)
+    required Size containerSize, // play area size on screen
+    required Size viewBoxSize, // SVG viewBox size
+    double topPaddingViewBox = 18,
+  }) {
+    final Sw = viewBoxSize.width;
+    final Sh = viewBoxSize.height;
+    final Pt = topPaddingViewBox;
+
+    // A) percent -> SVG viewBox coords (content excludes top padding)
+    final xSvg = u * Sw;
+    final ySvg = Pt + v * (Sh - Pt);
+
+    // B) BoxFit.contain into container (centered)
+    final k = math.min(containerSize.width / Sw, containerSize.height / Sh);
+    final Rw = Sw * k;
+    final Rh = Sh * k;
+    final Ox = (containerSize.width - Rw) / 2;
+    final Oy = (containerSize.height - Rh) / 2;
+
+    return Offset(Ox + xSvg * k, Oy + ySvg * k);
   }
 }

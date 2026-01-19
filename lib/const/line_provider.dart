@@ -291,6 +291,9 @@ class LineUpProvider extends Notifier<LineUpState> {
         state = newState;
       case ActionType.edit:
       //Do nothing
+      case ActionType.bulkDeletion:
+        // Handled by ActionProvider
+        break;
     }
   }
 
@@ -312,6 +315,9 @@ class LineUpProvider extends Notifier<LineUpState> {
         state = newState;
       case ActionType.edit:
       //Do nothing
+      case ActionType.bulkDeletion:
+        // Handled by ActionProvider
+        break;
     }
   }
 
@@ -319,6 +325,28 @@ class LineUpProvider extends Notifier<LineUpState> {
     log("Clearing all line ups");
     _poppedLineUps.clear();
     state = state.copyWith(lineUps: []);
+  }
+
+  /// Returns all current items and clears the state (for bulk undo support)
+  List<LineUp> getItemsAndClear() {
+    final items = List<LineUp>.from(state.lineUps);
+    _poppedLineUps.clear();
+    state = state.copyWith(lineUps: []);
+    return items;
+  }
+
+  /// Restores items from a bulk undo operation
+  void restoreItems(List<dynamic> items) {
+    final lineUps = items.cast<LineUp>();
+    state = state.copyWith(lineUps: [...state.lineUps, ...lineUps]);
+  }
+
+  /// Removes items by matching objects (for bulk redo operation)
+  void removeItems(List<dynamic> items) {
+    final idsToRemove = items.cast<LineUp>().map((l) => l.id).toSet();
+    state = state.copyWith(
+      lineUps: state.lineUps.where((l) => !idsToRemove.contains(l.id)).toList(),
+    );
   }
 }
 

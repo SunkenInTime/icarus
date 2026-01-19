@@ -18,7 +18,18 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
 
   @override
   List<PlacedAgent> build() {
-    return [];
+    return [
+      PlacedAgent(
+        id: "1",
+        type: AgentType.jett,
+        position: CoordinateSystem.valorantPercentToContainerPx(
+          u: 0,
+          v: 0,
+          containerSize: const Size(100, 100),
+          viewBoxSize: const Size(100, 100),
+        ),
+      ),
+    ];
   }
 
   void addAgent(PlacedAgent placedAgent) {
@@ -106,6 +117,9 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
         state = newState;
       case ActionType.edit:
         undoPosition(action.id);
+      case ActionType.bulkDeletion:
+        // Handled by ActionProvider
+        break;
     }
   }
 
@@ -136,6 +150,9 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
           newState[index].redoAction();
+        case ActionType.bulkDeletion:
+          // Handled by ActionProvider
+          break;
       }
     } catch (_) {
       log("failed to find index");
@@ -201,5 +218,25 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
   void clearAll() {
     poppedAgents = [];
     state = [];
+  }
+
+  /// Returns all current items and clears the state (for bulk undo support)
+  List<PlacedAgent> getItemsAndClear() {
+    final items = List<PlacedAgent>.from(state);
+    poppedAgents = [];
+    state = [];
+    return items;
+  }
+
+  /// Restores items from a bulk undo operation
+  void restoreItems(List<dynamic> items) {
+    final agents = items.cast<PlacedAgent>();
+    state = [...state, ...agents];
+  }
+
+  /// Removes items by matching objects (for bulk redo operation)
+  void removeItems(List<dynamic> items) {
+    final idsToRemove = items.cast<PlacedAgent>().map((a) => a.id).toSet();
+    state = state.where((a) => !idsToRemove.contains(a.id)).toList();
   }
 }

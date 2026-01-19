@@ -157,6 +157,9 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
         log("Current rotation: ${newState[index].rotation} Current length: ${newState[index].length}");
         state = newState;
+      case ActionType.bulkDeletion:
+        // Handled by ActionProvider
+        break;
     }
   }
 
@@ -176,6 +179,9 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
           newState[index].redoAction();
+        case ActionType.bulkDeletion:
+          // Handled by ActionProvider
+          break;
       }
     } catch (_) {
       log("failed to find index");
@@ -203,6 +209,26 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   void clearAll() {
     poppedAbility = [];
     state = [];
+  }
+
+  /// Returns all current items and clears the state (for bulk undo support)
+  List<PlacedAbility> getItemsAndClear() {
+    final items = List<PlacedAbility>.from(state);
+    poppedAbility = [];
+    state = [];
+    return items;
+  }
+
+  /// Restores items from a bulk undo operation
+  void restoreItems(List<dynamic> items) {
+    final abilities = items.cast<PlacedAbility>();
+    state = [...state, ...abilities];
+  }
+
+  /// Removes items by matching objects (for bulk redo operation)
+  void removeItems(List<dynamic> items) {
+    final idsToRemove = items.cast<PlacedAbility>().map((a) => a.id).toSet();
+    state = state.where((a) => !idsToRemove.contains(a.id)).toList();
   }
 
   String toJson() {

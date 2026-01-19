@@ -104,6 +104,9 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
 
         // log("Current rotation: ${newState[index].rotation} Current length: ${newState[index].length}");
         state = newState;
+      case ActionType.bulkDeletion:
+        // Handled by ActionProvider
+        break;
     }
   }
 
@@ -123,6 +126,9 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
           newState[index].redoAction();
+        case ActionType.bulkDeletion:
+          // Handled by ActionProvider
+          break;
       }
     } catch (_) {
       log("failed to find index");
@@ -150,6 +156,26 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
   void clearAll() {
     poppedUtilities = [];
     state = [];
+  }
+
+  /// Returns all current items and clears the state (for bulk undo support)
+  List<PlacedUtility> getItemsAndClear() {
+    final items = List<PlacedUtility>.from(state);
+    poppedUtilities = [];
+    state = [];
+    return items;
+  }
+
+  /// Restores items from a bulk undo operation
+  void restoreItems(List<dynamic> items) {
+    final utilities = items.cast<PlacedUtility>();
+    state = [...state, ...utilities];
+  }
+
+  /// Removes items by matching objects (for bulk redo operation)
+  void removeItems(List<dynamic> items) {
+    final idsToRemove = items.cast<PlacedUtility>().map((u) => u.id).toSet();
+    state = state.where((u) => !idsToRemove.contains(u.id)).toList();
   }
 
   String toJsonFromData(List<PlacedUtility> elements) {

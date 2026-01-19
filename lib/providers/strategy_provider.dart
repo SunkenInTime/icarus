@@ -340,7 +340,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     activePageID = page.id;
 
-    ref.read(actionProvider.notifier).clearAllActions();
+    ref.read(actionProvider.notifier).hardClearAll();
     ref.read(agentProvider.notifier).fromHive(page.agentData);
     ref.read(abilityProvider.notifier).fromHive(page.abilityData);
     ref.read(drawingProvider.notifier).fromHive(page.drawingData);
@@ -556,7 +556,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       log("Couldn't find save");
       return;
     }
-    ref.read(actionProvider.notifier).clearAllActions();
+    ref.read(actionProvider.notifier).hardClearAll();
 
     //TODO: FIX THIS LATER BOI
     List<PlacedImage> pageImageData = [];

@@ -22,7 +22,7 @@ class DeleteOptions extends ConsumerWidget {
                 context: context,
                 title: "Clear All Items",
                 content:
-                    "Are you sure you want to clear all items? This cannot be undone.",
+                    "Are you sure you want to clear all items? You can undo this with Ctrl+Z.",
                 confirmText: "Clear All",
                 cancelText: "Cancel",
                 isDestructive: true,

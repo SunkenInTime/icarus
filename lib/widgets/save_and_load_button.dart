@@ -7,9 +7,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_portal/flutter_portal.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -70,6 +73,27 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
               },
               icon: const Icon(Icons.file_upload),
             ),
+          ),
+          ShadIconButton.ghost(
+            icon: const Icon(Icons.developer_board),
+            foregroundColor: Colors.white,
+            onPressed: () async {
+              final px = CoordinateSystem.valorantPercentToContainerPx(
+                u: 0.66848,
+                v: 0.239504,
+                containerSize: CoordinateSystem.instance.playAreaSize,
+                viewBoxSize: const Size(452, 474),
+              );
+
+              final norm = CoordinateSystem.instance.screenToCoordinate(px);
+
+              final agent = PlacedAgent(
+                id: "1",
+                type: AgentType.jett,
+                position: norm,
+              );
+              ref.read(agentProvider.notifier).addAgent(agent);
+            },
           ),
           ShadTooltip(
             builder: (context) => const Text("Screenshot"),

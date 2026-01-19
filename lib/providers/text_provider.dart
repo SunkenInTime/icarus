@@ -96,6 +96,9 @@ class TextProvider extends Notifier<List<PlacedText>> {
         newState[index].undoAction();
 
         state = newState;
+      case ActionType.bulkDeletion:
+        // Handled by ActionProvider
+        break;
     }
   }
 
@@ -117,6 +120,9 @@ class TextProvider extends Notifier<List<PlacedText>> {
           final index = PlacedWidget.getIndexByID(action.id, newState);
 
           newState[index].redoAction();
+        case ActionType.bulkDeletion:
+          // Handled by ActionProvider
+          break;
       }
     } catch (_) {
       log("oops");
@@ -177,5 +183,25 @@ class TextProvider extends Notifier<List<PlacedText>> {
   void clearAll() {
     poppedText = [];
     state = [];
+  }
+
+  /// Returns all current items and clears the state (for bulk undo support)
+  List<PlacedText> getItemsAndClear() {
+    final items = List<PlacedText>.from(state);
+    poppedText = [];
+    state = [];
+    return items;
+  }
+
+  /// Restores items from a bulk undo operation
+  void restoreItems(List<dynamic> items) {
+    final texts = items.cast<PlacedText>();
+    state = [...state, ...texts];
+  }
+
+  /// Removes items by matching objects (for bulk redo operation)
+  void removeItems(List<dynamic> items) {
+    final idsToRemove = items.cast<PlacedText>().map((t) => t.id).toSet();
+    state = state.where((t) => !idsToRemove.contains(t.id)).toList();
   }
 }

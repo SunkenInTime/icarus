@@ -192,6 +192,9 @@ class PlacedImageProvider extends Notifier<ImageState> {
         state = state.copyWith(images: newImages);
       case ActionType.edit:
         undoPosition(action.id);
+      case ActionType.bulkDeletion:
+        // Handled by ActionProvider
+        break;
     }
   }
 
@@ -221,6 +224,10 @@ class PlacedImageProvider extends Notifier<ImageState> {
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newImages);
           newImages[index].redoAction();
+
+        case ActionType.bulkDeletion:
+          // Handled by ActionProvider
+          break;
       }
     } catch (_) {
       log("Failed to find index");
@@ -350,6 +357,28 @@ class PlacedImageProvider extends Notifier<ImageState> {
   void clearAll() {
     poppedImages = [];
     state = state.copyWith(images: []);
+  }
+
+  /// Returns all current items and clears the state (for bulk undo support)
+  List<PlacedImage> getItemsAndClear() {
+    final items = List<PlacedImage>.from(state.images);
+    poppedImages = [];
+    state = state.copyWith(images: []);
+    return items;
+  }
+
+  /// Restores items from a bulk undo operation
+  void restoreItems(List<dynamic> items) {
+    final images = items.cast<PlacedImage>();
+    state = state.copyWith(images: [...state.images, ...images]);
+  }
+
+  /// Removes items by matching objects (for bulk redo operation)
+  void removeItems(List<dynamic> items) {
+    final idsToRemove = items.cast<PlacedImage>().map((i) => i.id).toSet();
+    state = state.copyWith(
+      images: state.images.where((i) => !idsToRemove.contains(i.id)).toList(),
+    );
   }
 }
 
