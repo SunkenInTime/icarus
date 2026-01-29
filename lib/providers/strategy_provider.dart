@@ -2,18 +2,19 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
-import 'package:icarus/const/youtube_handler.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'image_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
@@ -29,8 +30,10 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/valorant_match_mappings.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -633,9 +636,325 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
   }
 
+  Future<String?> importValorantMatchJsonFromPicker({
+    String allyTeamId = 'Blue',
+  }) async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      type: FileType.custom,
+      allowedExtensions: ["json"],
+    );
+
+    if (result == null) return null;
+    final file = result.files.first;
+    return _importValorantMatchJsonFromXFile(file.xFile,
+        allyTeamId: allyTeamId);
+  }
+
   Future<void> loadFromFileDrop(List<XFile> files) async {
     for (XFile file in files) {
       await _loadFromXFile(file);
+    }
+  }
+
+  Future<String?> _importValorantMatchJsonFromXFile(
+    XFile xFile, {
+    required String allyTeamId,
+  }) async {
+    try {
+      final jsonData = await xFile.readAsString();
+      final root = jsonDecode(jsonData) as Map<String, dynamic>;
+
+      final matchInfo = (root['matchInfo'] as Map?)?.cast<String, dynamic>();
+      final mapId = matchInfo?['mapId'] as String?;
+      final mapValue = ValorantMatchMappings.mapValueFromMatchMapId(mapId);
+      if (mapValue == null) {
+        Settings.showToast(
+          message: 'Unknown match mapId: ${mapId ?? "(missing)"}',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return null;
+      }
+
+      final transform = ValorantMatchMappings.transformForMap(mapValue);
+      if (transform == null) {
+        Settings.showToast(
+          message: 'No minimap transform found for map: $mapId',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return null;
+      }
+
+      final importCwTurns = ValorantMatchMappings.importTurnsForMap(mapValue);
+
+      // The importer should be usable even if the UI hasn't initialized
+      // CoordinateSystem yet. Normalized coordinates are stable as long as we
+      // keep a consistent container aspect ratio.
+      Size containerSize;
+      double normalizedWidth;
+      double normalizedHeight;
+      double Function(double) scale;
+      Offset Function(Offset) screenToCoordinate;
+
+      try {
+        final coordinateSystem = CoordinateSystem.instance;
+        containerSize = coordinateSystem.effectiveSize;
+        normalizedWidth = coordinateSystem.normalizedWidth;
+        normalizedHeight = coordinateSystem.normalizedHeight;
+        scale = coordinateSystem.scale;
+        screenToCoordinate = coordinateSystem.screenToCoordinate;
+      } catch (_) {
+        containerSize = CoordinateSystem.screenShotSize;
+        normalizedHeight = 1000.0;
+        normalizedWidth = normalizedHeight * 1.24;
+        final scaleFactor = containerSize.height / 831.0;
+        scale = (size) => size * scaleFactor;
+        screenToCoordinate = (screenPoint) {
+          return Offset(
+            (screenPoint.dx / containerSize.width) * normalizedWidth,
+            (screenPoint.dy / containerSize.height) * normalizedHeight,
+          );
+        };
+      }
+      final viewBoxSize = Maps.mapViewBox[mapValue];
+      final iconPadding = Maps.valorantDisplayIconPaddingVb[mapValue];
+
+      if (viewBoxSize == null || iconPadding == null) {
+        Settings.showToast(
+          message:
+              'Missing viewBox/padding config for map: ${Maps.mapNames[mapValue]}',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        return null;
+      }
+
+      final players = (root['players'] as List?) ?? const [];
+      final subjectToTeam = <String, String>{};
+      final subjectToAgentType = <String, AgentType>{};
+      for (final p in players) {
+        if (p is! Map) continue;
+        final subject = p['subject'] as String?;
+        if (subject == null) continue;
+        final teamId = p['teamId'] as String?;
+        final characterId = p['characterId'] as String?;
+        if (teamId != null) subjectToTeam[subject] = teamId;
+        subjectToAgentType[subject] =
+            ValorantMatchMappings.agentTypeFromCharacterId(characterId);
+      }
+
+      Offset normalizedDeltaFromScreenPx(double px) {
+        return Offset(
+          (px / containerSize.width) * normalizedWidth,
+          (px / containerSize.height) * normalizedHeight,
+        );
+      }
+
+      Offset centerNormalizedFromGameLocation(
+          {required num x, required num y}) {
+        var u = (y.toDouble() * transform.xMultiplier) + transform.xScalarToAdd;
+        var v = (x.toDouble() * transform.yMultiplier) + transform.yScalarToAdd;
+        if (importCwTurns != 0) {
+          final rotated = ValorantMatchMappings.rotateUvCw(
+            u: u,
+            v: v,
+            turns: importCwTurns,
+          );
+          u = rotated.u;
+          v = rotated.v;
+        }
+        final screenPx = CoordinateSystem.valorantPaddedPercentToContainerPx(
+          u: u,
+          v: v,
+          referencePaddingInViewBoxUnits: iconPadding,
+          containerSize: containerSize,
+          viewBoxSize: viewBoxSize,
+        );
+        return screenToCoordinate(screenPx);
+      }
+
+      final defaultPageSettings = StrategySettings();
+      final halfAgentPx = scale(defaultPageSettings.agentSize) / 2;
+      final halfAgentNorm = normalizedDeltaFromScreenPx(halfAgentPx);
+
+      final pages = <StrategyPage>[];
+      final roundResults = (root['roundResults'] as List?) ?? const [];
+      const uuid = Uuid();
+      var pageIndex = 0;
+
+      for (final round in roundResults) {
+        if (round is! Map) continue;
+        final roundNum = (round['roundNum'] as num?)?.toInt() ?? 0;
+        final winningTeam = round['winningTeam'] as String?;
+        final winningTeamRole = round['winningTeamRole'] as String?;
+
+        // bool allyIsAttack = true;
+        // if (winningTeam != null && winningTeamRole != null) {
+        //   final winningIsAttack = winningTeamRole == 'Attacker';
+        //   if (winningTeam == allyTeamId) {
+        //     allyIsAttack = winningIsAttack;
+        //   } else {
+        //     allyIsAttack = !winningIsAttack;
+        //   }
+        // }
+
+        final playerStats = (round['playerStats'] as List?) ?? const [];
+        for (final ps in playerStats) {
+          if (ps is! Map) continue;
+          final kills = (ps['kills'] as List?) ?? const [];
+          for (final k in kills) {
+            if (k is! Map) continue;
+            final killer = k['killer'] as String?;
+            final victim = k['victim'] as String?;
+            final playerLocations = (k['playerLocations'] as List?) ?? const [];
+
+            final agentData = <PlacedAgent>[];
+            final drawingData = <DrawingElement>[];
+            final centerBySubject = <String, Offset>{};
+
+            for (final pl in playerLocations) {
+              if (pl is! Map) continue;
+              final subject = pl['subject'] as String?;
+              final loc = (pl['location'] as Map?)?.cast<String, dynamic>();
+              if (subject == null || loc == null) continue;
+              final x = loc['x'] as num?;
+              final y = loc['y'] as num?;
+              if (x == null || y == null) continue;
+
+              final center = centerNormalizedFromGameLocation(x: x, y: y);
+              centerBySubject[subject] = center;
+
+              final topLeft = center - halfAgentNorm;
+              final teamId = subjectToTeam[subject];
+              final isAlly = teamId == allyTeamId;
+              final type = subjectToAgentType[subject] ?? AgentType.jett;
+              final state = (victim != null && subject == victim)
+                  ? AgentState.dead
+                  : AgentState.none;
+
+              agentData.add(
+                PlacedAgent(
+                  id: uuid.v4(),
+                  type: type,
+                  position: topLeft,
+                  isAlly: isAlly,
+                  state: state,
+                ),
+              );
+            }
+
+            // Ensure we have a victim agent if the victim wasn't present in playerLocations.
+            if (victim != null && !centerBySubject.containsKey(victim)) {
+              final victimLoc =
+                  (k['victimLocation'] as Map?)?.cast<String, dynamic>();
+              final x = victimLoc?['x'] as num?;
+              final y = victimLoc?['y'] as num?;
+              if (x != null && y != null) {
+                final center = centerNormalizedFromGameLocation(x: x, y: y);
+                centerBySubject[victim] = center;
+                final topLeft = center - halfAgentNorm;
+                final teamId = subjectToTeam[victim];
+                final isAlly = teamId == allyTeamId;
+                final type = subjectToAgentType[victim] ?? AgentType.jett;
+                agentData.add(
+                  PlacedAgent(
+                    id: uuid.v4(),
+                    type: type,
+                    position: topLeft,
+                    isAlly: isAlly,
+                    state: AgentState.dead,
+                  ),
+                );
+              }
+            }
+
+            final killerCenter =
+                killer != null ? centerBySubject[killer] : null;
+            final victimCenter =
+                victim != null ? centerBySubject[victim] : null;
+            if (killerCenter != null && victimCenter != null) {
+              final minPt = Offset(
+                math.min(killerCenter.dx, victimCenter.dx),
+                math.min(killerCenter.dy, victimCenter.dy),
+              );
+              final maxPt = Offset(
+                math.max(killerCenter.dx, victimCenter.dx),
+                math.max(killerCenter.dy, victimCenter.dy),
+              );
+              drawingData.add(
+                FreeDrawing(
+                  id: uuid.v4(),
+                  color: Colors.redAccent,
+                  isDotted: false,
+                  hasArrow: true,
+                  boundingBox: BoundingBox(min: minPt, max: maxPt),
+                  listOfPoints: [killerCenter, victimCenter],
+                ),
+              );
+            }
+
+            pages.add(
+              StrategyPage(
+                id: uuid.v4(),
+                name: 'R${roundNum + 1} K${pageIndex + 1}',
+                drawingData: drawingData,
+                agentData: agentData,
+                abilityData: const [],
+                textData: const [],
+                imageData: const [],
+                utilityData: const [],
+                sortIndex: pageIndex,
+                isAttack: true,
+                settings: defaultPageSettings.copyWith(),
+                lineUps: const [],
+              ),
+            );
+            pageIndex++;
+          }
+        }
+      }
+
+      if (pages.isEmpty) {
+        pages.add(
+          StrategyPage(
+            id: uuid.v4(),
+            name: 'Page 1',
+            drawingData: const [],
+            agentData: const [],
+            abilityData: const [],
+            textData: const [],
+            imageData: const [],
+            utilityData: const [],
+            sortIndex: 0,
+            isAttack: true,
+            settings: defaultPageSettings.copyWith(),
+            lineUps: const [],
+          ),
+        );
+      }
+
+      final newID = uuid.v4();
+      final strategyName = path.basenameWithoutExtension(xFile.path);
+      final newStrategy = StrategyData(
+        id: newID,
+        name: strategyName,
+        mapData: mapValue,
+        versionNumber: Settings.versionNumber,
+        lastEdited: DateTime.now(),
+        folderID: ref.read(folderProvider),
+        pages: pages,
+      );
+
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+          .put(newStrategy.id, newStrategy);
+
+      return newStrategy.id;
+    } catch (e, st) {
+      log('Failed to import match JSON: $e\n$st');
+      Settings.showToast(
+        message: 'Failed to import match JSON',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return null;
     }
   }
 

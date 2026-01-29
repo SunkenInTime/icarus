@@ -71,12 +71,12 @@ class MapProvider extends Notifier<MapState> {
 
   void switchSide() {
     // Flip all placed agents to mirror positions before toggling the side
-    ref.read(agentProvider.notifier).switchSides();
-    ref.read(abilityProvider.notifier).switchSides();
-    ref.read(utilityProvider.notifier).switchSides();
-    ref.read(lineUpProvider.notifier).switchSides();
-    ref.read(textProvider.notifier).switchSides();
-    ref.read(placedImageProvider.notifier).switchSides();
+    // ref.read(agentProvider.notifier).switchSides();
+    // ref.read(abilityProvider.notifier).switchSides();
+    // ref.read(utilityProvider.notifier).switchSides();
+    // ref.read(lineUpProvider.notifier).switchSides();
+    // ref.read(textProvider.notifier).switchSides();
+    // ref.read(placedImageProvider.notifier).switchSides();
     state = state.copyWith(isAttack: !state.isAttack);
   }
 

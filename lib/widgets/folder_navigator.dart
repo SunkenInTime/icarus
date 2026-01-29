@@ -12,8 +12,6 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/current_path_bar.dart';
-import 'package:icarus/widgets/custom_button.dart';
-import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
@@ -168,6 +166,27 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 },
                 leading: const Icon(Icons.file_download),
                 child: const Text('Import .ica'),
+              ),
+              ShadButton.secondary(
+                onPressed: () async {
+                  if (kIsWeb) {
+                    Settings.showToast(
+                      message:
+                          'This feature is only supported in the Windows version.',
+                      backgroundColor: Settings.tacticalVioletTheme.destructive,
+                    );
+                    return;
+                  }
+
+                  final strategyId = await ref
+                      .read(strategyProvider.notifier)
+                      .importValorantMatchJsonFromPicker();
+                  if (strategyId == null) return;
+                  if (!context.mounted) return;
+                  await navigateWithLoading(context, strategyId);
+                },
+                leading: const Icon(Icons.sports_esports_outlined),
+                child: const Text('Import match JSON'),
               ),
               ShadButton.secondary(
                 leading: const Icon(LucideIcons.folderPlus),
