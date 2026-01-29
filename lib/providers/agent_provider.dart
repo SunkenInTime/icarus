@@ -204,6 +204,26 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
     state = newState;
   }
 
+  void recenterAllForAgentSizeChange(double oldAgentSize, double newAgentSize) {
+    if (oldAgentSize == newAgentSize) return;
+
+    for (final agent in state) {
+      agent.recenterForSizeChange(
+        oldAgentSize: oldAgentSize,
+        newAgentSize: newAgentSize,
+      );
+    }
+    for (final agent in poppedAgents) {
+      agent.recenterForSizeChange(
+        oldAgentSize: oldAgentSize,
+        newAgentSize: newAgentSize,
+      );
+    }
+
+    // Trigger rebuild.
+    state = [...state];
+  }
+
   void clearAll() {
     poppedAgents = [];
     state = [];

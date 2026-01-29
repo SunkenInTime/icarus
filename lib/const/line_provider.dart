@@ -187,6 +187,26 @@ class LineUpProvider extends Notifier<LineUpState> {
     state = state.copyWith(lineUps: newState);
   }
 
+  void recenterAgentsForAgentSizeChange(
+      double oldAgentSize, double newAgentSize) {
+    if (oldAgentSize == newAgentSize) return;
+
+    for (final lineUp in state.lineUps) {
+      lineUp.agent.recenterForSizeChange(
+        oldAgentSize: oldAgentSize,
+        newAgentSize: newAgentSize,
+      );
+    }
+    if (state.currentAgent != null) {
+      state.currentAgent!.recenterForSizeChange(
+        oldAgentSize: oldAgentSize,
+        newAgentSize: newAgentSize,
+      );
+    }
+
+    state = state.copyWith(lineUps: [...state.lineUps]);
+  }
+
   void setSelectingPosition(bool isSelecting, {PlacingType? type}) {
     state = state.copyWith(
       isSelectingPosition: isSelecting,

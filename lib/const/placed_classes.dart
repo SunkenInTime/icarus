@@ -302,6 +302,47 @@ class PlacedAgent extends PlacedWidget {
     }
   }
 
+  void recenterForSizeChange({
+    required double oldAgentSize,
+    required double newAgentSize,
+  }) {
+    if (oldAgentSize == newAgentSize) return;
+
+    final coordinateSystem = CoordinateSystem.instance;
+    final oldPx = coordinateSystem.scale(oldAgentSize);
+    final newPx = coordinateSystem.scale(newAgentSize);
+
+    final oldWNorm = (oldPx / coordinateSystem.effectiveSize.width) *
+        coordinateSystem.normalizedWidth;
+    final oldHNorm = (oldPx / coordinateSystem.effectiveSize.height) *
+        coordinateSystem.normalizedHeight;
+    final newWNorm = (newPx / coordinateSystem.effectiveSize.width) *
+        coordinateSystem.normalizedWidth;
+    final newHNorm = (newPx / coordinateSystem.effectiveSize.height) *
+        coordinateSystem.normalizedHeight;
+
+    // Keep the agent's center point fixed as size changes.
+    final delta = Offset(
+      (oldWNorm - newWNorm) / 2,
+      (oldHNorm - newHNorm) / 2,
+    );
+
+    position = position + delta;
+
+    for (final (index, action) in _actionHistory.indexed) {
+      if (action is PositionAction) {
+        _actionHistory[index] =
+            action.copyWith(position: action.position + delta);
+      }
+    }
+    for (final (index, action) in _poppedAction.indexed) {
+      if (action is PositionAction) {
+        _poppedAction[index] =
+            action.copyWith(position: action.position + delta);
+      }
+    }
+  }
+
   PlacedAgent copyWith({
     AgentType? type,
     Offset? position,

@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class SettingsTab extends ConsumerWidget {
@@ -37,9 +40,21 @@ class SettingsTab extends ConsumerWidget {
                       divisions: 15,
                       value: ref.watch(strategySettingsProvider).agentSize,
                       onChanged: (value) {
+                        final oldSize =
+                            ref.read(strategySettingsProvider).agentSize;
+                        if (oldSize == value) return;
                         ref
                             .read(strategySettingsProvider.notifier)
                             .updateAgentSize(value);
+
+                        ref
+                            .read(agentProvider.notifier)
+                            .recenterAllForAgentSizeChange(oldSize, value);
+                        ref
+                            .read(lineUpProvider.notifier)
+                            .recenterAgentsForAgentSizeChange(oldSize, value);
+
+                        ref.read(strategyProvider.notifier).setUnsaved();
                       },
                     )
                   ],

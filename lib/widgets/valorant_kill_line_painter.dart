@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:dash_painter/dash_painter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
@@ -115,7 +116,11 @@ class _KillLinePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..isAntiAlias = true;
 
-    canvas.drawLine(insetStart, insetEnd, paint);
+    final space = coordinateSystem.scale(10);
+    final path = Path()
+      ..moveTo(insetStart.dx, insetStart.dy)
+      ..lineTo(insetEnd.dx, insetEnd.dy);
+    DashPainter(span: space, step: space).paint(canvas, path, paint);
     _drawArrow(canvas, paint, insetStart, insetEnd);
   }
 
