@@ -24,7 +24,7 @@ class ValorantMatchStrategyData {
   final List<ValorantPageMeta> pageMeta;
 
   const ValorantMatchStrategyData({
-    this.schemaVersion = 1,
+    this.schemaVersion = 2,
     required this.matchId,
     required this.riotMapId,
     required this.allyTeamId,
@@ -68,7 +68,7 @@ class ValorantMatchStrategyData {
     final metaJson = (json['pageMeta'] as List?) ?? const [];
 
     return ValorantMatchStrategyData(
-      schemaVersion: (json['schemaVersion'] as num?)?.toInt() ?? 1,
+      schemaVersion: (json['schemaVersion'] as num?)?.toInt() ?? 2,
       matchId: (json['matchId'] as String?) ?? '',
       riotMapId: (json['riotMapId'] as String?) ?? '',
       allyTeamId: (json['allyTeamId'] as String?) ?? '',
@@ -170,6 +170,12 @@ class ValorantPageMeta {
   final String? victimSubject;
   final List<String> assistantSubjects;
 
+  // Stored in CoordinateSystem normalized coordinate space.
+  final double? killerX;
+  final double? killerY;
+  final double? victimX;
+  final double? victimY;
+
   const ValorantPageMeta({
     required this.pageId,
     required this.roundIndex,
@@ -180,6 +186,10 @@ class ValorantPageMeta {
     this.killerSubject,
     this.victimSubject,
     this.assistantSubjects = const [],
+    this.killerX,
+    this.killerY,
+    this.victimX,
+    this.victimY,
   });
 
   Map<String, dynamic> toJson() {
@@ -193,6 +203,10 @@ class ValorantPageMeta {
       'killerSubject': killerSubject,
       'victimSubject': victimSubject,
       'assistantSubjects': assistantSubjects,
+      'killerX': killerX,
+      'killerY': killerY,
+      'victimX': victimX,
+      'victimY': victimY,
     };
   }
 
@@ -221,6 +235,10 @@ class ValorantPageMeta {
         for (final a in assistants)
           if (a is String) a,
       ],
+      killerX: (json['killerX'] as num?)?.toDouble(),
+      killerY: (json['killerY'] as num?)?.toDouble(),
+      victimX: (json['victimX'] as num?)?.toDouble(),
+      victimY: (json['victimY'] as num?)?.toDouble(),
     );
   }
 }

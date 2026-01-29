@@ -30,6 +30,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/line_up_line_painter.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
+import 'package:icarus/widgets/valorant_kill_line_painter.dart';
 import 'package:uuid/uuid.dart';
 
 class PlacedWidgetBuilder extends ConsumerStatefulWidget {
@@ -76,6 +77,9 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                       coordinateSystem: coordinateSystem,
                       mapScale: mapScale,
                       abilitySize: abilitySize,
+                    ),
+                    const Positioned.fill(
+                      child: ValorantKillLinePainter(),
                     ),
                     _AgentList(coordinateSystem: coordinateSystem),
                     _TextList(

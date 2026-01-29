@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
-import 'dart:math' as math;
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
@@ -31,7 +30,6 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/drawing_element.dart';
-import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/valorant_match_mappings.dart';
@@ -1059,26 +1057,6 @@ class StrategyProvider extends Notifier<StrategyState> {
 
           final killerCenter = killer != null ? centerBySubject[killer] : null;
           final victimCenter = victim != null ? centerBySubject[victim] : null;
-          if (killerCenter != null && victimCenter != null) {
-            final minPt = Offset(
-              math.min(killerCenter.dx, victimCenter.dx),
-              math.min(killerCenter.dy, victimCenter.dy),
-            );
-            final maxPt = Offset(
-              math.max(killerCenter.dx, victimCenter.dx),
-              math.max(killerCenter.dy, victimCenter.dy),
-            );
-            drawingData.add(
-              FreeDrawing(
-                id: uuid.v4(),
-                color: Colors.redAccent,
-                isDotted: false,
-                hasArrow: true,
-                boundingBox: BoundingBox(min: minPt, max: maxPt),
-                listOfPoints: [killerCenter, victimCenter],
-              ),
-            );
-          }
 
           final pageId = uuid.v4();
 
@@ -1116,6 +1094,10 @@ class StrategyProvider extends Notifier<StrategyState> {
               killerSubject: killer,
               victimSubject: victim,
               assistantSubjects: assistantSubjects,
+              killerX: killerCenter?.dx,
+              killerY: killerCenter?.dy,
+              victimX: victimCenter?.dx,
+              victimY: victimCenter?.dy,
             ),
           );
 
@@ -1167,7 +1149,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
 
       final matchData = ValorantMatchStrategyData(
-        schemaVersion: 1,
+        schemaVersion: 2,
         matchId: matchId,
         riotMapId: mapId ?? '',
         allyTeamId: allyTeamId,
