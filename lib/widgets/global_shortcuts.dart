@@ -11,6 +11,7 @@ import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/dialogs/in_app_debug_dialog.dart';
+import 'package:pasteboard/pasteboard.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
@@ -114,6 +115,20 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
                 log("I triggered");
 
                 await ref.read(strategyProvider.notifier).backwardPage();
+                return null;
+              },
+            ),
+            PasteBoardIntent: CallbackAction<PasteBoardIntent>(
+              onInvoke: (intent) async {
+                log("I triggered");
+                // Pasteboard.files()
+
+                // ref.read(textProvider.notifier).addText(
+                //       PlacedText(
+                //           position: const Offset(500, 500),
+                //           id: const Uuid().v4(),
+                //           text: text),
+                //     );
                 return null;
               },
             ),

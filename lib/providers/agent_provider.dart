@@ -18,18 +18,7 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
 
   @override
   List<PlacedAgent> build() {
-    return [
-      PlacedAgent(
-        id: "1",
-        type: AgentType.jett,
-        position: CoordinateSystem.valorantPercentToContainerPx(
-          u: 0,
-          v: 0,
-          containerSize: const Size(100, 100),
-          viewBoxSize: const Size(100, 100),
-        ),
-      ),
-    ];
+    return [];
   }
 
   void addAgent(PlacedAgent placedAgent) {

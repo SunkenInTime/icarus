@@ -129,9 +129,13 @@ class PlacedWidget extends HiveObject {
 
 @JsonSerializable()
 class PlacedText extends PlacedWidget {
-  PlacedText({required super.position, required super.id, this.size = 200});
+  PlacedText(
+      {required super.position,
+      required super.id,
+      this.size = 200,
+      this.text = ""});
 
-  String text = "";
+  String text;
   double size;
 
   factory PlacedText.fromJson(Map<String, dynamic> json) =>

@@ -58,7 +58,7 @@ class Maps {
     MapValue.icebox: 1.05,
     MapValue.split: 1.18,
     MapValue.haven: 1.09,
-    MapValue.fracture: 1,
+    MapValue.fracture: 1.221,
     MapValue.pearl: 1.185,
     MapValue.abyss: 1.167,
     MapValue.sunset: 1.048,

@@ -267,7 +267,7 @@ class ToolGrid extends ConsumerWidget {
                 ),
               ),
               ShadTooltip(
-                builder: (context) => const Text("View Cone 180°"),
+                builder: (context) => const Text("View Cone 103°"),
                 child: ShadIconButton.secondary(
                   onPressed: () {
                     ref
@@ -288,7 +288,7 @@ class ToolGrid extends ConsumerWidget {
                 ),
               ),
               ShadTooltip(
-                builder: (context) => const Text("View Cone 90°"),
+                builder: (context) => const Text("View Cone 60°"),
                 child: ShadIconButton.secondary(
                   onPressed: () {
                     ref
@@ -309,7 +309,7 @@ class ToolGrid extends ConsumerWidget {
                 ),
               ),
               ShadTooltip(
-                builder: (context) => const Text("View Cone 40°"),
+                builder: (context) => const Text("View Cone 20°"),
                 child: ShadIconButton.secondary(
                   onPressed: () {
                     ref
