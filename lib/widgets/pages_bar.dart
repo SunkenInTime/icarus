@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
@@ -6,8 +5,10 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/active_page_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/valorant_round_provider.dart';
 
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/valorant/valorant_match_strategy_data.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -90,6 +91,24 @@ class _PagesBarState extends ConsumerState<PagesBar>
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final remaining = [...strat.pages]..removeWhere((p) => p.id == page.id);
+
+    final match = strat.valorantMatch;
+    String? updatedMatchJson;
+    if (match != null) {
+      final updatedMeta =
+          match.pageMeta.where((m) => m.pageId != page.id).toList();
+      updatedMatchJson = ValorantMatchStrategyData(
+        schemaVersion: match.schemaVersion,
+        matchId: match.matchId,
+        riotMapId: match.riotMapId,
+        allyTeamId: match.allyTeamId,
+        povSubject: match.povSubject,
+        players: match.players,
+        rounds: match.rounds,
+        pageMeta: updatedMeta,
+      ).toJsonString();
+    }
+
     // Reindex sortIndex to keep dense ordering
     final reindexed = [
       for (var i = 0; i < remaining.length; i++)
@@ -101,6 +120,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
     final updated = strat.copyWith(
       pages: reindexed,
       lastEdited: DateTime.now(),
+      valorantMatchJson: updatedMatchJson ?? strat.valorantMatchJson,
     );
     await box.put(updated.id, updated);
     if (newActive != activeId) {
@@ -120,16 +140,34 @@ class _PagesBarState extends ConsumerState<PagesBar>
         final strat = _strategy(b, strategyId);
         if (strat == null) return const SizedBox();
 
-        final pages = [...strat.pages]
-          ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-        final activePageId = ref.watch(activePageProvider) ??
-            (pages.isNotEmpty ? pages.first.id : null);
-        final activeName = pages
-            .firstWhere(
-              (p) => p.id == activePageId,
-              orElse: () => pages.first,
-            )
-            .name;
+        final match = strat.valorantMatch;
+        final selectedRound = ref.watch(valorantRoundProvider);
+
+        final pages = _pagesForUi(
+          strat: strat,
+          match: match,
+          selectedRound: selectedRound,
+        );
+
+        final activeFromState = ref.watch(activePageProvider);
+        final activePageId =
+            activeFromState ?? (pages.isNotEmpty ? pages.first.id : null);
+
+        final String activeName;
+        if (pages.isEmpty) {
+          if (match != null) {
+            activeName = 'Round ${(selectedRound ?? 0) + 1}';
+          } else {
+            activeName = 'No pages';
+          }
+        } else {
+          activeName = pages
+              .firstWhere(
+                (p) => p.id == activePageId,
+                orElse: () => pages.first,
+              )
+              .name;
+        }
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 180),
@@ -149,6 +187,8 @@ class _PagesBarState extends ConsumerState<PagesBar>
               ? _ExpandedPanel(
                   pages: pages,
                   strategy: strat,
+                  match: match,
+                  selectedRound: selectedRound,
                   activePageId: activePageId,
                   onSelect: _selectPage,
                   onRename: (p) => _renamePage(strat, p),
@@ -165,6 +205,30 @@ class _PagesBarState extends ConsumerState<PagesBar>
       },
     );
   }
+}
+
+List<StrategyPage> _pagesForUi({
+  required StrategyData strat,
+  required ValorantMatchStrategyData? match,
+  required int? selectedRound,
+}) {
+  if (match == null) {
+    final pages = [...strat.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    return pages;
+  }
+
+  final roundIndex = selectedRound ?? 0;
+  final meta = match.pageMeta.where((m) => m.roundIndex == roundIndex).toList()
+    ..sort((a, b) => a.orderInRound.compareTo(b.orderInRound));
+
+  final pagesById = {for (final p in strat.pages) p.id: p};
+  final pages = <StrategyPage>[];
+  for (final m in meta) {
+    final p = pagesById[m.pageId];
+    if (p != null) pages.add(p);
+  }
+  return pages;
 }
 
 /* -------- Collapsed pill -------- */
@@ -221,6 +285,8 @@ class _ExpandedPanel extends ConsumerWidget {
   const _ExpandedPanel({
     required this.pages,
     required this.strategy,
+    required this.match,
+    required this.selectedRound,
     required this.activePageId,
     required this.onSelect,
     required this.onRename,
@@ -231,6 +297,8 @@ class _ExpandedPanel extends ConsumerWidget {
 
   final List<StrategyPage> pages;
   final StrategyData strategy;
+  final ValorantMatchStrategyData? match;
+  final int? selectedRound;
   final String? activePageId;
   final ValueChanged<String> onSelect;
   final ValueChanged<StrategyPage> onRename;
@@ -262,8 +330,16 @@ class _ExpandedPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final desiredHeight = _computeDesiredHeight(pages.length);
-    final needsScroll = desiredHeight >= _maxPanelHeight - 0.5; // approximate
+    final showRoundHeader = match != null;
+
+    const roundHeaderHeight = 44.0;
+
+    final desiredHeightUnclamped = _computeDesiredHeight(pages.length) +
+        (showRoundHeader ? roundHeaderHeight : 0);
+    final desiredHeight =
+        desiredHeightUnclamped.clamp(0, _maxPanelHeight).toDouble();
+    final needsScroll =
+        desiredHeightUnclamped >= _maxPanelHeight - 0.5; // approximate
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 150),
@@ -276,40 +352,56 @@ class _ExpandedPanel extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (showRoundHeader)
+            SizedBox(
+              height: roundHeaderHeight,
+              child: _RoundHeader(
+                match: match!,
+                selectedRound: selectedRound ?? 0,
+              ),
+            ),
           // List / content section
           Flexible(
             child: Padding(
               padding: const EdgeInsets.only(top: _topPadding),
               child: ReorderableListView.builder(
                 onReorder: (oldIndex, newIndex) {
-                  ref
-                      .read(strategyProvider.notifier)
-                      .reorderPage(oldIndex, newIndex);
+                  // Reordering is not supported in match mode yet.
+                  if (match == null) {
+                    ref
+                        .read(strategyProvider.notifier)
+                        .reorderPage(oldIndex, newIndex);
+                  }
                 },
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                 shrinkWrap: needsScroll ? false : true,
                 physics:
                     needsScroll ? null : const NeverScrollableScrollPhysics(),
                 itemCount: pages.length,
-                buildDefaultDragHandles: false,
+                buildDefaultDragHandles: match == null ? false : true,
                 proxyDecorator: proxyDecorator,
                 itemBuilder: (ctx, i) {
                   final p = pages[i];
 
+                  final row = Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: _PageRow(
+                      page: p,
+                      active: p.id == activePageId,
+                      onSelect: onSelect,
+                      onRename: onRename,
+                      onDelete: onDelete,
+                      disableDelete: pages.length == 1,
+                    ),
+                  );
+
+                  if (match != null)
+                    return KeyedSubtree(key: ValueKey(p.id), child: row);
+
                   return ReorderableDragStartListener(
                     key: ValueKey(p.id),
                     index: i,
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _PageRow(
-                        page: p,
-                        active: p.id == activePageId,
-                        onSelect: onSelect,
-                        onRename: onRename,
-                        onDelete: onDelete,
-                        disableDelete: pages.length == 1,
-                      ),
-                    ),
+                    child: row,
                   );
                 },
               ),
@@ -424,6 +516,97 @@ class _PageRow extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoundHeader extends ConsumerWidget {
+  const _RoundHeader({
+    required this.match,
+    required this.selectedRound,
+  });
+
+  final ValorantMatchStrategyData match;
+  final int selectedRound;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final totalRounds = match.rounds.length;
+    if (totalRounds == 0) return const SizedBox.shrink();
+
+    final current = selectedRound.clamp(0, totalRounds - 1);
+
+    Future<void> setRound(int index) async {
+      final clamped = index.clamp(0, totalRounds - 1);
+      ref.read(valorantRoundProvider.notifier).setRound(clamped);
+
+      final strategyId = ref.read(strategyProvider).id;
+      final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+      final strat = box.get(strategyId);
+      if (strat == null) return;
+
+      final updatedMatch = strat.valorantMatch;
+      if (updatedMatch == null) return;
+
+      final meta = updatedMatch.pageMeta
+          .where((m) => m.roundIndex == clamped)
+          .toList()
+        ..sort((a, b) => a.orderInRound.compareTo(b.orderInRound));
+      if (meta.isEmpty) return;
+
+      await ref
+          .read(strategyProvider.notifier)
+          .setActivePageAnimated(meta.first.pageId);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Settings.tacticalVioletTheme.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Settings.tacticalVioletTheme.border,
+            width: 1,
+          ),
+        ),
+        child: SizedBox(
+          height: 36,
+          child: Row(
+            children: [
+              const SizedBox(width: 4),
+              ShadIconButton.ghost(
+                onPressed: current <= 0 ? null : () => setRound(current - 1),
+                icon: const Icon(
+                  Icons.chevron_left,
+                  color: Colors.white,
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    'Round ${current + 1} / $totalRounds',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              ),
+              ShadIconButton.ghost(
+                onPressed: current >= totalRounds - 1
+                    ? null
+                    : () => setRound(current + 1),
+                icon: const Icon(
+                  Icons.chevron_right,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
           ),
         ),
       ),

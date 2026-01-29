@@ -36,6 +36,8 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/valorant_match_mappings.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/providers/valorant_round_provider.dart';
+import 'package:icarus/valorant/valorant_match_strategy_data.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -74,6 +76,9 @@ class StrategyData extends HiveObject {
   final DateTime lastEdited;
   final DateTime createdAt;
 
+  // Only set for strategies created by Valorant match import.
+  final String? valorantMatchJson;
+
   String? folderID;
 
   StrategyData({
@@ -92,10 +97,15 @@ class StrategyData extends HiveObject {
     required this.folderID,
     this.pages = const [],
     DateTime? createdAt,
+    this.valorantMatchJson,
     @Deprecated('Use pages instead') StrategySettings? strategySettings,
     // ignore: deprecated_member_use_from_same_package
   })  : strategySettings = strategySettings ?? StrategySettings(),
         createdAt = createdAt ?? lastEdited;
+
+  ValorantMatchStrategyData? get valorantMatch {
+    return ValorantMatchStrategyData.tryFromJsonString(valorantMatchJson);
+  }
 
   StrategyData copyWith({
     String? id,
@@ -114,6 +124,7 @@ class StrategyData extends HiveObject {
     StrategySettings? strategySettings,
     String? folderID,
     DateTime? createdAt,
+    String? valorantMatchJson,
   }) {
     return StrategyData(
       id: id ?? this.id,
@@ -140,6 +151,7 @@ class StrategyData extends HiveObject {
       strategySettings: strategySettings ?? this.strategySettings,
       createdAt: createdAt ?? this.createdAt,
       folderID: folderID ?? this.folderID,
+      valorantMatchJson: valorantMatchJson ?? this.valorantMatchJson,
     );
   }
 }
@@ -258,6 +270,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> clearCurrentStrategy() async {
     ref.read(activePageProvider.notifier).state = null;
+    ref.read(valorantRoundProvider.notifier).setRound(null);
     state = StrategyState(
       isSaved: true,
       stratName: null,
@@ -341,6 +354,20 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
 
     ref.read(activePageProvider.notifier).setActivePage(page.id);
+
+    final match = doc.valorantMatch;
+    if (match != null) {
+      int? roundIndex;
+      for (final m in match.pageMeta) {
+        if (m.pageId == page.id) {
+          roundIndex = m.roundIndex;
+          break;
+        }
+      }
+      ref.read(valorantRoundProvider.notifier).setRound(roundIndex ?? 0);
+    } else {
+      ref.read(valorantRoundProvider.notifier).setRound(null);
+    }
 
     ref.read(actionProvider.notifier).hardClearAll();
     ref.read(agentProvider.notifier).fromHive(page.agentData);
@@ -520,6 +547,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     final strat = box.get(state.id);
     if (strat == null) return;
 
+    if (strat.valorantMatch != null) {
+      await _addValorantPageInCurrentRound(strat, name: name);
+      return;
+    }
+
     name ??= "Page ${strat.pages.length + 1}";
     //TODO Make this function of the index
     final newPage = strat.pages.last.copyWith(
@@ -546,6 +578,85 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
     await box.put(updated.id, updated);
 
+    await setActivePageAnimated(newPage.id);
+  }
+
+  Future<void> _addValorantPageInCurrentRound(
+    StrategyData strat, {
+    String? name,
+  }) async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final match = strat.valorantMatch;
+    if (match == null) return;
+
+    final selectedRound = ref.read(valorantRoundProvider);
+    final activeId = ref.read(activePageProvider.notifier).state;
+
+    int roundIndex = selectedRound ?? 0;
+    if (activeId != null) {
+      for (final m in match.pageMeta) {
+        if (m.pageId == activeId) {
+          roundIndex = m.roundIndex;
+          break;
+        }
+      }
+    }
+
+    final roundMetas = match.pageMeta
+        .where((m) => m.roundIndex == roundIndex)
+        .toList()
+      ..sort((a, b) => a.orderInRound.compareTo(b.orderInRound));
+
+    final pagesById = {for (final p in strat.pages) p.id: p};
+
+    StrategyPage? template;
+    if (activeId != null) template = pagesById[activeId];
+    template ??=
+        roundMetas.isNotEmpty ? pagesById[roundMetas.last.pageId] : null;
+    template ??= strat.pages.isNotEmpty ? strat.pages.last : null;
+    if (template == null) return;
+
+    final maxSortIndex = strat.pages.isEmpty
+        ? -1
+        : strat.pages.map((p) => p.sortIndex).reduce((a, b) => a > b ? a : b);
+
+    final newPageId = const Uuid().v4();
+    final newOrder = roundMetas.length;
+    final roundNumber = roundIndex + 1;
+    name ??= 'R$roundNumber Note ${newOrder + 1}';
+
+    final newPage = template.copyWith(
+      id: newPageId,
+      name: name,
+      sortIndex: maxSortIndex + 1,
+      isAttack: template.isAttack,
+    );
+
+    final updatedMatch = ValorantMatchStrategyData(
+      schemaVersion: match.schemaVersion,
+      matchId: match.matchId,
+      riotMapId: match.riotMapId,
+      allyTeamId: match.allyTeamId,
+      povSubject: match.povSubject,
+      players: match.players,
+      rounds: match.rounds,
+      pageMeta: [
+        ...match.pageMeta,
+        ValorantPageMeta(
+          pageId: newPageId,
+          roundIndex: roundIndex,
+          orderInRound: newOrder,
+          type: ValorantEventType.note,
+        ),
+      ],
+    );
+
+    final updated = strat.copyWith(
+      pages: [...strat.pages, newPage],
+      lastEdited: DateTime.now(),
+      valorantMatchJson: updatedMatch.toJsonString(),
+    );
+    await box.put(updated.id, updated);
     await setActivePageAnimated(newPage.id);
   }
 
@@ -599,6 +710,20 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(strategySettingsProvider.notifier).fromHive(firstPage.settings);
     ref.read(utilityProvider.notifier).fromHive(firstPage.utilityData);
     ref.read(activePageProvider.notifier).setActivePage(firstPage.id);
+
+    final match = newStrat.valorantMatch;
+    if (match != null) {
+      int? roundIndex;
+      for (final m in match.pageMeta) {
+        if (m.pageId == firstPage.id) {
+          roundIndex = m.roundIndex;
+          break;
+        }
+      }
+      ref.read(valorantRoundProvider.notifier).setRound(roundIndex ?? 0);
+    } else {
+      ref.read(valorantRoundProvider.notifier).setRound(null);
+    }
 
     if (kIsWeb) {
       state = StrategyState(
@@ -668,6 +793,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
       final matchInfo = (root['matchInfo'] as Map?)?.cast<String, dynamic>();
       final mapId = matchInfo?['mapId'] as String?;
+      final strategyName = path.basenameWithoutExtension(xFile.path);
+      final matchId = (matchInfo?['matchId'] as String?) ?? strategyName;
       final mapValue = ValorantMatchMappings.mapValueFromMatchMapId(mapId);
       if (mapValue == null) {
         Settings.showToast(
@@ -732,15 +859,30 @@ class StrategyProvider extends Notifier<StrategyState> {
       final players = (root['players'] as List?) ?? const [];
       final subjectToTeam = <String, String>{};
       final subjectToAgentType = <String, AgentType>{};
+      final matchPlayers = <ValorantMatchPlayer>[];
       for (final p in players) {
         if (p is! Map) continue;
         final subject = p['subject'] as String?;
         if (subject == null) continue;
-        final teamId = p['teamId'] as String?;
-        final characterId = p['characterId'] as String?;
-        if (teamId != null) subjectToTeam[subject] = teamId;
+
+        final teamId = (p['teamId'] as String?) ?? '';
+        final characterId = (p['characterId'] as String?) ?? '';
+        final gameName = (p['gameName'] as String?) ?? '';
+        final tagLine = (p['tagLine'] as String?) ?? '';
+
+        if (teamId.isNotEmpty) subjectToTeam[subject] = teamId;
         subjectToAgentType[subject] =
             ValorantMatchMappings.agentTypeFromCharacterId(characterId);
+
+        matchPlayers.add(
+          ValorantMatchPlayer(
+            subject: subject,
+            gameName: gameName,
+            tagLine: tagLine,
+            teamId: teamId,
+            characterId: characterId,
+          ),
+        );
       }
 
       Offset normalizedDeltaFromScreenPx(double px) {
@@ -778,6 +920,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       final halfAgentNorm = normalizedDeltaFromScreenPx(halfAgentPx);
 
       final pages = <StrategyPage>[];
+      final pageMeta = <ValorantPageMeta>[];
+      final roundsByIndex = <int, ValorantMatchRound>{};
       final roundResults = (root['roundResults'] as List?) ?? const [];
       const uuid = Uuid();
       var pageIndex = 0;
@@ -788,136 +932,202 @@ class StrategyProvider extends Notifier<StrategyState> {
         final winningTeam = round['winningTeam'] as String?;
         final winningTeamRole = round['winningTeamRole'] as String?;
 
-        // bool allyIsAttack = true;
-        // if (winningTeam != null && winningTeamRole != null) {
-        //   final winningIsAttack = winningTeamRole == 'Attacker';
-        //   if (winningTeam == allyTeamId) {
-        //     allyIsAttack = winningIsAttack;
-        //   } else {
-        //     allyIsAttack = !winningIsAttack;
-        //   }
-        // }
+        roundsByIndex[roundNum] = ValorantMatchRound(
+          roundIndex: roundNum,
+          allyIsAttack: true,
+          winningTeamId: winningTeam,
+          winningTeamRole: winningTeamRole,
+        );
 
         final playerStats = (round['playerStats'] as List?) ?? const [];
+        final killsForRound = <({
+          Map<String, dynamic> kill,
+          int insertion,
+          int? roundTimeMs,
+          int? gameTimeMs,
+        })>[];
+        final seenKillKeys = <String>{};
+        var insertion = 0;
+
         for (final ps in playerStats) {
           if (ps is! Map) continue;
           final kills = (ps['kills'] as List?) ?? const [];
           for (final k in kills) {
             if (k is! Map) continue;
-            final killer = k['killer'] as String?;
-            final victim = k['victim'] as String?;
-            final playerLocations = (k['playerLocations'] as List?) ?? const [];
+            final kill = k.cast<String, dynamic>();
 
-            final agentData = <PlacedAgent>[];
-            final drawingData = <DrawingElement>[];
-            final centerBySubject = <String, Offset>{};
+            final roundTimeMs = (kill['roundTime'] as num?)?.toInt() ??
+                (kill['roundTimeMs'] as num?)?.toInt() ??
+                (kill['timeSinceRoundStartMillis'] as num?)?.toInt();
+            final gameTimeMs = (kill['gameTime'] as num?)?.toInt() ??
+                (kill['gameTimeMs'] as num?)?.toInt() ??
+                (kill['timeSinceGameStartMillis'] as num?)?.toInt();
 
-            for (final pl in playerLocations) {
-              if (pl is! Map) continue;
-              final subject = pl['subject'] as String?;
-              final loc = (pl['location'] as Map?)?.cast<String, dynamic>();
-              if (subject == null || loc == null) continue;
-              final x = loc['x'] as num?;
-              final y = loc['y'] as num?;
-              if (x == null || y == null) continue;
+            final killer = kill['killer'] as String?;
+            final victim = kill['victim'] as String?;
+            final key =
+                '$roundNum|${gameTimeMs ?? -1}|${roundTimeMs ?? -1}|${killer ?? ""}|${victim ?? ""}';
+            if (!seenKillKeys.add(key)) continue;
 
+            killsForRound.add((
+              kill: kill,
+              insertion: insertion,
+              roundTimeMs: roundTimeMs,
+              gameTimeMs: gameTimeMs,
+            ));
+            insertion++;
+          }
+        }
+
+        killsForRound.sort((a, b) {
+          final ta = a.roundTimeMs ?? a.gameTimeMs ?? (1 << 62);
+          final tb = b.roundTimeMs ?? b.gameTimeMs ?? (1 << 62);
+          final c = ta.compareTo(tb);
+          if (c != 0) return c;
+          return a.insertion.compareTo(b.insertion);
+        });
+
+        for (var orderInRound = 0;
+            orderInRound < killsForRound.length;
+            orderInRound++) {
+          final entry = killsForRound[orderInRound];
+          final k = entry.kill;
+
+          final killer = k['killer'] as String?;
+          final victim = k['victim'] as String?;
+          final playerLocations = (k['playerLocations'] as List?) ?? const [];
+
+          final agentData = <PlacedAgent>[];
+          final drawingData = <DrawingElement>[];
+          final centerBySubject = <String, Offset>{};
+
+          for (final pl in playerLocations) {
+            if (pl is! Map) continue;
+            final subject = pl['subject'] as String?;
+            final loc = (pl['location'] as Map?)?.cast<String, dynamic>();
+            if (subject == null || loc == null) continue;
+            final x = loc['x'] as num?;
+            final y = loc['y'] as num?;
+            if (x == null || y == null) continue;
+
+            final center = centerNormalizedFromGameLocation(x: x, y: y);
+            centerBySubject[subject] = center;
+
+            final topLeft = center - halfAgentNorm;
+            final teamId = subjectToTeam[subject];
+            final isAlly = teamId == allyTeamId;
+            final type = subjectToAgentType[subject] ?? AgentType.jett;
+            final state = (victim != null && subject == victim)
+                ? AgentState.dead
+                : AgentState.none;
+
+            agentData.add(
+              PlacedAgent(
+                id: uuid.v4(),
+                type: type,
+                position: topLeft,
+                isAlly: isAlly,
+                state: state,
+              ),
+            );
+          }
+
+          // Ensure we have a victim agent if the victim wasn't present in playerLocations.
+          if (victim != null && !centerBySubject.containsKey(victim)) {
+            final victimLoc =
+                (k['victimLocation'] as Map?)?.cast<String, dynamic>();
+            final x = victimLoc?['x'] as num?;
+            final y = victimLoc?['y'] as num?;
+            if (x != null && y != null) {
               final center = centerNormalizedFromGameLocation(x: x, y: y);
-              centerBySubject[subject] = center;
-
+              centerBySubject[victim] = center;
               final topLeft = center - halfAgentNorm;
-              final teamId = subjectToTeam[subject];
+              final teamId = subjectToTeam[victim];
               final isAlly = teamId == allyTeamId;
-              final type = subjectToAgentType[subject] ?? AgentType.jett;
-              final state = (victim != null && subject == victim)
-                  ? AgentState.dead
-                  : AgentState.none;
-
+              final type = subjectToAgentType[victim] ?? AgentType.jett;
               agentData.add(
                 PlacedAgent(
                   id: uuid.v4(),
                   type: type,
                   position: topLeft,
                   isAlly: isAlly,
-                  state: state,
+                  state: AgentState.dead,
                 ),
               );
             }
+          }
 
-            // Ensure we have a victim agent if the victim wasn't present in playerLocations.
-            if (victim != null && !centerBySubject.containsKey(victim)) {
-              final victimLoc =
-                  (k['victimLocation'] as Map?)?.cast<String, dynamic>();
-              final x = victimLoc?['x'] as num?;
-              final y = victimLoc?['y'] as num?;
-              if (x != null && y != null) {
-                final center = centerNormalizedFromGameLocation(x: x, y: y);
-                centerBySubject[victim] = center;
-                final topLeft = center - halfAgentNorm;
-                final teamId = subjectToTeam[victim];
-                final isAlly = teamId == allyTeamId;
-                final type = subjectToAgentType[victim] ?? AgentType.jett;
-                agentData.add(
-                  PlacedAgent(
-                    id: uuid.v4(),
-                    type: type,
-                    position: topLeft,
-                    isAlly: isAlly,
-                    state: AgentState.dead,
-                  ),
-                );
-              }
-            }
-
-            final killerCenter =
-                killer != null ? centerBySubject[killer] : null;
-            final victimCenter =
-                victim != null ? centerBySubject[victim] : null;
-            if (killerCenter != null && victimCenter != null) {
-              final minPt = Offset(
-                math.min(killerCenter.dx, victimCenter.dx),
-                math.min(killerCenter.dy, victimCenter.dy),
-              );
-              final maxPt = Offset(
-                math.max(killerCenter.dx, victimCenter.dx),
-                math.max(killerCenter.dy, victimCenter.dy),
-              );
-              drawingData.add(
-                FreeDrawing(
-                  id: uuid.v4(),
-                  color: Colors.redAccent,
-                  isDotted: false,
-                  hasArrow: true,
-                  boundingBox: BoundingBox(min: minPt, max: maxPt),
-                  listOfPoints: [killerCenter, victimCenter],
-                ),
-              );
-            }
-
-            pages.add(
-              StrategyPage(
+          final killerCenter = killer != null ? centerBySubject[killer] : null;
+          final victimCenter = victim != null ? centerBySubject[victim] : null;
+          if (killerCenter != null && victimCenter != null) {
+            final minPt = Offset(
+              math.min(killerCenter.dx, victimCenter.dx),
+              math.min(killerCenter.dy, victimCenter.dy),
+            );
+            final maxPt = Offset(
+              math.max(killerCenter.dx, victimCenter.dx),
+              math.max(killerCenter.dy, victimCenter.dy),
+            );
+            drawingData.add(
+              FreeDrawing(
                 id: uuid.v4(),
-                name: 'R${roundNum + 1} K${pageIndex + 1}',
-                drawingData: drawingData,
-                agentData: agentData,
-                abilityData: const [],
-                textData: const [],
-                imageData: const [],
-                utilityData: const [],
-                sortIndex: pageIndex,
-                isAttack: true,
-                settings: defaultPageSettings.copyWith(),
-                lineUps: const [],
+                color: Colors.redAccent,
+                isDotted: false,
+                hasArrow: true,
+                boundingBox: BoundingBox(min: minPt, max: maxPt),
+                listOfPoints: [killerCenter, victimCenter],
               ),
             );
-            pageIndex++;
           }
+
+          final pageId = uuid.v4();
+
+          pages.add(
+            StrategyPage(
+              id: pageId,
+              name: 'R${roundNum + 1} K${orderInRound + 1}',
+              drawingData: drawingData,
+              agentData: agentData,
+              abilityData: const [],
+              textData: const [],
+              imageData: const [],
+              utilityData: const [],
+              sortIndex: pageIndex,
+              isAttack: true,
+              settings: defaultPageSettings.copyWith(),
+              lineUps: const [],
+            ),
+          );
+
+          final assistants = (k['assistants'] as List?) ?? const [];
+          final assistantSubjects = <String>[];
+          for (final a in assistants) {
+            if (a is String) assistantSubjects.add(a);
+          }
+
+          pageMeta.add(
+            ValorantPageMeta(
+              pageId: pageId,
+              roundIndex: roundNum,
+              orderInRound: orderInRound,
+              type: ValorantEventType.kill,
+              roundTimeMs: entry.roundTimeMs,
+              gameTimeMs: entry.gameTimeMs,
+              killerSubject: killer,
+              victimSubject: victim,
+              assistantSubjects: assistantSubjects,
+            ),
+          );
+
+          pageIndex++;
         }
       }
 
       if (pages.isEmpty) {
+        final pageId = uuid.v4();
         pages.add(
           StrategyPage(
-            id: uuid.v4(),
+            id: pageId,
             name: 'Page 1',
             drawingData: const [],
             agentData: const [],
@@ -931,10 +1141,42 @@ class StrategyProvider extends Notifier<StrategyState> {
             lineUps: const [],
           ),
         );
+
+        pageMeta.add(
+          ValorantPageMeta(
+            pageId: pageId,
+            roundIndex: 0,
+            orderInRound: 0,
+            type: ValorantEventType.note,
+          ),
+        );
       }
 
+      List<ValorantMatchRound> rounds;
+      if (roundsByIndex.isEmpty) {
+        rounds = const [
+          ValorantMatchRound(roundIndex: 0, allyIsAttack: true),
+        ];
+      } else {
+        final maxIndex = roundsByIndex.keys.reduce((a, b) => a > b ? a : b);
+        rounds = [
+          for (var i = 0; i <= maxIndex; i++)
+            roundsByIndex[i] ??
+                ValorantMatchRound(roundIndex: i, allyIsAttack: true),
+        ];
+      }
+
+      final matchData = ValorantMatchStrategyData(
+        schemaVersion: 1,
+        matchId: matchId,
+        riotMapId: mapId ?? '',
+        allyTeamId: allyTeamId,
+        players: matchPlayers,
+        rounds: rounds,
+        pageMeta: pageMeta,
+      );
+
       final newID = uuid.v4();
-      final strategyName = path.basenameWithoutExtension(xFile.path);
       final newStrategy = StrategyData(
         id: newID,
         name: strategyName,
@@ -943,6 +1185,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         lastEdited: DateTime.now(),
         folderID: ref.read(folderProvider),
         pages: pages,
+        valorantMatchJson: matchData.toJsonString(),
       );
 
       await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)

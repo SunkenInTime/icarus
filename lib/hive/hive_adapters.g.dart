@@ -45,6 +45,7 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
           ? const []
           : (fields[14] as List).cast<StrategyPage>(),
       createdAt: fields[15] as DateTime?,
+      valorantMatchJson: fields[16] as String?,
       strategySettings: fields[11] as StrategySettings?,
     );
   }
@@ -52,7 +53,7 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
   @override
   void write(BinaryWriter writer, StrategyData obj) {
     writer
-      ..writeByte(16)
+      ..writeByte(17)
       ..writeByte(0)
       ..write(obj.versionNumber)
       ..writeByte(1)
@@ -84,7 +85,9 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
       ..writeByte(14)
       ..write(obj.pages)
       ..writeByte(15)
-      ..write(obj.createdAt);
+      ..write(obj.createdAt)
+      ..writeByte(16)
+      ..write(obj.valorantMatchJson);
   }
 
   @override
