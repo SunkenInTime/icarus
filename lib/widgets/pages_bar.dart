@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/active_page_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
 import 'package:icarus/providers/strategy_page.dart';
@@ -29,7 +30,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
   }
 
   Future<void> _selectPage(String id) async {
-    if (id == ref.read(strategyProvider.notifier).activePageID) return;
+    if (id == ref.read(activePageProvider)) return;
     await ref.read(strategyProvider.notifier).setActivePageAnimated(id);
   }
 
@@ -94,7 +95,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
       for (var i = 0; i < remaining.length; i++)
         remaining[i].copyWith(sortIndex: i),
     ];
-    final activeId = ref.read(strategyProvider.notifier).activePageID;
+    final activeId = ref.read(activePageProvider);
     final newActive = (activeId == page.id) ? reindexed.first.id : activeId;
 
     final updated = strat.copyWith(
@@ -121,9 +122,8 @@ class _PagesBarState extends ConsumerState<PagesBar>
 
         final pages = [...strat.pages]
           ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-        final activePageId =
-            ref.watch(strategyProvider.notifier).activePageID ??
-                (pages.isNotEmpty ? pages.first.id : null);
+        final activePageId = ref.watch(activePageProvider) ??
+            (pages.isNotEmpty ? pages.first.id : null);
         final activeName = pages
             .firstWhere(
               (p) => p.id == activePageId,

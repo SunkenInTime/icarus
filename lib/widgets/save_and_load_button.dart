@@ -12,6 +12,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/active_page_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
@@ -138,8 +139,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                   return;
                 }
                 final newController = ScreenshotController();
-                final currentPageID =
-                    ref.read(strategyProvider.notifier).activePageID;
+                final currentPageID = ref.read(activePageProvider);
 
                 if (currentPageID == null) return;
 

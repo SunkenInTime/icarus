@@ -8,6 +8,7 @@ import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/active_page_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'image_provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -175,8 +176,6 @@ final strategyProvider =
     NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
 
 class StrategyProvider extends Notifier<StrategyState> {
-  String? activePageID;
-
   @override
   StrategyState build() {
     return StrategyState(
@@ -258,7 +257,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> clearCurrentStrategy() async {
-    activePageID = null;
+    ref.read(activePageProvider.notifier).state = null;
     state = StrategyState(
       isSaved: true,
       stratName: null,
@@ -327,7 +326,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   // Switch active page: flush old page first, then hydrate new
   Future<void> setActivePage(String pageID) async {
-    if (pageID == activePageID) return;
+    if (pageID == ref.read(activePageProvider.notifier).state) return;
 
     // Flush current before switching
     await _syncCurrentPageToHive();
@@ -341,7 +340,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       orElse: () => doc.pages.first,
     );
 
-    activePageID = page.id;
+    ref.read(activePageProvider.notifier).setActivePage(page.id);
 
     ref.read(actionProvider.notifier).hardClearAll();
     ref.read(agentProvider.notifier).fromHive(page.agentData);
@@ -363,7 +362,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> backwardPage() async {
-    if (activePageID == null) return;
+    if (ref.read(activePageProvider.notifier).state == null) return;
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final doc = box.get(state.id);
@@ -373,7 +372,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     final pages = [...doc.pages]
       ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
 
-    final currentIndex = pages.indexWhere((p) => p.id == activePageID);
+    final currentIndex = pages
+        .indexWhere((p) => p.id == ref.read(activePageProvider.notifier).state);
     if (currentIndex == -1) return;
     int nextIndex = currentIndex - 1;
     if (nextIndex < 0)
@@ -384,7 +384,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> forwardPage() async {
-    if (activePageID == null) return;
+    if (ref.read(activePageProvider.notifier).state == null) return;
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final doc = box.get(state.id);
@@ -394,7 +394,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     final pages = [...doc.pages]
       ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
 
-    final currentIndex = pages.indexWhere((p) => p.id == activePageID);
+    final currentIndex = pages
+        .indexWhere((p) => p.id == ref.read(activePageProvider.notifier).state);
     if (currentIndex == -1) return;
 
     int nextIndex = currentIndex + 1;
@@ -597,7 +598,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(lineUpProvider.notifier).fromHive(firstPage.lineUps);
     ref.read(strategySettingsProvider.notifier).fromHive(firstPage.settings);
     ref.read(utilityProvider.notifier).fromHive(firstPage.utilityData);
-    activePageID = firstPage.id;
+    ref.read(activePageProvider.notifier).setActivePage(firstPage.id);
 
     if (kIsWeb) {
       state = StrategyState(
@@ -1413,7 +1414,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    final pageId = activePageID ?? strat.pages.first.id;
+    final pageId =
+        ref.read(activePageProvider.notifier).state ?? strat.pages.first.id;
     final idx = strat.pages.indexWhere((p) => p.id == pageId);
     if (idx == -1) {
       log("Active page ID $pageId not found in strategy ${strat.id}");
