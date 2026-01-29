@@ -125,6 +125,52 @@ class CoordinateSystem {
         offset.dy < 0 + tolerance;
   }
 
+  static Offset viewBoxPxToContainerPx({
+    required Offset viewBoxPx,
+    required Size containerSize,
+    required Size viewBoxSize,
+  }) {
+    final Sw = viewBoxSize.width;
+    final Sh = viewBoxSize.height;
+
+    final k = math.min(containerSize.width / Sw, containerSize.height / Sh);
+    final Rw = Sw * k;
+    final Rh = Sh * k;
+    final Ox = (containerSize.width - Rw) / 2;
+    final Oy = (containerSize.height - Rh) / 2;
+
+    return Offset(Ox + viewBoxPx.dx * k, Oy + viewBoxPx.dy * k);
+  }
+
+  static Offset valorantPaddedPercentToContainerPx({
+    required double u, // 0..1 on padded reference
+    required double v, // 0..1 on padded reference
+    required EdgeInsets referencePaddingInViewBoxUnits,
+    required Size containerSize,
+    required Size viewBoxSize,
+    bool clampToViewBox = true,
+  }) {
+    final Sw = viewBoxSize.width;
+    final Sh = viewBoxSize.height;
+    final Pl = referencePaddingInViewBoxUnits.left;
+    final Pr = referencePaddingInViewBoxUnits.right;
+    final Pt = referencePaddingInViewBoxUnits.top;
+    final Pb = referencePaddingInViewBoxUnits.bottom;
+    final paddedW = Sw + Pl + Pr;
+    final paddedH = Sh + Pt + Pb;
+    var xSvg = u * paddedW - Pl;
+    var ySvg = v * paddedH - Pt;
+    if (clampToViewBox) {
+      xSvg = (xSvg.clamp(0.0, Sw) as num).toDouble();
+      ySvg = (ySvg.clamp(0.0, Sh) as num).toDouble();
+    }
+    return viewBoxPxToContainerPx(
+      viewBoxPx: Offset(xSvg, ySvg),
+      containerSize: containerSize,
+      viewBoxSize: viewBoxSize,
+    );
+  }
+
   static Offset valorantPercentToContainerPx({
     required double u, // 0..1
     required double v, // 0..1 (content-only, excludes top padding)

@@ -78,12 +78,20 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
             icon: const Icon(Icons.developer_board),
             foregroundColor: Colors.white,
             onPressed: () async {
-              final px = CoordinateSystem.valorantPercentToContainerPx(
-                u: 0.66848,
-                v: 0.239504,
+              const pad = EdgeInsets.fromLTRB(10, 33, 37, 35);
+              final px = CoordinateSystem.valorantPaddedPercentToContainerPx(
+                u: 0.3315,
+                v: 0.2615,
+                referencePaddingInViewBoxUnits: pad,
                 containerSize: CoordinateSystem.instance.playAreaSize,
                 viewBoxSize: const Size(452, 474),
               );
+              // final px = CoordinateSystem.valorantPercentToContainerPx(
+              //   u: 0.3315,
+              //   v: 0.2615,
+              //   containerSize: CoordinateSystem.instance.playAreaSize,
+              //   viewBoxSize: const Size(452, 474),
+              // );
 
               final norm = CoordinateSystem.instance.screenToCoordinate(px);
 

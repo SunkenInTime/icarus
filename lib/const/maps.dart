@@ -1,3 +1,5 @@
+import 'dart:ui' show Size;
+
 enum MapValue {
   ascent,
   breeze,
@@ -60,5 +62,39 @@ class Maps {
     MapValue.sunset: 1.048,
     MapValue.bind: .835,
     MapValue.corrode: .985,
+  };
+
+  static const Map<MapValue, Size> mapViewBox = {
+    MapValue.ascent: Size(411, 474),
+    MapValue.breeze: Size(448, 474),
+    MapValue.lotus: Size(494, 473),
+    MapValue.icebox: Size(387, 473),
+    MapValue.sunset: Size(416, 473),
+    MapValue.split: Size(467, 473),
+    MapValue.haven: Size(395, 474),
+    MapValue.fracture: Size(460, 473),
+    MapValue.abyss: Size(452, 474),
+    MapValue.pearl: Size(469, 473),
+    MapValue.bind: Size(416, 474),
+    MapValue.corrode: Size(387, 473),
+  };
+
+  static const Map<MapValue, Size> defenseMapViewBox = {
+    MapValue.ascent: Size(411, 474),
+    MapValue.breeze: Size(448, 474),
+    MapValue.lotus: Size(494, 473),
+    MapValue.icebox: Size(387, 473),
+    MapValue.sunset: Size(416, 473),
+    MapValue.split: Size(467, 473),
+    MapValue.haven: Size(395, 474),
+    MapValue.fracture: Size(460, 473),
+    MapValue.abyss: Size(452, 474),
+    MapValue.pearl: Size(469, 473),
+    MapValue.bind: Size(416, 474),
+    MapValue.corrode: Size(387, 473),
+  };
+
+  static const Map<MapValue, Size> spawnWallViewBox = {
+    MapValue.ascent: Size(410, 474),
   };
 }
