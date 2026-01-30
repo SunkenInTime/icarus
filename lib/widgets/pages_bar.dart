@@ -169,7 +169,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
               .name;
         }
 
-        return AnimatedContainer(
+        final pagesBar = AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeInOut,
           decoration: BoxDecoration(
@@ -201,6 +201,19 @@ class _PagesBarState extends ConsumerState<PagesBar>
                   onAdd: _addPage,
                   onToggle: () => setState(() => _expanded = true),
                 ),
+        );
+
+        if (match == null) return pagesBar;
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _MatchRoundSelector(
+              match: match,
+              selectedRound: selectedRound ?? 0,
+            ),
+            pagesBar,
+          ],
         );
       },
     );
@@ -330,12 +343,7 @@ class _ExpandedPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final showRoundHeader = match != null;
-
-    const roundHeaderHeight = 44.0;
-
-    final desiredHeightUnclamped = _computeDesiredHeight(pages.length) +
-        (showRoundHeader ? roundHeaderHeight : 0);
+    final desiredHeightUnclamped = _computeDesiredHeight(pages.length);
     final desiredHeight =
         desiredHeightUnclamped.clamp(0, _maxPanelHeight).toDouble();
     final needsScroll =
@@ -352,14 +360,6 @@ class _ExpandedPanel extends ConsumerWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (showRoundHeader)
-            SizedBox(
-              height: roundHeaderHeight,
-              child: _RoundHeader(
-                match: match!,
-                selectedRound: selectedRound ?? 0,
-              ),
-            ),
           // List / content section
           Flexible(
             child: Padding(
@@ -378,7 +378,7 @@ class _ExpandedPanel extends ConsumerWidget {
                 physics:
                     needsScroll ? null : const NeverScrollableScrollPhysics(),
                 itemCount: pages.length,
-                buildDefaultDragHandles: match == null ? false : true,
+                buildDefaultDragHandles: false,
                 proxyDecorator: proxyDecorator,
                 itemBuilder: (ctx, i) {
                   final p = pages[i];
@@ -523,8 +523,8 @@ class _PageRow extends StatelessWidget {
   }
 }
 
-class _RoundHeader extends ConsumerWidget {
-  const _RoundHeader({
+class _MatchRoundSelector extends ConsumerWidget {
+  const _MatchRoundSelector({
     required this.match,
     required this.selectedRound,
   });
@@ -538,6 +538,9 @@ class _RoundHeader extends ConsumerWidget {
     if (totalRounds == 0) return const SizedBox.shrink();
 
     final current = selectedRound.clamp(0, totalRounds - 1);
+
+    final canPrev = current > 0;
+    final canNext = current < totalRounds - 1;
 
     Future<void> setRound(int index) async {
       final clamped = index.clamp(0, totalRounds - 1);
@@ -562,51 +565,86 @@ class _RoundHeader extends ConsumerWidget {
           .setActivePageAnimated(meta.first.pageId);
     }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Settings.tacticalVioletTheme.card,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Settings.tacticalVioletTheme.border,
-            width: 1,
+    final primary = Settings.tacticalVioletTheme.primary;
+    final secondary = Settings.tacticalVioletTheme.secondary;
+
+    return SizedBox(
+      width: 224,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Settings.tacticalVioletTheme.card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Settings.tacticalVioletTheme.border,
+              width: 2,
+            ),
           ),
-        ),
-        child: SizedBox(
-          height: 36,
-          child: Row(
-            children: [
-              const SizedBox(width: 4),
-              ShadIconButton.ghost(
-                onPressed: current <= 0 ? null : () => setRound(current - 1),
-                icon: const Icon(
-                  Icons.chevron_left,
-                  color: Colors.white,
-                ),
-              ),
-              Expanded(
-                child: Center(
-                  child: Text(
-                    'Round ${current + 1} / $totalRounds',
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
+          child: SizedBox(
+            height: 44,
+            child: Row(
+              children: [
+                // const SizedBox(width: 4),
+                Padding(
+                  padding: const EdgeInsets.only(left: 6, top: 6, bottom: 6),
+                  child: ShadIconButton(
+                    enabled: canPrev,
+                    backgroundColor: canPrev ? primary : secondary,
+                    foregroundColor: Colors.white,
+                    onPressed: () {
+                      if (!canPrev) return;
+                      setRound(current - 1);
+                    },
+                    decoration: ShadDecoration(
+                      border: ShadBorder(
+                        radius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: const Icon(
+                      Icons.chevron_left,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
-              ),
-              ShadIconButton.ghost(
-                onPressed: current >= totalRounds - 1
-                    ? null
-                    : () => setRound(current + 1),
-                icon: const Icon(
-                  Icons.chevron_right,
-                  color: Colors.white,
+                Expanded(
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Round ${current + 1}',
+                        maxLines: 1,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 4),
-            ],
+                Padding(
+                  padding: const EdgeInsets.only(right: 6, top: 6, bottom: 6),
+                  child: ShadIconButton(
+                    enabled: canNext,
+                    backgroundColor: canNext ? primary : secondary,
+                    foregroundColor: Colors.white,
+                    onPressed: () {
+                      if (!canNext) return;
+                      setRound(current + 1);
+                    },
+                    decoration: ShadDecoration(
+                      border: ShadBorder(
+                        radius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: const Icon(
+                      Icons.chevron_right,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

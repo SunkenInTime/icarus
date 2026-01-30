@@ -1664,6 +1664,39 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
   }
 
+  /// Applies the current (or provided) StrategySettings to all pages in the
+  /// current strategy.
+  ///
+  /// Notes:
+  /// - This only updates the persisted page settings.
+  /// - It intentionally does not attempt to transform existing placed widgets
+  ///   on other pages.
+  Future<void> applySettingsToAllPages({
+    double? agentSize,
+    double? abilitySize,
+  }) async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+
+    // Ensure current page provider-state is flushed first.
+    await _syncCurrentPageToHive();
+
+    final strat = box.get(state.id);
+    if (strat == null || strat.pages.isEmpty) return;
+
+    final current = ref.read(strategySettingsProvider);
+    final updatedSettings = current.copyWith(
+      agentSize: agentSize ?? current.agentSize,
+      abilitySize: abilitySize ?? current.abilitySize,
+    );
+
+    final newPages = [
+      for (final p in strat.pages) p.copyWith(settings: updatedSettings),
+    ];
+
+    final updated = strat.copyWith(pages: newPages, lastEdited: DateTime.now());
+    await box.put(updated.id, updated);
+  }
+
   void moveToFolder({required String strategyID, required String? parentID}) {
     final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strategy = strategyBox.get(strategyID);

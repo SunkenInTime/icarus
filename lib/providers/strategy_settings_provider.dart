@@ -6,6 +6,19 @@ import 'package:icarus/const/settings.dart';
 import 'package:json_annotation/json_annotation.dart';
 part "strategy_settings_provider.g.dart";
 
+final applyScaleToAllPagesProvider =
+    NotifierProvider<ApplyScaleToAllPagesProvider, bool>(
+        ApplyScaleToAllPagesProvider.new);
+
+class ApplyScaleToAllPagesProvider extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set(bool value) {
+    state = value;
+  }
+}
+
 @JsonSerializable()
 class StrategySettings extends HiveObject {
   final double agentSize;

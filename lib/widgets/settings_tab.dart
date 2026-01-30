@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -14,7 +12,6 @@ class SettingsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final coordinateSystem = CoordinateSystem.instance;
     return ShadSheet(
       title: Text("Settings", style: ShadTheme.of(context).textTheme.h3),
       description: const Text("Adjust your application settings here."),
@@ -28,6 +25,28 @@ class SettingsTab extends ConsumerWidget {
                 SettingsSection(
                   title: "Agents",
                   children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            "Apply scale to all pages",
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 15),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        ShadCheckbox(
+                          value: ref.watch(applyScaleToAllPagesProvider),
+                          onChanged: (value) {
+                            ref
+                                .read(applyScaleToAllPagesProvider.notifier)
+                                .set(value);
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
                     const Text(
                       "Scale",
                       style: TextStyle(fontSize: 15),
@@ -39,7 +58,7 @@ class SettingsTab extends ConsumerWidget {
                       inactiveColor: Settings.tacticalVioletTheme.secondary,
                       divisions: 15,
                       value: ref.watch(strategySettingsProvider).agentSize,
-                      onChanged: (value) {
+                      onChanged: (value) async {
                         final oldSize =
                             ref.read(strategySettingsProvider).agentSize;
                         if (oldSize == value) return;
@@ -53,6 +72,12 @@ class SettingsTab extends ConsumerWidget {
                         ref
                             .read(lineUpProvider.notifier)
                             .recenterAgentsForAgentSizeChange(oldSize, value);
+
+                        if (ref.read(applyScaleToAllPagesProvider)) {
+                          await ref
+                              .read(strategyProvider.notifier)
+                              .applySettingsToAllPages(agentSize: value);
+                        }
 
                         ref.read(strategyProvider.notifier).setUnsaved();
                       },
@@ -73,10 +98,18 @@ class SettingsTab extends ConsumerWidget {
                       inactiveColor: Settings.tacticalVioletTheme.secondary,
                       divisions: 15,
                       value: ref.watch(strategySettingsProvider).abilitySize,
-                      onChanged: (value) {
+                      onChanged: (value) async {
                         ref
                             .read(strategySettingsProvider.notifier)
                             .updateAbilitySize(value);
+
+                        if (ref.read(applyScaleToAllPagesProvider)) {
+                          await ref
+                              .read(strategyProvider.notifier)
+                              .applySettingsToAllPages(abilitySize: value);
+                        }
+
+                        ref.read(strategyProvider.notifier).setUnsaved();
                       },
                     )
                   ],
