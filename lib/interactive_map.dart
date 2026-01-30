@@ -22,6 +22,7 @@ import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
+import 'package:icarus/widgets/match_roster_card.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -77,106 +78,125 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
             ),
           ),
           child: ImageDropTarget(
-            child: InteractiveViewer(
-              transformationController: controller,
-              onInteractionEnd: (details) {
-                ref
-                    .read(screenZoomProvider.notifier)
-                    .updateZoom(controller.value.getMaxScaleOnAxis());
-              },
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  //Dot Grid
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        ref.read(abilityBarProvider.notifier).updateData(null);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.all(4.0),
-                        child: DotGrid(),
-                      ),
-                    ),
-                  ),
-                  // Map SVG
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        ref.read(abilityBarProvider.notifier).updateData(null);
-                      },
-                      child: SvgPicture.asset(
-                        assetName,
-                        semanticsLabel: 'Map',
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                  ),
-                  if (ref.watch(mapProvider).showSpawnBarrier)
-                    Positioned.fill(
-                      top: 0,
-                      left: isAttack ? -1.5 : 1.5,
-                      child: Transform.flip(
-                        flipX: !isAttack,
-                        flipY: !isAttack,
-                        child: SvgPicture.asset(
-                          barrierAssetName,
-                          semanticsLabel: 'Barrier',
-                          fit: BoxFit.contain,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: InteractiveViewer(
+                    transformationController: controller,
+                    onInteractionEnd: (details) {
+                      ref
+                          .read(screenZoomProvider.notifier)
+                          .updateZoom(controller.value.getMaxScaleOnAxis());
+                    },
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        //Dot Grid
+                        Positioned.fill(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onTap: () {
+                              ref
+                                  .read(abilityBarProvider.notifier)
+                                  .updateData(null);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(4.0),
+                              child: DotGrid(),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  //Agents
+                        // Map SVG
+                        Positioned.fill(
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.translucent,
+                            onTap: () {
+                              ref
+                                  .read(abilityBarProvider.notifier)
+                                  .updateData(null);
+                            },
+                            child: SvgPicture.asset(
+                              assetName,
+                              semanticsLabel: 'Map',
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                        if (ref.watch(mapProvider).showSpawnBarrier)
+                          Positioned.fill(
+                            top: 0,
+                            left: isAttack ? -1.5 : 1.5,
+                            child: Transform.flip(
+                              flipX: !isAttack,
+                              flipY: !isAttack,
+                              child: SvgPicture.asset(
+                                barrierAssetName,
+                                semanticsLabel: 'Barrier',
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ),
+                        //Agents
 
-                  Positioned.fill(
-                    child: ref.watch(transitionProvider).hideView
-                        ? SizedBox.shrink()
-                        : Opacity(
+                        Positioned.fill(
+                          child: ref.watch(transitionProvider).hideView
+                              ? SizedBox.shrink()
+                              : Opacity(
+                                  opacity:
+                                      ref.watch(interactionStateProvider) ==
+                                              InteractionState.lineUpPlacing
+                                          ? 0.2
+                                          : 1.0,
+                                  child: PlacedWidgetBuilder(),
+                                ),
+                        ),
+
+                        // Positioned.fill(child: child)
+                        Positioned.fill(
+                          child: ref.watch(transitionProvider).active
+                              ? PageTransitionOverlay()
+                              : SizedBox.shrink(),
+                        ),
+                        Positioned.fill(
+                          child: ref.watch(transitionProvider).hideView &&
+                                  !ref.watch(transitionProvider).active
+                              ? TemporaryWidgetBuilder()
+                              : SizedBox.shrink(),
+                        ),
+
+                        //Painting
+                        Positioned.fill(
+                          child: Opacity(
                             opacity: ref.watch(interactionStateProvider) ==
                                     InteractionState.lineUpPlacing
                                 ? 0.2
                                 : 1.0,
-                            child: PlacedWidgetBuilder(),
+                            child: Transform.flip(
+                                flipX: !isAttack,
+                                flipY: !isAttack,
+                                child: InteractivePainter()),
                           ),
-                  ),
+                        ),
 
-                  // Positioned.fill(child: child)
-                  Positioned.fill(
-                    child: ref.watch(transitionProvider).active
-                        ? PageTransitionOverlay()
-                        : SizedBox.shrink(),
-                  ),
-                  Positioned.fill(
-                    child: ref.watch(transitionProvider).hideView &&
-                            !ref.watch(transitionProvider).active
-                        ? TemporaryWidgetBuilder()
-                        : SizedBox.shrink(),
-                  ),
-
-                  //Painting
-                  Positioned.fill(
-                    child: Opacity(
-                      opacity: ref.watch(interactionStateProvider) ==
-                              InteractionState.lineUpPlacing
-                          ? 0.2
-                          : 1.0,
-                      child: Transform.flip(
-                          flipX: !isAttack,
-                          flipY: !isAttack,
-                          child: InteractivePainter()),
+                        if (ref.watch(interactionStateProvider) ==
+                            InteractionState.lineUpPlacing)
+                          Positioned.fill(
+                            child: LineupPositionWidget(),
+                          ),
+                      ],
                     ),
                   ),
-
-                  if (ref.watch(interactionStateProvider) ==
-                      InteractionState.lineUpPlacing)
-                    Positioned.fill(
-                      child: LineupPositionWidget(),
-                    ),
-                ],
-              ),
+                ),
+              ],
             ),
+          ),
+        ),
+        Align(
+          alignment: Alignment.bottomRight,
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: MatchRosterCard(),
           ),
         ),
       ],
