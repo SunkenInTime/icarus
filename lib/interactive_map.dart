@@ -50,7 +50,11 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
     String barrierAssetName =
-        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map_spawn_wall.svg';
+        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_spawn_walls.svg';
+    String calloutsAssetName =
+        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_call_outs.svg';
+    String ultOrbsAssetName =
+        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_ult_orbs.svg';
 
     final double height = MediaQuery.sizeOf(context).height - 90;
     final Size playAreaSize = Size(height * 1.2, height);
@@ -115,8 +119,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                   ),
                   if (ref.watch(mapProvider).showSpawnBarrier)
                     Positioned.fill(
-                      top: 0,
-                      left: isAttack ? -1.5 : 1.5,
                       child: Transform.flip(
                         flipX: !isAttack,
                         flipY: !isAttack,
@@ -128,7 +130,23 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                       ),
                     ),
                   //Agents
+                  if (ref.watch(mapProvider).showRegionNames)
+                    Positioned.fill(
+                      child: SvgPicture.asset(
+                        calloutsAssetName,
+                        semanticsLabel: 'Callouts',
+                        fit: BoxFit.contain,
+                      ),
+                    ),
 
+                  if (ref.watch(mapProvider).showUltOrbs)
+                    Positioned.fill(
+                      child: SvgPicture.asset(
+                        ultOrbsAssetName,
+                        semanticsLabel: 'Ult Orbs',
+                        fit: BoxFit.contain,
+                      ),
+                    ),
                   Positioned.fill(
                     child: ref.watch(transitionProvider).hideView
                         ? SizedBox.shrink()
