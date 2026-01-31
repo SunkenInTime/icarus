@@ -13,6 +13,24 @@ import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+ValorantPageMeta? _metaForPage(ValorantMatchStrategyData match, String pageId) {
+  for (final m in match.pageMeta) {
+    if (m.pageId == pageId) return m;
+  }
+  return null;
+}
+
+String? _matchTimeLabel(ValorantPageMeta meta) {
+  final ms = meta.roundTimeMs ?? meta.gameTimeMs;
+  if (ms == null) return null;
+
+  final totalSeconds = (ms / 1000).floor();
+  final minutes = totalSeconds ~/ 60;
+  final seconds = totalSeconds % 60;
+  final s2 = seconds.toString().padLeft(2, '0');
+  return '$minutes:$s2';
+}
+
 class PagesBar extends ConsumerStatefulWidget {
   const PagesBar({super.key});
 
@@ -23,6 +41,7 @@ class PagesBar extends ConsumerStatefulWidget {
 class _PagesBarState extends ConsumerState<PagesBar>
     with SingleTickerProviderStateMixin {
   bool _expanded = false;
+  final Set<String> _normalizedMatchNamesFor = {};
 
   StrategyData? _strategy(Box<StrategyData> box, String id) => box.get(id);
 
@@ -141,6 +160,16 @@ class _PagesBarState extends ConsumerState<PagesBar>
         if (strat == null) return const SizedBox();
 
         final match = strat.valorantMatch;
+
+        if (match != null && !_normalizedMatchNamesFor.contains(strategyId)) {
+          _normalizedMatchNamesFor.add(strategyId);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            ref
+                .read(strategyProvider.notifier)
+                .normalizeValorantMatchKillPageNames();
+          });
+        }
+
         final selectedRound = ref.watch(valorantRoundProvider);
 
         final pages = _pagesForUi(
@@ -161,12 +190,11 @@ class _PagesBarState extends ConsumerState<PagesBar>
             activeName = 'No pages';
           }
         } else {
-          activeName = pages
-              .firstWhere(
-                (p) => p.id == activePageId,
-                orElse: () => pages.first,
-              )
-              .name;
+          final page = pages.firstWhere(
+            (p) => p.id == activePageId,
+            orElse: () => pages.first,
+          );
+          activeName = page.name;
         }
 
         final pagesBar = AnimatedContainer(
@@ -387,6 +415,7 @@ class _ExpandedPanel extends ConsumerWidget {
                     padding: const EdgeInsets.only(bottom: 8),
                     child: _PageRow(
                       page: p,
+                      match: match,
                       active: p.id == activePageId,
                       onSelect: onSelect,
                       onRename: onRename,
@@ -439,6 +468,7 @@ class _ExpandedPanel extends ConsumerWidget {
 class _PageRow extends StatelessWidget {
   const _PageRow({
     required this.page,
+    required this.match,
     required this.active,
     required this.onSelect,
     required this.onRename,
@@ -447,6 +477,7 @@ class _PageRow extends StatelessWidget {
   });
 
   final StrategyPage page;
+  final ValorantMatchStrategyData? match;
   final bool active;
   final ValueChanged<String> onSelect;
   final ValueChanged<StrategyPage> onRename;
@@ -461,6 +492,12 @@ class _PageRow extends StatelessWidget {
     final bg = active
         ? Settings.tacticalVioletTheme.primary
         : Settings.tacticalVioletTheme.card;
+
+    final meta = (match != null) ? _metaForPage(match!, page.id) : null;
+    final timeLabel = (match != null && meta?.type == ValorantEventType.kill)
+        ? _matchTimeLabel(meta!)
+        : null;
+
     return Material(
       color: bg,
       shape: RoundedRectangleBorder(
@@ -490,6 +527,30 @@ class _PageRow extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (timeLabel != null) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Settings.tacticalVioletTheme.secondary,
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      timeLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.clip,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w600,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                ],
                 ShadTooltip(
                   builder: (context) => const Text("Rename"),
                   child: ShadIconButton.ghost(
@@ -499,21 +560,22 @@ class _PageRow extends StatelessWidget {
                     onPressed: () => onRename(page),
                   ),
                 ),
-                ShadTooltip(
-                  builder: (context) => const Text("Delete"),
-                  child: ShadIconButton.ghost(
-                    hoverForegroundColor:
-                        Settings.tacticalVioletTheme.destructive,
-                    hoverBackgroundColor: Colors.transparent,
-                    foregroundColor:
-                        disableDelete ? Colors.white24 : Colors.white,
-                    icon: const Icon(
-                      Icons.delete,
-                      size: 18,
+                if (match == null)
+                  ShadTooltip(
+                    builder: (context) => const Text("Delete"),
+                    child: ShadIconButton.ghost(
+                      hoverForegroundColor:
+                          Settings.tacticalVioletTheme.destructive,
+                      hoverBackgroundColor: Colors.transparent,
+                      foregroundColor:
+                          disableDelete ? Colors.white24 : Colors.white,
+                      icon: const Icon(
+                        Icons.delete,
+                        size: 18,
+                      ),
+                      onPressed: disableDelete ? null : () => onDelete(page),
                     ),
-                    onPressed: disableDelete ? null : () => onDelete(page),
                   ),
-                ),
               ],
             ),
           ),

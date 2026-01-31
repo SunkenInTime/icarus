@@ -40,6 +40,28 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+final RegExp _legacyValorantKillPageNameRe = RegExp(r'^R\d+\s+K\d+$');
+
+String _agentNameForSubjectInMatch(
+  ValorantMatchStrategyData match,
+  String? subject,
+) {
+  if (subject == null || subject.isEmpty) return 'Unknown';
+  for (final p in match.players) {
+    if (p.subject != subject) continue;
+    final t = ValorantMatchMappings.agentTypeFromCharacterId(p.characterId);
+    return AgentData.agents[t]?.name ?? 'Unknown';
+  }
+  return 'Unknown';
+}
+
+String _killPageNameFromMeta(
+    ValorantMatchStrategyData match, ValorantPageMeta m) {
+  final killer = _agentNameForSubjectInMatch(match, m.killerSubject);
+  final victim = _agentNameForSubjectInMatch(match, m.victimSubject);
+  return '$killer > $victim';
+}
+
 class StrategyData extends HiveObject {
   final String id;
   String name;
@@ -579,6 +601,43 @@ class StrategyProvider extends Notifier<StrategyState> {
     await setActivePageAnimated(newPage.id);
   }
 
+  Future<void> normalizeValorantMatchKillPageNames() async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(state.id);
+    if (strat == null) return;
+
+    final match = strat.valorantMatch;
+    if (match == null) return;
+
+    final indexById = <String, int>{
+      for (var i = 0; i < strat.pages.length; i++) strat.pages[i].id: i,
+    };
+
+    var changed = false;
+    final updatedPages = [...strat.pages];
+
+    for (final m in match.pageMeta) {
+      if (m.type != ValorantEventType.kill) continue;
+      final idx = indexById[m.pageId];
+      if (idx == null) continue;
+
+      final page = updatedPages[idx];
+      if (!_legacyValorantKillPageNameRe.hasMatch(page.name)) continue;
+
+      final newName = _killPageNameFromMeta(match, m);
+      if (newName.isEmpty || newName == page.name) continue;
+
+      updatedPages[idx] = page.copyWith(name: newName);
+      changed = true;
+    }
+
+    if (!changed) return;
+
+    final updated =
+        strat.copyWith(pages: updatedPages, lastEdited: DateTime.now());
+    await box.put(updated.id, updated);
+  }
+
   Future<void> _addValorantPageInCurrentRound(
     StrategyData strat, {
     String? name,
@@ -1060,10 +1119,20 @@ class StrategyProvider extends Notifier<StrategyState> {
 
           final pageId = uuid.v4();
 
+          String agentNameForSubject(String? subject) {
+            if (subject == null || subject.isEmpty) return 'Unknown';
+            final t = subjectToAgentType[subject];
+            if (t == null) return 'Unknown';
+            return AgentData.agents[t]?.name ?? 'Unknown';
+          }
+
+          final pageName =
+              '${agentNameForSubject(killer)} > ${agentNameForSubject(victim)}';
+
           pages.add(
             StrategyPage(
               id: pageId,
-              name: 'R${roundNum + 1} K${orderInRound + 1}',
+              name: pageName,
               drawingData: drawingData,
               agentData: agentData,
               abilityData: const [],
