@@ -3,17 +3,13 @@
 import 'dart:developer';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:icarus/ai/ai_chat_view.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 
@@ -24,7 +20,6 @@ import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:icarus/widgets/match_roster_card.dart';
-import 'package:icarus/const/line_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class InteractiveMap extends ConsumerStatefulWidget {
@@ -215,7 +210,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
         Align(
           alignment: Alignment.topRight,
           child: SizedBox(
-            width: 300,
+            width: 350,
             child: Padding(
               padding: const EdgeInsets.only(top: 18, left: 18, bottom: 18),
               child: Column(

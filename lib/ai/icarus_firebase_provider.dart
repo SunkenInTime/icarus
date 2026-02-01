@@ -40,6 +40,16 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
       _onFunctionCall;
   ChatSession? _chat;
 
+  String? _statusText;
+
+  String? get statusText => _statusText;
+
+  void _setStatus(String? text) {
+    if (_statusText == text) return;
+    _statusText = text;
+    notifyListeners();
+  }
+
   @override
   Stream<String> generateStream(
     String prompt, {
@@ -57,6 +67,7 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
     String prompt, {
     Iterable<Attachment> attachments = const [],
   }) async* {
+    _setStatus('Helios is thinking...');
     final userMessage = ChatMessage.user(prompt, attachments);
     final llmMessage = ChatMessage.llm();
     _history.addAll([userMessage, llmMessage]);
@@ -67,12 +78,15 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
       chat: _chat!,
     );
 
-    yield* response.map((chunk) {
-      llmMessage.append(chunk);
-      return chunk;
-    });
-
-    notifyListeners();
+    try {
+      yield* response.map((chunk) {
+        llmMessage.append(chunk);
+        return chunk;
+      });
+    } finally {
+      _setStatus(null);
+      notifyListeners();
+    }
   }
 
   Stream<String> _sendMessageStream({
@@ -92,6 +106,8 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
 
       await for (final chunk in responseStream) {
         if (chunk.text != null) {
+          // As soon as we have real model text, hide any "thinking/tool" status.
+          if (statusText != null) _setStatus(null);
           yield chunk.text!;
         }
         if (chunk.functionCalls.isNotEmpty) {
@@ -103,12 +119,16 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
         break;
       }
 
-      yield '\n';
+      // Do not yield a newline here.
+      // If we yield any text, flutter_ai_toolkit will treat the pending LLM
+      // message as non-null and the built-in "jumping dots" loader disappears
+      // while tools are executing.
 
       final functionResponses = <FunctionResponse>[];
       final extraParts = <Part>[];
 
       for (final functionCall in functionCalls) {
+        _setStatus(_statusForTool(functionCall.name));
         try {
           final result = await _onFunctionCall?.call(functionCall);
           functionResponses.add(
@@ -124,9 +144,28 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
         }
       }
 
+      _setStatus('Helios is analyzing...');
       responseStream = chat.sendMessageStream(
         Content('function', [...functionResponses, ...extraParts]),
       );
+    }
+  }
+
+  static String _statusForTool(String toolName) {
+    switch (toolName) {
+      case 'get_visible_round':
+        return 'Checking visible round...';
+      case 'get_active_page':
+        return 'Checking active page...';
+      case 'get_roster':
+        return 'Loading roster...';
+      case 'get_round_kills':
+        return 'Loading kill timeline...';
+      case 'take_current_screenshot':
+      case 'take_page_screenshot':
+        return 'Capturing screenshot...';
+      default:
+        return 'Executing $toolName...';
     }
   }
 

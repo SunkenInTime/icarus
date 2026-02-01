@@ -9,7 +9,7 @@ class AiChatSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return ShadSheet(
       title: Text('AI Chat', style: ShadTheme.of(context).textTheme.h3),
-      description: const Text('Ask Gemini for help or ideas.'),
+      description: const Text('Ask Helios for a round plan or visual review.'),
       child: SizedBox(
         width: 520,
         height: 620,

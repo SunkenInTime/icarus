@@ -1,6 +1,7 @@
 import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_ai_toolkit/flutter_ai_toolkit.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/ai_models.dart';
 import 'package:icarus/const/shortcut_info.dart';
@@ -17,6 +18,7 @@ import 'package:icarus/providers/valorant_round_provider.dart';
 import 'package:icarus/valorant/valorant_match_strategy_data.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/settings.dart';
 
 class AiChatView extends ConsumerStatefulWidget {
   const AiChatView({super.key});
@@ -50,17 +52,258 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
   @override
   Widget build(BuildContext context) {
     return Material(
+      color: Colors.transparent,
       child: Shortcuts(
         shortcuts: ShortcutInfo.textEditingOverrides,
-        child: LlmChatView(
-          provider: _provider,
-          enableAttachments: true,
-          enableVoiceNotes: false,
-          autofocus: true,
-          welcomeMessage:
-              'Ask for review (round, spacing, win condition), or ask for a visual read of the current map canvas.',
+        child: Container(
+          decoration: BoxDecoration(
+            color: Settings.tacticalVioletTheme.card,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Settings.tacticalVioletTheme.border,
+              width: 2,
+            ),
+          ),
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: LlmChatView(
+                  provider: _provider,
+                  enableAttachments: true,
+                  enableVoiceNotes: false,
+                  autofocus: true,
+                  welcomeMessage:
+                      "Helios here. I can review your current setup, round plan, spacing, and utility usage. If you want a visual read, ask me to take a screenshot of the map canvas.",
+                  suggestions: const [
+                    'Analyze the current round: win condition, first death, and trade plan.',
+                    'Review spacing + crossfires on this page (use a screenshot).',
+                    "Summarize this round's kill timing and tempo swing.",
+                    'Find the biggest utility gap and give 3 repeatable fixes.',
+                    'Check last 3 rounds for patterns + adjustment plan.',
+                  ],
+                  style: _chatStyle(context),
+                ),
+              ),
+              Positioned(
+                top: 10,
+                left: 10,
+                child: ListenableBuilder(
+                  listenable: _provider,
+                  builder: (context, _) {
+                    final status = _provider.statusText;
+                    if (status == null || status.trim().isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 150),
+                      child: Container(
+                        key: ValueKey(status),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Settings.tacticalVioletTheme.secondary,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: Settings.tacticalVioletTheme.border,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 10,
+                              height: 10,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Settings.tacticalVioletTheme.primary,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Text(
+                                status,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelSmall
+                                    ?.copyWith(
+                                      color: Settings
+                                          .tacticalVioletTheme.foreground,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  LlmChatViewStyle _chatStyle(BuildContext context) {
+    const scheme = Settings.tacticalVioletTheme;
+    final base = LlmChatViewStyle.defaultStyle();
+
+    final baseLlm = base.llmMessageStyle ?? LlmMessageStyle.defaultStyle();
+    final baseUser = base.userMessageStyle ?? UserMessageStyle.defaultStyle();
+    final baseInput = base.chatInputStyle ?? ChatInputStyle.defaultStyle();
+    final baseSuggestion =
+        base.suggestionStyle ?? SuggestionStyle.defaultStyle();
+
+    final markdown = (baseLlm.markdownStyle ?? MarkdownStyleSheet()).copyWith(
+      p: (baseLlm.markdownStyle?.p ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      strong: (baseLlm.markdownStyle?.strong ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      em: (baseLlm.markdownStyle?.em ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      a: (baseLlm.markdownStyle?.a ?? const TextStyle()).copyWith(
+        color: scheme.primary,
+      ),
+      code: (baseLlm.markdownStyle?.code ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+        backgroundColor: scheme.background,
+      ),
+      listBullet:
+          (baseLlm.markdownStyle?.listBullet ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      blockquote:
+          (baseLlm.markdownStyle?.blockquote ?? const TextStyle()).copyWith(
+        color: scheme.mutedForeground,
+      ),
+      h1: (baseLlm.markdownStyle?.h1 ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      h2: (baseLlm.markdownStyle?.h2 ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      h3: (baseLlm.markdownStyle?.h3 ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      h4: (baseLlm.markdownStyle?.h4 ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      h5: (baseLlm.markdownStyle?.h5 ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      h6: (baseLlm.markdownStyle?.h6 ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+    );
+
+    ActionButtonStyle? button(ActionButtonStyle? s, {bool primary = false}) {
+      if (s == null) return null;
+      return ActionButtonStyle(
+        icon: s.icon,
+        iconColor: primary ? scheme.primaryForeground : scheme.foreground,
+        iconDecoration: BoxDecoration(
+          color: primary ? scheme.primary : scheme.secondary,
+          shape: BoxShape.circle,
+          border: Border.all(color: scheme.border),
+        ),
+        text: s.text,
+        textStyle: s.textStyle?.copyWith(
+          color: scheme.foreground,
+        ),
+      );
+    }
+
+    return base.copyWith(
+      backgroundColor: scheme.card,
+      menuColor: scheme.popover,
+      progressIndicatorColor: scheme.mutedForeground,
+      padding: const EdgeInsets.only(top: 14, left: 12, right: 12),
+      messageSpacing: 8,
+      llmMessageStyle: baseLlm.copyWith(
+        minWidth: 0,
+        maxWidth: 520,
+        icon: Icons.wb_sunny_outlined,
+        iconColor: scheme.primaryForeground,
+        iconDecoration: BoxDecoration(
+          color: scheme.primary,
+          shape: BoxShape.circle,
+        ),
+        markdownStyle: markdown,
+        decoration: BoxDecoration(
+          color: scheme.secondary,
+          border: Border.all(color: scheme.border),
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.zero,
+            topRight: Radius.circular(16),
+            bottomLeft: Radius.circular(16),
+            bottomRight: Radius.circular(16),
+          ),
+        ),
+      ),
+      userMessageStyle: UserMessageStyle(
+        textStyle: (baseUser.textStyle ?? const TextStyle()).copyWith(
+          color: scheme.foreground,
+        ),
+        decoration: BoxDecoration(
+          color: scheme.selection,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(16),
+            topRight: Radius.zero,
+            bottomLeft: Radius.circular(16),
+            bottomRight: Radius.circular(16),
+          ),
+        ),
+      ),
+      chatInputStyle: ChatInputStyle(
+        textStyle: (baseInput.textStyle ?? const TextStyle()).copyWith(
+          color: scheme.foreground,
+        ),
+        hintStyle: (baseInput.hintStyle ?? const TextStyle()).copyWith(
+          color: scheme.mutedForeground,
+        ),
+        hintText: "Ask Helios... (try 'use a screenshot')",
+        backgroundColor: scheme.background,
+        decoration: BoxDecoration(
+          color: scheme.background,
+          border: Border.all(width: 1, color: scheme.border),
+          borderRadius: BorderRadius.circular(18),
+        ),
+      ),
+      actionButtonBarDecoration: BoxDecoration(
+        color: scheme.background,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: scheme.border),
+      ),
+      suggestionStyle: SuggestionStyle(
+        textStyle: (baseSuggestion.textStyle ?? const TextStyle()).copyWith(
+          color: scheme.foreground,
+        ),
+        decoration: BoxDecoration(
+          color: scheme.secondary,
+          borderRadius: const BorderRadius.all(Radius.circular(10)),
+          border: Border.all(color: scheme.border),
+        ),
+      ),
+      addButtonStyle: button(base.addButtonStyle),
+      attachFileButtonStyle: button(base.attachFileButtonStyle),
+      cameraButtonStyle: button(base.cameraButtonStyle),
+      galleryButtonStyle: button(base.galleryButtonStyle),
+      stopButtonStyle: button(base.stopButtonStyle),
+      submitButtonStyle: button(base.submitButtonStyle, primary: true),
+      closeMenuButtonStyle: button(base.closeMenuButtonStyle),
     );
   }
 
@@ -94,7 +337,7 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
       case IcarusAiToolNames.takePageScreenshot:
         final targetPageId = _resolveScreenshotTargetPageId(functionCall.args);
         if (targetPageId == null || targetPageId.trim().isEmpty) {
-          return IcarusFunctionCallResult(
+          return const IcarusFunctionCallResult(
             response: {
               'error':
                   'Missing target. Provide pageId, or (in match mode) roundIndex + orderInRound.'

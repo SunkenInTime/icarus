@@ -39,7 +39,7 @@ class MatchRosterCard extends ConsumerWidget {
         return ConstrainedBox(
           constraints: const BoxConstraints(
             minWidth: 260,
-            maxWidth: 300,
+            maxWidth: 350,
             maxHeight: 320,
           ),
           child: Container(
