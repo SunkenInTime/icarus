@@ -8,6 +8,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
@@ -62,6 +63,7 @@ class AgentWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
+    final isScreenshot = ref.watch(screenshotProvider);
     final isDead = state == AgentState.dead;
 
     final agentImage = RepaintBoundary(child: Image.asset(agent.iconPath));
@@ -122,7 +124,7 @@ class AgentWidget extends ConsumerWidget {
     }
     final bool isLineUp = lineUpId != null;
 
-    final bool isNoneInteractive = (id == null || id!.isEmpty);
+    // final bool isNoneInteractive = (id == null || id!.isEmpty);
 
     final decoration = BoxDecoration(
       color: bgColor,
@@ -139,7 +141,7 @@ class AgentWidget extends ConsumerWidget {
     Widget agentCard;
     // Use Ink + InkWell so the ripple shows on top of the background
 
-    if (isLineUp) {
+    if (isLineUp || isScreenshot) {
       agentCard = Container(
         decoration: decoration,
         width: scaledSize,
