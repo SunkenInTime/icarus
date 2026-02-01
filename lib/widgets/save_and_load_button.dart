@@ -18,6 +18,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
+import 'package:icarus/widgets/ai_chat_sheet.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
 import 'package:screenshot/screenshot.dart';
@@ -51,6 +52,20 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 );
               },
               icon: const Icon(Icons.settings),
+            ),
+          ),
+          ShadTooltip(
+            builder: (context) => const Text("AI Chat"),
+            child: ShadIconButton.ghost(
+              foregroundColor: Colors.white,
+              onPressed: () async {
+                showShadSheet(
+                  side: ShadSheetSide.right,
+                  context: context,
+                  builder: (context) => const AiChatSheet(),
+                );
+              },
+              icon: const Icon(Icons.auto_awesome),
             ),
           ),
           const AutoSaveButton(),

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "109851197209",
+    "project_id": "icarus-hackathon",
+    "storage_bucket": "icarus-hackathon.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:109851197209:android:9b1695c9060e0c689b4f88",
+        "android_client_info": {
+          "package_name": "com.example.icarus"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6aVl3uT9zu_uMLtjy3kZwxvOI2V-LuDQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
