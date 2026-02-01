@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'dart:io';
 
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -30,6 +31,8 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:icarus/firebase_options.dart';
+
 late CustomMouseCursor staticDrawingCursor;
 WebViewEnvironment? webViewEnvironment;
 bool isWebViewInitialized = false;
@@ -39,6 +42,9 @@ Future<void> main(List<String> args) async {
   }
 
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   if (!kIsWeb && Platform.isWindows) {
     await WindowsSingleInstance.ensureSingleInstance(

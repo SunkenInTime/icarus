@@ -13,6 +13,7 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.6
+  firebase_core: ^4.4.0
   flutter_svg: ^2.0.14
   flutter_riverpod: ^2.6.1
   json_annotation: ^4.9.0
@@ -39,6 +40,11 @@ dependencies:
   flutter_inappwebview: ^6.1.5
   windows_single_instance: ^1.0.0
   pasteboard: ^0.4.0
+  flutter_ai_toolkit: ^1.0.0
+  firebase_ai: ^3.7.0
+  
+
+
 
 dev_dependencies:
   hive_ce_generator: ^1.8.2
