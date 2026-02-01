@@ -91,11 +91,68 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
             InlineDataPart('image/png', bytes),
           ],
         );
+      case IcarusAiToolNames.takePageScreenshot:
+        final targetPageId = _resolveScreenshotTargetPageId(functionCall.args);
+        if (targetPageId == null || targetPageId.trim().isEmpty) {
+          return IcarusFunctionCallResult(
+            response: {
+              'error':
+                  'Missing target. Provide pageId, or (in match mode) roundIndex + orderInRound.'
+            },
+          );
+        }
+        final bytes =
+            await captureCleanMapScreenshotForPageId(ref, targetPageId);
+        return IcarusFunctionCallResult(
+          response: {
+            'status': 'captured',
+            'pageId': targetPageId,
+            'mimeType': 'image/png',
+            'width': CoordinateSystem.screenShotSize.width.toInt(),
+            'height': CoordinateSystem.screenShotSize.height.toInt(),
+          },
+          extraParts: [
+            TextPart('Screenshot for pageId=$targetPageId (image/png).'),
+            InlineDataPart('image/png', bytes),
+          ],
+        );
       default:
         return IcarusFunctionCallResult(
           response: {'error': 'Unknown function: ${functionCall.name}'},
         );
     }
+  }
+
+  String? _resolveScreenshotTargetPageId(Map<String, Object?> args) {
+    final pageId = args['pageId'] as String?;
+    if (pageId != null && pageId.trim().isNotEmpty) return pageId;
+
+    final strat = _loadStrategyFromHive();
+    final match = strat?.valorantMatch;
+    if (match == null) return null;
+
+    final roundIndex = (args['roundIndex'] as num?)?.toInt();
+    final orderInRound = (args['orderInRound'] as num?)?.toInt();
+    if (roundIndex == null || orderInRound == null) return null;
+
+    final eventTypeStr = args['eventType'] as String?;
+    ValorantEventType? eventType;
+    if (eventTypeStr != null && eventTypeStr.trim().isNotEmpty) {
+      for (final t in ValorantEventType.values) {
+        if (t.name == eventTypeStr) {
+          eventType = t;
+          break;
+        }
+      }
+    }
+
+    for (final m in match.pageMeta) {
+      if (m.roundIndex != roundIndex) continue;
+      if (m.orderInRound != orderInRound) continue;
+      if (eventType != null && m.type != eventType) continue;
+      return m.pageId;
+    }
+    return null;
   }
 
   Map<String, Object?> _getVisibleRound() {

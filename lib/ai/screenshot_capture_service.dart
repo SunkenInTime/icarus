@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_portal/flutter_portal.dart';
@@ -11,20 +9,34 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/active_page_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 Future<Uint8List> captureCleanMapScreenshot(WidgetRef ref) async {
+  final currentPageId = ref.read(activePageProvider);
+  if (currentPageId == null) {
+    throw StateError("No active page selected");
+  }
+  return captureCleanMapScreenshotForPageId(ref, currentPageId);
+}
+
+Future<Uint8List> captureCleanMapScreenshotForPageId(
+  WidgetRef ref,
+  String pageId,
+) async {
   if (kIsWeb) {
     throw UnsupportedError('Screenshot capture is not supported on web.');
   }
 
   final id = ref.read(strategyProvider).id;
 
-  // Ensure any in-memory edits are flushed to Hive so the screenshot is current.
-  await ref.read(strategyProvider.notifier).forceSaveNow(id);
+  // If the requested page is currently active, flush edits first.
+  if (ref.read(activePageProvider) == pageId) {
+    await ref.read(strategyProvider.notifier).forceSaveNow(id);
+  }
 
   final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
   StrategyData? strat = box.get(id);
@@ -42,15 +54,19 @@ Future<Uint8List> captureCleanMapScreenshot(WidgetRef ref) async {
 
   final stratData = strat;
 
-  final currentPageId = ref.read(activePageProvider);
-  if (currentPageId == null) {
-    throw StateError("No active page selected");
+  StrategyPage? page;
+  for (final p in stratData.pages) {
+    if (p.id == pageId) {
+      page = p;
+      break;
+    }
   }
-
-  final activePage = stratData.pages.firstWhere(
-    (p) => p.id == currentPageId,
-    orElse: () => stratData.pages.first,
-  );
+  if (page == null) {
+    if (stratData.pages.isEmpty) {
+      throw StateError('Strategy has no pages');
+    }
+    throw StateError('Page not found for screenshot: $pageId');
+  }
 
   final controller = ScreenshotController();
 
@@ -73,17 +89,17 @@ Future<Uint8List> captureCleanMapScreenshot(WidgetRef ref) async {
                 theme: Theme.of(context),
                 debugShowCheckedModeBanner: false,
                 home: ScreenshotView(
-                  isAttack: activePage.isAttack,
+                  isAttack: page!.isAttack,
                   mapValue: stratData.mapData,
-                  agents: activePage.agentData,
-                  abilities: activePage.abilityData,
-                  text: activePage.textData,
-                  images: activePage.imageData,
-                  drawings: activePage.drawingData,
-                  utilities: activePage.utilityData,
-                  strategySettings: activePage.settings,
+                  agents: page.agentData,
+                  abilities: page.abilityData,
+                  text: page.textData,
+                  images: page.imageData,
+                  drawings: page.drawingData,
+                  utilities: page.utilityData,
+                  strategySettings: page.settings,
                   strategyState: ref.read(strategyProvider),
-                  lineUps: activePage.lineUps,
+                  lineUps: page.lineUps,
                 ),
                 builder: (context, child) {
                   return Portal(child: ShadAppBuilder(child: child!));

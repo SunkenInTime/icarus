@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:icarus/ai/ai_chat_view.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
@@ -212,10 +213,19 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
           ),
         ),
         Align(
-          alignment: Alignment.bottomRight,
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: MatchRosterCard(),
+          alignment: Alignment.topRight,
+          child: SizedBox(
+            width: 300,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 18, left: 18, bottom: 18),
+              child: Column(
+                spacing: 18,
+                children: const [
+                  Flexible(child: AiChatView()),
+                  MatchRosterCard(),
+                ],
+              ),
+            ),
           ),
         ),
       ],
