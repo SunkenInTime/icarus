@@ -68,6 +68,8 @@ class ScreenshotView extends ConsumerWidget {
     ref
         .read(drawingProvider.notifier)
         .rebuildAllPaths(CoordinateSystem.instance);
+    String calloutsAssetName =
+        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_call_outs.svg';
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
     return Container(
@@ -81,7 +83,14 @@ class ScreenshotView extends ConsumerWidget {
             padding: EdgeInsets.all(4.0),
             child: DotGrid(isScreenshot: true),
           )),
-
+          //TODO: Make it so that if a model is querying it show the callouts on top
+          Positioned.fill(
+            child: SvgPicture.asset(
+              calloutsAssetName,
+              semanticsLabel: 'Callouts',
+              fit: BoxFit.contain,
+            ),
+          ),
           Positioned.fill(
             child: SvgPicture.asset(
               assetName,

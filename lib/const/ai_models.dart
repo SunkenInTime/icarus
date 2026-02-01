@@ -1,3 +1,3 @@
 class AiModels {
-  static const String geminiFlash = 'gemini-2.0-flash';
+  static const String geminiFlash = 'gemini-3-flash-preview';
 }

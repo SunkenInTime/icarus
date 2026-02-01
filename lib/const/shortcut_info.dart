@@ -22,8 +22,8 @@ class ShortcutInfo {
     LogicalKeySet(LogicalKeyboardKey.keyA): const ForwardPageIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyD): const BackwardPageIntent(),
     LogicalKeySet(LogicalKeyboardKey.f12): const OpenInAppDebugIntent(),
-    LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyV):
-        const PasteBoardIntent(),
+    // LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyV):
+    //     const PasteBoardIntent(),
   };
 
   // New map to disable global shortcuts when typing
@@ -55,8 +55,8 @@ class ShortcutInfo {
         const DoNothingAndStopPropagationIntent(),
 
     LogicalKeySet(LogicalKeyboardKey.enter): const EnterTextIntent(),
-    LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyV):
-        const DoNothingAndStopPropagationIntent(),
+    // LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyV):
+    //     const DoNothingAndStopPropagationIntent(),
   };
 }
 
