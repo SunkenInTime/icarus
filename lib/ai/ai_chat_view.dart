@@ -164,9 +164,15 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
     final baseSuggestion =
         base.suggestionStyle ?? SuggestionStyle.defaultStyle();
 
+    const fontDelta = -1.0;
+
     final markdown = (baseLlm.markdownStyle ?? MarkdownStyleSheet()).copyWith(
       p: (baseLlm.markdownStyle?.p ?? const TextStyle()).copyWith(
         color: scheme.foreground,
+        fontSize:
+            ((baseLlm.markdownStyle?.p ?? const TextStyle()).fontSize ?? 14) +
+                fontDelta,
+        height: 1.25,
       ),
       strong: (baseLlm.markdownStyle?.strong ?? const TextStyle()).copyWith(
         color: scheme.foreground,
@@ -180,6 +186,10 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
       code: (baseLlm.markdownStyle?.code ?? const TextStyle()).copyWith(
         color: scheme.foreground,
         backgroundColor: scheme.background,
+        fontSize:
+            ((baseLlm.markdownStyle?.code ?? const TextStyle()).fontSize ??
+                    13) +
+                fontDelta,
       ),
       listBullet:
           (baseLlm.markdownStyle?.listBullet ?? const TextStyle()).copyWith(
@@ -235,6 +245,10 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
       llmMessageStyle: baseLlm.copyWith(
         minWidth: 0,
         maxWidth: 520,
+        // In the right sidebar, the toolkit's LLM row reserves a trailing
+        // Flexible spacer. Increasing this flex lets Helios responses use more
+        // of the available width (less "skinny" lines).
+        flex: 20,
         icon: Icons.wb_sunny_outlined,
         iconColor: scheme.primaryForeground,
         iconDecoration: BoxDecoration(
@@ -242,6 +256,7 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
           shape: BoxShape.circle,
         ),
         markdownStyle: markdown,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
           color: scheme.secondary,
           border: Border.all(color: scheme.border),
@@ -256,6 +271,8 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
       userMessageStyle: UserMessageStyle(
         textStyle: (baseUser.textStyle ?? const TextStyle()).copyWith(
           color: scheme.foreground,
+          fontSize: ((baseUser.textStyle ?? const TextStyle()).fontSize ?? 14) +
+              fontDelta,
         ),
         decoration: BoxDecoration(
           color: scheme.selection,
@@ -270,9 +287,15 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
       chatInputStyle: ChatInputStyle(
         textStyle: (baseInput.textStyle ?? const TextStyle()).copyWith(
           color: scheme.foreground,
+          fontSize:
+              ((baseInput.textStyle ?? const TextStyle()).fontSize ?? 14) +
+                  fontDelta,
         ),
         hintStyle: (baseInput.hintStyle ?? const TextStyle()).copyWith(
           color: scheme.mutedForeground,
+          fontSize:
+              ((baseInput.hintStyle ?? const TextStyle()).fontSize ?? 14) +
+                  fontDelta,
         ),
         hintText: "Ask Helios... (try 'use a screenshot')",
         backgroundColor: scheme.background,
@@ -290,6 +313,9 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
       suggestionStyle: SuggestionStyle(
         textStyle: (baseSuggestion.textStyle ?? const TextStyle()).copyWith(
           color: scheme.foreground,
+          fontSize:
+              ((baseSuggestion.textStyle ?? const TextStyle()).fontSize ?? 13) +
+                  fontDelta,
         ),
         decoration: BoxDecoration(
           color: scheme.secondary,

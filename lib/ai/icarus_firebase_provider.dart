@@ -103,12 +103,14 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
 
     while (true) {
       final functionCalls = <FunctionCall>[];
+      final bufferedText = StringBuffer();
 
       await for (final chunk in responseStream) {
-        if (chunk.text != null) {
-          // As soon as we have real model text, hide any "thinking/tool" status.
-          if (statusText != null) _setStatus(null);
-          yield chunk.text!;
+        final text = chunk.text;
+        if (text != null && text.isNotEmpty) {
+          // Only show the final response to the user. We buffer streaming
+          // chunks and emit once at the end of the model turn.
+          bufferedText.write(text);
         }
         if (chunk.functionCalls.isNotEmpty) {
           functionCalls.addAll(chunk.functionCalls);
@@ -116,6 +118,13 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
       }
 
       if (functionCalls.isEmpty) {
+        final finalText = _sanitizeModelOutput(bufferedText.toString());
+        if (statusText != null) _setStatus(null);
+        if (finalText.trim().isEmpty) {
+          yield "I couldn't generate a response.";
+        } else {
+          yield finalText;
+        }
         break;
       }
 
@@ -149,6 +158,40 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
         Content('function', [...functionResponses, ...extraParts]),
       );
     }
+  }
+
+  static String _sanitizeModelOutput(String text) {
+    var out = text;
+
+    // Strip common "thinking" wrappers if the model includes them.
+    out = out.replaceAll(
+      RegExp(
+        r'<thinking>.*?</thinking>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      '',
+    );
+    out = out.replaceAll(
+      RegExp(
+        r'<analysis>.*?</analysis>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      '',
+    );
+
+    // If the model accidentally prepends reasoning before the required
+    // structure, keep only the structured coaching response.
+    final findingsMatch = RegExp(
+      r'(^|\n)\s*(\*\*\s*)?findings\b',
+      caseSensitive: false,
+    ).firstMatch(out);
+    if (findingsMatch != null && findingsMatch.start > 0) {
+      out = out.substring(findingsMatch.start);
+    }
+
+    return out.trim();
   }
 
   static String _statusForTool(String toolName) {
