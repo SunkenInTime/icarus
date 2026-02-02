@@ -72,32 +72,37 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(14),
-                child: Column(
+                child: Stack(
                   children: [
-                    Expanded(
-                      child: LlmChatView(
-                        provider: _provider,
-                        enableAttachments: true,
-                        enableVoiceNotes: false,
-                        autofocus: true,
-                        welcomeMessage:
-                            "Helios here. I can review your current setup, round plan, spacing, and utility usage. If you want a visual read, ask me to take a screenshot of the map canvas.",
-                        suggestions: const [
-                          'Analyze the current round: win condition, first death, and trade plan.',
-                          'Review spacing + crossfires on this page (use a screenshot).',
-                          "Summarize this round's kill timing and tempo swing.",
-                          'Find the biggest utility gap and give 3 repeatable fixes.',
-                          'Check last 3 rounds for patterns + adjustment plan.',
-                        ],
-                        style: _chatStyle(context),
-                        responseBuilder: (context, text) =>
-                            _buildHeliosResponse(
-                          context,
-                          text,
-                        ),
+                    LlmChatView(
+                      provider: _provider,
+                      enableAttachments: true,
+                      enableVoiceNotes: false,
+                      autofocus: true,
+                      welcomeMessage:
+                          "Helios here. I can review your current setup, round plan, spacing, and utility usage. If you want a visual read, ask me to take a screenshot of the map canvas.",
+                      suggestions: const [
+                        'Analyze the current round: win condition, first death, and trade plan.',
+                        'Review spacing + crossfires on this page (use a screenshot).',
+                        "Summarize this round's kill timing and tempo swing.",
+                        'Find the biggest utility gap and give 3 repeatable fixes.',
+                        'Check last 3 rounds for patterns + adjustment plan.',
+                      ],
+                      style: _chatStyle(context),
+                      responseBuilder: (context, text) => _buildHeliosResponse(
+                        context,
+                        text,
                       ),
                     ),
-                    _HeliosStatusBar(provider: _provider),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 88,
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: _HeliosStatusOverlay(provider: _provider),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -198,11 +203,11 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
       messageSpacing: 8,
       llmMessageStyle: baseLlm.copyWith(
         minWidth: 0,
-        maxWidth: 520,
+        maxWidth: 720,
         // In the right sidebar, the toolkit's LLM row reserves a trailing
         // Flexible spacer. Increasing this flex lets Helios responses use more
         // of the available width (less "skinny" lines).
-        flex: 20,
+        flex: 32,
         icon: Icons.wb_sunny_outlined,
         iconColor: scheme.primaryForeground,
         iconDecoration: BoxDecoration(
@@ -731,8 +736,8 @@ class _HeliosLinkPill extends StatelessWidget {
   }
 }
 
-class _HeliosStatusBar extends StatelessWidget {
-  const _HeliosStatusBar({required this.provider});
+class _HeliosStatusOverlay extends StatelessWidget {
+  const _HeliosStatusOverlay({required this.provider});
 
   final IcarusFirebaseProvider provider;
 
@@ -746,53 +751,57 @@ class _HeliosStatusBar extends StatelessWidget {
           return const SizedBox.shrink();
         }
 
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 150),
-              child: Container(
-                key: ValueKey(status),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Settings.tacticalVioletTheme.secondary,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(
-                    color: Settings.tacticalVioletTheme.border,
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 160),
+          transitionBuilder: (child, animation) {
+            final slide = Tween<Offset>(
+              begin: const Offset(0, 0.4),
+              end: Offset.zero,
+            ).animate(animation);
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(position: slide, child: child),
+            );
+          },
+          child: Container(
+            key: ValueKey(status),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 6,
+            ),
+            decoration: BoxDecoration(
+              color: Settings.tacticalVioletTheme.secondary,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: Settings.tacticalVioletTheme.border,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 10,
+                  height: 10,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Settings.tacticalVioletTheme.primary,
+                    ),
                   ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SizedBox(
-                      width: 10,
-                      height: 10,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Settings.tacticalVioletTheme.primary,
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    status,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Settings.tacticalVioletTheme.foreground,
+                          fontWeight: FontWeight.w600,
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        status,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: Settings.tacticalVioletTheme.foreground,
-                              fontWeight: FontWeight.w600,
-                            ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         );
