@@ -9,7 +9,14 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/valorant/valorant_match_strategy_data.dart';
 
 class MatchRosterCard extends ConsumerWidget {
-  const MatchRosterCard({super.key});
+  const MatchRosterCard({
+    super.key,
+    this.onCollapse,
+    this.showCollapseButton = false,
+  });
+
+  final VoidCallback? onCollapse;
+  final bool showCollapseButton;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -38,9 +45,9 @@ class MatchRosterCard extends ConsumerWidget {
 
         return ConstrainedBox(
           constraints: const BoxConstraints(
-            minWidth: 260,
-            maxWidth: 350,
-            maxHeight: 320,
+            minWidth: 240,
+            maxWidth: 420,
+            maxHeight: 200,
           ),
           child: Container(
             decoration: BoxDecoration(
@@ -51,19 +58,36 @@ class MatchRosterCard extends ConsumerWidget {
                 width: 2,
               ),
             ),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(8),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Players',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Players',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
                       ),
+                    ),
+                    if (showCollapseButton)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        tooltip: 'Collapse',
+                        onPressed: onCollapse,
+                        icon: const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: Colors.white,
+                        ),
+                      ),
+                  ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Flexible(
                   child: SingleChildScrollView(
                     child: Column(
@@ -74,7 +98,7 @@ class MatchRosterCard extends ConsumerWidget {
                           players: allies,
                           isAlly: true,
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 8),
                         _TeamSection(
                           title: 'Enemies',
                           players: enemies,
@@ -160,10 +184,10 @@ class _TeamSection extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         for (final p in players) ...[
           _PlayerRow(player: p, isAlly: isAlly),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
         ],
       ],
     );
@@ -194,27 +218,27 @@ class _PlayerRow extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 34,
-          height: 34,
+          width: 28,
+          height: 28,
           decoration: BoxDecoration(
             color: bgColor,
             borderRadius: BorderRadius.circular(6),
             border: Border.all(color: outlineColor, width: 1),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(1.5),
+            padding: const EdgeInsets.all(1),
             child: agent == null
-                ? const Icon(Icons.person, size: 18, color: Colors.white)
+                ? const Icon(Icons.person, size: 16, color: Colors.white)
                 : Image.asset(agent.iconPath, fit: BoxFit.contain),
           ),
         ),
-        const SizedBox(width: 10),
+        const SizedBox(width: 8),
         Expanded(
           child: Text(
             displayName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.w500,
                 ),

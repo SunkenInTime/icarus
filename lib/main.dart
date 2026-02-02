@@ -17,6 +17,7 @@ import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/second_instance_args.dart';
 import 'package:icarus/const/settings.dart' show Settings;
+import 'package:icarus/const/app_storage.dart';
 import 'package:icarus/hive/hive_registrar.g.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
@@ -25,7 +26,6 @@ import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
 import 'package:icarus/widgets/settings_tab.dart';
-import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
@@ -60,12 +60,11 @@ Future<void> main(List<String> args) async {
     // On web, Hive uses IndexedDB; no path needed.
     await Hive.initFlutter();
   } else {
-    // On mobile/desktop, you can still choose an explicit directory.
-    final dir = await getApplicationSupportDirectory();
+    final hiveDir = await AppStorage.hiveRoot();
     final tempDir = await getTemporaryDirectory();
-    log("App Support Directory: ${dir.path}");
+    log("Hive Directory (Hackathon): ${hiveDir.path}");
     log("Temporary Directory: ${tempDir.path}");
-    await Hive.initFlutter(dir.path);
+    await Hive.initFlutter(hiveDir.path);
   }
 
   staticDrawingCursor = await CustomMouseCursor.icon(
@@ -112,7 +111,7 @@ Future<void> main(List<String> args) async {
 Future<void> _initWebViewEnvironment() async {
   if (kIsWeb) return;
   if (Platform.isWindows) {
-    final dir = await getApplicationSupportDirectory();
+    final dir = await AppStorage.webViewRoot();
     final availableVersion = await WebViewEnvironment.getAvailableVersion();
 
     if (availableVersion == null) {
@@ -124,7 +123,7 @@ Future<void> _initWebViewEnvironment() async {
 
     webViewEnvironment = await WebViewEnvironment.create(
       settings: WebViewEnvironmentSettings(
-        userDataFolder: path.join(dir.path, 'webview'),
+        userDataFolder: dir.path,
       ),
     );
   }

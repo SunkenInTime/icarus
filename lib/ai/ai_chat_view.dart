@@ -34,6 +34,8 @@ class AiChatView extends ConsumerStatefulWidget {
 class _AiChatViewState extends ConsumerState<AiChatView> {
   late final IcarusFirebaseProvider _provider;
 
+  String? _lastContextKey;
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +57,7 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
 
   @override
   Widget build(BuildContext context) {
+    _syncPromptContext();
     return Material(
       color: Colors.transparent,
       child: Shortcuts(
@@ -113,6 +116,46 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
     );
   }
 
+  void _syncPromptContext() {
+    final strat = _loadStrategyFromHive();
+    if (strat == null) {
+      _provider.setPromptContext(null);
+      _lastContextKey = null;
+      return;
+    }
+
+    final pageId = ref.read(activePageProvider);
+    final pageName = (pageId == null)
+        ? null
+        : strat.pages
+            .where((p) => p.id == pageId)
+            .map((p) => p.name)
+            .cast<String?>()
+            .firstOrNull;
+
+    final inMatchMode = strat.valorantMatch != null;
+    final strategyName = strat.name;
+
+    // Prevent unnecessary updates each build.
+    final key = '$strategyName|$pageId|$pageName|$inMatchMode';
+    if (_lastContextKey == key) return;
+    _lastContextKey = key;
+
+    final buffer = StringBuffer();
+    buffer.writeln('Context (not a user message):');
+    buffer.writeln('- Strategy title: "$strategyName"');
+    if (pageName != null && pageName.trim().isNotEmpty) {
+      buffer.writeln('- Active page: "$pageName"');
+    }
+    buffer.writeln(
+        '- Mode: ${inMatchMode ? "Imported match" : "Custom strategy"}');
+    buffer.writeln();
+    buffer.writeln(
+        'Interpretation note: Use titles as intent hints only; request screenshots/data for facts.');
+
+    _provider.setPromptContext(buffer.toString());
+  }
+
   LlmChatViewStyle _chatStyle(BuildContext context) {
     const scheme = Settings.tacticalVioletTheme;
     final base = LlmChatViewStyle.defaultStyle();
@@ -124,14 +167,15 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
         base.suggestionStyle ?? SuggestionStyle.defaultStyle();
 
     const fontDelta = -1.0;
+    const llmFontDelta = -2.0;
 
     final markdown = (baseLlm.markdownStyle ?? MarkdownStyleSheet()).copyWith(
       p: (baseLlm.markdownStyle?.p ?? const TextStyle()).copyWith(
         color: scheme.foreground,
         fontSize:
             ((baseLlm.markdownStyle?.p ?? const TextStyle()).fontSize ?? 14) +
-                fontDelta,
-        height: 1.25,
+                llmFontDelta,
+        height: 1.4,
       ),
       strong: (baseLlm.markdownStyle?.strong ?? const TextStyle()).copyWith(
         color: scheme.foreground,
@@ -148,7 +192,7 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
         fontSize:
             ((baseLlm.markdownStyle?.code ?? const TextStyle()).fontSize ??
                     13) +
-                fontDelta,
+                llmFontDelta,
       ),
       listBullet:
           (baseLlm.markdownStyle?.listBullet ?? const TextStyle()).copyWith(
@@ -199,15 +243,15 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
       backgroundColor: scheme.card,
       menuColor: scheme.popover,
       progressIndicatorColor: scheme.mutedForeground,
-      padding: const EdgeInsets.only(top: 14, left: 12, right: 12),
+      padding: const EdgeInsets.only(top: 12, left: 8, right: 8),
       messageSpacing: 8,
       llmMessageStyle: baseLlm.copyWith(
         minWidth: 0,
-        maxWidth: 720,
+        maxWidth: 9999,
         // In the right sidebar, the toolkit's LLM row reserves a trailing
         // Flexible spacer. Increasing this flex lets Helios responses use more
         // of the available width (less "skinny" lines).
-        flex: 32,
+        flex: 100,
         icon: Icons.wb_sunny_outlined,
         iconColor: scheme.primaryForeground,
         iconDecoration: BoxDecoration(
@@ -215,7 +259,7 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
           shape: BoxShape.circle,
         ),
         markdownStyle: markdown,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         decoration: BoxDecoration(
           color: scheme.secondary,
           border: Border.all(color: scheme.border),
@@ -646,7 +690,7 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
           scheme: Settings.tacticalVioletTheme,
         ),
       },
-      onTapLink: (_text, href, _title) {
+      onTapLink: (text, href, title) {
         if (href == null) return;
         launchUrl(Uri.parse(href));
       },

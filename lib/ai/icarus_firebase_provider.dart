@@ -40,6 +40,22 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
       _onFunctionCall;
   ChatSession? _chat;
 
+  String? _promptContext;
+
+  /// Optional hidden context to prepend to user prompts when sending to the
+  /// model (not shown in the UI transcript).
+  void setPromptContext(String? context) {
+    final normalized =
+        (context == null || context.trim().isEmpty) ? null : context.trim();
+    _promptContext = normalized;
+  }
+
+  String _augmentPrompt(String prompt) {
+    final ctx = _promptContext;
+    if (ctx == null || ctx.isEmpty) return prompt;
+    return '$ctx\n\nUser message:\n$prompt';
+  }
+
   String? _statusText;
 
   String? get statusText => _statusText;
@@ -56,7 +72,7 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
     Iterable<Attachment> attachments = const [],
   }) =>
       _sendMessageStream(
-        prompt: prompt,
+        prompt: _augmentPrompt(prompt),
         attachments: attachments,
         // For one-off generation we create an isolated chat session.
         chat: _startChat(null)!,
@@ -73,7 +89,7 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
     _history.addAll([userMessage, llmMessage]);
 
     final response = _sendMessageStream(
-      prompt: prompt,
+      prompt: _augmentPrompt(prompt),
       attachments: attachments,
       chat: _chat!,
     );

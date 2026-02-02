@@ -36,8 +36,8 @@ import 'package:icarus/const/valorant_match_mappings.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/valorant_round_provider.dart';
 import 'package:icarus/valorant/valorant_match_strategy_data.dart';
+import 'package:icarus/const/app_storage.dart';
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 final RegExp _legacyValorantKillPageNameRe = RegExp(r'^R\d+\s+K\d+$');
@@ -272,20 +272,14 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<Directory> setStorageDirectory(String strategyID) async {
-    // final strategyID = state.id;
-    // Get the system's application support directory.
-    final directory = await getApplicationSupportDirectory();
-
-    // Create a custom directory inside the application support directory.
-
-    final customDirectory = Directory(path.join(directory.path, strategyID));
-
-    if (!await customDirectory.exists()) {
-      await customDirectory.create(recursive: true);
+    // Used by some widgets to build file paths.
+    final dirPath = await AppStorage.strategyRootPath(strategyID);
+    final dir = Directory(dirPath);
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
     }
-
-    log(customDirectory.path);
-    return customDirectory;
+    log(dir.path);
+    return dir;
   }
 
   Future<void> clearCurrentStrategy() async {
@@ -1254,12 +1248,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<Directory> getTempDirectory(String strategyID) async {
-    final tempDirectory = await getTemporaryDirectory();
-
-    Directory tempDir = await Directory(
-            path.join(tempDirectory.path, "xyz.icarus-strats", strategyID))
-        .create(recursive: true);
-    return tempDir;
+    return AppStorage.tempStrategyRoot(strategyID);
   }
 
   Future<void> cleanUpTempDirectory(String strategyID) async {
@@ -1587,11 +1576,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final zipEncoder = ZipFileEncoder()..create(outPath);
 
-    final supportDirectory = await getApplicationSupportDirectory();
-    final customDirectory =
-        Directory(path.join(supportDirectory.path, strategy.id));
-    final imagesDirectory =
-        Directory(path.join(customDirectory.path, 'images'));
+    final imagesDirectoryPath = await AppStorage.imagesRootPath(strategy.id);
+    final imagesDirectory = Directory(imagesDirectoryPath);
     await imagesDirectory.create(recursive: true);
 
     await for (final entity in imagesDirectory.list()) {
@@ -1660,12 +1646,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> deleteStrategy(String strategyID) async {
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(strategyID);
 
-    final directory = await getApplicationSupportDirectory();
-
-    final customDirectory = Directory(path.join(directory.path, strategyID));
-
+    final customDirectoryPath = await AppStorage.strategyRootPath(strategyID);
+    final customDirectory = Directory(customDirectoryPath);
     if (!await customDirectory.exists()) return;
-
     await customDirectory.delete(recursive: true);
   }
 

@@ -34,6 +34,8 @@ class InteractiveMap extends ConsumerStatefulWidget {
 class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   final controller = TransformationController();
 
+  bool _showRoster = true;
+
   @override
   void dispose() {
     controller.dispose();
@@ -210,14 +212,28 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
         Align(
           alignment: Alignment.topRight,
           child: SizedBox(
-            width: 350,
+            width: 420,
             child: Padding(
-              padding: const EdgeInsets.only(top: 18, left: 18, bottom: 18),
+              padding: const EdgeInsets.only(top: 18, left: 10, bottom: 18),
               child: Column(
                 spacing: 18,
-                children: const [
+                children: [
                   Flexible(child: AiChatView()),
-                  MatchRosterCard(),
+                  if (_showRoster)
+                    MatchRosterCard(
+                      showCollapseButton: true,
+                      onCollapse: () => setState(() => _showRoster = false),
+                    )
+                  else
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: ShadButton(
+                        height: 28,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        onPressed: () => setState(() => _showRoster = true),
+                        child: const Text('Show players'),
+                      ),
+                    ),
                 ],
               ),
             ),

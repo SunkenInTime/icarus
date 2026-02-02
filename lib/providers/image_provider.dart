@@ -12,8 +12,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/const/app_storage.dart';
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 final placedImageProvider =
@@ -51,24 +51,9 @@ class PlacedImageProvider extends Notifier<ImageState> {
     List<String> fileIDs = localImages;
 
     if (kIsWeb) return;
-    // Get the system's application support directory.
-    final directory = await getApplicationSupportDirectory();
-
-    // Create a custom directory inside the application support directory.
-    final customDirectory = Directory(path.join(directory.path, strategyID));
-
-    // Create the directory if it doesn't exist.
-    if (!await customDirectory.exists()) return;
-
-    // Construct the full path for the images subdirectory.
-    final filePath = path.join(customDirectory.path, 'images');
-
-    // Create the images directory if it doesn't exist.
-    final imagesDirectory = Directory(filePath);
-    if (!await imagesDirectory.exists()) {
-      await imagesDirectory.create(recursive: true);
-      return; // If directory was just created, no files to check.
-    }
+    final imagesDirectoryPath = await AppStorage.imagesRootPath(strategyID);
+    final imagesDirectory = Directory(imagesDirectoryPath);
+    if (!await imagesDirectory.exists()) return;
 
     // List all files in the directory (non-recursively).
     List<FileSystemEntity> files = imagesDirectory.listSync();
@@ -236,22 +221,11 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   static Future<Directory> getImageFolder(String strategyID) async {
-    // Get the system's application support directory.
-    final Directory appSupportDir = await getApplicationSupportDirectory();
-
-    // Create the custom directory using the strategy ID.
-    final Directory customDirectory =
-        Directory(path.join(appSupportDir.path, strategyID));
-    if (!await customDirectory.exists()) {
-      await customDirectory.create(recursive: true);
-    }
-
-    final Directory imagesDirectory =
-        Directory(path.join(customDirectory.path, 'images'));
+    final imagesDirectoryPath = await AppStorage.imagesRootPath(strategyID);
+    final imagesDirectory = Directory(imagesDirectoryPath);
     if (!await imagesDirectory.exists()) {
       await imagesDirectory.create(recursive: true);
     }
-
     return imagesDirectory;
   }
 
@@ -316,33 +290,10 @@ class PlacedImageProvider extends Notifier<ImageState> {
     final strategyID = ref.read(strategyProvider).id;
     // Get the system's application support directory.
     if (kIsWeb) return;
-    final directory = await getApplicationSupportDirectory();
-
-    // Create a custom directory inside the application support directory.
-
-    final customDirectory = Directory(path.join(directory.path, strategyID));
-
-    if (!await customDirectory.exists()) {
-      await customDirectory.create(recursive: true);
-    }
-
-    // Now create the full file path.
-    final filePath = path.join(
-      customDirectory.path,
-      'images',
-      '$imageID$fileExtenstion',
-    );
-
+    final imagesDir = await getImageFolder(strategyID);
+    final filePath = path.join(imagesDir.path, '$imageID$fileExtenstion');
     log(filePath);
-    // Ensure the images subdirectory exists.
-    final imagesDir = Directory(path.join(customDirectory.path, 'images'));
-    if (!await imagesDir.exists()) {
-      await imagesDir.create(recursive: true);
-    }
-
-    // Write the file.
-    final file = File(filePath);
-    await file.writeAsBytes(imageBytes);
+    await File(filePath).writeAsBytes(imageBytes);
   }
 
   static List<PlacedImage> deepCopyWith(List<PlacedImage> images) {
@@ -474,25 +425,8 @@ class PlacedImageSerializer {
   /// image's [id] and [fileExtension].
   static Future<String> _computeFilePath(
       PlacedImage image, String strategyID) async {
-    // Get the system's application support directory.
-    final Directory appSupportDir = await getApplicationSupportDirectory();
-
-    // Create the custom directory using the strategy ID.
-    final Directory customDirectory =
-        Directory(path.join(appSupportDir.path, strategyID));
-    if (!await customDirectory.exists()) {
-      await customDirectory.create(recursive: true);
-    }
-
-    // Create the images subfolder.
-    final Directory imagesDirectory =
-        Directory(path.join(customDirectory.path, 'images'));
-    if (!await imagesDirectory.exists()) {
-      await imagesDirectory.create(recursive: true);
-    }
-
-    // The final file path: [id][fileExtension]
-    return path.join(imagesDirectory.path, '${image.id}${image.fileExtension}');
+    final imagesDirectoryPath = await AppStorage.imagesRootPath(strategyID);
+    return path.join(imagesDirectoryPath, '${image.id}${image.fileExtension}');
   }
 }
 
