@@ -5,6 +5,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/ai_models.dart';
 import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/ai/helios_link_tags.dart';
 import 'package:icarus/ai/icarus_ai_system_prompt.dart';
 import 'package:icarus/ai/icarus_ai_tools.dart';
 import 'package:icarus/ai/icarus_firebase_provider.dart';
@@ -19,6 +20,9 @@ import 'package:icarus/valorant/valorant_match_strategy_data.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:markdown/markdown.dart' as md;
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class AiChatView extends ConsumerStatefulWidget {
   const AiChatView({super.key});
@@ -68,83 +72,33 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
             children: [
               ClipRRect(
                 borderRadius: BorderRadius.circular(14),
-                child: LlmChatView(
-                  provider: _provider,
-                  enableAttachments: true,
-                  enableVoiceNotes: false,
-                  autofocus: true,
-                  welcomeMessage:
-                      "Helios here. I can review your current setup, round plan, spacing, and utility usage. If you want a visual read, ask me to take a screenshot of the map canvas.",
-                  suggestions: const [
-                    'Analyze the current round: win condition, first death, and trade plan.',
-                    'Review spacing + crossfires on this page (use a screenshot).',
-                    "Summarize this round's kill timing and tempo swing.",
-                    'Find the biggest utility gap and give 3 repeatable fixes.',
-                    'Check last 3 rounds for patterns + adjustment plan.',
-                  ],
-                  style: _chatStyle(context),
-                ),
-              ),
-              Positioned(
-                top: 10,
-                left: 10,
-                child: ListenableBuilder(
-                  listenable: _provider,
-                  builder: (context, _) {
-                    final status = _provider.statusText;
-                    if (status == null || status.trim().isEmpty) {
-                      return const SizedBox.shrink();
-                    }
-
-                    return AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 150),
-                      child: Container(
-                        key: ValueKey(status),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Settings.tacticalVioletTheme.secondary,
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: Settings.tacticalVioletTheme.border,
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            SizedBox(
-                              width: 10,
-                              height: 10,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Settings.tacticalVioletTheme.primary,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Flexible(
-                              child: Text(
-                                status,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                      color: Settings
-                                          .tacticalVioletTheme.foreground,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                              ),
-                            ),
-                          ],
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: LlmChatView(
+                        provider: _provider,
+                        enableAttachments: true,
+                        enableVoiceNotes: false,
+                        autofocus: true,
+                        welcomeMessage:
+                            "Helios here. I can review your current setup, round plan, spacing, and utility usage. If you want a visual read, ask me to take a screenshot of the map canvas.",
+                        suggestions: const [
+                          'Analyze the current round: win condition, first death, and trade plan.',
+                          'Review spacing + crossfires on this page (use a screenshot).',
+                          "Summarize this round's kill timing and tempo swing.",
+                          'Find the biggest utility gap and give 3 repeatable fixes.',
+                          'Check last 3 rounds for patterns + adjustment plan.',
+                        ],
+                        style: _chatStyle(context),
+                        responseBuilder: (context, text) =>
+                            _buildHeliosResponse(
+                          context,
+                          text,
                         ),
                       ),
-                    );
-                  },
+                    ),
+                    _HeliosStatusBar(provider: _provider),
+                  ],
                 ),
               ),
             ],
@@ -623,5 +577,300 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
     final minutes = totalSeconds ~/ 60;
     final seconds = totalSeconds % 60;
     return '$minutes:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  MarkdownStyleSheet _markdownStyleFor(BuildContext context) {
+    const scheme = Settings.tacticalVioletTheme;
+    final base = LlmChatViewStyle.resolve(_chatStyle(context));
+    final baseLlm = base.llmMessageStyle ?? LlmMessageStyle.defaultStyle();
+    return (baseLlm.markdownStyle ?? MarkdownStyleSheet()).copyWith(
+      p: (baseLlm.markdownStyle?.p ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      strong: (baseLlm.markdownStyle?.strong ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      em: (baseLlm.markdownStyle?.em ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      a: (baseLlm.markdownStyle?.a ?? const TextStyle()).copyWith(
+        color: scheme.primary,
+      ),
+      code: (baseLlm.markdownStyle?.code ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+        backgroundColor: scheme.background,
+      ),
+      listBullet:
+          (baseLlm.markdownStyle?.listBullet ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      blockquote:
+          (baseLlm.markdownStyle?.blockquote ?? const TextStyle()).copyWith(
+        color: scheme.mutedForeground,
+      ),
+      h1: (baseLlm.markdownStyle?.h1 ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      h2: (baseLlm.markdownStyle?.h2 ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      h3: (baseLlm.markdownStyle?.h3 ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      h4: (baseLlm.markdownStyle?.h4 ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      h5: (baseLlm.markdownStyle?.h5 ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+      h6: (baseLlm.markdownStyle?.h6 ?? const TextStyle()).copyWith(
+        color: scheme.foreground,
+      ),
+    );
+  }
+
+  Widget _buildHeliosResponse(BuildContext context, String text) {
+    return MarkdownBody(
+      data: text,
+      selectable: false,
+      styleSheet: _markdownStyleFor(context),
+      inlineSyntaxes: [HeliosLinkInlineSyntax()],
+      builders: {
+        'helios_link': HeliosLinkBuilder(
+          onTap: _navigateToLink,
+          scheme: Settings.tacticalVioletTheme,
+        ),
+      },
+      onTapLink: (_text, href, _title) {
+        if (href == null) return;
+        launchUrl(Uri.parse(href));
+      },
+    );
+  }
+
+  Future<void> _navigateToLink(HeliosLinkTag tag) async {
+    final strat = _loadStrategyFromHive();
+    if (strat == null) return;
+
+    final match = strat.valorantMatch;
+    if (tag.roundIndex != null && match != null) {
+      ref.read(valorantRoundProvider.notifier).setRound(tag.roundIndex);
+    }
+
+    var resolvedPageId = tag.pageId;
+    var pageExists = strat.pages.any((p) => p.id == resolvedPageId);
+    if (!pageExists &&
+        match != null &&
+        tag.roundIndex != null &&
+        tag.orderInRound != null) {
+      for (final meta in match.pageMeta) {
+        if (meta.roundIndex == tag.roundIndex &&
+            meta.orderInRound == tag.orderInRound) {
+          resolvedPageId = meta.pageId;
+          pageExists = strat.pages.any((p) => p.id == resolvedPageId);
+          break;
+        }
+      }
+    }
+
+    if (!pageExists) {
+      Settings.showToast(
+        message: 'Page not found for ${tag.label}',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+
+    await ref
+        .read(strategyProvider.notifier)
+        .setActivePageAnimated(resolvedPageId);
+  }
+}
+
+class _HeliosLinkPill extends StatelessWidget {
+  const _HeliosLinkPill({
+    required this.tag,
+    required this.onTap,
+    required this.scheme,
+  });
+
+  final HeliosLinkTag tag;
+  final VoidCallback onTap;
+  final ShadColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: scheme.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(999),
+        side: BorderSide(color: scheme.border, width: 1),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.link, size: 12, color: scheme.primary),
+              const SizedBox(width: 6),
+              Text(
+                tag.label,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: scheme.foreground,
+                      fontWeight: FontWeight.w600,
+                    ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeliosStatusBar extends StatelessWidget {
+  const _HeliosStatusBar({required this.provider});
+
+  final IcarusFirebaseProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: provider,
+      builder: (context, _) {
+        final status = provider.statusText;
+        if (status == null || status.trim().isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 150),
+              child: Container(
+                key: ValueKey(status),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Settings.tacticalVioletTheme.secondary,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: Settings.tacticalVioletTheme.border,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: 10,
+                      height: 10,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Settings.tacticalVioletTheme.primary,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        status,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Settings.tacticalVioletTheme.foreground,
+                              fontWeight: FontWeight.w600,
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class HeliosLinkInlineSyntax extends md.InlineSyntax {
+  HeliosLinkInlineSyntax() : super(r'@link\{([^}]*)\}');
+
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    final payload = match.group(1) ?? '';
+    final fields = parseHeliosLinkFields(payload);
+    final label = fields['label'] as String?;
+    final pageId = fields['pageId'] as String?;
+    if (label == null || pageId == null) {
+      parser.addNode(md.Text(match[0]!));
+      return true;
+    }
+
+    final element = md.Element.text('helios_link', label)
+      ..attributes['label'] = label
+      ..attributes['pageId'] = pageId;
+    if (fields['roundIndex'] != null) {
+      element.attributes['roundIndex'] = '${fields['roundIndex']}';
+    }
+    if (fields['orderInRound'] != null) {
+      element.attributes['orderInRound'] = '${fields['orderInRound']}';
+    }
+
+    parser.addNode(element);
+    return true;
+  }
+}
+
+class HeliosLinkBuilder extends MarkdownElementBuilder {
+  HeliosLinkBuilder({required this.onTap, required this.scheme});
+
+  final Future<void> Function(HeliosLinkTag tag) onTap;
+  final ShadColorScheme scheme;
+
+  @override
+  Widget? visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    final label = element.attributes['label']?.trim() ?? '';
+    final pageId = element.attributes['pageId']?.trim() ?? '';
+    if (label.isEmpty || pageId.isEmpty) {
+      return Text.rich(TextSpan(text: element.textContent));
+    }
+
+    final roundIndex = int.tryParse(element.attributes['roundIndex'] ?? '');
+    final orderInRound = int.tryParse(element.attributes['orderInRound'] ?? '');
+    final tag = HeliosLinkTag(
+      label: label,
+      pageId: pageId,
+      roundIndex: roundIndex,
+      orderInRound: orderInRound,
+    );
+
+    return Text.rich(
+      TextSpan(
+        children: [
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _HeliosLinkPill(
+              tag: tag,
+              scheme: scheme,
+              onTap: () => onTap(tag),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

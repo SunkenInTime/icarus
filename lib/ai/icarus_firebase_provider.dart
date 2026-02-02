@@ -181,6 +181,24 @@ class IcarusFirebaseProvider extends LlmProvider with ChangeNotifier {
       '',
     );
 
+    // Remove stray leading "thinking" or "analysis" lines.
+    out = out.replaceFirst(
+      RegExp(
+        r'^\s*(thinking|analysis)\b[:\-\s]*\n?',
+        caseSensitive: false,
+      ),
+      '',
+    );
+
+    out = out.replaceFirst(
+      RegExp(
+        r'^\s*(thinking|analysis)\b.*?\n',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      '',
+    );
+
     // If the model accidentally prepends reasoning before the required
     // structure, keep only the structured coaching response.
     final findingsMatch = RegExp(

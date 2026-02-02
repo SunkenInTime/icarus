@@ -74,4 +74,5 @@ class DefaultFirebaseOptions {
     storageBucket: 'icarus-hackathon.firebasestorage.app',
     measurementId: 'G-3B1MLEVEFN',
   );
+
 }
