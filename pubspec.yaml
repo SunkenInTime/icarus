@@ -78,6 +78,7 @@ flutter:
         - asset: assets/fonts/CustomIcons.ttf
   assets:
     - assets/
+    - assets/data/
     - assets/maps/
     - assets/maps/thumbnails/
     - assets/agents/

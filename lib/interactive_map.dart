@@ -214,11 +214,11 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
           child: SizedBox(
             width: 420,
             child: Padding(
-              padding: const EdgeInsets.only(top: 18, left: 10, bottom: 18),
+              padding: const EdgeInsets.only(left: 10, bottom: 18),
               child: Column(
                 spacing: 18,
                 children: [
-                  Flexible(child: AiChatView()),
+                  Expanded(child: AiChatView()),
                   if (_showRoster)
                     MatchRosterCard(
                       showCollapseButton: true,

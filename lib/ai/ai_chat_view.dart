@@ -73,40 +73,45 @@ class _AiChatViewState extends ConsumerState<AiChatView> {
           ),
           child: Stack(
             children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Stack(
-                  children: [
-                    LlmChatView(
-                      provider: _provider,
-                      enableAttachments: true,
-                      enableVoiceNotes: false,
-                      autofocus: true,
-                      welcomeMessage:
-                          "Helios here. I can review your current setup, round plan, spacing, and utility usage. If you want a visual read, ask me to take a screenshot of the map canvas.",
-                      suggestions: const [
-                        'Analyze the current round: win condition, first death, and trade plan.',
-                        'Review spacing + crossfires on this page (use a screenshot).',
-                        "Summarize this round's kill timing and tempo swing.",
-                        'Find the biggest utility gap and give 3 repeatable fixes.',
-                        'Check last 3 rounds for patterns + adjustment plan.',
-                      ],
-                      style: _chatStyle(context),
-                      responseBuilder: (context, text) => _buildHeliosResponse(
-                        context,
-                        text,
+              Positioned.fill(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: LlmChatView(
+                          provider: _provider,
+                          enableAttachments: true,
+                          enableVoiceNotes: false,
+                          autofocus: true,
+                          welcomeMessage:
+                              "Helios here. I can review your current setup, round plan, spacing, and utility usage. If you want a visual read, ask me to take a screenshot of the map canvas.",
+                          suggestions: const [
+                            'Analyze the current round: win condition, first death, and trade plan.',
+                            'Review spacing + crossfires on this page (use a screenshot).',
+                            "Summarize this round's kill timing and tempo swing.",
+                            'Find the biggest utility gap and give 3 repeatable fixes.',
+                            'Check last 3 rounds for patterns + adjustment plan.',
+                          ],
+                          style: _chatStyle(context),
+                          responseBuilder: (context, text) =>
+                              _buildHeliosResponse(
+                            context,
+                            text,
+                          ),
+                        ),
                       ),
-                    ),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 88,
-                      child: Align(
-                        alignment: Alignment.bottomCenter,
-                        child: _HeliosStatusOverlay(provider: _provider),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 88,
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: _HeliosStatusOverlay(provider: _provider),
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],

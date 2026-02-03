@@ -37,6 +37,7 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/valorant_round_provider.dart';
 import 'package:icarus/valorant/valorant_match_strategy_data.dart';
 import 'package:icarus/const/app_storage.dart';
+import 'package:icarus/const/embedded_json_assets.dart';
 import 'package:path/path.dart' as path;
 import 'package:uuid/uuid.dart';
 
@@ -828,6 +829,34 @@ class StrategyProvider extends Notifier<StrategyState> {
         allyTeamId: allyTeamId);
   }
 
+  Future<String?> importValorantMatchJsonFromXFile(
+    XFile xFile, {
+    String allyTeamId = 'Blue',
+  }) {
+    return _importValorantMatchJsonFromXFile(xFile, allyTeamId: allyTeamId);
+  }
+
+  Future<String?> importEmbeddedMatchJson({
+    String allyTeamId = 'Blue',
+  }) async {
+    try {
+      final root = await EmbeddedJsonAssets.loadMatchData();
+      final jsonData = jsonEncode(root);
+      return await _importValorantMatchJsonFromJsonString(
+        jsonData,
+        allyTeamId: allyTeamId,
+        strategyName: 'Embedded match JSON',
+      );
+    } catch (e, st) {
+      log('Failed to import embedded match JSON: $e\n$st');
+      Settings.showToast(
+        message: 'Failed to load embedded match JSON',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return null;
+    }
+  }
+
   Future<void> loadFromFileDrop(List<XFile> files) async {
     for (XFile file in files) {
       await _loadFromXFile(file);
@@ -840,11 +869,32 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) async {
     try {
       final jsonData = await xFile.readAsString();
+      final strategyName = path.basenameWithoutExtension(xFile.path);
+      return await _importValorantMatchJsonFromJsonString(
+        jsonData,
+        allyTeamId: allyTeamId,
+        strategyName: strategyName,
+      );
+    } catch (e, st) {
+      log('Failed to import match JSON: $e\n$st');
+      Settings.showToast(
+        message: 'Failed to import match JSON',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return null;
+    }
+  }
+
+  Future<String?> _importValorantMatchJsonFromJsonString(
+    String jsonData, {
+    required String allyTeamId,
+    required String strategyName,
+  }) async {
+    try {
       final root = jsonDecode(jsonData) as Map<String, dynamic>;
 
       final matchInfo = (root['matchInfo'] as Map?)?.cast<String, dynamic>();
       final mapId = matchInfo?['mapId'] as String?;
-      final strategyName = path.basenameWithoutExtension(xFile.path);
       final matchId = (matchInfo?['matchId'] as String?) ?? strategyName;
       final mapValue = ValorantMatchMappings.mapValueFromMatchMapId(mapId);
       if (mapValue == null) {

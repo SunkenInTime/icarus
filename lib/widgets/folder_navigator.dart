@@ -15,6 +15,7 @@ import 'package:icarus/widgets/current_path_bar.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
+import 'package:icarus/widgets/dialogs/load_game_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
@@ -178,15 +179,16 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                     return;
                   }
 
-                  final strategyId = await ref
-                      .read(strategyProvider.notifier)
-                      .importValorantMatchJsonFromPicker();
+                  final strategyId = await showShadDialog<String>(
+                    context: context,
+                    builder: (context) => const LoadGameDialog(),
+                  );
                   if (strategyId == null) return;
                   if (!context.mounted) return;
                   await navigateWithLoading(context, strategyId);
                 },
                 leading: const Icon(Icons.sports_esports_outlined),
-                child: const Text('Import match JSON'),
+                child: const Text('Load game'),
               ),
               ShadButton.secondary(
                 leading: const Icon(LucideIcons.folderPlus),
