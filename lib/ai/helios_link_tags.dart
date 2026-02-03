@@ -27,8 +27,14 @@ class HeliosParsedResponse {
 }
 
 final RegExp _linkTagRegex = RegExp(r'@link\{([^}]*)\}');
+
+// Supports values in a few forms:
+// - key:"string"
+// - key:'string'
+// - key:123
+// - key:bare-token
 final RegExp _fieldRegex = RegExp(
-  r'(\w+)\s*:\s*(?:"((?:[^"\\]|\\.)*)"|(-?\d+))',
+  "(\\w+)\\s*:\\s*(?:\"((?:[^\"\\\\]|\\\\.)*)\"|'((?:[^'\\\\]|\\\\.)*)'|(-?\\d+)|([A-Za-z0-9_.\\-]+))",
 );
 
 HeliosParsedResponse parseHeliosLinkTags(String text) {
@@ -68,15 +74,64 @@ Map<String, Object?> parseHeliosLinkFields(String payload) {
   for (final match in _fieldRegex.allMatches(payload)) {
     final key = match.group(1);
     if (key == null) continue;
-    final stringValue = match.group(2);
-    final intValue = match.group(3);
-    if (stringValue != null) {
-      fields[key] = _unescape(stringValue);
-    } else if (intValue != null) {
+    final stringValueDouble = match.group(2);
+    final stringValueSingle = match.group(3);
+    final intValue = match.group(4);
+    final bareValue = match.group(5);
+
+    if (stringValueDouble != null) {
+      fields[key] = _unescape(stringValueDouble);
+      continue;
+    }
+    if (stringValueSingle != null) {
+      fields[key] = _unescape(stringValueSingle);
+      continue;
+    }
+    if (intValue != null) {
       fields[key] = int.tryParse(intValue);
+      continue;
+    }
+    if (bareValue != null) {
+      fields[key] = bareValue;
     }
   }
+
+  // Back-compat: sometimes the model emits an unkeyed label like:
+  // @link{0:33 Sova > Sova, pageId:"..."}
+  if (fields['label'] == null) {
+    final label = _tryParseLeadingLabel(payload);
+    if (label != null) fields['label'] = label;
+  }
+
   return fields;
+}
+
+String? _tryParseLeadingLabel(String payload) {
+  final trimmed = payload.trim();
+  if (trimmed.isEmpty) return null;
+  // If the payload starts with a normal key, there's no unkeyed label.
+  if (RegExp(r'^(label|pageId|roundIndex|orderInRound)\s*:')
+      .hasMatch(trimmed)) {
+    return null;
+  }
+  final commaIndex = trimmed.indexOf(',');
+  if (commaIndex <= 0) return null;
+
+  final candidate = trimmed.substring(0, commaIndex).trim();
+  if (candidate.isEmpty) return null;
+  return _stripWrappingQuotes(candidate);
+}
+
+String _stripWrappingQuotes(String value) {
+  final v = value.trim();
+  if (v.length >= 2) {
+    final first = v[0];
+    final last = v[v.length - 1];
+    if ((first == '"' && last == '"') || (first == "'" && last == "'")) {
+      return v.substring(1, v.length - 1);
+    }
+  }
+  return v;
 }
 
 String _unescape(String value) {

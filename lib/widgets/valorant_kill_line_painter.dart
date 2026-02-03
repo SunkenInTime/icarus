@@ -51,9 +51,7 @@ class ValorantKillLinePainter extends ConsumerWidget {
         }
 
         final coordinateSystem = CoordinateSystem.instance;
-        final agentSizePx = coordinateSystem.scale(
-          ref.watch(strategySettingsProvider).agentSize,
-        );
+        final agentSizeBase = ref.watch(strategySettingsProvider).agentSize;
 
         return IgnorePointer(
           ignoring: true,
@@ -64,7 +62,7 @@ class ValorantKillLinePainter extends ConsumerWidget {
                 resizeCounter: ref.watch(lineUpCanvasResizeProvider),
                 killer: Offset(kx, ky),
                 victim: Offset(vx, vy),
-                agentRadiusPx: agentSizePx / 2,
+                agentRadiusBase: agentSizeBase / 2,
               ),
               size: Size.infinite,
             ),
@@ -80,20 +78,37 @@ class _KillLinePainter extends CustomPainter {
   final int resizeCounter;
   final Offset killer;
   final Offset victim;
-  final double agentRadiusPx;
+  final double agentRadiusBase;
 
   _KillLinePainter({
     required this.coordinateSystem,
     required this.resizeCounter,
     required this.killer,
     required this.victim,
-    required this.agentRadiusPx,
+    required this.agentRadiusBase,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final start = coordinateSystem.coordinateToScreen(killer);
-    final end = coordinateSystem.coordinateToScreen(victim);
+    // Screenshot capture toggles CoordinateSystem.instance.isScreenshot globally,
+    // which can temporarily change effectiveSize for the live canvas.
+    // Use the *actual* canvas size here so this painter renders correctly in
+    // both the live view and the offscreen screenshot view.
+    const baseHeight = 831.0;
+    final scaleFactor = size.height / baseHeight;
+    double scale(double v) => v * scaleFactor;
+
+    final normalizedW = coordinateSystem.normalizedWidth;
+    final normalizedH = coordinateSystem.normalizedHeight;
+    Offset toScreen(Offset coordinates) {
+      return Offset(
+        (coordinates.dx / normalizedW) * size.width,
+        (coordinates.dy / normalizedH) * size.height,
+      );
+    }
+
+    final start = toScreen(killer);
+    final end = toScreen(victim);
 
     final dx = end.dx - start.dx;
     final dy = end.dy - start.dy;
@@ -103,29 +118,34 @@ class _KillLinePainter extends CustomPainter {
     // Shorten the line so it doesn't pass under the agent icons.
     final ux = dx / len;
     final uy = dy / len;
-    final inset = math.min(agentRadiusPx, len / 2);
+    final inset = math.min(scale(agentRadiusBase), len / 2);
 
     final insetStart = start + Offset(ux * inset, uy * inset);
     final insetEnd = end - Offset(ux * inset, uy * inset);
 
     final paint = Paint()
       ..color = Colors.white
-      ..strokeWidth = coordinateSystem.scale(Settings.brushSize)
+      ..strokeWidth = scale(Settings.brushSize)
       ..style = PaintingStyle.stroke
       ..strokeJoin = StrokeJoin.round
       ..strokeCap = StrokeCap.round
       ..isAntiAlias = true;
 
-    final space = coordinateSystem.scale(10);
+    final space = scale(10);
     final path = Path()
       ..moveTo(insetStart.dx, insetStart.dy)
       ..lineTo(insetEnd.dx, insetEnd.dy);
     DashPainter(span: space, step: space).paint(canvas, path, paint);
-    _drawArrow(canvas, paint, insetStart, insetEnd);
+    _drawArrow(canvas, paint, insetStart, insetEnd, arrowHeadSize: scale(8));
   }
 
-  void _drawArrow(Canvas canvas, Paint paint, Offset from, Offset to) {
-    final arrowHeadSize = coordinateSystem.scale(8);
+  void _drawArrow(
+    Canvas canvas,
+    Paint paint,
+    Offset from,
+    Offset to, {
+    required double arrowHeadSize,
+  }) {
     const arrowAngle = math.pi / 4;
     final angle = math.atan2(to.dy - from.dy, to.dx - from.dx);
 
@@ -147,9 +167,7 @@ class _KillLinePainter extends CustomPainter {
     if (oldDelegate is _KillLinePainter) {
       return oldDelegate.killer != killer ||
           oldDelegate.victim != victim ||
-          oldDelegate.agentRadiusPx != agentRadiusPx ||
-          oldDelegate.coordinateSystem.effectiveSize !=
-              coordinateSystem.effectiveSize ||
+          oldDelegate.agentRadiusBase != agentRadiusBase ||
           oldDelegate.resizeCounter != resizeCounter;
     }
     return true;

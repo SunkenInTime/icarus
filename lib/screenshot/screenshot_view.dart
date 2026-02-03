@@ -84,17 +84,18 @@ class ScreenshotView extends ConsumerWidget {
             child: DotGrid(isScreenshot: true),
           )),
           //TODO: Make it so that if a model is querying it show the callouts on top
+
           Positioned.fill(
             child: SvgPicture.asset(
-              calloutsAssetName,
-              semanticsLabel: 'Callouts',
+              assetName,
+              semanticsLabel: 'Map',
               fit: BoxFit.contain,
             ),
           ),
           Positioned.fill(
             child: SvgPicture.asset(
-              assetName,
-              semanticsLabel: 'Map',
+              calloutsAssetName,
+              semanticsLabel: 'Callouts',
               fit: BoxFit.contain,
             ),
           ),
@@ -107,6 +108,7 @@ class ScreenshotView extends ConsumerWidget {
           const Positioned.fill(
             child: InteractivePainter(),
           ),
+
           // Add any other widgets you want to include in the screenshot
         ],
       ),
