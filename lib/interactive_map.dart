@@ -52,7 +52,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
     String barrierAssetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_spawn_walls.svg';
     String calloutsAssetName =
-        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_call_outs.svg';
+        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_call_outs${isAttack ? "" : "_defense"}.svg';
     String ultOrbsAssetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_ult_orbs.svg';
 
@@ -141,10 +141,14 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
 
                   if (ref.watch(mapProvider).showUltOrbs)
                     Positioned.fill(
-                      child: SvgPicture.asset(
-                        ultOrbsAssetName,
-                        semanticsLabel: 'Ult Orbs',
-                        fit: BoxFit.contain,
+                      child: Transform.flip(
+                        flipX: !isAttack,
+                        flipY: !isAttack,
+                        child: SvgPicture.asset(
+                          ultOrbsAssetName,
+                          semanticsLabel: 'Ult Orbs',
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
                   Positioned.fill(
