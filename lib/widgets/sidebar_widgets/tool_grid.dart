@@ -12,6 +12,7 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/widgets/dialogs/upload_image_dialog.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/delete_options.dart';
 import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
@@ -185,6 +186,11 @@ class ToolGrid extends ConsumerWidget {
                 builder: (context) => const Text("Add Image"),
                 child: ShadIconButton.secondary(
                   onPressed: () async {
+                    showShadDialog(
+                      context: context,
+                      builder: (context) => const UploadImageDialog(),
+                    );
+                    return;
                     if (kIsWeb) {
                       Settings.showToast(
                         message:
