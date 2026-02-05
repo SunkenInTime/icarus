@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/services/clipboard_service.dart';
 import 'package:pasteboard/pasteboard.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -24,7 +25,7 @@ class UploadImageDialog extends ConsumerStatefulWidget {
 
 class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
   bool _isDragging = false;
-  bool _isCheckingClipboard = false;
+  final bool _isCheckingClipboard = false;
   Uint8List? _selectedBytes;
   String? _selectedName;
 
@@ -34,7 +35,14 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
     // Best-effort: if the clipboard contains an image (or an image data URI),
     // automatically select it.
     Future<void>(() async {
-      await _trySelectImageFromClipboard();
+      final (bytes, name) =
+          await ClipboardService.trySelectImageFromClipboard();
+      if (bytes != null) {
+        setState(() {
+          _selectedBytes = bytes;
+          _selectedName = name;
+        });
+      }
     });
   }
 
@@ -85,141 +93,6 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
     });
   }
 
-  Future<bool> _trySelectImageFromClipboard() async {
-    if (_selectedBytes != null) return false;
-    log('trying to select image from clipboard');
-    setState(() {
-      _isCheckingClipboard = true;
-    });
-
-    try {
-      log("yes I buy");
-      final clipBoardImages = await Pasteboard.text;
-
-      log('clipBoardImages: $clipBoardImages');
-      // log('clipBoardImages: ${clipBoardImages.length}');
-      // log('clipBoardImages: ${clipBoardImages.first}');
-      // Flutter clipboard APIs don't reliably expose raw image bytes across
-      // platforms, so we do a best-effort approach:
-      // - Try image formats (some platforms may expose image data as text)
-      // - Fallback to plain text and parse a data URI
-      final ClipboardData? maybePng = await Clipboard.getData('image/png');
-      final Uint8List? pngBytes = _tryDecodeImageDataUri(maybePng?.text);
-      if (pngBytes != null) {
-        if (!mounted) return true;
-        setState(() {
-          _selectedBytes = pngBytes;
-          _selectedName = 'clipboard.png';
-        });
-        return true;
-      }
-
-      final ClipboardData? maybeJpeg = await Clipboard.getData('image/jpeg');
-      final Uint8List? jpegBytes = _tryDecodeImageDataUri(maybeJpeg?.text);
-      if (jpegBytes != null) {
-        if (!mounted) return true;
-        setState(() {
-          _selectedBytes = jpegBytes;
-          _selectedName = 'clipboard.jpg';
-        });
-        return true;
-      }
-
-      final ClipboardData? text = await Clipboard.getData(Clipboard.kTextPlain);
-      final Uint8List? textBytes = _tryDecodeImageDataUri(text?.text);
-      if (textBytes != null) {
-        if (!mounted) return true;
-        setState(() {
-          _selectedBytes = textBytes;
-          _selectedName = 'clipboard.png';
-        });
-        return true;
-      }
-
-      // If the clipboard contains a file path / file:// URL to an image (common
-      // when copying files in desktop file managers), try loading it.
-      if (!kIsWeb) {
-        final pathBytes = await _tryLoadImageFromClipboardPath(text?.text);
-        if (pathBytes != null) {
-          if (!mounted) return true;
-          setState(() {
-            _selectedBytes = pathBytes.bytes;
-            _selectedName = pathBytes.name;
-          });
-          return true;
-        }
-      }
-    } catch (_) {
-      // Best-effort only; ignore clipboard errors.
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isCheckingClipboard = false;
-        });
-      }
-    }
-
-    return false;
-  }
-
-  Future<({Uint8List bytes, String name})?> _tryLoadImageFromClipboardPath(
-    String? text,
-  ) async {
-    if (text == null) return null;
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return null;
-
-    // Some clipboards include surrounding quotes.
-    final unquoted = trimmed.startsWith('"') && trimmed.endsWith('"')
-        ? trimmed.substring(1, trimmed.length - 1)
-        : trimmed;
-
-    String? path;
-    if (unquoted.startsWith('file://')) {
-      try {
-        path = Uri.parse(unquoted).toFilePath();
-      } catch (_) {
-        path = null;
-      }
-    } else {
-      path = unquoted;
-    }
-
-    if (path == null || path.isEmpty) return null;
-
-    final lower = path.toLowerCase();
-    final ext = lower.contains('.') ? lower.split('.').last : '';
-    if (!const {'png', 'jpg', 'jpeg', 'webp', 'gif'}.contains(ext)) return null;
-
-    try {
-      final file = XFile(path);
-      final bytes = await file.readAsBytes();
-      final name = file.name.isNotEmpty ? file.name : 'clipboard.$ext';
-      return (bytes: bytes, name: name);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Uint8List? _tryDecodeImageDataUri(String? text) {
-    if (text == null) return null;
-    final trimmed = text.trim();
-    if (!trimmed.startsWith('data:image/')) return null;
-
-    final commaIndex = trimmed.indexOf(',');
-    if (commaIndex <= 0 || commaIndex >= trimmed.length - 1) return null;
-
-    final metadata = trimmed.substring(0, commaIndex);
-    final payload = trimmed.substring(commaIndex + 1);
-    if (!metadata.contains(';base64')) return null;
-
-    try {
-      return base64Decode(payload);
-    } catch (_) {
-      return null;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -258,6 +131,19 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
       title: const Text('Upload image'),
       description: const Text('Drop an image here or click to choose a file.'),
       actions: [
+        ShadIconButton.secondary(
+          icon: const Icon(LucideIcons.clipboard),
+          onPressed: () async {
+            final (bytes, name) =
+                await ClipboardService.trySelectImageFromClipboard();
+            if (bytes != null) {
+              setState(() {
+                _selectedBytes = bytes;
+                _selectedName = name;
+              });
+            }
+          },
+        ),
         ShadButton.outline(
           onPressed: () => Navigator.of(context).pop<Uint8List?>(null),
           child: const Text('Cancel'),
@@ -499,46 +385,5 @@ class _SelectionFooter extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _DottedRRectBorderPainter extends CustomPainter {
-  _DottedRRectBorderPainter({
-    required this.color,
-    required this.radius,
-    required this.strokeWidth,
-    required this.dashLength,
-    required this.dashGap,
-  });
-
-  final Color color;
-  final double radius;
-  final double strokeWidth;
-  final double dashLength;
-  final double dashGap;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Rect.fromLTWH(1, 1, size.width - 2, size.height - 2);
-    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(radius));
-
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke
-      ..isAntiAlias = true;
-
-    final path = Path()..addRRect(rrect);
-    DashPainter(span: dashLength, step: dashLength + dashGap)
-        .paint(canvas, path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _DottedRRectBorderPainter oldDelegate) {
-    return oldDelegate.color != color ||
-        oldDelegate.radius != radius ||
-        oldDelegate.strokeWidth != strokeWidth ||
-        oldDelegate.dashLength != dashLength ||
-        oldDelegate.dashGap != dashGap;
   }
 }
