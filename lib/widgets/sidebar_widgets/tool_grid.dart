@@ -186,11 +186,27 @@ class ToolGrid extends ConsumerWidget {
                 builder: (context) => const Text("Add Image"),
                 child: ShadIconButton.secondary(
                   onPressed: () async {
-                    showShadDialog(
+                    ref
+                        .read(interactionStateProvider.notifier)
+                        .update(InteractionState.navigation);
+                    final Uint8List? imageBytes =
+                        await showShadDialog<Uint8List?>(
                       context: context,
                       builder: (context) => const UploadImageDialog(),
                     );
-                    return;
+                    if (imageBytes == null) return;
+
+                    final String? fileExtension =
+                        PlacedImageSerializer.detectImageFormat(imageBytes);
+                    if (fileExtension == null) {
+                      Settings.showToast(
+                        message: 'Upload failed',
+                        backgroundColor:
+                            Settings.tacticalVioletTheme.destructive,
+                      );
+                      return;
+                    }
+
                     if (kIsWeb) {
                       Settings.showToast(
                         message:
@@ -201,22 +217,8 @@ class ToolGrid extends ConsumerWidget {
                       return;
                     }
 
-                    ref
-                        .read(interactionStateProvider.notifier)
-                        .update(InteractionState.navigation);
-
-                    FilePickerResult? result =
-                        await FilePicker.platform.pickFiles(
-                      allowMultiple: false,
-                      type: FileType.custom,
-                      allowedExtensions: ["png", "jpg", "gif", "webp"],
-                    );
-
-                    if (result == null) return;
-                    final data = result.files.first.xFile;
-
-                    ref.read(placedImageProvider.notifier).addImage(data);
-                    // showImageDialog();
+                    ref.read(placedImageProvider.notifier).addImage(
+                        imageBytes: imageBytes, fileExtension: fileExtension);
                   },
                   icon: const Icon(Icons.image_outlined),
                 ),

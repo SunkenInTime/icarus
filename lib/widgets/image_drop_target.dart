@@ -41,9 +41,11 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
         final files = details.files;
 
         for (final file in files) {
-          final String extension = file.name.split('.').last.toLowerCase();
-          if (['png', 'jpg', 'jpeg', 'webp', 'gif'].contains(extension)) {
-            await ref.read(placedImageProvider.notifier).addImage(file);
+          final String fileExtension = file.name.split('.').last.toLowerCase();
+          if (['png', 'jpg', 'jpeg', 'webp', 'gif'].contains(fileExtension)) {
+            await ref.read(placedImageProvider.notifier).addImage(
+                imageBytes: await file.readAsBytes(),
+                fileExtension: fileExtension);
           }
         }
       },

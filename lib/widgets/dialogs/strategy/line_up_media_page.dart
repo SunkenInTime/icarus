@@ -17,7 +17,7 @@ class LineupMediaPage extends ConsumerStatefulWidget {
   final Function(int index) onRemoveImage;
   final TextEditingController notesController;
   const LineupMediaPage({
-    super.key,
+    super.key,So I want you to modify the way the lineup media page works right now in terms of adding images. I want you to add a button. I don't know where the button should be. I believe it should be directly under the add images selection area. In this area, at about that says "Paste from clipboard" or whatever. Essentially, it just uses the. 
     required this.youtubeLinkController,
     required this.images,
     required this.onAddImage,

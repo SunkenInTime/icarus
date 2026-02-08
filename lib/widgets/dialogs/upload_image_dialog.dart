@@ -12,7 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/services/clipboard_service.dart';
-import 'package:pasteboard/pasteboard.dart';
+
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class UploadImageDialog extends ConsumerStatefulWidget {
@@ -131,6 +131,10 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
       title: const Text('Upload image'),
       description: const Text('Drop an image here or click to choose a file.'),
       actions: [
+        ShadButton.secondary(
+          onPressed: () => Navigator.of(context).pop<Uint8List?>(null),
+          child: const Text('Cancel'),
+        ),
         ShadIconButton.secondary(
           icon: const Icon(LucideIcons.clipboard),
           onPressed: () async {
@@ -143,10 +147,6 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
               });
             }
           },
-        ),
-        ShadButton.outline(
-          onPressed: () => Navigator.of(context).pop<Uint8List?>(null),
-          child: const Text('Cancel'),
         ),
         ShadButton(
           onPressed: hasSelection
@@ -235,7 +235,7 @@ class _UploadDropSquare extends StatelessWidget {
                             children: [
                               Image.memory(
                                 selectedBytes!,
-                                fit: BoxFit.cover,
+                                fit: BoxFit.contain,
                               ),
                               Positioned(
                                 left: 10,
