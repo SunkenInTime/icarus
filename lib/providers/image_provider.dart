@@ -102,10 +102,9 @@ class PlacedImageProvider extends Notifier<ImageState> {
     return image.width / image.height;
   }
 
-  Future<void> addImage(XFile imageFile) async {
+  Future<void> addImage(
+      {required Uint8List imageBytes, required String fileExtension}) async {
     final imageID = const Uuid().v4();
-    final String fileExtension = path.extension(imageFile.path);
-    final Uint8List imageBytes = await imageFile.readAsBytes();
 
     await ref
         .read(placedImageProvider.notifier)
@@ -413,7 +412,7 @@ class PlacedImageSerializer {
     final Uint8List imageBytes = deserializeUint8List(serializedBytes);
 
     if (!json.containsKey('fileExtension')) {
-      final String? fileExtension = _detectImageFormat(imageBytes);
+      final String? fileExtension = detectImageFormat(imageBytes);
 
       json['fileExtension'] = fileExtension;
     }
@@ -465,6 +464,17 @@ class PlacedImageSerializer {
     // The final file path: [id][fileExtension]
     return path.join(imagesDirectory.path, '${image.id}${image.fileExtension}');
   }
+
+  static String? detectImageFormat(Uint8List bytes) {
+    final decoder = img.findDecoderForData(bytes);
+    if (decoder == null || !decoder.isValidFile(bytes)) return null;
+    if (decoder is img.PngDecoder) return '.png';
+    if (decoder is img.JpegDecoder) return '.jpeg';
+    if (decoder is img.GifDecoder) return '.gif';
+    if (decoder is img.WebPDecoder) return '.webp';
+    // …etc.
+    return null;
+  }
 }
 
 /// Dummy custom serializer for Uint8List.
@@ -480,15 +490,4 @@ Uint8List deserializeUint8List(dynamic jsonData) {
     return Uint8List.fromList(base64Decode(jsonData));
   }
   throw Exception('Invalid data for Uint8List deserialization.');
-}
-
-String? _detectImageFormat(Uint8List bytes) {
-  final decoder = img.findDecoderForData(bytes);
-  if (decoder == null || !decoder.isValidFile(bytes)) return null;
-  if (decoder is img.PngDecoder) return 'png';
-  if (decoder is img.JpegDecoder) return 'jpeg';
-  if (decoder is img.GifDecoder) return 'gif';
-  if (decoder is img.WebPDecoder) return 'webp';
-  // …etc.
-  return null;
 }

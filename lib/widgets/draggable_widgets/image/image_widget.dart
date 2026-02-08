@@ -178,10 +178,10 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
     // Build the small image widget used both here and in the hero
     Widget buildThumb() {
       if (file.existsSync() && widget.fileExtension != null) {
-        return Image.file(file, fit: BoxFit.cover);
+        return Image.file(file, fit: BoxFit.contain);
       }
       if (widget.link != null && widget.link!.isNotEmpty) {
-        return Image.network(widget.link!, fit: BoxFit.cover);
+        return Image.network(widget.link!, fit: BoxFit.contain);
       }
       return const Placeholder();
     }

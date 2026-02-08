@@ -14,6 +14,7 @@ class LineupMediaPage extends ConsumerStatefulWidget {
   final TextEditingController youtubeLinkController;
   final List<SimpleImageData> images; // Placeholder for actual image data
   final VoidCallback onAddImage;
+  final VoidCallback onPasteImage;
   final Function(int index) onRemoveImage;
   final TextEditingController notesController;
   const LineupMediaPage({
@@ -21,6 +22,7 @@ class LineupMediaPage extends ConsumerStatefulWidget {
     required this.youtubeLinkController,
     required this.images,
     required this.onAddImage,
+    required this.onPasteImage,
     required this.onRemoveImage,
     required this.notesController,
   });
@@ -92,25 +94,34 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   }
 
   Widget _buildEmptyState() {
-    return GestureDetector(
-      onTap: widget.onAddImage,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.add_photo_alternate_outlined,
-                  size: 48, color: Settings.tacticalVioletTheme.cardForeground),
-              const SizedBox(height: 8),
-              Text(
-                "Click here to add images",
-                style: TextStyle(
-                    color: Settings.tacticalVioletTheme.cardForeground),
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          GestureDetector(
+            onTap: widget.onAddImage,
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.add_photo_alternate_outlined,
+                    size: 48,
+                    color: Settings.tacticalVioletTheme.cardForeground,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    "Click here to add images",
+                    style: TextStyle(
+                        color: Settings.tacticalVioletTheme.cardForeground),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(height: 12),
+          _buildPasteActionButton(),
+        ],
       ),
     );
   }
@@ -133,10 +144,13 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
               crossAxisSpacing: 8,
               childAspectRatio: 1,
             ),
-            itemCount: widget.images.length + 1, // +1 for the Add button
+            itemCount: widget.images.length + 2, // +1 for Add, +1 for Paste
             itemBuilder: (context, index) {
               if (index == widget.images.length) {
                 return _buildAddButton();
+              }
+              if (index == widget.images.length + 1) {
+                return _buildPasteButton();
               }
               return _buildImageTile(index);
             },
@@ -156,6 +170,61 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
           child: const Icon(Icons.add, color: Colors.white),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPasteButton() {
+    return GestureDetector(
+      onTap: widget.onPasteImage,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Container(
+          decoration: BoxDecoration(
+            color: Settings.tacticalVioletTheme.secondary,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Settings.tacticalVioletTheme.border),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const [
+              Icon(Icons.content_paste, color: Colors.white),
+              SizedBox(height: 4),
+              Text(
+                "Paste",
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPasteActionButton() {
+    return GestureDetector(
+      onTap: widget.onPasteImage,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: Settings.tacticalVioletTheme.secondary,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: Settings.tacticalVioletTheme.border),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: const [
+              Icon(Icons.content_paste, color: Colors.white, size: 16),
+              SizedBox(width: 6),
+              Text(
+                "Paste from clipboard",
+                style: TextStyle(color: Colors.white),
+              ),
+            ],
+          ),
         ),
       ),
     );
