@@ -5,8 +5,10 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/services/clipboard_service.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -144,6 +146,39 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
               await ref
                   .read(placedImageProvider.notifier)
                   .saveSecureImage(imageBytes, id, fileExtension);
+
+              setState(() {
+                _imagePaths.add(imageData);
+              });
+            },
+            onPasteImage: () async {
+              final (bytes, _) =
+                  await ClipboardService.trySelectImageFromClipboard();
+              if (bytes == null) {
+                Settings.showToast(
+                  message: 'No image found in clipboard',
+                  backgroundColor: Settings.tacticalVioletTheme.destructive,
+                );
+                return;
+              }
+
+              final String? fileExtension =
+                  PlacedImageSerializer.detectImageFormat(bytes);
+              if (fileExtension == null) {
+                Settings.showToast(
+                  message: 'Clipboard image type not supported',
+                  backgroundColor: Settings.tacticalVioletTheme.destructive,
+                );
+                return;
+              }
+
+              final id = const Uuid().v4();
+              final SimpleImageData imageData =
+                  SimpleImageData(id: id, fileExtension: fileExtension);
+
+              await ref
+                  .read(placedImageProvider.notifier)
+                  .saveSecureImage(bytes, id, fileExtension);
 
               setState(() {
                 _imagePaths.add(imageData);
