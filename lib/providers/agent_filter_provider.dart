@@ -42,7 +42,7 @@ class AgentFilterProvider extends Notifier<AgentFilterState> {
         List<AgentType> filteredList = [];
 
         for (AgentType agentType in AgentType.values) {
-          if (AgentData.agents[agentType]!.role == state.currentRole) {
+          if (AgentData.forType(agentType)!.role == state.currentRole) {
             filteredList.add(agentType);
           }
         }
@@ -58,7 +58,7 @@ class AgentFilterProvider extends Notifier<AgentFilterState> {
     List<AgentType> filteredList = [];
 
     for (AgentType agentType in AgentType.values) {
-      if (AgentData.agents[agentType]!.role == currentRole) {
+      if (AgentData.forType(agentType)!.role == currentRole) {
         filteredList.add(agentType);
       }
     }

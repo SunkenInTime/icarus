@@ -56,9 +56,8 @@ class AbilityInfoConverter
 
   @override
   AbilityInfo fromJson(Map<String, dynamic> json) {
-    final info = AgentData.agents[$enumDecode(_agentTypeEnumMap, json["type"])]!
-        .abilities[json["index"] as int];
-    return info;
+    final agentType = $enumDecode(_agentTypeEnumMap, json["type"]);
+    return AgentData.abilityFor(agentType, json["index"] as int);
   }
 
   @override

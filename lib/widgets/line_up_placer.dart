@@ -126,7 +126,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                         child: AgentWidget(
                           isAlly: lineUp.currentAgent!.isAlly,
                           id: "",
-                          agent: AgentData.agents[lineUp.currentAgent!.type]!,
+                          agent: AgentData.forType(lineUp.currentAgent!.type)!,
                         ),
                       ),
                     ),
@@ -149,7 +149,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                       child: AgentWidget(
                         isAlly: lineUp.currentAgent!.isAlly,
                         id: lineUp.currentAgent!.id,
-                        agent: AgentData.agents[lineUp.currentAgent!.type]!,
+                        agent: AgentData.forType(lineUp.currentAgent!.type)!,
                       ),
                     ),
                   ),
@@ -233,7 +233,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
             ref.read(lineUpProvider.notifier).setAgent(placedAgent);
             ref
                 .read(abilityBarProvider.notifier)
-                .updateData(AgentData.agents[placedAgent.type]!);
+                .updateData(AgentData.forType(placedAgent.type)!);
           } else if (details.data is AbilityInfo) {
             PlacedAbility placedAbility = PlacedAbility(
               id: uuid.v4(),

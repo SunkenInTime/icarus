@@ -250,7 +250,7 @@ class _AgentIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
         border: Border.all(color: Settings.tacticalVioletTheme.border),
       ),
-      child: Image.asset(AgentData.agents[agentType]!.iconPath),
+      child: Image.asset(AgentData.forType(agentType)!.iconPath),
     );
   }
 }

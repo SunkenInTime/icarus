@@ -26,7 +26,7 @@ class LineUpAgentWidget extends ConsumerWidget {
       top: agentScreen.dy,
       child: AgentWidget(
         lineUpId: lineUp.id,
-        agent: AgentData.agents[lineUp.agent.type]!,
+        agent: AgentData.forType(lineUp.agent.type)!,
         isAlly: true,
         id: lineUp.id,
       ),

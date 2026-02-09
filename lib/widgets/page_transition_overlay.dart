@@ -242,7 +242,7 @@ class PlacedWidgetPreview {
   static Widget build(PlacedWidget w, double mapScale, double? length) {
     if (w is PlacedAgent) {
       return AgentWidget(
-          isAlly: w.isAlly, id: w.id, agent: AgentData.agents[w.type]!);
+          isAlly: w.isAlly, id: w.id, agent: AgentData.forType(w.type)!);
     }
     if (w is PlacedAbility) {
       if (w.data.abilityData == null) {

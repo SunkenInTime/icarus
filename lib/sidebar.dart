@@ -127,7 +127,7 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
 
                                   itemBuilder: (context, index) {
                                     final agent =
-                                        AgentData.agents[agentList[index]]!;
+                                        AgentData.forType(agentList[index])!;
                                     return AgentDragable(
                                       agent: agent,
                                     );
