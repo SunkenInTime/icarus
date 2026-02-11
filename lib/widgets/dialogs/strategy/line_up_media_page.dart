@@ -146,12 +146,13 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             ),
             itemCount: widget.images.length + 2, // +1 for Add, +1 for Paste
             itemBuilder: (context, index) {
-              if (index == widget.images.length) {
+              if (index == widget.images.length + 1) {
                 return _buildAddButton();
               }
-              if (index == widget.images.length + 1) {
+              if (index == widget.images.length) {
                 return _buildPasteButton();
               }
+
               return _buildImageTile(index);
             },
           );
@@ -186,9 +187,9 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
-          child: Column(
+          child: const Column(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: const [
+            children: [
               Icon(Icons.content_paste, color: Colors.white),
               SizedBox(height: 4),
               Text(
@@ -214,9 +215,9 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             borderRadius: BorderRadius.circular(6),
             border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
-          child: Row(
+          child: const Row(
             mainAxisSize: MainAxisSize.min,
-            children: const [
+            children: [
               Icon(Icons.content_paste, color: Colors.white, size: 16),
               SizedBox(width: 6),
               Text(

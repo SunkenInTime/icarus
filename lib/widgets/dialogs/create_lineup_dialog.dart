@@ -131,7 +131,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
               FilePickerResult? result = await FilePicker.platform.pickFiles(
                 allowMultiple: false,
                 type: FileType.custom,
-                allowedExtensions: ["png", "jpg", "gif", "webp"],
+                allowedExtensions: ["png", "jpg", "gif", "webp", "bmp"],
               );
 
               if (result == null) return;
@@ -164,6 +164,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
 
               final String? fileExtension =
                   PlacedImageSerializer.detectImageFormat(bytes);
+
               if (fileExtension == null) {
                 Settings.showToast(
                   message: 'Clipboard image type not supported',

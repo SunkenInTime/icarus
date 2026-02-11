@@ -1,9 +1,6 @@
-import 'dart:convert' show base64Decode;
-import 'dart:developer';
 import 'dart:typed_data' show Uint8List;
 
 import 'package:cross_file/cross_file.dart';
-import 'package:dash_painter/dash_painter.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
@@ -11,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/services/clipboard_service.dart';
 
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -38,6 +36,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
       final (bytes, name) =
           await ClipboardService.trySelectImageFromClipboard();
       if (bytes != null) {
+        if (!mounted) return;
         setState(() {
           _selectedBytes = bytes;
           _selectedName = name;
@@ -50,7 +49,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
     final FilePickerResult? result = await FilePicker.platform.pickFiles(
       allowMultiple: false,
       type: FileType.custom,
-      allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp', 'gif'],
+      allowedExtensions: const ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'],
       withData: true, // ensures bytes are available (esp. web)
       lockParentWindow: true,
     );
@@ -76,19 +75,37 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
     for (final f in files) {
       final name = f.name.toLowerCase();
       final ext = name.contains('.') ? name.split('.').last : '';
-      if (const {'png', 'jpg', 'jpeg', 'webp', 'gif'}.contains(ext)) {
+      if (const {'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'}.contains(ext)) {
         imageFile = f;
         break;
       }
     }
-    imageFile ??= files.first;
+    if (imageFile == null) {
+      if (!mounted) return;
+      setState(() => _isDragging = false);
+      Settings.showToast(
+        message: 'Unsupported image format',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
 
-    final bytes = await imageFile.readAsBytes();
+    final XFile selectedFile = imageFile;
+    final bytes = await selectedFile.readAsBytes();
+    final detectedExtension = PlacedImageSerializer.detectImageFormat(bytes);
     if (!mounted) return;
+    if (detectedExtension == null) {
+      setState(() => _isDragging = false);
+      Settings.showToast(
+        message: 'Unsupported image format',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
 
     setState(() {
       _selectedBytes = bytes;
-      _selectedName = imageFile!.name;
+      _selectedName = selectedFile.name;
       _isDragging = false;
     });
   }
@@ -203,10 +220,6 @@ class _UploadDropSquare extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final borderColor = isDragging ? cs.primary : cs.outlineVariant;
-    final bgColor = isDragging
-        ? cs.primary.withOpacity(0.06)
-        : cs.onSurface.withOpacity(0.03);
 
     return AspectRatio(
       aspectRatio: 1,
@@ -311,7 +324,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'PNG, JPG, WEBP, GIF',
+              'PNG, JPG, WEBP, GIF, BMP',
               textAlign: TextAlign.center,
               style: body?.copyWith(color: cs.onSurfaceVariant),
             ),

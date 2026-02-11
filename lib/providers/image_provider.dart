@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'dart:ui';
-import 'package:cross_file/cross_file.dart' show XFile;
 import 'package:flutter/foundation.dart';
 import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:image/image.dart' as img;
@@ -468,10 +467,21 @@ class PlacedImageSerializer {
   static String? detectImageFormat(Uint8List bytes) {
     final decoder = img.findDecoderForData(bytes);
     if (decoder == null || !decoder.isValidFile(bytes)) return null;
-    if (decoder is img.PngDecoder) return '.png';
-    if (decoder is img.JpegDecoder) return '.jpeg';
-    if (decoder is img.GifDecoder) return '.gif';
-    if (decoder is img.WebPDecoder) return '.webp';
+    if (decoder is img.PngDecoder) {
+      return '.png';
+    }
+    if (decoder is img.JpegDecoder) {
+      return '.jpeg';
+    }
+    if (decoder is img.GifDecoder) {
+      return '.gif';
+    }
+    if (decoder is img.WebPDecoder) {
+      return '.webp';
+    }
+    if (decoder is img.BmpDecoder) {
+      return '.bmp';
+    }
     // …etc.
     return null;
   }

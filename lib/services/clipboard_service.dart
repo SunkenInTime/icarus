@@ -10,6 +10,7 @@ class ClipboardService {
     'png',
     'jpg',
     'jpeg',
+    'bmp',
   };
 
   /// Returns true if [clipboardFile] appears to be a supported image file path/URI.

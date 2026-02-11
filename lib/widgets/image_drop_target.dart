@@ -41,8 +41,12 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
         final files = details.files;
 
         for (final file in files) {
-          final String fileExtension = file.name.split('.').last.toLowerCase();
-          if (['png', 'jpg', 'jpeg', 'webp', 'gif'].contains(fileExtension)) {
+          final parts = file.name.split('.');
+          if (parts.length < 2) continue;
+          final rawExtension = parts.last.toLowerCase();
+          if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp']
+              .contains(rawExtension)) {
+            final fileExtension = '.$rawExtension';
             await ref.read(placedImageProvider.notifier).addImage(
                 imageBytes: await file.readAsBytes(),
                 fileExtension: fileExtension);
@@ -69,7 +73,7 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
                       height: 10,
                     ),
                     Text(
-                      "Import image file (.png, .jpg, .webp, .gif)",
+                      "Import image file (.png, .jpg, .webp, .gif, .bmp)",
                       style:
                           TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     )
