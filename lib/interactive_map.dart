@@ -33,8 +33,6 @@ class InteractiveMap extends ConsumerStatefulWidget {
 class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   final controller = TransformationController();
   Size? _lastViewportSize;
-  double? _lastCenteredOffsetX;
-  bool _userHasInteracted = false;
 
   @override
   void dispose() {
@@ -65,18 +63,16 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
         final viewportSize = Size(viewportWidth, height);
         final double desiredOffsetX =
             viewportWidth > worldWidth ? (viewportWidth - worldWidth) / 2 : 0.0;
-        final double currentScale = controller.value.getMaxScaleOnAxis();
-        final double currentOffsetX = controller.value.getTranslation().x;
-        final bool shouldAutoCenter = currentScale == 1.0 &&
-            !_userHasInteracted &&
-            (_lastCenteredOffsetX == null ||
-                (currentOffsetX - _lastCenteredOffsetX!).abs() < 0.5);
         if (_lastViewportSize != viewportSize) {
-          if (shouldAutoCenter) {
-            controller.value = Matrix4.identity()
-              ..translate(desiredOffsetX, 0.0);
-            _lastCenteredOffsetX = desiredOffsetX;
-          }
+          final double currentScale = controller.value.getMaxScaleOnAxis();
+          final double safeScale = currentScale == 0 ? 1.0 : currentScale;
+          final double centeredOffsetX =
+              (viewportWidth - (worldWidth * safeScale)) / 2;
+          final double centeredOffsetY = (height - (height * safeScale)) / 2;
+          final matrix = Matrix4.identity()..scale(safeScale);
+          matrix.translate(
+              centeredOffsetX / safeScale, centeredOffsetY / safeScale);
+          controller.value = matrix;
           _lastViewportSize = viewportSize;
         }
         final Size playAreaSize = Size(worldWidth, height);
@@ -113,9 +109,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                           alignment: Alignment.topLeft,
                           minScale: 1.0,
                           maxScale: 8.0,
-                          onInteractionStart: (_) {
-                            _userHasInteracted = true;
-                          },
                           onInteractionUpdate: (_) {
                             ref.read(screenZoomProvider.notifier).updateZoom(
                                 controller.value.getMaxScaleOnAxis());
