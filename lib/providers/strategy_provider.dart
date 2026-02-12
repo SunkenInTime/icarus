@@ -31,6 +31,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -268,7 +269,13 @@ class StrategyProvider extends Notifier<StrategyState> {
   static Future<void> migrateAllStrategies() async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     for (final strat in box.values) {
-      await migrateLegacyData(strat);
+      final legacyMigrated = await migrateLegacyData(strat);
+      final worldMigrated = migrateToWorld16x9(legacyMigrated);
+      if (worldMigrated != legacyMigrated) {
+        await box.put(worldMigrated.id, worldMigrated);
+      } else if (legacyMigrated != strat) {
+        await box.put(legacyMigrated.id, legacyMigrated);
+      }
     }
   }
 
@@ -276,6 +283,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     // Already migrated
     if (strat.pages.isNotEmpty) return strat;
     if (strat.versionNumber > 15) return strat;
+    final originalVersion = strat.versionNumber;
     log("Migrating legacy strategy to single page");
     // ignore: deprecated_member_use, deprecated_member_use_from_same_package
     final abilityData = [...strat.abilityData];
@@ -319,7 +327,154 @@ class StrategyProvider extends Notifier<StrategyState> {
       lastEdited: DateTime.now(),
     );
 
-    return updated;
+    return migrateToWorld16x9(updated,
+        force: originalVersion < Settings.versionNumber);
+  }
+
+  static StrategyData migrateToWorld16x9(StrategyData strat,
+      {bool force = false}) {
+    if (!force && strat.versionNumber >= Settings.versionNumber) return strat;
+
+    const double normalizedHeight = 1000.0;
+    const double mapAspectRatio = 1.24;
+    const double worldAspectRatio = 16 / 9;
+    final mapWidth = normalizedHeight * mapAspectRatio;
+    final worldWidth = normalizedHeight * worldAspectRatio;
+    final padding = (worldWidth - mapWidth) / 2;
+
+    Offset shift(Offset offset) => offset.translate(padding, 0);
+
+    List<PlacedAgent> shiftAgents(List<PlacedAgent> agents) {
+      return [
+        for (final agent in agents)
+          agent.copyWith(position: shift(agent.position))
+            ..isDeleted = agent.isDeleted
+      ];
+    }
+
+    List<PlacedAbility> shiftAbilities(List<PlacedAbility> abilities) {
+      return [
+        for (final ability in abilities)
+          ability.copyWith(position: shift(ability.position))
+            ..isDeleted = ability.isDeleted
+      ];
+    }
+
+    List<PlacedText> shiftTexts(List<PlacedText> texts) {
+      return [
+        for (final text in texts)
+          PlacedText(
+            position: shift(text.position),
+            id: text.id,
+            size: text.size,
+          )
+            ..text = text.text
+            ..isDeleted = text.isDeleted
+      ];
+    }
+
+    List<PlacedImage> shiftImages(List<PlacedImage> images) {
+      return [
+        for (final image in images)
+          image.copyWith(position: shift(image.position))
+            ..isDeleted = image.isDeleted
+      ];
+    }
+
+    List<PlacedUtility> shiftUtilities(List<PlacedUtility> utilities) {
+      return [
+        for (final utility in utilities)
+          PlacedUtility(
+            type: utility.type,
+            position: shift(utility.position),
+            id: utility.id,
+            angle: utility.angle,
+            attachedAgentId: utility.attachedAgentId,
+          )
+            ..rotation = utility.rotation
+            ..length = utility.length
+            ..isDeleted = utility.isDeleted
+      ];
+    }
+
+    List<LineUp> shiftLineUps(List<LineUp> lineUps) {
+      return [
+        for (final lineUp in lineUps)
+          () {
+            final shiftedAgent = lineUp.agent.copyWith(
+              position: shift(lineUp.agent.position),
+            )..isDeleted = lineUp.agent.isDeleted;
+            final shiftedAbility = lineUp.ability.copyWith(
+              position: shift(lineUp.ability.position),
+            )..isDeleted = lineUp.ability.isDeleted;
+            return lineUp.copyWith(
+              agent: shiftedAgent,
+              ability: shiftedAbility,
+            );
+          }()
+      ];
+    }
+
+    List<DrawingElement> shiftDrawings(List<DrawingElement> drawings) {
+      return drawings
+          .map((element) {
+            if (element is Line) {
+              return Line(
+                lineStart: shift(element.lineStart),
+                lineEnd: shift(element.lineEnd),
+                color: element.color,
+                isDotted: element.isDotted,
+                hasArrow: element.hasArrow,
+                id: element.id,
+              );
+            }
+            if (element is FreeDrawing) {
+              final shiftedPoints =
+                  element.listOfPoints.map(shift).toList(growable: false);
+              final shiftedBoundingBox = element.boundingBox == null
+                  ? null
+                  : BoundingBox(
+                      min: shift(element.boundingBox!.min),
+                      max: shift(element.boundingBox!.max),
+                    );
+
+              return FreeDrawing(
+                listOfPoints: shiftedPoints,
+                color: element.color,
+                boundingBox: shiftedBoundingBox,
+                isDotted: element.isDotted,
+                hasArrow: element.hasArrow,
+                id: element.id,
+              );
+            }
+            return element;
+          })
+          .cast<DrawingElement>()
+          .toList(growable: false);
+    }
+
+    final updatedPages = strat.pages
+        .map((page) => page.copyWith(
+              sortIndex: page.sortIndex,
+              name: page.name,
+              id: page.id,
+              agentData: shiftAgents(page.agentData),
+              abilityData: shiftAbilities(page.abilityData),
+              textData: shiftTexts(page.textData),
+              imageData: shiftImages(page.imageData),
+              utilityData: shiftUtilities(page.utilityData),
+              drawingData: shiftDrawings(page.drawingData),
+              lineUps: shiftLineUps(page.lineUps),
+            ))
+        .toList(growable: false);
+
+    final migrated = strat.copyWith(
+      pages: updatedPages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+
+    return migrated;
   }
 
   // Switch active page: flush old page first, then hydrate new
@@ -341,15 +496,24 @@ class StrategyProvider extends Notifier<StrategyState> {
     activePageID = page.id;
 
     ref.read(actionProvider.notifier).clearAllActions();
-    ref.read(agentProvider.notifier).fromHive(page.agentData);
-    ref.read(abilityProvider.notifier).fromHive(page.abilityData);
-    ref.read(drawingProvider.notifier).fromHive(page.drawingData);
-    ref.read(textProvider.notifier).fromHive(page.textData);
-    ref.read(placedImageProvider.notifier).fromHive(page.imageData);
-    ref.read(utilityProvider.notifier).fromHive(page.utilityData);
-    ref.read(mapProvider.notifier).setAttack(page.isAttack);
-    ref.read(strategySettingsProvider.notifier).fromHive(page.settings);
-    ref.read(lineUpProvider.notifier).fromHive(page.lineUps);
+    final migrated = migrateToWorld16x9(doc);
+    final migratedPage = migrated.pages.firstWhere(
+      (p) => p.id == page.id,
+      orElse: () => migrated.pages.first,
+    );
+    if (migrated != doc) {
+      await box.put(migrated.id, migrated);
+    }
+
+    ref.read(agentProvider.notifier).fromHive(migratedPage.agentData);
+    ref.read(abilityProvider.notifier).fromHive(migratedPage.abilityData);
+    ref.read(drawingProvider.notifier).fromHive(migratedPage.drawingData);
+    ref.read(textProvider.notifier).fromHive(migratedPage.textData);
+    ref.read(placedImageProvider.notifier).fromHive(migratedPage.imageData);
+    ref.read(utilityProvider.notifier).fromHive(migratedPage.utilityData);
+    ref.read(mapProvider.notifier).setAttack(migratedPage.isAttack);
+    ref.read(strategySettingsProvider.notifier).fromHive(migratedPage.settings);
+    ref.read(lineUpProvider.notifier).fromHive(migratedPage.lineUps);
 
     // Defer path rebuild until next frame (layout complete)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -578,39 +742,45 @@ class StrategyProvider extends Notifier<StrategyState> {
           .deleteUnusedImages(newStrat.id, allImageIds);
     }
 
-    final firstPage = newStrat.pages.first;
-
     // We clear previous data to avoid artifacts when loading a new strategy
-    log(firstPage.toString());
-    ref.read(agentProvider.notifier).fromHive(firstPage.agentData);
-    ref.read(abilityProvider.notifier).fromHive(firstPage.abilityData);
-    ref.read(drawingProvider.notifier).fromHive(firstPage.drawingData);
+    log(newStrat.pages.first.toString());
+    final migratedStrategy = migrateToWorld16x9(newStrat);
+    final page = migratedStrategy.pages.first;
+
+    if (migratedStrategy != newStrat) {
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+          .put(migratedStrategy.id, migratedStrategy);
+    }
+
+    ref.read(agentProvider.notifier).fromHive(page.agentData);
+    ref.read(abilityProvider.notifier).fromHive(page.abilityData);
+    ref.read(drawingProvider.notifier).fromHive(page.drawingData);
 
     ref
         .read(mapProvider.notifier)
-        .fromHive(newStrat.mapData, newStrat.pages.first.isAttack);
-    ref.read(textProvider.notifier).fromHive(firstPage.textData);
-    ref.read(placedImageProvider.notifier).fromHive(firstPage.imageData);
-    ref.read(lineUpProvider.notifier).fromHive(firstPage.lineUps);
-    ref.read(strategySettingsProvider.notifier).fromHive(firstPage.settings);
-    ref.read(utilityProvider.notifier).fromHive(firstPage.utilityData);
-    activePageID = firstPage.id;
+        .fromHive(migratedStrategy.mapData, page.isAttack);
+    ref.read(textProvider.notifier).fromHive(page.textData);
+    ref.read(placedImageProvider.notifier).fromHive(page.imageData);
+    ref.read(lineUpProvider.notifier).fromHive(page.lineUps);
+    ref.read(strategySettingsProvider.notifier).fromHive(page.settings);
+    ref.read(utilityProvider.notifier).fromHive(page.utilityData);
+    activePageID = page.id;
 
     if (kIsWeb) {
       state = StrategyState(
         isSaved: true,
-        stratName: newStrat.name,
-        id: newStrat.id,
+        stratName: migratedStrategy.name,
+        id: migratedStrategy.id,
         storageDirectory: null,
       );
       return;
     }
-    final newDir = await setStorageDirectory(newStrat.id);
+    final newDir = await setStorageDirectory(migratedStrategy.id);
 
     state = StrategyState(
       isSaved: true,
-      stratName: newStrat.name,
-      id: newStrat.id,
+      stratName: migratedStrategy.name,
+      id: migratedStrategy.id,
       storageDirectory: newDir.path,
     );
   }

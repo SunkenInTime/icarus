@@ -28,7 +28,6 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
 
   @override
   Widget build(BuildContext context) {
-    const double sideBarSize = 325;
     final agentList = ref.watch(agentFilterProvider).agentList;
     return Row(
       // mainAxisAlignment: MainAxisAlignment.end,
@@ -36,9 +35,10 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
       children: [
         const AbiilityBar(),
         Padding(
-          padding: const EdgeInsets.only(right: 8, bottom: 8),
+          padding: const EdgeInsets.only(
+              right: Settings.sideBarPanelPaddingRight, bottom: 8),
           child: Container(
-            width: sideBarSize + 20,
+            width: Settings.sideBarPanelWidth,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(30),
               color: Settings.tacticalVioletTheme.card,
@@ -104,7 +104,7 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                           child: Align(
                             alignment: Alignment.topRight,
                             child: SizedBox(
-                              width: sideBarSize,
+                              width: Settings.sideBarContentWidth,
                               child: ScrollConfiguration(
                                 behavior: ScrollConfiguration.of(context)
                                     .copyWith(scrollbars: false),

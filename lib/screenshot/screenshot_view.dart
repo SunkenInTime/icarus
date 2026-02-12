@@ -70,6 +70,10 @@ class ScreenshotView extends ConsumerWidget {
         .rebuildAllPaths(CoordinateSystem.instance);
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
+    final mapWidth = CoordinateSystem.screenShotSize.height *
+        CoordinateSystem.instance.mapAspectRatio;
+    final mapLeft = (CoordinateSystem.screenShotSize.width - mapWidth) / 2;
+
     return Container(
       color: const Color(0xFF1B1B1B),
       height: CoordinateSystem.screenShotSize.height,
@@ -81,15 +85,17 @@ class ScreenshotView extends ConsumerWidget {
             padding: EdgeInsets.all(4.0),
             child: DotGrid(isScreenshot: true),
           )),
-
-          Positioned.fill(
+          Positioned(
+            left: mapLeft,
+            top: 0,
+            width: mapWidth,
+            height: CoordinateSystem.screenShotSize.height,
             child: SvgPicture.asset(
               assetName,
               semanticsLabel: 'Map',
               fit: BoxFit.contain,
             ),
           ),
-
           const Positioned.fill(
             child: PlacedWidgetBuilder(),
           ),
