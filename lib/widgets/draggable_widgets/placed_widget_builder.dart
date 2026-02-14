@@ -64,10 +64,6 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    const Align(
-                      alignment: Alignment.topRight,
-                      child: DeleteArea(),
-                    ),
                     _ViewConeUtilityList(
                       coordinateSystem: coordinateSystem,
                       agentSize: agentSize,

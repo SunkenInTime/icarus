@@ -79,7 +79,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   @override
   Widget build(BuildContext context) {
     final double height = MediaQuery.sizeOf(context).height - 90;
-    final Size playAreaSize = Size(height * 1.2, height);
+    final Size playAreaSize = Size(height * (16 / 9), height);
     CoordinateSystem(playAreaSize: playAreaSize);
     final currentFolderId = ref.watch(folderProvider);
     final currentFolder = currentFolderId != null

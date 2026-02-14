@@ -132,11 +132,6 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          const Align(
-            alignment: Alignment.topRight,
-            child: DeleteArea(),
-          ),
-
           // None: unchanged items rendered at fixed position
           for (final e in none)
             _overlayItem(
@@ -316,10 +311,6 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          const Align(
-            alignment: Alignment.topRight,
-            child: DeleteArea(),
-          ),
           for (final widget in state.allWidgets)
             _widgetView(
               widget: widget,
