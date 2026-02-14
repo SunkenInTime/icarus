@@ -36,7 +36,9 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
         const AbiilityBar(),
         Padding(
           padding: const EdgeInsets.only(
-              right: Settings.sideBarPanelPaddingRight, bottom: 8),
+              left: Settings.sideBarPanelPaddingLeft,
+              right: Settings.sideBarPanelPaddingRight,
+              bottom: 8),
           child: Container(
             width: Settings.sideBarPanelWidth,
             decoration: BoxDecoration(

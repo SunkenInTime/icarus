@@ -333,14 +333,14 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   static StrategyData migrateToWorld16x9(StrategyData strat,
       {bool force = false}) {
-    if (!force && strat.versionNumber >= Settings.versionNumber) return strat;
+    if (!force && strat.versionNumber >= 38) return strat;
 
     const double normalizedHeight = 1000.0;
     const double mapAspectRatio = 1.24;
     const double worldAspectRatio = 16 / 9;
-    final mapWidth = normalizedHeight * mapAspectRatio;
-    final worldWidth = normalizedHeight * worldAspectRatio;
-    final padding = (worldWidth - mapWidth) / 2;
+    const mapWidth = normalizedHeight * mapAspectRatio;
+    const worldWidth = normalizedHeight * worldAspectRatio;
+    const padding = (worldWidth - mapWidth) / 2;
 
     Offset shift(Offset offset) => offset.translate(padding, 0);
 
