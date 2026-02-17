@@ -217,7 +217,7 @@ types:
         index: 1
   FreeDrawing:
     typeId: 11
-    nextIndex: 7
+    nextIndex: 8
     fields:
       listOfPoints:
         index: 0
@@ -231,6 +231,8 @@ types:
         index: 5
       boundingBox:
         index: 6
+      isRectangle:
+        index: 7
   Line:
     typeId: 12
     nextIndex: 7

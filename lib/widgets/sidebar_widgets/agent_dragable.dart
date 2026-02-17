@@ -64,6 +64,7 @@ class AgentDragable extends ConsumerWidget {
           ).scale(ref.read(screenZoomProvider), ref.read(screenZoomProvider));
         },
         child: InkWell(
+          mouseCursor: SystemMouseCursors.click,
           onTap: () {
             ref.read(abilityBarProvider.notifier).updateData(agent);
           },

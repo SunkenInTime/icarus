@@ -98,6 +98,7 @@ class AbiilityBar extends ConsumerWidget {
 
                 // dragAnchorStrategy: centerDragStrategy,
                 child: InkWell(
+                  mouseCursor: SystemMouseCursors.click,
                   onTap: () {},
                   child: Padding(
                     padding: const EdgeInsets.all(8.0),

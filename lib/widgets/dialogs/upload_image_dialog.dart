@@ -226,6 +226,7 @@ class _UploadDropSquare extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
+          mouseCursor: SystemMouseCursors.click,
           borderRadius: BorderRadius.circular(16),
           onTap: onPick,
           child: Stack(

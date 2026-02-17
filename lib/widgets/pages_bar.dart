@@ -379,6 +379,7 @@ class _PageRow extends StatelessWidget {
         ),
       ),
       child: InkWell(
+        mouseCursor: SystemMouseCursors.click,
         borderRadius: BorderRadius.circular(14),
         onTap: () => onSelect(page.id),
         child: SizedBox(

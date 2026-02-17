@@ -154,6 +154,7 @@ class _CustomExpansionTileState extends State<CustomExpansionTile>
         children: <Widget>[
           // Title row with expansion control
           InkWell(
+            mouseCursor: SystemMouseCursors.click,
             onTap: _handleTap,
             child: Padding(
               padding: widget.tilePadding ??

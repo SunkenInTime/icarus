@@ -11,6 +11,7 @@ enum InteractionState {
   drawing,
   erasing,
   deleting,
+  visionCone,
   lineUpPlacing,
 }
 

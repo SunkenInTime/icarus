@@ -613,13 +613,14 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       isDotted: fields[3] as bool,
       hasArrow: fields[4] as bool,
       id: fields[5] as String,
+      isRectangle: fields[7] == null ? false : fields[7] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, FreeDrawing obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(7)
       ..writeByte(0)
       ..write(obj.listOfPoints)
       ..writeByte(2)
@@ -631,7 +632,9 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       ..writeByte(5)
       ..write(obj.id)
       ..writeByte(6)
-      ..write(obj.boundingBox);
+      ..write(obj.boundingBox)
+      ..writeByte(7)
+      ..write(obj.isRectangle);
   }
 
   @override

@@ -21,7 +21,6 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
-import 'package:icarus/widgets/delete_area.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/utility_widget_builder.dart';
@@ -141,6 +140,23 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
               }
 
               ref.read(abilityProvider.notifier).addAbility(placedAbility);
+            } else if (details.data is VisionConeToolData) {
+              final visionConeData = details.data as VisionConeToolData;
+              final placedUtility = PlacedUtility(
+                id: uuid.v4(),
+                type: visionConeData.type,
+                position: normalizedPosition,
+                angle: visionConeData.angle,
+              );
+              ref.read(utilityProvider.notifier).addUtility(placedUtility);
+            } else if (details.data is SpikeToolData) {
+              final spikeData = details.data as SpikeToolData;
+              final placedUtility = PlacedUtility(
+                id: uuid.v4(),
+                type: spikeData.type,
+                position: normalizedPosition,
+              );
+              ref.read(utilityProvider.notifier).addUtility(placedUtility);
             }
           },
           onLeave: (data) {
