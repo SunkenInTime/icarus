@@ -19,6 +19,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/team_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/widgets/delete_area.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
@@ -63,9 +64,9 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    const Align(
+                    Align(
                       alignment: Alignment.topRight,
-                      child: DeleteArea(),
+                      child: const DeleteArea(),
                     ),
                     _ViewConeUtilityList(
                       coordinateSystem: coordinateSystem,
