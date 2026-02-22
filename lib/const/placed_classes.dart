@@ -20,10 +20,10 @@ Offset getFlippedPosition({
 }) {
   final coordinateSystem = CoordinateSystem.instance;
   final wNorm = (scaledSize.dx / coordinateSystem.effectiveSize.width) *
-      coordinateSystem.normalizedWidth;
+      coordinateSystem.worldNormalizedWidth;
   final hNorm = (scaledSize.dy / coordinateSystem.effectiveSize.height) *
       coordinateSystem.normalizedHeight;
-  final flippedX = coordinateSystem.normalizedWidth - position.dx - wNorm;
+  final flippedX = coordinateSystem.worldNormalizedWidth - position.dx - wNorm;
   double flippedY = 0;
 
   if (isRotatable) {

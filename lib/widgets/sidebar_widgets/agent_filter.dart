@@ -13,6 +13,7 @@ class AgentFilter extends ConsumerWidget {
     AgentRole.initiator,
     AgentRole.sentinel,
   ];
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ShadTabs<FilterState>(
@@ -34,6 +35,11 @@ class AgentFilter extends ConsumerWidget {
           // label: Text("Role"),
           child: Text("Role"),
         ),
+        // ShadTab<FilterState>(
+        //   value: FilterState.role,
+        //   // label: Text("Role"),
+        //   child: Text("Favorite"),
+        // ),
       ],
       onChanged: (value) {
         ref.read(agentFilterProvider.notifier).updateFilterState(value);

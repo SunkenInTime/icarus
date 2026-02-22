@@ -6,6 +6,7 @@ import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -70,8 +71,21 @@ class ScreenshotView extends ConsumerWidget {
         .rebuildAllPaths(CoordinateSystem.instance);
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
+    final mapWidth = CoordinateSystem.screenShotSize.height *
+        CoordinateSystem.instance.mapAspectRatio;
+    final mapLeft = (CoordinateSystem.screenShotSize.width - mapWidth) / 2;
+
     return Container(
-      color: const Color(0xFF1B1B1B),
+      decoration: BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment.center,
+          radius: 1.5,
+          colors: [
+            const Color(0xff18181b),
+            Settings.tacticalVioletTheme.background,
+          ],
+        ),
+      ),
       height: CoordinateSystem.screenShotSize.height,
       width: CoordinateSystem.screenShotSize.width,
       child: Stack(
@@ -81,15 +95,17 @@ class ScreenshotView extends ConsumerWidget {
             padding: EdgeInsets.all(4.0),
             child: DotGrid(isScreenshot: true),
           )),
-
-          Positioned.fill(
+          Positioned(
+            left: mapLeft,
+            top: 0,
+            width: mapWidth,
+            height: CoordinateSystem.screenShotSize.height,
             child: SvgPicture.asset(
               assetName,
               semanticsLabel: 'Map',
               fit: BoxFit.contain,
             ),
           ),
-
           const Positioned.fill(
             child: PlacedWidgetBuilder(),
           ),

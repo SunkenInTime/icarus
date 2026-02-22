@@ -11,7 +11,7 @@ class CoordinateSystem {
   final Size _playAreaSize;
   Size get playAreaSize => _playAreaSize;
 
-  static const Size screenShotSize = Size(1296, 1080);
+  static const Size screenShotSize = Size(1920, 1080);
   bool isScreenshot = false;
 
   void setIsScreenshot(bool value) {
@@ -26,7 +26,13 @@ class CoordinateSystem {
   Size get effectiveSize => _effectiveSize;
   // The normalized coordinate space will maintain this aspect ratio
   final double normalizedHeight = 1000.0;
-  late final double normalizedWidth = normalizedHeight * 1.24;
+  final double mapAspectRatio = 1.24;
+  final double worldAspectRatio = 16 / 9;
+
+  double get mapNormalizedWidth => normalizedHeight * mapAspectRatio;
+  double get worldNormalizedWidth => normalizedHeight * worldAspectRatio;
+  double get mapPaddingNormalizedX =>
+      (worldNormalizedWidth - mapNormalizedWidth) / 2;
 
   factory CoordinateSystem({required Size playAreaSize}) {
     _instance = CoordinateSystem._(playAreaSize: playAreaSize);
@@ -42,20 +48,18 @@ class CoordinateSystem {
   }
 
   Offset screenToCoordinate(Offset screenPoint) {
-    // Convert screen points to the normalized space while maintaining aspect ratio
-    double normalizedX =
-        (screenPoint.dx / _effectiveSize.width) * normalizedWidth;
-    double normalizedY =
+    final double normalizedX =
+        (screenPoint.dx / _effectiveSize.width) * worldNormalizedWidth;
+    final double normalizedY =
         (screenPoint.dy / _effectiveSize.height) * normalizedHeight;
 
     return Offset(normalizedX, normalizedY);
   }
 
   Offset coordinateToScreen(Offset coordinates) {
-    // Convert from normalized space back to screen space while maintaining aspect ratio
-    double screenX =
-        (coordinates.dx / normalizedWidth) * (_effectiveSize.width);
-    double screenY =
+    final double screenX =
+        (coordinates.dx / worldNormalizedWidth) * (_effectiveSize.width);
+    final double screenY =
         (coordinates.dy / normalizedHeight) * (_effectiveSize.height);
 
     return Offset(screenX, screenY);
@@ -77,30 +81,7 @@ class CoordinateSystem {
       );
 
   Offset convertOldCoordinateToNew(Offset oldCoordinate) {
-    // Calculate the ratio between old and new play area heights
-    double screenHeight = _effectiveSize.height + 90;
-    log("currentScreen height: $screenHeight");
-    double oldPlayAreaHeight = screenHeight - 56;
-    double newPlayAreaHeight = screenHeight - 90;
-    double heightRatio = oldPlayAreaHeight / newPlayAreaHeight;
-
-    log("$heightRatio");
-    // Apply the ratio to both dimensions (since width is based on height * 1.2)
-    return Offset(
-        oldCoordinate.dx * heightRatio, oldCoordinate.dy * heightRatio);
-  }
-
-  Offset loggedCoordinateToScreen(Offset coordinates) {
-    // Convert from normalized space back to screen space while maintaining aspect ratio
-    double screenX =
-        (coordinates.dx / normalizedWidth) * (_effectiveSize.width);
-    double screenY =
-        (coordinates.dy / normalizedHeight) * (_effectiveSize.height);
-
-    log("normalized Coordinates: ${coordinates.toString()}");
-    log("screen Coordinates: ${Offset(screenX, screenY).toString()}");
-
-    return Offset(screenX, screenY);
+    return oldCoordinate;
   }
 
   // Convenience method to wrap a widget with scaled dimensions
@@ -118,7 +99,7 @@ class CoordinateSystem {
 
   bool isOutOfBounds(Offset offset) {
     const int tolerance = 10;
-    return offset.dx > normalizedWidth - tolerance ||
+    return offset.dx > worldNormalizedWidth - tolerance ||
         offset.dy > normalizedHeight - tolerance ||
         offset.dx < 0 + tolerance ||
         offset.dy < 0 + tolerance;
