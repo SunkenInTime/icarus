@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show Size;
 
 import 'package:flutter/material.dart';
@@ -18,6 +19,23 @@ enum MapValue {
 }
 
 class Maps {
+  // Playable dimensions (meters) derived from Valorant map bounds after removing
+  // display-icon padding from the padded minimap world extent.
+  static const Map<MapValue, Size> mapPlayableMeters = {
+    MapValue.ascent: Size(12418.91682031634, 13326.491033008337),
+    MapValue.bind: Size(11512.621459595475, 12175.77133315273),
+    MapValue.breeze: Size(13395.904430787905, 13222.156668189),
+    MapValue.lotus: Size(12179.83511197221, 11002.003263176117),
+    MapValue.icebox: Size(11495.558837879202, 13083.067808295538),
+    MapValue.sunset: Size(11881.031268613191, 12577.223294152906),
+    MapValue.split: Size(15738.349327986287, 14941.778019870651),
+    MapValue.haven: Size(11186.97301971374, 12517.093011464156),
+    MapValue.fracture: Size(11583.889845070918, 11148.643072224917),
+    MapValue.abyss: Size(12019.131598227425, 11663.010340975046),
+    MapValue.pearl: Size(12720.700077897336, 11959.810989473342),
+    MapValue.corrode: Size(12031.771816700097, 13671.313297776283),
+  };
+
   static List<MapValue> availableMaps = [
     MapValue.bind,
     MapValue.haven,
@@ -51,20 +69,20 @@ class Maps {
     MapValue.corrode: 'corrode',
   };
 
-  static Map<MapValue, double> mapScale = {
-    MapValue.ascent: 1,
-    MapValue.breeze: 1.02,
-    MapValue.lotus: 1.25,
-    MapValue.icebox: 1.05,
-    MapValue.split: 1.18,
-    MapValue.haven: 1.09,
-    MapValue.fracture: 1.221,
-    MapValue.pearl: 1.185,
-    MapValue.abyss: 1.167,
-    MapValue.sunset: 1.048,
-    MapValue.bind: .835,
-    MapValue.corrode: .985,
-  };
+  // Per-map scalar for ability rendering using Ascent as baseline (1.0).
+  // Formula: sqrt((playableWidth * playableHeight) / ascentPlayableArea)
+  static final Map<MapValue, double> mapScale = buildMapScaleFromPlayableArea();
+
+  static Map<MapValue, double> buildMapScaleFromPlayableArea({
+    MapValue baselineMap = MapValue.ascent,
+  }) {
+    final ascent = mapPlayableMeters[baselineMap]!;
+    final ascentArea = ascent.width * ascent.height;
+    return {
+      for (final entry in mapPlayableMeters.entries)
+        entry.key: math.sqrt((entry.value.width * entry.value.height) / ascentArea),
+    };
+  }
 
   static const Map<MapValue, Size> mapViewBox = {
     MapValue.ascent: Size(411, 474),

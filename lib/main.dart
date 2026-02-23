@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/const/maps.dart';
 
 import 'package:windows_single_instance/windows_single_instance.dart';
 import 'package:icarus/const/custom_icons.dart';
@@ -59,6 +60,7 @@ Future<void> main(List<String> args) async {
     final tempDir = await getTemporaryDirectory();
     log("App Support Directory: ${dir.path}");
     log("Temporary Directory: ${tempDir.path}");
+    log("Map Scale: ${Maps.mapScale}");
     await Hive.initFlutter(dir.path);
   }
 
