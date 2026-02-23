@@ -159,7 +159,7 @@ class AgentData implements DraggableData {
   final String name;
   final String iconPath;
 
-  static const double inGameMeters = 5.5;
+  static const double inGameMeters = 5.8;
   // static const double inGameMeters = 6;
 
   static const double inGameMetersDiameter = inGameMeters * 2;
