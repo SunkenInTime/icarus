@@ -13,6 +13,7 @@ enum InteractionState {
   deleting,
   visionCone,
   lineUpPlacing,
+  customAbility,
 }
 
 final interactionStateProvider =

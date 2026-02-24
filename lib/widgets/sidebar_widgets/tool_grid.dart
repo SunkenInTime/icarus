@@ -17,12 +17,13 @@ import 'package:icarus/widgets/dialogs/upload_image_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/delete_options.dart';
+import 'package:icarus/widgets/sidebar_widgets/custom_ability_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/vision_cone_tools.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
-enum _ContextBarMode { drawing, deleting, visionCone, none }
+enum _ContextBarMode { drawing, deleting, visionCone, customAbility, none }
 
 class BottomContextBar extends ConsumerWidget {
   const BottomContextBar({super.key});
@@ -37,6 +38,7 @@ class BottomContextBar extends ConsumerWidget {
       InteractionState.drawing => _ContextBarMode.drawing,
       InteractionState.deleting => _ContextBarMode.deleting,
       InteractionState.visionCone => _ContextBarMode.visionCone,
+      InteractionState.customAbility => _ContextBarMode.customAbility,
       _ => _ContextBarMode.none,
     };
 
@@ -65,6 +67,7 @@ class BottomContextBar extends ConsumerWidget {
     return switch (mode) {
       _ContextBarMode.drawing => const DrawingTools(key: ValueKey('drawing')),
       _ContextBarMode.visionCone => const VisionConeTools(key: ValueKey('visionCone')),
+      _ContextBarMode.customAbility => const CustomAbilityTools(key: ValueKey('customAbility')),
       _ContextBarMode.deleting =>
         const DeleteOptions(key: ValueKey('deleting')),
       _ContextBarMode.none => const SizedBox.shrink(key: ValueKey('none')),
@@ -324,6 +327,24 @@ class ToolGrid extends ConsumerWidget {
                     ),
                   ),
                 ),
+              ),
+              SelectableIconButton(
+                tooltip: "Custom Shapes",
+                onPressed: () {
+                  switch (currentInteractionState) {
+                    case InteractionState.customAbility:
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.navigation);
+                    default:
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.customAbility);
+                  }
+                },
+                icon: const Icon(Icons.shape_line_outlined, size: 20),
+                isSelected:
+                    currentInteractionState == InteractionState.customAbility,
               ),
             ],
           ),

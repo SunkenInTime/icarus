@@ -24,6 +24,7 @@ import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/utility_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_view_cone_widget.dart';
 import 'package:icarus/const/utilities.dart';
@@ -90,6 +91,9 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                       coordinateSystem: coordinateSystem,
                       agentSize: agentSize,
                     ),
+                    _CustomShapeUtilityList(
+                      coordinateSystem: coordinateSystem,
+                    ),
                     const Positioned.fill(
                       child: LineUpLinePainter(),
                     ),
@@ -150,6 +154,19 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 angle: visionConeData.angle,
               );
               ref.read(utilityProvider.notifier).addUtility(placedUtility);
+            } else if (details.data is CustomAbilityToolData) {
+              final customData = details.data as CustomAbilityToolData;
+              final placedUtility = PlacedUtility(
+                id: uuid.v4(),
+                type: customData.type,
+                position: normalizedPosition,
+              );
+              ref.read(utilityProvider.notifier).addUtility(
+                    placedUtility,
+                    customWidthMeters: customData.widthMeters,
+                    customHeightMeters: customData.heightMeters,
+                    customColor: customData.color,
+                  );
             } else if (details.data is SpikeToolData) {
               final spikeData = details.data as SpikeToolData;
               final placedUtility = PlacedUtility(
@@ -434,9 +451,9 @@ class _UtilityList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final utilities = ref
-        .watch(utilityProvider)
-        .where((utility) => !UtilityData.isViewCone(utility.type));
+    final utilities = ref.watch(utilityProvider).where((utility) =>
+        !UtilityData.isViewCone(utility.type) &&
+        !UtilityData.isCustomShape(utility.type));
 
     return Stack(
       clipBehavior: Clip.none,
@@ -477,6 +494,101 @@ class _UtilityList extends ConsumerWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _CustomShapeUtilityList extends ConsumerWidget {
+  const _CustomShapeUtilityList({
+    required this.coordinateSystem,
+  });
+
+  final CoordinateSystem coordinateSystem;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final utilities = ref
+        .watch(utilityProvider)
+        .where((utility) => UtilityData.isCustomShape(utility.type));
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (final placedUtility in utilities)
+          Positioned(
+            key: ValueKey(placedUtility.id),
+            left:
+                coordinateSystem.coordinateToScreen(placedUtility.position).dx,
+            top: coordinateSystem.coordinateToScreen(placedUtility.position).dy,
+            child: _CustomShapeUtilityWidget(
+              utility: placedUtility,
+              onDragEnd: (details) {
+                final renderBox = context.findRenderObject() as RenderBox;
+                final localOffset = renderBox.globalToLocal(details.offset);
+                final virtualOffset =
+                    coordinateSystem.screenToCoordinate(localOffset);
+
+                if (coordinateSystem.isOutOfBounds(virtualOffset)) {
+                  ref
+                      .read(utilityProvider.notifier)
+                      .removeUtility(placedUtility.id);
+                  return;
+                }
+
+                ref
+                    .read(utilityProvider.notifier)
+                    .updatePosition(virtualOffset, placedUtility.id);
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _CustomShapeUtilityWidget extends ConsumerWidget {
+  const _CustomShapeUtilityWidget({
+    required this.utility,
+    required this.onDragEnd,
+  });
+
+  final PlacedUtility utility;
+  final Function(DraggableDetails details) onDragEnd;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final shape = utility.type == UtilityType.customCircle
+        ? CustomShapeType.circle
+        : CustomShapeType.rectangle;
+    final color = Color(utility.customColorValue);
+
+    final widget = CustomShapeWidget(
+      shape: shape,
+      widthMeters: utility.customWidthMeters,
+      heightMeters: utility.customHeightMeters,
+      id: utility.id,
+      color: color,
+    );
+
+    return Draggable<PlacedUtility>(
+      data: utility,
+      dragAnchorStrategy:
+          ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
+      childWhenDragging: const SizedBox.shrink(),
+      feedback: Opacity(
+        opacity: Settings.feedbackOpacity,
+        child: ZoomTransform(
+          child: CustomShapeWidget(
+            shape: shape,
+            widthMeters: utility.customWidthMeters,
+            heightMeters: utility.customHeightMeters,
+            id: null,
+            color: color,
+          ),
+        ),
+      ),
+      onDragEnd: onDragEnd,
+      child: widget,
     );
   }
 }

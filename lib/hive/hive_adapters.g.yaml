@@ -267,7 +267,7 @@ types:
         index: 1
   PlacedUtility:
     typeId: 15
-    nextIndex: 8
+    nextIndex: 11
     fields:
       type:
         index: 0
@@ -285,9 +285,15 @@ types:
         index: 6
       attachedAgentId:
         index: 7
+      customWidthMeters:
+        index: 8
+      customHeightMeters:
+        index: 9
+      customColorValue:
+        index: 10
   UtilityType:
     typeId: 16
-    nextIndex: 4
+    nextIndex: 6
     fields:
       spike:
         index: 0
@@ -297,6 +303,10 @@ types:
         index: 2
       viewCone40:
         index: 3
+      customCircle:
+        index: 4
+      customRectangle:
+        index: 5
   Folder:
     typeId: 17
     nextIndex: 7

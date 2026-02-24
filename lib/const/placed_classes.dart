@@ -505,7 +505,14 @@ class PlacedUtility extends PlacedWidget {
   }
 
   void switchSides() {
-    final size = UtilityData.utilityWidgets[type]!.getSize();
+    final Offset size;
+    if (UtilityData.isCustomShape(type)) {
+      final w = customWidthMeters * AgentData.inGameMetersDiameter;
+      final h = customHeightMeters * AgentData.inGameMetersDiameter;
+      size = Offset(w, h);
+    } else {
+      size = UtilityData.utilityWidgets[type]!.getSize();
+    }
     final scaledSize = size.scale(CoordinateSystem.instance.scaleFactor,
         CoordinateSystem.instance.scaleFactor);
 
@@ -602,12 +609,24 @@ class PlacedUtility extends PlacedWidget {
   @JsonKey(defaultValue: null)
   String? attachedAgentId;
 
+  @JsonKey(defaultValue: 0.0)
+  double customWidthMeters;
+
+  @JsonKey(defaultValue: 0.0)
+  double customHeightMeters;
+
+  @JsonKey(defaultValue: 0xFFFFFFFF)
+  int customColorValue;
+
   PlacedUtility({
     required this.type,
     required super.position,
     required super.id,
     this.angle = 0.0,
     this.attachedAgentId,
+    this.customWidthMeters = 0.0,
+    this.customHeightMeters = 0.0,
+    this.customColorValue = 0xFFFFFFFF,
   });
 
   factory PlacedUtility.fromJson(Map<String, dynamic> json) =>

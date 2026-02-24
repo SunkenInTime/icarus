@@ -45,6 +45,8 @@ class InteractionStateDisplay extends ConsumerWidget {
         return 'Vision Cone Tools';
       case InteractionState.lineUpPlacing:
         return 'Placing Lineup';
+      case InteractionState.customAbility:
+        return 'Custom Shape Tools';
     }
   }
 }

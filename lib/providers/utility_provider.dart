@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:ui';
+import 'package:flutter/material.dart' show Color;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -20,7 +21,22 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     return [];
   }
 
-  void addUtility(PlacedUtility utility) {
+  void addUtility(
+    PlacedUtility utility, {
+    double? customWidthMeters,
+    double? customHeightMeters,
+    Color? customColor,
+  }) {
+    if (customWidthMeters != null) {
+      utility.customWidthMeters = customWidthMeters;
+    }
+    if (customHeightMeters != null) {
+      utility.customHeightMeters = customHeightMeters;
+    }
+    if (customColor != null) {
+      utility.customColorValue = customColor.toARGB32();
+    }
+
     final action = UserAction(
       type: ActionType.addition,
       id: utility.id,

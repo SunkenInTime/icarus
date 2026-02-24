@@ -151,6 +151,11 @@ PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
       id: json['id'] as String,
       angle: (json['angle'] as num?)?.toDouble() ?? 0.0,
       attachedAgentId: json['attachedAgentId'] as String?,
+      customWidthMeters: (json['customWidthMeters'] as num?)?.toDouble() ?? 0.0,
+      customHeightMeters:
+          (json['customHeightMeters'] as num?)?.toDouble() ?? 0.0,
+      customColorValue:
+          (json['customColorValue'] as num?)?.toInt() ?? 4294967295,
     )
       ..isDeleted = json['isDeleted'] as bool? ?? false
       ..rotation = (json['rotation'] as num).toDouble()
@@ -166,6 +171,9 @@ Map<String, dynamic> _$PlacedUtilityToJson(PlacedUtility instance) =>
       'length': instance.length,
       'angle': instance.angle,
       'attachedAgentId': instance.attachedAgentId,
+      'customWidthMeters': instance.customWidthMeters,
+      'customHeightMeters': instance.customHeightMeters,
+      'customColorValue': instance.customColorValue,
     };
 
 const _$UtilityTypeEnumMap = {
@@ -173,4 +181,6 @@ const _$UtilityTypeEnumMap = {
   UtilityType.viewCone180: 'viewCone180',
   UtilityType.viewCone90: 'viewCone90',
   UtilityType.viewCone40: 'viewCone40',
+  UtilityType.customCircle: 'customCircle',
+  UtilityType.customRectangle: 'customRectangle',
 };

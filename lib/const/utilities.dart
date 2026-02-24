@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/image_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 
@@ -8,6 +9,8 @@ enum UtilityType {
   viewCone180,
   viewCone90,
   viewCone40,
+  customCircle,
+  customRectangle,
 }
 
 class UtilityData {
@@ -20,6 +23,16 @@ class UtilityData {
     UtilityType.viewCone180: ViewConeUtility(angle: 103, defaultLength: 50),
     UtilityType.viewCone90: ViewConeUtility(angle: 60, defaultLength: 50),
     UtilityType.viewCone40: ViewConeUtility(angle: 20, defaultLength: 50),
+    UtilityType.customCircle: CustomShapeUtility(
+      shape: CustomShapeType.circle,
+      widthMeters: 5,
+      heightMeters: 5,
+    ),
+    UtilityType.customRectangle: CustomShapeUtility(
+      shape: CustomShapeType.rectangle,
+      widthMeters: 5,
+      heightMeters: 10,
+    ),
   };
 
   /// Helper to check if a utility type is a view cone
@@ -27,6 +40,11 @@ class UtilityData {
     return type == UtilityType.viewCone180 ||
         type == UtilityType.viewCone90 ||
         type == UtilityType.viewCone40;
+  }
+
+  static bool isCustomShape(UtilityType type) {
+    return type == UtilityType.customCircle ||
+        type == UtilityType.customRectangle;
   }
 
   /// Get the angle for a view cone type
@@ -134,6 +152,83 @@ class ImageUtility extends Utilities {
   @override
   Offset getSize() {
     return Offset(size, size);
+  }
+}
+
+enum CustomShapeType { circle, rectangle }
+
+class CustomAbilityToolData implements DraggableData {
+  final UtilityType type;
+  final CustomShapeType shape;
+  final double widthMeters;
+  final double heightMeters;
+  final Color color;
+
+  const CustomAbilityToolData({
+    required this.type,
+    required this.shape,
+    required this.widthMeters,
+    required this.heightMeters,
+    required this.color,
+  });
+
+  Offset getScaledCenterPoint({
+    required double scaleFactor,
+    required double screenZoom,
+  }) {
+    final sizeInUnits = widthMeters * AgentData.inGameMetersDiameter;
+    final center = Offset(sizeInUnits / 2, sizeInUnits / 2);
+    return center.scale(scaleFactor * screenZoom, scaleFactor * screenZoom);
+  }
+}
+
+class CustomShapeUtility extends Utilities {
+  final CustomShapeType shape;
+  final double widthMeters;
+  final double heightMeters;
+
+  CustomShapeUtility({
+    required this.shape,
+    required this.widthMeters,
+    required this.heightMeters,
+  });
+
+  double get widthUnits => widthMeters * AgentData.inGameMetersDiameter;
+  double get heightUnits => heightMeters * AgentData.inGameMetersDiameter;
+
+  @override
+  Offset getAnchorPoint({String? id, double? length, double? rotation}) {
+    return Offset(widthUnits / 2, heightUnits / 2);
+  }
+
+  @override
+  Offset getSize() {
+    return Offset(widthUnits, heightUnits);
+  }
+
+  @override
+  Widget createWidget({String? id, double? rotation, double? length}) {
+    return CustomShapeWidget(
+      shape: shape,
+      widthMeters: widthMeters,
+      heightMeters: heightMeters,
+      id: id,
+    );
+  }
+
+  Widget createWidgetWithParams({
+    String? id,
+    double? overrideWidthMeters,
+    double? overrideHeightMeters,
+    Color color = Colors.white,
+  }) {
+    return CustomShapeWidget(
+      shape: shape,
+      widthMeters: overrideWidthMeters ?? widthMeters,
+      heightMeters: overrideHeightMeters ?? heightMeters,
+      id: id,
+      color: color,
+    );
   }
 }
 
