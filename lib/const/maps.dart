@@ -48,17 +48,17 @@ class Maps {
   };
 
   static Map<MapValue, double> mapScale = {
-    MapValue.ascent: 1,
-    MapValue.breeze: 1.02,
-    MapValue.lotus: 1.25,
-    MapValue.icebox: 1.05,
-    MapValue.split: 1.18,
-    MapValue.haven: 1.09,
-    MapValue.fracture: 1,
-    MapValue.pearl: 1.185,
-    MapValue.abyss: 1.167,
-    MapValue.sunset: 1.048,
-    MapValue.bind: .835,
-    MapValue.corrode: .985,
+    MapValue.ascent: 1.0,
+    MapValue.bind: 0.9203130690340208,
+    MapValue.breeze: 1.0345164594726595,
+    MapValue.lotus: 0.8998224500275241,
+    MapValue.icebox: 0.953279109045773,
+    MapValue.sunset: 0.9502102049421427,
+    MapValue.split: 1.1920129279062075,
+    MapValue.haven: 0.9198314832784289,
+    MapValue.fracture: 0.8833614658628114,
+    MapValue.abyss: 0.9203268885006505,
+    MapValue.pearl: 0.9587776459743304,
+    MapValue.corrode: 0.9969425827502745,
   };
 }
