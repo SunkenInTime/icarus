@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -9,21 +10,23 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
+import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/dialogs/upload_image_dialog.dart';
+import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/delete_options.dart';
 import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
+import 'package:icarus/widgets/sidebar_widgets/vision_cone_tools.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
-enum _ContextBarMode { drawing, deleting, none }
+enum _ContextBarMode { drawing, deleting, visionCone, none }
 
 class BottomContextBar extends ConsumerWidget {
   const BottomContextBar({super.key});
 
-  static const double _expandedHeight = 150.0;
   static const Duration _animationDuration = Duration(milliseconds: 200);
 
   @override
@@ -33,29 +36,26 @@ class BottomContextBar extends ConsumerWidget {
     final mode = switch (interactionState) {
       InteractionState.drawing => _ContextBarMode.drawing,
       InteractionState.deleting => _ContextBarMode.deleting,
+      InteractionState.visionCone => _ContextBarMode.visionCone,
       _ => _ContextBarMode.none,
     };
 
-    final isExpanded = mode != _ContextBarMode.none;
-
     return ClipRect(
-      child: AnimatedContainer(
+      child: AnimatedSize(
         duration: _animationDuration,
         curve: Curves.easeInOut,
-        height: isExpanded ? _expandedHeight : 0,
-        child: SingleChildScrollView(
-          child: AnimatedSwitcher(
-            duration: _animationDuration,
-            switchInCurve: Curves.easeIn,
-            switchOutCurve: Curves.easeOut,
-            transitionBuilder: (child, animation) {
-              return FadeTransition(
-                opacity: animation,
-                child: child,
-              );
-            },
-            child: _buildContent(mode),
-          ),
+        alignment: Alignment.topCenter,
+        child: AnimatedSwitcher(
+          duration: _animationDuration,
+          switchInCurve: Curves.easeIn,
+          switchOutCurve: Curves.easeOut,
+          transitionBuilder: (child, animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: child,
+            );
+          },
+          child: _buildContent(mode),
         ),
       ),
     );
@@ -64,6 +64,7 @@ class BottomContextBar extends ConsumerWidget {
   Widget _buildContent(_ContextBarMode mode) {
     return switch (mode) {
       _ContextBarMode.drawing => const DrawingTools(key: ValueKey('drawing')),
+      _ContextBarMode.visionCone => const VisionConeTools(key: ValueKey('visionCone')),
       _ContextBarMode.deleting =>
         const DeleteOptions(key: ValueKey('deleting')),
       _ContextBarMode.none => const SizedBox.shrink(key: ValueKey('none')),
@@ -250,90 +251,78 @@ class ToolGrid extends ConsumerWidget {
                     InteractionState.lineUpPlacing,
               ),
               ShadTooltip(
-                builder: (context) => const Text("Spike"),
-                child: ShadIconButton.secondary(
+                builder: (context) => const Text("Vision Cone Tools"),
+                child: SelectableIconButton(
+                  tooltip: "Vision Cone R",
                   onPressed: () {
-                    ref
-                        .read(interactionStateProvider.notifier)
-                        .update(InteractionState.navigation);
-                    const uuid = Uuid();
-
-                    ref.read(utilityProvider.notifier).addUtility(
-                          PlacedUtility(
-                            position: const Offset(500, 500),
-                            id: uuid.v4(),
-                            type: UtilityType.spike,
-                          ),
-                        );
-                  },
-                  icon: SvgPicture.asset(
-                    "assets/spike.svg",
-                    width: 20,
-                    height: 20,
-                  ),
-                ),
-              ),
-              ShadTooltip(
-                builder: (context) => const Text("View Cone 180°"),
-                child: ShadIconButton.secondary(
-                  onPressed: () {
-                    ref
-                        .read(interactionStateProvider.notifier)
-                        .update(InteractionState.navigation);
-                    const uuid = Uuid();
-
-                    ref.read(utilityProvider.notifier).addUtility(
-                          PlacedUtility(
-                            position: const Offset(500, 500),
-                            id: uuid.v4(),
-                            type: UtilityType.viewCone180,
-                            angle: 180,
-                          ),
-                        );
+                    switch (currentInteractionState) {
+                      case InteractionState.visionCone:
+                        ref
+                            .read(interactionStateProvider.notifier)
+                            .update(InteractionState.navigation);
+                      default:
+                        ref
+                            .read(interactionStateProvider.notifier)
+                            .update(InteractionState.visionCone);
+                    }
                   },
                   icon: const Icon(LucideIcons.eye, size: 20),
+                  isSelected:
+                      currentInteractionState == InteractionState.visionCone,
                 ),
               ),
               ShadTooltip(
-                builder: (context) => const Text("View Cone 90°"),
-                child: ShadIconButton.secondary(
-                  onPressed: () {
-                    ref
-                        .read(interactionStateProvider.notifier)
-                        .update(InteractionState.navigation);
-                    const uuid = Uuid();
-
-                    ref.read(utilityProvider.notifier).addUtility(
-                          PlacedUtility(
-                            position: const Offset(500, 500),
-                            id: uuid.v4(),
-                            type: UtilityType.viewCone90,
-                            angle: 90,
-                          ),
-                        );
+                builder: (context) => const Text("Spike"),
+                child: Draggable<SpikeToolData>(
+                  data: SpikeToolData.fromUtility(
+                    UtilityData.utilityWidgets[UtilityType.spike]!
+                        as ImageUtility,
+                  ),
+                  dragAnchorStrategy: (draggable, context, position) {
+                    final data = draggable.data as SpikeToolData;
+                    return data.getScaledCenterPoint(
+                      scaleFactor: CoordinateSystem.instance.scaleFactor,
+                      screenZoom: ref.read(screenZoomProvider),
+                    );
                   },
-                  icon: const Icon(LucideIcons.scanEye, size: 20),
-                ),
-              ),
-              ShadTooltip(
-                builder: (context) => const Text("View Cone 40°"),
-                child: ShadIconButton.secondary(
-                  onPressed: () {
-                    ref
-                        .read(interactionStateProvider.notifier)
-                        .update(InteractionState.navigation);
-                    const uuid = Uuid();
-
-                    ref.read(utilityProvider.notifier).addUtility(
-                          PlacedUtility(
-                            position: const Offset(500, 500),
-                            id: uuid.v4(),
-                            type: UtilityType.viewCone40,
-                            angle: 40,
-                          ),
-                        );
+                  onDragStarted: () {
+                    if (ref.read(interactionStateProvider) ==
+                            InteractionState.drawing ||
+                        ref.read(interactionStateProvider) ==
+                            InteractionState.erasing) {
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.navigation);
+                    }
                   },
-                  icon: const Icon(LucideIcons.focus, size: 20),
+                  feedback: Opacity(
+                    opacity: Settings.feedbackOpacity,
+                    child: ZoomTransform(
+                      child: UtilityData.utilityWidgets[UtilityType.spike]!
+                          .createWidget(id: null),
+                    ),
+                  ),
+                  child: ShadIconButton.secondary(
+                    onPressed: () {
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.navigation);
+                      const uuid = Uuid();
+
+                      ref.read(utilityProvider.notifier).addUtility(
+                            PlacedUtility(
+                              position: const Offset(500, 500),
+                              id: uuid.v4(),
+                              type: UtilityType.spike,
+                            ),
+                          );
+                    },
+                    icon: SvgPicture.asset(
+                      "assets/spike.svg",
+                      width: 20,
+                      height: 20,
+                    ),
+                  ),
                 ),
               ),
             ],

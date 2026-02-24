@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/image_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 
@@ -41,6 +42,70 @@ class UtilityData {
         return 0;
     }
   }
+
+  static bool isViewConePresetType(UtilityType type) => isViewCone(type);
+
+  static ViewConeUtility getViewConePreset(UtilityType type) {
+    return utilityWidgets[type]! as ViewConeUtility;
+  }
+
+  static double getViewConeSpawnAngle(UtilityType type) {
+    switch (type) {
+      case UtilityType.viewCone180:
+        return 180;
+      case UtilityType.viewCone90:
+        return 90;
+      case UtilityType.viewCone40:
+        return 40;
+      default:
+        return 0;
+    }
+  }
+}
+
+class VisionConeToolData implements DraggableData {
+  final UtilityType type;
+  final double angle;
+  final Offset centerPoint;
+
+  const VisionConeToolData({
+    required this.type,
+    required this.angle,
+    required this.centerPoint,
+  });
+
+  factory VisionConeToolData.fromType(UtilityType type) {
+    final utility = UtilityData.getViewConePreset(type);
+    return VisionConeToolData(
+      type: type,
+      angle: UtilityData.getViewConeSpawnAngle(type),
+      centerPoint: utility.getCenterPoint(),
+    );
+  }
+}
+
+class SpikeToolData implements DraggableData {
+  final UtilityType type;
+  final Offset centerPoint;
+
+  const SpikeToolData({
+    required this.type,
+    required this.centerPoint,
+  });
+
+  factory SpikeToolData.fromUtility(ImageUtility utility) {
+    return SpikeToolData(
+      type: UtilityType.spike,
+      centerPoint: utility.getAnchorPoint(),
+    );
+  }
+
+  Offset getScaledCenterPoint({
+    required double scaleFactor,
+    required double screenZoom,
+  }) {
+    return centerPoint.scale(scaleFactor * screenZoom, scaleFactor * screenZoom);
+  }
 }
 
 sealed class Utilities {
@@ -79,6 +144,7 @@ class ViewConeUtility extends Utilities {
 
   static const double maxLength = 300;
   static const double minLength = 40;
+  static const double iconTopOffset = 7.5;
 
   ViewConeUtility({
     required this.angle,
@@ -99,12 +165,26 @@ class ViewConeUtility extends Utilities {
   /// The length determines where the bottom center is positioned
   @override
   Offset getAnchorPoint({String? id, double? length, double? rotation}) {
-    return const Offset(maxLength, maxLength + 7.5);
+    return const Offset(maxLength, maxLength + iconTopOffset);
+  }
+
+  /// Center point of the eye icon used as canonical placement anchor.
+  Offset getCenterPoint() {
+    return const Offset(maxLength, maxLength + iconTopOffset);
+  }
+
+  /// Returns the drag anchor point in physical pixels.
+  Offset getScaledCenterPoint({
+    required double scaleFactor,
+    required double screenZoom,
+  }) {
+    final center = getCenterPoint();
+    return center.scale(scaleFactor * screenZoom, scaleFactor * screenZoom);
   }
 
   @override
   Offset getSize() {
-    return const Offset(maxLength * 2, maxLength + 7.5);
+    return const Offset(maxLength * 2, maxLength + iconTopOffset);
   }
   // /// Get anchor point with length - bottom center of the view cone
   // /// Similar to how SquareAbility calculates its anchor

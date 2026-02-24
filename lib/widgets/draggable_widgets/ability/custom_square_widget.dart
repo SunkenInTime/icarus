@@ -52,8 +52,10 @@ class CustomSquareWidget extends ConsumerWidget {
     final scaledHeight = coordinateSystem.scale(height);
     final scaledDistance = coordinateSystem.scale((distanceBetweenAOE));
     final scaledAbilitySize = coordinateSystem.scale(abilitySize);
-    final totalHeight =
-        scaledHeight + scaledDistance + scaledAbilitySize + resizeButtonOffset;
+    final totalHeight = scaledHeight +
+        scaledDistance +
+        (scaledAbilitySize / 2) +
+        resizeButtonOffset;
 
     return SizedBox(
       width: scaledWidth,

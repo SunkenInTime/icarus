@@ -38,8 +38,8 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 38;
-  static const String versionName = "3.1.0";
+  static const int versionNumber = 40;
+  static const String versionName = "3.1.2";
 
   static const double sideBarContentWidth = 325;
   static const double sideBarPanelWidth = sideBarContentWidth + 20;

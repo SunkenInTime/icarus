@@ -1219,3 +1219,55 @@ class AgentStateAdapter extends TypeAdapter<AgentState> {
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }
+
+class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
+  @override
+  final typeId = 24;
+
+  @override
+  RectangleDrawing read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return RectangleDrawing(
+      start: fields[0] as Offset,
+      end: fields[1] as Offset,
+      color: fields[2] as Color,
+      boundingBox: fields[6] as BoundingBox?,
+      isDotted: fields[3] as bool,
+      hasArrow: fields[4] as bool,
+      id: fields[5] as String,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, RectangleDrawing obj) {
+    writer
+      ..writeByte(7)
+      ..writeByte(0)
+      ..write(obj.start)
+      ..writeByte(1)
+      ..write(obj.end)
+      ..writeByte(2)
+      ..write(obj.color)
+      ..writeByte(3)
+      ..write(obj.isDotted)
+      ..writeByte(4)
+      ..write(obj.hasArrow)
+      ..writeByte(5)
+      ..write(obj.id)
+      ..writeByte(6)
+      ..write(obj.boundingBox);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RectangleDrawingAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}

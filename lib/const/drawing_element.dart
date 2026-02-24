@@ -48,6 +48,32 @@ class Line extends DrawingElement with HiveObjectMixin {
   }
 }
 
+class RectangleDrawing extends DrawingElement with HiveObjectMixin {
+  final Offset start;
+  Offset end;
+
+  RectangleDrawing({
+    required this.start,
+    required this.end,
+    required super.color,
+    super.boundingBox,
+    required super.isDotted,
+    required super.hasArrow,
+    required super.id,
+  });
+
+  void updateEndPoint(Offset endPoint) {
+    end = endPoint;
+  }
+
+  Rect get normalizedRect => Rect.fromLTRB(
+        start.dx < end.dx ? start.dx : end.dx,
+        start.dy < end.dy ? start.dy : end.dy,
+        start.dx > end.dx ? start.dx : end.dx,
+        start.dy > end.dy ? start.dy : end.dy,
+      );
+}
+
 @JsonSerializable()
 class FreeDrawing extends DrawingElement with HiveObjectMixin {
   FreeDrawing({

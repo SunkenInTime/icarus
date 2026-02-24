@@ -7,7 +7,6 @@ import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
-import 'package:icarus/const/youtube_handler.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'image_provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -17,6 +16,7 @@ import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/migrations/ability_scale_migration.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -271,7 +271,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     for (final strat in box.values) {
       final legacyMigrated = await migrateLegacyData(strat);
       final worldMigrated = migrateToWorld16x9(legacyMigrated);
-      if (worldMigrated != legacyMigrated) {
+      final abilityScaleMigrated = migrateAbilityScale(worldMigrated);
+      final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
+      if (squareAoeMigrated != abilityScaleMigrated) {
+        await box.put(squareAoeMigrated.id, squareAoeMigrated);
+      } else if (abilityScaleMigrated != worldMigrated) {
+        await box.put(abilityScaleMigrated.id, abilityScaleMigrated);
+      } else if (worldMigrated != legacyMigrated) {
         await box.put(worldMigrated.id, worldMigrated);
       } else if (legacyMigrated != strat) {
         await box.put(legacyMigrated.id, legacyMigrated);
@@ -279,10 +285,77 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
   }
 
+  static StrategyData migrateAbilityScale(StrategyData strat,
+      {bool force = false}) {
+    if (!force && strat.versionNumber >= AbilityScaleMigration.version) {
+      return strat;
+    }
+
+    final migratedPages = AbilityScaleMigration.migratePages(
+      pages: strat.pages,
+      map: strat.mapData,
+    );
+
+    final hasPageChanged = migratedPages.length == strat.pages.length &&
+        migratedPages.asMap().entries.any((entry) {
+          final index = entry.key;
+          return entry.value != strat.pages[index];
+        });
+
+    if (!hasPageChanged && !force) {
+      return strat;
+    }
+
+    return strat.copyWith(
+      pages: migratedPages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migrateSquareAoeCenter(StrategyData strat,
+      {bool force = false}) {
+    if (!force && strat.versionNumber >= SquareAoeCenterMigration.version) {
+      return strat;
+    }
+
+    final migratedPages = SquareAoeCenterMigration.migratePages(
+      pages: strat.pages,
+    );
+
+    final hasPageChanged = migratedPages.length == strat.pages.length &&
+        migratedPages.asMap().entries.any((entry) {
+          final index = entry.key;
+          return entry.value != strat.pages[index];
+        });
+
+    if (!hasPageChanged && !force) {
+      return strat;
+    }
+
+    return strat.copyWith(
+      pages: migratedPages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migrateToCurrentVersion(StrategyData strat,
+      {bool forceAbilityScale = false}) {
+    final worldMigrated = migrateToWorld16x9(strat);
+    final abilityScaleMigrated =
+        migrateAbilityScale(worldMigrated, force: forceAbilityScale);
+    return migrateSquareAoeCenter(abilityScaleMigrated);
+  }
+
   static Future<StrategyData> migrateLegacyData(StrategyData strat) async {
     // Already migrated
-    if (strat.pages.isNotEmpty) return strat;
-    if (strat.versionNumber > 15) return strat;
+    if (strat.pages.isNotEmpty) {
+      return migrateToCurrentVersion(strat);
+    }
+    if (strat.versionNumber > 15) {
+      return migrateToCurrentVersion(strat);
+    }
     final originalVersion = strat.versionNumber;
     log("Migrating legacy strategy to single page");
     // ignore: deprecated_member_use, deprecated_member_use_from_same_package
@@ -327,8 +400,16 @@ class StrategyProvider extends Notifier<StrategyState> {
       lastEdited: DateTime.now(),
     );
 
-    return migrateToWorld16x9(updated,
+    final worldMigrated = migrateToWorld16x9(updated,
         force: originalVersion < Settings.versionNumber);
+    final abilityScaleMigrated = migrateAbilityScale(
+      worldMigrated,
+      force: originalVersion < AbilityScaleMigration.version,
+    );
+    return migrateSquareAoeCenter(
+      abilityScaleMigrated,
+      force: originalVersion < SquareAoeCenterMigration.version,
+    );
   }
 
   static StrategyData migrateToWorld16x9(StrategyData strat,
@@ -496,7 +577,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     activePageID = page.id;
 
     ref.read(actionProvider.notifier).clearAllActions();
-    final migrated = migrateToWorld16x9(doc);
+    final migrated = migrateToCurrentVersion(doc);
     final migratedPage = migrated.pages.firstWhere(
       (p) => p.id == page.id,
       orElse: () => migrated.pages.first,
@@ -744,7 +825,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     // We clear previous data to avoid artifacts when loading a new strategy
     log(newStrat.pages.first.toString());
-    final migratedStrategy = migrateToWorld16x9(newStrat);
+    final migratedStrategy = migrateToCurrentVersion(newStrat);
     final page = migratedStrategy.pages.first;
 
     if (migratedStrategy != newStrat) {

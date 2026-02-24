@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/main.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
@@ -33,7 +32,6 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
     super.initState();
   }
 
-  Offset? _visualMousePosition;
   @override
   Widget build(BuildContext context) {
     CoordinateSystem coordinateSystem = CoordinateSystem.instance;
@@ -48,6 +46,7 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
     });
     // Get the drawing data here in the widget
     DrawingState drawingState = ref.watch(drawingProvider);
+    final penState = ref.watch(penProvider);
 
     CustomPainter drawingPainter = DrawingPainter(
         updateCounter: drawingState.updateCounter,
@@ -66,7 +65,7 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
       child: RepaintBoundary(
         child: MouseRegion(
           cursor: currentInteractionState == InteractionState.drawing
-              ? ref.watch(penProvider).drawingCursor!
+              ? penState.drawingCursor!
               : currentInteractionState == InteractionState.erasing
                   ? SystemMouseCursors.none
                   : SystemMouseCursors.basic,
@@ -98,20 +97,26 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
           child: GestureDetector(
             onPanStart: (details) {
               log("Pan start detected");
-              final currentColor = ref.watch(penProvider).color;
-              final hasArrow = ref.watch(penProvider).hasArrow;
-              final isDotted = ref.watch(penProvider).isDotted;
-              log(currentColor.toString());
+              log(penState.color.toString());
 
               switch (currentInteractionState) {
                 case InteractionState.drawing:
-                  ref.read(drawingProvider.notifier).startFreeDrawing(
-                        details.localPosition,
-                        coordinateSystem,
-                        currentColor,
-                        isDotted,
-                        hasArrow,
-                      );
+                  if (penState.penMode == PenMode.square) {
+                    ref.read(drawingProvider.notifier).startRectangle(
+                          details.localPosition,
+                          coordinateSystem,
+                          penState.color,
+                          penState.isDotted,
+                        );
+                  } else {
+                    ref.read(drawingProvider.notifier).startFreeDrawing(
+                          details.localPosition,
+                          coordinateSystem,
+                          penState.color,
+                          penState.isDotted,
+                          penState.hasArrow,
+                        );
+                  }
 
                 case InteractionState.erasing:
                   final normalizedPosition = CoordinateSystem.instance
@@ -133,8 +138,15 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
             onPanUpdate: (details) {
               switch (currentInteractionState) {
                 case InteractionState.drawing:
-                  ref.read(drawingProvider.notifier).updateFreeDrawing(
-                      details.localPosition, coordinateSystem);
+                  if (penState.penMode == PenMode.square) {
+                    ref.read(drawingProvider.notifier).updateRectangle(
+                          details.localPosition,
+                          coordinateSystem,
+                        );
+                  } else {
+                    ref.read(drawingProvider.notifier).updateFreeDrawing(
+                        details.localPosition, coordinateSystem);
+                  }
                 case InteractionState.erasing:
                   final normalizedPosition = CoordinateSystem.instance
                       .screenToCoordinate(details.localPosition);
@@ -153,14 +165,17 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
             onPanEnd: (details) {
               switch (currentInteractionState) {
                 case InteractionState.drawing:
-                  ref.read(drawingProvider.notifier).finishFreeDrawing(
-                      details.localPosition, coordinateSystem);
+                  if (penState.penMode == PenMode.square) {
+                    ref
+                        .read(drawingProvider.notifier)
+                        .finishRectangle(null, coordinateSystem);
+                  } else {
+                    ref
+                        .read(drawingProvider.notifier)
+                        .finishFreeDrawing(null, coordinateSystem);
+                  }
                 case InteractionState.erasing:
-                  final normalizedPosition = CoordinateSystem.instance
-                      .screenToCoordinate(details.localPosition);
-                  ref
-                      .read(drawingProvider.notifier)
-                      .onErase(normalizedPosition);
+                  ref.read(visualPositionProvider.notifier).state = null;
                 default:
               }
             },
@@ -284,6 +299,20 @@ class DrawingPainter extends CustomPainter {
             coordinateSystem.coordinateToScreen(line.lineEnd);
 
         canvas.drawLine(screenStartOffset, screenEndOffset, paint);
+      } else if (elements[i] is RectangleDrawing) {
+        final rectangle = elements[i] as RectangleDrawing;
+        final screenRect = Rect.fromPoints(
+          coordinateSystem.coordinateToScreen(rectangle.start),
+          coordinateSystem.coordinateToScreen(rectangle.end),
+        );
+
+        if (rectangle.isDotted) {
+          final space = coordinateSystem.scale(10);
+          final rectPath = Path()..addRect(screenRect);
+          DashPainter(span: space, step: space).paint(canvas, rectPath, paint);
+        } else {
+          canvas.drawRect(screenRect, paint);
+        }
       } else if (elements[i] is FreeDrawing) {
         FreeDrawing freeDrawing = elements[i] as FreeDrawing;
         List<Offset> points = freeDrawing.listOfPoints;
@@ -329,6 +358,20 @@ class DrawingPainter extends CustomPainter {
               coordinateSystem.coordinateToScreen(points[points.length - 2]);
           final to = coordinateSystem.coordinateToScreen(points.last);
           drawArrow(canvas, paint, from, to);
+        }
+      } else if (currentLine is RectangleDrawing) {
+        final rectangle = currentLine as RectangleDrawing;
+        final screenRect = Rect.fromPoints(
+          coordinateSystem.coordinateToScreen(rectangle.start),
+          coordinateSystem.coordinateToScreen(rectangle.end),
+        );
+
+        if (rectangle.isDotted) {
+          final space = coordinateSystem.scale(10);
+          final rectPath = Path()..addRect(screenRect);
+          DashPainter(span: space, step: space).paint(canvas, rectPath, paint);
+        } else {
+          canvas.drawRect(screenRect, paint);
         }
       }
     }
