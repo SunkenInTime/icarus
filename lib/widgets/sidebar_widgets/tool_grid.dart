@@ -16,13 +16,14 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/dialogs/upload_image_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
+import 'package:icarus/widgets/sidebar_widgets/custom_shape_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/delete_options.dart';
 import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/vision_cone_tools.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
-enum _ContextBarMode { drawing, deleting, visionCone, none }
+enum _ContextBarMode { drawing, deleting, visionCone, customShapes, none }
 
 class BottomContextBar extends ConsumerWidget {
   const BottomContextBar({super.key});
@@ -37,6 +38,7 @@ class BottomContextBar extends ConsumerWidget {
       InteractionState.drawing => _ContextBarMode.drawing,
       InteractionState.deleting => _ContextBarMode.deleting,
       InteractionState.visionCone => _ContextBarMode.visionCone,
+      InteractionState.customShapes => _ContextBarMode.customShapes,
       _ => _ContextBarMode.none,
     };
 
@@ -64,7 +66,10 @@ class BottomContextBar extends ConsumerWidget {
   Widget _buildContent(_ContextBarMode mode) {
     return switch (mode) {
       _ContextBarMode.drawing => const DrawingTools(key: ValueKey('drawing')),
-      _ContextBarMode.visionCone => const VisionConeTools(key: ValueKey('visionCone')),
+      _ContextBarMode.visionCone =>
+        const VisionConeTools(key: ValueKey('visionCone')),
+      _ContextBarMode.customShapes =>
+        const CustomShapeTools(key: ValueKey('customShapes')),
       _ContextBarMode.deleting =>
         const DeleteOptions(key: ValueKey('deleting')),
       _ContextBarMode.none => const SizedBox.shrink(key: ValueKey('none')),
@@ -165,7 +170,7 @@ class ToolGrid extends ConsumerWidget {
                 ),
               ),
               ShadTooltip(
-                builder: (context) => const Text("Add Text"),
+                builder: (context) => const Text("Add Text T"),
                 child: ShadIconButton.secondary(
                   onPressed: () {
                     ref
@@ -253,7 +258,7 @@ class ToolGrid extends ConsumerWidget {
               ShadTooltip(
                 builder: (context) => const Text("Vision Cone Tools"),
                 child: SelectableIconButton(
-                  tooltip: "Vision Cone R",
+                  tooltip: "Vision Cone",
                   onPressed: () {
                     switch (currentInteractionState) {
                       case InteractionState.visionCone:
@@ -269,6 +274,27 @@ class ToolGrid extends ConsumerWidget {
                   icon: const Icon(LucideIcons.eye, size: 20),
                   isSelected:
                       currentInteractionState == InteractionState.visionCone,
+                ),
+              ),
+              ShadTooltip(
+                builder: (context) => const Text("Custom Shapes"),
+                child: SelectableIconButton(
+                  tooltip: "Custom Shapes",
+                  onPressed: () {
+                    switch (currentInteractionState) {
+                      case InteractionState.customShapes:
+                        ref
+                            .read(interactionStateProvider.notifier)
+                            .update(InteractionState.navigation);
+                      default:
+                        ref
+                            .read(interactionStateProvider.notifier)
+                            .update(InteractionState.customShapes);
+                    }
+                  },
+                  icon: const Icon(Icons.crop_square, size: 20),
+                  isSelected:
+                      currentInteractionState == InteractionState.customShapes,
                 ),
               ),
               ShadTooltip(

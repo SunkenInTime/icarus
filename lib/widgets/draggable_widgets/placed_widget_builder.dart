@@ -19,7 +19,6 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/team_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:icarus/widgets/delete_area.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
@@ -64,9 +63,13 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Align(
-                      alignment: Alignment.topRight,
-                      child: const DeleteArea(),
+                    // Align(
+                    //   alignment: Alignment.topRight,
+                    //   child: const DeleteArea(),
+                    // ),
+                    _CustomShapeUtilityList(
+                      coordinateSystem: coordinateSystem,
+                      mapScale: mapScale,
                     ),
                     _ViewConeUtilityList(
                       coordinateSystem: coordinateSystem,
@@ -89,6 +92,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                     _UtilityList(
                       coordinateSystem: coordinateSystem,
                       agentSize: agentSize,
+                      mapScale: mapScale,
                     ),
                     const Positioned.fill(
                       child: LineUpLinePainter(),
@@ -156,6 +160,24 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 id: uuid.v4(),
                 type: spikeData.type,
                 position: normalizedPosition,
+              );
+              ref.read(utilityProvider.notifier).addUtility(placedUtility);
+            } else if (details.data is CustomShapeToolData) {
+              final customData = details.data as CustomShapeToolData;
+              final placedUtility = PlacedUtility(
+                id: uuid.v4(),
+                type: customData.type,
+                position: normalizedPosition,
+                customDiameter: customData.diameterMeters > 0
+                    ? customData.diameterMeters
+                    : null,
+                customWidth:
+                    customData.widthMeters > 0 ? customData.widthMeters : null,
+                customLength: customData.rectLengthMeters > 0
+                    ? customData.rectLengthMeters
+                    : null,
+                customColorValue: customData.colorValue,
+                customOpacityPercent: customData.opacityPercent,
               );
               ref.read(utilityProvider.notifier).addUtility(placedUtility);
             }
@@ -427,16 +449,18 @@ class _UtilityList extends ConsumerWidget {
   const _UtilityList({
     required this.coordinateSystem,
     required this.agentSize,
+    required this.mapScale,
   });
 
   final CoordinateSystem coordinateSystem;
   final double agentSize;
+  final double mapScale;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final utilities = ref
-        .watch(utilityProvider)
-        .where((utility) => !UtilityData.isViewCone(utility.type));
+    final utilities = ref.watch(utilityProvider).where((utility) =>
+        !UtilityData.isViewCone(utility.type) &&
+        !UtilityData.isCustomShape(utility.type));
 
     return Stack(
       clipBehavior: Clip.none,
@@ -458,9 +482,101 @@ class _UtilityList extends ConsumerWidget {
                 final virtualOffset =
                     coordinateSystem.screenToCoordinate(localOffset);
 
-                final safeArea = UtilityData.utilityWidgets[placedUtility.type]!
-                        .getAnchorPoint() /
-                    2;
+                Offset safeArea;
+                if (placedUtility.type == UtilityType.customCircle) {
+                  final diameter = placedUtility.customDiameter ??
+                      CustomCircleUtility.defaultDiameterMeters;
+                  final renderedDiameter =
+                      diameter * AgentData.inGameMetersDiameter * mapScale;
+                  safeArea = Offset(renderedDiameter / 2, renderedDiameter / 2);
+                } else if (placedUtility.type == UtilityType.customRectangle) {
+                  final width = placedUtility.customWidth ??
+                      CustomRectangleUtility.defaultWidthMeters;
+                  final length = placedUtility.customLength ??
+                      CustomRectangleUtility.defaultLengthMeters;
+                  final renderedWidth =
+                      width * AgentData.inGameMetersDiameter * mapScale;
+                  final renderedLength =
+                      length * AgentData.inGameMetersDiameter * mapScale;
+                  safeArea = Offset(renderedLength / 2, renderedWidth / 2);
+                } else {
+                  safeArea = UtilityData.utilityWidgets[placedUtility.type]!
+                          .getAnchorPoint() /
+                      2;
+                }
+
+                if (coordinateSystem.isOutOfBounds(virtualOffset.translate(
+                    safeArea.dx / 2, safeArea.dy / 2))) {
+                  ref
+                      .read(utilityProvider.notifier)
+                      .removeUtility(placedUtility.id);
+                  return;
+                }
+
+                ref
+                    .read(utilityProvider.notifier)
+                    .updatePosition(virtualOffset, placedUtility.id);
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _CustomShapeUtilityList extends ConsumerWidget {
+  const _CustomShapeUtilityList({
+    required this.coordinateSystem,
+    required this.mapScale,
+  });
+
+  final CoordinateSystem coordinateSystem;
+  final double mapScale;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final customShapes = ref
+        .watch(utilityProvider)
+        .where((utility) => UtilityData.isCustomShape(utility.type));
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (final placedUtility in customShapes)
+          Positioned(
+            key: ValueKey('custom-shape-${placedUtility.id}'),
+            left:
+                coordinateSystem.coordinateToScreen(placedUtility.position).dx,
+            top: coordinateSystem.coordinateToScreen(placedUtility.position).dy,
+            child: UtilityWidgetBuilder(
+              rotation: placedUtility.rotation,
+              length: placedUtility.length,
+              utility: placedUtility,
+              id: placedUtility.id,
+              onDragEnd: (details) {
+                final renderBox = context.findRenderObject() as RenderBox;
+                final localOffset = renderBox.globalToLocal(details.offset);
+                final virtualOffset =
+                    coordinateSystem.screenToCoordinate(localOffset);
+
+                Offset safeArea;
+                if (placedUtility.type == UtilityType.customCircle) {
+                  final diameterMeters = placedUtility.customDiameter ??
+                      CustomCircleUtility.defaultDiameterMeters;
+                  final diameter =
+                      diameterMeters * AgentData.inGameMetersDiameter * mapScale;
+                  safeArea = Offset(diameter / 2, diameter / 2);
+                } else {
+                  final widthMeters = placedUtility.customWidth ??
+                      CustomRectangleUtility.defaultWidthMeters;
+                  final lengthMeters = placedUtility.customLength ??
+                      CustomRectangleUtility.defaultLengthMeters;
+                  final width =
+                      widthMeters * AgentData.inGameMetersDiameter * mapScale;
+                  final length =
+                      lengthMeters * AgentData.inGameMetersDiameter * mapScale;
+                  safeArea = Offset(length / 2, width / 2);
+                }
 
                 if (coordinateSystem.isOutOfBounds(virtualOffset.translate(
                     safeArea.dx / 2, safeArea.dy / 2))) {

@@ -790,6 +790,11 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       id: fields[3] as String,
       angle: fields[6] == null ? 0.0 : (fields[6] as num).toDouble(),
       attachedAgentId: fields[7] as String?,
+      customDiameter: (fields[8] as num?)?.toDouble(),
+      customWidth: (fields[9] as num?)?.toDouble(),
+      customLength: (fields[10] as num?)?.toDouble(),
+      customColorValue: (fields[11] as num?)?.toInt(),
+      customOpacityPercent: (fields[12] as num?)?.toInt(),
     )
       ..rotation = (fields[1] as num).toDouble()
       ..length = (fields[2] as num).toDouble()
@@ -799,7 +804,7 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
   @override
   void write(BinaryWriter writer, PlacedUtility obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -815,7 +820,17 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       ..writeByte(6)
       ..write(obj.angle)
       ..writeByte(7)
-      ..write(obj.attachedAgentId);
+      ..write(obj.attachedAgentId)
+      ..writeByte(8)
+      ..write(obj.customDiameter)
+      ..writeByte(9)
+      ..write(obj.customWidth)
+      ..writeByte(10)
+      ..write(obj.customLength)
+      ..writeByte(11)
+      ..write(obj.customColorValue)
+      ..writeByte(12)
+      ..write(obj.customOpacityPercent);
   }
 
   @override
@@ -844,6 +859,10 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
         return UtilityType.viewCone90;
       case 3:
         return UtilityType.viewCone40;
+      case 4:
+        return UtilityType.customCircle;
+      case 5:
+        return UtilityType.customRectangle;
       default:
         return UtilityType.spike;
     }
@@ -860,6 +879,10 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
         writer.writeByte(2);
       case UtilityType.viewCone40:
         writer.writeByte(3);
+      case UtilityType.customCircle:
+        writer.writeByte(4);
+      case UtilityType.customRectangle:
+        writer.writeByte(5);
     }
   }
 

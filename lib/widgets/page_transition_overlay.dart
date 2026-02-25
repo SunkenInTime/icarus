@@ -292,7 +292,10 @@ class PlacedWidgetPreview {
     }
     if (w is PlacedUtility) {
       return UtilityData.utilityWidgets[w.type]!.createWidget(
-          id: w.id, rotation: w.rotation, length: length ?? w.length);
+          id: w.id,
+          rotation: w.rotation,
+          length: length ?? w.length,
+          mapScale: mapScale);
     }
     return const SizedBox.shrink();
   }

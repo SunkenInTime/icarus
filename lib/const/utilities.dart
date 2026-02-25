@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/image_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 
@@ -8,6 +10,8 @@ enum UtilityType {
   viewCone180,
   viewCone90,
   viewCone40,
+  customCircle,
+  customRectangle,
 }
 
 class UtilityData {
@@ -20,6 +24,8 @@ class UtilityData {
     UtilityType.viewCone180: ViewConeUtility(angle: 103, defaultLength: 50),
     UtilityType.viewCone90: ViewConeUtility(angle: 60, defaultLength: 50),
     UtilityType.viewCone40: ViewConeUtility(angle: 20, defaultLength: 50),
+    UtilityType.customCircle: CustomCircleUtility(),
+    UtilityType.customRectangle: CustomRectangleUtility(),
   };
 
   /// Helper to check if a utility type is a view cone
@@ -44,6 +50,11 @@ class UtilityData {
   }
 
   static bool isViewConePresetType(UtilityType type) => isViewCone(type);
+
+  static bool isCustomShape(UtilityType type) {
+    return type == UtilityType.customCircle ||
+        type == UtilityType.customRectangle;
+  }
 
   static ViewConeUtility getViewConePreset(UtilityType type) {
     return utilityWidgets[type]! as ViewConeUtility;
@@ -108,10 +119,78 @@ class SpikeToolData implements DraggableData {
   }
 }
 
+class CustomShapeToolData implements DraggableData {
+  final UtilityType type;
+  final Offset centerPoint;
+  final double diameterMeters;
+  final double widthMeters;
+  final double rectLengthMeters;
+  final int colorValue;
+  final int opacityPercent;
+
+  const CustomShapeToolData({
+    required this.type,
+    required this.centerPoint,
+    required this.diameterMeters,
+    required this.widthMeters,
+    required this.rectLengthMeters,
+    required this.colorValue,
+    required this.opacityPercent,
+  });
+
+  factory CustomShapeToolData.circle({
+    required double diameterMeters,
+    required double mapScale,
+    required int colorValue,
+    required int opacityPercent,
+  }) {
+    final diameter =
+        diameterMeters * AgentData.inGameMetersDiameter * mapScale;
+    return CustomShapeToolData(
+      type: UtilityType.customCircle,
+      centerPoint: Offset(diameter / 2, diameter / 2),
+      diameterMeters: diameterMeters,
+      widthMeters: 0,
+      rectLengthMeters: 0,
+      colorValue: colorValue,
+      opacityPercent: opacityPercent,
+    );
+  }
+
+  factory CustomShapeToolData.rectangle({
+    required double widthMeters,
+    required double rectLengthMeters,
+    required double mapScale,
+    required int colorValue,
+    required int opacityPercent,
+  }) {
+    final width = widthMeters * AgentData.inGameMetersDiameter * mapScale;
+    final rectLength =
+        rectLengthMeters * AgentData.inGameMetersDiameter * mapScale;
+    return CustomShapeToolData(
+      type: UtilityType.customRectangle,
+      centerPoint: Offset(rectLength / 2, width / 2),
+      diameterMeters: 0,
+      widthMeters: widthMeters,
+      rectLengthMeters: rectLengthMeters,
+      colorValue: colorValue,
+      opacityPercent: opacityPercent,
+    );
+  }
+
+  Offset getScaledCenterPoint({
+    required double scaleFactor,
+    required double screenZoom,
+  }) {
+    return centerPoint.scale(scaleFactor * screenZoom, scaleFactor * screenZoom);
+  }
+}
+
 sealed class Utilities {
   Offset getAnchorPoint({String? id, double? length, double? rotation});
 
-  Widget createWidget({String? id, double? rotation, double? length});
+  Widget createWidget(
+      {String? id, double? rotation, double? length, double? mapScale});
   Offset getSize();
 }
 
@@ -122,7 +201,8 @@ class ImageUtility extends Utilities {
   ImageUtility({required this.imagePath, required this.size});
 
   @override
-  Widget createWidget({String? id, double? rotation, double? length}) {
+  Widget createWidget(
+      {String? id, double? rotation, double? length, double? mapScale}) {
     return ImageUtilityWidget(imagePath: imagePath, size: size, id: id);
   }
 
@@ -152,7 +232,8 @@ class ViewConeUtility extends Utilities {
   });
 
   @override
-  Widget createWidget({String? id, double? rotation, double? length}) {
+  Widget createWidget(
+      {String? id, double? rotation, double? length, double? mapScale}) {
     return ViewConeWidget(
       id: id,
       angle: angle,
@@ -198,4 +279,56 @@ class ViewConeUtility extends Utilities {
   //   final scaledLength = length;
   //   return Offset(scaledLength, scaledLength);
   // }
+}
+
+class CustomCircleUtility extends Utilities {
+  static const double defaultDiameterMeters = 10;
+  static const int defaultOpacityPercent = 30;
+  static const int defaultColorValue = 0xFF22C55E;
+
+  @override
+  Widget createWidget(
+      {String? id, double? rotation, double? length, double? mapScale}) {
+    return CustomCircleUtilityWidget(id: id, mapScale: mapScale);
+  }
+
+  @override
+  Offset getAnchorPoint({String? id, double? length, double? rotation}) {
+    return const Offset(
+        (defaultDiameterMeters * AgentData.inGameMetersDiameter) / 2,
+        (defaultDiameterMeters * AgentData.inGameMetersDiameter) / 2);
+  }
+
+  @override
+  Offset getSize() {
+    return const Offset(defaultDiameterMeters * AgentData.inGameMetersDiameter,
+        defaultDiameterMeters * AgentData.inGameMetersDiameter);
+  }
+}
+
+class CustomRectangleUtility extends Utilities {
+  static const double defaultWidthMeters = 6;
+  static const double defaultLengthMeters = 12;
+  static const int defaultOpacityPercent = 30;
+  static const int defaultColorValue = 0xFF3B82F6;
+
+  @override
+  Widget createWidget(
+      {String? id, double? rotation, double? length, double? mapScale}) {
+    return CustomRectangleUtilityWidget(id: id, mapScale: mapScale);
+  }
+
+  @override
+  Offset getAnchorPoint({String? id, double? length, double? rotation}) {
+    return const Offset(
+        (defaultLengthMeters * AgentData.inGameMetersDiameter) / 2,
+        (defaultWidthMeters * AgentData.inGameMetersDiameter) / 2);
+  }
+
+  @override
+  Offset getSize() {
+    return const Offset(
+        defaultLengthMeters * AgentData.inGameMetersDiameter,
+        defaultWidthMeters * AgentData.inGameMetersDiameter);
+  }
 }

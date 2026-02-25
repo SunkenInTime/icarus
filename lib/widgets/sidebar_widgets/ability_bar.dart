@@ -28,28 +28,42 @@ class AbiilityBar extends ConsumerWidget {
       width: 90,
       height: (activeAgent.abilities.length * 71),
       decoration: BoxDecoration(
-          color: Settings.tacticalVioletTheme.card,
-          borderRadius: const BorderRadius.horizontal(
-            left: Radius.circular(24),
+        gradient: LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          stops: const [0.0, 0.75, 1.0],
+          colors: [
+            Settings.tacticalVioletTheme.card,
+            Settings.tacticalVioletTheme.card,
+            Color.lerp(Settings.tacticalVioletTheme.card, Colors.black, 0.5)!,
+          ],
+        ),
+        borderRadius: const BorderRadius.horizontal(
+          left: Radius.circular(24),
+        ),
+        border: Border(
+          left: BorderSide(
+            strokeAlign: BorderSide.strokeAlignOutside,
+            color: Settings.tacticalVioletTheme.border,
+            width: 1,
           ),
-          border: Border(
-            left: BorderSide(
-              strokeAlign: BorderSide.strokeAlignOutside,
-              color: Settings.tacticalVioletTheme.border,
-              width: 1,
-            ),
-            top: BorderSide(
-              strokeAlign: BorderSide.strokeAlignOutside,
-              color: Settings.tacticalVioletTheme.border,
-              width: 1,
-            ),
-            bottom: BorderSide(
-              strokeAlign: BorderSide.strokeAlignOutside,
-              color: Settings.tacticalVioletTheme.border,
-              width: 1,
-            ),
+          top: BorderSide(
+            strokeAlign: BorderSide.strokeAlignOutside,
+            color: Settings.tacticalVioletTheme.border,
+            width: 1,
           ),
-          boxShadow: const [Settings.cardForegroundBackdrop]),
+          bottom: BorderSide(
+            strokeAlign: BorderSide.strokeAlignOutside,
+            color: Settings.tacticalVioletTheme.border,
+            width: 1,
+          ),
+        ),
+        boxShadow: const [
+          Settings.cardForegroundBackdrop,
+          
+
+        ],
+      ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
