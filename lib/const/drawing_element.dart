@@ -3,6 +3,7 @@ import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/json_converters.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:json_annotation/json_annotation.dart';
 
 part "drawing_element.g.dart";
@@ -105,12 +106,17 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
 
   void rebuildPath(CoordinateSystem coordinateSystem) {
     if (listOfPoints.length < 2) {
-      if (listOfPoints.isEmpty) return;
+      if (listOfPoints.isEmpty) {
+        _path = Path();
+        return;
+      }
 
       final path = Path();
       final screenPoint = coordinateSystem.coordinateToScreen(listOfPoints[0]);
+      final dotRadius = (coordinateSystem.scale(Settings.brushSize * 0.25))
+          .clamp(1.0, coordinateSystem.scale(2.0));
 
-      path.addOval(Rect.fromCircle(center: screenPoint, radius: 5));
+      path.addOval(Rect.fromCircle(center: screenPoint, radius: dotRadius));
       _path = path;
 
       return;

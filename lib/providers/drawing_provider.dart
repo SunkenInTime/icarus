@@ -194,14 +194,16 @@ class DrawingProvider extends Notifier<DrawingState> {
     }
 
     if (type == 'rectangleDrawing' ||
-        (type == null && json.containsKey('start') && json.containsKey('end'))) {
+        (type == null &&
+            json.containsKey('start') &&
+            json.containsKey('end'))) {
       const colorConverter = ColorConverter();
       const offsetConverter = OffsetConverter();
 
-      final start =
-          offsetConverter.fromJson(Map<String, dynamic>.from(json['start'] as Map));
-      final end =
-          offsetConverter.fromJson(Map<String, dynamic>.from(json['end'] as Map));
+      final start = offsetConverter
+          .fromJson(Map<String, dynamic>.from(json['start'] as Map));
+      final end = offsetConverter
+          .fromJson(Map<String, dynamic>.from(json['end'] as Map));
       final normalizedRect = Rect.fromPoints(start, end);
 
       BoundingBox? boundingBox;
@@ -258,7 +260,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       if (drawing is FreeDrawing) {
         if (drawing.boundingBox != null &&
             drawing.boundingBox!
-            .isWithinOrNear(mousePos, Settings.erasingSize)) {
+                .isWithinOrNear(mousePos, Settings.erasingSize)) {
           for (int i = 0; i < drawing.listOfPoints.length - 1; i++) {
             double distance = distanceToLineSegment(
                 mousePos, drawing.listOfPoints[i], drawing.listOfPoints[i + 1]);
@@ -273,7 +275,8 @@ class DrawingProvider extends Notifier<DrawingState> {
         if (drawing.boundingBox != null &&
             drawing.boundingBox!
                 .isWithinOrNear(mousePos, Settings.erasingSize) &&
-            _isPointNearRectangleStroke(mousePos, drawing, Settings.erasingSize)) {
+            _isPointNearRectangleStroke(
+                mousePos, drawing, Settings.erasingSize)) {
           indicesToDelete.add(index);
         }
       }
@@ -378,8 +381,6 @@ class DrawingProvider extends Notifier<DrawingState> {
       id: id,
     );
 
-    freeDrawing.path.moveTo(start.dx, start.dy);
-
     freeDrawing.listOfPoints.add(normalizedStart);
 
     state = state.copyWith(currentElement: freeDrawing);
@@ -395,16 +396,15 @@ class DrawingProvider extends Notifier<DrawingState> {
     List<Offset> currentPoints = currentDrawing.listOfPoints;
     Offset lastPoint = currentPoints[currentPoints.length - 1];
 
-    final minDistance = coordinateSystem.scale(3);
-    if ((lastPoint - offset).distance < minDistance) return;
+    final minDistance =
+        coordinateSystem.normalize(Settings.freeDrawMinDistance);
+    if ((lastPoint - normalizedOffset).distance < minDistance) return;
 
     final boundingBox =
         updateBoundingBox(currentDrawing.boundingBox!, normalizedOffset);
 
-    currentDrawing.path.lineTo(offset.dx, offset.dy);
-
-    currentDrawing.listOfPoints
-        .add(coordinateSystem.screenToCoordinate(offset));
+    currentDrawing.listOfPoints.add(normalizedOffset);
+    currentDrawing.rebuildPath(coordinateSystem);
 
     currentDrawing.boundingBox = boundingBox;
     state = state.copyWith(currentElement: currentDrawing);
@@ -414,24 +414,31 @@ class DrawingProvider extends Notifier<DrawingState> {
   void finishFreeDrawing(Offset? offset, CoordinateSystem coordinateSystem) {
     if (state.currentElement == null) return;
 
-    // if (state.currentElement == null) return;
     final currentDrawing = state.currentElement as FreeDrawing;
+    FreeDrawing finalDrawing = currentDrawing.copyWith(
+      listOfPoints: [...currentDrawing.listOfPoints],
+    );
+
     if (offset != null) {
-      currentDrawing.listOfPoints
+      finalDrawing.listOfPoints
           .add(coordinateSystem.screenToCoordinate(offset));
     }
 
-    FreeDrawing simplifiedDrawing = douglasPeucker(currentDrawing, 1.4);
-
-    simplifiedDrawing.rebuildPath(coordinateSystem);
+    if (Settings.enableStrokeSimplification) {
+      finalDrawing = douglasPeucker(
+        finalDrawing,
+        Settings.strokeSimplificationEpsilon,
+      );
+    }
+    finalDrawing.rebuildPath(coordinateSystem);
 
     state = state.copyWithButEvil(
-      elements: [...state.elements, simplifiedDrawing],
+      elements: [...state.elements, finalDrawing],
     );
 
     final action = UserAction(
         type: ActionType.addition,
-        id: simplifiedDrawing.id,
+        id: finalDrawing.id,
         group: ActionGroup.drawing);
     ref.read(actionProvider.notifier).addAction(action);
 
@@ -468,22 +475,25 @@ class DrawingProvider extends Notifier<DrawingState> {
   }
 
   void updateRectangle(Offset offset, CoordinateSystem coordinateSystem) {
-    if (state.currentElement == null || state.currentElement is! RectangleDrawing) {
+    if (state.currentElement == null ||
+        state.currentElement is! RectangleDrawing) {
       return;
     }
 
     final rectangle = state.currentElement as RectangleDrawing;
     final normalizedOffset = coordinateSystem.screenToCoordinate(offset);
     rectangle.updateEndPoint(normalizedOffset);
-    rectangle.boundingBox =
-        BoundingBox(min: rectangle.normalizedRect.topLeft, max: rectangle.normalizedRect.bottomRight);
+    rectangle.boundingBox = BoundingBox(
+        min: rectangle.normalizedRect.topLeft,
+        max: rectangle.normalizedRect.bottomRight);
 
     state = state.copyWith(currentElement: rectangle);
     _triggerRepaint();
   }
 
   void finishRectangle(Offset? offset, CoordinateSystem coordinateSystem) {
-    if (state.currentElement == null || state.currentElement is! RectangleDrawing) {
+    if (state.currentElement == null ||
+        state.currentElement is! RectangleDrawing) {
       return;
     }
 
@@ -493,8 +503,9 @@ class DrawingProvider extends Notifier<DrawingState> {
       rectangle.updateEndPoint(coordinateSystem.screenToCoordinate(offset));
     }
 
-    rectangle.boundingBox =
-        BoundingBox(min: rectangle.normalizedRect.topLeft, max: rectangle.normalizedRect.bottomRight);
+    rectangle.boundingBox = BoundingBox(
+        min: rectangle.normalizedRect.topLeft,
+        max: rectangle.normalizedRect.bottomRight);
 
     state = state.copyWithButEvil(
       elements: [...state.elements, rectangle],
