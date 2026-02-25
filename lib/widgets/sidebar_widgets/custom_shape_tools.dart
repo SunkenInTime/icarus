@@ -9,6 +9,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
+import 'package:icarus/widgets/numeric_drag_input.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
@@ -40,7 +41,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
   double _rectLengthMeters = CustomRectangleUtility.defaultLengthMeters;
   int _opacityPercent = CustomCircleUtility.defaultOpacityPercent;
   Color _selectedColor = const Color(CustomCircleUtility.defaultColorValue);
-
+  final double _number = 100;
   @override
   Widget build(BuildContext context) {
     final draggableData = _buildToolData();
@@ -109,73 +110,113 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_shape == _CustomShapeKind.circle) ...[
+          const Text("Diameter"),
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 40,
+            // width: 100,
+            child: NumericDragInput(
+              value: _diameterMeters,
+              onChanged: (v) => setState(() => _diameterMeters = v),
+              min: 1.0,
+              max: 40.0,
+              label: 'D',
+              hintText: 'Enter Diameter',
+              suffix: 'm',
+            ),
+          ),
+          const SizedBox(height: 4),
+        ] else ...[
+          const Text("Dimensions"),
+          const SizedBox(height: 4),
+          Row(spacing: 4, children: [
+            Flexible(
+              child: SizedBox(
+                height: 40,
+                // width: 100,
+                child: NumericDragInput(
+                  value: _rectLengthMeters,
+                  onChanged: (v) => setState(() => _rectLengthMeters = v),
+                  min: 1,
+                  max: 60,
+                  label: 'L',
+                  hintText: 'Enter Length',
+                  suffix: 'm',
+                ),
+              ),
+            ),
+            Flexible(
+              child: SizedBox(
+                height: 40,
+                // width: 100,
+                child: NumericDragInput(
+                  value: _rectWidthMeters,
+                  onChanged: (v) => setState(() => _rectWidthMeters = v),
+                  min: 0.5,
+                  max: 30,
+                  label: 'W',
+                  hintText: 'Enter Width',
+                  suffix: 'm',
+                ),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 4),
+        ],
+        const Text("Opacity"),
+        const SizedBox(height: 4),
+        SizedBox(
+          height: 40,
+          // width: 100,
+          child: NumericDragInput(
+            value: _opacityPercent.toDouble(),
+            onChanged: (v) => setState(() => _opacityPercent = v.round()),
+            min: 5,
+            max: 80,
+            leading: Icon(Icons.opacity,
+                color: Settings.tacticalVioletTheme.mutedForeground),
+            // label: 'O',
+            hintText: 'Enter Opacity',
+            suffix: '%',
+          ),
+        ),
+        const SizedBox(height: 4),
         const Text("Color"),
         const SizedBox(height: 4),
         _buildColorPicker(),
         const SizedBox(height: 4),
-        if (_shape == _CustomShapeKind.circle)
-          _slider(
-            label: "Diameter: ${_diameterMeters.toStringAsFixed(1)}m",
-            value: _diameterMeters,
-            min: 1.0,
-            max: 40.0,
-            onChanged: (value) => setState(() => _diameterMeters = value),
-          )
-        else ...[
-          _slider(
-            label: "Length: ${_rectLengthMeters.toStringAsFixed(1)}m",
-            value: _rectLengthMeters,
-            min: 1.0,
-            max: 60.0,
-            onChanged: (value) => setState(() => _rectLengthMeters = value),
-          ),
-          _slider(
-            label: "Width: ${_rectWidthMeters.toStringAsFixed(1)}m",
-            value: _rectWidthMeters,
-            min: 0.5,
-            max: 30.0,
-            onChanged: (value) => setState(() => _rectWidthMeters = value),
-          ),
-        ],
-        _slider(
-          label: "Opacity: $_opacityPercent%",
-          value: _opacityPercent.toDouble(),
-          min: 5,
-          max: 80,
-          onChanged: (value) => setState(() => _opacityPercent = value.round()),
-        ),
-        const SizedBox(height: 4),
         Draggable<CustomShapeToolData>(
-              data: draggableData,
-              dragAnchorStrategy: (draggable, context, position) {
-                final data = draggable.data as CustomShapeToolData;
-                return data.getScaledCenterPoint(
-                  scaleFactor: CoordinateSystem.instance.scaleFactor,
-                  screenZoom: ref.read(screenZoomProvider),
-                );
-              },
-              onDragStarted: () {
-                final interactionState = ref.read(interactionStateProvider);
-                if (interactionState == InteractionState.drawing ||
-                    interactionState == InteractionState.erasing) {
-                  ref
-                      .read(interactionStateProvider.notifier)
-                      .update(InteractionState.navigation);
-                }
-              },
-              feedback: Opacity(
-                opacity: Settings.feedbackOpacity,
-                child: ZoomTransform(child: _buildPreview()),
-              ),
-              child: SizedBox(
-                width: double.infinity,
-                child: ShadButton(
-                  backgroundColor: Settings.tacticalVioletTheme.primary,
-                  onPressed: _placeAtCenter,
-                  child: const Text("+ Place Shape"),
-                ),
-              ),
+          data: draggableData,
+          dragAnchorStrategy: (draggable, context, position) {
+            final data = draggable.data as CustomShapeToolData;
+            return data.getScaledCenterPoint(
+              scaleFactor: CoordinateSystem.instance.scaleFactor,
+              screenZoom: ref.read(screenZoomProvider),
+            );
+          },
+          onDragStarted: () {
+            final interactionState = ref.read(interactionStateProvider);
+            if (interactionState == InteractionState.drawing ||
+                interactionState == InteractionState.erasing) {
+              ref
+                  .read(interactionStateProvider.notifier)
+                  .update(InteractionState.navigation);
+            }
+          },
+          feedback: Opacity(
+            opacity: Settings.feedbackOpacity,
+            child: ZoomTransform(child: _buildPreview()),
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            child: ShadButton(
+              backgroundColor: Settings.tacticalVioletTheme.primary,
+              onPressed: _placeAtCenter,
+              child: const Text("+ Place Shape"),
             ),
+          ),
+        ),
       ],
     );
   }
@@ -194,27 +235,6 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
               onTap: () => setState(() => _selectedColor = color),
             ),
           ),
-      ],
-    );
-  }
-
-  Widget _slider({
-    required String label,
-    required double value,
-    required double min,
-    required double max,
-    required ValueChanged<double> onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label),
-        Slider(
-          value: value.clamp(min, max),
-          min: min,
-          max: max,
-          onChanged: onChanged,
-        ),
       ],
     );
   }

@@ -74,19 +74,19 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
               ),
             ),
           ),
-          MouseWatch(
-            cursor: SystemMouseCursors.click,
-            onDeleteKeyPressed: () {
-              if (id == null) return;
-              final action = UserAction(
-                type: ActionType.deletion,
-                id: id!,
-                group: ActionGroup.utility,
-              );
-              ref.read(actionProvider.notifier).addAction(action);
-              ref.read(utilityProvider.notifier).removeUtility(id!);
-            },
-            child: Center(
+          Center(
+            child: MouseWatch(
+              cursor: SystemMouseCursors.click,
+              onDeleteKeyPressed: () {
+                if (id == null) return;
+                final action = UserAction(
+                  type: ActionType.deletion,
+                  id: id!,
+                  group: ActionGroup.utility,
+                );
+                ref.read(actionProvider.notifier).addAction(action);
+                ref.read(utilityProvider.notifier).removeUtility(id!);
+              },
               child: Container(
                 width: iconSize * 0.8,
                 height: iconSize * 0.8,
