@@ -9,6 +9,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -409,9 +410,8 @@ class _ViewConeUtilityList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final utilities = ref
-        .watch(utilityProvider)
-        .where((utility) => UtilityData.isViewCone(utility.type));
+    final utilities =
+        ref.watch(utilityProvider).where(PageLayering.isViewConeUtility);
 
     return Stack(
       clipBehavior: Clip.none,
@@ -458,9 +458,8 @@ class _UtilityList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final utilities = ref.watch(utilityProvider).where((utility) =>
-        !UtilityData.isViewCone(utility.type) &&
-        !UtilityData.isCustomShape(utility.type));
+    final utilities =
+        ref.watch(utilityProvider).where(PageLayering.isTopUtility);
 
     return Stack(
       clipBehavior: Clip.none,
@@ -535,9 +534,8 @@ class _CustomShapeUtilityList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final customShapes = ref
-        .watch(utilityProvider)
-        .where((utility) => UtilityData.isCustomShape(utility.type));
+    final customShapes =
+        ref.watch(utilityProvider).where(PageLayering.isCustomShapeUtility);
 
     return Stack(
       clipBehavior: Clip.none,
@@ -563,8 +561,9 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                 if (placedUtility.type == UtilityType.customCircle) {
                   final diameterMeters = placedUtility.customDiameter ??
                       CustomCircleUtility.defaultDiameterMeters;
-                  final diameter =
-                      diameterMeters * AgentData.inGameMetersDiameter * mapScale;
+                  final diameter = diameterMeters *
+                      AgentData.inGameMetersDiameter *
+                      mapScale;
                   safeArea = Offset(diameter / 2, diameter / 2);
                 } else {
                   final widthMeters = placedUtility.customWidth ??

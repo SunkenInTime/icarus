@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
@@ -104,7 +103,9 @@ class _PagesBarState extends ConsumerState<PagesBar>
     await box.put(updated.id, updated);
     if (newActive != activeId) {
       if (newActive != null)
-        await ref.read(strategyProvider.notifier).setActivePage(newActive);
+        await ref
+            .read(strategyProvider.notifier)
+            .setActivePageAnimated(newActive);
     }
   }
 

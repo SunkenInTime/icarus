@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 
+enum PageTransitionPhase { idle, preparing, animating }
+
+const Duration kPageTransitionDuration = Duration(milliseconds: 420);
+
 class PageTransitionState {
   const PageTransitionState({
     required this.active,
@@ -12,6 +16,9 @@ class PageTransitionState {
     required this.duration,
     required this.hideView,
     required this.allWidgets,
+    required this.direction,
+    required this.phase,
+    required this.transitionId,
   });
   final bool hideView;
   final bool active;
@@ -19,6 +26,9 @@ class PageTransitionState {
   final List<PlacedWidget> allWidgets;
   final double progress;
   final Duration duration;
+  final PageTransitionDirection direction;
+  final PageTransitionPhase phase;
+  final int transitionId;
 
   PageTransitionState copyWith({
     bool? active,
@@ -27,6 +37,9 @@ class PageTransitionState {
     Duration? duration,
     bool? hideView,
     List<PlacedWidget>? allWidgets,
+    PageTransitionDirection? direction,
+    PageTransitionPhase? phase,
+    int? transitionId,
   }) =>
       PageTransitionState(
         hideView: hideView ?? this.hideView,
@@ -35,15 +48,21 @@ class PageTransitionState {
         progress: progress ?? this.progress,
         duration: duration ?? this.duration,
         allWidgets: allWidgets ?? this.allWidgets,
+        direction: direction ?? this.direction,
+        phase: phase ?? this.phase,
+        transitionId: transitionId ?? this.transitionId,
       );
 
   static const idle = PageTransitionState(
       active: false,
       entries: [],
       progress: 0,
-      duration: Duration(seconds: 2),
+      duration: kPageTransitionDuration,
       hideView: false,
-      allWidgets: []);
+      allWidgets: [],
+      direction: PageTransitionDirection.forward,
+      phase: PageTransitionPhase.idle,
+      transitionId: 0);
 }
 
 final transitionProvider =
@@ -51,6 +70,8 @@ final transitionProvider =
         TransitionProvider.new);
 
 class TransitionProvider extends Notifier<PageTransitionState> {
+  int _nextTransitionId = 1;
+
   @override
   PageTransitionState build() {
     return PageTransitionState.idle;
@@ -61,14 +82,31 @@ class TransitionProvider extends Notifier<PageTransitionState> {
     state = state.copyWith(progress: v.clamp(0, 1));
   }
 
+  void prepare(List<PlacedWidget> widgets,
+      {PageTransitionDirection direction = PageTransitionDirection.forward}) {
+    state = state.copyWith(
+      allWidgets: widgets,
+      hideView: true,
+      active: false,
+      entries: const [],
+      progress: 0,
+      phase: PageTransitionPhase.preparing,
+      direction: direction,
+    );
+  }
+
   void start(List<PageTransitionEntry> entries,
-      {Duration duration = const Duration(seconds: 2)}) {
+      {Duration duration = kPageTransitionDuration,
+      PageTransitionDirection direction = PageTransitionDirection.forward}) {
     state = state.copyWith(
       hideView: true,
       active: true,
       entries: entries,
       progress: 0,
       duration: duration,
+      direction: direction,
+      phase: PageTransitionPhase.animating,
+      transitionId: _nextTransitionId++,
     );
   }
 
@@ -82,6 +120,13 @@ class TransitionProvider extends Notifier<PageTransitionState> {
 
   void complete() {
     log("Transition Complete Called");
-    state = state.copyWith(active: false, progress: 1, hideView: false);
+    state = state.copyWith(
+      active: false,
+      progress: 1,
+      hideView: false,
+      entries: const [],
+      allWidgets: const [],
+      phase: PageTransitionPhase.idle,
+    );
   }
 }

@@ -622,7 +622,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       nextIndex = pages.length - 1; // No forward page available.
 
     final nextPage = pages[nextIndex];
-    await setActivePage(nextPage.id);
+    await setActivePageAnimated(
+      nextPage.id,
+      direction: PageTransitionDirection.backward,
+    );
   }
 
   Future<void> forwardPage() async {
@@ -643,7 +646,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (nextIndex >= pages.length) nextIndex = 0; // No forward page available.
 
     final nextPage = pages[nextIndex];
-    await setActivePage(nextPage.id);
+    await setActivePageAnimated(
+      nextPage.id,
+      direction: PageTransitionDirection.forward,
+    );
   }
 
   Future<void> reorderPage(int oldIndex, int newIndex) async {
@@ -684,11 +690,49 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
   }
 
-// Add these inside StrategyProvider
-  Future<void> setActivePageAnimated(String pageID) async {
+  PageTransitionDirection _resolveDirectionForPage(
+      String pageID, List<StrategyPage> orderedPages) {
+    if (activePageID == null) return PageTransitionDirection.forward;
+
+    final currentIndex = orderedPages.indexWhere((p) => p.id == activePageID);
+    final targetIndex = orderedPages.indexWhere((p) => p.id == pageID);
+    if (currentIndex < 0 || targetIndex < 0) {
+      return PageTransitionDirection.forward;
+    }
+
+    final length = orderedPages.length;
+    final forwardSteps = (targetIndex - currentIndex + length) % length;
+    final backwardSteps = (currentIndex - targetIndex + length) % length;
+    return forwardSteps <= backwardSteps
+        ? PageTransitionDirection.forward
+        : PageTransitionDirection.backward;
+  }
+
+  // Add these inside StrategyProvider
+  Future<void> setActivePageAnimated(String pageID,
+      {PageTransitionDirection? direction,
+      Duration duration = kPageTransitionDuration}) async {
+    if (pageID == activePageID) return;
+
+    final transitionState = ref.read(transitionProvider);
+    final transitionNotifier = ref.read(transitionProvider.notifier);
+    if (transitionState.active ||
+        transitionState.phase == PageTransitionPhase.preparing) {
+      transitionNotifier.complete();
+    }
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final doc = box.get(state.id);
+    if (doc == null || doc.pages.isEmpty) return;
+
+    final orderedPages = [...doc.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    final resolvedDirection =
+        direction ?? _resolveDirectionForPage(pageID, orderedPages);
+
     final prev = _snapshotAllPlaced();
-    ref.read(transitionProvider.notifier).setAllWidgets(prev.values.toList());
-    ref.read(transitionProvider.notifier).setHideView(true);
+    transitionNotifier.prepare(prev.values.toList(),
+        direction: resolvedDirection);
 
     // Load target page (hydrates providers)
     await setActivePage(pageID);
@@ -698,11 +742,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       final next = _snapshotAllPlaced();
       final entries = _diffToTransitions(prev, next);
       if (entries.isNotEmpty) {
-        ref
-            .read(transitionProvider.notifier)
-            .start(entries, duration: const Duration(seconds: 1));
+        transitionNotifier.start(
+          entries,
+          duration: duration,
+          direction: resolvedDirection,
+        );
       } else {
-        ref.read(transitionProvider.notifier).complete();
+        transitionNotifier.complete();
       }
     });
   }
@@ -722,6 +768,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     Map<String, PlacedWidget> next,
   ) {
     final entries = <PageTransitionEntry>[];
+    var order = 0;
 
     // Move / appear
     next.forEach((id, to) {
@@ -732,20 +779,23 @@ class StrategyProvider extends Notifier<StrategyState> {
                 PageTransitionEntry.rotationOf(to) ||
             PageTransitionEntry.lengthOf(from) !=
                 PageTransitionEntry.lengthOf(to)) {
-          entries.add(PageTransitionEntry.move(from: from, to: to));
+          entries
+              .add(PageTransitionEntry.move(from: from, to: to, order: order));
         } else {
           // Unchanged: include as 'none' so it stays visible while base view is hidden
-          entries.add(PageTransitionEntry.none(to: to));
+          entries.add(PageTransitionEntry.none(to: to, order: order));
         }
       } else {
-        entries.add(PageTransitionEntry.appear(to: to));
+        entries.add(PageTransitionEntry.appear(to: to, order: order));
       }
+      order++;
     });
 
     // Disappear
     prev.forEach((id, from) {
       if (!next.containsKey(id)) {
-        entries.add(PageTransitionEntry.disappear(from: from));
+        entries.add(PageTransitionEntry.disappear(from: from, order: order));
+        order++;
       }
     });
 

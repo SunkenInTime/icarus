@@ -61,8 +61,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
             (constraints.maxWidth - Settings.sideBarReservedWidth)
                 .clamp(0.0, constraints.maxWidth);
         final viewportSize = Size(viewportWidth, height);
-        final double desiredOffsetX =
-            viewportWidth > worldWidth ? (viewportWidth - worldWidth) / 2 : 0.0;
         if (_lastViewportSize != viewportSize) {
           final double currentScale = controller.value.getMaxScaleOnAxis();
           final double safeScale = currentScale == 0 ? 1.0 : currentScale;
@@ -223,7 +221,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                   child: ref
                                               .watch(transitionProvider)
                                               .hideView &&
-                                          !ref.watch(transitionProvider).active
+                                          ref.watch(transitionProvider).phase ==
+                                              PageTransitionPhase.preparing
                                       ? TemporaryWidgetBuilder()
                                       : SizedBox.shrink(),
                                 ),
