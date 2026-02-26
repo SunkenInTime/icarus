@@ -5,6 +5,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DrawingTools extends ConsumerWidget {
   const DrawingTools({super.key});
@@ -14,6 +15,7 @@ class DrawingTools extends ConsumerWidget {
     final isDotted = ref.watch(penProvider).isDotted;
     final hasArrow = ref.watch(penProvider).hasArrow;
     final penMode = ref.watch(penProvider).penMode;
+    final traversalTimeEnabled = ref.watch(penProvider).traversalTimeEnabled;
 
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 16, top: 8),
@@ -44,119 +46,123 @@ class DrawingTools extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 4),
-          const Text("Stroke"),
-          const SizedBox(height: 4),
           Row(
+            spacing: 8,
             children: [
-              Container(
-                  decoration: BoxDecoration(
-                    color: Settings.tacticalVioletTheme.card,
-                    borderRadius: const BorderRadius.all(Radius.circular(8)),
-                    border: Border.all(
-                      color: Settings.tacticalVioletTheme.border,
-                      width: 1,
-                    ),
-                    boxShadow: const [
-                      Settings.cardForegroundBackdrop,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Shape"),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Settings.tacticalVioletTheme.card,
+                          borderRadius:
+                              const BorderRadius.all(Radius.circular(8)),
+                          border: Border.all(
+                            color: Settings.tacticalVioletTheme.border,
+                            width: 1,
+                          ),
+                          boxShadow: const [
+                            Settings.cardForegroundBackdrop,
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(2.0),
+                          child: Row(
+                            spacing: 4,
+                            children: [
+                              SelectableIconButton(
+                                icon: const Icon(
+                                  LucideIcons.lineSquiggle,
+                                  size: 20,
+                                ),
+                                isSelected: penMode == PenMode.freeDraw,
+                                onPressed: () {
+                                  ref
+                                      .read(penProvider.notifier)
+                                      .updateValue(penMode: PenMode.freeDraw);
+                                },
+                                tooltip: "Free draw",
+                              ),
+                              SelectableIconButton(
+                                icon: const Icon(
+                                  Icons.crop_square,
+                                  size: 20,
+                                ),
+                                isSelected: penMode == PenMode.square,
+                                onPressed: () {
+                                  ref
+                                      .read(penProvider.notifier)
+                                      .updateValue(penMode: PenMode.square);
+                                },
+                                tooltip: "Rectangle",
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(2.0),
-                    child: Row(
-                      spacing: 4,
-                      children: [
-                        SelectableIconButton(
-                          icon: const Icon(
-                            CustomIcons.line,
-                            size: 20,
-                          ),
-                          isSelected: !isDotted,
-                          onPressed: () {
-                            ref
-                                .read(penProvider.notifier)
-                                .updateValue(isDotted: false);
-                          },
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("Stroke"),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      SelectableIconButton(
+                        icon: const Icon(
+                          CustomIcons.dottedline,
+                          size: 20,
                         ),
-                        SelectableIconButton(
-                          icon: const Icon(
-                            CustomIcons.dottedline,
-                            size: 20,
-                          ),
-                          isSelected: isDotted,
-                          onPressed: () {
-                            ref
-                                .read(penProvider.notifier)
-                                .updateValue(isDotted: true);
-                          },
+                        isSelected: isDotted,
+                        onPressed: () {
+                          ref
+                              .read(penProvider.notifier)
+                              .updateValue(isDotted: !isDotted);
+                        },
+                        tooltip: "Dotted line",
+                      ),
+                      const SizedBox(width: 5),
+                      SelectableIconButton(
+                        icon: const Icon(
+                          CustomIcons.arrow,
+                          size: 20,
                         ),
-                      ],
-                    ),
-                  )),
-              const SizedBox(width: 5),
-              SelectableIconButton(
-                icon: const Icon(
-                  CustomIcons.arrow,
-                  size: 20,
-                ),
-                isSelected: hasArrow,
-                onPressed: () {
-                  ref.read(penProvider.notifier).toggleArrow();
-                },
-                tooltip: "Arrow",
+                        isSelected: hasArrow,
+                        onPressed: () {
+                          ref.read(penProvider.notifier).toggleArrow();
+                        },
+                        tooltip: "Arrow",
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),
           const SizedBox(height: 4),
-          const Text("Rectangle mode"),
+
+          const SizedBox(height: 4),
+          const Text("Traversal Time"),
           const SizedBox(height: 4),
           Row(
             children: [
-              Container(
-                decoration: BoxDecoration(
-                  color: Settings.tacticalVioletTheme.card,
-                  borderRadius: const BorderRadius.all(Radius.circular(8)),
-                  border: Border.all(
-                    color: Settings.tacticalVioletTheme.border,
-                    width: 1,
-                  ),
-                  boxShadow: const [
-                    Settings.cardForegroundBackdrop,
-                  ],
+              SelectableIconButton(
+                icon: const Icon(
+                  Icons.timer_outlined,
+                  size: 20,
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.all(2.0),
-                  child: Row(
-                    spacing: 4,
-                    children: [
-                      SelectableIconButton(
-                        icon: const Icon(
-                          CustomIcons.line,
-                          size: 20,
-                        ),
-                        isSelected: penMode == PenMode.freeDraw,
-                        onPressed: () {
-                          ref
-                              .read(penProvider.notifier)
-                              .updateValue(penMode: PenMode.freeDraw);
-                        },
-                        tooltip: "Free draw",
-                      ),
-                      SelectableIconButton(
-                        icon: const Icon(
-                          Icons.crop_square,
-                          size: 20,
-                        ),
-                        isSelected: penMode == PenMode.square,
-                        onPressed: () {
-                          ref
-                              .read(penProvider.notifier)
-                              .updateValue(penMode: PenMode.square);
-                        },
-                        tooltip: "Rectangle",
-                      ),
-                    ],
-                  ),
-                ),
+                isSelected: traversalTimeEnabled,
+                onPressed: () {
+                  ref.read(penProvider.notifier).toggleTraversalTime();
+                },
+                tooltip: "Show traversal time cards",
               ),
             ],
           ),

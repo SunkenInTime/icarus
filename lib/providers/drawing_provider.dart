@@ -9,6 +9,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -363,8 +364,14 @@ class DrawingProvider extends Notifier<DrawingState> {
   //   _triggerRepaint();
   // }
 
-  void startFreeDrawing(Offset start, CoordinateSystem coordinateSystem,
-      Color activeColor, bool isDotted, bool hasArrow) {
+  void startFreeDrawing(
+      Offset start,
+      CoordinateSystem coordinateSystem,
+      Color activeColor,
+      bool isDotted,
+      bool hasArrow,
+      bool showTraversalTime,
+      TraversalSpeedProfile traversalSpeedProfile) {
     if (state.currentElement != null) {
       dev.log(
           "An error occured the gesture detecture is attempting to draw while another line is active");
@@ -379,6 +386,8 @@ class DrawingProvider extends Notifier<DrawingState> {
       color: activeColor,
       boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
       id: id,
+      showTraversalTime: showTraversalTime,
+      traversalSpeedProfile: traversalSpeedProfile,
     );
 
     freeDrawing.listOfPoints.add(normalizedStart);

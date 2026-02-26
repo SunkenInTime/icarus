@@ -12,6 +12,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';

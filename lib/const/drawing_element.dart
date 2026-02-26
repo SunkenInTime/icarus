@@ -4,6 +4,7 @@ import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/traversal_speed.dart';
 import 'package:json_annotation/json_annotation.dart';
 
 part "drawing_element.g.dart";
@@ -85,11 +86,19 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
     required super.isDotted,
     required super.hasArrow,
     required super.id,
+    this.showTraversalTime = false,
+    this.traversalSpeedProfile = TraversalSpeed.defaultProfile,
   })  : listOfPoints = listOfPoints ?? [],
         _path = path ?? Path();
 
   @OffsetListConverter()
   List<Offset> listOfPoints = [];
+
+  @JsonKey(defaultValue: false)
+  final bool showTraversalTime;
+
+  @JsonKey(defaultValue: TraversalSpeedProfile.running)
+  final TraversalSpeedProfile traversalSpeedProfile;
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   Path _path = Path();
@@ -160,6 +169,8 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
     bool? isDotted,
     bool? hasArrow,
     String? id,
+    bool? showTraversalTime,
+    TraversalSpeedProfile? traversalSpeedProfile,
   }) {
     return FreeDrawing(
       color: color ?? this.color,
@@ -169,6 +180,9 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
       isDotted: isDotted ?? this.isDotted,
       hasArrow: hasArrow ?? this.hasArrow,
       id: id ?? this.id,
+      showTraversalTime: showTraversalTime ?? this.showTraversalTime,
+      traversalSpeedProfile:
+          traversalSpeedProfile ?? this.traversalSpeedProfile,
     );
   }
 

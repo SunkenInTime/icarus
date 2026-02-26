@@ -4,11 +4,14 @@ import 'dart:math' as math;
 import 'package:dash_painter/dash_painter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/widgets/cursor_circle.dart';
 
@@ -47,6 +50,8 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
     // Get the drawing data here in the widget
     DrawingState drawingState = ref.watch(drawingProvider);
     final penState = ref.watch(penProvider);
+    final mapScale = ref.watch(mapProvider.notifier).mapScale;
+    final isAttack = ref.watch(mapProvider.select((state) => state.isAttack));
 
     CustomPainter drawingPainter = DrawingPainter(
         updateCounter: drawingState.updateCounter,
@@ -115,6 +120,8 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                           penState.color,
                           penState.isDotted,
                           penState.hasArrow,
+                          penState.traversalTimeEnabled,
+                          penState.activeTraversalSpeedProfile,
                         );
                   }
 
@@ -225,6 +232,17 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                     );
                   },
                 ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: _TraversalTimeOverlay(
+                      coordinateSystem: coordinateSystem,
+                      mapScale: mapScale,
+                      isAttack: isAttack,
+                      elements: drawingState.elements,
+                      currentLine: drawingState.currentElement,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -232,6 +250,143 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
       ),
     );
   }
+}
+
+class _TraversalTimeOverlay extends StatelessWidget {
+  const _TraversalTimeOverlay({
+    required this.coordinateSystem,
+    required this.mapScale,
+    required this.isAttack,
+    required this.elements,
+    required this.currentLine,
+  });
+
+  final CoordinateSystem coordinateSystem;
+  final double mapScale;
+  final bool isAttack;
+  final List<DrawingElement> elements;
+  final DrawingElement? currentLine;
+
+  @override
+  Widget build(BuildContext context) {
+    final cards = <Widget>[
+      for (final element in elements.whereType<FreeDrawing>())
+        if (element.showTraversalTime)
+          _buildTraversalCard(
+            drawing: element,
+            coordinateSystem: coordinateSystem,
+            mapScale: mapScale,
+            isAttack: isAttack,
+          ),
+      if (currentLine is FreeDrawing &&
+          (currentLine as FreeDrawing).showTraversalTime)
+        _buildTraversalCard(
+          drawing: currentLine as FreeDrawing,
+          coordinateSystem: coordinateSystem,
+          mapScale: mapScale,
+          isAttack: isAttack,
+        ),
+    ];
+
+    if (cards.isEmpty) return const SizedBox.shrink();
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: cards,
+    );
+  }
+}
+
+Widget _buildTraversalCard({
+  required FreeDrawing drawing,
+  required CoordinateSystem coordinateSystem,
+  required double mapScale,
+  required bool isAttack,
+}) {
+  if (drawing.listOfPoints.isEmpty) return const SizedBox.shrink();
+
+  final unitsPerMeter = AgentData.inGameMeters * mapScale;
+  if (unitsPerMeter <= 0) return const SizedBox.shrink();
+
+  const cardWidthMeters = 5.0;
+  const cardHeightMeters = 2.5;
+  const xOffsetMeters = 0.8;
+  const yOffsetMeters = 0.8;
+
+  final cardWidthScreen =
+      coordinateSystem.scale(cardWidthMeters * unitsPerMeter);
+  final cardHeightScreen =
+      coordinateSystem.scale(cardHeightMeters * unitsPerMeter);
+  final anchor = drawing.listOfPoints.last.translate(
+    xOffsetMeters * unitsPerMeter,
+    -yOffsetMeters * unitsPerMeter,
+  );
+  final anchorScreen = coordinateSystem.coordinateToScreen(anchor);
+
+  final timeSeconds = _calculateTraversalTime(
+    drawing: drawing,
+    unitsPerMeter: unitsPerMeter,
+  );
+  final label = "${timeSeconds.toStringAsFixed(2)}s";
+
+  return Positioned(
+    left: anchorScreen.dx,
+    top: anchorScreen.dy,
+    child: Container(
+      width: cardWidthScreen,
+      height: cardHeightScreen,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Settings.tacticalVioletTheme.card.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(coordinateSystem.scale(4)),
+        border: Border.all(
+          color: Settings.tacticalVioletTheme.border,
+          width: 1,
+        ),
+      ),
+      // Defensive-side drawings are rotated, so flip card text diagonally too.
+      child: Transform(
+        alignment: Alignment.center,
+        transform: !isAttack
+            ? Matrix4.diagonal3Values(-1.0, -1.0, 1.0)
+            : Matrix4.identity(),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: coordinateSystem.scale(10),
+                color: Settings.tacticalVioletTheme.foreground,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+double _calculateTraversalTime({
+  required FreeDrawing drawing,
+  required double unitsPerMeter,
+}) {
+  if (drawing.listOfPoints.length < 2) return 0.0;
+
+  double lengthUnits = 0.0;
+  for (int i = 0; i < drawing.listOfPoints.length - 1; i++) {
+    lengthUnits +=
+        (drawing.listOfPoints[i + 1] - drawing.listOfPoints[i]).distance;
+  }
+
+  final distanceMeters = lengthUnits / unitsPerMeter;
+  final speed = TraversalSpeed.metersPerSecond[drawing.traversalSpeedProfile] ??
+      TraversalSpeed.metersPerSecond[TraversalSpeed.defaultProfile]!;
+  if (speed <= 0) return 0.0;
+
+  return distanceMeters / speed;
 }
 
 class DrawingPainter extends CustomPainter {

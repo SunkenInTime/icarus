@@ -41,7 +41,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
   double _rectLengthMeters = CustomRectangleUtility.defaultLengthMeters;
   int _opacityPercent = CustomCircleUtility.defaultOpacityPercent;
   Color _selectedColor = const Color(CustomCircleUtility.defaultColorValue);
-  final double _number = 100;
+
   @override
   Widget build(BuildContext context) {
     final draggableData = _buildToolData();

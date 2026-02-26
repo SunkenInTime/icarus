@@ -16,6 +16,10 @@ FreeDrawing _$FreeDrawingFromJson(Map<String, dynamic> json) => FreeDrawing(
       isDotted: json['isDotted'] as bool,
       hasArrow: json['hasArrow'] as bool,
       id: json['id'] as String,
+      showTraversalTime: json['showTraversalTime'] as bool? ?? false,
+      traversalSpeedProfile: $enumDecodeNullable(
+              _$TraversalSpeedProfileEnumMap, json['traversalSpeedProfile']) ??
+          TraversalSpeedProfile.running,
     );
 
 Map<String, dynamic> _$FreeDrawingToJson(FreeDrawing instance) =>
@@ -26,7 +30,14 @@ Map<String, dynamic> _$FreeDrawingToJson(FreeDrawing instance) =>
       'id': instance.id,
       'boundingBox': instance.boundingBox,
       'listOfPoints': const OffsetListConverter().toJson(instance.listOfPoints),
+      'showTraversalTime': instance.showTraversalTime,
+      'traversalSpeedProfile':
+          _$TraversalSpeedProfileEnumMap[instance.traversalSpeedProfile]!,
     };
+
+const _$TraversalSpeedProfileEnumMap = {
+  TraversalSpeedProfile.running: 'running',
+};
 
 Value? _$JsonConverterFromJson<Json, Value>(
   Object? json,
