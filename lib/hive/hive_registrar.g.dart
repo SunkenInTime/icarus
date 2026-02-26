@@ -31,6 +31,7 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(StrategyDataAdapter());
     registerAdapter(StrategyPageAdapter());
     registerAdapter(StrategySettingsAdapter());
+    registerAdapter(TraversalSpeedProfileAdapter());
     registerAdapter(UtilityTypeAdapter());
   }
 }
@@ -60,6 +61,7 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(StrategyDataAdapter());
     registerAdapter(StrategyPageAdapter());
     registerAdapter(StrategySettingsAdapter());
+    registerAdapter(TraversalSpeedProfileAdapter());
     registerAdapter(UtilityTypeAdapter());
   }
 }

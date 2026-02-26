@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+Do not edit .g.dart or any other code generate files. use the appropriate channels and then run the code gen command

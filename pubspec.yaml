@@ -49,7 +49,7 @@ dev_dependencies:
   flutter_lints: ^3.0.0
   msix: ^3.16.8
   # dart run msix:create
-  # flutter pub run build_runner build --delete-conflicting-outputs
+  # dart run build_runner build --delete-conflicting-outputs
   # powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 -Bump major
   # powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 -Bump minor
   # powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 -Bump patch

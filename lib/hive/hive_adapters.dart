@@ -43,5 +43,6 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
   AdapterSpec<SimpleImageData>(),
   AdapterSpec<AgentState>(),
   AdapterSpec<RectangleDrawing>(),
+  AdapterSpec<TraversalSpeedProfile>(),
 ])
 part 'hive_adapters.g.dart';

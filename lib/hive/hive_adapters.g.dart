@@ -613,13 +613,10 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       isDotted: fields[3] as bool,
       hasArrow: fields[4] as bool,
       id: fields[5] as String,
-      showTraversalTime: fields[7] == null ? false : fields[7] as bool,
-      traversalSpeedProfile: fields[8] == null
+      showTraversalTime: fields[8] == null ? false : fields[8] as bool,
+      traversalSpeedProfile: fields[9] == null
           ? TraversalSpeed.defaultProfile
-          : TraversalSpeedProfile.values[(fields[8] as num).toInt().clamp(
-                0,
-                TraversalSpeedProfile.values.length - 1,
-              )],
+          : fields[9] as TraversalSpeedProfile,
     );
   }
 
@@ -639,10 +636,10 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       ..write(obj.id)
       ..writeByte(6)
       ..write(obj.boundingBox)
-      ..writeByte(7)
-      ..write(obj.showTraversalTime)
       ..writeByte(8)
-      ..write(obj.traversalSpeedProfile.index);
+      ..write(obj.showTraversalTime)
+      ..writeByte(9)
+      ..write(obj.traversalSpeedProfile);
   }
 
   @override
@@ -1302,6 +1299,51 @@ class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is RectangleDrawingAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class TraversalSpeedProfileAdapter extends TypeAdapter<TraversalSpeedProfile> {
+  @override
+  final typeId = 25;
+
+  @override
+  TraversalSpeedProfile read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return TraversalSpeedProfile.running;
+      case 1:
+        return TraversalSpeedProfile.walking;
+      case 2:
+        return TraversalSpeedProfile.brimStim;
+      case 3:
+        return TraversalSpeedProfile.neonRun;
+      default:
+        return TraversalSpeedProfile.running;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, TraversalSpeedProfile obj) {
+    switch (obj) {
+      case TraversalSpeedProfile.running:
+        writer.writeByte(0);
+      case TraversalSpeedProfile.walking:
+        writer.writeByte(1);
+      case TraversalSpeedProfile.brimStim:
+        writer.writeByte(2);
+      case TraversalSpeedProfile.neonRun:
+        writer.writeByte(3);
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TraversalSpeedProfileAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

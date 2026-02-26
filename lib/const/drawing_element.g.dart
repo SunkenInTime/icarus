@@ -35,12 +35,15 @@ Map<String, dynamic> _$FreeDrawingToJson(FreeDrawing instance) =>
           _$TraversalSpeedProfileEnumMap[instance.traversalSpeedProfile]!,
     };
 
-const _$TraversalSpeedProfileEnumMap = {
-  TraversalSpeedProfile.running: 'running',
-};
-
 Value? _$JsonConverterFromJson<Json, Value>(
   Object? json,
   Value? Function(Json json) fromJson,
 ) =>
     json == null ? null : fromJson(json as Json);
+
+const _$TraversalSpeedProfileEnumMap = {
+  TraversalSpeedProfile.running: 'running',
+  TraversalSpeedProfile.walking: 'walking',
+  TraversalSpeedProfile.brimStim: 'brimStim',
+  TraversalSpeedProfile.neonRun: 'neonRun',
+};
