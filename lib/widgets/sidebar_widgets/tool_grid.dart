@@ -4,12 +4,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/custom_icons.dart';
+import 'package:icarus/const/default_placement.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
+import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
@@ -79,6 +81,9 @@ class BottomContextBar extends ConsumerWidget {
 
 class ToolGrid extends ConsumerWidget {
   const ToolGrid({super.key});
+  static const double _defaultTextSpawnWidth = 200;
+  static const double _defaultTextSpawnHeight = 40;
+  static const double _defaultImageSpawnWidth = 200;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -177,11 +182,17 @@ class ToolGrid extends ConsumerWidget {
                         .read(interactionStateProvider.notifier)
                         .update(InteractionState.navigation);
                     const uuid = Uuid();
+                    final placementCenter = ref.read(placementCenterProvider);
+                    final centeredTopLeft =
+                        DefaultPlacement.topLeftFromVirtualAnchor(
+                      viewportCenter: placementCenter,
+                      anchorVirtual: const Offset(
+                        _defaultTextSpawnWidth / 2,
+                        _defaultTextSpawnHeight / 2,
+                      ),
+                    );
                     ref.read(textProvider.notifier).addText(
-                          PlacedText(
-                            position: const Offset(500, 500),
-                            id: uuid.v4(),
-                          ),
+                          PlacedText(position: centeredTopLeft, id: uuid.v4()),
                         );
                   },
                   icon: const Icon(Icons.text_fields),
@@ -222,8 +233,24 @@ class ToolGrid extends ConsumerWidget {
                       return;
                     }
 
+                    final aspectRatio = await ref
+                        .read(placedImageProvider.notifier)
+                        .getImageAspectRatio(imageBytes);
+                    final placementCenter = ref.read(placementCenterProvider);
+                    final imageHeight = _defaultImageSpawnWidth / aspectRatio;
+                    final centeredTopLeft =
+                        DefaultPlacement.topLeftFromVirtualAnchor(
+                      viewportCenter: placementCenter,
+                      anchorVirtual:
+                          Offset(_defaultImageSpawnWidth / 2, imageHeight / 2),
+                    );
+
                     ref.read(placedImageProvider.notifier).addImage(
-                        imageBytes: imageBytes, fileExtension: fileExtension);
+                          imageBytes: imageBytes,
+                          fileExtension: fileExtension,
+                          aspectRatio: aspectRatio,
+                          position: centeredTopLeft,
+                        );
                   },
                   icon: const Icon(Icons.image_outlined),
                 ),
@@ -334,10 +361,20 @@ class ToolGrid extends ConsumerWidget {
                           .read(interactionStateProvider.notifier)
                           .update(InteractionState.navigation);
                       const uuid = Uuid();
+                      final placementCenter = ref.read(placementCenterProvider);
+                      final spikeData = SpikeToolData.fromUtility(
+                        UtilityData.utilityWidgets[UtilityType.spike]!
+                            as ImageUtility,
+                      );
+                      final centeredTopLeft =
+                          DefaultPlacement.topLeftFromVirtualAnchor(
+                        viewportCenter: placementCenter,
+                        anchorVirtual: spikeData.centerPoint,
+                      );
 
                       ref.read(utilityProvider.notifier).addUtility(
                             PlacedUtility(
-                              position: const Offset(500, 500),
+                              position: centeredTopLeft,
                               id: uuid.v4(),
                               type: UtilityType.spike,
                             ),

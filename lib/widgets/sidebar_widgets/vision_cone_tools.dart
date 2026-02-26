@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/default_placement.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -135,9 +137,14 @@ class _VisionConePresetTile extends ConsumerWidget {
                 .read(interactionStateProvider.notifier)
                 .update(InteractionState.navigation);
             const uuid = Uuid();
+            final placementCenter = ref.read(placementCenterProvider);
+            final centeredTopLeft = DefaultPlacement.topLeftFromVirtualAnchor(
+              viewportCenter: placementCenter,
+              anchorVirtual: data.centerPoint,
+            );
             ref.read(utilityProvider.notifier).addUtility(
                   PlacedUtility(
-                    position: const Offset(500, 500),
+                    position: centeredTopLeft,
                     id: uuid.v4(),
                     type: type,
                     angle: data.angle,

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/default_placement.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
@@ -261,10 +263,15 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
   void _placeAtCenter() {
     const uuid = Uuid();
     final toolData = _buildToolData();
+    final placementCenter = ref.read(placementCenterProvider);
+    final centeredTopLeft = DefaultPlacement.topLeftFromVirtualAnchor(
+      viewportCenter: placementCenter,
+      anchorVirtual: toolData.centerPoint,
+    );
 
     ref.read(utilityProvider.notifier).addUtility(
           PlacedUtility(
-            position: const Offset(500, 500),
+            position: centeredTopLeft,
             id: uuid.v4(),
             type: toolData.type,
             customDiameter:

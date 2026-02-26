@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -48,16 +47,18 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
     return TextScaleController(
       isDragging: isDragging,
       onPanUpdate: (details) {
-        final coordinateSystem = CoordinateSystem.instance;
+        final renderBox = context.findRenderObject() as RenderBox?;
+        if (renderBox == null) return;
+
+        final leftEdgeGlobal = renderBox.localToGlobal(Offset.zero);
+        final scale = ref.read(screenZoomProvider);
+        final widthInScreenPixels =
+            details.globalPosition.dx - leftEdgeGlobal.dx;
+        final widthInContentSpace = widthInScreenPixels / scale;
 
         setState(() {
           isPanning = true;
-          final onScreenPos =
-              coordinateSystem.coordinateToScreen(widget.placedText.position);
-
-          localSize = (details.globalPosition - onScreenPos)
-              .dx
-              .clamp(minSize, double.infinity);
+          localSize = widthInContentSpace.clamp(minSize, double.infinity);
         });
       },
       onPanEnd: (details) {
