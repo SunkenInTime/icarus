@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
@@ -16,6 +17,9 @@ class DrawingTools extends ConsumerWidget {
     final hasArrow = ref.watch(penProvider).hasArrow;
     final penMode = ref.watch(penProvider).penMode;
     final traversalTimeEnabled = ref.watch(penProvider).traversalTimeEnabled;
+    final activeTraversalSpeedProfile = ref.watch(
+      penProvider.select((state) => state.activeTraversalSpeedProfile),
+    );
 
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 16, top: 8),
@@ -152,17 +156,68 @@ class DrawingTools extends ConsumerWidget {
           const Text("Traversal Time"),
           const SizedBox(height: 4),
           Row(
+            spacing: 4,
             children: [
               SelectableIconButton(
                 icon: const Icon(
-                  Icons.timer_outlined,
+                  LucideIcons.chevronsUp,
                   size: 20,
                 ),
-                isSelected: traversalTimeEnabled,
+                isSelected: traversalTimeEnabled &&
+                    activeTraversalSpeedProfile ==
+                        TraversalSpeedProfile.running,
                 onPressed: () {
-                  ref.read(penProvider.notifier).toggleTraversalTime();
+                  ref
+                      .read(penProvider.notifier)
+                      .setTraversalMode(TraversalSpeedProfile.running);
                 },
-                tooltip: "Show traversal time cards",
+                tooltip: "running",
+              ),
+              SelectableIconButton(
+                icon: const Icon(
+                  LucideIcons.chevronUp,
+                  size: 20,
+                ),
+                isSelected: traversalTimeEnabled &&
+                    activeTraversalSpeedProfile ==
+                        TraversalSpeedProfile.walking,
+                onPressed: () {
+                  ref
+                      .read(penProvider.notifier)
+                      .setTraversalMode(TraversalSpeedProfile.walking);
+                },
+                tooltip: "walking",
+              ),
+              SelectableIconButton(
+                icon: Image.asset(
+                  'assets/agents/Brimstone/1.webp',
+                  width: 20,
+                  height: 20,
+                ),
+                isSelected: traversalTimeEnabled &&
+                    activeTraversalSpeedProfile ==
+                        TraversalSpeedProfile.brimStim,
+                onPressed: () {
+                  ref
+                      .read(penProvider.notifier)
+                      .setTraversalMode(TraversalSpeedProfile.brimStim);
+                },
+                tooltip: "brim stim",
+              ),
+              SelectableIconButton(
+                icon: Image.asset(
+                  'assets/agents/Neon/3.webp',
+                  width: 20,
+                  height: 20,
+                ),
+                isSelected: traversalTimeEnabled &&
+                    activeTraversalSpeedProfile == TraversalSpeedProfile.neonRun,
+                onPressed: () {
+                  ref
+                      .read(penProvider.notifier)
+                      .setTraversalMode(TraversalSpeedProfile.neonRun);
+                },
+                tooltip: "neon run",
               ),
             ],
           ),

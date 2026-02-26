@@ -162,4 +162,14 @@ class PenProvider extends Notifier<PenState> {
       traversalTimeEnabled: !state.traversalTimeEnabled,
     );
   }
+
+  void setTraversalMode(TraversalSpeedProfile profile) {
+    final isCurrentMode =
+        state.activeTraversalSpeedProfile == profile && state.traversalTimeEnabled;
+
+    state = state.copyWith(
+      activeTraversalSpeedProfile: profile,
+      traversalTimeEnabled: !isCurrentMode,
+    );
+  }
 }

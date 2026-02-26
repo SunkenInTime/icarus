@@ -14,6 +14,7 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/widgets/cursor_circle.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 final visualPositionProvider = StateProvider<Offset?>((ref) {
   return null;
@@ -308,8 +309,8 @@ Widget _buildTraversalCard({
   final unitsPerMeter = AgentData.inGameMeters * mapScale;
   if (unitsPerMeter <= 0) return const SizedBox.shrink();
 
-  const cardWidthMeters = 5.0;
-  const cardHeightMeters = 2.5;
+  const cardWidthMeters = 8.0;
+  const cardHeightMeters = 3.5;
   const xOffsetMeters = 0.8;
   const yOffsetMeters = 0.8;
 
@@ -328,6 +329,11 @@ Widget _buildTraversalCard({
     unitsPerMeter: unitsPerMeter,
   );
   final label = "${timeSeconds.toStringAsFixed(2)}s";
+  final iconSize = coordinateSystem.scale(10).clamp(10.0, 20.0).toDouble();
+  final leadingIcon = _buildTraversalModeIcon(
+    profile: drawing.traversalSpeedProfile,
+    size: iconSize,
+  );
 
   return Positioned(
     left: anchorScreen.dx,
@@ -354,19 +360,58 @@ Widget _buildTraversalCard({
           fit: BoxFit.scaleDown,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: coordinateSystem.scale(10),
-                color: Settings.tacticalVioletTheme.foreground,
-                fontWeight: FontWeight.w600,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                leadingIcon,
+                const SizedBox(width: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: coordinateSystem.scale(10),
+                    color: Settings.tacticalVioletTheme.foreground,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ),
     ),
   );
+}
+
+Widget _buildTraversalModeIcon({
+  required TraversalSpeedProfile profile,
+  required double size,
+}) {
+  switch (profile) {
+    case TraversalSpeedProfile.running:
+      return Icon(
+        LucideIcons.chevronsUp,
+        size: size,
+        color: Settings.tacticalVioletTheme.foreground,
+      );
+    case TraversalSpeedProfile.walking:
+      return Icon(
+        LucideIcons.chevronUp,
+        size: size,
+        color: Settings.tacticalVioletTheme.foreground,
+      );
+    case TraversalSpeedProfile.brimStim:
+      return Image.asset(
+        'assets/agents/Brimstone/1.webp',
+        width: size,
+        height: size,
+      );
+    case TraversalSpeedProfile.neonRun:
+      return Image.asset(
+        'assets/agents/Neon/3.webp',
+        width: size,
+        height: size,
+      );
+  }
 }
 
 double _calculateTraversalTime({
