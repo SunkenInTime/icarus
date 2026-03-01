@@ -24,6 +24,7 @@ import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -72,6 +73,8 @@ class StrategyData extends HiveObject {
   final DateTime createdAt;
 
   String? folderID;
+  final String? themeProfileId;
+  final MapThemePalette? themeOverridePalette;
 
   StrategyData({
     @Deprecated('Use pages instead') this.isAttack = true,
@@ -87,6 +90,8 @@ class StrategyData extends HiveObject {
     required this.versionNumber,
     required this.lastEdited,
     required this.folderID,
+    this.themeProfileId,
+    this.themeOverridePalette,
     this.pages = const [],
     DateTime? createdAt,
     @Deprecated('Use pages instead') StrategySettings? strategySettings,
@@ -111,6 +116,10 @@ class StrategyData extends HiveObject {
     StrategySettings? strategySettings,
     String? folderID,
     DateTime? createdAt,
+    String? themeProfileId,
+    bool clearThemeProfileId = false,
+    MapThemePalette? themeOverridePalette,
+    bool clearThemeOverridePalette = false,
   }) {
     return StrategyData(
       id: id ?? this.id,
@@ -137,6 +146,11 @@ class StrategyData extends HiveObject {
       strategySettings: strategySettings ?? this.strategySettings,
       createdAt: createdAt ?? this.createdAt,
       folderID: folderID ?? this.folderID,
+      themeProfileId:
+          clearThemeProfileId ? null : (themeProfileId ?? this.themeProfileId),
+      themeOverridePalette: clearThemeOverridePalette
+          ? null
+          : (themeOverridePalette ?? this.themeOverridePalette),
     );
   }
 }
@@ -257,6 +271,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> clearCurrentStrategy() async {
     activePageID = null;
+    ref.read(strategyThemeProvider.notifier).fromStrategy();
     state = StrategyState(
       isSaved: true,
       stratName: null,
@@ -594,6 +609,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(utilityProvider.notifier).fromHive(migratedPage.utilityData);
     ref.read(mapProvider.notifier).setAttack(migratedPage.isAttack);
     ref.read(strategySettingsProvider.notifier).fromHive(migratedPage.settings);
+    ref.read(strategyThemeProvider.notifier).fromStrategy(
+          profileId: migrated.themeProfileId ??
+              MapThemeProfilesProvider.immutableDefaultProfileId,
+          overridePalette: migrated.themeOverridePalette,
+        );
     ref.read(lineUpProvider.notifier).fromHive(migratedPage.lineUps);
 
     // Defer path rebuild until next frame (layout complete)
@@ -894,6 +914,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(placedImageProvider.notifier).fromHive(page.imageData);
     ref.read(lineUpProvider.notifier).fromHive(page.lineUps);
     ref.read(strategySettingsProvider.notifier).fromHive(page.settings);
+    ref.read(strategyThemeProvider.notifier).fromStrategy(
+          profileId: migratedStrategy.themeProfileId ??
+              MapThemeProfilesProvider.immutableDefaultProfileId,
+          overridePalette: migratedStrategy.themeOverridePalette,
+        );
     ref.read(utilityProvider.notifier).fromHive(page.utilityData);
     activePageID = page.id;
 
@@ -1066,6 +1091,13 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final versionNumber = int.tryParse(json["versionNumber"].toString()) ??
         Settings.versionNumber;
+    final MapThemePalette? importedThemeOverridePalette =
+        json["themePalette"] is Map<String, dynamic>
+            ? MapThemePalette.fromJson(json["themePalette"])
+            : (json["themePalette"] is Map
+                ? MapThemePalette.fromJson(
+                    Map<String, dynamic>.from(json["themePalette"]))
+                : null);
 
     // bool needsMigration = (versionNumber < 15);
     final List<StrategyPage> pages = json["pages"] != null
@@ -1102,6 +1134,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       lastEdited: DateTime.now(),
 
       folderID: null,
+      themeOverridePalette: importedThemeOverridePalette,
     );
 
     newStrategy = await migrateLegacyData(newStrategy);
@@ -1115,6 +1148,8 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<String> createNewStrategy(String name) async {
     final newID = const Uuid().v4();
     final pageID = const Uuid().v4();
+    final defaultThemeProfileId =
+        ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies;
     final newStrategy = StrategyData(
       mapData: MapValue.ascent,
       versionNumber: Settings.versionNumber,
@@ -1141,12 +1176,28 @@ class StrategyProvider extends Notifier<StrategyState> {
       // ignore: deprecated_member_use_from_same_package
       strategySettings: StrategySettings(),
       folderID: ref.read(folderProvider),
+      themeProfileId: defaultThemeProfileId,
     );
 
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put(newStrategy.id, newStrategy);
 
     return newStrategy.id;
+  }
+
+  void setThemeProfileForCurrentStrategy(String profileId) {
+    ref.read(strategyThemeProvider.notifier).setProfile(profileId);
+    setUnsaved();
+  }
+
+  void setThemeOverrideForCurrentStrategy(MapThemePalette palette) {
+    ref.read(strategyThemeProvider.notifier).setOverride(palette);
+    setUnsaved();
+  }
+
+  void clearThemeOverrideForCurrentStrategy() {
+    ref.read(strategyThemeProvider.notifier).clearOverride();
+    setUnsaved();
   }
 
   //Get all of the stratgies in the folder
@@ -1227,6 +1278,23 @@ class StrategyProvider extends Notifier<StrategyState> {
     return sanitized.isEmpty ? 'untitled' : sanitized;
   }
 
+  MapThemePalette _resolveThemePaletteForExport(StrategyData strategy) {
+    if (strategy.themeOverridePalette != null) {
+      return strategy.themeOverridePalette!;
+    }
+
+    final profiles =
+        Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+    final assignedProfile = strategy.themeProfileId == null
+        ? null
+        : profiles.get(strategy.themeProfileId!);
+    if (assignedProfile != null) {
+      return assignedProfile.palette;
+    }
+
+    return MapThemeProfilesProvider.immutableDefaultPalette;
+  }
+
   Future<void> zipStrategy({
     required String id,
     Directory? saveDir, // used when outputFilePath is not provided
@@ -1240,11 +1308,14 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final pages = strategy.pages.map((p) => p.toJson(strategy.id)).toList();
     final pageJson = jsonEncode(pages);
+    final exportPalette = _resolveThemePaletteForExport(strategy);
+    final paletteJson = jsonEncode(exportPalette.toJson());
 
     final data = '''
                   {
                   "versionNumber": "${Settings.versionNumber}",
                   "mapData": "${Maps.mapNames[strategy.mapData]}",
+                  "themePalette": $paletteJson,
                   "pages": $pageJson
                   }
                 ''';
@@ -1339,6 +1410,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       lastEdited: DateTime.now(),
       folderID: originalStrategy.folderID,
       pages: newPages,
+      themeProfileId: originalStrategy.themeProfileId,
+      themeOverridePalette: originalStrategy.themeOverridePalette,
     );
 
     await strategyBox.put(duplicatedStrategy.id, duplicatedStrategy);
@@ -1371,9 +1444,14 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     if (savedStrat == null) return;
 
+    final strategyTheme = ref.read(strategyThemeProvider);
     final currentStrategy = savedStrat.copyWith(
       mapData: ref.read(mapProvider).currentMap,
       lastEdited: DateTime.now(),
+      themeProfileId: strategyTheme.profileId,
+      clearThemeProfileId: strategyTheme.profileId == null,
+      themeOverridePalette: strategyTheme.overridePalette,
+      clearThemeOverridePalette: strategyTheme.overridePalette == null,
     );
 
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)

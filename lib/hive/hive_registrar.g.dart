@@ -11,6 +11,7 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(AbilityInfoAdapter());
     registerAdapter(AgentStateAdapter());
     registerAdapter(AgentTypeAdapter());
+    registerAdapter(AppPreferencesAdapter());
     registerAdapter(BoundingBoxAdapter());
     registerAdapter(FolderAdapter());
     registerAdapter(FolderColorAdapter());
@@ -18,6 +19,8 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(IconDataAdapter());
     registerAdapter(LineAdapter());
     registerAdapter(LineUpAdapter());
+    registerAdapter(MapThemePaletteAdapter());
+    registerAdapter(MapThemeProfileAdapter());
     registerAdapter(MapValueAdapter());
     registerAdapter(OffsetAdapter());
     registerAdapter(PlacedAbilityAdapter());
@@ -41,6 +44,7 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(AbilityInfoAdapter());
     registerAdapter(AgentStateAdapter());
     registerAdapter(AgentTypeAdapter());
+    registerAdapter(AppPreferencesAdapter());
     registerAdapter(BoundingBoxAdapter());
     registerAdapter(FolderAdapter());
     registerAdapter(FolderColorAdapter());
@@ -48,6 +52,8 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(IconDataAdapter());
     registerAdapter(LineAdapter());
     registerAdapter(LineUpAdapter());
+    registerAdapter(MapThemePaletteAdapter());
+    registerAdapter(MapThemeProfileAdapter());
     registerAdapter(MapValueAdapter());
     registerAdapter(OffsetAdapter());
     registerAdapter(PlacedAbilityAdapter());

@@ -9,6 +9,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -34,12 +35,14 @@ class _MapSvgColorMapper extends ColorMapper {
     String attributeName,
     Color color,
   ) {
-    final replacement = replacements[color.withAlpha(0xFF).value];
+    final opaqueColorValue = (color.toARGB32() & 0x00FFFFFF) | 0xFF000000;
+    final replacement = replacements[opaqueColorValue];
     if (replacement == null) {
       return color;
     }
     // Keep per-element opacity from the original SVG.
-    return replacement.withAlpha(color.alpha);
+    final alpha = (color.a * 255.0).round().clamp(0, 255);
+    return replacement.withAlpha(alpha);
   }
 }
 
@@ -56,18 +59,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   static const Color _mapBaseSourceColor = Color(0xFF271406);
   static const Color _mapDetailSourceColor = Color(0xFFB27C40);
   static const Color _mapHighlightSourceColor = Color(0xFFF08234);
-
-  static final Map<int, Color> _attackMapPalette = {
-    _mapBaseSourceColor.value: _mapBaseSourceColor,
-    _mapDetailSourceColor.value: _mapDetailSourceColor,
-    _mapHighlightSourceColor.value: _mapHighlightSourceColor,
-  };
-
-  static final Map<int, Color> _defenseMapPalette = {
-    _mapBaseSourceColor.value: Color(0xFF0F172A),
-    _mapDetailSourceColor.value: Color(0xFF3B82F6),
-    _mapHighlightSourceColor.value: Color(0xFF60A5FA),
-  };
 
   final controller = TransformationController();
   Size? _lastViewportSize;
@@ -123,8 +114,12 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   @override
   Widget build(BuildContext context) {
     bool isAttack = ref.watch(mapProvider).isAttack;
-    final mapColorMapper =
-        _MapSvgColorMapper(isAttack ? _attackMapPalette : _defenseMapPalette);
+    final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
+    final mapColorMapper = _MapSvgColorMapper({
+      _mapBaseSourceColor.toARGB32(): effectivePalette.baseColor,
+      _mapDetailSourceColor.toARGB32(): effectivePalette.detailColor,
+      _mapHighlightSourceColor.toARGB32(): effectivePalette.highlightColor,
+    });
 
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';

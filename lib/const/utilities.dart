@@ -190,7 +190,15 @@ sealed class Utilities {
   Offset getAnchorPoint({String? id, double? length, double? rotation});
 
   Widget createWidget(
-      {String? id, double? rotation, double? length, double? mapScale});
+      {String? id,
+      double? rotation,
+      double? length,
+      double? mapScale,
+      double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters,
+      int? colorValue,
+      int? opacityPercent});
   Offset getSize();
 }
 
@@ -202,7 +210,15 @@ class ImageUtility extends Utilities {
 
   @override
   Widget createWidget(
-      {String? id, double? rotation, double? length, double? mapScale}) {
+      {String? id,
+      double? rotation,
+      double? length,
+      double? mapScale,
+      double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters,
+      int? colorValue,
+      int? opacityPercent}) {
     return ImageUtilityWidget(imagePath: imagePath, size: size, id: id);
   }
 
@@ -233,7 +249,15 @@ class ViewConeUtility extends Utilities {
 
   @override
   Widget createWidget(
-      {String? id, double? rotation, double? length, double? mapScale}) {
+      {String? id,
+      double? rotation,
+      double? length,
+      double? mapScale,
+      double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters,
+      int? colorValue,
+      int? opacityPercent}) {
     return ViewConeWidget(
       id: id,
       angle: angle,
@@ -288,8 +312,22 @@ class CustomCircleUtility extends Utilities {
 
   @override
   Widget createWidget(
-      {String? id, double? rotation, double? length, double? mapScale}) {
-    return CustomCircleUtilityWidget(id: id, mapScale: mapScale);
+      {String? id,
+      double? rotation,
+      double? length,
+      double? mapScale,
+      double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters,
+      int? colorValue,
+      int? opacityPercent}) {
+    return CustomCircleUtilityWidget(
+      id: id,
+      mapScale: mapScale,
+      diameterMeters: diameterMeters,
+      colorValue: colorValue,
+      opacityPercent: opacityPercent,
+    );
   }
 
   @override
@@ -314,8 +352,23 @@ class CustomRectangleUtility extends Utilities {
 
   @override
   Widget createWidget(
-      {String? id, double? rotation, double? length, double? mapScale}) {
-    return CustomRectangleUtilityWidget(id: id, mapScale: mapScale);
+      {String? id,
+      double? rotation,
+      double? length,
+      double? mapScale,
+      double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters,
+      int? colorValue,
+      int? opacityPercent}) {
+    return CustomRectangleUtilityWidget(
+      id: id,
+      mapScale: mapScale,
+      widthMeters: widthMeters,
+      rectLengthMeters: rectLengthMeters,
+      colorValue: colorValue,
+      opacityPercent: opacityPercent,
+    );
   }
 
   @override

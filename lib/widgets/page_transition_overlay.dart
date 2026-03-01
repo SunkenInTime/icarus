@@ -330,7 +330,12 @@ class PlacedWidgetPreview {
           id: w.id,
           rotation: w.rotation,
           length: length ?? w.length,
-          mapScale: mapScale);
+          mapScale: mapScale,
+          diameterMeters: w.customDiameter,
+          widthMeters: w.customWidth,
+          rectLengthMeters: w.customLength,
+          colorValue: w.customColorValue,
+          opacityPercent: w.customOpacityPercent);
     }
     return const SizedBox.shrink();
   }

@@ -41,6 +41,8 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
       versionNumber: (fields[0] as num).toInt(),
       lastEdited: fields[9] as DateTime,
       folderID: fields[13] as String?,
+      themeProfileId: fields[16] as String?,
+      themeOverridePalette: fields[17] as MapThemePalette?,
       pages: fields[14] == null
           ? const []
           : (fields[14] as List).cast<StrategyPage>(),
@@ -52,7 +54,7 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
   @override
   void write(BinaryWriter writer, StrategyData obj) {
     writer
-      ..writeByte(16)
+      ..writeByte(18)
       ..writeByte(0)
       ..write(obj.versionNumber)
       ..writeByte(1)
@@ -84,7 +86,11 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
       ..writeByte(14)
       ..write(obj.pages)
       ..writeByte(15)
-      ..write(obj.createdAt);
+      ..write(obj.createdAt)
+      ..writeByte(16)
+      ..write(obj.themeProfileId)
+      ..writeByte(17)
+      ..write(obj.themeOverridePalette);
   }
 
   @override
@@ -1344,6 +1350,126 @@ class TraversalSpeedProfileAdapter extends TypeAdapter<TraversalSpeedProfile> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is TraversalSpeedProfileAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class MapThemePaletteAdapter extends TypeAdapter<MapThemePalette> {
+  @override
+  final typeId = 26;
+
+  @override
+  MapThemePalette read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return MapThemePalette(
+      baseColorValue: (fields[0] as num).toInt(),
+      detailColorValue: (fields[1] as num).toInt(),
+      highlightColorValue: (fields[2] as num).toInt(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, MapThemePalette obj) {
+    writer
+      ..writeByte(3)
+      ..writeByte(0)
+      ..write(obj.baseColorValue)
+      ..writeByte(1)
+      ..write(obj.detailColorValue)
+      ..writeByte(2)
+      ..write(obj.highlightColorValue);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MapThemePaletteAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class MapThemeProfileAdapter extends TypeAdapter<MapThemeProfile> {
+  @override
+  final typeId = 27;
+
+  @override
+  MapThemeProfile read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return MapThemeProfile(
+      id: fields[0] as String,
+      name: fields[1] as String,
+      palette: fields[2] as MapThemePalette,
+      isBuiltIn: fields[3] as bool,
+      createdAt: fields[4] as DateTime?,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, MapThemeProfile obj) {
+    writer
+      ..writeByte(5)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.name)
+      ..writeByte(2)
+      ..write(obj.palette)
+      ..writeByte(3)
+      ..write(obj.isBuiltIn)
+      ..writeByte(4)
+      ..write(obj.createdAt);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MapThemeProfileAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
+  @override
+  final typeId = 28;
+
+  @override
+  AppPreferences read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return AppPreferences(
+      defaultThemeProfileIdForNewStrategies: fields[0] as String,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, AppPreferences obj) {
+    writer
+      ..writeByte(1)
+      ..writeByte(0)
+      ..write(obj.defaultThemeProfileIdForNewStrategies);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AppPreferencesAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }
