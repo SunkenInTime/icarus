@@ -19,6 +19,7 @@ import 'package:icarus/const/settings.dart' show Settings;
 import 'package:icarus/hive/hive_registrar.g.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
@@ -74,6 +75,10 @@ Future<void> main(List<String> args) async {
 
   await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
   await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+  await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+  await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
+
+  await MapThemeProfilesProvider.bootstrap();
 
   await StrategyProvider.migrateAllStrategies();
 

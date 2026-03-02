@@ -602,12 +602,32 @@ class PlacedUtility extends PlacedWidget {
   @JsonKey(defaultValue: null)
   String? attachedAgentId;
 
+  @JsonKey(defaultValue: null)
+  double? customDiameter;
+
+  @JsonKey(defaultValue: null)
+  double? customWidth;
+
+  @JsonKey(defaultValue: null)
+  double? customLength;
+
+  @JsonKey(defaultValue: null)
+  int? customColorValue;
+
+  @JsonKey(defaultValue: null)
+  int? customOpacityPercent;
+
   PlacedUtility({
     required this.type,
     required super.position,
     required super.id,
     this.angle = 0.0,
     this.attachedAgentId,
+    this.customDiameter,
+    this.customWidth,
+    this.customLength,
+    this.customColorValue,
+    this.customOpacityPercent,
   });
 
   factory PlacedUtility.fromJson(Map<String, dynamic> json) =>

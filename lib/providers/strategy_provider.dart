@@ -7,7 +7,6 @@ import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
-import 'package:icarus/const/youtube_handler.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'image_provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -17,6 +16,7 @@ import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/migrations/ability_scale_migration.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -24,6 +24,7 @@ import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -72,6 +73,8 @@ class StrategyData extends HiveObject {
   final DateTime createdAt;
 
   String? folderID;
+  final String? themeProfileId;
+  final MapThemePalette? themeOverridePalette;
 
   StrategyData({
     @Deprecated('Use pages instead') this.isAttack = true,
@@ -87,6 +90,8 @@ class StrategyData extends HiveObject {
     required this.versionNumber,
     required this.lastEdited,
     required this.folderID,
+    this.themeProfileId,
+    this.themeOverridePalette,
     this.pages = const [],
     DateTime? createdAt,
     @Deprecated('Use pages instead') StrategySettings? strategySettings,
@@ -111,6 +116,10 @@ class StrategyData extends HiveObject {
     StrategySettings? strategySettings,
     String? folderID,
     DateTime? createdAt,
+    String? themeProfileId,
+    bool clearThemeProfileId = false,
+    MapThemePalette? themeOverridePalette,
+    bool clearThemeOverridePalette = false,
   }) {
     return StrategyData(
       id: id ?? this.id,
@@ -137,6 +146,11 @@ class StrategyData extends HiveObject {
       strategySettings: strategySettings ?? this.strategySettings,
       createdAt: createdAt ?? this.createdAt,
       folderID: folderID ?? this.folderID,
+      themeProfileId:
+          clearThemeProfileId ? null : (themeProfileId ?? this.themeProfileId),
+      themeOverridePalette: clearThemeOverridePalette
+          ? null
+          : (themeOverridePalette ?? this.themeOverridePalette),
     );
   }
 }
@@ -257,6 +271,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> clearCurrentStrategy() async {
     activePageID = null;
+    ref.read(strategyThemeProvider.notifier).fromStrategy();
     state = StrategyState(
       isSaved: true,
       stratName: null,
@@ -271,7 +286,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     for (final strat in box.values) {
       final legacyMigrated = await migrateLegacyData(strat);
       final worldMigrated = migrateToWorld16x9(legacyMigrated);
-      if (worldMigrated != legacyMigrated) {
+      final abilityScaleMigrated = migrateAbilityScale(worldMigrated);
+      final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
+      if (squareAoeMigrated != abilityScaleMigrated) {
+        await box.put(squareAoeMigrated.id, squareAoeMigrated);
+      } else if (abilityScaleMigrated != worldMigrated) {
+        await box.put(abilityScaleMigrated.id, abilityScaleMigrated);
+      } else if (worldMigrated != legacyMigrated) {
         await box.put(worldMigrated.id, worldMigrated);
       } else if (legacyMigrated != strat) {
         await box.put(legacyMigrated.id, legacyMigrated);
@@ -279,10 +300,77 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
   }
 
+  static StrategyData migrateAbilityScale(StrategyData strat,
+      {bool force = false}) {
+    if (!force && strat.versionNumber >= AbilityScaleMigration.version) {
+      return strat;
+    }
+
+    final migratedPages = AbilityScaleMigration.migratePages(
+      pages: strat.pages,
+      map: strat.mapData,
+    );
+
+    final hasPageChanged = migratedPages.length == strat.pages.length &&
+        migratedPages.asMap().entries.any((entry) {
+          final index = entry.key;
+          return entry.value != strat.pages[index];
+        });
+
+    if (!hasPageChanged && !force) {
+      return strat;
+    }
+
+    return strat.copyWith(
+      pages: migratedPages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migrateSquareAoeCenter(StrategyData strat,
+      {bool force = false}) {
+    if (!force && strat.versionNumber >= SquareAoeCenterMigration.version) {
+      return strat;
+    }
+
+    final migratedPages = SquareAoeCenterMigration.migratePages(
+      pages: strat.pages,
+    );
+
+    final hasPageChanged = migratedPages.length == strat.pages.length &&
+        migratedPages.asMap().entries.any((entry) {
+          final index = entry.key;
+          return entry.value != strat.pages[index];
+        });
+
+    if (!hasPageChanged && !force) {
+      return strat;
+    }
+
+    return strat.copyWith(
+      pages: migratedPages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migrateToCurrentVersion(StrategyData strat,
+      {bool forceAbilityScale = false}) {
+    final worldMigrated = migrateToWorld16x9(strat);
+    final abilityScaleMigrated =
+        migrateAbilityScale(worldMigrated, force: forceAbilityScale);
+    return migrateSquareAoeCenter(abilityScaleMigrated);
+  }
+
   static Future<StrategyData> migrateLegacyData(StrategyData strat) async {
     // Already migrated
-    if (strat.pages.isNotEmpty) return strat;
-    if (strat.versionNumber > 15) return strat;
+    if (strat.pages.isNotEmpty) {
+      return migrateToCurrentVersion(strat);
+    }
+    if (strat.versionNumber > 15) {
+      return migrateToCurrentVersion(strat);
+    }
     final originalVersion = strat.versionNumber;
     log("Migrating legacy strategy to single page");
     // ignore: deprecated_member_use, deprecated_member_use_from_same_package
@@ -327,8 +415,16 @@ class StrategyProvider extends Notifier<StrategyState> {
       lastEdited: DateTime.now(),
     );
 
-    return migrateToWorld16x9(updated,
+    final worldMigrated = migrateToWorld16x9(updated,
         force: originalVersion < Settings.versionNumber);
+    final abilityScaleMigrated = migrateAbilityScale(
+      worldMigrated,
+      force: originalVersion < AbilityScaleMigration.version,
+    );
+    return migrateSquareAoeCenter(
+      abilityScaleMigrated,
+      force: originalVersion < SquareAoeCenterMigration.version,
+    );
   }
 
   static StrategyData migrateToWorld16x9(StrategyData strat,
@@ -496,7 +592,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     activePageID = page.id;
 
     ref.read(actionProvider.notifier).clearAllActions();
-    final migrated = migrateToWorld16x9(doc);
+    final migrated = migrateToCurrentVersion(doc);
     final migratedPage = migrated.pages.firstWhere(
       (p) => p.id == page.id,
       orElse: () => migrated.pages.first,
@@ -513,6 +609,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(utilityProvider.notifier).fromHive(migratedPage.utilityData);
     ref.read(mapProvider.notifier).setAttack(migratedPage.isAttack);
     ref.read(strategySettingsProvider.notifier).fromHive(migratedPage.settings);
+    ref.read(strategyThemeProvider.notifier).fromStrategy(
+          profileId: migrated.themeProfileId ??
+              MapThemeProfilesProvider.immutableDefaultProfileId,
+          overridePalette: migrated.themeOverridePalette,
+        );
     ref.read(lineUpProvider.notifier).fromHive(migratedPage.lineUps);
 
     // Defer path rebuild until next frame (layout complete)
@@ -541,7 +642,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       nextIndex = pages.length - 1; // No forward page available.
 
     final nextPage = pages[nextIndex];
-    await setActivePage(nextPage.id);
+    await setActivePageAnimated(
+      nextPage.id,
+      direction: PageTransitionDirection.backward,
+    );
   }
 
   Future<void> forwardPage() async {
@@ -562,7 +666,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (nextIndex >= pages.length) nextIndex = 0; // No forward page available.
 
     final nextPage = pages[nextIndex];
-    await setActivePage(nextPage.id);
+    await setActivePageAnimated(
+      nextPage.id,
+      direction: PageTransitionDirection.forward,
+    );
   }
 
   Future<void> reorderPage(int oldIndex, int newIndex) async {
@@ -603,11 +710,49 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
   }
 
-// Add these inside StrategyProvider
-  Future<void> setActivePageAnimated(String pageID) async {
+  PageTransitionDirection _resolveDirectionForPage(
+      String pageID, List<StrategyPage> orderedPages) {
+    if (activePageID == null) return PageTransitionDirection.forward;
+
+    final currentIndex = orderedPages.indexWhere((p) => p.id == activePageID);
+    final targetIndex = orderedPages.indexWhere((p) => p.id == pageID);
+    if (currentIndex < 0 || targetIndex < 0) {
+      return PageTransitionDirection.forward;
+    }
+
+    final length = orderedPages.length;
+    final forwardSteps = (targetIndex - currentIndex + length) % length;
+    final backwardSteps = (currentIndex - targetIndex + length) % length;
+    return forwardSteps <= backwardSteps
+        ? PageTransitionDirection.forward
+        : PageTransitionDirection.backward;
+  }
+
+  // Add these inside StrategyProvider
+  Future<void> setActivePageAnimated(String pageID,
+      {PageTransitionDirection? direction,
+      Duration duration = kPageTransitionDuration}) async {
+    if (pageID == activePageID) return;
+
+    final transitionState = ref.read(transitionProvider);
+    final transitionNotifier = ref.read(transitionProvider.notifier);
+    if (transitionState.active ||
+        transitionState.phase == PageTransitionPhase.preparing) {
+      transitionNotifier.complete();
+    }
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final doc = box.get(state.id);
+    if (doc == null || doc.pages.isEmpty) return;
+
+    final orderedPages = [...doc.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    final resolvedDirection =
+        direction ?? _resolveDirectionForPage(pageID, orderedPages);
+
     final prev = _snapshotAllPlaced();
-    ref.read(transitionProvider.notifier).setAllWidgets(prev.values.toList());
-    ref.read(transitionProvider.notifier).setHideView(true);
+    transitionNotifier.prepare(prev.values.toList(),
+        direction: resolvedDirection);
 
     // Load target page (hydrates providers)
     await setActivePage(pageID);
@@ -617,11 +762,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       final next = _snapshotAllPlaced();
       final entries = _diffToTransitions(prev, next);
       if (entries.isNotEmpty) {
-        ref
-            .read(transitionProvider.notifier)
-            .start(entries, duration: const Duration(seconds: 1));
+        transitionNotifier.start(
+          entries,
+          duration: duration,
+          direction: resolvedDirection,
+        );
       } else {
-        ref.read(transitionProvider.notifier).complete();
+        transitionNotifier.complete();
       }
     });
   }
@@ -641,6 +788,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     Map<String, PlacedWidget> next,
   ) {
     final entries = <PageTransitionEntry>[];
+    var order = 0;
 
     // Move / appear
     next.forEach((id, to) {
@@ -651,20 +799,23 @@ class StrategyProvider extends Notifier<StrategyState> {
                 PageTransitionEntry.rotationOf(to) ||
             PageTransitionEntry.lengthOf(from) !=
                 PageTransitionEntry.lengthOf(to)) {
-          entries.add(PageTransitionEntry.move(from: from, to: to));
+          entries
+              .add(PageTransitionEntry.move(from: from, to: to, order: order));
         } else {
           // Unchanged: include as 'none' so it stays visible while base view is hidden
-          entries.add(PageTransitionEntry.none(to: to));
+          entries.add(PageTransitionEntry.none(to: to, order: order));
         }
       } else {
-        entries.add(PageTransitionEntry.appear(to: to));
+        entries.add(PageTransitionEntry.appear(to: to, order: order));
       }
+      order++;
     });
 
     // Disappear
     prev.forEach((id, from) {
       if (!next.containsKey(id)) {
-        entries.add(PageTransitionEntry.disappear(from: from));
+        entries.add(PageTransitionEntry.disappear(from: from, order: order));
+        order++;
       }
     });
 
@@ -744,7 +895,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     // We clear previous data to avoid artifacts when loading a new strategy
     log(newStrat.pages.first.toString());
-    final migratedStrategy = migrateToWorld16x9(newStrat);
+    final migratedStrategy = migrateToCurrentVersion(newStrat);
     final page = migratedStrategy.pages.first;
 
     if (migratedStrategy != newStrat) {
@@ -763,6 +914,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(placedImageProvider.notifier).fromHive(page.imageData);
     ref.read(lineUpProvider.notifier).fromHive(page.lineUps);
     ref.read(strategySettingsProvider.notifier).fromHive(page.settings);
+    ref.read(strategyThemeProvider.notifier).fromStrategy(
+          profileId: migratedStrategy.themeProfileId ??
+              MapThemeProfilesProvider.immutableDefaultProfileId,
+          overridePalette: migratedStrategy.themeOverridePalette,
+        );
     ref.read(utilityProvider.notifier).fromHive(page.utilityData);
     activePageID = page.id;
 
@@ -935,6 +1091,13 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final versionNumber = int.tryParse(json["versionNumber"].toString()) ??
         Settings.versionNumber;
+    final MapThemePalette? importedThemeOverridePalette =
+        json["themePalette"] is Map<String, dynamic>
+            ? MapThemePalette.fromJson(json["themePalette"])
+            : (json["themePalette"] is Map
+                ? MapThemePalette.fromJson(
+                    Map<String, dynamic>.from(json["themePalette"]))
+                : null);
 
     // bool needsMigration = (versionNumber < 15);
     final List<StrategyPage> pages = json["pages"] != null
@@ -971,6 +1134,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       lastEdited: DateTime.now(),
 
       folderID: null,
+      themeOverridePalette: importedThemeOverridePalette,
     );
 
     newStrategy = await migrateLegacyData(newStrategy);
@@ -984,6 +1148,8 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<String> createNewStrategy(String name) async {
     final newID = const Uuid().v4();
     final pageID = const Uuid().v4();
+    final defaultThemeProfileId =
+        ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies;
     final newStrategy = StrategyData(
       mapData: MapValue.ascent,
       versionNumber: Settings.versionNumber,
@@ -1010,12 +1176,28 @@ class StrategyProvider extends Notifier<StrategyState> {
       // ignore: deprecated_member_use_from_same_package
       strategySettings: StrategySettings(),
       folderID: ref.read(folderProvider),
+      themeProfileId: defaultThemeProfileId,
     );
 
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put(newStrategy.id, newStrategy);
 
     return newStrategy.id;
+  }
+
+  void setThemeProfileForCurrentStrategy(String profileId) {
+    ref.read(strategyThemeProvider.notifier).setProfile(profileId);
+    setUnsaved();
+  }
+
+  void setThemeOverrideForCurrentStrategy(MapThemePalette palette) {
+    ref.read(strategyThemeProvider.notifier).setOverride(palette);
+    setUnsaved();
+  }
+
+  void clearThemeOverrideForCurrentStrategy() {
+    ref.read(strategyThemeProvider.notifier).clearOverride();
+    setUnsaved();
   }
 
   //Get all of the stratgies in the folder
@@ -1096,6 +1278,23 @@ class StrategyProvider extends Notifier<StrategyState> {
     return sanitized.isEmpty ? 'untitled' : sanitized;
   }
 
+  MapThemePalette _resolveThemePaletteForExport(StrategyData strategy) {
+    if (strategy.themeOverridePalette != null) {
+      return strategy.themeOverridePalette!;
+    }
+
+    final profiles =
+        Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+    final assignedProfile = strategy.themeProfileId == null
+        ? null
+        : profiles.get(strategy.themeProfileId!);
+    if (assignedProfile != null) {
+      return assignedProfile.palette;
+    }
+
+    return MapThemeProfilesProvider.immutableDefaultPalette;
+  }
+
   Future<void> zipStrategy({
     required String id,
     Directory? saveDir, // used when outputFilePath is not provided
@@ -1109,11 +1308,14 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final pages = strategy.pages.map((p) => p.toJson(strategy.id)).toList();
     final pageJson = jsonEncode(pages);
+    final exportPalette = _resolveThemePaletteForExport(strategy);
+    final paletteJson = jsonEncode(exportPalette.toJson());
 
     final data = '''
                   {
                   "versionNumber": "${Settings.versionNumber}",
                   "mapData": "${Maps.mapNames[strategy.mapData]}",
+                  "themePalette": $paletteJson,
                   "pages": $pageJson
                   }
                 ''';
@@ -1208,6 +1410,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       lastEdited: DateTime.now(),
       folderID: originalStrategy.folderID,
       pages: newPages,
+      themeProfileId: originalStrategy.themeProfileId,
+      themeOverridePalette: originalStrategy.themeOverridePalette,
     );
 
     await strategyBox.put(duplicatedStrategy.id, duplicatedStrategy);
@@ -1240,9 +1444,14 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     if (savedStrat == null) return;
 
+    final strategyTheme = ref.read(strategyThemeProvider);
     final currentStrategy = savedStrat.copyWith(
       mapData: ref.read(mapProvider).currentMap,
       lastEdited: DateTime.now(),
+      themeProfileId: strategyTheme.profileId,
+      clearThemeProfileId: strategyTheme.profileId == null,
+      themeOverridePalette: strategyTheme.overridePalette,
+      clearThemeOverridePalette: strategyTheme.overridePalette == null,
     );
 
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)

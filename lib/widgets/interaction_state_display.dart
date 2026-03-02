@@ -41,6 +41,10 @@ class InteractionStateDisplay extends ConsumerWidget {
         return 'Erasing Selection';
       case InteractionState.deleting:
         return 'Delete Mode';
+      case InteractionState.visionCone:
+        return 'Vision Cone Tools';
+      case InteractionState.customShapes:
+        return 'Custom Shape Tools';
       case InteractionState.lineUpPlacing:
         return 'Placing Lineup';
     }

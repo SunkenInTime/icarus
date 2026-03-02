@@ -14,6 +14,7 @@ class DemoTag extends ConsumerWidget {
     const accent = Colors.red;
 
     return InkWell(
+      mouseCursor: SystemMouseCursors.click,
       onTap: () async {
         await showShadDialog<void>(
           context: context,

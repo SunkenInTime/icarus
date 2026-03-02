@@ -7,7 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -109,18 +111,14 @@ class DrawingProvider extends Notifier<DrawingState> {
   }
 
   String toJson() {
-    final List<Map<String, dynamic>> jsonList = state.elements
-        .whereType<FreeDrawing>()
-        .map((element) => element.toJson())
-        .toList();
+    final List<Map<String, dynamic>> jsonList =
+        state.elements.map(_serializeDrawingElement).toList();
     return jsonEncode(jsonList);
   }
 
   static String objectToJson(List<DrawingElement> elements) {
-    final List<Map<String, dynamic>> jsonList = elements
-        .whereType<FreeDrawing>()
-        .map((element) => element.toJson())
-        .toList();
+    final List<Map<String, dynamic>> jsonList =
+        elements.map(_serializeDrawingElement).toList();
     return jsonEncode(jsonList);
   }
 
@@ -140,21 +138,98 @@ class DrawingProvider extends Notifier<DrawingState> {
 
   static List<DrawingElement> fromJson(String jsonString) {
     final List<dynamic> jsonList = jsonDecode(jsonString);
-    // dev.log(jsonList.toString());
-    // final coordinateSystem = CoordinateSystem.instance;
-
-    final result = jsonList.map((json) {
-      try {
-        final drawing = FreeDrawing.fromJson(json as Map<String, dynamic>);
-        return drawing;
-      } catch (e) {
-        dev.log(e.toString());
-        return FreeDrawing(
-            color: Colors.red, isDotted: true, hasArrow: true, id: "test");
-      }
-    }).toList();
+    final result = jsonList
+        .map((json) {
+          try {
+            return _deserializeDrawingElement(json as Map<String, dynamic>);
+          } catch (e) {
+            dev.log(e.toString());
+            return null;
+          }
+        })
+        .whereType<DrawingElement>()
+        .toList();
 
     return result;
+  }
+
+  static Map<String, dynamic> _serializeDrawingElement(DrawingElement element) {
+    if (element is FreeDrawing) {
+      return {
+        'type': 'freeDrawing',
+        ...element.toJson(),
+      };
+    }
+
+    if (element is RectangleDrawing) {
+      const colorConverter = ColorConverter();
+      const offsetConverter = OffsetConverter();
+      return {
+        'type': 'rectangleDrawing',
+        'color': colorConverter.toJson(element.color),
+        'isDotted': element.isDotted,
+        'hasArrow': element.hasArrow,
+        'id': element.id,
+        'boundingBox': element.boundingBox?.toJson(),
+        'start': offsetConverter.toJson(element.start),
+        'end': offsetConverter.toJson(element.end),
+      };
+    }
+
+    throw UnsupportedError(
+      'Unsupported drawing element for serialization: ${element.runtimeType}',
+    );
+  }
+
+  static DrawingElement _deserializeDrawingElement(Map<String, dynamic> json) {
+    final type = json['type'] as String?;
+
+    // Backward compatibility for old saved data without explicit type.
+    if (type == null && json.containsKey('listOfPoints')) {
+      return FreeDrawing.fromJson(json);
+    }
+
+    if (type == 'freeDrawing') {
+      final freeJson = Map<String, dynamic>.from(json)..remove('type');
+      return FreeDrawing.fromJson(freeJson);
+    }
+
+    if (type == 'rectangleDrawing' ||
+        (type == null &&
+            json.containsKey('start') &&
+            json.containsKey('end'))) {
+      const colorConverter = ColorConverter();
+      const offsetConverter = OffsetConverter();
+
+      final start = offsetConverter
+          .fromJson(Map<String, dynamic>.from(json['start'] as Map));
+      final end = offsetConverter
+          .fromJson(Map<String, dynamic>.from(json['end'] as Map));
+      final normalizedRect = Rect.fromPoints(start, end);
+
+      BoundingBox? boundingBox;
+      if (json['boundingBox'] != null) {
+        boundingBox = BoundingBox.fromJson(
+            Map<String, dynamic>.from(json['boundingBox'] as Map));
+      } else {
+        boundingBox = BoundingBox(
+          min: normalizedRect.topLeft,
+          max: normalizedRect.bottomRight,
+        );
+      }
+
+      return RectangleDrawing(
+        start: start,
+        end: end,
+        color: colorConverter.fromJson(json['color'] as String),
+        isDotted: json['isDotted'] as bool? ?? false,
+        hasArrow: json['hasArrow'] as bool? ?? false,
+        id: json['id'] as String,
+        boundingBox: boundingBox,
+      );
+    }
+
+    throw UnsupportedError('Unknown drawing element type: $type');
   }
 
   void _triggerRepaint() {
@@ -184,8 +259,9 @@ class DrawingProvider extends Notifier<DrawingState> {
 
     for (final (index, drawing) in state.elements.indexed) {
       if (drawing is FreeDrawing) {
-        if (drawing.boundingBox!
-            .isWithinOrNear(mousePos, Settings.erasingSize)) {
+        if (drawing.boundingBox != null &&
+            drawing.boundingBox!
+                .isWithinOrNear(mousePos, Settings.erasingSize)) {
           for (int i = 0; i < drawing.listOfPoints.length - 1; i++) {
             double distance = distanceToLineSegment(
                 mousePos, drawing.listOfPoints[i], drawing.listOfPoints[i + 1]);
@@ -195,6 +271,14 @@ class DrawingProvider extends Notifier<DrawingState> {
               break;
             }
           }
+        }
+      } else if (drawing is RectangleDrawing) {
+        if (drawing.boundingBox != null &&
+            drawing.boundingBox!
+                .isWithinOrNear(mousePos, Settings.erasingSize) &&
+            _isPointNearRectangleStroke(
+                mousePos, drawing, Settings.erasingSize)) {
+          indicesToDelete.add(index);
         }
       }
     }
@@ -227,6 +311,20 @@ class DrawingProvider extends Notifier<DrawingState> {
 
     // Return the distance to the closest point
     return (p - projection).distance;
+  }
+
+  bool _isPointNearRectangleStroke(
+      Offset point, RectangleDrawing rectangle, double threshold) {
+    final rect = rectangle.normalizedRect;
+    final topLeft = Offset(rect.left, rect.top);
+    final topRight = Offset(rect.right, rect.top);
+    final bottomRight = Offset(rect.right, rect.bottom);
+    final bottomLeft = Offset(rect.left, rect.bottom);
+
+    return distanceToLineSegment(point, topLeft, topRight) <= threshold ||
+        distanceToLineSegment(point, topRight, bottomRight) <= threshold ||
+        distanceToLineSegment(point, bottomRight, bottomLeft) <= threshold ||
+        distanceToLineSegment(point, bottomLeft, topLeft) <= threshold;
   }
 
   // void startSimpleTap(Offset start, CoordinateSystem coordinateSystem) {
@@ -266,8 +364,14 @@ class DrawingProvider extends Notifier<DrawingState> {
   //   _triggerRepaint();
   // }
 
-  void startFreeDrawing(Offset start, CoordinateSystem coordinateSystem,
-      Color activeColor, bool isDotted, bool hasArrow) {
+  void startFreeDrawing(
+      Offset start,
+      CoordinateSystem coordinateSystem,
+      Color activeColor,
+      bool isDotted,
+      bool hasArrow,
+      bool showTraversalTime,
+      TraversalSpeedProfile traversalSpeedProfile) {
     if (state.currentElement != null) {
       dev.log(
           "An error occured the gesture detecture is attempting to draw while another line is active");
@@ -282,9 +386,9 @@ class DrawingProvider extends Notifier<DrawingState> {
       color: activeColor,
       boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
       id: id,
+      showTraversalTime: showTraversalTime,
+      traversalSpeedProfile: traversalSpeedProfile,
     );
-
-    freeDrawing.path.moveTo(start.dx, start.dy);
 
     freeDrawing.listOfPoints.add(normalizedStart);
 
@@ -301,16 +405,15 @@ class DrawingProvider extends Notifier<DrawingState> {
     List<Offset> currentPoints = currentDrawing.listOfPoints;
     Offset lastPoint = currentPoints[currentPoints.length - 1];
 
-    final minDistance = coordinateSystem.scale(3);
-    if ((lastPoint - offset).distance < minDistance) return;
+    final minDistance =
+        coordinateSystem.normalize(Settings.freeDrawMinDistance);
+    if ((lastPoint - normalizedOffset).distance < minDistance) return;
 
     final boundingBox =
         updateBoundingBox(currentDrawing.boundingBox!, normalizedOffset);
 
-    currentDrawing.path.lineTo(offset.dx, offset.dy);
-
-    currentDrawing.listOfPoints
-        .add(coordinateSystem.screenToCoordinate(offset));
+    currentDrawing.listOfPoints.add(normalizedOffset);
+    currentDrawing.rebuildPath(coordinateSystem);
 
     currentDrawing.boundingBox = boundingBox;
     state = state.copyWith(currentElement: currentDrawing);
@@ -320,25 +423,108 @@ class DrawingProvider extends Notifier<DrawingState> {
   void finishFreeDrawing(Offset? offset, CoordinateSystem coordinateSystem) {
     if (state.currentElement == null) return;
 
-    // if (state.currentElement == null) return;
     final currentDrawing = state.currentElement as FreeDrawing;
+    FreeDrawing finalDrawing = currentDrawing.copyWith(
+      listOfPoints: [...currentDrawing.listOfPoints],
+    );
+
     if (offset != null) {
-      currentDrawing.listOfPoints
+      finalDrawing.listOfPoints
           .add(coordinateSystem.screenToCoordinate(offset));
     }
 
-    FreeDrawing simplifiedDrawing = douglasPeucker(currentDrawing, 1.4);
-
-    simplifiedDrawing.rebuildPath(coordinateSystem);
+    if (Settings.enableStrokeSimplification) {
+      finalDrawing = douglasPeucker(
+        finalDrawing,
+        Settings.strokeSimplificationEpsilon,
+      );
+    }
+    finalDrawing.rebuildPath(coordinateSystem);
 
     state = state.copyWithButEvil(
-      elements: [...state.elements, simplifiedDrawing],
+      elements: [...state.elements, finalDrawing],
     );
 
     final action = UserAction(
         type: ActionType.addition,
-        id: simplifiedDrawing.id,
+        id: finalDrawing.id,
         group: ActionGroup.drawing);
+    ref.read(actionProvider.notifier).addAction(action);
+
+    _triggerRepaint();
+  }
+
+  void startRectangle(
+    Offset start,
+    CoordinateSystem coordinateSystem,
+    Color activeColor,
+    bool isDotted,
+  ) {
+    if (state.currentElement != null) {
+      dev.log(
+          "An error occured the gesture detecture is attempting to draw while another line is active");
+      return;
+    }
+
+    final normalizedStart = coordinateSystem.screenToCoordinate(start);
+    final id = const Uuid().v4();
+
+    final rectangle = RectangleDrawing(
+      start: normalizedStart,
+      end: normalizedStart,
+      color: activeColor,
+      isDotted: isDotted,
+      hasArrow: false,
+      id: id,
+      boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
+    );
+
+    state = state.copyWith(currentElement: rectangle);
+    _triggerRepaint();
+  }
+
+  void updateRectangle(Offset offset, CoordinateSystem coordinateSystem) {
+    if (state.currentElement == null ||
+        state.currentElement is! RectangleDrawing) {
+      return;
+    }
+
+    final rectangle = state.currentElement as RectangleDrawing;
+    final normalizedOffset = coordinateSystem.screenToCoordinate(offset);
+    rectangle.updateEndPoint(normalizedOffset);
+    rectangle.boundingBox = BoundingBox(
+        min: rectangle.normalizedRect.topLeft,
+        max: rectangle.normalizedRect.bottomRight);
+
+    state = state.copyWith(currentElement: rectangle);
+    _triggerRepaint();
+  }
+
+  void finishRectangle(Offset? offset, CoordinateSystem coordinateSystem) {
+    if (state.currentElement == null ||
+        state.currentElement is! RectangleDrawing) {
+      return;
+    }
+
+    final rectangle = state.currentElement as RectangleDrawing;
+
+    if (offset != null) {
+      rectangle.updateEndPoint(coordinateSystem.screenToCoordinate(offset));
+    }
+
+    rectangle.boundingBox = BoundingBox(
+        min: rectangle.normalizedRect.topLeft,
+        max: rectangle.normalizedRect.bottomRight);
+
+    state = state.copyWithButEvil(
+      elements: [...state.elements, rectangle],
+    );
+
+    final action = UserAction(
+      type: ActionType.addition,
+      id: rectangle.id,
+      group: ActionGroup.drawing,
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     _triggerRepaint();

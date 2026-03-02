@@ -9,6 +9,8 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 
@@ -21,6 +23,29 @@ import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+class _MapSvgColorMapper extends ColorMapper {
+  const _MapSvgColorMapper(this.replacements);
+
+  final Map<int, Color> replacements;
+
+  @override
+  Color substitute(
+    String? id,
+    String elementName,
+    String attributeName,
+    Color color,
+  ) {
+    final opaqueColorValue = (color.toARGB32() & 0x00FFFFFF) | 0xFF000000;
+    final replacement = replacements[opaqueColorValue];
+    if (replacement == null) {
+      return color;
+    }
+    // Keep per-element opacity from the original SVG.
+    final alpha = (color.a * 255.0).round().clamp(0, 255);
+    return replacement.withAlpha(alpha);
+  }
+}
+
 class InteractiveMap extends ConsumerStatefulWidget {
   const InteractiveMap({
     super.key,
@@ -31,8 +56,54 @@ class InteractiveMap extends ConsumerStatefulWidget {
 }
 
 class _InteractiveMapState extends ConsumerState<InteractiveMap> {
+  static const Color _mapBaseSourceColor = Color(0xFF271406);
+  static const Color _mapDetailSourceColor = Color(0xFFB27C40);
+  static const Color _mapHighlightSourceColor = Color(0xFFF08234);
+
   final controller = TransformationController();
   Size? _lastViewportSize;
+  bool _placementCenterUpdateScheduled = false;
+
+  Offset _clampToWorld(Offset value, CoordinateSystem coordinateSystem) {
+    const double edgePadding = 10.0;
+    final double maxX = coordinateSystem.worldNormalizedWidth - edgePadding;
+    final double maxY = coordinateSystem.normalizedHeight - edgePadding;
+    return Offset(
+      value.dx.clamp(edgePadding, maxX).toDouble(),
+      value.dy.clamp(edgePadding, maxY).toDouble(),
+    );
+  }
+
+  void _updatePlacementCenter({
+    required double viewportWidth,
+    required double viewportHeight,
+    required CoordinateSystem coordinateSystem,
+  }) {
+    final sceneCenter =
+        controller.toScene(Offset(viewportWidth / 2, viewportHeight / 2));
+    final normalizedCenter = coordinateSystem.screenToCoordinate(sceneCenter);
+    ref
+        .read(placementCenterProvider.notifier)
+        .updateCenter(_clampToWorld(normalizedCenter, coordinateSystem));
+  }
+
+  void _schedulePlacementCenterUpdate({
+    required double viewportWidth,
+    required double viewportHeight,
+    required CoordinateSystem coordinateSystem,
+  }) {
+    if (_placementCenterUpdateScheduled) return;
+    _placementCenterUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _placementCenterUpdateScheduled = false;
+      if (!mounted) return;
+      _updatePlacementCenter(
+        viewportWidth: viewportWidth,
+        viewportHeight: viewportHeight,
+        coordinateSystem: coordinateSystem,
+      );
+    });
+  }
 
   @override
   void dispose() {
@@ -43,6 +114,12 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   @override
   Widget build(BuildContext context) {
     bool isAttack = ref.watch(mapProvider).isAttack;
+    final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
+    final mapColorMapper = _MapSvgColorMapper({
+      _mapBaseSourceColor.toARGB32(): effectivePalette.baseColor,
+      _mapDetailSourceColor.toARGB32(): effectivePalette.detailColor,
+      _mapHighlightSourceColor.toARGB32(): effectivePalette.highlightColor,
+    });
 
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
@@ -57,12 +134,13 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
       builder: (context, constraints) {
         final double height = MediaQuery.sizeOf(context).height - 90;
         final double worldWidth = height * (16 / 9);
+        final Size playAreaSize = Size(worldWidth, height);
+        CoordinateSystem(playAreaSize: playAreaSize);
+        final coordinateSystem = CoordinateSystem.instance;
         final double viewportWidth =
             (constraints.maxWidth - Settings.sideBarReservedWidth)
                 .clamp(0.0, constraints.maxWidth);
         final viewportSize = Size(viewportWidth, height);
-        final double desiredOffsetX =
-            viewportWidth > worldWidth ? (viewportWidth - worldWidth) / 2 : 0.0;
         if (_lastViewportSize != viewportSize) {
           final double currentScale = controller.value.getMaxScaleOnAxis();
           final double safeScale = currentScale == 0 ? 1.0 : currentScale;
@@ -73,11 +151,13 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
           matrix.translate(
               centeredOffsetX / safeScale, centeredOffsetY / safeScale);
           controller.value = matrix;
+          _schedulePlacementCenterUpdate(
+            viewportWidth: viewportWidth,
+            viewportHeight: height,
+            coordinateSystem: coordinateSystem,
+          );
           _lastViewportSize = viewportSize;
         }
-        final Size playAreaSize = Size(worldWidth, height);
-        CoordinateSystem(playAreaSize: playAreaSize);
-        final coordinateSystem = CoordinateSystem.instance;
         final double mapWidth = height * coordinateSystem.mapAspectRatio;
         final double mapLeft = (worldWidth - mapWidth) / 2;
 
@@ -112,10 +192,20 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                           onInteractionUpdate: (_) {
                             ref.read(screenZoomProvider.notifier).updateZoom(
                                 controller.value.getMaxScaleOnAxis());
+                            _updatePlacementCenter(
+                              viewportWidth: viewportWidth,
+                              viewportHeight: height,
+                              coordinateSystem: coordinateSystem,
+                            );
                           },
                           onInteractionEnd: (details) {
                             ref.read(screenZoomProvider.notifier).updateZoom(
                                 controller.value.getMaxScaleOnAxis());
+                            _updatePlacementCenter(
+                              viewportWidth: viewportWidth,
+                              viewportHeight: height,
+                              coordinateSystem: coordinateSystem,
+                            );
                           },
                           child: SizedBox(
                             width: worldWidth,
@@ -153,6 +243,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                     },
                                     child: SvgPicture.asset(
                                       assetName,
+                                      colorMapper: mapColorMapper,
                                       semanticsLabel: 'Map',
                                       fit: BoxFit.contain,
                                     ),
@@ -223,7 +314,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                   child: ref
                                               .watch(transitionProvider)
                                               .hideView &&
-                                          !ref.watch(transitionProvider).active
+                                          ref.watch(transitionProvider).phase ==
+                                              PageTransitionPhase.preparing
                                       ? TemporaryWidgetBuilder()
                                       : SizedBox.shrink(),
                                 ),

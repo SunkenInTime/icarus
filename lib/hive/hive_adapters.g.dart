@@ -41,6 +41,8 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
       versionNumber: (fields[0] as num).toInt(),
       lastEdited: fields[9] as DateTime,
       folderID: fields[13] as String?,
+      themeProfileId: fields[16] as String?,
+      themeOverridePalette: fields[17] as MapThemePalette?,
       pages: fields[14] == null
           ? const []
           : (fields[14] as List).cast<StrategyPage>(),
@@ -52,7 +54,7 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
   @override
   void write(BinaryWriter writer, StrategyData obj) {
     writer
-      ..writeByte(16)
+      ..writeByte(18)
       ..writeByte(0)
       ..write(obj.versionNumber)
       ..writeByte(1)
@@ -84,7 +86,11 @@ class StrategyDataAdapter extends TypeAdapter<StrategyData> {
       ..writeByte(14)
       ..write(obj.pages)
       ..writeByte(15)
-      ..write(obj.createdAt);
+      ..write(obj.createdAt)
+      ..writeByte(16)
+      ..write(obj.themeProfileId)
+      ..writeByte(17)
+      ..write(obj.themeOverridePalette);
   }
 
   @override
@@ -613,13 +619,17 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       isDotted: fields[3] as bool,
       hasArrow: fields[4] as bool,
       id: fields[5] as String,
+      showTraversalTime: fields[8] == null ? false : fields[8] as bool,
+      traversalSpeedProfile: fields[9] == null
+          ? TraversalSpeed.defaultProfile
+          : fields[9] as TraversalSpeedProfile,
     );
   }
 
   @override
   void write(BinaryWriter writer, FreeDrawing obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.listOfPoints)
       ..writeByte(2)
@@ -631,7 +641,11 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       ..writeByte(5)
       ..write(obj.id)
       ..writeByte(6)
-      ..write(obj.boundingBox);
+      ..write(obj.boundingBox)
+      ..writeByte(8)
+      ..write(obj.showTraversalTime)
+      ..writeByte(9)
+      ..write(obj.traversalSpeedProfile);
   }
 
   @override
@@ -790,6 +804,11 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       id: fields[3] as String,
       angle: fields[6] == null ? 0.0 : (fields[6] as num).toDouble(),
       attachedAgentId: fields[7] as String?,
+      customDiameter: (fields[8] as num?)?.toDouble(),
+      customWidth: (fields[9] as num?)?.toDouble(),
+      customLength: (fields[10] as num?)?.toDouble(),
+      customColorValue: (fields[11] as num?)?.toInt(),
+      customOpacityPercent: (fields[12] as num?)?.toInt(),
     )
       ..rotation = (fields[1] as num).toDouble()
       ..length = (fields[2] as num).toDouble()
@@ -799,7 +818,7 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
   @override
   void write(BinaryWriter writer, PlacedUtility obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -815,7 +834,17 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       ..writeByte(6)
       ..write(obj.angle)
       ..writeByte(7)
-      ..write(obj.attachedAgentId);
+      ..write(obj.attachedAgentId)
+      ..writeByte(8)
+      ..write(obj.customDiameter)
+      ..writeByte(9)
+      ..write(obj.customWidth)
+      ..writeByte(10)
+      ..write(obj.customLength)
+      ..writeByte(11)
+      ..write(obj.customColorValue)
+      ..writeByte(12)
+      ..write(obj.customOpacityPercent);
   }
 
   @override
@@ -844,6 +873,10 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
         return UtilityType.viewCone90;
       case 3:
         return UtilityType.viewCone40;
+      case 4:
+        return UtilityType.customCircle;
+      case 5:
+        return UtilityType.customRectangle;
       default:
         return UtilityType.spike;
     }
@@ -860,6 +893,10 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
         writer.writeByte(2);
       case UtilityType.viewCone40:
         writer.writeByte(3);
+      case UtilityType.customCircle:
+        writer.writeByte(4);
+      case UtilityType.customRectangle:
+        writer.writeByte(5);
     }
   }
 
@@ -1216,6 +1253,223 @@ class AgentStateAdapter extends TypeAdapter<AgentState> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is AgentStateAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
+  @override
+  final typeId = 24;
+
+  @override
+  RectangleDrawing read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return RectangleDrawing(
+      start: fields[0] as Offset,
+      end: fields[1] as Offset,
+      color: fields[2] as Color,
+      boundingBox: fields[6] as BoundingBox?,
+      isDotted: fields[3] as bool,
+      hasArrow: fields[4] as bool,
+      id: fields[5] as String,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, RectangleDrawing obj) {
+    writer
+      ..writeByte(7)
+      ..writeByte(0)
+      ..write(obj.start)
+      ..writeByte(1)
+      ..write(obj.end)
+      ..writeByte(2)
+      ..write(obj.color)
+      ..writeByte(3)
+      ..write(obj.isDotted)
+      ..writeByte(4)
+      ..write(obj.hasArrow)
+      ..writeByte(5)
+      ..write(obj.id)
+      ..writeByte(6)
+      ..write(obj.boundingBox);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RectangleDrawingAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class TraversalSpeedProfileAdapter extends TypeAdapter<TraversalSpeedProfile> {
+  @override
+  final typeId = 25;
+
+  @override
+  TraversalSpeedProfile read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return TraversalSpeedProfile.running;
+      case 1:
+        return TraversalSpeedProfile.walking;
+      case 2:
+        return TraversalSpeedProfile.brimStim;
+      case 3:
+        return TraversalSpeedProfile.neonRun;
+      default:
+        return TraversalSpeedProfile.running;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, TraversalSpeedProfile obj) {
+    switch (obj) {
+      case TraversalSpeedProfile.running:
+        writer.writeByte(0);
+      case TraversalSpeedProfile.walking:
+        writer.writeByte(1);
+      case TraversalSpeedProfile.brimStim:
+        writer.writeByte(2);
+      case TraversalSpeedProfile.neonRun:
+        writer.writeByte(3);
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TraversalSpeedProfileAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class MapThemePaletteAdapter extends TypeAdapter<MapThemePalette> {
+  @override
+  final typeId = 26;
+
+  @override
+  MapThemePalette read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return MapThemePalette(
+      baseColorValue: (fields[0] as num).toInt(),
+      detailColorValue: (fields[1] as num).toInt(),
+      highlightColorValue: (fields[2] as num).toInt(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, MapThemePalette obj) {
+    writer
+      ..writeByte(3)
+      ..writeByte(0)
+      ..write(obj.baseColorValue)
+      ..writeByte(1)
+      ..write(obj.detailColorValue)
+      ..writeByte(2)
+      ..write(obj.highlightColorValue);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MapThemePaletteAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class MapThemeProfileAdapter extends TypeAdapter<MapThemeProfile> {
+  @override
+  final typeId = 27;
+
+  @override
+  MapThemeProfile read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return MapThemeProfile(
+      id: fields[0] as String,
+      name: fields[1] as String,
+      palette: fields[2] as MapThemePalette,
+      isBuiltIn: fields[3] as bool,
+      createdAt: fields[4] as DateTime?,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, MapThemeProfile obj) {
+    writer
+      ..writeByte(5)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.name)
+      ..writeByte(2)
+      ..write(obj.palette)
+      ..writeByte(3)
+      ..write(obj.isBuiltIn)
+      ..writeByte(4)
+      ..write(obj.createdAt);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MapThemeProfileAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
+  @override
+  final typeId = 28;
+
+  @override
+  AppPreferences read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return AppPreferences(
+      defaultThemeProfileIdForNewStrategies: fields[0] as String,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, AppPreferences obj) {
+    writer
+      ..writeByte(1)
+      ..writeByte(0)
+      ..write(obj.defaultThemeProfileIdForNewStrategies);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AppPreferencesAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

@@ -10,12 +10,22 @@ final agentFilterProvider =
         AgentFilterProvider.new);
 
 class AgentFilterProvider extends Notifier<AgentFilterState> {
+  List<AgentType> _sortAgentsByName(Iterable<AgentType> agents) {
+    final sortedAgents = agents.toList();
+    sortedAgents.sort(
+      (a, b) => AgentData.agents[a]!.name
+          .toLowerCase()
+          .compareTo(AgentData.agents[b]!.name.toLowerCase()),
+    );
+    return sortedAgents;
+  }
+
   @override
   AgentFilterState build() {
     return AgentFilterState(
       currentFilter: FilterState.all,
       currentRole: AgentRole.duelist,
-      agentList: AgentType.values,
+      agentList: _sortAgentsByName(AgentType.values),
     );
   }
 
@@ -24,7 +34,7 @@ class AgentFilterProvider extends Notifier<AgentFilterState> {
       case FilterState.all:
         state = state.copyWith(
           currentFilter: filterState,
-          agentList: AgentType.values,
+          agentList: _sortAgentsByName(AgentType.values),
         );
       case FilterState.onMap:
         Set<AgentType> filteredList = {};
@@ -35,7 +45,7 @@ class AgentFilterProvider extends Notifier<AgentFilterState> {
 
         state = state.copyWith(
           currentFilter: filterState,
-          agentList: filteredList.toList(),
+          agentList: _sortAgentsByName(filteredList),
         );
 
       case FilterState.role:
@@ -49,7 +59,7 @@ class AgentFilterProvider extends Notifier<AgentFilterState> {
 
         state = state.copyWith(
           currentFilter: filterState,
-          agentList: filteredList,
+          agentList: _sortAgentsByName(filteredList),
         );
     }
   }
@@ -65,7 +75,7 @@ class AgentFilterProvider extends Notifier<AgentFilterState> {
 
     state = state.copyWith(
       currentRole: currentRole,
-      agentList: filteredList.toList(),
+      agentList: _sortAgentsByName(filteredList),
     );
   }
 }

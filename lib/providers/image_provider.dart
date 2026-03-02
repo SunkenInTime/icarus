@@ -102,18 +102,22 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   Future<void> addImage(
-      {required Uint8List imageBytes, required String fileExtension}) async {
+      {required Uint8List imageBytes,
+      required String fileExtension,
+      Offset? position,
+      double? aspectRatio}) async {
     final imageID = const Uuid().v4();
 
     await ref
         .read(placedImageProvider.notifier)
         .saveSecureImage(imageBytes, imageID, fileExtension);
 
+    final effectiveAspectRatio = aspectRatio ?? await getImageAspectRatio(imageBytes);
     final placedImage = PlacedImage(
       fileExtension: fileExtension,
-      position: const Offset(500, 500),
+      position: position ?? const Offset(500, 500),
       id: imageID,
-      aspectRatio: await getImageAspectRatio(imageBytes),
+      aspectRatio: effectiveAspectRatio,
       scale: 200,
     );
 

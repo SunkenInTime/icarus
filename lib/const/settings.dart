@@ -16,6 +16,9 @@ class Settings {
   static const Color abilityBGColor = Color(0xFF1B1B1B);
   static const double feedbackOpacity = 0.7;
   static const double brushSize = 5;
+  static const double freeDrawMinDistance = 3;
+  static const bool enableStrokeSimplification = false;
+  static const double strokeSimplificationEpsilon = 1.4;
   static const PhysicalKeyboardKey deleteKey = PhysicalKeyboardKey.keyX;
 
   static const Color sideBarColor = Color(0xFF141114);
@@ -38,8 +41,8 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 38;
-  static const String versionName = "3.1.0";
+  static const int versionNumber = 40;
+  static const String versionName = "3.1.2";
 
   static const double sideBarContentWidth = 325;
   static const double sideBarPanelWidth = sideBarContentWidth + 20;
