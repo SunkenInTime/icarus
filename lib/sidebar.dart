@@ -9,6 +9,7 @@ import 'package:icarus/widgets/sidebar_widgets/agent_filter.dart';
 import 'package:icarus/widgets/sidebar_widgets/role_picker.dart';
 import 'package:icarus/widgets/sidebar_widgets/team_picker.dart';
 import 'package:icarus/widgets/sidebar_widgets/tool_grid.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class SideBarUI extends ConsumerStatefulWidget {
   const SideBarUI({super.key});
@@ -28,7 +29,8 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
 
   @override
   Widget build(BuildContext context) {
-    final agentList = ref.watch(agentFilterProvider).agentList;
+    final filterState = ref.watch(agentFilterProvider);
+    final agentList = filterState.agentList;
     return Row(
       // mainAxisAlignment: MainAxisAlignment.end,
       mainAxisSize: MainAxisSize.min,
@@ -76,8 +78,87 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                             padding: const EdgeInsets.only(top: 6),
                             child: AgentFilter(),
                           ),
-                          const TeamPicker()
+                          Row(
+                            children: [
+                              ShadTooltip(
+                                builder: (context) => Text(
+                                  filterState.favoritesOnly
+                                      ? "Show all agents"
+                                      : "Show only favorite agents",
+                                ),
+                                child: IconButton(
+                                  onPressed: () {
+                                    ref
+                                        .read(agentFilterProvider.notifier)
+                                        .toggleFavoritesOnly();
+                                  },
+                                  style: IconButton.styleFrom(
+                                    minimumSize: const Size(32, 32),
+                                    padding: const EdgeInsets.all(6),
+                                    backgroundColor: filterState.favoritesOnly
+                                        ? Settings.tacticalVioletTheme
+                                            .primary
+                                            .withValues(alpha: 0.16)
+                                        : Colors.transparent,
+                                    side: BorderSide(
+                                      color: filterState.favoritesOnly
+                                          ? const Color(0xFFFF9800)
+                                          : Settings
+                                              .tacticalVioletTheme.border,
+                                    ),
+                                  ),
+                                  icon: Icon(
+                                    filterState.favoritesOnly
+                                        ? LucideIcons.star
+                                        : LucideIcons.star,
+                                    size: 16,
+                                    color: filterState.favoritesOnly
+                                        ? const Color(0xFFFF9800)
+                                        : Settings
+                                            .tacticalVioletTheme
+                                            .mutedForeground,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              const TeamPicker(),
+                            ],
+                          )
                         ],
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          child: filterState.favoritesOnly
+                              ? Padding(
+                                  key: const ValueKey("favorites-only-indicator"),
+                                  padding: const EdgeInsets.only(top: 6, left: 2),
+                                  child: Row(
+                                    spacing: 6,
+                                    children: const [
+                                      Icon(
+                                        LucideIcons.star,
+                                        size: 12,
+                                        color: Color(0xFFFF9800),
+                                      ),
+                                      Text(
+                                        "Filtering: Favorites only",
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFFFF9800),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : const SizedBox.shrink(
+                                  key: ValueKey("favorites-only-indicator-empty"),
+                                ),
+                        ),
                       ),
                       const RolePicker()
                     ],

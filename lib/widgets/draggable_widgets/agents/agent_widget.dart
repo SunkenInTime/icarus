@@ -156,6 +156,7 @@ class AgentWidget extends ConsumerWidget {
           width: scaledSize,
           height: scaledSize,
           child: InkWell(
+            mouseCursor: SystemMouseCursors.click,
             borderRadius: const BorderRadius.all(Radius.circular(3)),
             highlightColor: Colors.white.withValues(alpha: 0.2),
             splashColor: Colors.white.withValues(alpha: 0.3),

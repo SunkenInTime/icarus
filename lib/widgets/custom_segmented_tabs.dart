@@ -279,6 +279,7 @@ class _TabButton<T> extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
+        mouseCursor: SystemMouseCursors.click,
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: AnimatedContainer(
