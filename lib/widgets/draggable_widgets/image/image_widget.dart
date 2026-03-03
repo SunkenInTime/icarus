@@ -174,8 +174,9 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
     final clampedScale = ImageScalePolicy.clamp(widget.scale);
     const leftChromeWidth = 12.0; // left bar (10) + spacer (2)
     final safeAspectRatio = widget.aspectRatio <= 0 ? 1.0 : widget.aspectRatio;
-    final cardWidth = (clampedScale - leftChromeWidth).clamp(1.0, double.infinity);
-    final cardHeight = (cardWidth / safeAspectRatio) + 10;
+    final cardWidth =
+        (clampedScale - leftChromeWidth).clamp(1.0, double.infinity);
+    final cardHeight = (cardWidth - 10) / safeAspectRatio + 10;
     log(clampedScale.toString());
     final file = File(path.join(
       ref.watch(strategyProvider).storageDirectory!,
@@ -231,6 +232,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
+                  //Tag container
                   width: 10,
                   height: cardHeight.toDouble(),
                   decoration: BoxDecoration(
