@@ -2,6 +2,7 @@ import 'dart:developer';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -11,6 +12,7 @@ import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/scalable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class PlacedImageBuilder extends StatefulWidget {
   const PlacedImageBuilder({
@@ -31,14 +33,18 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
   double? localScale; // Make localScale nullable to check if it's initialized
   bool isPanning = false;
   bool isDragging = false;
-  // Optionally define min and max scale values
-  static const double minScale = 100;
-  static const double maxScale = 800;
+  static const List<Color> _tagPalette = [
+    Color(0xFF22C55E),
+    Color(0xFF3B82F6),
+    Color(0xFFF59E0B),
+    Color(0xFFEF4444),
+    Color(0xFFA855F7),
+  ];
 
   @override
   void initState() {
     super.initState();
-    localScale ??= widget.scale;
+    localScale ??= ImageScalePolicy.clamp(widget.scale);
   }
 
   @override
@@ -53,7 +59,8 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
 
       if (ref.watch(placedImageProvider).images[index].scale != localScale &&
           !isPanning) {
-        localScale = ref.read(placedImageProvider).images[index].scale;
+        localScale =
+            ImageScalePolicy.clamp(ref.read(placedImageProvider).images[index].scale);
       }
 
       return ImageScaleController(
@@ -62,9 +69,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
           log("I'm being panned");
           setState(() {
             isPanning = true;
-            localScale = details.delta.dx + localScale!;
-            if (localScale! < minScale) localScale = minScale;
-            if (localScale! > maxScale) localScale = maxScale;
+            localScale = ImageScalePolicy.clamp(details.delta.dx + localScale!);
           });
         },
         onPanEnd: (details) {
@@ -91,6 +96,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
                 scale: localScale!,
                 fileExtension: widget.placedImage.fileExtension,
                 id: widget.placedImage.id,
+                tagColorValue: widget.placedImage.tagColorValue,
               ),
             ),
           ),
@@ -108,26 +114,77 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
               isDragging = false;
             });
           },
-          child: MouseWatch(
-            cursor: SystemMouseCursors.click,
-            onDeleteKeyPressed: () {
-              final id = widget.placedImage.id;
-              final action = UserAction(
-                  type: ActionType.deletion, id: id, group: ActionGroup.image);
+          child: ShadContextMenuRegion(
+            items: _buildTagColorItems(ref),
+            child: MouseWatch(
+              cursor: SystemMouseCursors.click,
+              onDeleteKeyPressed: () {
+                final id = widget.placedImage.id;
+                final action = UserAction(
+                    type: ActionType.deletion, id: id, group: ActionGroup.image);
 
-              ref.read(actionProvider.notifier).addAction(action);
-              ref.read(placedImageProvider.notifier).removeImage(id);
-            },
-            child: ImageWidget(
-              fileExtension: widget.placedImage.fileExtension,
-              aspectRatio: widget.placedImage.aspectRatio,
-              link: widget.placedImage.link,
-              scale: localScale!,
-              id: widget.placedImage.id,
+                ref.read(actionProvider.notifier).addAction(action);
+                ref.read(placedImageProvider.notifier).removeImage(id);
+              },
+              child: ImageWidget(
+                fileExtension: widget.placedImage.fileExtension,
+                aspectRatio: widget.placedImage.aspectRatio,
+                link: widget.placedImage.link,
+                scale: localScale!,
+                id: widget.placedImage.id,
+                tagColorValue: widget.placedImage.tagColorValue,
+              ),
             ),
           ),
         ),
       );
     });
+  }
+
+  List<ShadContextMenuItem> _buildTagColorItems(WidgetRef ref) {
+    return [
+      ShadContextMenuItem(
+        child: const Text('Reset tag to gray'),
+        onPressed: () {
+          ref
+              .read(placedImageProvider.notifier)
+              .updateTagColor(widget.placedImage.id, null);
+        },
+      ),
+      ..._tagPalette.map(
+        (color) => ShadContextMenuItem(
+          leading: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          child: Text(_labelForColor(color)),
+          onPressed: () {
+            ref
+                .read(placedImageProvider.notifier)
+                .updateTagColor(widget.placedImage.id, color.toARGB32());
+          },
+        ),
+      ),
+    ];
+  }
+
+  String _labelForColor(Color color) {
+    if (color.toARGB32() == const Color(0xFF22C55E).toARGB32()) {
+      return 'Green tag';
+    }
+    if (color.toARGB32() == const Color(0xFF3B82F6).toARGB32()) {
+      return 'Blue tag';
+    }
+    if (color.toARGB32() == const Color(0xFFF59E0B).toARGB32()) {
+      return 'Amber tag';
+    }
+    if (color.toARGB32() == const Color(0xFFEF4444).toARGB32()) {
+      return 'Red tag';
+    }
+    return 'Purple tag';
   }
 }

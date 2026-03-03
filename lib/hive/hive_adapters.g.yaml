@@ -93,7 +93,7 @@ types:
         index: 7
   PlacedText:
     typeId: 4
-    nextIndex: 5
+    nextIndex: 6
     fields:
       text:
         index: 0
@@ -105,9 +105,11 @@ types:
         index: 3
       position:
         index: 4
+      tagColorValue:
+        index: 5
   PlacedImage:
     typeId: 5
-    nextIndex: 9
+    nextIndex: 10
     fields:
       aspectRatio:
         index: 1
@@ -123,6 +125,8 @@ types:
         index: 6
       fileExtension:
         index: 8
+      tagColorValue:
+        index: 9
   MapValue:
     typeId: 6
     nextIndex: 12

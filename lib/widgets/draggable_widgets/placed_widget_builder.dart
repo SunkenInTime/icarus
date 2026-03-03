@@ -181,6 +181,15 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 customOpacityPercent: customData.opacityPercent,
               );
               ref.read(utilityProvider.notifier).addUtility(placedUtility);
+            } else if (details.data is TextToolData) {
+              final textData = details.data as TextToolData;
+              final placedText = PlacedText(
+                id: uuid.v4(),
+                position: normalizedPosition,
+                size: textData.width,
+                tagColorValue: textData.tagColorValue,
+              );
+              ref.read(textProvider.notifier).addText(placedText);
             }
           },
           onLeave: (data) {

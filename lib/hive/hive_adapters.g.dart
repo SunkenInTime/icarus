@@ -263,6 +263,7 @@ class PlacedTextAdapter extends TypeAdapter<PlacedText> {
       position: fields[4] as Offset,
       id: fields[2] as String,
       size: fields[1] == null ? 200 : (fields[1] as num).toDouble(),
+      tagColorValue: (fields[5] as num?)?.toInt(),
     )
       ..text = fields[0] as String
       ..isDeleted = fields[3] as bool;
@@ -271,7 +272,7 @@ class PlacedTextAdapter extends TypeAdapter<PlacedText> {
   @override
   void write(BinaryWriter writer, PlacedText obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.text)
       ..writeByte(1)
@@ -281,7 +282,9 @@ class PlacedTextAdapter extends TypeAdapter<PlacedText> {
       ..writeByte(3)
       ..write(obj.isDeleted)
       ..writeByte(4)
-      ..write(obj.position);
+      ..write(obj.position)
+      ..writeByte(5)
+      ..write(obj.tagColorValue);
   }
 
   @override
@@ -311,6 +314,7 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       aspectRatio: (fields[1] as num).toDouble(),
       scale: (fields[2] as num).toDouble(),
       fileExtension: fields[8] as String?,
+      tagColorValue: (fields[9] as num?)?.toInt(),
     )
       ..link = fields[3] as String
       ..isDeleted = fields[5] as bool;
@@ -319,7 +323,7 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
   @override
   void write(BinaryWriter writer, PlacedImage obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(1)
       ..write(obj.aspectRatio)
       ..writeByte(2)
@@ -333,7 +337,9 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       ..writeByte(6)
       ..write(obj.position)
       ..writeByte(8)
-      ..write(obj.fileExtension);
+      ..write(obj.fileExtension)
+      ..writeByte(9)
+      ..write(obj.tagColorValue);
   }
 
   @override

@@ -129,10 +129,18 @@ class PlacedWidget extends HiveObject {
 
 @JsonSerializable()
 class PlacedText extends PlacedWidget {
-  PlacedText({required super.position, required super.id, this.size = 200});
+  PlacedText({
+    required super.position,
+    required super.id,
+    this.size = 200,
+    this.tagColorValue,
+  });
 
   String text = "";
   double size;
+
+  @JsonKey(defaultValue: null)
+  int? tagColorValue;
 
   factory PlacedText.fromJson(Map<String, dynamic> json) =>
       _$PlacedTextFromJson(json);
@@ -167,6 +175,7 @@ class PlacedImage extends PlacedWidget {
     required this.aspectRatio,
     required this.scale,
     required this.fileExtension,
+    this.tagColorValue,
   });
 
   final double aspectRatio;
@@ -174,10 +183,17 @@ class PlacedImage extends PlacedWidget {
   final String? fileExtension;
   double scale;
 
+  @JsonKey(defaultValue: null)
+  int? tagColorValue;
+
   String link = "";
 
   void updateLink(String link) {
     this.link = link;
+  }
+
+  void updateTagColor(int? colorValue) {
+    tagColorValue = colorValue;
   }
 
   void switchSides(Offset size) {
@@ -211,6 +227,7 @@ class PlacedImage extends PlacedWidget {
     double? aspectRatio,
     double? scale,
     String? fileExtension,
+    int? tagColorValue,
     bool? isDeleted,
     String? link,
   }) {
@@ -220,6 +237,7 @@ class PlacedImage extends PlacedWidget {
       aspectRatio: aspectRatio ?? this.aspectRatio,
       scale: scale ?? this.scale,
       fileExtension: fileExtension ?? this.fileExtension,
+      tagColorValue: tagColorValue ?? this.tagColorValue,
     );
     // Base class field
     // cloned.isDeleted = isDeleted ?? this.isDeleted;

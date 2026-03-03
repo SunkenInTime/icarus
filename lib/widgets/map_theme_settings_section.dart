@@ -71,6 +71,7 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(12),
+        boxShadow: const [Settings.cardForegroundBackdrop],
         border: Border.all(
           color: isOverride
               ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.4)
@@ -140,12 +141,9 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
                     Text(profile.name),
                     const SizedBox(height: 2),
                     Text(
-                      profile.isBuiltIn
-                          ? "Built-in profile"
-                          : "Custom profile",
+                      profile.isBuiltIn ? "Built-in profile" : "Custom profile",
                       style: ShadTheme.of(context).textTheme.small.copyWith(
-                            color:
-                                Settings.tacticalVioletTheme.mutedForeground,
+                            color: Settings.tacticalVioletTheme.mutedForeground,
                           ),
                     ),
                   ],
@@ -157,7 +155,7 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
           const SizedBox(height: 10),
           Align(
             alignment: Alignment.centerRight,
-            child: ShadButton.ghost(
+            child: ShadButton(
               onPressed: () {
                 _profileIdBeforeCustomize =
                     ref.read(strategyThemeProvider).profileId ??
@@ -192,7 +190,8 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: Settings.tacticalVioletTheme.primary.withValues(alpha: 0.15),
+              color:
+                  Settings.tacticalVioletTheme.primary.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -219,7 +218,8 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              ShadButton.ghost(
+              ShadButton.secondary(
+                leading: const Icon(LucideIcons.undo),
                 onPressed: () {
                   final restoreId = _profileIdBeforeCustomize ??
                       MapThemeProfilesProvider.immutableDefaultProfileId;
@@ -231,17 +231,13 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
                     _showSaveForm = false;
                   });
                 },
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.undo_outlined, size: 14),
-                    SizedBox(width: 6),
-                    Text("Reset"),
-                  ],
-                ),
+                child: const Text("Reset"),
               ),
               const SizedBox(width: 4),
-              ShadButton.outline(
+              ShadButton(
+                leading: _showSaveForm
+                    ? const Icon(LucideIcons.x)
+                    : const Icon(LucideIcons.save),
                 onPressed: () {
                   setState(() {
                     _showSaveForm = !_showSaveForm;
@@ -249,24 +245,12 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
                       final profiles = ref.read(mapThemeProfilesProvider);
                       _saveNameController.text =
                           "Profile ${MapThemeProfilesProvider.nextGeneratedProfileNumber(
-                        profiles.profiles
-                            .where((p) => !p.isBuiltIn)
-                            .toList(),
+                        profiles.profiles.where((p) => !p.isBuiltIn).toList(),
                       )}";
                     }
                   });
                 },
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _showSaveForm ? Icons.close : Icons.save_outlined,
-                      size: 14,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(_showSaveForm ? "Cancel" : "Save as Profile"),
-                  ],
-                ),
+                child: Text(_showSaveForm ? "Cancel" : "Save as Profile"),
               ),
             ],
           ),
@@ -345,7 +329,8 @@ class _ProfileLibrarySection extends ConsumerStatefulWidget {
       _ProfileLibrarySectionState();
 }
 
-class _ProfileLibrarySectionState extends ConsumerState<_ProfileLibrarySection> {
+class _ProfileLibrarySectionState
+    extends ConsumerState<_ProfileLibrarySection> {
   @override
   Widget build(BuildContext context) {
     final profilesState = ref.watch(mapThemeProfilesProvider);
@@ -482,8 +467,7 @@ class _ProfileLibrarySectionState extends ConsumerState<_ProfileLibrarySection> 
           child: Row(
             children: [
               Icon(Icons.delete_outline,
-                  size: 16,
-                  color: Settings.tacticalVioletTheme.destructive),
+                  size: 16, color: Settings.tacticalVioletTheme.destructive),
               const SizedBox(width: 8),
               Text("Delete",
                   style: TextStyle(
@@ -518,6 +502,7 @@ class _ProfileListRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
+      mouseCursor: SystemMouseCursors.click,
       borderRadius: BorderRadius.circular(10),
       onTap: onTap,
       child: AnimatedContainer(
@@ -525,6 +510,7 @@ class _ProfileListRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
+          boxShadow: const [Settings.cardForegroundBackdrop],
           border: Border.all(
             color: isSelected
                 ? Settings.tacticalVioletTheme.primary
@@ -532,8 +518,8 @@ class _ProfileListRow extends StatelessWidget {
             width: isSelected ? 1.5 : 1,
           ),
           color: isSelected
-              ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.05)
-              : Settings.tacticalVioletTheme.background,
+              ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.1)
+              : Settings.tacticalVioletTheme.card,
         ),
         child: Row(
           children: [
@@ -677,6 +663,7 @@ class _EditableSwatch extends StatelessWidget {
   Widget build(BuildContext context) {
     return Expanded(
       child: InkWell(
+        mouseCursor: SystemMouseCursors.click,
         borderRadius: BorderRadius.circular(8),
         onTap: () async {
           final picked = await _showColorPickerDialog(

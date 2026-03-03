@@ -18,9 +18,6 @@ class ImageScaleController extends ConsumerWidget {
 
   final Widget child;
   final bool isDragging;
-
-  final double minScale = 100;
-  final double maxScale = 500;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Stack(

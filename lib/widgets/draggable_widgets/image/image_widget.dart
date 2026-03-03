@@ -4,6 +4,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -135,6 +136,7 @@ class ImageWidget extends ConsumerStatefulWidget {
     required this.scale,
     required this.fileExtension,
     required this.id,
+    this.tagColorValue,
     this.isFeedback = false,
   });
   final double aspectRatio;
@@ -142,6 +144,7 @@ class ImageWidget extends ConsumerStatefulWidget {
   final double scale;
   final String? fileExtension;
   final String id;
+  final int? tagColorValue;
   final bool isFeedback;
 
   @override
@@ -168,7 +171,12 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
 
   @override
   Widget build(BuildContext context) {
-    log(widget.scale.toString());
+    final clampedScale = ImageScalePolicy.clamp(widget.scale);
+    const leftChromeWidth = 12.0; // left bar (10) + spacer (2)
+    final safeAspectRatio = widget.aspectRatio <= 0 ? 1.0 : widget.aspectRatio;
+    final cardWidth = (clampedScale - leftChromeWidth).clamp(1.0, double.infinity);
+    final cardHeight = (cardWidth / safeAspectRatio) + 10;
+    log(clampedScale.toString());
     final file = File(path.join(
       ref.watch(strategyProvider).storageDirectory!,
       'images',
@@ -217,30 +225,32 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
         },
         child: SizeChangedLayoutNotifier(
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: widget.scale),
-            child: AspectRatio(
-              aspectRatio: widget.aspectRatio,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // The grey container on left
-                  Container(
-                    width: 10,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFC5C5C5),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
+            constraints: BoxConstraints(maxWidth: clampedScale, minWidth: 0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 10,
+                  height: cardHeight.toDouble(),
+                  decoration: BoxDecoration(
+                    color: Color(widget.tagColorValue ?? 0xFFC5C5C5),
+                    borderRadius: BorderRadius.circular(3),
                   ),
-                  const SizedBox(width: 2),
-                  Flexible(
-                    child: Card(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      margin: EdgeInsets.zero,
-                      color: Colors.black,
-                      child: Padding(
-                        padding: const EdgeInsets.all(5),
+                ),
+                const SizedBox(width: 2),
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  margin: EdgeInsets.zero,
+                  color: Colors.black,
+                  child: SizedBox(
+                    width: cardWidth.toDouble(),
+                    child: Padding(
+                      padding: const EdgeInsets.all(5),
+                      child: AspectRatio(
+                        aspectRatio: safeAspectRatio,
                         child: Container(
                           decoration: BoxDecoration(
                             color: const Color.fromARGB(255, 20, 20, 20),
@@ -256,9 +266,9 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
                         ),
                       ),
                     ),
-                  )
-                ],
-              ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

@@ -25,6 +25,7 @@ PlacedText _$PlacedTextFromJson(Map<String, dynamic> json) => PlacedText(
           .fromJson(json['position'] as Map<String, dynamic>),
       id: json['id'] as String,
       size: (json['size'] as num?)?.toDouble() ?? 200,
+      tagColorValue: (json['tagColorValue'] as num?)?.toInt(),
     )
       ..isDeleted = json['isDeleted'] as bool? ?? false
       ..text = json['text'] as String;
@@ -36,6 +37,7 @@ Map<String, dynamic> _$PlacedTextToJson(PlacedText instance) =>
       'position': const OffsetConverter().toJson(instance.position),
       'text': instance.text,
       'size': instance.size,
+      'tagColorValue': instance.tagColorValue,
     };
 
 PlacedImage _$PlacedImageFromJson(Map<String, dynamic> json) => PlacedImage(
@@ -45,6 +47,7 @@ PlacedImage _$PlacedImageFromJson(Map<String, dynamic> json) => PlacedImage(
       aspectRatio: (json['aspectRatio'] as num).toDouble(),
       scale: (json['scale'] as num).toDouble(),
       fileExtension: json['fileExtension'] as String?,
+      tagColorValue: (json['tagColorValue'] as num?)?.toInt(),
     )
       ..isDeleted = json['isDeleted'] as bool? ?? false
       ..link = json['link'] as String;
@@ -57,6 +60,7 @@ Map<String, dynamic> _$PlacedImageToJson(PlacedImage instance) =>
       'aspectRatio': instance.aspectRatio,
       'fileExtension': instance.fileExtension,
       'scale': instance.scale,
+      'tagColorValue': instance.tagColorValue,
       'link': instance.link,
     };
 

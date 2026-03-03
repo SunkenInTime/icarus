@@ -186,6 +186,38 @@ class CustomShapeToolData implements DraggableData {
   }
 }
 
+class TextToolData implements DraggableData {
+  final Offset centerPoint;
+  final double width;
+  final double height;
+  final int? tagColorValue;
+
+  const TextToolData({
+    required this.centerPoint,
+    required this.width,
+    required this.height,
+    required this.tagColorValue,
+  });
+
+  factory TextToolData.defaults({int? tagColorValue}) {
+    const width = 200.0;
+    const height = 40.0;
+    return TextToolData(
+      centerPoint: const Offset(width / 2, height / 2),
+      width: width,
+      height: height,
+      tagColorValue: tagColorValue,
+    );
+  }
+
+  Offset getScaledCenterPoint({
+    required double scaleFactor,
+    required double screenZoom,
+  }) {
+    return centerPoint.scale(scaleFactor * screenZoom, scaleFactor * screenZoom);
+  }
+}
+
 sealed class Utilities {
   Offset getAnchorPoint({String? id, double? length, double? rotation});
 

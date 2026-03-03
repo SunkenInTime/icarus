@@ -13,7 +13,6 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
-import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/dialogs/upload_image_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -21,11 +20,19 @@ import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/custom_shape_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/delete_options.dart';
 import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
+import 'package:icarus/widgets/sidebar_widgets/text_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/vision_cone_tools.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
-enum _ContextBarMode { drawing, deleting, visionCone, customShapes, none }
+enum _ContextBarMode {
+  drawing,
+  deleting,
+  visionCone,
+  customShapes,
+  textTools,
+  none
+}
 
 class BottomContextBar extends ConsumerWidget {
   const BottomContextBar({super.key});
@@ -41,6 +48,7 @@ class BottomContextBar extends ConsumerWidget {
       InteractionState.deleting => _ContextBarMode.deleting,
       InteractionState.visionCone => _ContextBarMode.visionCone,
       InteractionState.customShapes => _ContextBarMode.customShapes,
+      InteractionState.textTools => _ContextBarMode.textTools,
       _ => _ContextBarMode.none,
     };
 
@@ -72,6 +80,7 @@ class BottomContextBar extends ConsumerWidget {
         const VisionConeTools(key: ValueKey('visionCone')),
       _ContextBarMode.customShapes =>
         const CustomShapeTools(key: ValueKey('customShapes')),
+      _ContextBarMode.textTools => const TextTools(key: ValueKey('textTools')),
       _ContextBarMode.deleting =>
         const DeleteOptions(key: ValueKey('deleting')),
       _ContextBarMode.none => const SizedBox.shrink(key: ValueKey('none')),
@@ -81,8 +90,6 @@ class BottomContextBar extends ConsumerWidget {
 
 class ToolGrid extends ConsumerWidget {
   const ToolGrid({super.key});
-  static const double _defaultTextSpawnWidth = 200;
-  static const double _defaultTextSpawnHeight = 40;
   static const double _defaultImageSpawnWidth = 200;
 
   @override
@@ -178,22 +185,16 @@ class ToolGrid extends ConsumerWidget {
                 builder: (context) => const Text("Add Text T"),
                 child: ShadIconButton.secondary(
                   onPressed: () {
-                    ref
-                        .read(interactionStateProvider.notifier)
-                        .update(InteractionState.navigation);
-                    const uuid = Uuid();
-                    final placementCenter = ref.read(placementCenterProvider);
-                    final centeredTopLeft =
-                        DefaultPlacement.topLeftFromVirtualAnchor(
-                      viewportCenter: placementCenter,
-                      anchorVirtual: const Offset(
-                        _defaultTextSpawnWidth / 2,
-                        _defaultTextSpawnHeight / 2,
-                      ),
-                    );
-                    ref.read(textProvider.notifier).addText(
-                          PlacedText(position: centeredTopLeft, id: uuid.v4()),
-                        );
+                    switch (currentInteractionState) {
+                      case InteractionState.textTools:
+                        ref
+                            .read(interactionStateProvider.notifier)
+                            .update(InteractionState.navigation);
+                      default:
+                        ref
+                            .read(interactionStateProvider.notifier)
+                            .update(InteractionState.textTools);
+                    }
                   },
                   icon: const Icon(Icons.text_fields),
                 ),
@@ -205,12 +206,13 @@ class ToolGrid extends ConsumerWidget {
                     ref
                         .read(interactionStateProvider.notifier)
                         .update(InteractionState.navigation);
-                    final Uint8List? imageBytes =
-                        await showShadDialog<Uint8List?>(
+                    final UploadImageResult? imageResult =
+                        await showShadDialog<UploadImageResult?>(
                       context: context,
                       builder: (context) => const UploadImageDialog(),
                     );
-                    if (imageBytes == null) return;
+                    if (imageResult == null) return;
+                    final imageBytes = imageResult.bytes;
 
                     final String? fileExtension =
                         PlacedImageSerializer.detectImageFormat(imageBytes);
@@ -250,6 +252,7 @@ class ToolGrid extends ConsumerWidget {
                           fileExtension: fileExtension,
                           aspectRatio: aspectRatio,
                           position: centeredTopLeft,
+                          tagColorValue: imageResult.tagColorValue,
                         );
                   },
                   icon: const Icon(Icons.image_outlined),

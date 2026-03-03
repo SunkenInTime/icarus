@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
+import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:image/image.dart' as img;
 import 'dart:ui' as ui;
@@ -105,7 +106,8 @@ class PlacedImageProvider extends Notifier<ImageState> {
       {required Uint8List imageBytes,
       required String fileExtension,
       Offset? position,
-      double? aspectRatio}) async {
+      double? aspectRatio,
+      int? tagColorValue}) async {
     final imageID = const Uuid().v4();
 
     await ref
@@ -118,7 +120,8 @@ class PlacedImageProvider extends Notifier<ImageState> {
       position: position ?? const Offset(500, 500),
       id: imageID,
       aspectRatio: effectiveAspectRatio,
-      scale: 200,
+      scale: ImageScalePolicy.defaultWidth,
+      tagColorValue: tagColorValue,
     );
 
     final action = UserAction(
@@ -163,6 +166,15 @@ class PlacedImageProvider extends Notifier<ImageState> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = state.copyWith(images: [...newImages, temp]);
+  }
+
+  void updateTagColor(String id, int? colorValue) {
+    final newImages = [...state.images];
+    final index = PlacedWidget.getIndexByID(id, newImages);
+    if (index < 0) return;
+
+    newImages[index].updateTagColor(colorValue);
+    state = state.copyWith(images: newImages);
   }
 
   void switchSides() {
@@ -277,6 +289,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
     final images = jsonList
         .map((json) => PlacedImage.fromJson(json as Map<String, dynamic>))
+        .map((image) => image.copyWith(scale: ImageScalePolicy.clamp(image.scale)))
         .toList();
 
     return images;
@@ -292,13 +305,15 @@ class PlacedImageProvider extends Notifier<ImageState> {
           json as Map<String, dynamic>, strategyID)),
     );
 
-    return images;
+    return images
+        .map((image) => image.copyWith(scale: ImageScalePolicy.clamp(image.scale)))
+        .toList();
   }
 
   void updateScale(int index, double scale) {
     final newState = state.copyWith();
 
-    newState.images[index].scale = scale;
+    newState.images[index].scale = ImageScalePolicy.clamp(scale);
 
     state = newState;
   }
@@ -346,7 +361,12 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
   void fromHive(List<PlacedImage> hiveImages) {
     poppedImages = [];
-    state = state.copyWith(images: hiveImages);
+    state = state.copyWith(
+      images: hiveImages
+          .map((image) =>
+              image.copyWith(scale: ImageScalePolicy.clamp(image.scale)))
+          .toList(),
+    );
   }
 
   void clearAll() {
@@ -420,7 +440,9 @@ class PlacedImageSerializer {
       json['fileExtension'] = fileExtension;
     }
 
-    final placedImage = PlacedImage.fromJson(json);
+    final parsedImage = PlacedImage.fromJson(json);
+    final placedImage =
+        parsedImage.copyWith(scale: ImageScalePolicy.clamp(parsedImage.scale));
 
     // Compute the final file path to write the image.
     final filePath = await _computeFilePath(placedImage, strategyID);
