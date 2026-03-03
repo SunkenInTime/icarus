@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/agent_dragable.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/agents.dart';
@@ -74,56 +75,41 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: AgentFilter(),
-                          ),
                           Row(
+                            spacing: 8,
                             children: [
+                              const AgentFilter(),
                               ShadTooltip(
                                 builder: (context) => Text(
                                   filterState.favoritesOnly
                                       ? "Show all agents"
                                       : "Show only favorite agents",
                                 ),
-                                child: IconButton(
+                                child: SelectableIconButton(
+                                  isSelected: filterState.favoritesOnly,
+                                  hoverBackgroundColor:
+                                      filterState.favoritesOnly
+                                          ? const Color(0xFFFF9800)
+                                          : null,
                                   onPressed: () {
                                     ref
                                         .read(agentFilterProvider.notifier)
                                         .toggleFavoritesOnly();
                                   },
-                                  style: IconButton.styleFrom(
-                                    minimumSize: const Size(32, 32),
-                                    padding: const EdgeInsets.all(6),
-                                    backgroundColor: filterState.favoritesOnly
-                                        ? Settings.tacticalVioletTheme
-                                            .primary
-                                            .withValues(alpha: 0.16)
-                                        : Colors.transparent,
-                                    side: BorderSide(
-                                      color: filterState.favoritesOnly
-                                          ? const Color(0xFFFF9800)
-                                          : Settings
-                                              .tacticalVioletTheme.border,
-                                    ),
-                                  ),
                                   icon: Icon(
-                                    filterState.favoritesOnly
-                                        ? LucideIcons.star
-                                        : LucideIcons.star,
-                                    size: 16,
+                                    Icons.star_rounded,
+                                    size: 24,
                                     color: filterState.favoritesOnly
-                                        ? const Color(0xFFFF9800)
-                                        : Settings
-                                            .tacticalVioletTheme
+                                        ? Colors.white
+                                        : Settings.tacticalVioletTheme
                                             .mutedForeground,
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              const TeamPicker(),
                             ],
-                          )
+                          ),
+                          const SizedBox(width: 8),
+                          const TeamPicker(),
                         ],
                       ),
                       Align(
@@ -133,12 +119,12 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                           switchInCurve: Curves.easeOutCubic,
                           switchOutCurve: Curves.easeInCubic,
                           child: filterState.favoritesOnly
-                              ? Padding(
-                                  key: const ValueKey("favorites-only-indicator"),
-                                  padding: const EdgeInsets.only(top: 6, left: 2),
+                              ? const Padding(
+                                  key: ValueKey("favorites-only-indicator"),
+                                  padding: EdgeInsets.only(top: 6, left: 2),
                                   child: Row(
                                     spacing: 6,
-                                    children: const [
+                                    children: [
                                       Icon(
                                         LucideIcons.star,
                                         size: 12,
@@ -156,7 +142,8 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                                   ),
                                 )
                               : const SizedBox.shrink(
-                                  key: ValueKey("favorites-only-indicator-empty"),
+                                  key: ValueKey(
+                                      "favorites-only-indicator-empty"),
                                 ),
                         ),
                       ),

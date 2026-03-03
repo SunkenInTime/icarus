@@ -205,6 +205,13 @@ class _CustomSegmentedTabsState<T> extends State<CustomSegmentedTabs<T>> {
                 bottom: 0,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withAlpha(100),
+                        blurRadius: 2,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                     color: Settings.tacticalVioletTheme.primary,
                     borderRadius: BorderRadius.circular(8),
                   ),
