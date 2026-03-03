@@ -44,8 +44,6 @@ class _TextToolsState extends ConsumerState<TextTools> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Text"),
-          const SizedBox(height: 4),
           const Text("Tag Color"),
           const SizedBox(height: 4),
           _buildColorPicker(),
@@ -136,7 +134,8 @@ class _TextToolsState extends ConsumerState<TextTools> {
 
   void _placeAtCenter() {
     const uuid = Uuid();
-    final toolData = TextToolData.defaults(tagColorValue: _selectedTagColorValue);
+    final toolData =
+        TextToolData.defaults(tagColorValue: _selectedTagColorValue);
     final placementCenter = ref.read(placementCenterProvider);
     final centeredTopLeft = DefaultPlacement.topLeftFromVirtualAnchor(
       viewportCenter: placementCenter,

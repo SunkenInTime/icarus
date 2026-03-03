@@ -183,7 +183,8 @@ class ToolGrid extends ConsumerWidget {
               ),
               ShadTooltip(
                 builder: (context) => const Text("Add Text T"),
-                child: ShadIconButton.secondary(
+                child: SelectableIconButton(
+                  tooltip: "Add Text T",
                   onPressed: () {
                     switch (currentInteractionState) {
                       case InteractionState.textTools:
@@ -197,6 +198,8 @@ class ToolGrid extends ConsumerWidget {
                     }
                   },
                   icon: const Icon(Icons.text_fields),
+                  isSelected:
+                      currentInteractionState == InteractionState.textTools,
                 ),
               ),
               ShadTooltip(
