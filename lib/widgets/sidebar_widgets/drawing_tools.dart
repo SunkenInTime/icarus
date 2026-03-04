@@ -171,7 +171,7 @@ class DrawingTools extends ConsumerWidget {
                       .read(penProvider.notifier)
                       .setTraversalMode(TraversalSpeedProfile.running);
                 },
-                tooltip: "running",
+                tooltip: "Running w/ knife out",
               ),
               SelectableIconButton(
                 icon: const Icon(
@@ -186,7 +186,7 @@ class DrawingTools extends ConsumerWidget {
                       .read(penProvider.notifier)
                       .setTraversalMode(TraversalSpeedProfile.walking);
                 },
-                tooltip: "walking",
+                tooltip: "Walking w/ knife out",
               ),
               SelectableIconButton(
                 icon: Image.asset(
@@ -202,7 +202,7 @@ class DrawingTools extends ConsumerWidget {
                       .read(penProvider.notifier)
                       .setTraversalMode(TraversalSpeedProfile.brimStim);
                 },
-                tooltip: "brim stim",
+                tooltip: "Brimstone Stim w/ knife out",
               ),
               SelectableIconButton(
                 icon: Image.asset(
@@ -211,7 +211,8 @@ class DrawingTools extends ConsumerWidget {
                   height: 20,
                 ),
                 isSelected: traversalTimeEnabled &&
-                    activeTraversalSpeedProfile == TraversalSpeedProfile.neonRun,
+                    activeTraversalSpeedProfile ==
+                        TraversalSpeedProfile.neonRun,
                 onPressed: () {
                   ref
                       .read(penProvider.notifier)
