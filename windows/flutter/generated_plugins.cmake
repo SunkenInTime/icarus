@@ -3,6 +3,7 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  app_links
   desktop_drop
   flutter_inappwebview_windows
   pasteboard
@@ -13,6 +14,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
+  convex_flutter
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

@@ -39,6 +39,11 @@ dependencies:
   flutter_inappwebview: ^6.1.5
   windows_single_instance: ^1.0.0
   pasteboard: ^0.4.0
+  convex_flutter: ^3.0.1
+  supabase: ^2.10.2
+  supabase_flutter: ^2.12.0
+  win32_registry: ^2.1.0
+  app_links: ^6.4.1
 
 
 dev_dependencies:

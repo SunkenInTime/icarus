@@ -1,0 +1,286 @@
+"use strict";
+import {
+  VAny,
+  VArray,
+  VBoolean,
+  VBytes,
+  VFloat64,
+  VId,
+  VInt64,
+  VLiteral,
+  VNull,
+  VObject,
+  VRecord,
+  VString,
+  VUnion
+} from "./validators.js";
+export function isValidator(v2) {
+  return !!v2.isConvexValidator;
+}
+export function asObjectValidator(obj) {
+  if (isValidator(obj)) {
+    return obj;
+  } else {
+    return v.object(obj);
+  }
+}
+export const v = {
+  /**
+   * Validates that the value is a document ID for the given table.
+   *
+   * IDs are strings at runtime but are typed as `Id<"tableName">` in
+   * TypeScript for type safety.
+   *
+   * @example
+   * ```typescript
+   * args: { userId: v.id("users") }
+   * ```
+   *
+   * @param tableName The name of the table.
+   */
+  id: (tableName) => {
+    return new VId({
+      isOptional: "required",
+      tableName
+    });
+  },
+  /**
+   * Validates that the value is `null`.
+   *
+   * Use `returns: v.null()` for functions that don't return a meaningful value.
+   * JavaScript `undefined` is not a valid Convex value, it is automatically
+   * converted to `null`.
+   */
+  null: () => {
+    return new VNull({ isOptional: "required" });
+  },
+  /**
+   * Validates that the value is a JavaScript `number` (Convex Float64).
+   *
+   * Supports all IEEE-754 double-precision floating point numbers including
+   * NaN and Infinity.
+   *
+   * Alias for `v.float64()`.
+   */
+  number: () => {
+    return new VFloat64({ isOptional: "required" });
+  },
+  /**
+   * Validates that the value is a JavaScript `number` (Convex Float64).
+   *
+   * Supports all IEEE-754 double-precision floating point numbers.
+   */
+  float64: () => {
+    return new VFloat64({ isOptional: "required" });
+  },
+  /**
+   * @deprecated Use `v.int64()` instead.
+   */
+  bigint: () => {
+    return new VInt64({ isOptional: "required" });
+  },
+  /**
+   * Validates that the value is a JavaScript `bigint` (Convex Int64).
+   *
+   * Supports BigInts between -2^63 and 2^63-1.
+   *
+   * @example
+   * ```typescript
+   * args: { timestamp: v.int64() }
+   * // Usage: createDoc({ timestamp: 1234567890n })
+   * ```
+   */
+  int64: () => {
+    return new VInt64({ isOptional: "required" });
+  },
+  /**
+   * Validates that the value is a `boolean`.
+   */
+  boolean: () => {
+    return new VBoolean({ isOptional: "required" });
+  },
+  /**
+   * Validates that the value is a `string`.
+   *
+   * Strings are stored as UTF-8 and their storage size is calculated as their
+   * UTF-8 encoded size.
+   */
+  string: () => {
+    return new VString({ isOptional: "required" });
+  },
+  /**
+   * Validates that the value is an `ArrayBuffer` (Convex Bytes).
+   *
+   * Use for binary data.
+   */
+  bytes: () => {
+    return new VBytes({ isOptional: "required" });
+  },
+  /**
+   * Validates that the value is exactly equal to the given literal.
+   *
+   * Useful for discriminated unions and enum-like patterns.
+   *
+   * @example
+   * ```typescript
+   * // Discriminated union pattern:
+   * v.union(
+   *   v.object({ kind: v.literal("error"), message: v.string() }),
+   *   v.object({ kind: v.literal("success"), value: v.number() }),
+   * )
+   * ```
+   *
+   * @param literal The literal value to compare against.
+   */
+  literal: (literal) => {
+    return new VLiteral({ isOptional: "required", value: literal });
+  },
+  /**
+   * Validates that the value is an `Array` where every element matches the
+   * given validator.
+   *
+   * Arrays can have at most 8192 elements.
+   *
+   * @example
+   * ```typescript
+   * args: { tags: v.array(v.string()) }
+   * args: { coordinates: v.array(v.number()) }
+   * args: { items: v.array(v.object({ name: v.string(), qty: v.number() })) }
+   * ```
+   *
+   * @param element The validator for the elements of the array.
+   */
+  array: (element) => {
+    return new VArray({ isOptional: "required", element });
+  },
+  /**
+   * Validates that the value is an `Object` with the specified properties.
+   *
+   * Objects can have at most 1024 entries. Field names must be non-empty and
+   * must not start with `"$"` or `"_"` (`_` is reserved for system fields
+   * like `_id` and `_creationTime`; `$` is reserved for Convex internal use).
+   *
+   * @example
+   * ```typescript
+   * args: {
+   *   user: v.object({
+   *     name: v.string(),
+   *     email: v.string(),
+   *     age: v.optional(v.number()),
+   *   })
+   * }
+   * ```
+   *
+   * @param fields An object mapping property names to their validators.
+   */
+  object: (fields) => {
+    return new VObject({ isOptional: "required", fields });
+  },
+  /**
+   * Validates that the value is a `Record` (object with dynamic keys).
+   *
+   * Records are objects at runtime but allow dynamic keys, unlike `v.object()`
+   * which requires known property names. Keys must be ASCII characters only,
+   * non-empty, and not start with `"$"` or `"_"`.
+   *
+   * @example
+   * ```typescript
+   * // Map of user IDs to scores:
+   * args: { scores: v.record(v.id("users"), v.number()) }
+   *
+   * // Map of string keys to string values:
+   * args: { metadata: v.record(v.string(), v.string()) }
+   * ```
+   *
+   * @param keys The validator for the keys of the record.
+   * @param values The validator for the values of the record.
+   */
+  record: (keys, values) => {
+    return new VRecord({
+      isOptional: "required",
+      key: keys,
+      value: values
+    });
+  },
+  /**
+   * Validates that the value matches at least one of the given validators.
+   *
+   * @example
+   * ```typescript
+   * // Allow string or number:
+   * args: { value: v.union(v.string(), v.number()) }
+   *
+   * // Discriminated union (recommended pattern):
+   * v.union(
+   *   v.object({ kind: v.literal("text"), body: v.string() }),
+   *   v.object({ kind: v.literal("image"), url: v.string() }),
+   * )
+   *
+   * // Nullable value:
+   * returns: v.union(v.object({ ... }), v.null())
+   * ```
+   *
+   * @param members The validators to match against.
+   */
+  union: (...members) => {
+    return new VUnion({
+      isOptional: "required",
+      members
+    });
+  },
+  /**
+   * A validator that accepts any Convex value without validation.
+   *
+   * Prefer using specific validators when possible for better type safety
+   * and runtime validation.
+   */
+  any: () => {
+    return new VAny({ isOptional: "required" });
+  },
+  /**
+   * Makes a property optional in an object validator.
+   *
+   * An optional property can be omitted entirely when creating a document or
+   * calling a function. This is different from `v.nullable()` which requires
+   * the property to be present but allows `null`.
+   *
+   * @example
+   * ```typescript
+   * v.object({
+   *   name: v.string(),              // required
+   *   nickname: v.optional(v.string()), // can be omitted
+   * })
+   *
+   * // Valid: { name: "Alice" }
+   * // Valid: { name: "Alice", nickname: "Ali" }
+   * // Invalid: { name: "Alice", nickname: null }  - use v.nullable() for this
+   * ```
+   *
+   * @param value The property value validator to make optional.
+   */
+  optional: (value) => {
+    return value.asOptional();
+  },
+  /**
+   * Allows a value to be either the given type or `null`.
+   *
+   * This is shorthand for `v.union(value, v.null())`. Unlike `v.optional()`,
+   * the property must still be present, but may be `null`.
+   *
+   * @example
+   * ```typescript
+   * v.object({
+   *   name: v.string(),
+   *   deletedAt: v.nullable(v.number()), // must be present, can be null
+   * })
+   *
+   * // Valid: { name: "Alice", deletedAt: null }
+   * // Valid: { name: "Alice", deletedAt: 1234567890 }
+   * // Invalid: { name: "Alice" }  - deletedAt is required
+   * ```
+   */
+  nullable: (value) => {
+    return v.union(value, v.null());
+  }
+};
+//# sourceMappingURL=validator.js.map
