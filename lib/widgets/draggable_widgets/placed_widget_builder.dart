@@ -497,8 +497,8 @@ class _UtilityList extends ConsumerWidget {
                         .getAnchorPoint() /
                     2;
 
-                if (coordinateSystem.isOutOfBounds(virtualOffset.translate(
-                    safeArea.dx / 2, safeArea.dy / 2))) {
+                if (coordinateSystem.isOutOfBounds(
+                    virtualOffset.translate(safeArea.dx, safeArea.dy))) {
                   ref
                       .read(utilityProvider.notifier)
                       .removeUtility(placedUtility.id);
@@ -554,8 +554,7 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                 if (placedUtility.type == UtilityType.customCircle) {
                   final diameterMeters = placedUtility.customDiameter;
                   if (diameterMeters == null) {
-                    log(
-                        'Missing customDiameter for custom circle ${placedUtility.id}, removing malformed utility.');
+                    log('Missing customDiameter for custom circle ${placedUtility.id}, removing malformed utility.');
                     ref
                         .read(utilityProvider.notifier)
                         .removeUtility(placedUtility.id);
@@ -569,8 +568,7 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                   final widthMeters = placedUtility.customWidth;
                   final lengthMeters = placedUtility.customLength;
                   if (widthMeters == null || lengthMeters == null) {
-                    log(
-                        'Missing custom rectangle dimensions for ${placedUtility.id}, removing malformed utility.');
+                    log('Missing custom rectangle dimensions for ${placedUtility.id}, removing malformed utility.');
                     ref
                         .read(utilityProvider.notifier)
                         .removeUtility(placedUtility.id);
