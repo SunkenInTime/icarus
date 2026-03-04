@@ -10,6 +10,7 @@
 .history
 .svn/
 .swiftpm/
+node_modules/
 migrate_working_dir/
 
 # IntelliJ related
@@ -47,4 +48,3 @@ app.*.map.json
 # FVM Version Cache
 .fvm/
 .env.local
-.node_modules/
