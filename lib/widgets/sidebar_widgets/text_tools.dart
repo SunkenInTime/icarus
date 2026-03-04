@@ -137,10 +137,13 @@ class _TextToolsState extends ConsumerState<TextTools> {
     final toolData =
         TextToolData.defaults(tagColorValue: _selectedTagColorValue);
     final placementCenter = ref.read(placementCenterProvider);
-    final centeredTopLeft = DefaultPlacement.topLeftFromVirtualAnchor(
-      viewportCenter: placementCenter,
-      anchorVirtual: toolData.centerPoint,
-    );
+
+    final coordinateSystem = CoordinateSystem.instance;
+    const screenPoint = Offset(200, 42);
+    final virtualPoint = coordinateSystem.screenToCoordinate(screenPoint);
+
+    final centeredTopLeft =
+        placementCenter - Offset(virtualPoint.dx / 2, virtualPoint.dy / 2);
 
     ref.read(textProvider.notifier).addText(
           PlacedText(

@@ -3,11 +3,14 @@ import 'dart:developer';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/app_navigator.dart';
+import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/default_placement.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
+import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/dialogs/in_app_debug_dialog.dart';
@@ -43,9 +46,17 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             AddedTextIntent: CallbackAction<AddedTextIntent>(
               onInvoke: (intent) {
                 const uuid = Uuid();
+                final coordinateSystem = CoordinateSystem.instance;
+                const screenPoint = Offset(200, 42);
+                final virtualPoint =
+                    coordinateSystem.screenToCoordinate(screenPoint);
+                final placementCenter = ref.read(placementCenterProvider);
+                final centeredTopLeft = placementCenter -
+                    Offset(virtualPoint.dx / 2, virtualPoint.dy / 2);
+
                 ref.read(textProvider.notifier).addText(
                       PlacedText(
-                        position: const Offset(500, 500),
+                        position: centeredTopLeft,
                         id: uuid.v4(),
                       ),
                     );

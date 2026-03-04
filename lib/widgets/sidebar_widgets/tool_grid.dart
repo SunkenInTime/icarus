@@ -125,7 +125,8 @@ class ToolGrid extends ConsumerWidget {
             children: [
               SelectableIconButton(
                 icon: const Icon(Icons.draw),
-                tooltip: "Draw Q",
+                tooltip: "Draw",
+                shortcutLabel: 'Q',
                 onPressed: () {
                   switch (currentInteractionState) {
                     case InteractionState.drawing:
@@ -141,7 +142,8 @@ class ToolGrid extends ConsumerWidget {
                 isSelected: currentInteractionState == InteractionState.drawing,
               ),
               SelectableIconButton(
-                tooltip: "Eraser W",
+                tooltip: "Eraser",
+                shortcutLabel: 'W',
                 onPressed: () async {
                   await ref.read(penProvider.notifier).buildCursors();
                   switch (currentInteractionState) {
@@ -162,7 +164,8 @@ class ToolGrid extends ConsumerWidget {
                 isSelected: currentInteractionState == InteractionState.erasing,
               ),
               SelectableIconButton(
-                tooltip: "Delete E",
+                tooltip: "Delete",
+                shortcutLabel: 'E',
                 onPressed: () {
                   switch (currentInteractionState) {
                     case InteractionState.deleting:
@@ -181,26 +184,24 @@ class ToolGrid extends ConsumerWidget {
                   Icons.delete,
                 ),
               ),
-              ShadTooltip(
-                builder: (context) => const Text("Add Text T"),
-                child: SelectableIconButton(
-                  tooltip: "Add Text T",
-                  onPressed: () {
-                    switch (currentInteractionState) {
-                      case InteractionState.textTools:
-                        ref
-                            .read(interactionStateProvider.notifier)
-                            .update(InteractionState.navigation);
-                      default:
-                        ref
-                            .read(interactionStateProvider.notifier)
-                            .update(InteractionState.textTools);
-                    }
-                  },
-                  icon: const Icon(Icons.text_fields),
-                  isSelected:
-                      currentInteractionState == InteractionState.textTools,
-                ),
+              SelectableIconButton(
+                tooltip: "Add Text",
+                shortcutLabel: 'T',
+                onPressed: () {
+                  switch (currentInteractionState) {
+                    case InteractionState.textTools:
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.navigation);
+                    default:
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.textTools);
+                  }
+                },
+                icon: const Icon(Icons.text_fields),
+                isSelected:
+                    currentInteractionState == InteractionState.textTools,
               ),
               ShadTooltip(
                 builder: (context) => const Text("Add Image"),
@@ -288,47 +289,41 @@ class ToolGrid extends ConsumerWidget {
                 isSelected: ref.watch(interactionStateProvider) ==
                     InteractionState.lineUpPlacing,
               ),
-              ShadTooltip(
-                builder: (context) => const Text("Vision Cone Tools"),
-                child: SelectableIconButton(
-                  tooltip: "Vision Cone",
-                  onPressed: () {
-                    switch (currentInteractionState) {
-                      case InteractionState.visionCone:
-                        ref
-                            .read(interactionStateProvider.notifier)
-                            .update(InteractionState.navigation);
-                      default:
-                        ref
-                            .read(interactionStateProvider.notifier)
-                            .update(InteractionState.visionCone);
-                    }
-                  },
-                  icon: const Icon(LucideIcons.eye, size: 20),
-                  isSelected:
-                      currentInteractionState == InteractionState.visionCone,
-                ),
+              SelectableIconButton(
+                tooltip: "Vision Cone Tools",
+                onPressed: () {
+                  switch (currentInteractionState) {
+                    case InteractionState.visionCone:
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.navigation);
+                    default:
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.visionCone);
+                  }
+                },
+                icon: const Icon(LucideIcons.eye, size: 20),
+                isSelected:
+                    currentInteractionState == InteractionState.visionCone,
               ),
-              ShadTooltip(
-                builder: (context) => const Text("Custom Shapes"),
-                child: SelectableIconButton(
-                  tooltip: "Custom Shapes",
-                  onPressed: () {
-                    switch (currentInteractionState) {
-                      case InteractionState.customShapes:
-                        ref
-                            .read(interactionStateProvider.notifier)
-                            .update(InteractionState.navigation);
-                      default:
-                        ref
-                            .read(interactionStateProvider.notifier)
-                            .update(InteractionState.customShapes);
-                    }
-                  },
-                  icon: const Icon(Icons.crop_square, size: 20),
-                  isSelected:
-                      currentInteractionState == InteractionState.customShapes,
-                ),
+              SelectableIconButton(
+                tooltip: "Custom Shapes",
+                onPressed: () {
+                  switch (currentInteractionState) {
+                    case InteractionState.customShapes:
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.navigation);
+                    default:
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.customShapes);
+                  }
+                },
+                icon: const Icon(Icons.crop_square, size: 20),
+                isSelected:
+                    currentInteractionState == InteractionState.customShapes,
               ),
               ShadTooltip(
                 builder: (context) => const Text("Spike"),

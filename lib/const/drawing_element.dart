@@ -155,7 +155,8 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
       final path = Path();
       final screenPoint = coordinateSystem.coordinateToScreen(listOfPoints[0]);
       final dotRadius = (coordinateSystem.scale(Settings.brushSize * 0.25))
-          .clamp(1.0, coordinateSystem.scale(2.0));
+          .clamp(1.0, coordinateSystem.scale(2.0))
+          .toDouble();
 
       path.addOval(Rect.fromCircle(center: screenPoint, radius: dotRadius));
       _path = path;
