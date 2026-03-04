@@ -52,7 +52,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   // }
   @override
   Widget build(BuildContext context) {
-    //TODO: Figure why I wrote like this??
     ref.listen(lineUpProvider, (previous, next) {
       if (previous?.isSelectingPosition == true &&
           next.isSelectingPosition == false) {

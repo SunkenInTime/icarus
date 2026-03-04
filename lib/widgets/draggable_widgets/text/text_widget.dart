@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/shortcut_info.dart';
@@ -13,11 +11,13 @@ class TextWidget extends ConsumerStatefulWidget {
     this.isFeedback = false,
     required this.id,
     required this.size,
+    this.tagColorValue,
   });
   final double size;
   final String text;
   final bool isFeedback;
   final String id;
+  final int? tagColorValue;
   @override
   ConsumerState<ConsumerStatefulWidget> createState() => _TextWidgetState();
 }
@@ -93,7 +93,7 @@ class _TextWidgetState extends ConsumerState<TextWidget> {
                     borderRadius: const BorderRadius.all(Radius.circular(3)),
                     child: Container(
                       width: 10,
-                      color: const Color(0xFFC5C5C5),
+                      color: Color(widget.tagColorValue ?? 0xFFC5C5C5),
                     ),
                   ),
                   const SizedBox(width: 2),

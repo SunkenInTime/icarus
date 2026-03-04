@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:developer' show log;
-import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/abilities.dart';
+
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -49,7 +49,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     final ability = newState[index];
 
     final coordinateSystem = CoordinateSystem.instance;
-    final mapScale = ref.read(mapProvider.notifier).mapScale;
+    final mapScale = Maps.mapScale[ref.read(mapProvider)] ?? 1.0;
 
     final abilitySize = ref.read(strategySettingsProvider).abilitySize;
 
@@ -82,7 +82,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     final newState = <PlacedAbility>[...state];
 
     for (final ability in state) {
-      final mapScale = ref.read(mapProvider.notifier).mapScale;
+      final mapScale = Maps.mapScale[ref.read(mapProvider)] ?? 1.0;
       final abilitySizeSetting = ref.read(strategySettingsProvider).abilitySize;
 
       ability.switchSides(mapScale: mapScale, abilitySize: abilitySizeSetting);

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -50,6 +51,9 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
         });
 
         final resizeCounter = ref.watch(lineUpCanvasResizeProvider);
+        final currentMap =
+            ref.watch(mapProvider.select((state) => state.currentMap));
+        final mapScale = Maps.mapScale[currentMap] ?? 1.0;
 
         return IgnorePointer(
           ignoring: true,
@@ -64,7 +68,7 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
                 agentSize: coordinateSystem.scale(
                   ref.watch(strategySettingsProvider).agentSize,
                 ),
-                mapScale: ref.watch(mapProvider.notifier).mapScale,
+                mapScale: mapScale,
                 currentAgent: ref.watch(lineUpProvider).currentAgent,
                 currentAbility: ref.watch(lineUpProvider).currentAbility,
               ),

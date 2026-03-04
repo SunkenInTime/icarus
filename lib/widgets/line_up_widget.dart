@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
@@ -42,7 +43,8 @@ class LineUpAbilityWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final mapScale = ref.watch(mapProvider.notifier).mapScale;
+    final currentMap = ref.watch(mapProvider.select((state) => state.currentMap));
+    final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final abilityScreen =
         coordinateSystem.coordinateToScreen(lineUp.ability.position);
     log(lineUp.notes);

@@ -33,6 +33,7 @@ class _MapTileState extends ConsumerState<MapTile> {
       child: ClipRRect(
         borderRadius: const BorderRadius.all(Radius.circular(10)),
         child: InkWell(
+          mouseCursor: SystemMouseCursors.click,
           onTap: widget.onTap,
           child: SizedBox(
             width: 180,

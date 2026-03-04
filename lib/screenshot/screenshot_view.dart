@@ -12,6 +12,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -20,6 +21,28 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
+
+class _MapSvgColorMapper extends ColorMapper {
+  const _MapSvgColorMapper(this.replacements);
+
+  final Map<int, Color> replacements;
+
+  @override
+  Color substitute(
+    String? id,
+    String elementName,
+    String attributeName,
+    Color color,
+  ) {
+    final opaqueColorValue = (color.toARGB32() & 0x00FFFFFF) | 0xFF000000;
+    final replacement = replacements[opaqueColorValue];
+    if (replacement == null) {
+      return color;
+    }
+    final alpha = (color.a * 255.0).round().clamp(0, 255);
+    return replacement.withAlpha(alpha);
+  }
+}
 
 class ScreenshotView extends ConsumerWidget {
   const ScreenshotView({
@@ -35,6 +58,8 @@ class ScreenshotView extends ConsumerWidget {
     required this.isAttack,
     required this.strategyState,
     required this.lineUps,
+    required this.themeProfileId,
+    required this.themeOverridePalette,
   });
   final StrategyState strategyState;
   final MapValue mapValue;
@@ -47,6 +72,8 @@ class ScreenshotView extends ConsumerWidget {
   final StrategySettings strategySettings;
   final bool isAttack;
   final List<LineUp> lineUps;
+  final String? themeProfileId;
+  final MapThemePalette? themeOverridePalette;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -62,6 +89,10 @@ class ScreenshotView extends ConsumerWidget {
     ref.read(placedImageProvider.notifier).fromHive(images);
 
     ref.read(strategySettingsProvider.notifier).fromHive(strategySettings);
+    ref.read(strategyThemeProvider.notifier).fromStrategy(
+          profileId: themeProfileId,
+          overridePalette: themeOverridePalette,
+        );
     ref.read(utilityProvider.notifier).fromHive(utilities);
 
     ref.read(lineUpProvider.notifier).fromHive(lineUps);
@@ -71,6 +102,12 @@ class ScreenshotView extends ConsumerWidget {
         .rebuildAllPaths(CoordinateSystem.instance);
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
+    final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
+    final mapColorMapper = _MapSvgColorMapper({
+      0xFF271406: effectivePalette.baseColor,
+      0xFFB27C40: effectivePalette.detailColor,
+      0xFFF08234: effectivePalette.highlightColor,
+    });
     final mapWidth = CoordinateSystem.screenShotSize.height *
         CoordinateSystem.instance.mapAspectRatio;
     final mapLeft = (CoordinateSystem.screenShotSize.width - mapWidth) / 2;
@@ -102,6 +139,7 @@ class ScreenshotView extends ConsumerWidget {
             height: CoordinateSystem.screenShotSize.height,
             child: SvgPicture.asset(
               assetName,
+              colorMapper: mapColorMapper,
               semanticsLabel: 'Map',
               fit: BoxFit.contain,
             ),

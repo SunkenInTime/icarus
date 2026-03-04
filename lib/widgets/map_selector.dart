@@ -47,6 +47,20 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
   @override
   Widget build(BuildContext context) {
     final MapValue currentMap = ref.watch(mapProvider).currentMap;
+    final List<MapValue> availableMaps = Maps.mapNames.keys
+        .where((mapValue) => Maps.availableMaps.contains(mapValue))
+        .toList()
+      ..sort(
+        (a, b) => Maps.mapNames[a]!
+            .toLowerCase()
+            .compareTo(Maps.mapNames[b]!.toLowerCase()),
+      );
+    final List<MapValue> outOfRotationMaps = Maps.outofplayMaps.toList()
+      ..sort(
+        (a, b) => Maps.mapNames[a]!
+            .toLowerCase()
+            .compareTo(Maps.mapNames[b]!.toLowerCase()),
+      );
 
     return CompositedTransformTarget(
       link: _link,
@@ -99,11 +113,7 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                                 Expanded(
                                   child: ListView(
                                     children: [
-                                      ...Maps.mapNames.keys
-                                          .where((mapValue) => Maps
-                                              .availableMaps
-                                              .contains(mapValue))
-                                          .map((mapValue) {
+                                      ...availableMaps.map((mapValue) {
                                         String mapName =
                                             Maps.mapNames[mapValue]!;
                                         return Padding(
@@ -133,7 +143,7 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                                           textAlign: TextAlign.center,
                                         ),
                                       ),
-                                      ...Maps.outofplayMaps.map((mapValue) {
+                                      ...outOfRotationMaps.map((mapValue) {
                                         String mapName =
                                             Maps.mapNames[mapValue]!;
                                         return Padding(

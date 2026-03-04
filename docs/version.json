@@ -1,5 +1,11 @@
 {
-    "current_version": "1.7.1",
-    "current_version_number": "10",
-    "release_notes": "1.7.1 Release: Folders: Organize your stuff with folders!"
+    "current_version": "3.2.2",
+    "current_version_number": "41",
+    "update_title": "3.2.2 Release: Icarus Villan Arc",
+    "release_notes": "This is the description of the update",
+    "list_of_features": [
+        "Feature 1",
+        "Feature 2",
+        "Feature 3"
+    ]
 }

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class SettingsTab extends ConsumerWidget {
@@ -11,7 +11,6 @@ class SettingsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final coordinateSystem = CoordinateSystem.instance;
     return ShadSheet(
       title: Text("Settings", style: ShadTheme.of(context).textTheme.h3),
       description: const Text("Adjust your application settings here."),
@@ -125,6 +124,8 @@ class SettingsTab extends ConsumerWidget {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                const MapThemeSettingsSection(),
               ],
             ),
           ),

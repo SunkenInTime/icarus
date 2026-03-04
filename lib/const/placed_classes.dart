@@ -129,10 +129,18 @@ class PlacedWidget extends HiveObject {
 
 @JsonSerializable()
 class PlacedText extends PlacedWidget {
-  PlacedText({required super.position, required super.id, this.size = 200});
+  PlacedText({
+    required super.position,
+    required super.id,
+    this.size = 200,
+    this.tagColorValue,
+  });
 
   String text = "";
   double size;
+
+  @JsonKey(defaultValue: null)
+  int? tagColorValue;
 
   factory PlacedText.fromJson(Map<String, dynamic> json) =>
       _$PlacedTextFromJson(json);
@@ -167,6 +175,7 @@ class PlacedImage extends PlacedWidget {
     required this.aspectRatio,
     required this.scale,
     required this.fileExtension,
+    this.tagColorValue,
   });
 
   final double aspectRatio;
@@ -174,10 +183,17 @@ class PlacedImage extends PlacedWidget {
   final String? fileExtension;
   double scale;
 
+  @JsonKey(defaultValue: null)
+  int? tagColorValue;
+
   String link = "";
 
   void updateLink(String link) {
     this.link = link;
+  }
+
+  void updateTagColor(int? colorValue) {
+    tagColorValue = colorValue;
   }
 
   void switchSides(Offset size) {
@@ -211,6 +227,7 @@ class PlacedImage extends PlacedWidget {
     double? aspectRatio,
     double? scale,
     String? fileExtension,
+    int? tagColorValue,
     bool? isDeleted,
     String? link,
   }) {
@@ -220,6 +237,7 @@ class PlacedImage extends PlacedWidget {
       aspectRatio: aspectRatio ?? this.aspectRatio,
       scale: scale ?? this.scale,
       fileExtension: fileExtension ?? this.fileExtension,
+      tagColorValue: tagColorValue ?? this.tagColorValue,
     );
     // Base class field
     // cloned.isDeleted = isDeleted ?? this.isDeleted;
@@ -504,8 +522,34 @@ class PlacedUtility extends PlacedWidget {
     return UtilityData.isViewCone(type);
   }
 
-  void switchSides() {
-    final size = UtilityData.utilityWidgets[type]!.getSize();
+  Offset _getEffectiveUtilitySize({required double mapScale}) {
+    final utility = UtilityData.utilityWidgets[type]!;
+    if (type == UtilityType.customCircle) {
+      assert(customDiameter != null,
+          'customDiameter is required for custom circle utility.');
+      if (customDiameter == null) {
+        return Offset.zero;
+      }
+      return utility.getSize(
+          diameterMeters: customDiameter, mapScale: mapScale);
+    }
+    if (type == UtilityType.customRectangle) {
+      assert(customWidth != null && customLength != null,
+          'customWidth and customLength are required for custom rectangle utility.');
+      if (customWidth == null || customLength == null) {
+        return Offset.zero;
+      }
+      return utility.getSize(
+        widthMeters: customWidth,
+        rectLengthMeters: customLength,
+        mapScale: mapScale,
+      );
+    }
+    return utility.getSize();
+  }
+
+  void switchSides({required double mapScale}) {
+    final size = _getEffectiveUtilitySize(mapScale: mapScale);
     final scaledSize = size.scale(CoordinateSystem.instance.scaleFactor,
         CoordinateSystem.instance.scaleFactor);
 
@@ -602,12 +646,32 @@ class PlacedUtility extends PlacedWidget {
   @JsonKey(defaultValue: null)
   String? attachedAgentId;
 
+  @JsonKey(defaultValue: null)
+  double? customDiameter;
+
+  @JsonKey(defaultValue: null)
+  double? customWidth;
+
+  @JsonKey(defaultValue: null)
+  double? customLength;
+
+  @JsonKey(defaultValue: null)
+  int? customColorValue;
+
+  @JsonKey(defaultValue: null)
+  int? customOpacityPercent;
+
   PlacedUtility({
     required this.type,
     required super.position,
     required super.id,
     this.angle = 0.0,
     this.attachedAgentId,
+    this.customDiameter,
+    this.customWidth,
+    this.customLength,
+    this.customColorValue,
+    this.customOpacityPercent,
   });
 
   factory PlacedUtility.fromJson(Map<String, dynamic> json) =>

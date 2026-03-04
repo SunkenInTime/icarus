@@ -76,6 +76,15 @@ class TextProvider extends Notifier<List<PlacedText>> {
     state = newState;
   }
 
+  void updateTagColor(String id, int? colorValue) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+
+    newState[index].tagColorValue = colorValue;
+    state = newState;
+  }
+
   void undoAction(UserAction action) {
     switch (action.type) {
       case ActionType.addition:

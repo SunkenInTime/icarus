@@ -213,7 +213,6 @@ class SquareAbility extends Ability {
       (isWall ? abilitySize * 2 : width * mapScale!) / 2,
       (height * mapScale!) +
           (distanceBetweenAOE * mapScale) +
-          (abilitySize / 2) +
           7.5, //This is the resize button offset
     );
   }
@@ -227,7 +226,6 @@ class SquareAbility extends Ability {
       width * mapScale!,
       (height * mapScale) +
           (distanceBetweenAOE * mapScale) +
-          (abilitySize! / 2) +
           7.5,
     );
   }
@@ -412,7 +410,6 @@ class ResizableSquareAbility extends SquareAbility {
       (isWall ? abilitySize! * 2 : width * mapScale!) / 2,
       (height * mapScale!) +
           (distanceBetweenAOE * mapScale) +
-          (abilitySize! / 2) +
           7.5,
     );
   }

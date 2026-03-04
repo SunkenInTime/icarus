@@ -19,6 +19,7 @@ import 'package:icarus/const/settings.dart' show Settings;
 import 'package:icarus/hive/hive_registrar.g.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
@@ -74,6 +75,11 @@ Future<void> main(List<String> args) async {
 
   await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
   await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+  await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+  await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
+  await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
+
+  await MapThemeProfilesProvider.bootstrap();
 
   await StrategyProvider.migrateAllStrategies();
 
@@ -135,6 +141,18 @@ class MyApp extends ConsumerStatefulWidget {
 class _MyAppState extends ConsumerState<MyApp> {
   StreamSubscription<List<String>>? _secondInstanceSub;
 
+  Future<void> _loadFromFilePathWithWarning(String filePath) async {
+    try {
+      await ref.read(strategyProvider.notifier).loadFromFilePath(filePath);
+    } on NewerVersionImportException {
+      if (!mounted) return;
+      Settings.showToast(
+        message: NewerVersionImportException.userMessage,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -144,7 +162,7 @@ class _MyAppState extends ConsumerState<MyApp> {
       log("Data: ${widget.data}");
 
       ref.read(inAppDebugProvider.notifier).bulkAddLogs(widget.data);
-      ref.read(strategyProvider.notifier).loadFromFilePath(widget.data.first);
+      _loadFromFilePathWithWarning(widget.data.first);
     });
 
     _secondInstanceSub = secondInstanceArgsController.stream.listen((args) {
@@ -153,7 +171,7 @@ class _MyAppState extends ConsumerState<MyApp> {
       log("Second instance args: $args");
       log("Data: ${widget.data}");
 
-      ref.read(strategyProvider.notifier).loadFromFilePath(args.first);
+      _loadFromFilePathWithWarning(args.first);
       ref.read(inAppDebugProvider.notifier).bulkAddLogs(args);
     });
   }

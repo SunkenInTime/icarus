@@ -159,7 +159,7 @@ class AgentData implements DraggableData {
   final String name;
   final String iconPath;
 
-  static const double inGameMeters = 5.5;
+  static const double inGameMeters = 5.78;
   // static const double inGameMeters = 6;
 
   static const double inGameMetersDiameter = inGameMeters * 2;
@@ -231,7 +231,7 @@ class AgentData implements DraggableData {
           type: AgentType.astra,
           index: 2,
           name: "Nebula",
-          iconPath: 'assets/agents/Astra/1.webp',
+          iconPath: 'assets/agents/Astra/3.webp',
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Astra/Smoke.webp',
             size: 4.75 * inGameMetersDiameter,
@@ -856,7 +856,7 @@ class AgentData implements DraggableData {
       );
 
       agent.abilities.last.abilityData = SquareAbility(
-        width: 10 * inGameMeters,
+        width: 12 * inGameMeters,
         height: 32 * inGameMeters,
         iconPath: agent.abilities.last.iconPath,
         color: Colors.orangeAccent,

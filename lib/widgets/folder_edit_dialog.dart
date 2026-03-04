@@ -4,11 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/widgets/color_picker_button.dart';
-import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_pill.dart';
-import 'package:icarus/widgets/folder_tile.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 

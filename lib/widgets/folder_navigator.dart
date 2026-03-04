@@ -10,10 +10,9 @@ import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/current_path_bar.dart';
-import 'package:icarus/widgets/custom_button.dart';
-import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
@@ -32,14 +31,11 @@ class FolderNavigator extends ConsumerStatefulWidget {
 
 class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   bool _warnedOnce = false;
-  void _checkUpdate() async {
-    await UpdateChecker.checkForUpdate(context);
-  }
+  bool _hasPromptedUpdateDialog = false;
 
   @override
   void initState() {
     super.initState();
-    _checkUpdate();
 
     // Show the demo warning only once after the first frame on web.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -78,6 +74,20 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<AsyncValue<UpdateCheckResult>>(appUpdateStatusProvider,
+        (_, next) {
+      next.whenData((result) {
+        if (!mounted || _hasPromptedUpdateDialog || !result.isUpdateAvailable) {
+          return;
+        }
+        _hasPromptedUpdateDialog = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          UpdateChecker.showUpdateDialog(context, result);
+        });
+      });
+    });
+
     final double height = MediaQuery.sizeOf(context).height - 90;
     final Size playAreaSize = Size(height * (16 / 9), height);
     CoordinateSystem(playAreaSize: playAreaSize);
@@ -162,9 +172,16 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                     );
                     return;
                   }
-                  await ref
-                      .read(strategyProvider.notifier)
-                      .loadFromFilePicker();
+                  try {
+                    await ref
+                        .read(strategyProvider.notifier)
+                        .loadFromFilePicker();
+                  } on NewerVersionImportException {
+                    Settings.showToast(
+                      message: NewerVersionImportException.userMessage,
+                      backgroundColor: Settings.tacticalVioletTheme.destructive,
+                    );
+                  }
                 },
                 leading: const Icon(Icons.file_download),
                 child: const Text('Import .ica'),

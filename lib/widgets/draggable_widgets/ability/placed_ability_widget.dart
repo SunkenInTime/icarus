@@ -8,6 +8,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -126,6 +127,10 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
         widget.ability.data.abilityData is CenterSquareAbility ||
         widget.ability.data.abilityData is RotatableImageAbility ||
         widget.ability.data.abilityData is ResizableSquareAbility) {
+      final screenPosition = screenPositionForWidget(
+        widget: widget.ability,
+        coordinateSystem: coordinateSystem,
+      );
       final isCenterSquare =
           widget.ability.data.abilityData is CenterSquareAbility;
       final double? buttonTop;
@@ -156,8 +161,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
         buttonTop = null;
       }
       return Positioned(
-        left: coordinateSystem.coordinateToScreen(widget.ability.position).dx,
-        top: coordinateSystem.coordinateToScreen(widget.ability.position).dy,
+        left: screenPosition.dx,
+        top: screenPosition.dy,
         child: RotatableWidget(
           buttonTop: buttonTop,
           rotation: localRotation!,
@@ -296,9 +301,13 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
         ),
       );
     }
+    final screenPosition = screenPositionForWidget(
+      widget: widget.ability,
+      coordinateSystem: coordinateSystem,
+    );
     return Positioned(
-      left: coordinateSystem.coordinateToScreen(widget.ability.position).dx,
-      top: coordinateSystem.coordinateToScreen(widget.ability.position).dy,
+      left: screenPosition.dx,
+      top: screenPosition.dy,
       child: Draggable<PlacedWidget>(
         dragAnchorStrategy:
             ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,

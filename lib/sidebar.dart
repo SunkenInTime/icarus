@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/agent_dragable.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/agents.dart';
@@ -9,6 +10,7 @@ import 'package:icarus/widgets/sidebar_widgets/agent_filter.dart';
 import 'package:icarus/widgets/sidebar_widgets/role_picker.dart';
 import 'package:icarus/widgets/sidebar_widgets/team_picker.dart';
 import 'package:icarus/widgets/sidebar_widgets/tool_grid.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class SideBarUI extends ConsumerStatefulWidget {
   const SideBarUI({super.key});
@@ -28,7 +30,8 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
 
   @override
   Widget build(BuildContext context) {
-    final agentList = ref.watch(agentFilterProvider).agentList;
+    final filterState = ref.watch(agentFilterProvider);
+    final agentList = filterState.agentList;
     return Row(
       // mainAxisAlignment: MainAxisAlignment.end,
       mainAxisSize: MainAxisSize.min,
@@ -36,9 +39,7 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
         const AbiilityBar(),
         Padding(
           padding: const EdgeInsets.only(
-              left: Settings.sideBarPanelPaddingLeft,
-              right: Settings.sideBarPanelPaddingRight,
-              bottom: 8),
+              left: 0, right: Settings.sideBarPanelPaddingRight, bottom: 8),
           child: Container(
             width: Settings.sideBarPanelWidth,
             decoration: BoxDecoration(
@@ -74,12 +75,77 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: AgentFilter(),
+                          Row(
+                            spacing: 8,
+                            children: [
+                              const AgentFilter(),
+                              ShadTooltip(
+                                builder: (context) => Text(
+                                  filterState.favoritesOnly
+                                      ? "Show all agents"
+                                      : "Show only favorite agents",
+                                ),
+                                child: SelectableIconButton(
+                                  isSelected: filterState.favoritesOnly,
+                                  hoverBackgroundColor:
+                                      filterState.favoritesOnly
+                                          ? const Color(0xFFFF9800)
+                                          : null,
+                                  onPressed: () {
+                                    ref
+                                        .read(agentFilterProvider.notifier)
+                                        .toggleFavoritesOnly();
+                                  },
+                                  icon: Icon(
+                                    Icons.star_rounded,
+                                    size: 24,
+                                    color: filterState.favoritesOnly
+                                        ? Colors.white
+                                        : Settings.tacticalVioletTheme
+                                            .mutedForeground,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const TeamPicker()
+                          const SizedBox(width: 8),
+                          const TeamPicker(),
                         ],
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          child: filterState.favoritesOnly
+                              ? const Padding(
+                                  key: ValueKey("favorites-only-indicator"),
+                                  padding: EdgeInsets.only(top: 6, left: 2),
+                                  child: Row(
+                                    spacing: 6,
+                                    children: [
+                                      Icon(
+                                        LucideIcons.star,
+                                        size: 12,
+                                        color: Color(0xFFFF9800),
+                                      ),
+                                      Text(
+                                        "Filtering: Favorites only",
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFFFF9800),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              : const SizedBox.shrink(
+                                  key: ValueKey(
+                                      "favorites-only-indicator-empty"),
+                                ),
+                        ),
                       ),
                       const RolePicker()
                     ],

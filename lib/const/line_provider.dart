@@ -3,7 +3,7 @@ import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
-import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -176,7 +176,8 @@ class LineUpProvider extends Notifier<LineUpState> {
   void switchSides() {
     final agentSize = ref.read(strategySettingsProvider).agentSize;
     final abilitySize = ref.read(strategySettingsProvider).abilitySize;
-    final mapScale = ref.read(mapProvider.notifier).mapScale;
+    final currentMap = ref.read(mapProvider).currentMap;
+    final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final newState = [...state.lineUps];
 
     for (final lineUp in newState) {
@@ -201,6 +202,10 @@ class LineUpProvider extends Notifier<LineUpState> {
       currentYoutubeLink: null,
       isSelectingPosition: false,
     );
+  }
+
+  void removeCurrentAbility() {
+    state = state.copyWith(currentAbility: null);
   }
 
   void updateAgentPosition(Offset position) {

@@ -149,7 +149,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       await ref
           .read(strategyProvider.notifier)
           .loadFromHive(widget.strategyData.id);
-      if (!mounted) return;
+      if (!context.mounted) return;
       Navigator.pop(context);
       await Navigator.push(
         context,
@@ -172,7 +172,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       );
     } catch (error, stackTrace) {
       log('Error loading strategy: $error', stackTrace: stackTrace);
-      if (mounted) {
+      if (context.mounted) {
         Navigator.pop(context);
       }
     } finally {
@@ -230,30 +230,6 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         strategyID: widget.strategyData.id,
         name: widget.strategyData.name,
       ),
-    );
-  }
-}
-
-class _MenuRow extends StatelessWidget {
-  const _MenuRow({
-    required this.icon,
-    required this.label,
-    this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color),
-        const SizedBox(width: 8),
-        Text(label, style: TextStyle(color: color)),
-      ],
     );
   }
 }

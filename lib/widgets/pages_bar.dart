@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
@@ -104,13 +103,17 @@ class _PagesBarState extends ConsumerState<PagesBar>
     await box.put(updated.id, updated);
     if (newActive != activeId) {
       if (newActive != null)
-        await ref.read(strategyProvider.notifier).setActivePage(newActive);
+        await ref
+            .read(strategyProvider.notifier)
+            .setActivePageAnimated(newActive);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final strategyId = ref.watch(strategyProvider).id;
+    final activePageIdFromState =
+        ref.watch(strategyProvider.select((state) => state.activePageId));
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
     return ValueListenableBuilder(
@@ -122,8 +125,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
         final pages = [...strat.pages]
           ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
         final activePageId =
-            ref.watch(strategyProvider.notifier).activePageID ??
-                (pages.isNotEmpty ? pages.first.id : null);
+            activePageIdFromState ?? (pages.isNotEmpty ? pages.first.id : null);
         final activeName = pages
             .firstWhere(
               (p) => p.id == activePageId,
@@ -264,6 +266,19 @@ class _ExpandedPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final desiredHeight = _computeDesiredHeight(pages.length);
     final needsScroll = desiredHeight >= _maxPanelHeight - 0.5; // approximate
+    final activeIndex = activePageId == null
+        ? -1
+        : pages.indexWhere((p) => p.id == activePageId);
+
+    int? backwardIndex;
+    int? forwardIndex;
+    if (activeIndex >= 0 && pages.isNotEmpty) {
+      backwardIndex = activeIndex - 1;
+      if (backwardIndex < 0) backwardIndex = pages.length - 1;
+
+      forwardIndex = activeIndex + 1;
+      if (forwardIndex >= pages.length) forwardIndex = 0;
+    }
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 150),
@@ -294,7 +309,28 @@ class _ExpandedPanel extends ConsumerWidget {
                 buildDefaultDragHandles: false,
                 proxyDecorator: proxyDecorator,
                 itemBuilder: (ctx, i) {
+                  bool showForwardIndicator = false;
+                  bool showBackwardIndicator = false;
                   final p = pages[i];
+
+                  if (pages.length != 1) {
+                    if (pages.length == 2) {
+                      if (activeIndex == 0 && activeIndex != i) {
+                        showForwardIndicator = true;
+                      } else if (activeIndex == 1 && activeIndex != i) {
+                        showBackwardIndicator = true;
+                      }
+                    } else {
+                      if (forwardIndex != null && i == forwardIndex) {
+                        showForwardIndicator = true;
+                      }
+                      if (backwardIndex != null &&
+                          i == backwardIndex &&
+                          forwardIndex != backwardIndex) {
+                        showBackwardIndicator = true;
+                      }
+                    }
+                  }
 
                   return ReorderableDragStartListener(
                     key: ValueKey(p.id),
@@ -304,6 +340,8 @@ class _ExpandedPanel extends ConsumerWidget {
                       child: _PageRow(
                         page: p,
                         active: p.id == activePageId,
+                        showBackwardIndicator: showBackwardIndicator,
+                        showForwardIndicator: showForwardIndicator,
                         onSelect: onSelect,
                         onRename: onRename,
                         onDelete: onDelete,
@@ -348,6 +386,8 @@ class _PageRow extends StatelessWidget {
   const _PageRow({
     required this.page,
     required this.active,
+    required this.showBackwardIndicator,
+    required this.showForwardIndicator,
     required this.onSelect,
     required this.onRename,
     required this.onDelete,
@@ -356,6 +396,8 @@ class _PageRow extends StatelessWidget {
 
   final StrategyPage page;
   final bool active;
+  final bool showBackwardIndicator;
+  final bool showForwardIndicator;
   final ValueChanged<String> onSelect;
   final ValueChanged<StrategyPage> onRename;
   final ValueChanged<StrategyPage> onDelete;
@@ -370,18 +412,30 @@ class _PageRow extends StatelessWidget {
         ? Settings.tacticalVioletTheme.primary
         : Settings.tacticalVioletTheme.card;
     return Material(
-      color: bg,
+      // color: bg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: Settings.tacticalVioletTheme.border,
-          width: 1,
-        ),
       ),
       child: InkWell(
+        mouseCursor: SystemMouseCursors.click,
         borderRadius: BorderRadius.circular(14),
         onTap: () => onSelect(page.id),
-        child: SizedBox(
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: Settings.tacticalVioletTheme.border,
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                  color:
+                      Settings.tacticalVioletTheme.card.withValues(alpha: 0.2),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4))
+            ],
+            color: bg,
+          ),
           height: _rowHeight,
           child: Padding(
             padding: const EdgeInsets.only(left: 12),
@@ -398,6 +452,14 @@ class _PageRow extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (showBackwardIndicator || showForwardIndicator) ...[
+                  const SizedBox(width: 6),
+                  if (showBackwardIndicator) const _KeybindBadge(label: "A"),
+                  if (showBackwardIndicator && showForwardIndicator)
+                    const SizedBox(width: 4),
+                  if (showForwardIndicator) const _KeybindBadge(label: "D"),
+                  const SizedBox(width: 2),
+                ],
                 ShadTooltip(
                   builder: (context) => const Text("Rename"),
                   child: ShadIconButton.ghost(
@@ -425,6 +487,39 @@ class _PageRow extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _KeybindBadge extends StatelessWidget {
+  const _KeybindBadge({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 20,
+      width: 20,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Settings.tacticalVioletTheme.card,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Settings.tacticalVioletTheme.border),
+      ),
+      child: Center(
+        child: Text(
+          textAlign: TextAlign.center,
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Settings.tacticalVioletTheme.mutedForeground,
+                fontWeight: FontWeight.w700,
+                fontSize: 11,
+                height: 1.0,
+              ),
         ),
       ),
     );

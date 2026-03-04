@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
@@ -28,6 +30,9 @@ class UtilityWidgetBuilder extends ConsumerStatefulWidget {
 class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
   @override
   Widget build(BuildContext context) {
+    final currentMap =
+        ref.watch(mapProvider.select((state) => state.currentMap));
+    final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     return Draggable<PlacedUtility>(
       dragAnchorStrategy:
           ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
@@ -38,15 +43,31 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
       feedback: Opacity(
         opacity: Settings.feedbackOpacity,
         child: ZoomTransform(
-          child:
-              UtilityData.utilityWidgets[widget.utility.type]!.createWidget(),
+          child: UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
+            id: null,
+            rotation: widget.rotation,
+            length: widget.length,
+            mapScale: mapScale,
+            diameterMeters: widget.utility.customDiameter,
+            widthMeters: widget.utility.customWidth,
+            rectLengthMeters: widget.utility.customLength,
+            colorValue: widget.utility.customColorValue,
+            opacityPercent: widget.utility.customOpacityPercent,
+          ),
         ),
       ),
       onDragEnd: (details) {
         widget.onDragEnd(details);
       },
-      child: UtilityData.utilityWidgets[widget.utility.type]!
-          .createWidget(id: widget.id),
+      child: UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
+        id: widget.id,
+        mapScale: mapScale,
+        diameterMeters: widget.utility.customDiameter,
+        widthMeters: widget.utility.customWidth,
+        rectLengthMeters: widget.utility.customLength,
+        colorValue: widget.utility.customColorValue,
+        opacityPercent: widget.utility.customOpacityPercent,
+      ),
     );
   }
 }

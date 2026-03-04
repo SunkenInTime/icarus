@@ -61,7 +61,7 @@ class ResizableSquareWidget extends ConsumerWidget {
 
     final totalHeight = scaledBoxHeight +
         scaledDistance +
-        scaledAbilitySize +
+        (scaledAbilitySize / 2) +
         resizeButtonOffset;
 
     final double scaledLength;
@@ -84,7 +84,7 @@ class ResizableSquareWidget extends ConsumerWidget {
             ),
           ),
           Positioned(
-            bottom: scaledDistance + scaledAbilitySize,
+            bottom: scaledDistance + (scaledAbilitySize / 2),
             left: isWall ? ((scaledWidth - width) / 2) : 0,
             child: IgnorePointer(
               child: CustomBorderContainer(

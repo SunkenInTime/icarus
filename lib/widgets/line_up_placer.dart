@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
@@ -15,7 +16,6 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/team_provider.dart';
 import 'package:icarus/widgets/current_line_up_painter.dart';
-import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
@@ -85,7 +85,8 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                         renderBox.globalToLocal(details.offset);
                     // Updating info
 
-                    final mapScale = ref.read(mapProvider.notifier).mapScale;
+                    final mapScale =
+                        Maps.mapScale[ref.read(mapProvider)] ?? 1.0;
                     final abilitySize =
                         ref.read(strategySettingsProvider).abilitySize;
 
@@ -97,7 +98,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
 
                     if (coordinateSystem.isOutOfBounds(
                         virtualOffset.translate(safeArea.dx, safeArea.dy))) {
-                      //TODO: Fix removal of ability
+                      ref.read(lineUpProvider.notifier).removeCurrentAbility();
                       return;
                     }
 

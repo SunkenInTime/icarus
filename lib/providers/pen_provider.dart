@@ -5,6 +5,7 @@ import 'package:icarus/const/color_option.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/main.dart';
 
 enum PenMode { line, freeDraw, square }
@@ -18,6 +19,8 @@ class PenState {
   final double opacity;
   final double thickness;
   final PenMode penMode;
+  final bool traversalTimeEnabled;
+  final TraversalSpeedProfile activeTraversalSpeedProfile;
 
   final List<ColorOption> listOfColors;
   final CustomMouseCursor? drawingCursor;
@@ -30,6 +33,8 @@ class PenState {
     required this.opacity,
     required this.thickness,
     required this.penMode,
+    required this.traversalTimeEnabled,
+    required this.activeTraversalSpeedProfile,
     required this.drawingCursor,
     required this.erasingCursor,
   });
@@ -41,6 +46,8 @@ class PenState {
     double? opacity,
     double? thickness,
     PenMode? penMode,
+    bool? traversalTimeEnabled,
+    TraversalSpeedProfile? activeTraversalSpeedProfile,
     List<ColorOption>? listOfColors,
     CustomMouseCursor? drawingCursor,
     CustomMouseCursor? erasingCursor,
@@ -53,6 +60,9 @@ class PenState {
       isDotted: isDotted ?? this.isDotted,
       opacity: opacity ?? this.opacity,
       thickness: thickness ?? this.thickness,
+      traversalTimeEnabled: traversalTimeEnabled ?? this.traversalTimeEnabled,
+      activeTraversalSpeedProfile:
+          activeTraversalSpeedProfile ?? this.activeTraversalSpeedProfile,
       drawingCursor: drawingCursor ?? this.drawingCursor,
       erasingCursor: erasingCursor ?? this.erasingCursor,
     );
@@ -72,6 +82,8 @@ class PenProvider extends Notifier<PenState> {
       isDotted: false,
       opacity: 1,
       thickness: Settings.brushSize,
+      traversalTimeEnabled: false,
+      activeTraversalSpeedProfile: TraversalSpeed.defaultProfile,
       drawingCursor: staticDrawingCursor,
       erasingCursor: null,
     );
@@ -110,6 +122,8 @@ class PenProvider extends Notifier<PenState> {
     double? opacity,
     double? thickness,
     PenMode? penMode,
+    bool? traversalTimeEnabled,
+    TraversalSpeedProfile? activeTraversalSpeedProfile,
   }) {
     state = state.copyWith(
       color: color,
@@ -118,6 +132,8 @@ class PenProvider extends Notifier<PenState> {
       opacity: opacity,
       thickness: thickness,
       penMode: penMode,
+      traversalTimeEnabled: traversalTimeEnabled,
+      activeTraversalSpeedProfile: activeTraversalSpeedProfile,
     );
   }
 
@@ -139,5 +155,21 @@ class PenProvider extends Notifier<PenState> {
 
   void toggleArrow() {
     state = state.copyWith(hasArrow: !state.hasArrow);
+  }
+
+  void toggleTraversalTime() {
+    state = state.copyWith(
+      traversalTimeEnabled: !state.traversalTimeEnabled,
+    );
+  }
+
+  void setTraversalMode(TraversalSpeedProfile profile) {
+    final isCurrentMode =
+        state.activeTraversalSpeedProfile == profile && state.traversalTimeEnabled;
+
+    state = state.copyWith(
+      activeTraversalSpeedProfile: profile,
+      traversalTimeEnabled: !isCurrentMode,
+    );
   }
 }

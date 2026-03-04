@@ -3,6 +3,8 @@ import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/json_converters.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/traversal_speed.dart';
 import 'package:json_annotation/json_annotation.dart';
 
 part "drawing_element.g.dart";
@@ -48,6 +50,32 @@ class Line extends DrawingElement with HiveObjectMixin {
   }
 }
 
+class RectangleDrawing extends DrawingElement with HiveObjectMixin {
+  final Offset start;
+  Offset end;
+
+  RectangleDrawing({
+    required this.start,
+    required this.end,
+    required super.color,
+    super.boundingBox,
+    required super.isDotted,
+    required super.hasArrow,
+    required super.id,
+  });
+
+  void updateEndPoint(Offset endPoint) {
+    end = endPoint;
+  }
+
+  Rect get normalizedRect => Rect.fromLTRB(
+        start.dx < end.dx ? start.dx : end.dx,
+        start.dy < end.dy ? start.dy : end.dy,
+        start.dx > end.dx ? start.dx : end.dx,
+        start.dy > end.dy ? start.dy : end.dy,
+      );
+}
+
 @JsonSerializable()
 class FreeDrawing extends DrawingElement with HiveObjectMixin {
   FreeDrawing({
@@ -58,11 +86,25 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
     required super.isDotted,
     required super.hasArrow,
     required super.id,
+    this.showTraversalTime = false,
+    this.traversalSpeedProfile = TraversalSpeed.defaultProfile,
+    double? cachedPolylineLengthUnits,
   })  : listOfPoints = listOfPoints ?? [],
-        _path = path ?? Path();
+        _path = path ?? Path(),
+        cachedPolylineLengthUnits = cachedPolylineLengthUnits ??
+            _computePolylineLength(listOfPoints ?? []);
 
   @OffsetListConverter()
   List<Offset> listOfPoints = [];
+
+  @JsonKey(defaultValue: false)
+  final bool showTraversalTime;
+
+  @JsonKey(defaultValue: TraversalSpeedProfile.running)
+  final TraversalSpeedProfile traversalSpeedProfile;
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  double cachedPolylineLengthUnits;
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   Path _path = Path();
@@ -77,14 +119,46 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
     _path = newPath;
   }
 
+  void appendPoint(Offset point) {
+    if (listOfPoints.isNotEmpty) {
+      cachedPolylineLengthUnits += (point - listOfPoints.last).distance;
+    }
+    listOfPoints.add(point);
+  }
+
+  void replacePoints(List<Offset> points) {
+    listOfPoints = points;
+    recomputeCachedPolylineLength();
+  }
+
+  void recomputeCachedPolylineLength() {
+    cachedPolylineLengthUnits = _computePolylineLength(listOfPoints);
+  }
+
+  static double _computePolylineLength(List<Offset> points) {
+    if (points.length < 2) return 0.0;
+
+    double totalLength = 0.0;
+    for (int i = 0; i < points.length - 1; i++) {
+      totalLength += (points[i + 1] - points[i]).distance;
+    }
+    return totalLength;
+  }
+
   void rebuildPath(CoordinateSystem coordinateSystem) {
     if (listOfPoints.length < 2) {
-      if (listOfPoints.isEmpty) return;
+      if (listOfPoints.isEmpty) {
+        _path = Path();
+        return;
+      }
 
       final path = Path();
       final screenPoint = coordinateSystem.coordinateToScreen(listOfPoints[0]);
+      final dotRadius = (coordinateSystem.scale(Settings.brushSize * 0.25))
+          .clamp(1.0, coordinateSystem.scale(2.0))
+          .toDouble();
 
-      path.addOval(Rect.fromCircle(center: screenPoint, radius: 5));
+      path.addOval(Rect.fromCircle(center: screenPoint, radius: dotRadius));
       _path = path;
 
       return;
@@ -128,6 +202,9 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
     bool? isDotted,
     bool? hasArrow,
     String? id,
+    bool? showTraversalTime,
+    TraversalSpeedProfile? traversalSpeedProfile,
+    double? cachedPolylineLengthUnits,
   }) {
     return FreeDrawing(
       color: color ?? this.color,
@@ -137,6 +214,11 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
       isDotted: isDotted ?? this.isDotted,
       hasArrow: hasArrow ?? this.hasArrow,
       id: id ?? this.id,
+      showTraversalTime: showTraversalTime ?? this.showTraversalTime,
+      traversalSpeedProfile:
+          traversalSpeedProfile ?? this.traversalSpeedProfile,
+      cachedPolylineLengthUnits:
+          cachedPolylineLengthUnits ?? this.cachedPolylineLengthUnits,
     );
   }
 

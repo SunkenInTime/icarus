@@ -1,6 +1,7 @@
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
 class IcaDropTarget extends ConsumerStatefulWidget {
@@ -30,10 +31,16 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
       },
       onDragDone: (details) async {
         isDragging = false;
-
-        await ref
-            .read(strategyProvider.notifier)
-            .loadFromFileDrop(details.files);
+        try {
+          await ref
+              .read(strategyProvider.notifier)
+              .loadFromFileDrop(details.files);
+        } on NewerVersionImportException {
+          Settings.showToast(
+            message: NewerVersionImportException.userMessage,
+            backgroundColor: Settings.tacticalVioletTheme.destructive,
+          );
+        }
       },
       child: Stack(
         children: [

@@ -1,5 +1,3 @@
-import 'dart:typed_data' show Uint8List;
-
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
@@ -10,8 +8,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/services/clipboard_service.dart';
+import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
 
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+class UploadImageResult {
+  const UploadImageResult({
+    required this.bytes,
+    required this.tagColorValue,
+  });
+
+  final Uint8List bytes;
+  final int? tagColorValue;
+}
 
 class UploadImageDialog extends ConsumerStatefulWidget {
   const UploadImageDialog({super.key});
@@ -26,6 +35,14 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
   final bool _isCheckingClipboard = false;
   Uint8List? _selectedBytes;
   String? _selectedName;
+  int? _selectedTagColorValue;
+  static const List<Color> _colorOptions = [
+    Color(0xFF22C55E),
+    Color(0xFF3B82F6),
+    Color(0xFFF59E0B),
+    Color(0xFFEF4444),
+    Color(0xFFA855F7),
+  ];
 
   @override
   void initState() {
@@ -149,7 +166,7 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
       description: const Text('Drop an image here or click to choose a file.'),
       actions: [
         ShadButton.secondary(
-          onPressed: () => Navigator.of(context).pop<Uint8List?>(null),
+          onPressed: () => Navigator.of(context).pop<UploadImageResult?>(null),
           child: const Text('Cancel'),
         ),
         ShadIconButton.secondary(
@@ -167,7 +184,12 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
         ),
         ShadButton(
           onPressed: hasSelection
-              ? () => Navigator.of(context).pop<Uint8List?>(_selectedBytes)
+              ? () => Navigator.of(context).pop<UploadImageResult?>(
+                    UploadImageResult(
+                      bytes: _selectedBytes!,
+                      tagColorValue: _selectedTagColorValue,
+                    ),
+                  )
               : null,
           child: const Text('Use image'),
         ),
@@ -189,6 +211,37 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: cs.onSurfaceVariant,
                     ),
+              ),
+              const SizedBox(height: 12),
+              const Text('Tag color'),
+              const SizedBox(height: 6),
+              Wrap(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(4.0),
+                    child: ColorButtons(
+                      height: 24,
+                      width: 24,
+                      color: const Color(0xFFC5C5C5),
+                      isSelected: _selectedTagColorValue == null,
+                      onTap: () =>
+                          setState(() => _selectedTagColorValue = null),
+                    ),
+                  ),
+                  for (final color in _colorOptions)
+                    Padding(
+                      padding: const EdgeInsets.all(4.0),
+                      child: ColorButtons(
+                        height: 24,
+                        width: 24,
+                        color: color,
+                        isSelected:
+                            _selectedTagColorValue == color.toARGB32(),
+                        onTap: () => setState(
+                            () => _selectedTagColorValue = color.toARGB32()),
+                      ),
+                    ),
+                ],
               ),
             ],
           ),
@@ -226,6 +279,7 @@ class _UploadDropSquare extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
+          mouseCursor: SystemMouseCursors.click,
           borderRadius: BorderRadius.circular(16),
           onTap: onPick,
           child: Stack(
@@ -272,7 +326,7 @@ class _UploadDropSquare extends StatelessWidget {
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: cs.primary.withOpacity(0.08),
+                      color: cs.primary.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),
