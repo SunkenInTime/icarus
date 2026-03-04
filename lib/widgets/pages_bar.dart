@@ -309,7 +309,28 @@ class _ExpandedPanel extends ConsumerWidget {
                 buildDefaultDragHandles: false,
                 proxyDecorator: proxyDecorator,
                 itemBuilder: (ctx, i) {
+                  bool showForwardIndicator = false;
+                  bool showBackwardIndicator = false;
                   final p = pages[i];
+
+                  if (pages.length != 1) {
+                    if (pages.length == 2) {
+                      if (activeIndex == 0 && activeIndex != i) {
+                        showForwardIndicator = true;
+                      } else if (activeIndex == 1 && activeIndex != i) {
+                        showBackwardIndicator = true;
+                      }
+                    } else {
+                      if (forwardIndex != null && i == forwardIndex) {
+                        showForwardIndicator = true;
+                      }
+                      if (backwardIndex != null &&
+                          i == backwardIndex &&
+                          forwardIndex != backwardIndex) {
+                        showBackwardIndicator = true;
+                      }
+                    }
+                  }
 
                   return ReorderableDragStartListener(
                     key: ValueKey(p.id),
@@ -319,10 +340,8 @@ class _ExpandedPanel extends ConsumerWidget {
                       child: _PageRow(
                         page: p,
                         active: p.id == activePageId,
-                        showBackwardIndicator:
-                            backwardIndex != null && i == backwardIndex,
-                        showForwardIndicator:
-                            forwardIndex != null && i == forwardIndex,
+                        showBackwardIndicator: showBackwardIndicator,
+                        showForwardIndicator: showForwardIndicator,
                         onSelect: onSelect,
                         onRename: onRename,
                         onDelete: onDelete,
