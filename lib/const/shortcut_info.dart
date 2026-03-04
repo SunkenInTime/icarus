@@ -19,8 +19,8 @@ class ShortcutInfo {
     LogicalKeySet(LogicalKeyboardKey.keyW): const ToggleErasingIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyT): const AddedTextIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyS): const NavigationActionIntent(),
-    LogicalKeySet(LogicalKeyboardKey.keyA): const ForwardPageIntent(),
-    LogicalKeySet(LogicalKeyboardKey.keyD): const BackwardPageIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyD): const ForwardPageIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyA): const BackwardPageIntent(),
     LogicalKeySet(LogicalKeyboardKey.f12): const OpenInAppDebugIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyV, LogicalKeyboardKey.control):
         const PasteImageIntent(),

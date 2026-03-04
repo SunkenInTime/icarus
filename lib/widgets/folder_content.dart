@@ -8,7 +8,6 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
-import 'package:icarus/widgets/custom_button.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/dot_painter.dart';
@@ -30,33 +29,6 @@ class FolderContent extends ConsumerWidget {
   });
 
   final TextEditingController searchController = TextEditingController();
-
-  Widget _buildMenuItem({
-    required String label,
-    required VoidCallback onPressed,
-    required bool isSelected,
-  }) {
-    final color = isSelected ? Colors.white : Colors.grey;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8.0),
-      child: MenuItemButton(
-        onPressed: onPressed,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            isSelected
-                ? Icon(Icons.check, color: color)
-                : const SizedBox(
-                    width: 24,
-                    height: 24,
-                  ),
-            const SizedBox(width: 8),
-            Text(label, style: TextStyle(color: color)),
-          ],
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -83,16 +55,6 @@ class FolderContent extends ConsumerWidget {
                     Row(
                       spacing: 8,
                       children: [
-                        //TODO: Implement filter button
-                        // CustomButton(
-                        //   height: 40,
-                        //   width: 96,
-                        //   label: "Filter",
-                        //   backgroundColor: Settings.sideBarColor,
-                        //   onPressed: () {},
-                        //   icon: const Icon(Icons.filter_alt),
-                        // ),
-
                         ShadSelect<SortBy>(
                           decoration: ShadDecoration(
                             color: Settings.tacticalVioletTheme.card,
@@ -116,7 +78,6 @@ class FolderContent extends ConsumerWidget {
                                 .setSortBy(value!);
                           },
                         ),
-
                         ShadSelect<SortOrder>(
                           decoration: ShadDecoration(
                             color: Settings.tacticalVioletTheme.card,

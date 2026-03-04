@@ -1,10 +1,9 @@
 import 'dart:convert';
 import 'dart:developer' show log;
-import 'dart:math' as math;
 import 'dart:ui' show Offset;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/abilities.dart';
+
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';

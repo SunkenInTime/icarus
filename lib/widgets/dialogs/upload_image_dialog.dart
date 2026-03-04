@@ -326,7 +326,7 @@ class _UploadDropSquare extends StatelessWidget {
                 Positioned.fill(
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: cs.primary.withOpacity(0.08),
+                      color: cs.primary.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ),

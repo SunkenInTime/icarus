@@ -228,7 +228,7 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                                   Settings.tacticalVioletTheme.destructive,
                               fillColor: Settings
                                   .tacticalVioletTheme.destructive
-                                  .withOpacity(0.5),
+                                  .withValues(alpha: 0.5),
                             ),
                           ),
                         )

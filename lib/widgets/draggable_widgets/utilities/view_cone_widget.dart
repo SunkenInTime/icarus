@@ -8,7 +8,6 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 class ViewConeWidget extends ConsumerWidget {
   final String? id;

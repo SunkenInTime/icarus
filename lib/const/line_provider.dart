@@ -204,6 +204,10 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
+  void removeCurrentAbility() {
+    state = state.copyWith(currentAbility: null);
+  }
+
   void updateAgentPosition(Offset position) {
     if (state.currentAgent != null) {
       final updatedAgent = state.currentAgent!..updatePosition(position);

@@ -35,7 +35,7 @@ class DotPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Settings.tacticalVioletTheme.border.withOpacity(0.2)
+      ..color = Settings.tacticalVioletTheme.border.withValues(alpha: 0.2)
       ..style = PaintingStyle.fill;
 
     // Calculate how many dots we need in each direction

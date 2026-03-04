@@ -21,14 +21,14 @@ class TeamPicker extends ConsumerWidget {
           _TeamTextButton(
             label: 'Ally',
             isSelected: isAlly,
-            selectedColor: Settings.allyOutlineColor.withOpacity(1),
+            selectedColor: Settings.allyOutlineColor.withValues(alpha: 1),
             onTap: () => notifier.isAlly(true),
           ),
           const SizedBox(height: 4),
           _TeamTextButton(
             label: 'Enemy',
             isSelected: !isAlly,
-            selectedColor: Settings.enemyOutlineColor.withOpacity(1),
+            selectedColor: Settings.enemyOutlineColor.withValues(alpha: 1),
             onTap: () => notifier.isAlly(false),
           ),
         ],
@@ -71,7 +71,7 @@ class _TeamTextButtonState extends State<_TeamTextButton> {
                 color: widget.isSelected
                     ? widget.selectedColor
                     : (isHovered
-                        ? widget.selectedColor.withOpacity(0.7)
+                        ? widget.selectedColor.withValues(alpha: 0.7)
                         : Settings.tacticalVioletTheme.mutedForeground),
                 // fontSize: 14,
               ),

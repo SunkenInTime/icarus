@@ -383,10 +383,9 @@ class _ProfileLibrarySectionState
                 : null,
             trailing: profile.isBuiltIn
                 ? null
-                : _buildProfilePopupMenu(
-                    context,
-                    profile,
-                    profile.id ==
+                : _ProfileContextMenuButton(
+                    profile: profile,
+                    isDefault: profile.id ==
                         profilesState.defaultProfileIdForNewStrategies,
                   ),
           ),
@@ -395,87 +394,114 @@ class _ProfileLibrarySectionState
       ],
     );
   }
+}
 
-  Widget _buildProfilePopupMenu(
-    BuildContext context,
-    MapThemeProfile profile,
-    bool isDefault,
-  ) {
-    return PopupMenuButton<String>(
-      icon: Icon(
-        Icons.more_vert,
-        size: 18,
-        color: Settings.tacticalVioletTheme.mutedForeground,
+class _ProfileContextMenuButton extends ConsumerStatefulWidget {
+  const _ProfileContextMenuButton({
+    required this.profile,
+    required this.isDefault,
+  });
+
+  final MapThemeProfile profile;
+  final bool isDefault;
+
+  @override
+  ConsumerState<_ProfileContextMenuButton> createState() =>
+      _ProfileContextMenuButtonState();
+}
+
+class _ProfileContextMenuButtonState
+    extends ConsumerState<_ProfileContextMenuButton> {
+  final ShadContextMenuController _contextMenuController =
+      ShadContextMenuController();
+
+  @override
+  void dispose() {
+    _contextMenuController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ShadContextMenuRegion(
+      controller: _contextMenuController,
+      items: _buildMenuItems(),
+      child: ShadIconButton.secondary(
+        width: 26,
+        height: 26,
+        icon: Icon(
+          LucideIcons.ellipsisVertical,
+          size: 18,
+          color: Settings.tacticalVioletTheme.mutedForeground,
+        ),
+        onPressed: () {
+          _contextMenuController.toggle();
+        },
       ),
-      padding: EdgeInsets.zero,
-      onSelected: (value) async {
-        switch (value) {
-          case 'rename':
-            final newName = await _showRenameDialog(
-              context: context,
-              currentName: profile.name,
-            );
-            if (newName != null && newName.isNotEmpty) {
-              await ref
-                  .read(mapThemeProfilesProvider.notifier)
-                  .renameProfile(profileId: profile.id, newName: newName);
-            }
-          case 'set_default':
-            await ref
-                .read(mapThemeProfilesProvider.notifier)
-                .setDefaultProfileForNewStrategies(profile.id);
-            if (!mounted) return;
-            Settings.showToast(
-              message: "Default profile updated.",
-              backgroundColor: Settings.tacticalVioletTheme.primary,
-            );
-          case 'delete':
-            await ref
-                .read(mapThemeProfilesProvider.notifier)
-                .deleteProfile(profile.id);
-            if (!mounted) return;
-            Settings.showToast(
-              message: "Profile deleted.",
-              backgroundColor: Settings.tacticalVioletTheme.primary,
-            );
-        }
-      },
-      itemBuilder: (context) => [
-        const PopupMenuItem(
-          value: 'rename',
-          child: Row(
-            children: [
-              Icon(Icons.edit_outlined, size: 16),
-              SizedBox(width: 8),
-              Text("Rename"),
-            ],
-          ),
+    );
+  }
+
+  List<ShadContextMenuItem> _buildMenuItems() {
+    return [
+      ShadContextMenuItem(
+        leading: const Icon(LucideIcons.pencil, size: 16),
+        onPressed: _renameProfile,
+        child: const Text("Rename"),
+      ),
+      if (!widget.isDefault)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.star, size: 16),
+          onPressed: _setAsDefault,
+          child: const Text("Set as Default"),
         ),
-        if (!isDefault)
-          const PopupMenuItem(
-            value: 'set_default',
-            child: Row(
-              children: [
-                Icon(Icons.star_outline, size: 16),
-                SizedBox(width: 8),
-                Text("Set as Default"),
-              ],
-            ),
-          ),
-        PopupMenuItem(
-          value: 'delete',
-          child: Row(
-            children: [
-              Icon(Icons.delete_outline,
-                  size: 16, color: Settings.tacticalVioletTheme.destructive),
-              const SizedBox(width: 8),
-              Text("Delete",
-                  style: TextStyle(
-                      color: Settings.tacticalVioletTheme.destructive)),
-            ],
-          ),
+      ShadContextMenuItem(
+        leading: Icon(
+          LucideIcons.trash2,
+          size: 16,
+          color: Settings.tacticalVioletTheme.destructive,
         ),
-      ],
+        onPressed: _deleteProfile,
+        child: Text(
+          "Delete",
+          style: TextStyle(color: Settings.tacticalVioletTheme.destructive),
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _renameProfile() async {
+    final newName = await _showRenameDialog(
+      context: context,
+      currentName: widget.profile.name,
+    );
+    if (newName == null || newName.isEmpty) return;
+
+    await ref
+        .read(mapThemeProfilesProvider.notifier)
+        .renameProfile(profileId: widget.profile.id, newName: newName);
+  }
+
+  Future<void> _setAsDefault() async {
+    await ref
+        .read(mapThemeProfilesProvider.notifier)
+        .setDefaultProfileForNewStrategies(widget.profile.id);
+    if (!mounted) return;
+
+    Settings.showToast(
+      message: "Default profile updated.",
+      backgroundColor: Settings.tacticalVioletTheme.primary,
+    );
+  }
+
+  Future<void> _deleteProfile() async {
+    await ref.read(mapThemeProfilesProvider.notifier).deleteProfile(
+          widget.profile.id,
+        );
+    if (!mounted) return;
+
+    Settings.showToast(
+      message: "Profile deleted.",
+      backgroundColor: Settings.tacticalVioletTheme.primary,
     );
   }
 }

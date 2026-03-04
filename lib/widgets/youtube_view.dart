@@ -6,7 +6,6 @@ import 'package:icarus/const/youtube_handler.dart';
 
 import 'package:icarus/main.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 // class YoutubeView extends StatelessWidget {
 //   const YoutubeView({

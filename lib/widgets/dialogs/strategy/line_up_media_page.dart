@@ -2,7 +2,6 @@ import 'dart:io' show File, Directory;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -42,7 +41,6 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   @override
   void initState() {
     super.initState();
-    final strategyID = ref.read(strategyProvider).id;
   }
 
   @override

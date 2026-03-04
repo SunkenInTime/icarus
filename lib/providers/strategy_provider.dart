@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/transition_provider.dart';
-import 'image_provider.dart';
+import 'package:icarus/providers/image_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -921,7 +921,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
     ref.read(actionProvider.notifier).clearAllActions();
 
-    //TODO: FIX THIS LATER BOI
     List<PlacedImage> pageImageData = [];
     for (final page in newStrat.pages) {
       pageImageData.addAll(page.imageData);

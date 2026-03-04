@@ -248,7 +248,6 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     required double agentSize,
     required double abilitySize,
   }) {
-    //TODO: Set map scale
     final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap]!;
     Widget child = PlacedWidgetPreview.build(
       widget,

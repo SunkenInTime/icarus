@@ -184,7 +184,7 @@ class StrategyTileDetails extends StatelessWidget {
                 style: TextStyle(color: data.attackColor),
               ),
               const SizedBox(height: 5),
-              Text(data.lastEditedLabel),
+              Text(data.lastEditedLabel, overflow: TextOverflow.ellipsis),
             ],
           ),
         ],

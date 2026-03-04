@@ -30,12 +30,12 @@ class DeleteArea extends ConsumerWidget {
                       color: candidateData.isNotEmpty
                           ? Settings.tacticalVioletTheme.destructive
                           : Settings.tacticalVioletTheme.destructive
-                              .withOpacity(0.1),
+                              .withValues(alpha: 0.1),
                       border: Border.all(
                         color: candidateData.isNotEmpty
                             ? Settings.tacticalVioletTheme.destructive
                             : Settings.tacticalVioletTheme.destructive
-                                .withOpacity(0.2),
+                                .withValues(alpha: 0.2),
                         width: 2,
                       ),
                     ),

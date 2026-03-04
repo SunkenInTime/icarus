@@ -4,7 +4,6 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/coordinate_system.dart';
-import 'package:icarus/const/default_placement.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';

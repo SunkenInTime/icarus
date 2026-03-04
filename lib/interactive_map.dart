@@ -2,7 +2,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
@@ -147,9 +146,10 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
           final double centeredOffsetX =
               (viewportWidth - (worldWidth * safeScale)) / 2;
           final double centeredOffsetY = (height - (height * safeScale)) / 2;
-          final matrix = Matrix4.identity()..scale(safeScale);
-          matrix.translate(
-              centeredOffsetX / safeScale, centeredOffsetY / safeScale);
+          final matrix =
+              Matrix4.identity()..scaleByDouble(safeScale, safeScale, safeScale, 1);
+          matrix.translateByDouble(
+              centeredOffsetX / safeScale, centeredOffsetY / safeScale, 0, 1);
           controller.value = matrix;
           _schedulePlacementCenterUpdate(
             viewportWidth: viewportWidth,

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/widgets/custom_segmented_tabs.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 class AgentFilter extends ConsumerWidget {
   const AgentFilter({super.key, this.compactness = 0.2});

@@ -282,7 +282,8 @@ class SquareAoeCenterMigration {
       for (final page in pages)
         page.copyWith(
           abilityData: [
-            for (final ability in page.abilityData) migratePlacedAbility(ability),
+            for (final ability in page.abilityData)
+              migratePlacedAbility(ability),
           ],
           lineUps: [
             for (final lineUp in page.lineUps)
@@ -294,11 +295,12 @@ class SquareAoeCenterMigration {
 
   static PlacedAbility migratePlacedAbility(PlacedAbility ability) {
     final abilityData = ability.data.abilityData;
-    if (abilityData is! SquareAbility && abilityData is! ResizableSquareAbility) {
+    if (abilityData is! SquareAbility &&
+        abilityData is! ResizableSquareAbility) {
       return ability;
     }
 
-    final deltaY = Settings.abilitySize / 2;
+    const deltaY = Settings.abilitySize / 2;
     return ability.copyWith(
       position: ability.position.translate(0, deltaY),
     );
