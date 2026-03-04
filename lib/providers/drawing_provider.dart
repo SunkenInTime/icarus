@@ -390,7 +390,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       traversalSpeedProfile: traversalSpeedProfile,
     );
 
-    freeDrawing.listOfPoints.add(normalizedStart);
+    freeDrawing.appendPoint(normalizedStart);
 
     state = state.copyWith(currentElement: freeDrawing);
 
@@ -412,7 +412,7 @@ class DrawingProvider extends Notifier<DrawingState> {
     final boundingBox =
         updateBoundingBox(currentDrawing.boundingBox!, normalizedOffset);
 
-    currentDrawing.listOfPoints.add(normalizedOffset);
+    currentDrawing.appendPoint(normalizedOffset);
     currentDrawing.rebuildPath(coordinateSystem);
 
     currentDrawing.boundingBox = boundingBox;
@@ -426,11 +426,11 @@ class DrawingProvider extends Notifier<DrawingState> {
     final currentDrawing = state.currentElement as FreeDrawing;
     FreeDrawing finalDrawing = currentDrawing.copyWith(
       listOfPoints: [...currentDrawing.listOfPoints],
+      cachedPolylineLengthUnits: currentDrawing.cachedPolylineLengthUnits,
     );
 
     if (offset != null) {
-      finalDrawing.listOfPoints
-          .add(coordinateSystem.screenToCoordinate(offset));
+      finalDrawing.appendPoint(coordinateSystem.screenToCoordinate(offset));
     }
 
     if (Settings.enableStrokeSimplification) {
@@ -439,6 +439,7 @@ class DrawingProvider extends Notifier<DrawingState> {
         Settings.strokeSimplificationEpsilon,
       );
     }
+    finalDrawing.recomputeCachedPolylineLength();
     finalDrawing.rebuildPath(coordinateSystem);
 
     state = state.copyWithButEvil(
@@ -626,15 +627,15 @@ FreeDrawing douglasPeucker(FreeDrawing drawing, double epsilon) {
         epsilon);
 
     // Combine the results, removing the duplicate point at the split
-    newDrawing.listOfPoints = [
+    newDrawing.replacePoints([
       ...leftDrawing.listOfPoints
           .sublist(0, leftDrawing.listOfPoints.length - 1),
       ...rightDrawing.listOfPoints
-    ];
+    ]);
     return newDrawing;
   } else {
     // If no point is far enough, return the endpoints
-    newDrawing.listOfPoints = [listOfPoints.first, listOfPoints.last];
+    newDrawing.replacePoints([listOfPoints.first, listOfPoints.last]);
     return newDrawing;
   }
 }

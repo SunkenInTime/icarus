@@ -52,7 +52,8 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
     // Get the drawing data here in the widget
     DrawingState drawingState = ref.watch(drawingProvider);
     final penState = ref.watch(penProvider);
-    final currentMap = ref.watch(mapProvider.select((state) => state.currentMap));
+    final currentMap =
+        ref.watch(mapProvider.select((state) => state.currentMap));
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final isAttack = ref.watch(mapProvider.select((state) => state.isAttack));
 
@@ -311,15 +312,13 @@ Widget _buildTraversalCard({
   final unitsPerMeter = AgentData.inGameMeters * mapScale;
   if (unitsPerMeter <= 0) return const SizedBox.shrink();
 
-  const cardWidthMeters = 8.0;
-  const cardHeightMeters = 3.5;
+  const cardWidthMeters = 8.0 * 7;
+  const cardHeightMeters = 3.5 * 7;
   const xOffsetMeters = 0.8;
   const yOffsetMeters = 0.8;
 
-  final cardWidthScreen =
-      coordinateSystem.scale(cardWidthMeters * unitsPerMeter);
-  final cardHeightScreen =
-      coordinateSystem.scale(cardHeightMeters * unitsPerMeter);
+  final cardWidthScreen = coordinateSystem.scale(cardWidthMeters);
+  final cardHeightScreen = coordinateSystem.scale(cardHeightMeters);
   final anchor = drawing.listOfPoints.last.translate(
     xOffsetMeters * unitsPerMeter,
     -yOffsetMeters * unitsPerMeter,
@@ -422,10 +421,13 @@ double _calculateTraversalTime({
 }) {
   if (drawing.listOfPoints.length < 2) return 0.0;
 
-  double lengthUnits = 0.0;
-  for (int i = 0; i < drawing.listOfPoints.length - 1; i++) {
-    lengthUnits +=
-        (drawing.listOfPoints[i + 1] - drawing.listOfPoints[i]).distance;
+  double lengthUnits = drawing.cachedPolylineLengthUnits;
+  if (!lengthUnits.isFinite || lengthUnits < 0) {
+    lengthUnits = 0.0;
+    for (int i = 0; i < drawing.listOfPoints.length - 1; i++) {
+      lengthUnits +=
+          (drawing.listOfPoints[i + 1] - drawing.listOfPoints[i]).distance;
+    }
   }
 
   final distanceMeters = lengthUnits / unitsPerMeter;

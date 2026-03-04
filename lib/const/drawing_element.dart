@@ -88,8 +88,11 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
     required super.id,
     this.showTraversalTime = false,
     this.traversalSpeedProfile = TraversalSpeed.defaultProfile,
+    double? cachedPolylineLengthUnits,
   })  : listOfPoints = listOfPoints ?? [],
-        _path = path ?? Path();
+        _path = path ?? Path(),
+        cachedPolylineLengthUnits = cachedPolylineLengthUnits ??
+            _computePolylineLength(listOfPoints ?? []);
 
   @OffsetListConverter()
   List<Offset> listOfPoints = [];
@@ -99,6 +102,9 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
 
   @JsonKey(defaultValue: TraversalSpeedProfile.running)
   final TraversalSpeedProfile traversalSpeedProfile;
+
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  double cachedPolylineLengthUnits;
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   Path _path = Path();
@@ -111,6 +117,32 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
 
   void updatePath(Path newPath) {
     _path = newPath;
+  }
+
+  void appendPoint(Offset point) {
+    if (listOfPoints.isNotEmpty) {
+      cachedPolylineLengthUnits += (point - listOfPoints.last).distance;
+    }
+    listOfPoints.add(point);
+  }
+
+  void replacePoints(List<Offset> points) {
+    listOfPoints = points;
+    recomputeCachedPolylineLength();
+  }
+
+  void recomputeCachedPolylineLength() {
+    cachedPolylineLengthUnits = _computePolylineLength(listOfPoints);
+  }
+
+  static double _computePolylineLength(List<Offset> points) {
+    if (points.length < 2) return 0.0;
+
+    double totalLength = 0.0;
+    for (int i = 0; i < points.length - 1; i++) {
+      totalLength += (points[i + 1] - points[i]).distance;
+    }
+    return totalLength;
   }
 
   void rebuildPath(CoordinateSystem coordinateSystem) {
@@ -171,6 +203,7 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
     String? id,
     bool? showTraversalTime,
     TraversalSpeedProfile? traversalSpeedProfile,
+    double? cachedPolylineLengthUnits,
   }) {
     return FreeDrawing(
       color: color ?? this.color,
@@ -183,6 +216,8 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
       showTraversalTime: showTraversalTime ?? this.showTraversalTime,
       traversalSpeedProfile:
           traversalSpeedProfile ?? this.traversalSpeedProfile,
+      cachedPolylineLengthUnits:
+          cachedPolylineLengthUnits ?? this.cachedPolylineLengthUnits,
     );
   }
 
