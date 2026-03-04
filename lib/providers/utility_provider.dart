@@ -3,9 +3,8 @@ import 'dart:developer';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 
@@ -70,12 +69,13 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
 
   void switchSides() {
     final newState = [...state];
-
+    final mapState = ref.read(mapProvider);
+    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
     for (final utility in newState) {
-      utility.switchSides();
+      utility.switchSides(mapScale: mapScale);
     }
     for (final utility in poppedUtilities) {
-      utility.switchSides();
+      utility.switchSides(mapScale: mapScale);
     }
 
     state = newState;

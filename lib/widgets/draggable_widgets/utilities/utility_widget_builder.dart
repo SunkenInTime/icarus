@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
@@ -29,7 +30,9 @@ class UtilityWidgetBuilder extends ConsumerStatefulWidget {
 class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
   @override
   Widget build(BuildContext context) {
-    final mapScale = ref.read(mapProvider.notifier).mapScale;
+    final currentMap =
+        ref.watch(mapProvider.select((state) => state.currentMap));
+    final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     return Draggable<PlacedUtility>(
       dragAnchorStrategy:
           ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
@@ -45,14 +48,26 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
             rotation: widget.rotation,
             length: widget.length,
             mapScale: mapScale,
+            diameterMeters: widget.utility.customDiameter,
+            widthMeters: widget.utility.customWidth,
+            rectLengthMeters: widget.utility.customLength,
+            colorValue: widget.utility.customColorValue,
+            opacityPercent: widget.utility.customOpacityPercent,
           ),
         ),
       ),
       onDragEnd: (details) {
         widget.onDragEnd(details);
       },
-      child: UtilityData.utilityWidgets[widget.utility.type]!
-          .createWidget(id: widget.id, mapScale: mapScale),
+      child: UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
+        id: widget.id,
+        mapScale: mapScale,
+        diameterMeters: widget.utility.customDiameter,
+        widthMeters: widget.utility.customWidth,
+        rectLengthMeters: widget.utility.customLength,
+        colorValue: widget.utility.customColorValue,
+        opacityPercent: widget.utility.customOpacityPercent,
+      ),
     );
   }
 }

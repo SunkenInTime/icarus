@@ -522,8 +522,34 @@ class PlacedUtility extends PlacedWidget {
     return UtilityData.isViewCone(type);
   }
 
-  void switchSides() {
-    final size = UtilityData.utilityWidgets[type]!.getSize();
+  Offset _getEffectiveUtilitySize({required double mapScale}) {
+    final utility = UtilityData.utilityWidgets[type]!;
+    if (type == UtilityType.customCircle) {
+      assert(customDiameter != null,
+          'customDiameter is required for custom circle utility.');
+      if (customDiameter == null) {
+        return Offset.zero;
+      }
+      return utility.getSize(
+          diameterMeters: customDiameter, mapScale: mapScale);
+    }
+    if (type == UtilityType.customRectangle) {
+      assert(customWidth != null && customLength != null,
+          'customWidth and customLength are required for custom rectangle utility.');
+      if (customWidth == null || customLength == null) {
+        return Offset.zero;
+      }
+      return utility.getSize(
+        widthMeters: customWidth,
+        rectLengthMeters: customLength,
+        mapScale: mapScale,
+      );
+    }
+    return utility.getSize();
+  }
+
+  void switchSides({required double mapScale}) {
+    final size = _getEffectiveUtilitySize(mapScale: mapScale);
     final scaledSize = size.scale(CoordinateSystem.instance.scaleFactor,
         CoordinateSystem.instance.scaleFactor);
 

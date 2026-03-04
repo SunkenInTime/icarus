@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/default_placement.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
@@ -29,6 +30,12 @@ class CustomShapeTools extends ConsumerStatefulWidget {
 }
 
 class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
+  static const double _defaultCircleDiameterMeters = 10;
+  static const double _defaultRectangleWidthMeters = 6;
+  static const double _defaultRectangleLengthMeters = 12;
+  static const int _defaultOpacityPercent = 30;
+  static const int _defaultColorValue = 0xFF22C55E;
+
   static const List<Color> _colorOptions = [
     Color(0xFF22C55E),
     Color(0xFF3B82F6),
@@ -38,15 +45,17 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
   ];
 
   _CustomShapeKind _shape = _CustomShapeKind.circle;
-  double _diameterMeters = CustomCircleUtility.defaultDiameterMeters;
-  double _rectWidthMeters = CustomRectangleUtility.defaultWidthMeters;
-  double _rectLengthMeters = CustomRectangleUtility.defaultLengthMeters;
-  int _opacityPercent = CustomCircleUtility.defaultOpacityPercent;
-  Color _selectedColor = const Color(CustomCircleUtility.defaultColorValue);
+  double _diameterMeters = _defaultCircleDiameterMeters;
+  double _rectWidthMeters = _defaultRectangleWidthMeters;
+  double _rectLengthMeters = _defaultRectangleLengthMeters;
+  int _opacityPercent = _defaultOpacityPercent;
+  Color _selectedColor = const Color(_defaultColorValue);
 
   @override
   Widget build(BuildContext context) {
-    final draggableData = _buildToolData();
+    final currentMap = ref.watch(mapProvider.select((state) => state.currentMap));
+    final mapScale = Maps.mapScale[currentMap] ?? 1.0;
+    final draggableData = _buildToolData(mapScale);
 
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 8),
@@ -57,7 +66,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
           const SizedBox(height: 4),
           _buildShapeSelector(),
           const SizedBox(height: 4),
-          _buildPanel(draggableData),
+          _buildPanel(draggableData, mapScale),
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Text(
@@ -108,7 +117,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
     );
   }
 
-  Widget _buildPanel(CustomShapeToolData draggableData) {
+  Widget _buildPanel(CustomShapeToolData draggableData, double mapScale) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -208,13 +217,13 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
           },
           feedback: Opacity(
             opacity: Settings.feedbackOpacity,
-            child: ZoomTransform(child: _buildPreview()),
+            child: ZoomTransform(child: _buildPreview(mapScale)),
           ),
           child: SizedBox(
             width: double.infinity,
             child: ShadButton(
               backgroundColor: Settings.tacticalVioletTheme.primary,
-              onPressed: _placeAtCenter,
+              onPressed: () => _placeAtCenter(mapScale),
               child: const Text("+ Place Shape"),
             ),
           ),
@@ -241,8 +250,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
     );
   }
 
-  CustomShapeToolData _buildToolData() {
-    final mapScale = ref.read(mapProvider.notifier).mapScale;
+  CustomShapeToolData _buildToolData(double mapScale) {
     if (_shape == _CustomShapeKind.circle) {
       return CustomShapeToolData.circle(
         diameterMeters: _diameterMeters,
@@ -260,40 +268,44 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
     );
   }
 
-  void _placeAtCenter() {
+  void _placeAtCenter(double mapScale) {
     const uuid = Uuid();
-    final toolData = _buildToolData();
+    final toolData = _buildToolData(mapScale);
     final placementCenter = ref.read(placementCenterProvider);
     final centeredTopLeft = DefaultPlacement.topLeftFromVirtualAnchor(
       viewportCenter: placementCenter,
       anchorVirtual: toolData.centerPoint,
     );
 
-    ref.read(utilityProvider.notifier).addUtility(
-          PlacedUtility(
+    final placedUtility = toolData.type == UtilityType.customCircle
+        ? PlacedUtility(
             position: centeredTopLeft,
             id: uuid.v4(),
             type: toolData.type,
-            customDiameter:
-                toolData.diameterMeters > 0 ? toolData.diameterMeters : null,
-            customWidth: toolData.widthMeters > 0 ? toolData.widthMeters : null,
-            customLength: toolData.rectLengthMeters > 0
-                ? toolData.rectLengthMeters
-                : null,
+            customDiameter: toolData.diameterMeters,
             customColorValue: toolData.colorValue,
             customOpacityPercent: toolData.opacityPercent,
-          ),
-        );
+          )
+        : PlacedUtility(
+            position: centeredTopLeft,
+            id: uuid.v4(),
+            type: toolData.type,
+            customWidth: toolData.widthMeters,
+            customLength: toolData.rectLengthMeters,
+            customColorValue: toolData.colorValue,
+            customOpacityPercent: toolData.opacityPercent,
+          );
+    ref.read(utilityProvider.notifier).addUtility(placedUtility);
   }
 
-  Widget _buildPreview() {
+  Widget _buildPreview(double mapScale) {
     if (_shape == _CustomShapeKind.circle) {
       return CustomCircleUtilityWidget(
         id: null,
         diameterMeters: _diameterMeters,
         colorValue: _selectedColor.toARGB32(),
         opacityPercent: _opacityPercent,
-        mapScale: ref.read(mapProvider.notifier).mapScale,
+        mapScale: mapScale,
       );
     }
     return CustomRectangleUtilityWidget(
@@ -302,7 +314,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
       rectLengthMeters: _rectLengthMeters,
       colorValue: _selectedColor.toARGB32(),
       opacityPercent: _opacityPercent,
-      mapScale: ref.read(mapProvider.notifier).mapScale,
+      mapScale: mapScale,
     );
   }
 }

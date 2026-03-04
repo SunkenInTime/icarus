@@ -161,24 +161,30 @@ class StrategyState {
     required this.stratName,
     required this.id,
     required this.storageDirectory,
+    this.activePageId,
   });
 
   final bool isSaved;
   final String? stratName;
   final String id;
   final String? storageDirectory;
+  final String? activePageId;
 
   StrategyState copyWith({
     bool? isSaved,
     String? stratName,
     String? id,
     String? storageDirectory,
+    String? activePageId,
+    bool clearActivePageId = false,
   }) {
     return StrategyState(
       isSaved: isSaved ?? this.isSaved,
       stratName: stratName ?? this.stratName,
       id: id ?? this.id,
       storageDirectory: storageDirectory ?? this.storageDirectory,
+      activePageId:
+          clearActivePageId ? null : (activePageId ?? this.activePageId),
     );
   }
 }
@@ -196,6 +202,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       stratName: null,
       id: "testID",
       storageDirectory: null,
+      activePageId: null,
     );
   }
 
@@ -277,6 +284,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       stratName: null,
       id: "testID",
       storageDirectory: state.storageDirectory,
+      activePageId: null,
     );
   }
   // --- MIGRATION: create a first page from legacy flat fields ----------------
@@ -486,6 +494,11 @@ class StrategyProvider extends Notifier<StrategyState> {
             id: utility.id,
             angle: utility.angle,
             attachedAgentId: utility.attachedAgentId,
+            customDiameter: utility.customDiameter,
+            customWidth: utility.customWidth,
+            customLength: utility.customLength,
+            customColorValue: utility.customColorValue,
+            customOpacityPercent: utility.customOpacityPercent,
           )
             ..rotation = utility.rotation
             ..length = utility.length
@@ -590,6 +603,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
 
     activePageID = page.id;
+    state = state.copyWith(activePageId: page.id);
 
     ref.read(actionProvider.notifier).clearAllActions();
     final migrated = migrateToCurrentVersion(doc);
@@ -940,6 +954,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         stratName: migratedStrategy.name,
         id: migratedStrategy.id,
         storageDirectory: null,
+        activePageId: page.id,
       );
       return;
     }
@@ -950,6 +965,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       stratName: migratedStrategy.name,
       id: migratedStrategy.id,
       storageDirectory: newDir.path,
+      activePageId: page.id,
     );
   }
 

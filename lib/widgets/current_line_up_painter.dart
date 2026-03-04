@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -19,7 +20,8 @@ class CurrentLineUpPainter extends ConsumerWidget {
     final double abilitySize = ref.watch(strategySettingsProvider).abilitySize;
     final double agentSize =
         coordinateSystem.scale(ref.watch(strategySettingsProvider).agentSize);
-    final double mapScale = ref.watch(mapProvider.notifier).mapScale;
+    final currentMap = ref.watch(mapProvider.select((state) => state.currentMap));
+    final double mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final PlacedAgent? currentAgent = ref.watch(lineUpProvider).currentAgent;
     final PlacedAbility? currentAbility =
         ref.watch(lineUpProvider).currentAbility;

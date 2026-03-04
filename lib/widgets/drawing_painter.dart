@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -51,7 +52,8 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
     // Get the drawing data here in the widget
     DrawingState drawingState = ref.watch(drawingProvider);
     final penState = ref.watch(penProvider);
-    final mapScale = ref.watch(mapProvider.notifier).mapScale;
+    final currentMap = ref.watch(mapProvider.select((state) => state.currentMap));
+    final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final isAttack = ref.watch(mapProvider.select((state) => state.isAttack));
 
     CustomPainter drawingPainter = DrawingPainter(

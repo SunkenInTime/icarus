@@ -112,6 +112,8 @@ class _PagesBarState extends ConsumerState<PagesBar>
   @override
   Widget build(BuildContext context) {
     final strategyId = ref.watch(strategyProvider).id;
+    final activePageIdFromState =
+        ref.watch(strategyProvider.select((state) => state.activePageId));
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
     return ValueListenableBuilder(
@@ -123,7 +125,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
         final pages = [...strat.pages]
           ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
         final activePageId =
-            ref.watch(strategyProvider.notifier).activePageID ??
+            activePageIdFromState ??
                 (pages.isNotEmpty ? pages.first.id : null);
         final activeName = pages
             .firstWhere(

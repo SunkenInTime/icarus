@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
@@ -31,15 +31,24 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
     final utility = _getUtility(ref);
     final effectiveMapScale = mapScale ?? 1.0;
 
-    final effectiveDiameterMeters = utility?.customDiameter ??
-        diameterMeters ??
-        CustomCircleUtility.defaultDiameterMeters;
-    final effectiveColorValue = utility?.customColorValue ??
-        colorValue ??
-        CustomCircleUtility.defaultColorValue;
-    final effectiveOpacityPercent = utility?.customOpacityPercent ??
-        opacityPercent ??
-        CustomCircleUtility.defaultOpacityPercent;
+    final effectiveDiameterMeters = utility?.customDiameter ?? diameterMeters;
+    final effectiveColorValue = utility?.customColorValue ?? colorValue;
+    final effectiveOpacityPercent =
+        utility?.customOpacityPercent ?? opacityPercent;
+    final hasAllRequiredValues = effectiveDiameterMeters != null &&
+        effectiveColorValue != null &&
+        effectiveOpacityPercent != null;
+    assert(
+      hasAllRequiredValues,
+      'CustomCircleUtilityWidget requires explicit diameter/color/opacity values.',
+    );
+    if (!hasAllRequiredValues) {
+      if (kDebugMode) {
+        debugPrint(
+            'Skipping custom circle render due to missing explicit values (id: $id).');
+      }
+      return const SizedBox.shrink();
+    }
 
     final color = Color(effectiveColorValue);
     final fillOpacity = (effectiveOpacityPercent / 100).clamp(0.0, 1.0);

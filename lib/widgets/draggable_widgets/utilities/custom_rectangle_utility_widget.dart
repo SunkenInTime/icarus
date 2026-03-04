@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
@@ -33,18 +33,26 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
     final utility = _getUtility(ref);
     final effectiveMapScale = mapScale ?? 1.0;
 
-    final effectiveWidthMeters = utility?.customWidth ??
-        widthMeters ??
-        CustomRectangleUtility.defaultWidthMeters;
-    final effectiveLengthMeters = utility?.customLength ??
-        rectLengthMeters ??
-        CustomRectangleUtility.defaultLengthMeters;
-    final effectiveColorValue = utility?.customColorValue ??
-        colorValue ??
-        CustomRectangleUtility.defaultColorValue;
-    final effectiveOpacityPercent = utility?.customOpacityPercent ??
-        opacityPercent ??
-        CustomRectangleUtility.defaultOpacityPercent;
+    final effectiveWidthMeters = utility?.customWidth ?? widthMeters;
+    final effectiveLengthMeters = utility?.customLength ?? rectLengthMeters;
+    final effectiveColorValue = utility?.customColorValue ?? colorValue;
+    final effectiveOpacityPercent =
+        utility?.customOpacityPercent ?? opacityPercent;
+    final hasAllRequiredValues = effectiveWidthMeters != null &&
+        effectiveLengthMeters != null &&
+        effectiveColorValue != null &&
+        effectiveOpacityPercent != null;
+    assert(
+      hasAllRequiredValues,
+      'CustomRectangleUtilityWidget requires explicit width/length/color/opacity values.',
+    );
+    if (!hasAllRequiredValues) {
+      if (kDebugMode) {
+        debugPrint(
+            'Skipping custom rectangle render due to missing explicit values (id: $id).');
+      }
+      return const SizedBox.shrink();
+    }
 
     final color = Color(effectiveColorValue);
     final fillOpacity = (effectiveOpacityPercent / 100).clamp(0.0, 1.0);

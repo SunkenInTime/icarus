@@ -115,7 +115,8 @@ class SpikeToolData implements DraggableData {
     required double scaleFactor,
     required double screenZoom,
   }) {
-    return centerPoint.scale(scaleFactor * screenZoom, scaleFactor * screenZoom);
+    return centerPoint.scale(
+        scaleFactor * screenZoom, scaleFactor * screenZoom);
   }
 }
 
@@ -144,8 +145,7 @@ class CustomShapeToolData implements DraggableData {
     required int colorValue,
     required int opacityPercent,
   }) {
-    final diameter =
-        diameterMeters * AgentData.inGameMetersDiameter * mapScale;
+    final diameter = diameterMeters * AgentData.inGameMetersDiameter * mapScale;
     return CustomShapeToolData(
       type: UtilityType.customCircle,
       centerPoint: Offset(diameter / 2, diameter / 2),
@@ -182,7 +182,8 @@ class CustomShapeToolData implements DraggableData {
     required double scaleFactor,
     required double screenZoom,
   }) {
-    return centerPoint.scale(scaleFactor * screenZoom, scaleFactor * screenZoom);
+    return centerPoint.scale(
+        scaleFactor * screenZoom, scaleFactor * screenZoom);
   }
 }
 
@@ -214,12 +215,20 @@ class TextToolData implements DraggableData {
     required double scaleFactor,
     required double screenZoom,
   }) {
-    return centerPoint.scale(scaleFactor * screenZoom, scaleFactor * screenZoom);
+    return centerPoint.scale(
+        scaleFactor * screenZoom, scaleFactor * screenZoom);
   }
 }
 
 sealed class Utilities {
-  Offset getAnchorPoint({String? id, double? length, double? rotation});
+  Offset getAnchorPoint(
+      {String? id,
+      double? length,
+      double? rotation,
+      double? mapScale,
+      double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters});
 
   Widget createWidget(
       {String? id,
@@ -231,7 +240,11 @@ sealed class Utilities {
       double? rectLengthMeters,
       int? colorValue,
       int? opacityPercent});
-  Offset getSize();
+  Offset getSize(
+      {double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters,
+      double? mapScale});
 }
 
 class ImageUtility extends Utilities {
@@ -255,12 +268,23 @@ class ImageUtility extends Utilities {
   }
 
   @override
-  Offset getAnchorPoint({String? id, double? length, double? rotation}) {
+  Offset getAnchorPoint(
+      {String? id,
+      double? length,
+      double? rotation,
+      double? mapScale,
+      double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters}) {
     return Offset(size / 2, size / 2);
   }
 
   @override
-  Offset getSize() {
+  Offset getSize(
+      {double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters,
+      double? mapScale}) {
     return Offset(size, size);
   }
 }
@@ -301,7 +325,14 @@ class ViewConeUtility extends Utilities {
   /// Get the anchor point at the bottom center (apex of the cone)
   /// The length determines where the bottom center is positioned
   @override
-  Offset getAnchorPoint({String? id, double? length, double? rotation}) {
+  Offset getAnchorPoint(
+      {String? id,
+      double? length,
+      double? rotation,
+      double? mapScale,
+      double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters}) {
     return const Offset(maxLength, maxLength + iconTopOffset);
   }
 
@@ -320,7 +351,11 @@ class ViewConeUtility extends Utilities {
   }
 
   @override
-  Offset getSize() {
+  Offset getSize(
+      {double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters,
+      double? mapScale}) {
     return const Offset(maxLength * 2, maxLength + iconTopOffset);
   }
   // /// Get anchor point with length - bottom center of the view cone
@@ -338,10 +373,6 @@ class ViewConeUtility extends Utilities {
 }
 
 class CustomCircleUtility extends Utilities {
-  static const double defaultDiameterMeters = 10;
-  static const int defaultOpacityPercent = 30;
-  static const int defaultColorValue = 0xFF22C55E;
-
   @override
   Widget createWidget(
       {String? id,
@@ -353,6 +384,10 @@ class CustomCircleUtility extends Utilities {
       double? rectLengthMeters,
       int? colorValue,
       int? opacityPercent}) {
+    assert(mapScale != null, 'mapScale must be provided');
+    assert(diameterMeters != null, 'diameterMeters must be provided');
+    assert(colorValue != null, 'colorValue must be provided');
+    assert(opacityPercent != null, 'opacityPercent must be provided');
     return CustomCircleUtilityWidget(
       id: id,
       mapScale: mapScale,
@@ -363,25 +398,36 @@ class CustomCircleUtility extends Utilities {
   }
 
   @override
-  Offset getAnchorPoint({String? id, double? length, double? rotation}) {
-    return const Offset(
-        (defaultDiameterMeters * AgentData.inGameMetersDiameter) / 2,
-        (defaultDiameterMeters * AgentData.inGameMetersDiameter) / 2);
+  Offset getAnchorPoint(
+      {String? id,
+      double? length,
+      double? rotation,
+      double? mapScale,
+      double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters}) {
+    assert(mapScale != null, 'mapScale must be provided');
+    assert(diameterMeters != null, 'diameterMeters must be provided');
+    final diameter =
+        diameterMeters! * AgentData.inGameMetersDiameter * mapScale!;
+    return Offset(diameter / 2, diameter / 2);
   }
 
   @override
-  Offset getSize() {
-    return const Offset(defaultDiameterMeters * AgentData.inGameMetersDiameter,
-        defaultDiameterMeters * AgentData.inGameMetersDiameter);
+  Offset getSize(
+      {double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters,
+      double? mapScale}) {
+    assert(diameterMeters != null, 'diameterMeters must be provided');
+    assert(mapScale != null, 'mapScale must be provided');
+    final diameter =
+        diameterMeters! * AgentData.inGameMetersDiameter * mapScale!;
+    return Offset(diameter, diameter);
   }
 }
 
 class CustomRectangleUtility extends Utilities {
-  static const double defaultWidthMeters = 6;
-  static const double defaultLengthMeters = 12;
-  static const int defaultOpacityPercent = 30;
-  static const int defaultColorValue = 0xFF3B82F6;
-
   @override
   Widget createWidget(
       {String? id,
@@ -393,6 +439,11 @@ class CustomRectangleUtility extends Utilities {
       double? rectLengthMeters,
       int? colorValue,
       int? opacityPercent}) {
+    assert(mapScale != null, 'mapScale must be provided');
+    assert(widthMeters != null, 'widthMeters must be provided');
+    assert(rectLengthMeters != null, 'rectLengthMeters must be provided');
+    assert(colorValue != null, 'colorValue must be provided');
+    assert(opacityPercent != null, 'opacityPercent must be provided');
     return CustomRectangleUtilityWidget(
       id: id,
       mapScale: mapScale,
@@ -404,16 +455,35 @@ class CustomRectangleUtility extends Utilities {
   }
 
   @override
-  Offset getAnchorPoint({String? id, double? length, double? rotation}) {
-    return const Offset(
-        (defaultLengthMeters * AgentData.inGameMetersDiameter) / 2,
-        (defaultWidthMeters * AgentData.inGameMetersDiameter) / 2);
+  Offset getAnchorPoint(
+      {String? id,
+      double? length,
+      double? rotation,
+      double? mapScale,
+      double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters}) {
+    assert(mapScale != null, 'mapScale must be provided');
+    assert(widthMeters != null, 'widthMeters must be provided');
+    assert(rectLengthMeters != null, 'rectLengthMeters must be provided');
+    final width = widthMeters! * AgentData.inGameMetersDiameter * mapScale!;
+    final rectLength =
+        rectLengthMeters! * AgentData.inGameMetersDiameter * mapScale;
+    return Offset(rectLength / 2, width / 2);
   }
 
   @override
-  Offset getSize() {
-    return const Offset(
-        defaultLengthMeters * AgentData.inGameMetersDiameter,
-        defaultWidthMeters * AgentData.inGameMetersDiameter);
+  Offset getSize(
+      {double? diameterMeters,
+      double? widthMeters,
+      double? rectLengthMeters,
+      double? mapScale}) {
+    assert(widthMeters != null, 'widthMeters must be provided');
+    assert(rectLengthMeters != null, 'rectLengthMeters must be provided');
+    assert(mapScale != null, 'mapScale must be provided');
+    final width = widthMeters! * AgentData.inGameMetersDiameter * mapScale!;
+    final rectLength =
+        rectLengthMeters! * AgentData.inGameMetersDiameter * mapScale;
+    return Offset(rectLength, width);
   }
 }

@@ -165,21 +165,24 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
               ref.read(utilityProvider.notifier).addUtility(placedUtility);
             } else if (details.data is CustomShapeToolData) {
               final customData = details.data as CustomShapeToolData;
-              final placedUtility = PlacedUtility(
-                id: uuid.v4(),
-                type: customData.type,
-                position: normalizedPosition,
-                customDiameter: customData.diameterMeters > 0
-                    ? customData.diameterMeters
-                    : null,
-                customWidth:
-                    customData.widthMeters > 0 ? customData.widthMeters : null,
-                customLength: customData.rectLengthMeters > 0
-                    ? customData.rectLengthMeters
-                    : null,
-                customColorValue: customData.colorValue,
-                customOpacityPercent: customData.opacityPercent,
-              );
+              final placedUtility = customData.type == UtilityType.customCircle
+                  ? PlacedUtility(
+                      id: uuid.v4(),
+                      type: customData.type,
+                      position: normalizedPosition,
+                      customDiameter: customData.diameterMeters,
+                      customColorValue: customData.colorValue,
+                      customOpacityPercent: customData.opacityPercent,
+                    )
+                  : PlacedUtility(
+                      id: uuid.v4(),
+                      type: customData.type,
+                      position: normalizedPosition,
+                      customWidth: customData.widthMeters,
+                      customLength: customData.rectLengthMeters,
+                      customColorValue: customData.colorValue,
+                      customOpacityPercent: customData.opacityPercent,
+                    );
               ref.read(utilityProvider.notifier).addUtility(placedUtility);
             } else if (details.data is TextToolData) {
               final textData = details.data as TextToolData;
@@ -490,28 +493,9 @@ class _UtilityList extends ConsumerWidget {
                 final virtualOffset =
                     coordinateSystem.screenToCoordinate(localOffset);
 
-                Offset safeArea;
-                if (placedUtility.type == UtilityType.customCircle) {
-                  final diameter = placedUtility.customDiameter ??
-                      CustomCircleUtility.defaultDiameterMeters;
-                  final renderedDiameter =
-                      diameter * AgentData.inGameMetersDiameter * mapScale;
-                  safeArea = Offset(renderedDiameter / 2, renderedDiameter / 2);
-                } else if (placedUtility.type == UtilityType.customRectangle) {
-                  final width = placedUtility.customWidth ??
-                      CustomRectangleUtility.defaultWidthMeters;
-                  final length = placedUtility.customLength ??
-                      CustomRectangleUtility.defaultLengthMeters;
-                  final renderedWidth =
-                      width * AgentData.inGameMetersDiameter * mapScale;
-                  final renderedLength =
-                      length * AgentData.inGameMetersDiameter * mapScale;
-                  safeArea = Offset(renderedLength / 2, renderedWidth / 2);
-                } else {
-                  safeArea = UtilityData.utilityWidgets[placedUtility.type]!
-                          .getAnchorPoint() /
-                      2;
-                }
+                final safeArea = UtilityData.utilityWidgets[placedUtility.type]!
+                        .getAnchorPoint() /
+                    2;
 
                 if (coordinateSystem.isOutOfBounds(virtualOffset.translate(
                     safeArea.dx / 2, safeArea.dy / 2))) {
@@ -568,17 +552,30 @@ class _CustomShapeUtilityList extends ConsumerWidget {
 
                 Offset safeArea;
                 if (placedUtility.type == UtilityType.customCircle) {
-                  final diameterMeters = placedUtility.customDiameter ??
-                      CustomCircleUtility.defaultDiameterMeters;
+                  final diameterMeters = placedUtility.customDiameter;
+                  if (diameterMeters == null) {
+                    log(
+                        'Missing customDiameter for custom circle ${placedUtility.id}, removing malformed utility.');
+                    ref
+                        .read(utilityProvider.notifier)
+                        .removeUtility(placedUtility.id);
+                    return;
+                  }
                   final diameter = diameterMeters *
                       AgentData.inGameMetersDiameter *
                       mapScale;
                   safeArea = Offset(diameter / 2, diameter / 2);
                 } else {
-                  final widthMeters = placedUtility.customWidth ??
-                      CustomRectangleUtility.defaultWidthMeters;
-                  final lengthMeters = placedUtility.customLength ??
-                      CustomRectangleUtility.defaultLengthMeters;
+                  final widthMeters = placedUtility.customWidth;
+                  final lengthMeters = placedUtility.customLength;
+                  if (widthMeters == null || lengthMeters == null) {
+                    log(
+                        'Missing custom rectangle dimensions for ${placedUtility.id}, removing malformed utility.');
+                    ref
+                        .read(utilityProvider.notifier)
+                        .removeUtility(placedUtility.id);
+                    return;
+                  }
                   final width =
                       widthMeters * AgentData.inGameMetersDiameter * mapScale;
                   final length =
