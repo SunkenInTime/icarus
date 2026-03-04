@@ -231,7 +231,7 @@ class AgentData implements DraggableData {
           type: AgentType.astra,
           index: 2,
           name: "Nebula",
-          iconPath: 'assets/agents/Astra/1.webp',
+          iconPath: 'assets/agents/Astra/3.webp',
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Astra/Smoke.webp',
             size: 4.75 * inGameMetersDiameter,

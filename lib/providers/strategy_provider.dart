@@ -4,7 +4,7 @@ import 'dart:developer';
 import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -191,6 +191,28 @@ class StrategyState {
 
 final strategyProvider =
     NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
+
+class NewerVersionImportException implements Exception {
+  const NewerVersionImportException({
+    required this.importedVersion,
+    required this.currentVersion,
+  });
+
+  final int importedVersion;
+  final int currentVersion;
+
+  static const String userMessage =
+      'This strategy was created in a newer version of Icarus. '
+      'Please update the app and try again.';
+
+  @override
+  String toString() {
+    return 'NewerVersionImportException('
+        'importedVersion: $importedVersion, '
+        'currentVersion: $currentVersion'
+        ')';
+  }
+}
 
 class StrategyProvider extends Notifier<StrategyState> {
   String? activePageID;
@@ -1024,25 +1046,23 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> _loadFromXFile(XFile xFile) async {
     final newID = const Uuid().v4();
-
-    bool isZip = await isZipFile(File(xFile.path));
+    final bool isZip = await isZipFile(File(xFile.path));
 
     log("Is ZIP file: $isZip");
     final bytes = await xFile.readAsBytes();
     String jsonData = "";
-    if (isZip) {
-      // Decode the Zip file
-      final archive = ZipDecoder().decodeBytes(bytes);
 
-      final imageFolder = await PlacedImageProvider.getImageFolder(newID);
+    try {
+      if (isZip) {
+        // Decode the Zip file
+        final archive = ZipDecoder().decodeBytes(bytes);
 
-      final tempDirectory = await getTempDirectory(newID);
+        final imageFolder = await PlacedImageProvider.getImageFolder(newID);
+        final tempDirectory = await getTempDirectory(newID);
 
-      await extractArchiveToDisk(archive, tempDirectory.path);
+        await extractArchiveToDisk(archive, tempDirectory.path);
 
-      final tempDirectoryList = tempDirectory.listSync();
-
-      try {
+        final tempDirectoryList = tempDirectory.listSync();
         log("Temp directory list: ${tempDirectoryList.length}.");
 
         for (final fileEntity in tempDirectoryList) {
@@ -1060,117 +1080,141 @@ class StrategyProvider extends Notifier<StrategyState> {
         if (jsonData.isEmpty) {
           throw Exception("No .ica file found");
         }
-      } catch (e) {
-        log(e.toString());
-        return;
-      }
-    } else {
-      jsonData = await xFile.readAsString();
-    }
-
-    Map<String, dynamic> json = jsonDecode(jsonData);
-
-    final List<DrawingElement> drawingData =
-        DrawingProvider.fromJson(jsonEncode(json["drawingData"] ?? []));
-    List<PlacedAgent> agentData =
-        AgentProvider.fromJson(jsonEncode(json["agentData"] ?? []));
-
-    final List<PlacedAbility> abilityData =
-        AbilityProvider.fromJson(jsonEncode(json["abilityData"] ?? []));
-
-    final mapData = MapProvider.fromJson(jsonEncode(json["mapData"]));
-    final textData = TextProvider.fromJson(jsonEncode(json["textData"] ?? []));
-
-    List<PlacedImage> imageData = [];
-    if (!kIsWeb) {
-      if (isZip) {
-        imageData = await PlacedImageProvider.fromJson(
-            jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID);
       } else {
-        log('Legacy image data loading');
-        imageData = await PlacedImageProvider.legacyFromJson(
-            jsonString: jsonEncode(json["imageData"] ?? []), strategyID: newID);
+        jsonData = await xFile.readAsString();
+      }
+
+      Map<String, dynamic> json = jsonDecode(jsonData);
+      final versionNumber = int.tryParse(json["versionNumber"].toString()) ??
+          Settings.versionNumber;
+      _throwIfImportedVersionIsTooNew(versionNumber);
+
+      final List<DrawingElement> drawingData =
+          DrawingProvider.fromJson(jsonEncode(json["drawingData"] ?? []));
+      List<PlacedAgent> agentData =
+          AgentProvider.fromJson(jsonEncode(json["agentData"] ?? []));
+
+      final List<PlacedAbility> abilityData =
+          AbilityProvider.fromJson(jsonEncode(json["abilityData"] ?? []));
+
+      final mapData = MapProvider.fromJson(jsonEncode(json["mapData"]));
+      final textData =
+          TextProvider.fromJson(jsonEncode(json["textData"] ?? []));
+
+      List<PlacedImage> imageData = [];
+      if (!kIsWeb) {
+        if (isZip) {
+          imageData = await PlacedImageProvider.fromJson(
+              jsonString: jsonEncode(json["imageData"] ?? []),
+              strategyID: newID);
+        } else {
+          log('Legacy image data loading');
+          imageData = await PlacedImageProvider.legacyFromJson(
+              jsonString: jsonEncode(json["imageData"] ?? []),
+              strategyID: newID);
+        }
+      }
+
+      final StrategySettings settingsData;
+      final bool isAttack;
+      final List<PlacedUtility> utilityData;
+
+      if (json["settingsData"] != null) {
+        settingsData = ref
+            .read(strategySettingsProvider.notifier)
+            .fromJson(jsonEncode(json["settingsData"]));
+      } else {
+        settingsData = StrategySettings();
+      }
+
+      if (json["isAttack"] != null) {
+        isAttack = json["isAttack"] == "true" ? true : false;
+      } else {
+        isAttack = true;
+      }
+
+      if (json["utilityData"] != null) {
+        utilityData = UtilityProvider.fromJson(jsonEncode(json["utilityData"]));
+      } else {
+        utilityData = [];
+      }
+      final MapThemePalette? importedThemeOverridePalette =
+          json["themePalette"] is Map<String, dynamic>
+              ? MapThemePalette.fromJson(json["themePalette"])
+              : (json["themePalette"] is Map
+                  ? MapThemePalette.fromJson(
+                      Map<String, dynamic>.from(json["themePalette"]))
+                  : null);
+
+      // bool needsMigration = (versionNumber < 15);
+      final List<StrategyPage> pages = json["pages"] != null
+          ? await StrategyPage.listFromJson(
+              json: jsonEncode(json["pages"]),
+              strategyID: newID,
+              isZip: isZip,
+            )
+          : [];
+
+      StrategyData newStrategy = StrategyData(
+        // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+        drawingData: drawingData,
+        // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+        agentData: agentData,
+        // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+        abilityData: abilityData,
+        // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+        textData: textData,
+        // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+        imageData: imageData,
+        // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+        utilityData: utilityData,
+        // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+        isAttack: isAttack,
+        // ignore: deprecated_member_use_from_same_package, deprecated_member_use
+        strategySettings: settingsData,
+
+        pages: pages,
+        id: newID,
+        name: path.basenameWithoutExtension(xFile.name),
+        mapData: mapData,
+        versionNumber: versionNumber,
+        lastEdited: DateTime.now(),
+
+        folderID: null,
+        themeOverridePalette: importedThemeOverridePalette,
+      );
+
+      newStrategy = await migrateLegacyData(newStrategy);
+
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+          .put(newStrategy.id, newStrategy);
+    } finally {
+      if (isZip) {
+        try {
+          await cleanUpTempDirectory(newID);
+        } catch (_) {}
       }
     }
+  }
 
-    final StrategySettings settingsData;
-    final bool isAttack;
-    final List<PlacedUtility> utilityData;
+  static bool isNewerVersionImportError(Object error) {
+    return error is NewerVersionImportException;
+  }
 
-    if (json["settingsData"] != null) {
-      settingsData = ref
-          .read(strategySettingsProvider.notifier)
-          .fromJson(jsonEncode(json["settingsData"]));
-    } else {
-      settingsData = StrategySettings();
+  @visibleForTesting
+  static void throwIfImportedVersionIsTooNewForTest(int importedVersion) {
+    _throwIfImportedVersionIsTooNew(importedVersion);
+  }
+
+  static void _throwIfImportedVersionIsTooNew(int importedVersion) {
+    if (importedVersion <= Settings.versionNumber) {
+      return;
     }
 
-    if (json["isAttack"] != null) {
-      isAttack = json["isAttack"] == "true" ? true : false;
-    } else {
-      isAttack = true;
-    }
-
-    if (json["utilityData"] != null) {
-      utilityData = UtilityProvider.fromJson(jsonEncode(json["utilityData"]));
-    } else {
-      utilityData = [];
-    }
-
-    final versionNumber = int.tryParse(json["versionNumber"].toString()) ??
-        Settings.versionNumber;
-    final MapThemePalette? importedThemeOverridePalette =
-        json["themePalette"] is Map<String, dynamic>
-            ? MapThemePalette.fromJson(json["themePalette"])
-            : (json["themePalette"] is Map
-                ? MapThemePalette.fromJson(
-                    Map<String, dynamic>.from(json["themePalette"]))
-                : null);
-
-    // bool needsMigration = (versionNumber < 15);
-    final List<StrategyPage> pages = json["pages"] != null
-        ? await StrategyPage.listFromJson(
-            json: jsonEncode(json["pages"]),
-            strategyID: newID,
-            isZip: isZip,
-          )
-        : [];
-
-    StrategyData newStrategy = StrategyData(
-      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
-      drawingData: drawingData,
-      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
-      agentData: agentData,
-      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
-      abilityData: abilityData,
-      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
-      textData: textData,
-      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
-      imageData: imageData,
-      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
-      utilityData: utilityData,
-      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
-      isAttack: isAttack,
-      // ignore: deprecated_member_use_from_same_package, deprecated_member_use
-      strategySettings: settingsData,
-
-      pages: pages,
-      id: newID,
-      name: path.basenameWithoutExtension(xFile.name),
-      mapData: mapData,
-      versionNumber: versionNumber,
-      lastEdited: DateTime.now(),
-
-      folderID: null,
-      themeOverridePalette: importedThemeOverridePalette,
+    throw NewerVersionImportException(
+      importedVersion: importedVersion,
+      currentVersion: Settings.versionNumber,
     );
-
-    newStrategy = await migrateLegacyData(newStrategy);
-
-    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .put(newStrategy.id, newStrategy);
-
-    await cleanUpTempDirectory(newStrategy.id);
   }
 
   Future<String> createNewStrategy(String name) async {

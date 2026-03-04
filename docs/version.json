@@ -1,5 +1,10 @@
 {
-    "current_version": "1.7.1",
-    "current_version_number": "10",
-    "release_notes": "1.7.1 Release: Folders: Organize your stuff with folders!"
+    "current_version": "3.2.2",
+    "current_version_number": "41",
+    "update_title": "3.2.2 Release: Icarus Villan Arc",
+    "release_notes": "3.2.2 Release: Text Tools: Add text tools to your strategy!",
+    "list_of_features": [
+        "Text Tools: Add text tools to your strategy!",
+        "Text Tools: Add text tools to your strategy!"
+    ]
 }
