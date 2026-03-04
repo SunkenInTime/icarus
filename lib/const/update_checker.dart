@@ -15,7 +15,9 @@ class UpdateCheckResult {
     required this.isUpdateAvailable,
     required this.source,
     this.remoteVersion,
+    this.updateTitle,
     this.releaseNotes,
+    this.features,
     this.errorCode,
     this.message,
   });
@@ -24,7 +26,9 @@ class UpdateCheckResult {
   final bool isUpdateAvailable;
   final String source;
   final String? remoteVersion;
+  final String? updateTitle;
   final String? releaseNotes;
+  final List<String>? features;
   final int? errorCode;
   final String? message;
 }
@@ -139,8 +143,7 @@ class UpdateChecker {
       );
     }
 
-    final int? remoteVersionNumber =
-        int.tryParse('${versionInfo['current_version_number'] ?? ''}');
+    final int? remoteVersionNumber = _extractVersionNumber(versionInfo);
     if (remoteVersionNumber == null) {
       return const UpdateCheckResult(
         isSupported: false,
@@ -154,8 +157,10 @@ class UpdateChecker {
       isSupported: true,
       isUpdateAvailable: remoteVersionNumber > appVersionNumber,
       source: 'remote_version_file',
-      remoteVersion: versionInfo['current_version']?.toString(),
-      releaseNotes: versionInfo['release_notes']?.toString(),
+      remoteVersion: _extractVersionName(versionInfo),
+      updateTitle: _extractUpdateTitle(versionInfo),
+      releaseNotes: _extractReleaseNotes(versionInfo),
+      features: _extractFeatures(versionInfo),
     );
   }
 
@@ -170,8 +175,10 @@ class UpdateChecker {
       isSupported: baseResult.isSupported,
       isUpdateAvailable: baseResult.isUpdateAvailable,
       source: baseResult.source,
-      remoteVersion: versionInfo['current_version']?.toString(),
-      releaseNotes: versionInfo['release_notes']?.toString(),
+      remoteVersion: _extractVersionName(versionInfo),
+      updateTitle: _extractUpdateTitle(versionInfo),
+      releaseNotes: _extractReleaseNotes(versionInfo),
+      features: _extractFeatures(versionInfo),
       errorCode: baseResult.errorCode,
       message: baseResult.message,
     );
@@ -179,16 +186,32 @@ class UpdateChecker {
 
   static void showUpdateDialog(BuildContext context, UpdateCheckResult result) {
     final String remoteVersion = result.remoteVersion ?? Settings.versionName;
+    final String titleText =
+        (result.updateTitle != null && result.updateTitle!.trim().isNotEmpty)
+            ? result.updateTitle!
+            : 'Version $remoteVersion is available';
     final String releaseNotes =
-        result.releaseNotes ?? 'An update is available in the Microsoft Store.';
+        result.releaseNotes ??
+        'An update is available in the Microsoft Store.';
+    final List<String> features = result.features ?? const <String>[];
 
     showDialog(
       context: context,
       builder: (BuildContext context) => ShadDialog.alert(
         title: const Text('Update Available'),
-        description: Text(
-          'A new version ($remoteVersion) is available.\n\n'
-          'Release Notes: $releaseNotes',
+        description: Text.rich(
+          TextSpan(
+            text: '$titleText\n\n',
+            children: [
+              const TextSpan(text: 'Release Notes:\n'),
+              TextSpan(text: '$releaseNotes\n'),
+              if (features.isNotEmpty) const TextSpan(text: '\nWhat is new:\n'),
+              if (features.isNotEmpty)
+                TextSpan(
+                  text: features.map((feature) => '- $feature').join('\n'),
+                ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -218,5 +241,38 @@ class UpdateChecker {
     if (value is int) return value;
     if (value is String) return int.tryParse(value);
     return null;
+  }
+
+  static int? _extractVersionNumber(Map<String, dynamic> versionInfo) {
+    return _toInt(
+      versionInfo['current_version_number'] ?? versionInfo['version_number'],
+    );
+  }
+
+  static String? _extractVersionName(Map<String, dynamic> versionInfo) {
+    return versionInfo['current_version']?.toString() ??
+        versionInfo['version']?.toString();
+  }
+
+  static String? _extractUpdateTitle(Map<String, dynamic> versionInfo) {
+    return versionInfo['update_title']?.toString() ??
+        versionInfo['release_title']?.toString();
+  }
+
+  static String? _extractReleaseNotes(Map<String, dynamic> versionInfo) {
+    return versionInfo['release_notes']?.toString() ??
+        versionInfo['description']?.toString();
+  }
+
+  static List<String>? _extractFeatures(Map<String, dynamic> versionInfo) {
+    final dynamic rawFeatures =
+        versionInfo['list_of_features'] ?? versionInfo['features'];
+    if (rawFeatures is! List) return null;
+
+    final List<String> features = rawFeatures
+        .map((feature) => feature?.toString().trim() ?? '')
+        .where((feature) => feature.isNotEmpty)
+        .toList();
+    return features.isEmpty ? null : features;
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/services.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -112,5 +113,39 @@ void main() {
     expect(result.source, 'windows_store');
     expect(result.isUpdateAvailable, isTrue);
     expect(result.releaseNotes, 'Provider test release');
+  });
+
+  test('windows native checker exception returns safe non-crashing result',
+      () async {
+    UpdateChecker.windowsStoreCheckOverride = () async {
+      throw Exception('simulated native failure');
+    };
+
+    final result = await UpdateChecker.checkForUpdateSignal(
+      isWebOverride: false,
+      isWindowsOverride: true,
+    );
+
+    expect(result.source, 'windows_store');
+    expect(result.isSupported, isFalse);
+    expect(result.isUpdateAvailable, isFalse);
+    expect(result.message, isNotNull);
+  });
+
+  test('windows native checker platform exception returns safe result',
+      () async {
+    UpdateChecker.windowsStoreCheckOverride = () async {
+      throw MissingPluginException('channel unavailable');
+    };
+
+    final result = await UpdateChecker.checkForUpdateSignal(
+      isWebOverride: false,
+      isWindowsOverride: true,
+    );
+
+    expect(result.source, 'windows_store');
+    expect(result.isSupported, isFalse);
+    expect(result.isUpdateAvailable, isFalse);
+    expect(result.message, contains('not available'));
   });
 }
