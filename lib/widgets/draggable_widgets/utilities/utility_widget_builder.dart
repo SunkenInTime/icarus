@@ -44,7 +44,7 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
         opacity: Settings.feedbackOpacity,
         child: ZoomTransform(
           child: UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
-            id: widget.id,
+            id: null,
             rotation: widget.rotation,
             length: widget.length,
             mapScale: mapScale,
