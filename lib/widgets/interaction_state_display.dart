@@ -29,7 +29,6 @@ class _InteractionStateDisplayState
 
   @override
   void dispose() {
-    _controller.hide();
     super.dispose();
   }
 
