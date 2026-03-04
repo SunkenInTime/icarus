@@ -144,9 +144,25 @@ class PageTransitionEntry {
     return null;
   }
 
+  static double? scaleOf(PlacedWidget w) {
+    if (w is PlacedImage) return w.scale;
+    return null;
+  }
+
+  static double? textSizeOf(PlacedWidget w) {
+    if (w is PlacedText) return w.size;
+    return null;
+  }
+
   double? get startRotation => from != null ? rotationOf(from!) : null;
   double? get endRotation => to != null ? rotationOf(to!) : null;
 
   double? get startLength => from != null ? lengthOf(from!) : null;
   double? get endLength => to != null ? lengthOf(to!) : null;
+
+  double? get startScale => from != null ? scaleOf(from!) : null;
+  double? get endScale => to != null ? scaleOf(to!) : null;
+
+  double? get startTextSize => from != null ? textSizeOf(from!) : null;
+  double? get endTextSize => to != null ? textSizeOf(to!) : null;
 }

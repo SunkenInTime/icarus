@@ -19,6 +19,10 @@ class PageTransitionState {
     required this.direction,
     required this.phase,
     required this.transitionId,
+    required this.startAgentSize,
+    required this.endAgentSize,
+    required this.startAbilitySize,
+    required this.endAbilitySize,
   });
   final bool hideView;
   final bool active;
@@ -29,6 +33,10 @@ class PageTransitionState {
   final PageTransitionDirection direction;
   final PageTransitionPhase phase;
   final int transitionId;
+  final double startAgentSize;
+  final double endAgentSize;
+  final double startAbilitySize;
+  final double endAbilitySize;
 
   PageTransitionState copyWith({
     bool? active,
@@ -40,6 +48,10 @@ class PageTransitionState {
     PageTransitionDirection? direction,
     PageTransitionPhase? phase,
     int? transitionId,
+    double? startAgentSize,
+    double? endAgentSize,
+    double? startAbilitySize,
+    double? endAbilitySize,
   }) =>
       PageTransitionState(
         hideView: hideView ?? this.hideView,
@@ -51,6 +63,10 @@ class PageTransitionState {
         direction: direction ?? this.direction,
         phase: phase ?? this.phase,
         transitionId: transitionId ?? this.transitionId,
+        startAgentSize: startAgentSize ?? this.startAgentSize,
+        endAgentSize: endAgentSize ?? this.endAgentSize,
+        startAbilitySize: startAbilitySize ?? this.startAbilitySize,
+        endAbilitySize: endAbilitySize ?? this.endAbilitySize,
       );
 
   static const idle = PageTransitionState(
@@ -62,7 +78,11 @@ class PageTransitionState {
       allWidgets: [],
       direction: PageTransitionDirection.forward,
       phase: PageTransitionPhase.idle,
-      transitionId: 0);
+      transitionId: 0,
+      startAgentSize: 0,
+      endAgentSize: 0,
+      startAbilitySize: 0,
+      endAbilitySize: 0);
 }
 
 final transitionProvider =
@@ -83,7 +103,9 @@ class TransitionProvider extends Notifier<PageTransitionState> {
   }
 
   void prepare(List<PlacedWidget> widgets,
-      {PageTransitionDirection direction = PageTransitionDirection.forward}) {
+      {PageTransitionDirection direction = PageTransitionDirection.forward,
+      required double startAgentSize,
+      required double startAbilitySize}) {
     state = state.copyWith(
       allWidgets: widgets,
       hideView: true,
@@ -92,12 +114,20 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       progress: 0,
       phase: PageTransitionPhase.preparing,
       direction: direction,
+      startAgentSize: startAgentSize,
+      endAgentSize: startAgentSize,
+      startAbilitySize: startAbilitySize,
+      endAbilitySize: startAbilitySize,
     );
   }
 
   void start(List<PageTransitionEntry> entries,
       {Duration duration = kPageTransitionDuration,
-      PageTransitionDirection direction = PageTransitionDirection.forward}) {
+      PageTransitionDirection direction = PageTransitionDirection.forward,
+      required double startAgentSize,
+      required double endAgentSize,
+      required double startAbilitySize,
+      required double endAbilitySize}) {
     state = state.copyWith(
       hideView: true,
       active: true,
@@ -107,6 +137,10 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       direction: direction,
       phase: PageTransitionPhase.animating,
       transitionId: _nextTransitionId++,
+      startAgentSize: startAgentSize,
+      endAgentSize: endAgentSize,
+      startAbilitySize: startAbilitySize,
+      endAbilitySize: endAbilitySize,
     );
   }
 

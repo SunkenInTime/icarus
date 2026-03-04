@@ -52,6 +52,7 @@ class AgentWidget extends ConsumerWidget {
     required this.isAlly,
     this.lineUpId,
     this.state = AgentState.none,
+    this.forcedAgentSize,
   });
 
   final String? lineUpId;
@@ -59,10 +60,12 @@ class AgentWidget extends ConsumerWidget {
   final bool isAlly;
   final AgentData agent;
   final AgentState state;
+  final double? forcedAgentSize;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final agentSize = ref.watch(strategySettingsProvider).agentSize;
+    final agentSize =
+        forcedAgentSize ?? ref.watch(strategySettingsProvider).agentSize;
     final isScreenshot = ref.watch(screenshotProvider);
     final isDead = state == AgentState.dead;
 

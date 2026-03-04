@@ -11,7 +11,6 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
@@ -111,7 +110,9 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       {required PageTransitionEntry entry,
       required double t,
       required CoordinateSystem coordinateSystem,
-      required PageTransitionDirection direction}) {
+      required PageTransitionDirection direction,
+      required double agentSize,
+      required double abilitySize}) {
     final directionalOffset = coordinateSystem.scale(28);
     final directionSign =
         direction == PageTransitionDirection.forward ? 1.0 : -1.0;
@@ -124,6 +125,10 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           opacity: 1,
           length: entry.endLength,
           rotation: entry.endRotation,
+          scale: entry.endScale,
+          textSize: entry.endTextSize,
+          agentSize: agentSize,
+          abilitySize: abilitySize,
         );
       case TransitionKind.disappear:
         final start = _startScreenPosition(entry, coordinateSystem).translate(
@@ -137,6 +142,10 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           opacity: 1 - t,
           length: entry.startLength,
           rotation: entry.startRotation,
+          scale: entry.startScale,
+          textSize: entry.startTextSize,
+          agentSize: agentSize,
+          abilitySize: abilitySize,
         );
       case TransitionKind.move:
         final start = _startScreenPosition(entry, coordinateSystem);
@@ -148,6 +157,10 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           opacity: 1,
           length: _lerpLength(entry.startLength, entry.endLength, t),
           rotation: _lerpAngle(entry.startRotation, entry.endRotation, t),
+          scale: _lerpDouble(entry.startScale, entry.endScale, t),
+          textSize: _lerpDouble(entry.startTextSize, entry.endTextSize, t),
+          agentSize: agentSize,
+          abilitySize: abilitySize,
         );
       case TransitionKind.appear:
         final end = _endScreenPosition(entry, coordinateSystem).translate(
@@ -161,6 +174,10 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           opacity: t,
           length: entry.endLength,
           rotation: entry.endRotation,
+          scale: entry.endScale,
+          textSize: entry.endTextSize,
+          agentSize: agentSize,
+          abilitySize: abilitySize,
         );
     }
   }
@@ -176,6 +193,10 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     }
 
     final t = Curves.easeInOutCubic.transform(_controller!.value);
+    final agentSize =
+        _lerpRequired(state.startAgentSize, state.endAgentSize, t);
+    final abilitySize =
+        _lerpRequired(state.startAbilitySize, state.endAbilitySize, t);
     final orderedEntries = [...state.entries]
       ..sort(PageLayering.compareEntries);
 
@@ -190,6 +211,8 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
               t: t,
               coordinateSystem: coord,
               direction: state.direction,
+              agentSize: agentSize,
+              abilitySize: abilitySize,
             ),
         ],
       ),
@@ -206,6 +229,13 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     return a + (b - a) * t;
   }
 
+  double? _lerpDouble(double? a, double? b, double t) {
+    if (a == null || b == null) return null;
+    return a + (b - a) * t;
+  }
+
+  double _lerpRequired(double a, double b, double t) => a + (b - a) * t;
+
   Widget _overlayItem({
     required Key key,
     required PlacedWidget widget,
@@ -213,12 +243,22 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     required double opacity,
     double? length,
     double? rotation,
+    double? scale,
+    double? textSize,
+    required double agentSize,
+    required double abilitySize,
   }) {
     //TODO: Set map scale
     final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap]!;
-    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
     Widget child = PlacedWidgetPreview.build(
-        widget, mapScale, length); // central factory (below)
+      widget,
+      mapScale,
+      length: length,
+      scale: scale,
+      textSize: textSize,
+      agentSize: agentSize,
+      abilitySize: abilitySize,
+    ); // central factory (below)
     if (_shouldRotate(widget, rotation)) {
       final angle = rotation ?? 0;
       if (widget is PlacedAbility) {
@@ -269,10 +309,22 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
 }
 
 class PlacedWidgetPreview {
-  static Widget build(PlacedWidget w, double mapScale, double? length) {
+  static Widget build(
+    PlacedWidget w,
+    double mapScale, {
+    double? length,
+    double? scale,
+    double? textSize,
+    required double agentSize,
+    required double abilitySize,
+  }) {
     if (w is PlacedAgent) {
       return AgentWidget(
-          isAlly: w.isAlly, id: w.id, agent: AgentData.agents[w.type]!);
+        isAlly: w.isAlly,
+        id: w.id,
+        agent: AgentData.agents[w.type]!,
+        forcedAgentSize: agentSize,
+      );
     }
     if (w is PlacedAbility) {
       if (w.data.abilityData == null) {
@@ -313,7 +365,12 @@ class PlacedWidgetPreview {
     }
 
     if (w is PlacedText) {
-      return TextWidget(text: w.text, id: w.id, size: w.size);
+      return TextWidget(
+        text: w.text,
+        id: w.id,
+        size: textSize ?? w.size,
+        tagColorValue: w.tagColorValue,
+      );
     }
 
     if (w is PlacedImage) {
@@ -321,8 +378,9 @@ class PlacedWidgetPreview {
         fileExtension: w.fileExtension,
         aspectRatio: w.aspectRatio,
         link: w.link,
-        scale: w.scale,
+        scale: scale ?? w.scale,
         id: w.id,
+        tagColorValue: w.tagColorValue,
       );
     }
     if (w is PlacedUtility) {
@@ -348,7 +406,8 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(transitionProvider);
     final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap]!;
-    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
+    final abilitySize = state.startAbilitySize;
+    final agentSize = state.startAgentSize;
     final orderedWidgets = [...state.allWidgets]
       ..sort(PageLayering.comparePlacedWidgets);
     return IgnorePointer(
@@ -361,6 +420,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
               widget: widget,
               mapScale: mapScale,
               abilitySize: abilitySize,
+              agentSize: agentSize,
             ),
         ],
       ),
@@ -370,7 +430,8 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
   Widget _widgetView(
       {required PlacedWidget widget,
       required double mapScale,
-      required double abilitySize}) {
+      required double abilitySize,
+      required double agentSize}) {
     final coord = CoordinateSystem.instance;
     final scaledPosition = screenPositionForWidget(
       widget: widget,
@@ -388,7 +449,13 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
                 .getAnchorPoint()
                 .scale(CoordinateSystem.instance.scaleFactor,
                     CoordinateSystem.instance.scaleFactor),
-            child: PlacedWidgetPreview.build(widget, mapScale, widget.length),
+            child: PlacedWidgetPreview.build(
+              widget,
+              mapScale,
+              length: widget.length,
+              agentSize: agentSize,
+              abilitySize: abilitySize,
+            ),
           ));
     } else if (widget is PlacedAbility &&
         widget.rotation != 0 &&
@@ -405,14 +472,25 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
               .abilityData!
               .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
               .scale(coord.scaleFactor, coord.scaleFactor),
-          child: PlacedWidgetPreview.build(widget, mapScale, widget.length),
+          child: PlacedWidgetPreview.build(
+            widget,
+            mapScale,
+            length: widget.length,
+            agentSize: agentSize,
+            abilitySize: abilitySize,
+          ),
         ),
       );
     } else {
       return Positioned(
         left: scaledPosition.dx,
         top: scaledPosition.dy,
-        child: PlacedWidgetPreview.build(widget, mapScale, null),
+        child: PlacedWidgetPreview.build(
+          widget,
+          mapScale,
+          agentSize: agentSize,
+          abilitySize: abilitySize,
+        ),
       );
     }
   }

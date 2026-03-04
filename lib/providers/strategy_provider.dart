@@ -749,13 +749,17 @@ class StrategyProvider extends Notifier<StrategyState> {
       ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
     final resolvedDirection =
         direction ?? _resolveDirectionForPage(pageID, orderedPages);
+    final startSettings = ref.read(strategySettingsProvider);
 
     final prev = _snapshotAllPlaced();
     transitionNotifier.prepare(prev.values.toList(),
-        direction: resolvedDirection);
+        direction: resolvedDirection,
+        startAgentSize: startSettings.agentSize,
+        startAbilitySize: startSettings.abilitySize);
 
     // Load target page (hydrates providers)
     await setActivePage(pageID);
+    final endSettings = ref.read(strategySettingsProvider);
 
     // After layout, snapshot next and start transition
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -766,6 +770,10 @@ class StrategyProvider extends Notifier<StrategyState> {
           entries,
           duration: duration,
           direction: resolvedDirection,
+          startAgentSize: startSettings.agentSize,
+          endAgentSize: endSettings.agentSize,
+          startAbilitySize: startSettings.abilitySize,
+          endAbilitySize: endSettings.abilitySize,
         );
       } else {
         transitionNotifier.complete();
@@ -798,7 +806,11 @@ class StrategyProvider extends Notifier<StrategyState> {
             PageTransitionEntry.rotationOf(from) !=
                 PageTransitionEntry.rotationOf(to) ||
             PageTransitionEntry.lengthOf(from) !=
-                PageTransitionEntry.lengthOf(to)) {
+                PageTransitionEntry.lengthOf(to) ||
+            PageTransitionEntry.scaleOf(from) !=
+                PageTransitionEntry.scaleOf(to) ||
+            PageTransitionEntry.textSizeOf(from) !=
+                PageTransitionEntry.textSizeOf(to)) {
           entries
               .add(PageTransitionEntry.move(from: from, to: to, order: order));
         } else {
