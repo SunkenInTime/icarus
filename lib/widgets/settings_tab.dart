@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
@@ -11,6 +12,8 @@ class SettingsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
+
     return ShadSheet(
       title: Text("Settings", style: ShadTheme.of(context).textTheme.h3),
       description: const Text("Adjust your application settings here."),
@@ -21,6 +24,81 @@ class SettingsTab extends ConsumerWidget {
           child: Material(
             child: Column(
               children: [
+                SettingsSection(
+                  title: "Account",
+                  children: [
+                    Row(
+                      children: [
+                        if (authState.avatarUrl != null)
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundImage: NetworkImage(authState.avatarUrl!),
+                          )
+                        else
+                          const CircleAvatar(
+                            radius: 16,
+                            child: Icon(Icons.person, size: 16),
+                          ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            authState.isAuthenticated
+                                ? authState.displayName
+                                : "Not signed in",
+                            style: const TextStyle(fontSize: 15),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: authState.isAuthenticated
+                          ? ShadButton.secondary(
+                              onPressed: authState.isLoading
+                                  ? null
+                                  : () =>
+                                      ref.read(authProvider.notifier).signOut(),
+                              child: authState.isLoading
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text("Sign out"),
+                            )
+                          : ShadButton(
+                              onPressed: authState.isLoading
+                                  ? null
+                                  : () => ref
+                                      .read(authProvider.notifier)
+                                      .signInWithDiscord(),
+                              child: authState.isLoading
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text("Sign in with Discord"),
+                            ),
+                    ),
+                    if (authState.errorMessage != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        authState.errorMessage!,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Settings.tacticalVioletTheme.destructive,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 12),
                 SettingsSection(
                   title: "Agents",
                   children: [

@@ -24,6 +24,7 @@ import 'package:icarus/hive/hive_registrar.g.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
@@ -140,6 +141,7 @@ Future<void> main(List<String> args) async {
   await Supabase.initialize(
     url: 'https://gjdirtrtgnawqoruavqn.supabase.co',
     anonKey: 'sb_publishable_6M0VCSZCvRFrcgNANWPVWw_U06T_rUo',
+    authOptions: const FlutterAuthClientOptions(detectSessionInUri: false),
   );
 
   await _initWebViewEnvironment();
@@ -231,7 +233,8 @@ class _MyAppState extends ConsumerState<MyApp> {
   void _handleIncomingUri(Uri uri, {required String source}) {
     final uriText = uri.toString();
     if (!_processedDeepLinks.add(uriText)) {
-      log('Ignoring duplicate deep link [$source]: $uriText', name: 'deep_link');
+      log('Ignoring duplicate deep link [$source]: $uriText',
+          name: 'deep_link');
       return;
     }
 
@@ -239,11 +242,18 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref
         .read(inAppDebugProvider.notifier)
         .bulkAddLogs(<String>['Deep link [$source]: $uriText']);
+
+    unawaited(
+      ref
+          .read(authProvider.notifier)
+          .handleAuthCallbackUri(uri, source: source),
+    );
   }
 
   @override
   void initState() {
     super.initState();
+    ref.read(authProvider);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.data.isEmpty) return;
