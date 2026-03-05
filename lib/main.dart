@@ -146,9 +146,6 @@ Future<void> main(List<String> args) async {
 
   await _initWebViewEnvironment();
 
-  final result = await ConvexClient.instance.query('health:ping', {});
-  log("Result: $result");
-
   if (!kIsWeb) {
     await windowManager.ensureInitialized();
     WindowOptions windowOptions = const WindowOptions(

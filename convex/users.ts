@@ -1,13 +1,12 @@
-import { mutation } from "./_generated/server";
+import { mutation, query } from "./_generated/server";
+import { unauthenticatedError } from "./lib/errors";
 
 export const ensureCurrentUser = mutation({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (identity === null) {
-      // Convex auth can lag briefly behind Supabase session changes.
-      // Treat unauthenticated calls as a no-op and let the next attempt sync.
-      return null;
+      throw unauthenticatedError();
     }
 
     const externalId = identity.subject ?? identity.tokenIdentifier;
@@ -23,6 +22,7 @@ export const ensureCurrentUser = mutation({
       await ctx.db.patch(existingUser._id, {
         displayName,
         avatarUrl,
+        updatedAt: Date.now(),
       });
       return existingUser._id;
     }
@@ -32,6 +32,36 @@ export const ensureCurrentUser = mutation({
       displayName,
       avatarUrl,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
     });
+  },
+});
+
+export const me = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity === null) {
+      return null;
+    }
+
+    const externalId = identity.subject ?? identity.tokenIdentifier;
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_externalId", (query) => query.eq("externalId", externalId))
+      .first();
+
+    if (user === null) {
+      return null;
+    }
+
+    return {
+      id: user._id,
+      externalId: user.externalId,
+      displayName: user.displayName,
+      avatarUrl: user.avatarUrl ?? null,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
   },
 });

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'package:archive/archive_io.dart';
+import 'package:convex_flutter/convex_flutter.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:icarus/const/line_provider.dart';
@@ -37,6 +38,13 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 
 class StrategyData extends HiveObject {
   final String id;
@@ -219,6 +227,14 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   @override
   StrategyState build() {
+    ref.listen<StrategyOpQueueState>(strategyOpQueueProvider, (previous, next) {
+      final previousAcks = previous?.lastAcks ?? const <OpAck>[];
+      if (next.lastAcks.isEmpty || identical(previousAcks, next.lastAcks)) {
+        return;
+      }
+      unawaited(reconcile(next.lastAcks));
+    });
+
     return StrategyState(
       isSaved: false,
       stratName: null,
@@ -232,28 +248,534 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   bool _saveInProgress = false;
   bool _pendingSave = false;
+  bool _skipQueueingDuringHydration = false;
 
   //Used For Images
   void setFromState(StrategyState newState) {
     state = newState;
   }
 
+  bool _isCloudMode() {
+    return ref.read(isCloudCollabEnabledProvider);
+  }
+
+  Future<bool> _reportCloudUnauthenticated({
+    required String source,
+    required Object error,
+    required StackTrace stackTrace,
+  }) async {
+    if (!isConvexUnauthenticatedError(error)) {
+      return false;
+    }
+
+    await ref.read(authProvider.notifier).reportConvexUnauthenticated(
+          source: source,
+          error: error,
+          stackTrace: stackTrace,
+        );
+    return true;
+  }
+
+  Future<void> openStrategy(String strategyID) async {
+    if (!_isCloudMode()) {
+      await loadFromHive(strategyID);
+      return;
+    }
+
+    await ref
+        .read(remoteStrategySnapshotProvider.notifier)
+        .openStrategy(strategyID);
+    final snapshotAsync = ref.read(remoteStrategySnapshotProvider);
+    final snapshot = snapshotAsync.valueOrNull;
+    if (snapshot == null || snapshot.pages.isEmpty) {
+      return;
+    }
+
+    final firstPage = [...snapshot.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    final page = firstPage.first;
+
+    await _hydrateFromRemotePage(snapshot, page.publicId);
+  }
+
+  Future<void> switchPage(String pageID) async {
+    if (_isCloudMode()) {
+      await setActivePage(pageID);
+      return;
+    }
+
+    await setActivePageAnimated(pageID);
+  }
+
+  Future<void> enqueueOps(
+    List<StrategyOp> ops, {
+    bool flushImmediately = false,
+  }) async {
+    if (!_isCloudMode() || ops.isEmpty) {
+      return;
+    }
+
+    ref
+        .read(strategyOpQueueProvider.notifier)
+        .enqueueAll(ops, flushImmediately: flushImmediately);
+    if (_skipQueueingDuringHydration) {
+      return;
+    }
+
+    state = state.copyWith(isSaved: false);
+  }
+
+  Future<void> reconcile(List<OpAck> acks) async {
+    if (!_isCloudMode() || acks.isEmpty) {
+      return;
+    }
+
+    bool hasReject = false;
+    for (final ack in acks) {
+      if (ack.isAck) {
+        continue;
+      }
+
+      hasReject = true;
+      Map<String, dynamic>? serverPayload;
+      if (ack.latestPayload != null && ack.latestPayload!.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(ack.latestPayload!);
+          if (decoded is Map<String, dynamic>) {
+            serverPayload = decoded;
+          }
+        } catch (_) {}
+      }
+
+      ref.read(strategyConflictProvider.notifier).push(
+            ConflictResolution(
+              type: ConflictResolutionType.rebase,
+              opId: ack.opId,
+              message: ack.reason,
+              serverPayload: serverPayload,
+              serverRevision: ack.latestRevision,
+              serverSequence: ack.latestSequence,
+            ),
+          );
+    }
+
+    if (hasReject) {
+      await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      if (snapshot != null && state.activePageId != null) {
+        await _hydrateFromRemotePage(snapshot, state.activePageId!);
+      }
+      return;
+    }
+
+    state = state.copyWith(isSaved: true);
+  }
+
+  Future<void> _hydrateFromRemotePage(
+    RemoteStrategySnapshot snapshot,
+    String pagePublicId,
+  ) async {
+    final page = snapshot.pages.firstWhere(
+      (p) => p.publicId == pagePublicId,
+      orElse: () => snapshot.pages.first,
+    );
+
+    final pageElements = snapshot.elementsByPage[page.publicId] ?? const [];
+    final pageLineups = snapshot.lineupsByPage[page.publicId] ?? const [];
+
+    final agents = <PlacedAgent>[];
+    final abilities = <PlacedAbility>[];
+    final drawings = <DrawingElement>[];
+    final texts = <PlacedText>[];
+    final images = <PlacedImage>[];
+    final utilities = <PlacedUtility>[];
+
+    for (final element in pageElements) {
+      if (element.deleted) continue;
+      final payload = element.decodedPayload();
+
+      try {
+        switch (element.elementType) {
+          case 'agent':
+            agents.add(PlacedAgent.fromJson(payload));
+            break;
+          case 'ability':
+            abilities.add(PlacedAbility.fromJson(payload));
+            break;
+          case 'drawing':
+            final asList = DrawingProvider.fromJson(jsonEncode([payload]));
+            if (asList.isNotEmpty) {
+              drawings.add(asList.first);
+            }
+            break;
+          case 'text':
+            texts.add(PlacedText.fromJson(payload));
+            break;
+          case 'image':
+            images.add(PlacedImage.fromJson(payload));
+            break;
+          case 'utility':
+            utilities.add(PlacedUtility.fromJson(payload));
+            break;
+          default:
+            break;
+        }
+      } catch (_) {
+        // Ignore malformed remote element payloads.
+      }
+    }
+
+    final lineUps = <LineUp>[];
+    for (final remoteLineup in pageLineups) {
+      if (remoteLineup.deleted) continue;
+      try {
+        final decoded = jsonDecode(remoteLineup.payload);
+        if (decoded is Map<String, dynamic>) {
+          lineUps.add(LineUp.fromJson(decoded));
+        }
+      } catch (_) {}
+    }
+
+    final mapEntry = Maps.mapNames.entries.firstWhere(
+      (entry) => entry.value == snapshot.header.mapData,
+      orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
+    );
+
+    StrategySettings pageSettings = StrategySettings();
+    if (page.settings != null && page.settings!.isNotEmpty) {
+      try {
+        pageSettings = ref
+            .read(strategySettingsProvider.notifier)
+            .fromJson(page.settings!);
+      } catch (_) {}
+    }
+
+    MapThemePalette? overridePalette;
+    if (snapshot.header.themeOverridePalette != null &&
+        snapshot.header.themeOverridePalette!.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(snapshot.header.themeOverridePalette!);
+        if (decoded is Map<String, dynamic>) {
+          overridePalette = MapThemePalette.fromJson(decoded);
+        } else if (decoded is Map) {
+          overridePalette =
+              MapThemePalette.fromJson(Map<String, dynamic>.from(decoded));
+        }
+      } catch (_) {}
+    }
+
+    activePageID = page.publicId;
+
+    _skipQueueingDuringHydration = true;
+    try {
+      ref.read(actionProvider.notifier).clearAllActions();
+      ref.read(agentProvider.notifier).fromHive(agents);
+      ref.read(abilityProvider.notifier).fromHive(abilities);
+      ref.read(drawingProvider.notifier).fromHive(drawings);
+      ref.read(textProvider.notifier).fromHive(texts);
+      ref.read(placedImageProvider.notifier).fromHive(images);
+      ref.read(utilityProvider.notifier).fromHive(utilities);
+      ref.read(lineUpProvider.notifier).fromHive(lineUps);
+
+      ref.read(mapProvider.notifier).fromHive(mapEntry.key, page.isAttack);
+      ref.read(strategySettingsProvider.notifier).fromHive(pageSettings);
+      ref.read(strategyThemeProvider.notifier).fromStrategy(
+            profileId: snapshot.header.themeProfileId ??
+                MapThemeProfilesProvider.immutableDefaultProfileId,
+            overridePalette: overridePalette,
+          );
+
+      state = state.copyWith(
+        id: snapshot.header.publicId,
+        stratName: snapshot.header.name,
+        activePageId: page.publicId,
+        isSaved: true,
+        storageDirectory: null,
+      );
+    } finally {
+      _skipQueueingDuringHydration = false;
+    }
+  }
+
+  List<_CollabElementEnvelope> _collectLocalElementEnvelopes() {
+    final envelopes = <_CollabElementEnvelope>[];
+
+    for (final agent in ref.read(agentProvider)) {
+      final payload = Map<String, dynamic>.from(agent.toJson())
+        ..putIfAbsent('elementType', () => 'agent');
+      envelopes.add(_CollabElementEnvelope(
+        publicId: agent.id,
+        elementType: 'agent',
+        payload: payload,
+      ));
+    }
+
+    for (final ability in ref.read(abilityProvider)) {
+      final payload = Map<String, dynamic>.from(ability.toJson())
+        ..putIfAbsent('elementType', () => 'ability');
+      envelopes.add(_CollabElementEnvelope(
+        publicId: ability.id,
+        elementType: 'ability',
+        payload: payload,
+      ));
+    }
+
+    for (final drawing in ref.read(drawingProvider).elements) {
+      final encodedList = jsonDecode(
+        DrawingProvider.objectToJson([drawing]),
+      ) as List<dynamic>;
+      final payload = Map<String, dynamic>.from(
+        (encodedList.isNotEmpty ? encodedList.first : <String, dynamic>{})
+            as Map,
+      )..putIfAbsent('elementType', () => 'drawing');
+      envelopes.add(_CollabElementEnvelope(
+        publicId: drawing.id,
+        elementType: 'drawing',
+        payload: payload,
+      ));
+    }
+
+    for (final text in ref.read(textProvider)) {
+      final payload = Map<String, dynamic>.from(text.toJson())
+        ..putIfAbsent('elementType', () => 'text');
+      envelopes.add(_CollabElementEnvelope(
+        publicId: text.id,
+        elementType: 'text',
+        payload: payload,
+      ));
+    }
+
+    for (final image in ref.read(placedImageProvider).images) {
+      final payload = Map<String, dynamic>.from(image.toJson())
+        ..putIfAbsent('elementType', () => 'image');
+      envelopes.add(_CollabElementEnvelope(
+        publicId: image.id,
+        elementType: 'image',
+        payload: payload,
+      ));
+    }
+
+    for (final utility in ref.read(utilityProvider)) {
+      final payload = Map<String, dynamic>.from(utility.toJson())
+        ..putIfAbsent('elementType', () => 'utility');
+      envelopes.add(_CollabElementEnvelope(
+        publicId: utility.id,
+        elementType: 'utility',
+        payload: payload,
+      ));
+    }
+
+    return envelopes;
+  }
+
+  List<StrategyOp> _buildOpsFromCurrentPageSnapshot() {
+    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+    final activePageId = state.activePageId;
+    if (snapshot == null || activePageId == null) {
+      return const <StrategyOp>[];
+    }
+
+    final remoteElements =
+        snapshot.elementsByPage[activePageId] ?? const <RemoteElement>[];
+    final remoteById = {
+      for (final element in remoteElements) element.publicId: element,
+    };
+
+    final local = _collectLocalElementEnvelopes();
+    final localById = {
+      for (var i = 0; i < local.length; i++) local[i].publicId: (local[i], i),
+    };
+
+    final ops = <StrategyOp>[];
+
+    for (final entry in localById.entries) {
+      final localEnvelope = entry.value.$1;
+      final localIndex = entry.value.$2;
+      final remote = remoteById[entry.key];
+      final payloadString = jsonEncode(localEnvelope.payload);
+
+      if (remote == null || remote.deleted) {
+        ops.add(StrategyOp(
+          opId: const Uuid().v4(),
+          kind: StrategyOpKind.add,
+          entityType: StrategyOpEntityType.element,
+          entityPublicId: localEnvelope.publicId,
+          pagePublicId: activePageId,
+          payload: payloadString,
+          sortIndex: localIndex,
+        ));
+        continue;
+      }
+
+      final sortChanged = remote.sortIndex != localIndex;
+      final payloadChanged = remote.payload != payloadString;
+      final typeChanged = remote.elementType != localEnvelope.elementType;
+
+      if (sortChanged || payloadChanged || typeChanged || remote.deleted) {
+        ops.add(StrategyOp(
+          opId: const Uuid().v4(),
+          kind: StrategyOpKind.patch,
+          entityType: StrategyOpEntityType.element,
+          entityPublicId: localEnvelope.publicId,
+          pagePublicId: activePageId,
+          payload: payloadString,
+          sortIndex: localIndex,
+        ));
+      }
+    }
+
+    for (final remote in remoteElements) {
+      if (remote.deleted) continue;
+      if (localById.containsKey(remote.publicId)) continue;
+      ops.add(StrategyOp(
+        opId: const Uuid().v4(),
+        kind: StrategyOpKind.delete,
+        entityType: StrategyOpEntityType.element,
+        entityPublicId: remote.publicId,
+      ));
+    }
+
+    final remoteLineups =
+        snapshot.lineupsByPage[activePageId] ?? const <RemoteLineup>[];
+    final remoteLineupById = {
+      for (final lineup in remoteLineups) lineup.publicId: lineup,
+    };
+    final localLineups = ref.read(lineUpProvider).lineUps;
+
+    for (var i = 0; i < localLineups.length; i++) {
+      final lineup = localLineups[i];
+      final payload = jsonEncode(lineup.toJson());
+      final remote = remoteLineupById[lineup.id];
+      if (remote == null || remote.deleted) {
+        ops.add(StrategyOp(
+          opId: const Uuid().v4(),
+          kind: StrategyOpKind.add,
+          entityType: StrategyOpEntityType.lineup,
+          entityPublicId: lineup.id,
+          pagePublicId: activePageId,
+          payload: payload,
+          sortIndex: i,
+        ));
+        continue;
+      }
+
+      if (remote.payload != payload || remote.sortIndex != i) {
+        ops.add(StrategyOp(
+          opId: const Uuid().v4(),
+          kind: StrategyOpKind.patch,
+          entityType: StrategyOpEntityType.lineup,
+          entityPublicId: lineup.id,
+          pagePublicId: activePageId,
+          payload: payload,
+          sortIndex: i,
+        ));
+      }
+    }
+
+    for (final remote in remoteLineups) {
+      if (remote.deleted) continue;
+      if (localLineups.any((lineup) => lineup.id == remote.publicId)) continue;
+      ops.add(StrategyOp(
+        opId: const Uuid().v4(),
+        kind: StrategyOpKind.delete,
+        entityType: StrategyOpEntityType.lineup,
+        entityPublicId: remote.publicId,
+      ));
+    }
+
+    final activePage = snapshot.pages.firstWhere(
+      (page) => page.publicId == activePageId,
+      orElse: () => snapshot.pages.first,
+    );
+
+    final localSettingsJson =
+        ref.read(strategySettingsProvider.notifier).toJson();
+    final localIsAttack = ref.read(mapProvider).isAttack;
+    if (activePage.settings != localSettingsJson ||
+        activePage.isAttack != localIsAttack) {
+      ops.add(StrategyOp(
+        opId: const Uuid().v4(),
+        kind: StrategyOpKind.patch,
+        entityType: StrategyOpEntityType.page,
+        entityPublicId: activePage.publicId,
+        payload: jsonEncode({
+          'isAttack': localIsAttack,
+          'settings': localSettingsJson,
+        }),
+      ));
+    }
+
+    final localMapName = Maps.mapNames[ref.read(mapProvider).currentMap] ??
+        snapshot.header.mapData;
+    final localTheme = ref.read(strategyThemeProvider);
+    final localThemeOverride = localTheme.overridePalette == null
+        ? null
+        : jsonEncode(localTheme.overridePalette!.toJson());
+    final themeChanged =
+        snapshot.header.themeProfileId != localTheme.profileId ||
+            snapshot.header.themeOverridePalette != localThemeOverride;
+    if (snapshot.header.mapData != localMapName || themeChanged) {
+      ops.add(StrategyOp(
+        opId: const Uuid().v4(),
+        kind: StrategyOpKind.patch,
+        entityType: StrategyOpEntityType.strategy,
+        payload: jsonEncode({
+          'mapData': localMapName,
+          'themeProfileId': localTheme.profileId,
+          'clearThemeProfileId': localTheme.profileId == null,
+          'themeOverridePalette': localThemeOverride,
+          'clearThemeOverridePalette': localTheme.overridePalette == null,
+        }),
+      ));
+    }
+    return ops;
+  }
+
+  Future<void> _queueCurrentPageOps({bool flushImmediately = false}) async {
+    if (!_isCloudMode()) {
+      return;
+    }
+
+    final ops = _buildOpsFromCurrentPageSnapshot();
+    if (ops.isEmpty) {
+      return;
+    }
+
+    await enqueueOps(ops, flushImmediately: flushImmediately);
+  }
+
   void setUnsaved() async {
     log("Setting unsaved is being called");
 
+    if (_skipQueueingDuringHydration) {
+      return;
+    }
+
     state = state.copyWith(isSaved: false);
     _saveTimer?.cancel();
+
+    if (_isCloudMode()) {
+      _saveTimer = Timer(Settings.autoSaveOffset, () async {
+        await _queueCurrentPageOps(flushImmediately: false);
+        await ref.read(strategyOpQueueProvider.notifier).flushNow();
+      });
+      return;
+    }
+
     _saveTimer = Timer(Settings.autoSaveOffset, () async {
-      //Find some way to tell the user that it is saving now()
       if (state.stratName == null) return;
-      // ref.read(autoSaveProvider.notifier).ping();
       await _performSave(state.id);
     });
   }
 
-  // For manual “Save now” actions
+  // For manual save-now actions
   Future<void> forceSaveNow(String id) async {
     _saveTimer?.cancel();
+    if (_isCloudMode()) {
+      await _queueCurrentPageOps(flushImmediately: false);
+      await ref.read(strategyOpQueueProvider.notifier).flushNow();
+      return;
+    }
     await _performSave(id);
   }
 
@@ -266,8 +788,13 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     _saveInProgress = true;
     try {
-      ref.read(autoSaveProvider.notifier).ping(); // UI: “Saving…”
-      await saveToHive(id);
+      ref.read(autoSaveProvider.notifier).ping(); // UI: Saving...
+      if (_isCloudMode()) {
+        await _queueCurrentPageOps(flushImmediately: false);
+        await ref.read(strategyOpQueueProvider.notifier).flushNow();
+      } else {
+        await saveToHive(id);
+      }
     } finally {
       _saveInProgress = false;
       if (_pendingSave) {
@@ -612,6 +1139,11 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> setActivePage(String pageID) async {
     if (pageID == activePageID) return;
 
+    if (_isCloudMode()) {
+      await _setActivePageCloud(pageID);
+      return;
+    }
+
     // Flush current before switching
     await _syncCurrentPageToHive();
 
@@ -660,22 +1192,46 @@ class StrategyProvider extends Notifier<StrategyState> {
     });
   }
 
+  Future<void> _setActivePageCloud(String pageID) async {
+    await _queueCurrentPageOps(flushImmediately: false);
+    await ref.read(strategyOpQueueProvider.notifier).flushNow();
+
+    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+    if (snapshot == null) {
+      return;
+    }
+
+    await _hydrateFromRemotePage(snapshot, pageID);
+  }
+
   Future<void> backwardPage() async {
+    if (_isCloudMode()) {
+      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      if (snapshot == null || snapshot.pages.isEmpty) return;
+      final pages = [...snapshot.pages]
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      final activeId = activePageID ?? pages.first.publicId;
+      final currentIndex = pages.indexWhere((p) => p.publicId == activeId);
+      if (currentIndex < 0) return;
+      var nextIndex = currentIndex - 1;
+      if (nextIndex < 0) nextIndex = pages.length - 1;
+      await setActivePage(pages[nextIndex].publicId);
+      return;
+    }
+
     if (activePageID == null) return;
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final doc = box.get(state.id);
     if (doc == null || doc.pages.isEmpty) return;
 
-    // Order pages by their sortIndex to find the "leading" (next) page.
     final pages = [...doc.pages]
       ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
 
     final currentIndex = pages.indexWhere((p) => p.id == activePageID);
     if (currentIndex == -1) return;
     int nextIndex = currentIndex - 1;
-    if (nextIndex < 0)
-      nextIndex = pages.length - 1; // No forward page available.
+    if (nextIndex < 0) nextIndex = pages.length - 1;
 
     final nextPage = pages[nextIndex];
     await setActivePageAnimated(
@@ -685,13 +1241,26 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> forwardPage() async {
+    if (_isCloudMode()) {
+      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      if (snapshot == null || snapshot.pages.isEmpty) return;
+      final pages = [...snapshot.pages]
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      final activeId = activePageID ?? pages.first.publicId;
+      final currentIndex = pages.indexWhere((p) => p.publicId == activeId);
+      if (currentIndex < 0) return;
+      var nextIndex = currentIndex + 1;
+      if (nextIndex >= pages.length) nextIndex = 0;
+      await setActivePage(pages[nextIndex].publicId);
+      return;
+    }
+
     if (activePageID == null) return;
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final doc = box.get(state.id);
     if (doc == null || doc.pages.isEmpty) return;
 
-    // Order pages by their sortIndex to find the "leading" (next) page.
     final pages = [...doc.pages]
       ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
 
@@ -699,7 +1268,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (currentIndex == -1) return;
 
     int nextIndex = currentIndex + 1;
-    if (nextIndex >= pages.length) nextIndex = 0; // No forward page available.
+    if (nextIndex >= pages.length) nextIndex = 0;
 
     final nextPage = pages[nextIndex];
     await setActivePageAnimated(
@@ -711,13 +1280,46 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> reorderPage(int oldIndex, int newIndex) async {
     if (oldIndex == newIndex) return;
 
+    if (_isCloudMode()) {
+      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      if (snapshot == null || snapshot.pages.isEmpty) return;
+      final ordered = [...snapshot.pages]
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      if (oldIndex < 0 ||
+          oldIndex >= ordered.length ||
+          newIndex < 0 ||
+          newIndex > ordered.length) {
+        return;
+      }
+
+      var targetIndex = newIndex;
+      if (targetIndex > oldIndex) targetIndex -= 1;
+
+      final moved = ordered.removeAt(oldIndex);
+      ordered.insert(targetIndex, moved);
+
+      try {
+      await ConvexClient.instance.mutation(name: "pages:reorder", args: {
+        "strategyPublicId": state.id,
+        "orderedPagePublicIds": ordered.map((p) => p.publicId).toList(),
+      });
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:pages_reorder',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!handled) rethrow;
+        return;
+      }
+      await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+      return;
+    }
+
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strat = box.get(state.id);
     if (strat == null || strat.pages.isEmpty) return;
 
-    // `oldIndex`/`newIndex` are list positions from the UI (ReorderableListView),
-    // not sortIndex values. We move the page and then reindex to keep a dense
-    // 0..N-1 ordering.
     final ordered = [...strat.pages]
       ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
 
@@ -728,8 +1330,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    // Flutter ReorderableListView reports `newIndex` as the target index in the
-    // list *after* the removal. When dragging down, we need to decrement.
     var targetIndex = newIndex;
     if (targetIndex > oldIndex) targetIndex -= 1;
 
@@ -769,6 +1369,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       {PageTransitionDirection? direction,
       Duration duration = kPageTransitionDuration}) async {
     if (pageID == activePageID) return;
+    if (_isCloudMode()) {
+      await setActivePage(pageID);
+      return;
+    }
 
     final transitionState = ref.read(transitionProvider);
     final transitionNotifier = ref.read(transitionProvider.notifier);
@@ -871,6 +1475,39 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> addPage([String? name]) async {
+    if (_isCloudMode()) {
+      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      if (snapshot == null) return;
+      final pages = [...snapshot.pages]
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      final pageID = const Uuid().v4();
+      final nextIndex = pages.length;
+      try {
+      await ConvexClient.instance.mutation(name: "pages:add", args: {
+        "strategyPublicId": state.id,
+        "pagePublicId": pageID,
+        "name": name ?? "Page ${pages.length + 1}",
+        "sortIndex": nextIndex,
+        "isAttack": pages.isNotEmpty ? pages.last.isAttack : true,
+        "settings": ref.read(strategySettingsProvider.notifier).toJson(),
+      });
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:pages_add',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!handled) rethrow;
+        return;
+      }
+      await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+      final refreshed = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      if (refreshed != null) {
+        await _hydrateFromRemotePage(refreshed, pageID);
+      }
+      return;
+    }
+
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
     // Flush current page so its edits are not lost
@@ -909,6 +1546,10 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> loadFromHive(String id) async {
+    if (_isCloudMode()) {
+      await openStrategy(id);
+      return;
+    }
     final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .values
         .where((StrategyData strategy) {
@@ -1217,6 +1858,39 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<String> createNewStrategy(String name) async {
+    if (_isCloudMode()) {
+      final newID = const Uuid().v4();
+      final pageID = const Uuid().v4();
+      final defaultThemeProfileId =
+          ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies;
+      try {
+      await ref.read(convexStrategyRepositoryProvider).createStrategy(
+            publicId: newID,
+            name: name,
+            mapData: Maps.mapNames[MapValue.ascent] ?? "ascent",
+            folderPublicId: ref.read(folderProvider),
+            themeProfileId: defaultThemeProfileId,
+          );
+      await ConvexClient.instance.mutation(name: "pages:add", args: {
+        "strategyPublicId": newID,
+        "pagePublicId": pageID,
+        "name": "Page 1",
+        "sortIndex": 0,
+        "isAttack": true,
+        "settings": ref.read(strategySettingsProvider.notifier).toJson(),
+      });
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:create_new',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!handled) rethrow;
+        return newID;
+      }
+      await openStrategy(newID);
+      return newID;
+    }
     final newID = const Uuid().v4();
     final pageID = const Uuid().v4();
     final defaultThemeProfileId =
@@ -1448,6 +2122,25 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> renameStrategy(String strategyID, String newName) async {
+    if (_isCloudMode()) {
+      try {
+      await ConvexClient.instance.mutation(name: "strategies:update", args: {
+        "strategyPublicId": strategyID,
+        "name": newName,
+      });
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:rename',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!handled) rethrow;
+        return;
+      }
+      await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+      return;
+    }
+
     final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strategy = strategyBox.get(strategyID);
 
@@ -1460,6 +2153,93 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> duplicateStrategy(String strategyID) async {
+    if (_isCloudMode()) {
+      try {
+      final snapshot = await ref
+          .read(convexStrategyRepositoryProvider)
+          .fetchSnapshot(strategyID);
+      final newStrategyID = const Uuid().v4();
+      await ref.read(convexStrategyRepositoryProvider).createStrategy(
+            publicId: newStrategyID,
+            name: "${snapshot.header.name} (Copy)",
+            mapData: snapshot.header.mapData,
+            folderPublicId: ref.read(folderProvider),
+            themeProfileId: snapshot.header.themeProfileId,
+            themeOverridePalette: snapshot.header.themeOverridePalette,
+          );
+
+      final pages = [...snapshot.pages]
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+
+      final pageIdMap = <String, String>{};
+      for (final page in pages) {
+        final newPageId = const Uuid().v4();
+        pageIdMap[page.publicId] = newPageId;
+        await ConvexClient.instance.mutation(name: "pages:add", args: {
+          "strategyPublicId": newStrategyID,
+          "pagePublicId": newPageId,
+          "name": page.name,
+          "sortIndex": page.sortIndex,
+          "isAttack": page.isAttack,
+          if (page.settings != null) "settings": page.settings,
+        });
+      }
+
+      final ops = <StrategyOp>[];
+      for (final page in pages) {
+        final newPageId = pageIdMap[page.publicId];
+        if (newPageId == null) continue;
+
+        final elements = snapshot.elementsByPage[page.publicId] ?? const [];
+        for (final element in elements) {
+          if (element.deleted) continue;
+          final payloadMap = element.decodedPayload();
+          payloadMap.putIfAbsent("elementType", () => element.elementType);
+          ops.add(StrategyOp(
+            opId: const Uuid().v4(),
+            kind: StrategyOpKind.add,
+            entityType: StrategyOpEntityType.element,
+            entityPublicId: const Uuid().v4(),
+            pagePublicId: newPageId,
+            payload: jsonEncode(payloadMap),
+            sortIndex: element.sortIndex,
+          ));
+        }
+
+        final lineups = snapshot.lineupsByPage[page.publicId] ?? const [];
+        for (final lineup in lineups) {
+          if (lineup.deleted) continue;
+          ops.add(StrategyOp(
+            opId: const Uuid().v4(),
+            kind: StrategyOpKind.add,
+            entityType: StrategyOpEntityType.lineup,
+            entityPublicId: const Uuid().v4(),
+            pagePublicId: newPageId,
+            payload: lineup.payload,
+            sortIndex: lineup.sortIndex,
+          ));
+        }
+      }
+
+      if (ops.isNotEmpty) {
+        await ref.read(convexStrategyRepositoryProvider).applyBatch(
+              strategyPublicId: newStrategyID,
+              clientId: const Uuid().v4(),
+              ops: ops,
+            );
+      }
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:duplicate',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!handled) rethrow;
+        return;
+      }
+      return;
+    }
+
     final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final originalStrategy = strategyBox.get(strategyID);
     if (originalStrategy == null) {
@@ -1475,8 +2255,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final duplicatedStrategy = StrategyData(
       id: newID,
       name: "${originalStrategy.name} (Copy)",
-      mapData: originalStrategy
-          .mapData, // MapValue is likely an enum, so this should be safe
+      mapData: originalStrategy.mapData,
       versionNumber: originalStrategy.versionNumber,
       lastEdited: DateTime.now(),
       folderID: originalStrategy.folderID,
@@ -1489,6 +2268,22 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> deleteStrategy(String strategyID) async {
+    if (_isCloudMode()) {
+      try {
+      await ConvexClient.instance.mutation(name: "strategies:delete", args: {
+        "strategyPublicId": strategyID,
+      });
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:delete',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!handled) rethrow;
+      }
+      return;
+    }
+
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(strategyID);
 
     final directory = await getApplicationSupportDirectory();
@@ -1501,6 +2296,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> saveToHive(String id) async {
+    if (_isCloudMode()) {
+      return;
+    }
     // final drawingData = ref.read(drawingProvider).elements;
     // final agentData = ref.read(agentProvider);
     // final abilityData = ref.read(abilityProvider);
@@ -1536,6 +2334,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   // Flush currently active page (uses activePageID). Safe if null/missing.
   Future<void> _syncCurrentPageToHive() async {
+    if (_isCloudMode()) {
+      return;
+    }
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     log("Syncing current page to hive for strategy ${state.id}");
     final strat = box.get(state.id);
@@ -1569,6 +2370,23 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   void moveToFolder({required String strategyID, required String? parentID}) {
+    if (_isCloudMode()) {
+      unawaited(() async {
+        try {
+          await ConvexClient.instance.mutation(name: "strategies:move", args: {
+            "strategyPublicId": strategyID,
+            if (parentID != null) "folderPublicId": parentID,
+          });
+        } catch (error, stackTrace) {
+          await _reportCloudUnauthenticated(
+            source: 'strategy:move',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }());
+      return;
+    }
     final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strategy = strategyBox.get(strategyID);
 
@@ -1579,4 +2397,16 @@ class StrategyProvider extends Notifier<StrategyState> {
       log("Strategy with ID $strategyID not found.");
     }
   }
+}
+
+class _CollabElementEnvelope {
+  const _CollabElementEnvelope({
+    required this.publicId,
+    required this.elementType,
+    required this.payload,
+  });
+
+  final String publicId;
+  final String elementType;
+  final Map<String, dynamic> payload;
 }

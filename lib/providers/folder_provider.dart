@@ -1,11 +1,15 @@
 import 'dart:math';
 
+import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -57,8 +61,6 @@ class Folder extends HiveObject {
   ];
 
   static List<IconData> folderIcons = [
-    // 📂 Folder & File Related
-
     Icons.star_rate_rounded,
     Icons.ac_unit_sharp,
     Icons.bug_report,
@@ -68,13 +70,10 @@ class Folder extends HiveObject {
     Icons.airline_stops_sharp,
     Icons.all_inclusive,
     Icons.api_rounded,
-
     Icons.drive_folder_upload,
     Icons.folder_shared,
     Icons.folder_special,
     Icons.workspaces,
-
-    // 🗂️ Organization & Structure
     Icons.category,
     Icons.collections_bookmark,
     Icons.library_books,
@@ -86,8 +85,6 @@ class Folder extends HiveObject {
     Icons.hourglass_bottom_outlined,
     Icons.image_search,
     Icons.view_quilt,
-
-    // 🎯 Strategy & Planning
     Icons.map,
     Icons.place,
     Icons.explore,
@@ -98,8 +95,6 @@ class Folder extends HiveObject {
     Icons.lightbulb,
     Icons.track_changes,
     Icons.timeline,
-
-    // ⚔️ Valorant / Tactical Feel
     Icons.sports_esports,
     CustomIcons.sword,
     Icons.military_tech,
@@ -132,8 +127,24 @@ class FolderProvider extends Notifier<String?> {
       color: color,
     );
 
-    await Hive.box<Folder>(HiveBoxNames.foldersBox)
-        .put(newFolder.id, newFolder);
+    if (ref.read(isCloudCollabEnabledProvider)) {
+      try {
+        await ref.read(convexStrategyRepositoryProvider).createFolder(
+              publicId: newFolder.id,
+              name: name,
+              parentFolderPublicId: state,
+            );
+      } catch (error, stackTrace) {
+        await _maybeReportCloudUnauthenticated(
+          source: 'folder:create',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      return;
+    }
+
+    await Hive.box<Folder>(HiveBoxNames.foldersBox).put(newFolder.id, newFolder);
   }
 
   void updateID(String? id) {
@@ -160,9 +171,10 @@ class FolderProvider extends Notifier<String?> {
     return pathIDs;
   }
 
-  // I want to be able
-
   List<Folder> findFolderChildren(String id) {
+    if (ref.read(isCloudCollabEnabledProvider)) {
+      return [];
+    }
     return Hive.box<Folder>(HiveBoxNames.foldersBox)
         .values
         .where((f) => f.parentID == id)
@@ -170,11 +182,30 @@ class FolderProvider extends Notifier<String?> {
   }
 
   Folder? findFolderByID(String id) {
+    if (ref.read(isCloudCollabEnabledProvider)) {
+      return null;
+    }
     return Hive.box<Folder>(HiveBoxNames.foldersBox).get(id);
   }
 
   void deleteFolder(String folderID) async {
-    // state = state.where((folder) => folder.id != folderID).toList();
+    if (ref.read(isCloudCollabEnabledProvider)) {
+      try {
+        await ConvexClient.instance.mutation(name: 'folders:delete', args: {
+          'folderPublicId': folderID,
+        });
+      } catch (error, stackTrace) {
+        await _maybeReportCloudUnauthenticated(
+          source: 'folder:delete',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      if (state == folderID) {
+        state = null;
+      }
+      return;
+    }
 
     final strategyList =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values.toList();
@@ -205,6 +236,22 @@ class FolderProvider extends Notifier<String?> {
     required FolderColor newColor,
     required Color? newCustomColor,
   }) async {
+    if (ref.read(isCloudCollabEnabledProvider)) {
+      try {
+        await ConvexClient.instance.mutation(name: 'folders:update', args: {
+          'folderPublicId': folder.id,
+          'name': newName,
+        });
+      } catch (error, stackTrace) {
+        await _maybeReportCloudUnauthenticated(
+          source: 'folder:update',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      return;
+    }
+
     folder.name = newName;
     folder.icon = newIcon;
     folder.customColor = newCustomColor;
@@ -213,12 +260,44 @@ class FolderProvider extends Notifier<String?> {
   }
 
   void moveToFolder({required String folderID, String? parentID}) async {
+    if (ref.read(isCloudCollabEnabledProvider)) {
+      try {
+        await ConvexClient.instance.mutation(name: 'folders:move', args: {
+          'folderPublicId': folderID,
+          if (parentID != null) 'parentFolderPublicId': parentID,
+        });
+      } catch (error, stackTrace) {
+        await _maybeReportCloudUnauthenticated(
+          source: 'folder:move',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      return;
+    }
+
     final folder = findFolderByID(folderID);
 
     if (folder != null) {
       folder.parentID = parentID;
       await folder.save();
     }
+  }
+
+  Future<void> _maybeReportCloudUnauthenticated({
+    required String source,
+    required Object error,
+    required StackTrace stackTrace,
+  }) async {
+    if (!isConvexUnauthenticatedError(error)) {
+      return;
+    }
+
+    await ref.read(authProvider.notifier).reportConvexUnauthenticated(
+          source: source,
+          error: error,
+          stackTrace: stackTrace,
+        );
   }
 
   @override
