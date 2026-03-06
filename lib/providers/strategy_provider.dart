@@ -1563,8 +1563,17 @@ class StrategyProvider extends Notifier<StrategyState> {
       lineUps: ref.read(lineUpProvider).lineUps,
     );
 
+    final strategyTheme = ref.read(strategyThemeProvider);
     final newPages = [...strat.pages]..[idx] = updatedPage;
-    final updated = strat.copyWith(pages: newPages, lastEdited: DateTime.now());
+    final updated = strat.copyWith(
+      pages: newPages,
+      mapData: ref.read(mapProvider).currentMap,
+      themeProfileId: strategyTheme.profileId,
+      clearThemeProfileId: strategyTheme.profileId == null,
+      themeOverridePalette: strategyTheme.overridePalette,
+      clearThemeOverridePalette: strategyTheme.overridePalette == null,
+      lastEdited: DateTime.now(),
+    );
     await box.put(updated.id, updated);
   }
 
