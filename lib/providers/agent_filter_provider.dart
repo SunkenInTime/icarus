@@ -45,13 +45,6 @@ class AgentFilterProvider extends Notifier<AgentFilterState> {
     _refreshAgentList(currentFilter: filterState);
   }
 
-  void toggleAllOnMap() {
-    final nextFilter = state.currentFilter == FilterState.onMap
-        ? FilterState.all
-        : FilterState.onMap;
-    _refreshAgentList(currentFilter: nextFilter);
-  }
-
   void updateRoleState(AgentRole currentRole) {
     _refreshAgentList(currentRole: currentRole);
   }

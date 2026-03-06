@@ -7,7 +7,6 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
-import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
@@ -109,12 +108,6 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
                 ref
                     .read(interactionStateProvider.notifier)
                     .update(InteractionState.navigation);
-                return null;
-              },
-            ),
-            ToggleAgentFilterIntent: CallbackAction<ToggleAgentFilterIntent>(
-              onInvoke: (intent) {
-                ref.read(agentFilterProvider.notifier).toggleAllOnMap();
                 return null;
               },
             ),
