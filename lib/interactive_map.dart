@@ -17,6 +17,7 @@ import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/delete_area.dart';
+import 'package:icarus/widgets/lineup_control_buttons.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
@@ -146,8 +147,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
           final double centeredOffsetX =
               (viewportWidth - (worldWidth * safeScale)) / 2;
           final double centeredOffsetY = (height - (height * safeScale)) / 2;
-          final matrix =
-              Matrix4.identity()..scaleByDouble(safeScale, safeScale, safeScale, 1);
+          final matrix = Matrix4.identity()
+            ..scaleByDouble(safeScale, safeScale, safeScale, 1);
           matrix.translateByDouble(
               centeredOffsetX / safeScale, centeredOffsetY / safeScale, 0, 1);
           controller.value = matrix;
@@ -347,6 +348,10 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                         top: 0,
                         right: 0,
                         child: DeleteArea(),
+                      ),
+                      Align(
+                        alignment: Alignment.bottomRight,
+                        child: const LineupControlButtons(),
                       ),
                     ],
                   ),

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_scale_controller.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class PlacedTextBuilder extends ConsumerStatefulWidget {
@@ -108,12 +110,24 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         },
         child: ShadContextMenuRegion(
           items: _buildTagColorItems(),
-          child: TextWidget(
-            id: widget.placedText.id,
-            text: widget.placedText.text,
-            size: localSize!,
-            tagColorValue: widget.placedText.tagColorValue,
-            isFeedback: false,
+          child: MouseWatch(
+            cursor: SystemMouseCursors.click,
+            onDeleteKeyPressed: () {
+              final action = UserAction(
+                type: ActionType.deletion,
+                id: widget.placedText.id,
+                group: ActionGroup.text,
+              );
+              ref.read(actionProvider.notifier).addAction(action);
+              ref.read(textProvider.notifier).removeText(widget.placedText.id);
+            },
+            child: TextWidget(
+              id: widget.placedText.id,
+              text: widget.placedText.text,
+              size: localSize!,
+              tagColorValue: widget.placedText.tagColorValue,
+              isFeedback: false,
+            ),
           ),
         ),
       ),
