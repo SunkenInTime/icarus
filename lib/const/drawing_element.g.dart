@@ -47,3 +47,4 @@ const _$TraversalSpeedProfileEnumMap = {
   TraversalSpeedProfile.brimStim: 'brimStim',
   TraversalSpeedProfile.neonRun: 'neonRun',
 };
+

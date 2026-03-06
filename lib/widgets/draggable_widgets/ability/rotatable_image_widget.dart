@@ -49,3 +49,4 @@ class RotatableImageWidget extends ConsumerWidget {
     );
   }
 }
+

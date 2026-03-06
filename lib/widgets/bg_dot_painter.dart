@@ -70,3 +70,4 @@ class DotPainter extends CustomPainter {
     return oldDelegate.size != size;
   }
 }
+

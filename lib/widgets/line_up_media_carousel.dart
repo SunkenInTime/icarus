@@ -172,7 +172,7 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                   borderRadius: BorderRadius.circular(6),
                   border:
                       Border.all(color: Settings.tacticalVioletTheme.border),
-                  // boxShadow: const [Settings.cardForegroundBackdrop],
+                  // boxShadow: Settings.cardForegroundBackdropShadows,
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(8.0),
@@ -189,7 +189,7 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                           shape: BoxShape.circle,
                           color: _currentIndex == index
                               ? Colors.white
-                              : Colors.white.withValues(alpha: 0.2),
+                              : Settings.tacticalVioletTheme.mutedForeground.withValues(alpha: 0.35),
                         ),
                       );
                     }),
@@ -209,7 +209,7 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
           Positioned.fill(
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
-              child: Container(color: Colors.black54),
+              child: Container(color: Settings.backdropOverlayColor),
             ),
           ),
           content,
@@ -271,3 +271,4 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
     );
   }
 }
+

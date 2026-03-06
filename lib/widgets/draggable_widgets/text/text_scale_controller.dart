@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 
 class TextScaleController extends ConsumerWidget {
   const TextScaleController({
@@ -22,39 +23,33 @@ class TextScaleController extends ConsumerWidget {
     return Stack(
       children: [
         child,
-        !isDragging
-            ? Positioned.fill(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: GestureDetector(
-                    onPanUpdate: onPanUpdate,
-                    onPanEnd: onPanEnd,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 4, horizontal: 2),
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.resizeLeftRight,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: const Color.fromARGB(68, 255, 255, 255),
-                            borderRadius: BorderRadius.circular(10),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Colors.black12,
-                                blurRadius: 2,
-                                offset: Offset(0, 1),
-                              ),
-                            ],
-                          ),
-                          width: 5,
-                        ),
+        if (!isDragging)
+          Positioned.fill(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onPanUpdate: onPanUpdate,
+                onPanEnd: onPanEnd,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.resizeLeftRight,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color.fromARGB(68, 255, 255, 255),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: Settings.textHandleShadows,
                       ),
+                      width: 5,
                     ),
                   ),
                 ),
-              )
-            : const SizedBox.shrink()
+              ),
+            ),
+          ),
       ],
     );
   }
 }
+

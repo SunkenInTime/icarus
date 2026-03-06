@@ -527,3 +527,4 @@ Uint8List deserializeUint8List(dynamic jsonData) {
   }
   throw Exception('Invalid data for Uint8List deserialization.');
 }
+

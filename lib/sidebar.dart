@@ -89,7 +89,7 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                                   isSelected: filterState.favoritesOnly,
                                   hoverBackgroundColor:
                                       filterState.favoritesOnly
-                                          ? const Color(0xFFFF9800)
+                                          ? Settings.favoriteOnColor
                                           : null,
                                   onPressed: () {
                                     ref
@@ -119,7 +119,7 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                           switchInCurve: Curves.easeOutCubic,
                           switchOutCurve: Curves.easeInCubic,
                           child: filterState.favoritesOnly
-                              ? const Padding(
+                              ? Padding(
                                   key: ValueKey("favorites-only-indicator"),
                                   padding: EdgeInsets.only(top: 6, left: 2),
                                   child: Row(
@@ -128,13 +128,13 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                                       Icon(
                                         LucideIcons.star,
                                         size: 12,
-                                        color: Color(0xFFFF9800),
+                                        color: Settings.favoriteOnColor,
                                       ),
                                       Text(
                                         "Filtering: Favorites only",
                                         style: TextStyle(
                                           fontSize: 12,
-                                          color: Color(0xFFFF9800),
+                                          color: Settings.favoriteOnColor,
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
@@ -162,7 +162,7 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
                       : RawScrollbar(
                           trackVisibility: true,
                           thumbVisibility: true,
-                          thumbColor: const Color(0xFF353435),
+                          thumbColor: Settings.scrollbarThumbColor,
                           scrollbarOrientation: ScrollbarOrientation.left,
                           thickness: 5,
                           radius: const Radius.circular(10),
@@ -214,3 +214,4 @@ class _SideBarUIState extends ConsumerState<SideBarUI> {
     );
   }
 }
+

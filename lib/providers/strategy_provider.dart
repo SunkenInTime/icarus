@@ -1589,3 +1589,4 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
   }
 }
+

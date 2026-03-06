@@ -12,3 +12,4 @@ class TeamProvider extends Notifier<bool> {
     state = value;
   }
 }
+

@@ -174,7 +174,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                     center: Alignment.center,
                     radius: 1.5,
                     colors: [
-                      Color(0xff18181b),
+                      Settings.mapBackdropCenterColor,
                       ShadTheme.of(context).colorScheme.background,
                     ],
                   ),
@@ -363,3 +363,4 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
     );
   }
 }
+

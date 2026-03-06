@@ -105,3 +105,4 @@ class CustomFolderPainter extends CustomPainter {
     return true;
   }
 }
+

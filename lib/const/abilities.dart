@@ -414,3 +414,4 @@ class ResizableSquareAbility extends SquareAbility {
     );
   }
 }
+

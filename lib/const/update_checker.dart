@@ -276,3 +276,4 @@ class UpdateChecker {
     return features.isEmpty ? null : features;
   }
 }
+

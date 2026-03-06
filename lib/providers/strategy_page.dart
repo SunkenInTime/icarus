@@ -164,3 +164,4 @@ class StrategyPage extends HiveObject {
     );
   }
 }
+

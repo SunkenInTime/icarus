@@ -164,3 +164,4 @@ class TransitionProvider extends Notifier<PageTransitionState> {
     );
   }
 }
+

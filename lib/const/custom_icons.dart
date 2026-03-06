@@ -23,3 +23,4 @@ class CustomIcons {
   static const IconData drawcursor =
       IconData(0xe80e, fontFamily: _kFontFam, fontPackage: _kFontPkg);
 }
+

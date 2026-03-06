@@ -107,3 +107,4 @@ class BackwardPageIntent extends Intent {
 class OpenInAppDebugIntent extends Intent {
   const OpenInAppDebugIntent();
 }
+

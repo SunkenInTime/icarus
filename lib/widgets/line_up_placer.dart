@@ -59,7 +59,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                       border: Border.all(
                         color: Settings.tacticalVioletTheme.border,
                       ),
-                      boxShadow: const [Settings.cardForegroundBackdrop],
+                      boxShadow: Settings.cardForegroundBackdropShadows,
                     ),
                     child: Text(
                       "Drag an agent to the map to start placing",
@@ -253,3 +253,4 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
     });
   }
 }
+

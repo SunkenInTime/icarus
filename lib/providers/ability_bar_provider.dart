@@ -14,3 +14,4 @@ class AbilityBarProvider extends Notifier<AgentData?> {
     state = data;
   }
 }
+

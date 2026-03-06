@@ -344,3 +344,4 @@ class HoveredLineUpProvider extends Notifier<String?> {
 /// Tracks which LineUp is currently hovered for unified highlight.
 final hoveredLineUpIdProvider =
     NotifierProvider<HoveredLineUpProvider, String?>(HoveredLineUpProvider.new);
+

@@ -62,3 +62,4 @@ class Maps {
     MapValue.corrode: 0.985,
   };
 }
+

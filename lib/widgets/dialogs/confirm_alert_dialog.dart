@@ -74,3 +74,4 @@ class ConfirmAlertDialog extends ConsumerWidget {
     return result ?? false; // Return false if dialog was dismissed
   }
 }
+

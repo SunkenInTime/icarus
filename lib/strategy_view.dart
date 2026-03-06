@@ -179,3 +179,4 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     await windowManager.close(); // Close the window/app
   }
 }
+

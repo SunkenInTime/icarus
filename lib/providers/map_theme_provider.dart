@@ -478,3 +478,4 @@ class StrategyThemeProvider extends Notifier<StrategyThemeState> {
     state = state.copyWith(clearOverride: true);
   }
 }
+

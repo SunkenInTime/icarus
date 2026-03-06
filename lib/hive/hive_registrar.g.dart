@@ -71,3 +71,4 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(UtilityTypeAdapter());
   }
 }
+

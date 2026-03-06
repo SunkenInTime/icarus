@@ -18,3 +18,4 @@ Map<String, dynamic> _$BoundingBoxToJson(BoundingBox instance) =>
       'min': const OffsetConverter().toJson(instance.min),
       'max': const OffsetConverter().toJson(instance.max),
     };
+

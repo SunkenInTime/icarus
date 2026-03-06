@@ -98,3 +98,4 @@ class _CurrentLinePainter extends CustomPainter {
     return true;
   }
 }
+

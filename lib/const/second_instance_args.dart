@@ -10,3 +10,4 @@ void publishSecondInstanceArgs(List<String> args) {
   if (args.isEmpty) return;
   secondInstanceArgsController.add(args);
 }
+

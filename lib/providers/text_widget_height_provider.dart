@@ -25,3 +25,4 @@ class TextWidgetHeightProvider extends Notifier<Map<String, Offset>> {
     state = {};
   }
 }
+

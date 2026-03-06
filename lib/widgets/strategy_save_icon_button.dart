@@ -173,3 +173,4 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
 }
 
 enum _Phase { idle, loading, success }
+

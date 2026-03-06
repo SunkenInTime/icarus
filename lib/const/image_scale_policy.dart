@@ -7,3 +7,4 @@ abstract final class ImageScalePolicy {
     return value.clamp(minWidth, maxWidth).toDouble();
   }
 }
+

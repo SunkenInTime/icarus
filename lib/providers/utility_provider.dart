@@ -177,3 +177,4 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     return jsonEncode(jsonList);
   }
 }
+

@@ -1479,3 +1479,4 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }
+

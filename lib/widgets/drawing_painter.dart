@@ -591,3 +591,4 @@ class DrawingPainter extends CustomPainter {
     return false;
   }
 }
+

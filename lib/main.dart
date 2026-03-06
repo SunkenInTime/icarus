@@ -21,10 +21,13 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/ui_theme_provider.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/theme/ui_theme_runtime.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
 import 'package:icarus/widgets/settings_tab.dart';
+import 'package:icarus/widgets/theme_token_map_page.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -52,10 +55,8 @@ Future<void> main(List<String> args) async {
   }
 
   if (kIsWeb) {
-    // On web, Hive uses IndexedDB; no path needed.
     await Hive.initFlutter();
   } else {
-    // On mobile/desktop, you can still choose an explicit directory.
     final dir = await getApplicationSupportDirectory();
     final tempDir = await getTemporaryDirectory();
     log("App Support Directory: ${dir.path}");
@@ -78,12 +79,13 @@ Future<void> main(List<String> args) async {
   await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
   await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
   await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
+  await Hive.openBox<String>(HiveBoxNames.uiThemeProfilesBox);
+  await Hive.openBox<String>(HiveBoxNames.uiThemePrefsBox);
 
   await MapThemeProfilesProvider.bootstrap();
+  await UiThemeProvider.bootstrap();
 
   await StrategyProvider.migrateAllStrategies();
-
-  // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
 
   await _initWebViewEnvironment();
 
@@ -97,14 +99,6 @@ Future<void> main(List<String> args) async {
       await windowManager.focus();
     });
   }
-
-  log("Web");
-  // Ensure WebView2 environment is initialized on Windows before any InAppWebView
-  // widgets are created. This is especially important in testing/dev where the
-  // WebView user-data folder and runtime selection can affect behavior.
-  // if (!kIsWeb && Platform.isWindows) {
-  //   await _initWebViewEnvironment();
-  // }
 
   runApp(ProviderScope(child: MyApp(data: args)));
 }
@@ -184,10 +178,12 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    final effectiveTheme = ref.watch(effectiveUiThemeProvider);
+    UiThemeRuntime.apply(effectiveTheme);
+
     return ToastificationWrapper(
       config: const ToastificationConfig(
         alignment: Alignment.bottomCenter,
-        // itemWidth: 440,
         animationDuration: Duration(milliseconds: 500),
         blockBackgroundInteraction: false,
       ),
@@ -196,7 +192,7 @@ class _MyAppState extends ConsumerState<MyApp> {
         themeMode: ThemeMode.dark,
         darkTheme: ShadThemeData(
           brightness: Brightness.dark,
-          colorScheme: Settings.tacticalVioletTheme,
+          colorScheme: effectiveTheme.shadColorScheme,
           breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
         ),
         home: const MyHomePage(),
@@ -204,6 +200,7 @@ class _MyAppState extends ConsumerState<MyApp> {
           Routes.folderNavigator: (context) => const FolderNavigator(),
           Routes.strategyView: (context) => const StrategyView(),
           Routes.settings: (context) => const SettingsTab(),
+          Routes.themeTokenMap: (context) => const ThemeTokenMapPage(),
         },
         builder: (context, child) {
           return GlobalShortcuts(child: child ?? const SizedBox.shrink());

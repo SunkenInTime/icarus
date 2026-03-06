@@ -25,3 +25,4 @@ class ImageWidgetSizeProvider extends Notifier<Map<String, Offset>> {
     state = {};
   }
 }
+

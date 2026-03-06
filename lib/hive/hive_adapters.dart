@@ -50,3 +50,4 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
   AdapterSpec<AppPreferences>(),
 ])
 part 'hive_adapters.g.dart';
+

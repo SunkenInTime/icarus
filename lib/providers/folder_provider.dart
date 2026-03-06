@@ -38,7 +38,7 @@ class Folder extends HiveObject {
     this.customColor,
   });
 
-  static Map<FolderColor, Color> folderColorMap = {
+  static Map<FolderColor, Color> get folderColorMap => {
     FolderColor.red: Colors.red,
     FolderColor.blue: Colors.blue,
     FolderColor.green: Colors.green,
@@ -226,3 +226,4 @@ class FolderProvider extends Notifier<String?> {
     return null;
   }
 }
+

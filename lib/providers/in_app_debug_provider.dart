@@ -21,3 +21,4 @@ class InAppDebugProvider extends Notifier<List<String>> {
     state = [];
   }
 }
+

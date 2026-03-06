@@ -117,8 +117,8 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
         : (isFavorite ? Icons.star_rounded : LucideIcons.star);
     final iconSize = iconData == Icons.star_rounded ? 18.5 : 16.0;
     final iconColor = isFavorite
-        ? (canShowStarOff ? const Color(0xFFE53935) : const Color(0xFFFF9800))
-        : (_isStarHovered ? const Color(0xFFFF9800) : const Color(0xFF9AA0A6));
+        ? (canShowStarOff ? Settings.favoriteRemoveColor : Settings.favoriteOnColor)
+        : (_isStarHovered ? Settings.favoriteOnColor : Settings.favoriteOffColor);
 
     return IgnorePointer(
       ignoring: ref.watch(dragNotifier) == true,
@@ -230,13 +230,7 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
                                 iconData,
                                 size: iconSize,
                                 color: iconColor,
-                                shadows: [
-                                  BoxShadow(
-                                    color: Colors.black.withAlpha(100),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
+                                shadows: Settings.favoriteIconTextShadows,
                               ),
                             ),
                           ),
@@ -253,3 +247,4 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
     );
   }
 }
+

@@ -13,3 +13,4 @@ class AutoSaveNotifier extends Notifier<int> {
     state = state + 1;
   }
 }
+

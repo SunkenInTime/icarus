@@ -48,11 +48,11 @@ class StrategyTileViewData {
     final label = _attackLabel(pages);
     switch (label) {
       case 'Attack':
-        return Colors.redAccent;
+        return Settings.attackBadgeColor;
       case 'Defend':
-        return Colors.lightBlueAccent;
+        return Settings.defendBadgeColor;
       default:
-        return Colors.orangeAccent;
+        return Settings.mixedBadgeColor;
     }
   }
 
@@ -136,7 +136,7 @@ class StrategyTileDetails extends StatelessWidget {
           color: ShadTheme.of(context).colorScheme.card,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Settings.tacticalVioletTheme.border),
-          boxShadow: const [Settings.cardForegroundBackdrop]),
+          boxShadow: Settings.cardForegroundBackdropShadows),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,7 +206,7 @@ class StrategyTileDragPreview extends StatelessWidget {
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.deepPurpleAccent, width: 2),
+        border: Border.all(color: Settings.swatchSelectedColor, width: 2),
       ),
       padding: const EdgeInsets.all(4),
       child: Row(
@@ -276,3 +276,4 @@ class _MoreAgentsIndicator extends StatelessWidget {
     );
   }
 }
+

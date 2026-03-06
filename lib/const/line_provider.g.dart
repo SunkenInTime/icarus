@@ -37,3 +37,4 @@ Map<String, dynamic> _$SimpleImageDataToJson(SimpleImageData instance) =>
       'id': instance.id,
       'fileExtension': instance.fileExtension,
     };
+

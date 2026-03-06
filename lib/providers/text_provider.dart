@@ -188,3 +188,4 @@ class TextProvider extends Notifier<List<PlacedText>> {
     state = [];
   }
 }
+

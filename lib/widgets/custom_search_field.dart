@@ -202,3 +202,4 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
     );
   }
 }
+

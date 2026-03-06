@@ -50,3 +50,4 @@ class ImageScaleController extends ConsumerWidget {
     );
   }
 }
+

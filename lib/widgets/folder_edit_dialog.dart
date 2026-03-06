@@ -257,3 +257,4 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
     );
   }
 }
+

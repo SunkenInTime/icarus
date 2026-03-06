@@ -36,13 +36,6 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
   Uint8List? _selectedBytes;
   String? _selectedName;
   int? _selectedTagColorValue;
-  static const List<Color> _colorOptions = [
-    Color(0xFF22C55E),
-    Color(0xFF3B82F6),
-    Color(0xFFF59E0B),
-    Color(0xFFEF4444),
-    Color(0xFFA855F7),
-  ];
 
   @override
   void initState() {
@@ -222,13 +215,13 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
                     child: ColorButtons(
                       height: 24,
                       width: 24,
-                      color: const Color(0xFFC5C5C5),
+                      color: Settings.defaultTagColor,
                       isSelected: _selectedTagColorValue == null,
                       onTap: () =>
                           setState(() => _selectedTagColorValue = null),
                     ),
                   ),
-                  for (final color in _colorOptions)
+                  for (final color in Settings.tagPalette)
                     Padding(
                       padding: const EdgeInsets.all(4.0),
                       child: ColorButtons(
@@ -423,9 +416,7 @@ class _SelectionFooter extends StatelessWidget {
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.background,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: const [
-          Settings.cardForegroundBackdrop,
-        ],
+        boxShadow: Settings.cardForegroundBackdropShadows,
         border: Border.all(color: Settings.tacticalVioletTheme.border),
       ),
       child: Padding(
@@ -454,3 +445,4 @@ class _SelectionFooter extends StatelessWidget {
     );
   }
 }
+

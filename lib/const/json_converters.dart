@@ -154,3 +154,4 @@ class OffsetListConverter
     return offsets.map(_offsetConverter.toJson).toList();
   }
 }
+

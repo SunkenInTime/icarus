@@ -487,3 +487,4 @@ class CustomRectangleUtility extends Utilities {
     return Offset(rectLength, width);
   }
 }
+

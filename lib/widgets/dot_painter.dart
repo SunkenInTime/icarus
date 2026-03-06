@@ -120,3 +120,4 @@ class DotPainter extends CustomPainter {
     return false;
   }
 }
+

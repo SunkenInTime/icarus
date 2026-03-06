@@ -18,3 +18,4 @@ Map<String, dynamic> _$StrategySettingsToJson(StrategySettings instance) =>
       'agentSize': instance.agentSize,
       'abilitySize': instance.abilitySize,
     };
+

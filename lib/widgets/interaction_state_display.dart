@@ -99,11 +99,11 @@ class _InteractionStateDisplayState
   Color _attackColor(String attackLabel) {
     switch (attackLabel) {
       case 'Attack':
-        return Colors.redAccent;
+        return Settings.attackBadgeColor;
       case 'Defend':
-        return Colors.lightBlueAccent;
+        return Settings.defendBadgeColor;
       default:
-        return Colors.orangeAccent;
+        return Settings.mixedBadgeColor;
     }
   }
 
@@ -340,7 +340,7 @@ class _StrategyQuickSwitchItemState extends State<_StrategyQuickSwitchItem> {
           color: backgroundColor,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: borderColor),
-          boxShadow: const [Settings.cardForegroundBackdrop],
+          boxShadow: Settings.cardForegroundBackdropShadows,
         ),
         child: Material(
           color: Colors.transparent,
@@ -423,3 +423,4 @@ class _StrategyQuickSwitchItemState extends State<_StrategyQuickSwitchItem> {
     );
   }
 }
+

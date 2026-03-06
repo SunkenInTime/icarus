@@ -335,3 +335,4 @@ class _NumericDragInputState extends State<NumericDragInput> {
     );
   }
 }
+

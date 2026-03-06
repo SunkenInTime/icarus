@@ -157,3 +157,4 @@ class LinePainter extends CustomPainter {
     return false;
   }
 }
+

@@ -32,3 +32,4 @@ class BoundingBox extends HiveObject {
     return 'BoundingBox(min: $min, max: $max)';
   }
 }
+

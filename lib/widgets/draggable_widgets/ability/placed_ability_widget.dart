@@ -326,3 +326,4 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     );
   }
 }
+

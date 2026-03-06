@@ -166,3 +166,4 @@ class PageTransitionEntry {
   double? get startTextSize => from != null ? textSizeOf(from!) : null;
   double? get endTextSize => to != null ? textSizeOf(to!) : null;
 }
+

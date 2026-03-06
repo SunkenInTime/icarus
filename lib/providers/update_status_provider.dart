@@ -4,3 +4,4 @@ import 'package:icarus/const/update_checker.dart';
 final appUpdateStatusProvider = FutureProvider<UpdateCheckResult>((ref) async {
   return UpdateChecker.checkForUpdateSignal();
 });
+

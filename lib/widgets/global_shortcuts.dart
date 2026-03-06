@@ -153,3 +153,4 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
     );
   }
 }
+

@@ -17,3 +17,4 @@ class TraversalSpeed {
     TraversalSpeedProfile.neonRun: 9.11,
   };
 }
+

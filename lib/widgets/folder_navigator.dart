@@ -226,3 +226,4 @@ class StrategyItem extends GridItem {
 
   StrategyItem(this.strategy);
 }
+

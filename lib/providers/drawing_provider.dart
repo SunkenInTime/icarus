@@ -659,3 +659,4 @@ double perpendicularDistance(Offset point, Offset lineStart, Offset lineEnd) {
 
   return numerator / denominator;
 }
+

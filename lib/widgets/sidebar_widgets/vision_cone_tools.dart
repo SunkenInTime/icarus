@@ -33,7 +33,7 @@ class VisionConeTools extends ConsumerWidget {
                 color: Settings.tacticalVioletTheme.border,
                 width: 1,
               ),
-              boxShadow: const [Settings.cardForegroundBackdrop],
+              boxShadow: Settings.cardForegroundBackdropShadows,
             ),
             child: const Padding(
               padding: EdgeInsets.all(2),
@@ -156,3 +156,4 @@ class _VisionConePresetTile extends ConsumerWidget {
     );
   }
 }
+

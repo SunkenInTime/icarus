@@ -15,3 +15,4 @@ class PlacementCenterNotifier extends Notifier<Offset> {
     state = center;
   }
 }
+

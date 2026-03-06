@@ -71,7 +71,7 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: const [Settings.cardForegroundBackdrop],
+        boxShadow: Settings.cardForegroundBackdropShadows,
         border: Border.all(
           color: isOverride
               ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.4)
@@ -536,7 +536,7 @@ class _ProfileListRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
-          boxShadow: const [Settings.cardForegroundBackdrop],
+          boxShadow: Settings.cardForegroundBackdropShadows,
           border: Border.all(
             color: isSelected
                 ? Settings.tacticalVioletTheme.primary
@@ -748,11 +748,32 @@ Future<Color?> _showColorPickerDialog({
   required String title,
 }) async {
   var workingColor = initialColor;
+  final hexController = TextEditingController(
+    text: '#${initialColor.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}',
+  );
+  final hsl = HSLColor.fromColor(initialColor);
+  final hslController = TextEditingController(
+    text:
+        'hsla(${hsl.hue.toStringAsFixed(0)}, ${(hsl.saturation * 100).toStringAsFixed(1)}%, ${(hsl.lightness * 100).toStringAsFixed(1)}%, ${hsl.alpha.toStringAsFixed(3)})',
+  );
+
   return showShadDialog<Color>(
     context: context,
     builder: (context) {
       return StatefulBuilder(
         builder: (context, setState) {
+          void updateFromColor(Color color) {
+            setState(() {
+              workingColor = color;
+              final argb =
+                  color.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase();
+              hexController.text = '#$argb';
+              final nextHsl = HSLColor.fromColor(color);
+              hslController.text =
+                  'hsla(${nextHsl.hue.toStringAsFixed(0)}, ${(nextHsl.saturation * 100).toStringAsFixed(1)}%, ${(nextHsl.lightness * 100).toStringAsFixed(1)}%, ${nextHsl.alpha.toStringAsFixed(3)})';
+            });
+          }
+
           return ShadDialog(
             title: Text(title),
             actions: [
@@ -768,16 +789,84 @@ Future<Color?> _showColorPickerDialog({
             child: Material(
               color: Colors.transparent,
               child: SizedBox(
-                width: 320,
-                child: ColorPicker(
-                  portraitOnly: true,
-                  pickerColor: workingColor,
-                  onColorChanged: (color) {
-                    setState(() {
-                      workingColor = color;
-                    });
-                  },
-                  pickerAreaHeightPercent: 0.8,
+                width: 360,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ColorPicker(
+                      portraitOnly: true,
+                      pickerColor: workingColor,
+                      onColorChanged: updateFromColor,
+                      pickerAreaHeightPercent: 0.72,
+                      enableAlpha: true,
+                      displayThumbColor: true,
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ShadInput(
+                            controller: hexController,
+                            placeholder: const Text('#RRGGBB / #AARRGGBB'),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        ShadButton.secondary(
+                          onPressed: () {
+                            final raw = hexController.text.trim();
+                            final cleaned =
+                                raw.startsWith('#') ? raw.substring(1) : raw;
+                            if (cleaned.length != 6 && cleaned.length != 8) return;
+                            final parsed = int.tryParse(cleaned, radix: 16);
+                            if (parsed == null) return;
+                            final argb =
+                                cleaned.length == 6 ? (0xFF000000 | parsed) : parsed;
+                            updateFromColor(Color(argb));
+                          },
+                          child: const Text('Hex'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ShadInput(
+                            controller: hslController,
+                            placeholder: const Text('hsla(h, s%, l%, a)'),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        ShadButton.secondary(
+                          onPressed: () {
+                            final input = hslController.text.trim().toLowerCase();
+                            final regExp = RegExp(
+                              r'^hsla?\(\s*([-+]?[0-9]*\.?[0-9]+)\s*,\s*([-+]?[0-9]*\.?[0-9]+)%\s*,\s*([-+]?[0-9]*\.?[0-9]+)%\s*(?:,\s*([-+]?[0-9]*\.?[0-9]+)\s*)?\)$',
+                            );
+                            final match = regExp.firstMatch(input);
+                            if (match == null) return;
+                            final hue = double.tryParse(match.group(1) ?? '');
+                            final sat = double.tryParse(match.group(2) ?? '');
+                            final light = double.tryParse(match.group(3) ?? '');
+                            final alpha = match.group(4) == null
+                                ? 1.0
+                                : double.tryParse(match.group(4) ?? '');
+                            if (hue == null || sat == null || light == null || alpha == null) {
+                              return;
+                            }
+                            final color = HSLColor.fromAHSL(
+                              alpha.clamp(0.0, 1.0),
+                              hue % 360,
+                              (sat / 100).clamp(0.0, 1.0),
+                              (light / 100).clamp(0.0, 1.0),
+                            ).toColor();
+                            updateFromColor(color);
+                          },
+                          child: const Text('HSL'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -787,7 +876,6 @@ Future<Color?> _showColorPickerDialog({
     },
   );
 }
-
 Future<String?> _showRenameDialog({
   required BuildContext context,
   required String currentName,
@@ -822,3 +910,7 @@ Future<String?> _showRenameDialog({
     },
   );
 }
+
+
+
+

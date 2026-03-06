@@ -58,7 +58,7 @@ class FolderContent extends ConsumerWidget {
                         ShadSelect<SortBy>(
                           decoration: ShadDecoration(
                             color: Settings.tacticalVioletTheme.card,
-                            shadows: const [Settings.cardForegroundBackdrop],
+                            shadows: Settings.cardForegroundBackdropShadows,
                           ),
                           initialValue:
                               ref.watch(strategyFilterProvider).sortBy,
@@ -81,7 +81,7 @@ class FolderContent extends ConsumerWidget {
                         ShadSelect<SortOrder>(
                           decoration: ShadDecoration(
                             color: Settings.tacticalVioletTheme.card,
-                            shadows: const [Settings.cardForegroundBackdrop],
+                            shadows: Settings.cardForegroundBackdropShadows,
                           ),
                           initialValue:
                               ref.watch(strategyFilterProvider).sortOrder,
@@ -274,3 +274,4 @@ class FolderContent extends ConsumerWidget {
     );
   }
 }
+

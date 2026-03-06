@@ -79,3 +79,4 @@ class AbilityWidget extends ConsumerWidget {
     );
   }
 }
+

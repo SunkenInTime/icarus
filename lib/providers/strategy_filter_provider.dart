@@ -77,3 +77,4 @@ class StrategyFilterProvider extends Notifier<StrategyFilterState> {
     }
   }
 }
+

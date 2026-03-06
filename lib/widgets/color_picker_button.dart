@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 
 class ColorPickerButton extends ConsumerStatefulWidget {
   const ColorPickerButton({
@@ -17,7 +18,6 @@ class ColorPickerButton extends ConsumerStatefulWidget {
 
 class _ColorButtonsState extends ConsumerState<ColorPickerButton> {
   final _hoverColor = Colors.white;
-  // final _selectColor = const Color(0xFF2282FF);
 
   Color _currentColor = Colors.transparent;
 
@@ -56,7 +56,7 @@ class _ColorButtonsState extends ConsumerState<ColorPickerButton> {
               decoration: BoxDecoration(
                 borderRadius: const BorderRadius.all(Radius.circular(4)),
                 border: Border.all(
-                  color: const Color(0xFF272727),
+                  color: Settings.swatchOutlineColor,
                   width: 1,
                   strokeAlign: BorderSide.strokeAlignCenter,
                 ),
@@ -69,3 +69,4 @@ class _ColorButtonsState extends ConsumerState<ColorPickerButton> {
     );
   }
 }
+

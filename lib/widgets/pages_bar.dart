@@ -427,13 +427,7 @@ class _PageRow extends StatelessWidget {
               color: Settings.tacticalVioletTheme.border,
               width: 1,
             ),
-            boxShadow: [
-              BoxShadow(
-                  color:
-                      Settings.tacticalVioletTheme.card.withValues(alpha: 0.2),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4))
-            ],
+            boxShadow: Settings.raisedControlShadows,
             color: bg,
           ),
           height: _rowHeight,
@@ -558,3 +552,5 @@ class _SquareIconButton extends StatelessWidget {
     );
   }
 }
+
+

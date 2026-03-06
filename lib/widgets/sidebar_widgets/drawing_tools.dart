@@ -69,9 +69,7 @@ class DrawingTools extends ConsumerWidget {
                             color: Settings.tacticalVioletTheme.border,
                             width: 1,
                           ),
-                          boxShadow: const [
-                            Settings.cardForegroundBackdrop,
-                          ],
+                          boxShadow: Settings.cardForegroundBackdropShadows,
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(2.0),
@@ -227,3 +225,4 @@ class DrawingTools extends ConsumerWidget {
     );
   }
 }
+

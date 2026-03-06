@@ -25,3 +25,4 @@ class ScreenZoomProvider extends Notifier<double> {
     return Offset(offset.dx * state, offset.dy * state);
   }
 }
+

@@ -61,3 +61,4 @@ class DeleteCapture extends ConsumerWidget {
     );
   }
 }
+

@@ -77,3 +77,4 @@ class StrategySettingsProvider extends Notifier<StrategySettings> {
     state = state.copyWith(abilitySize: size);
   }
 }
+

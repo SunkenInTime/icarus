@@ -48,3 +48,4 @@ class InteractionStateProvider extends Notifier<InteractionState> {
     state = InteractionState.navigation;
   }
 }
+

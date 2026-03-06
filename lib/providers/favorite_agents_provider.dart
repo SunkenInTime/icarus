@@ -47,3 +47,4 @@ class FavoriteAgentsProvider extends Notifier<Set<AgentType>> {
     return favorites;
   }
 }
+

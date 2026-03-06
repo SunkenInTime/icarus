@@ -190,3 +190,4 @@ const _$UtilityTypeEnumMap = {
   UtilityType.customCircle: 'customCircle',
   UtilityType.customRectangle: 'customRectangle',
 };
+

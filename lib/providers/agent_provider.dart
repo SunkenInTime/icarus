@@ -203,3 +203,4 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
     state = [];
   }
 }
+

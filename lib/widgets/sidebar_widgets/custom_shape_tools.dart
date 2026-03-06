@@ -34,22 +34,20 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
   static const double _defaultRectangleWidthMeters = 6;
   static const double _defaultRectangleLengthMeters = 12;
   static const int _defaultOpacityPercent = 30;
-  static const int _defaultColorValue = 0xFF22C55E;
 
-  static const List<Color> _colorOptions = [
-    Color(0xFF22C55E),
-    Color(0xFF3B82F6),
-    Color(0xFFF59E0B),
-    Color(0xFFEF4444),
-    Color(0xFFA855F7),
-  ];
 
   _CustomShapeKind _shape = _CustomShapeKind.circle;
   double _diameterMeters = _defaultCircleDiameterMeters;
   double _rectWidthMeters = _defaultRectangleWidthMeters;
   double _rectLengthMeters = _defaultRectangleLengthMeters;
   int _opacityPercent = _defaultOpacityPercent;
-  Color _selectedColor = const Color(_defaultColorValue);
+  late Color _selectedColor;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedColor = Settings.tagPalette.first;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -92,7 +90,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
           color: Settings.tacticalVioletTheme.border,
           width: 1,
         ),
-        boxShadow: const [Settings.cardForegroundBackdrop],
+        boxShadow: Settings.cardForegroundBackdropShadows,
       ),
       child: Padding(
         padding: const EdgeInsets.all(2.0),
@@ -235,7 +233,7 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
   Widget _buildColorPicker() {
     return Row(
       children: [
-        for (final color in _colorOptions)
+        for (final color in Settings.tagPalette)
           Padding(
             padding: const EdgeInsets.all(4.0),
             child: ColorButtons(
@@ -318,3 +316,4 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
     );
   }
 }
+

@@ -77,3 +77,4 @@ class _CursorCirclePainter extends CustomPainter {
         oldDelegate.fillColor != fillColor;
   }
 }
+

@@ -118,7 +118,7 @@ class ScreenshotView extends ConsumerWidget {
           center: Alignment.center,
           radius: 1.5,
           colors: [
-            const Color(0xff18181b),
+            Settings.mapBackdropCenterColor,
             Settings.tacticalVioletTheme.background,
           ],
         ),
@@ -158,3 +158,4 @@ class ScreenshotView extends ConsumerWidget {
     );
   }
 }
+

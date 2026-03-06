@@ -285,3 +285,4 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
 extension FreeDrawingx on FreeDrawing {
   Path get path => _path;
 }
+

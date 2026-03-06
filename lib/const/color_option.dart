@@ -6,3 +6,4 @@ class ColorOption {
   final Color color;
   bool isSelected;
 }
+

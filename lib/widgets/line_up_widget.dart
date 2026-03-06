@@ -82,3 +82,4 @@ class LineUpAbilityWidget extends ConsumerWidget {
     );
   }
 }
+

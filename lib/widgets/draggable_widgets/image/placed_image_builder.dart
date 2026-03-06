@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/image_scale_policy.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -33,13 +34,6 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
   double? localScale; // Make localScale nullable to check if it's initialized
   bool isPanning = false;
   bool isDragging = false;
-  static const List<Color> _tagPalette = [
-    Color(0xFF22C55E),
-    Color(0xFF3B82F6),
-    Color(0xFFF59E0B),
-    Color(0xFFEF4444),
-    Color(0xFFA855F7),
-  ];
 
   @override
   void initState() {
@@ -151,7 +145,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
               .updateTagColor(widget.placedImage.id, null);
         },
       ),
-      ..._tagPalette.map(
+      ...Settings.tagPalette.map(
         (color) => ShadContextMenuItem(
           leading: Container(
             width: 12,
@@ -173,18 +167,19 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
   }
 
   String _labelForColor(Color color) {
-    if (color.toARGB32() == const Color(0xFF22C55E).toARGB32()) {
+    if (color.toARGB32() == Settings.tagPalette[0].toARGB32()) {
       return 'Green tag';
     }
-    if (color.toARGB32() == const Color(0xFF3B82F6).toARGB32()) {
+    if (color.toARGB32() == Settings.tagPalette[1].toARGB32()) {
       return 'Blue tag';
     }
-    if (color.toARGB32() == const Color(0xFFF59E0B).toARGB32()) {
+    if (color.toARGB32() == Settings.tagPalette[2].toARGB32()) {
       return 'Amber tag';
     }
-    if (color.toARGB32() == const Color(0xFFEF4444).toARGB32()) {
+    if (color.toARGB32() == Settings.tagPalette[3].toARGB32()) {
       return 'Red tag';
     }
     return 'Purple tag';
   }
 }
+

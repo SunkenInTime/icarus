@@ -190,3 +190,4 @@ class ViewConePainter extends CustomPainter {
     return oldDelegate.length != length;
   }
 }
+

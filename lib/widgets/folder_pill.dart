@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
@@ -124,13 +125,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
                                     : Colors.white.withValues(alpha: 0.15)),
                             width: isDropTarget ? 2 : 1,
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _folderColor.withValues(alpha: 0.3),
-                              blurRadius: _isHovered ? 8 : 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
+                          boxShadow: Settings.folderGlowShadowsFor(_folderColor),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -285,3 +280,5 @@ class _FolderPillState extends ConsumerState<FolderPill>
     return false;
   }
 }
+
+

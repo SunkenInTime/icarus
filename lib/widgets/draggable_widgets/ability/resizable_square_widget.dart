@@ -112,3 +112,4 @@ class ResizableSquareWidget extends ConsumerWidget {
     );
   }
 }
+

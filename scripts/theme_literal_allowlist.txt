@@ -1,0 +1,226 @@
+# Regex allowlist for scripts/audit_theme_literals.ps1
+# One regex per line.
+# Generated baseline on 2026-03-06T00:27:15.1392931-05:00.
+
+lib\\const\\agents\.dart:214:\ \ \ \ \ \ \ \ color:\ Colors\.redAccent,
+lib\\const\\agents\.dart:219:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.redAccent,
+lib\\const\\agents\.dart:244:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.purple,
+lib\\const\\agents\.dart:250:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.purple,
+lib\\const\\agents\.dart:257:\ \ \ \ \ \ \ \ color:\ Colors\.purple,
+lib\\const\\agents\.dart:282:\ \ \ \ \ \ \ \ color:\ Colors\.orangeAccent,
+lib\\const\\agents\.dart:289:\ \ \ \ \ \ \ \ color:\ Colors\.orangeAccent,
+lib\\const\\agents\.dart:298:\ \ \ \ \ \ \ \ color:\ Colors\.orangeAccent,
+lib\\const\\agents\.dart:323:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.greenAccent,
+lib\\const\\agents\.dart:332:\ \ \ \ \ \ \ \ color:\ Colors\.greenAccent,
+lib\\const\\agents\.dart:383:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.green,
+lib\\const\\agents\.dart:399:\ \ \ \ \ \ \ \ outlineColor:\ const\ Color\(0xFF8C06A3\),
+lib\\const\\agents\.dart:407:\ \ \ \ \ \ \ \ outlineColor:\ const\ Color\(0xFF8C06A3\),
+lib\\const\\agents\.dart:430:\ \ \ \ \ \ \ \ outlineColor:\ const\ Color\(0xFF6A0EB6\),
+lib\\const\\agents\.dart:438:\ \ \ \ \ \ \ \ outlineColor:\ const\ Color\(0xFF6A0EB6\),
+lib\\const\\agents\.dart:446:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.white,
+lib\\const\\agents\.dart:458:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.white\.withAlpha\(100\),
+lib\\const\\agents\.dart:461:\ \ \ \ \ \ \ \ fillColor:\ Colors\.transparent,\ //\ Previously\ innerColor
+lib\\const\\agents\.dart:485:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.red,
+lib\\const\\agents\.dart:493:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.red,
+lib\\const\\agents\.dart:517:\ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\const\\agents\.dart:524:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.white,
+lib\\const\\agents\.dart:540:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.amber,
+lib\\const\\agents\.dart:547:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.amber,
+lib\\const\\agents\.dart:563:\ \ \ \ \ \ \ \ outlineColor:\ const\ Color\(0xFF680A79\),
+lib\\const\\agents\.dart:570:\ \ \ \ \ \ \ \ outlineColor:\ const\ Color\(0xFF680A79\),
+lib\\const\\agents\.dart:579:\ \ \ \ \ \ \ \ color:\ const\ Color\(0xFF680A79\),
+lib\\const\\agents\.dart:595:\ \ \ \ \ \ \ \ color:\ Colors\.blueAccent,
+lib\\const\\agents\.dart:602:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.blue,
+lib\\const\\agents\.dart:628:\ \ \ \ \ \ \ \ color:\ Colors\.deepPurple,
+lib\\const\\agents\.dart:657:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.blueAccent,
+lib\\const\\agents\.dart:699:\ \ \ \ \ \ \ \ color:\ Colors\.indigo,
+lib\\const\\agents\.dart:708:\ \ \ \ \ \ \ \ color:\ Colors\.indigo,
+lib\\const\\agents\.dart:715:\ \ \ \ \ \ \ \ color:\ Colors\.indigo,
+lib\\const\\agents\.dart:730:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.blue,
+lib\\const\\agents\.dart:738:\ \ \ \ \ \ \ \ color:\ Colors\.blue,
+lib\\const\\agents\.dart:753:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.greenAccent,
+lib\\const\\agents\.dart:778:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.lightBlue,
+lib\\const\\agents\.dart:795:\ \ \ \ \ \ \ \ color:\ Colors\.lightBlue,
+lib\\const\\agents\.dart:811:\ \ \ \ \ \ \ \ color:\ Colors\.deepPurple,
+lib\\const\\agents\.dart:817:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.deepPurple,
+lib\\const\\agents\.dart:824:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.deepPurple,
+lib\\const\\agents\.dart:840:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.orangeAccent,
+lib\\const\\agents\.dart:847:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.orangeAccent,
+lib\\const\\agents\.dart:854:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.orangeAccent,
+lib\\const\\agents\.dart:862:\ \ \ \ \ \ \ \ color:\ Colors\.orangeAccent,
+lib\\const\\agents\.dart:874:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.deepPurpleAccent,
+lib\\const\\agents\.dart:883:\ \ \ \ \ \ \ \ color:\ Colors\.deepPurpleAccent,
+lib\\const\\agents\.dart:895:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.lightBlueAccent,
+lib\\const\\agents\.dart:902:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.lightBlueAccent,
+lib\\const\\agents\.dart:909:\ \ \ \ \ \ \ \ outlineColor:\ Colors\.lightBlueAccent,
+lib\\const\\json_converters\.dart:94:\ \ \ \ \ \ return\ Colors\.transparent;
+lib\\const\\settings\.dart:117:\ \ \ \ \ \ \ \ ColorOption\(color:\ Colors\.white,\ isSelected:\ true\),
+lib\\const\\settings\.dart:118:\ \ \ \ \ \ \ \ ColorOption\(color:\ Colors\.red,\ isSelected:\ false\),
+lib\\const\\settings\.dart:119:\ \ \ \ \ \ \ \ ColorOption\(color:\ Colors\.blue,\ isSelected:\ false\),
+lib\\const\\settings\.dart:120:\ \ \ \ \ \ \ \ ColorOption\(color:\ Colors\.yellow,\ isSelected:\ false\),
+lib\\const\\settings\.dart:121:\ \ \ \ \ \ \ \ ColorOption\(color:\ Colors\.green,\ isSelected:\ false\),
+lib\\const\\settings\.dart:148:\ \ \ \ \ \ dividerColor:\ Colors\.transparent,
+lib\\const\\settings\.dart:153:\ \ \ \ \ \ \ \ \ \ foregroundColor:\ WidgetStateProperty\.all<Color>\(Colors\.white\),
+lib\\const\\settings\.dart:195:\ \ \ \ \ \ \ \ \ \ foregroundColor:\ WidgetStateProperty\.all<Color>\(Colors\.white\),
+lib\\const\\settings\.dart:225:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \.copyWith\(color:\ Colors\.white\),
+lib\\interactive_map\.dart:58:\ \ static\ const\ Color\ _mapBaseSourceColor\ =\ Color\(0xFF271406\);
+lib\\interactive_map\.dart:59:\ \ static\ const\ Color\ _mapDetailSourceColor\ =\ Color\(0xFFB27C40\);
+lib\\interactive_map\.dart:60:\ \ static\ const\ Color\ _mapHighlightSourceColor\ =\ Color\(0xFFF08234\);
+lib\\main\.dart:71:\ \ \ \ color:\ Colors\.white,
+lib\\providers\\folder_provider\.dart:42:\ \ \ \ FolderColor\.red:\ Colors\.red,
+lib\\providers\\folder_provider\.dart:43:\ \ \ \ FolderColor\.blue:\ Colors\.blue,
+lib\\providers\\folder_provider\.dart:44:\ \ \ \ FolderColor\.green:\ Colors\.green,
+lib\\providers\\folder_provider\.dart:45:\ \ \ \ FolderColor\.orange:\ Colors\.orange,
+lib\\providers\\folder_provider\.dart:46:\ \ \ \ FolderColor\.purple:\ Colors\.purple,
+lib\\providers\\map_theme_provider\.dart:20:\ \ Color\ get\ baseColor\ =>\ Color\(baseColorValue\);
+lib\\providers\\map_theme_provider\.dart:21:\ \ Color\ get\ detailColor\ =>\ Color\(detailColorValue\);
+lib\\providers\\map_theme_provider\.dart:22:\ \ Color\ get\ highlightColor\ =>\ Color\(highlightColorValue\);
+lib\\providers\\pen_provider\.dart:142:\ \ \ \ Color\ selectedColor\ =\ Colors\.white;
+lib\\providers\\pen_provider\.dart:80:\ \ \ \ \ \ color:\ Colors\.white,
+lib\\sidebar\.dart:103:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \?\ Colors\.white
+lib\\strategy_view\.dart:111:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ foregroundColor:\ Colors\.white,
+lib\\strategy_view\.dart:124:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\strategy_view\.dart:76:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ foregroundColor:\ Colors\.white,
+lib\\theme\\theme_color_format\.dart:40:\ \ \ \ return\ Color\(argb\);
+lib\\theme\\ui_theme_models\.dart:104:\ \ \ \ return\ Color\(value\);
+lib\\theme\\ui_theme_tokens\.dart:75:\ \ \ \ return\ BoxShadow\(
+lib\\theme\\ui_theme_tokens\.dart:76:\ \ \ \ \ \ color:\ Color\(colorValue\),
+lib\\theme\\ui_theme_tokens\.dart:84:\ \ \ \ return\ Shadow\(
+lib\\theme\\ui_theme_tokens\.dart:85:\ \ \ \ \ \ color:\ Color\(colorValue\),
+lib\\widgets\\color_picker_button\.dart:20:\ \ final\ _hoverColor\ =\ Colors\.white;
+lib\\widgets\\color_picker_button\.dart:22:\ \ Color\ _currentColor\ =\ Colors\.transparent;
+lib\\widgets\\color_picker_button\.dart:47:\ \ \ \ \ \ \ \ \ \ \ \ _currentColor\ =\ Colors\.transparent;
+lib\\widgets\\current_line_up_painter\.dart:70:\ \ \ \ \ \ \.\.color\ =\ Colors\.white
+lib\\widgets\\custom_button\.dart:11:\ \ \ \ this\.labelColor\ =\ Colors\.white,
+lib\\widgets\\custom_button\.dart:12:\ \ \ \ this\.backgroundColor\ =\ Colors\.deepPurple,
+lib\\widgets\\custom_button\.dart:62:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ const\ BorderSide\(color:\ Colors\.deepPurpleAccent,\ width:\ 2\.0\),
+lib\\widgets\\custom_button\.dart:76:\ \ \ \ \ \ \ \ \ \ \ \ return\ Colors\.white\.withAlpha\(51\);
+lib\\widgets\\custom_button\.dart:86:\ \ \ \ \ \ \ \ color:\ isDisabled\ \?\ Colors\.white70\ :\ labelColor,
+lib\\widgets\\custom_expansion_tile\.dart:139:\ \ \ \ \ \ \ \ \?\ widget\.backgroundColor\ \?\?\ Colors\.transparent
+lib\\widgets\\custom_expansion_tile\.dart:140:\ \ \ \ \ \ \ \ :\ widget\.collapsedBackgroundColor\ \?\?\ Colors\.transparent;
+lib\\widgets\\custom_search_field\.dart:108:\ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\custom_search_field\.dart:167:\ \ \ \ \ \ \ \ \ \ color:\ Colors\.white54,
+lib\\widgets\\custom_search_field\.dart:176:\ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\custom_search_field\.dart:190:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white70,
+lib\\widgets\\custom_segmented_tabs\.dart:281:\ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\custom_segmented_tabs\.dart:298:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ :\ Colors\.transparent,
+lib\\widgets\\demo_tag\.dart:14:\ \ \ \ const\ accent\ =\ Colors\.red;
+lib\\widgets\\demo_tag\.dart:33:\ \ \ \ \ \ \ \ \ \ \ \ BoxShadow\(
+lib\\widgets\\demo_tag\.dart:47:\ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white\.withAlpha\(230\),\ //\ 0\.9
+lib\\widgets\\demo_tag\.dart:53:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\demo_tag\.dart:58:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\dialogs\\strategy\\delete_strategy_alert_dialog\.dart:65:\ \ \ \ \ \ \ \ \ \ \ \ \ \ Icon\(Icons\.delete_forever,\ color:\ Colors\.white\),
+lib\\widgets\\dialogs\\strategy\\delete_strategy_alert_dialog\.dart:69:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ style:\ TextStyle\(color:\ Colors\.white\),
+lib\\widgets\\dialogs\\strategy\\line_up_media_page\.dart:171:\ \ \ \ \ \ \ \ \ \ child:\ const\ Icon\(Icons\.add,\ color:\ Colors\.white\),
+lib\\widgets\\dialogs\\strategy\\line_up_media_page\.dart:191:\ \ \ \ \ \ \ \ \ \ \ \ \ \ Icon\(Icons\.content_paste,\ color:\ Colors\.white\),
+lib\\widgets\\dialogs\\strategy\\line_up_media_page\.dart:195:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ style:\ TextStyle\(color:\ Colors\.white,\ fontSize:\ 12\),
+lib\\widgets\\dialogs\\strategy\\line_up_media_page\.dart:219:\ \ \ \ \ \ \ \ \ \ \ \ \ \ Icon\(Icons\.content_paste,\ color:\ Colors\.white,\ size:\ 16\),
+lib\\widgets\\dialogs\\strategy\\line_up_media_page\.dart:223:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ style:\ TextStyle\(color:\ Colors\.white\),
+lib\\widgets\\dialogs\\strategy\\line_up_media_page\.dart:258:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.black54,
+lib\\widgets\\dialogs\\strategy\\line_up_media_page\.dart:261:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ child:\ const\ Icon\(Icons\.close,\ size:\ 14,\ color:\ Colors\.white\),
+lib\\widgets\\dialogs\\strategy\\line_up_media_page\.dart:58:\ \ \ \ \ \ \ \ const\ Text\("Youtube\ link",\ style:\ TextStyle\(color:\ Colors\.white\)\),
+lib\\widgets\\dialogs\\strategy\\line_up_media_page\.dart:65:\ \ \ \ \ \ \ \ const\ Text\("Images",\ style:\ TextStyle\(color:\ Colors\.white\)\),
+lib\\widgets\\dialogs\\strategy\\line_up_media_page\.dart:81:\ \ \ \ \ \ \ \ \ \ child:\ Text\("Notes",\ style:\ TextStyle\(color:\ Colors\.white\)\),
+lib\\widgets\\dialogs\\upload_image_dialog\.dart:273:\ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\draggable_widgets\\ability\\ability_widget\.dart:56:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \?\ Colors\.deepPurple
+lib\\widgets\\draggable_widgets\\ability\\ability_widget\.dart:61:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \?\ Colors\.deepPurpleAccent
+lib\\widgets\\draggable_widgets\\ability\\custom_square_widget\.dart:76:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\draggable_widgets\\ability\\rotatable_widget\.dart:84:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \?\ Colors\.white
+lib\\widgets\\draggable_widgets\\ability\\rotatable_widget\.dart:85:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ :\ Colors\.white\.withAlpha\(200\),
+lib\\widgets\\draggable_widgets\\agents\\agent_widget\.dart:107:\ \ \ \ \ \ outlineColor\ =\ Colors\.deepPurpleAccent;
+lib\\widgets\\draggable_widgets\\agents\\agent_widget\.dart:156:\ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\draggable_widgets\\agents\\agent_widget\.dart:164:\ \ \ \ \ \ \ \ \ \ \ \ highlightColor:\ Colors\.white\.withValues\(alpha:\ 0\.2\),
+lib\\widgets\\draggable_widgets\\agents\\agent_widget\.dart:165:\ \ \ \ \ \ \ \ \ \ \ \ splashColor:\ Colors\.white\.withValues\(alpha:\ 0\.3\),
+lib\\widgets\\draggable_widgets\\agents\\agent_widget\.dart:205:\ \ \ \ \ \ \.\.color\ =\ Colors\.red\.withValues\(alpha:\ 0\.8\)
+lib\\widgets\\draggable_widgets\\agents\\agent_widget\.dart:89:\ \ \ \ \ \ bgColor\ =\ Colors\.deepPurple;
+lib\\widgets\\draggable_widgets\\image\\image_widget\.dart:115:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ icon:\ const\ Icon\(LucideIcons\.x,\ color:\ Colors\.white\),
+lib\\widgets\\draggable_widgets\\image\\image_widget\.dart:239:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Color\(widget\.tagColorValue\ \?\?\ Settings\.defaultTagColor\.toARGB32\(\)\),
+lib\\widgets\\draggable_widgets\\image\\image_widget\.dart:249:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.black,
+lib\\widgets\\draggable_widgets\\image\\image_widget\.dart:64:\ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\draggable_widgets\\text\\text_widget\.dart:116:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ hintStyle:\ TextStyle\(color:\ Colors\.grey\),
+lib\\widgets\\draggable_widgets\\text\\text_widget\.dart:97:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Color\(widget\.tagColorValue\ \?\?\ Settings\.defaultTagColor\.toARGB32\(\)\),
+lib\\widgets\\draggable_widgets\\utilities\\custom_circle_utility_widget\.dart:53:\ \ \ \ final\ color\ =\ Color\(effectiveColorValue\);
+lib\\widgets\\draggable_widgets\\utilities\\custom_circle_utility_widget\.dart:95:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white\.withValues\(alpha:\ 0\.9\),
+lib\\widgets\\draggable_widgets\\utilities\\custom_circle_utility_widget\.dart:97:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ Border\.all\(color:\ Colors\.white,\ width:\ coord\.scale\(2\)\),
+lib\\widgets\\draggable_widgets\\utilities\\custom_rectangle_utility_widget\.dart:103:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white\.withValues\(alpha:\ 0\.9\),
+lib\\widgets\\draggable_widgets\\utilities\\custom_rectangle_utility_widget\.dart:105:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ Border\.all\(color:\ Colors\.white,\ width:\ coord\.scale\(2\)\),
+lib\\widgets\\draggable_widgets\\utilities\\custom_rectangle_utility_widget\.dart:57:\ \ \ \ final\ color\ =\ Color\(effectiveColorValue\);
+lib\\widgets\\draggable_widgets\\utilities\\view_cone_widget\.dart:177:\ \ \ \ \ \ \ \ \ \ Colors\.transparent,
+lib\\widgets\\drawing_painter\.dart:459:\ \ \ \ \ \ \.\.color\ =\ Colors\.white
+lib\\widgets\\folder_content\.dart:255:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.grey,
+lib\\widgets\\folder_edit_dialog\.dart:129:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\folder_edit_dialog\.dart:244:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\folder_pill\.dart:122:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \?\ Colors\.white
+lib\\widgets\\folder_pill\.dart:124:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \?\ Colors\.white\.withValues\(alpha:\ 0\.5\)
+lib\\widgets\\folder_pill\.dart:125:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ :\ Colors\.white\.withValues\(alpha:\ 0\.15\)\),
+lib\\widgets\\folder_pill\.dart:135:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\folder_pill\.dart:144:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\folder_pill\.dart:180:\ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white\.withValues\(alpha:\ 0\.8\),
+lib\\widgets\\folder_pill\.dart:213:\ \ \ \ \ \ \ \ leading:\ const\ Icon\(Icons\.delete,\ color:\ Colors\.redAccent\),
+lib\\widgets\\folder_pill\.dart:214:\ \ \ \ \ \ \ \ child:\ const\ Text\('Delete',\ style:\ TextStyle\(color:\ Colors\.redAccent\)\),
+lib\\widgets\\folder_pill\.dart:239:\ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\folder_pill\.dart:246:\ \ \ \ \ \ \ \ \ \ \ \ border:\ Border\.all\(color:\ Colors\.white,\ width:\ 2\),
+lib\\widgets\\folder_pill\.dart:253:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\folder_pill\.dart:260:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\folder_pill\.dart:60:\ \ \ \ \ \ Colors\.grey;
+lib\\widgets\\interaction_state_display\.dart:169:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\interaction_state_display\.dart:191:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \.copyWith\(color:\ Colors\.white70\),
+lib\\widgets\\interaction_state_display\.dart:252:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\interaction_state_display\.dart:279:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\interaction_state_display\.dart:346:\ \ \ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\interaction_state_display\.dart:380:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\interaction_state_display\.dart:390:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white70,
+lib\\widgets\\interaction_state_display\.dart:412:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white54,
+lib\\widgets\\line_up_line_painter\.dart:111:\ \ \ \ \ \ \.\.color\ =\ Colors\.white70
+lib\\widgets\\line_up_line_painter\.dart:117:\ \ \ \ \ \ \.\.color\ =\ Colors\.white
+lib\\widgets\\line_up_media_carousel\.dart:115:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ child:\ Icon\(Icons\.broken_image,\ color:\ Colors\.white\)\);
+lib\\widgets\\line_up_media_carousel\.dart:138:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ icon:\ const\ Icon\(LucideIcons\.arrowLeft,\ color:\ Colors\.white\),
+lib\\widgets\\line_up_media_carousel\.dart:158:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ icon:\ const\ Icon\(LucideIcons\.arrowRight,\ color:\ Colors\.white\),
+lib\\widgets\\line_up_media_carousel\.dart:191:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \?\ Colors\.white
+lib\\widgets\\line_up_media_carousel\.dart:206:\ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\line_up_media_carousel\.dart:82:\ \ \ \ \ \ \ \ \ \ style:\ TextStyle\(color:\ Colors\.white\),
+lib\\widgets\\line_up_placer\.dart:69:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \.copyWith\(color:\ Colors\.white\),
+lib\\widgets\\map_selector\.dart:200:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \?\ Colors\.redAccent
+lib\\widgets\\map_selector\.dart:201:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ :\ Colors\.blueAccent,
+lib\\widgets\\map_selector\.dart:210:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\map_theme_settings_section\.dart:790:\ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\map_theme_settings_section\.dart:824:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ updateFromColor\(Color\(argb\)\);
+lib\\widgets\\map_theme_settings_section\.dart:903:\ \ \ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\map_tile\.dart:73:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ :\ Colors\.white,
+lib\\widgets\\mouse_watch\.dart:103:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.black87,
+lib\\widgets\\mouse_watch\.dart:109:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ style:\ const\ TextStyle\(color:\ Colors\.white\),
+lib\\widgets\\numeric_drag_input\.dart:263:\ \ \ \ \ \ \ \ \ \ \ \ hoverColor:\ Colors\.transparent,
+lib\\widgets\\numeric_drag_input\.dart:265:\ \ \ \ \ \ \ \ \ \ \ \ fillColor:\ Colors\.transparent,
+lib\\widgets\\pages_bar\.dart:204:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\pages_bar\.dart:210:\ \ \ \ \ \ \ \ \ \ \ \ foregroundColor:\ Colors\.white,
+lib\\widgets\\pages_bar\.dart:212:\ \ \ \ \ \ \ \ \ \ \ \ icon:\ const\ Icon\(Icons\.keyboard_arrow_down,\ color:\ Colors\.white\),
+lib\\widgets\\pages_bar\.dart:370:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ foregroundColor:\ Colors\.white,
+lib\\widgets\\pages_bar\.dart:373:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ const\ Icon\(Icons\.keyboard_arrow_up,\ color:\ Colors\.white\),
+lib\\widgets\\pages_bar\.dart:443:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\pages_bar\.dart:460:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ hoverBackgroundColor:\ Colors\.transparent,
+lib\\widgets\\pages_bar\.dart:461:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ foregroundColor:\ Colors\.white,
+lib\\widgets\\pages_bar\.dart:462:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ icon:\ const\ Icon\(Icons\.edit,\ size:\ 18,\ color:\ Colors\.white\),
+lib\\widgets\\pages_bar\.dart:471:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ hoverBackgroundColor:\ Colors\.transparent,
+lib\\widgets\\pages_bar\.dart:473:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ disableDelete\ \?\ Colors\.white24\ :\ Colors\.white,
+lib\\widgets\\save_and_load_button\.dart:194:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.white,
+lib\\widgets\\save_and_load_button\.dart:41:\ \ \ \ \ \ \ \ \ \ \ \ \ \ foregroundColor:\ Colors\.white,
+lib\\widgets\\save_and_load_button\.dart:56:\ \ \ \ \ \ \ \ \ \ \ \ \ \ foregroundColor:\ Colors\.white,
+lib\\widgets\\save_and_load_button\.dart:77:\ \ \ \ \ \ \ \ \ \ \ \ \ \ foregroundColor:\ Colors\.white,
+lib\\widgets\\settings_tab\.dart:22:\ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\sidebar_widgets\\ability_bar\.dart:38:\ \ \ \ \ \ \ \ \ \ \ \ Color\.lerp\(Settings\.tacticalVioletTheme\.card,\ Colors\.black,\ 0\.5\)!,
+lib\\widgets\\sidebar_widgets\\color_buttons\.dart:24:\ \ final\ _hoverColor\ =\ Colors\.white;
+lib\\widgets\\sidebar_widgets\\color_buttons\.dart:26:\ \ Color\ _currentColor\ =\ Colors\.transparent;
+lib\\widgets\\sidebar_widgets\\color_buttons\.dart:53:\ \ \ \ \ \ \ \ \ \ \ \ _currentColor\ =\ Colors\.transparent;
+lib\\widgets\\sidebar_widgets\\role_picker\.dart:38:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ :\ Colors\.transparent,
+lib\\widgets\\strategy_save_icon_button\.dart:105:\ \ \ \ \ \ \ \ \ \ \ \ valueColor:\ AlwaysStoppedAnimation<Color>\(Colors\.white\),
+lib\\widgets\\strategy_save_icon_button\.dart:112:\ \ \ \ \ \ \ \ icon\ =\ const\ Icon\(Icons\.check,\ color:\ Colors\.greenAccent\);
+lib\\widgets\\strategy_save_icon_button\.dart:120:\ \ \ \ \ \ \ \ foregroundColor:\ Colors\.white,
+lib\\widgets\\strategy_save_icon_button\.dart:150:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \.copyWith\(color:\ Colors\.white\),
+lib\\widgets\\strategy_tile\\strategy_tile\.dart:131:\ \ \ \ \ \ \ \ leading:\ const\ Icon\(LucideIcons\.trash2,\ color:\ Colors\.redAccent\),
+lib\\widgets\\strategy_tile\\strategy_tile\.dart:132:\ \ \ \ \ \ \ \ child:\ const\ Text\('Delete',\ style:\ TextStyle\(color:\ Colors\.redAccent\)\),
+lib\\widgets\\strategy_tile\\strategy_tile\.dart:49:\ \ \ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\theme_studio_section\.dart:162:\ \ \ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\theme_studio_section\.dart:207:\ \ \ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\theme_studio_section\.dart:456:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\theme_studio_section\.dart:644:\ \ \ \ \ \ \ \ \ \ \ \ \ \ \ \ color:\ Colors\.transparent,
+lib\\widgets\\theme_studio_section\.dart:712:\ \ \ \ final\ color\ =\ Color\(layer\.colorValue\);

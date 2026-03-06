@@ -1,4 +1,5 @@
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
@@ -57,7 +58,7 @@ class _MapTileState extends ConsumerState<MapTile> {
                 if (_isHovered && !widget.isPreview)
                   Positioned.fill(
                     child: Container(
-                      color: Colors.white.withValues(alpha: 0.15),
+                      color: Settings.mapTileOverlayColor,
                     ),
                   ),
                 Align(
@@ -70,13 +71,7 @@ class _MapTileState extends ConsumerState<MapTile> {
                       color: widget.isActive
                           ? Settings.tacticalVioletTheme.primary
                           : Colors.white,
-                      shadows: const [
-                        Shadow(
-                          color: Colors.black,
-                          blurRadius: 2,
-                          offset: Offset(0, 2),
-                        )
-                      ],
+                      shadows: Settings.mapTitleTextShadows,
                     ),
                   ),
                 )
@@ -88,3 +83,4 @@ class _MapTileState extends ConsumerState<MapTile> {
     );
   }
 }
+

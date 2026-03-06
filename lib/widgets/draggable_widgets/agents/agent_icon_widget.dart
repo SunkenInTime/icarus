@@ -43,3 +43,4 @@ class AgentIconWidget extends ConsumerWidget {
     );
   }
 }
+

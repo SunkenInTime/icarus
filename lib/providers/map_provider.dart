@@ -95,3 +95,4 @@ class MapProvider extends Notifier<MapState> {
     return mapValue;
   }
 }
+

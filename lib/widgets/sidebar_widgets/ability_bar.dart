@@ -58,11 +58,7 @@ class AbiilityBar extends ConsumerWidget {
             width: 1,
           ),
         ),
-        boxShadow: const [
-          Settings.cardForegroundBackdrop,
-          
-
-        ],
+        boxShadow: Settings.cardForegroundBackdropShadows,
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -134,3 +130,4 @@ class AbiilityBar extends ConsumerWidget {
     );
   }
 }
+

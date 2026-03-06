@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
 
@@ -93,7 +94,7 @@ class _TextWidgetState extends ConsumerState<TextWidget> {
                     borderRadius: const BorderRadius.all(Radius.circular(3)),
                     child: Container(
                       width: 10,
-                      color: Color(widget.tagColorValue ?? 0xFFC5C5C5),
+                      color: Color(widget.tagColorValue ?? Settings.defaultTagColor.toARGB32()),
                     ),
                   ),
                   const SizedBox(width: 2),
@@ -103,7 +104,7 @@ class _TextWidgetState extends ConsumerState<TextWidget> {
                         borderRadius: BorderRadius.all(Radius.circular(3)),
                       ),
                       margin: const EdgeInsets.all(0),
-                      color: Colors.black,
+                      color: Settings.textCardBackgroundColor,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 5, vertical: 5),
@@ -134,3 +135,4 @@ class _TextWidgetState extends ConsumerState<TextWidget> {
     );
   }
 }
+

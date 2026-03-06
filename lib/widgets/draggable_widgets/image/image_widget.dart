@@ -67,7 +67,7 @@ class _ImageFullScreenOverlay extends StatelessWidget {
           Positioned.fill(
             child: BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
-              child: Container(color: Colors.black54),
+              child: Container(color: Settings.backdropOverlayColor),
             ),
           ),
           SafeArea(
@@ -236,7 +236,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
                   width: 10,
                   height: cardHeight.toDouble(),
                   decoration: BoxDecoration(
-                    color: Color(widget.tagColorValue ?? 0xFFC5C5C5),
+                    color: Color(widget.tagColorValue ?? Settings.defaultTagColor.toARGB32()),
                     borderRadius: BorderRadius.circular(3),
                   ),
                 ),
@@ -255,7 +255,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
                         aspectRatio: safeAspectRatio,
                         child: Container(
                           decoration: BoxDecoration(
-                            color: const Color.fromARGB(255, 20, 20, 20),
+                            color: Settings.imageCardBackgroundColor,
                             borderRadius: BorderRadius.circular(3),
                           ),
                           child: ClipRRect(
@@ -278,3 +278,4 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
     );
   }
 }
+
