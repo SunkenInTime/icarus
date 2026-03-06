@@ -89,7 +89,7 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
     state = [...newState, temp];
   }
 
-  void duplicateAgentAt({
+  String? duplicateAgentAt({
     required String sourceId,
     required Offset position,
   }) {
@@ -97,15 +97,16 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
     final centerPosition =
         Offset(position.dx + agentSize / 2, position.dy + agentSize / 2);
     final coordinateSystem = CoordinateSystem.instance;
-    if (coordinateSystem.isOutOfBounds(centerPosition)) return;
+    if (coordinateSystem.isOutOfBounds(centerPosition)) return null;
 
     final sourceIndex = PlacedWidget.getIndexByID(sourceId, state);
-    if (sourceIndex < 0) return;
+    if (sourceIndex < 0) return null;
 
     final sourceAgent = state[sourceIndex];
     final duplicatedAgent =
         sourceAgent.copyWith(id: _uuid.v4(), position: position);
     addAgent(duplicatedAgent);
+    return duplicatedAgent.id;
   }
 
   void undoAction(UserAction action) {

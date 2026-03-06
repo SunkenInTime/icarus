@@ -257,13 +257,20 @@ class _AbilityList extends ConsumerWidget {
   }
 }
 
-class _AgentList extends ConsumerWidget {
+class _AgentList extends ConsumerStatefulWidget {
   const _AgentList({required this.coordinateSystem});
 
   final CoordinateSystem coordinateSystem;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AgentList> createState() => _AgentListState();
+}
+
+class _AgentListState extends ConsumerState<_AgentList> {
+  final Map<String, String> _pendingDuplicateDragBySource = {};
+
+  @override
+  Widget build(BuildContext context) {
     final agents = ref.watch(agentProvider);
     final zoomDragAnchorStrategy =
         ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy;
@@ -272,59 +279,67 @@ class _AgentList extends ConsumerWidget {
       clipBehavior: Clip.none,
       children: [
         for (final agent in agents)
-          () {
-            bool shouldDuplicateOnDrop = false;
-            return Positioned(
-              key: ValueKey(agent.id),
-              left: coordinateSystem.coordinateToScreen(agent.position).dx,
-              top: coordinateSystem.coordinateToScreen(agent.position).dy,
-              child: Draggable<PlacedWidget>(
-                data: agent,
-                dragAnchorStrategy: zoomDragAnchorStrategy,
-                onDragStarted: () {
-                  shouldDuplicateOnDrop =
-                      HardwareKeyboard.instance.isControlPressed ||
-                          HardwareKeyboard.instance.isMetaPressed;
-                },
-                feedback: Opacity(
-                  opacity: Settings.feedbackOpacity,
-                  child: ZoomTransform(
-                    child: AgentWidget(
-                      state: agent.state,
-                      isAlly: agent.isAlly,
-                      id: "",
-                      agent: AgentData.agents[agent.type]!,
-                    ),
-                  ),
-                ),
-                childWhenDragging: const SizedBox.shrink(),
-                onDragEnd: (details) {
-                  final renderBox = context.findRenderObject() as RenderBox;
-                  final localOffset = renderBox.globalToLocal(details.offset);
-                  final virtualOffset =
-                      coordinateSystem.screenToCoordinate(localOffset);
+          Positioned(
+            key: ValueKey(agent.id),
+            left: widget.coordinateSystem.coordinateToScreen(agent.position).dx,
+            top: widget.coordinateSystem.coordinateToScreen(agent.position).dy,
+            child: Draggable<PlacedWidget>(
+              data: agent,
+              dragAnchorStrategy: zoomDragAnchorStrategy,
+              onDragStarted: () {
+                final shouldDuplicate =
+                    HardwareKeyboard.instance.isControlPressed ||
+                        HardwareKeyboard.instance.isMetaPressed;
+                if (!shouldDuplicate) return;
 
-                  if (shouldDuplicateOnDrop) {
+                final duplicatedId =
                     ref.read(agentProvider.notifier).duplicateAgentAt(
                           sourceId: agent.id,
-                          position: virtualOffset,
+                          position: agent.position,
                         );
-                    return;
-                  }
-
-                  ref
-                      .read(agentProvider.notifier)
-                      .updatePosition(virtualOffset, agent.id);
-                },
-                child: AgentWidget(
-                  state: agent.state,
-                  isAlly: agent.isAlly,
-                  id: agent.id,
-                  agent: AgentData.agents[agent.type]!,
+                if (duplicatedId != null) {
+                  _pendingDuplicateDragBySource[agent.id] = duplicatedId;
+                }
+              },
+              feedback: Opacity(
+                opacity: Settings.feedbackOpacity,
+                child: ZoomTransform(
+                  child: AgentWidget(
+                    state: agent.state,
+                    isAlly: agent.isAlly,
+                    id: "",
+                    agent: AgentData.agents[agent.type]!,
+                  ),
                 ),
               ),
-            );
-          }(),
+              childWhenDragging: const SizedBox.shrink(),
+              onDragEnd: (details) {
+                final renderBox = context.findRenderObject() as RenderBox;
+                final localOffset = renderBox.globalToLocal(details.offset);
+                final virtualOffset =
+                    widget.coordinateSystem.screenToCoordinate(localOffset);
+
+                final duplicateId =
+                    _pendingDuplicateDragBySource.remove(agent.id);
+                if (duplicateId != null) {
+                  ref
+                      .read(agentProvider.notifier)
+                      .updatePosition(virtualOffset, duplicateId);
+                  return;
+                }
+
+                ref
+                    .read(agentProvider.notifier)
+                    .updatePosition(virtualOffset, agent.id);
+              },
+              child: AgentWidget(
+                state: agent.state,
+                isAlly: agent.isAlly,
+                id: agent.id,
+                agent: AgentData.agents[agent.type]!,
+              ),
+            ),
+          ),
       ],
     );
   }

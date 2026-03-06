@@ -28,7 +28,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('Agent duplication behavior', () {
-    test('ctrl-duplicate creates a new agent id at drop position', () {
+    test('ctrl-duplicate creates a new agent immediately with a fresh id', () {
       CoordinateSystem(playAreaSize: const Size(1920, 1080));
       final container = ProviderContainer(
         overrides: [
@@ -48,23 +48,23 @@ void main() {
         ),
       ]);
 
-      notifier.duplicateAgentAt(
+      final duplicateId = notifier.duplicateAgentAt(
         sourceId: 'source-agent-id',
-        position: const Offset(300, 330),
+        position: const Offset(180, 220),
       );
+      expect(duplicateId, isNotNull);
 
       final agents = container.read(agentProvider);
       expect(agents, hasLength(2));
 
       final source =
           agents.firstWhere((agent) => agent.id == 'source-agent-id');
-      final duplicate =
-          agents.firstWhere((agent) => agent.id != 'source-agent-id');
+      final duplicate = agents.firstWhere((agent) => agent.id == duplicateId);
 
       expect(source.position, const Offset(180, 220));
       expect(duplicate.id, isNot('source-agent-id'));
       expect(duplicate.type, AgentType.jett);
-      expect(duplicate.position, const Offset(300, 330));
+      expect(duplicate.position, const Offset(180, 220));
       expect(duplicate.isAlly, isTrue);
       expect(duplicate.state, AgentState.dead);
 
@@ -72,6 +72,40 @@ void main() {
       expect(lastAction.type, ActionType.addition);
       expect(lastAction.group, ActionGroup.agent);
       expect(lastAction.id, duplicate.id);
+    });
+
+    test('new duplicate can then be moved independently on drop', () {
+      CoordinateSystem(playAreaSize: const Size(1920, 1080));
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_NoopActionProvider.new),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(agentProvider.notifier);
+      notifier.fromHive([
+        PlacedAgent(
+          id: 'source-agent-id',
+          type: AgentType.jett,
+          position: const Offset(100, 120),
+        ),
+      ]);
+
+      final duplicateId = notifier.duplicateAgentAt(
+        sourceId: 'source-agent-id',
+        position: const Offset(100, 120),
+      );
+      expect(duplicateId, isNotNull);
+
+      notifier.updatePosition(const Offset(310, 340), duplicateId!);
+      final agents = container.read(agentProvider);
+      final source =
+          agents.firstWhere((agent) => agent.id == 'source-agent-id');
+      final duplicate = agents.firstWhere((agent) => agent.id == duplicateId);
+
+      expect(source.position, const Offset(100, 120));
+      expect(duplicate.position, const Offset(310, 340));
     });
 
     test('duplicate outside bounds is ignored', () {
@@ -92,11 +126,12 @@ void main() {
         ),
       ]);
 
-      notifier.duplicateAgentAt(
+      final duplicateId = notifier.duplicateAgentAt(
         sourceId: 'source-agent-id',
         position: const Offset(-100, -100),
       );
 
+      expect(duplicateId, isNull);
       expect(container.read(agentProvider), hasLength(1));
       expect(container.read(actionProvider), isEmpty);
     });
