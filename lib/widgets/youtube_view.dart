@@ -1,5 +1,7 @@
 import 'dart:developer' show log;
 
+import 'package:flutter/foundation.dart' show Factory;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:icarus/const/youtube_handler.dart';
@@ -49,10 +51,16 @@ class _YoutubeViewState extends State<YoutubeView>
     with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
+  static final Set<Factory<OneSequenceGestureRecognizer>>
+      _youtubeGestureRecognizers = {
+    Factory<OneSequenceGestureRecognizer>(() => EagerGestureRecognizer()),
+  };
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final videoId =
+        YoutubeHandler.extractYoutubeIdWithTimestamp(widget.youtubeLink);
 
     if (!isWebViewInitialized) {
       // showShadDialog<void>(
@@ -71,6 +79,7 @@ class _YoutubeViewState extends State<YoutubeView>
         ),
         Positioned.fill(
           child: InAppWebView(
+            gestureRecognizers: _youtubeGestureRecognizers,
             onLoadStart: (controller, url) {
               log("Youtube view loading");
             },
@@ -81,8 +90,7 @@ class _YoutubeViewState extends State<YoutubeView>
             initialSettings:
                 InAppWebViewSettings(allowBackgroundAudioPlaying: false),
             initialUrlRequest: URLRequest(
-                url: WebUri(
-                    "https://embed.icarus-strats.xyz/?v=${YoutubeHandler.extractYoutubeIdWithTimestamp(widget.youtubeLink)}")),
+                url: WebUri("https://embed.icarus-strats.xyz/?v=$videoId")),
           ),
         ),
       ],
