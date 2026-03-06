@@ -2,6 +2,7 @@
 
 import 'dart:developer';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -271,43 +272,59 @@ class _AgentList extends ConsumerWidget {
       clipBehavior: Clip.none,
       children: [
         for (final agent in agents)
-          Positioned(
-            key: ValueKey(agent.id),
-            left: coordinateSystem.coordinateToScreen(agent.position).dx,
-            top: coordinateSystem.coordinateToScreen(agent.position).dy,
-            child: Draggable<PlacedWidget>(
-              data: agent,
-              dragAnchorStrategy: zoomDragAnchorStrategy,
-              feedback: Opacity(
-                opacity: Settings.feedbackOpacity,
-                child: ZoomTransform(
-                  child: AgentWidget(
-                    state: agent.state,
-                    isAlly: agent.isAlly,
-                    id: "",
-                    agent: AgentData.agents[agent.type]!,
+          () {
+            bool shouldDuplicateOnDrop = false;
+            return Positioned(
+              key: ValueKey(agent.id),
+              left: coordinateSystem.coordinateToScreen(agent.position).dx,
+              top: coordinateSystem.coordinateToScreen(agent.position).dy,
+              child: Draggable<PlacedWidget>(
+                data: agent,
+                dragAnchorStrategy: zoomDragAnchorStrategy,
+                onDragStarted: () {
+                  shouldDuplicateOnDrop =
+                      HardwareKeyboard.instance.isControlPressed ||
+                          HardwareKeyboard.instance.isMetaPressed;
+                },
+                feedback: Opacity(
+                  opacity: Settings.feedbackOpacity,
+                  child: ZoomTransform(
+                    child: AgentWidget(
+                      state: agent.state,
+                      isAlly: agent.isAlly,
+                      id: "",
+                      agent: AgentData.agents[agent.type]!,
+                    ),
                   ),
                 ),
-              ),
-              childWhenDragging: const SizedBox.shrink(),
-              onDragEnd: (details) {
-                final renderBox = context.findRenderObject() as RenderBox;
-                final localOffset = renderBox.globalToLocal(details.offset);
-                final virtualOffset =
-                    coordinateSystem.screenToCoordinate(localOffset);
+                childWhenDragging: const SizedBox.shrink(),
+                onDragEnd: (details) {
+                  final renderBox = context.findRenderObject() as RenderBox;
+                  final localOffset = renderBox.globalToLocal(details.offset);
+                  final virtualOffset =
+                      coordinateSystem.screenToCoordinate(localOffset);
 
-                ref
-                    .read(agentProvider.notifier)
-                    .updatePosition(virtualOffset, agent.id);
-              },
-              child: AgentWidget(
-                state: agent.state,
-                isAlly: agent.isAlly,
-                id: agent.id,
-                agent: AgentData.agents[agent.type]!,
+                  if (shouldDuplicateOnDrop) {
+                    ref.read(agentProvider.notifier).duplicateAgentAt(
+                          sourceId: agent.id,
+                          position: virtualOffset,
+                        );
+                    return;
+                  }
+
+                  ref
+                      .read(agentProvider.notifier)
+                      .updatePosition(virtualOffset, agent.id);
+                },
+                child: AgentWidget(
+                  state: agent.state,
+                  isAlly: agent.isAlly,
+                  id: agent.id,
+                  agent: AgentData.agents[agent.type]!,
+                ),
               ),
-            ),
-          ),
+            );
+          }(),
       ],
     );
   }

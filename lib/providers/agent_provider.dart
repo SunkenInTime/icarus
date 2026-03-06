@@ -7,6 +7,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:icarus/const/placed_classes.dart';
 
@@ -15,6 +16,7 @@ final agentProvider =
 
 class AgentProvider extends Notifier<List<PlacedAgent>> {
   List<PlacedAgent> poppedAgents = [];
+  static const _uuid = Uuid();
 
   @override
   List<PlacedAgent> build() {
@@ -85,6 +87,25 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
+  }
+
+  void duplicateAgentAt({
+    required String sourceId,
+    required Offset position,
+  }) {
+    final agentSize = ref.read(strategySettingsProvider).agentSize;
+    final centerPosition =
+        Offset(position.dx + agentSize / 2, position.dy + agentSize / 2);
+    final coordinateSystem = CoordinateSystem.instance;
+    if (coordinateSystem.isOutOfBounds(centerPosition)) return;
+
+    final sourceIndex = PlacedWidget.getIndexByID(sourceId, state);
+    if (sourceIndex < 0) return;
+
+    final sourceAgent = state[sourceIndex];
+    final duplicatedAgent =
+        sourceAgent.copyWith(id: _uuid.v4(), position: position);
+    addAgent(duplicatedAgent);
   }
 
   void undoAction(UserAction action) {

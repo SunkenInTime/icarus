@@ -19,6 +19,7 @@ class ShortcutInfo {
     LogicalKeySet(LogicalKeyboardKey.keyW): const ToggleErasingIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyT): const AddedTextIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyS): const NavigationActionIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyR): const ToggleAgentFilterIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyD): const ForwardPageIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyA): const BackwardPageIntent(),
     LogicalKeySet(LogicalKeyboardKey.f12): const OpenInAppDebugIntent(),
@@ -52,6 +53,8 @@ class ShortcutInfo {
         const DoNothingAndStopPropagationIntent(),
 
     LogicalKeySet(LogicalKeyboardKey.keyS):
+        const DoNothingAndStopPropagationIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyR):
         const DoNothingAndStopPropagationIntent(),
 
     LogicalKeySet(LogicalKeyboardKey.enter): const EnterTextIntent(),
@@ -94,6 +97,10 @@ class RedoActionIntent extends Intent {
 
 class NavigationActionIntent extends Intent {
   const NavigationActionIntent();
+}
+
+class ToggleAgentFilterIntent extends Intent {
+  const ToggleAgentFilterIntent();
 }
 
 class ForwardPageIntent extends Intent {
