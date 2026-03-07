@@ -7,10 +7,8 @@ import 'package:icarus/providers/drawing_provider.dart';
 
 enum InteractionState {
   navigation,
-  // drag,
   drawing,
   erasing,
-  deleting,
   visionCone,
   customShapes,
   textTools,
