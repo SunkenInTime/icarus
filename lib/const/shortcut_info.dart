@@ -21,6 +21,7 @@ class ShortcutInfo {
         LogicalKeyboardKey.shift): const RedoActionIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyQ): const ToggleDrawingIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyW): const ToggleErasingIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyE): const OpenDeleteMenuIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyT): const AddedTextIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyS): const NavigationActionIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyR): const ToggleAgentFilterIntent(),
@@ -59,6 +60,8 @@ class ShortcutInfo {
         const DoNothingAndStopPropagationIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyW):
         const DoNothingAndStopPropagationIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyE):
+        const DoNothingAndStopPropagationIntent(),
 
     LogicalKeySet(LogicalKeyboardKey.keyS):
         const DoNothingAndStopPropagationIntent(),
@@ -91,6 +94,10 @@ class AddedTextIntent extends Intent {
 
 class ToggleErasingIntent extends Intent {
   const ToggleErasingIntent();
+}
+
+class OpenDeleteMenuIntent extends Intent {
+  const OpenDeleteMenuIntent();
 }
 
 class EnterTextIntent extends Intent {

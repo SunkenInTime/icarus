@@ -8,6 +8,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
@@ -28,6 +29,10 @@ class GlobalShortcuts extends ConsumerStatefulWidget {
 class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
   bool _isDebugDialogOpen = false;
 
+  void _dismissDeleteMenu() {
+    ref.read(deleteMenuProvider.notifier).requestClose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Focus(
@@ -39,12 +44,14 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
           actions: {
             UndoActionIntent: CallbackAction<UndoActionIntent>(
               onInvoke: (intent) {
+                _dismissDeleteMenu();
                 ref.read(actionProvider.notifier).undoAction();
                 return null;
               },
             ),
             AddedTextIntent: CallbackAction<AddedTextIntent>(
               onInvoke: (intent) {
+                _dismissDeleteMenu();
                 const uuid = Uuid();
                 final coordinateSystem = CoordinateSystem.instance;
                 const screenPoint = Offset(200, 42);
@@ -65,6 +72,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ),
             ToggleDrawingIntent: CallbackAction<ToggleDrawingIntent>(
               onInvoke: (intent) {
+                _dismissDeleteMenu();
                 if (ref.read(interactionStateProvider) ==
                     InteractionState.drawing) {
                   ref
@@ -80,6 +88,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ),
             ToggleErasingIntent: CallbackAction<ToggleErasingIntent>(
               onInvoke: (intent) async {
+                _dismissDeleteMenu();
                 if (ref.read(interactionStateProvider) ==
                     InteractionState.erasing) {
                   ref
@@ -96,6 +105,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ),
             RedoActionIntent: CallbackAction<RedoActionIntent>(
               onInvoke: (intent) {
+                _dismissDeleteMenu();
                 log("I triggered");
 
                 ref.read(actionProvider.notifier).redoAction();
@@ -104,6 +114,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ),
             SaveStrategyIntent: CallbackAction<SaveStrategyIntent>(
               onInvoke: (intent) async {
+                _dismissDeleteMenu();
                 final strategyId = ref.read(strategyProvider).id;
                 await ref.read(strategyProvider.notifier).forceSaveNow(
                       strategyId,
@@ -113,6 +124,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ),
             NavigationActionIntent: CallbackAction<NavigationActionIntent>(
               onInvoke: (intent) {
+                _dismissDeleteMenu();
                 log("I triggered");
 
                 ref
@@ -123,12 +135,14 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ),
             ToggleAgentFilterIntent: CallbackAction<ToggleAgentFilterIntent>(
               onInvoke: (intent) {
+                _dismissDeleteMenu();
                 ref.read(agentFilterProvider.notifier).toggleAllOnMap();
                 return null;
               },
             ),
             ForwardPageIntent: CallbackAction<ForwardPageIntent>(
               onInvoke: (intent) async {
+                _dismissDeleteMenu();
                 log("I triggered");
 
                 await ref.read(strategyProvider.notifier).forwardPage();
@@ -137,6 +151,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ),
             BackwardPageIntent: CallbackAction<BackwardPageIntent>(
               onInvoke: (intent) async {
+                _dismissDeleteMenu();
                 log("I triggered");
 
                 await ref.read(strategyProvider.notifier).backwardPage();
@@ -145,12 +160,14 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ),
             AddPageIntent: CallbackAction<AddPageIntent>(
               onInvoke: (intent) async {
+                _dismissDeleteMenu();
                 await ref.read(strategyProvider.notifier).addPage();
                 return null;
               },
             ),
             ToggleLineupIntent: CallbackAction<ToggleLineupIntent>(
               onInvoke: (intent) {
+                _dismissDeleteMenu();
                 if (ref.read(interactionStateProvider) ==
                     InteractionState.lineUpPlacing) {
                   ref
@@ -166,6 +183,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ),
             OpenInAppDebugIntent: CallbackAction<OpenInAppDebugIntent>(
               onInvoke: (intent) async {
+                _dismissDeleteMenu();
                 if (_isDebugDialogOpen) return null;
 
                 final navCtx = appNavigatorKey.currentContext ??
@@ -180,6 +198,14 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
                 );
 
                 _isDebugDialogOpen = false;
+                return null;
+              },
+            ),
+            OpenDeleteMenuIntent: CallbackAction<OpenDeleteMenuIntent>(
+              onInvoke: (intent) {
+                ref.read(deleteMenuProvider.notifier).requestOpen(
+                      reason: DeleteMenuOpenReason.keyboard,
+                    );
                 return null;
               },
             ),

@@ -25,14 +25,15 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   Color _highlightColor = Settings.tacticalVioletTheme.border;
   bool _isLoading = false;
 
-  final ShadPopoverController _menuController = ShadPopoverController();
-  final ShadContextMenuController _contextMenuController =
+  final ShadContextMenuController _menuButtonController =
+      ShadContextMenuController();
+  final ShadContextMenuController _rightClickMenuController =
       ShadContextMenuController();
 
   @override
   void dispose() {
-    _menuController.dispose();
-    _contextMenuController.dispose();
+    _menuButtonController.dispose();
+    _rightClickMenuController.dispose();
     super.dispose();
   }
 
@@ -58,51 +59,55 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
             () => _highlightColor = Settings.tacticalVioletTheme.border),
         child: AbsorbPointer(
           absorbing: _isLoading,
-          child: GestureDetector(
-            onTap: () => _openStrategy(context),
-            child: Stack(
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 100),
-                  decoration: BoxDecoration(
-                    color: ShadTheme.of(context).colorScheme.card,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: _highlightColor, width: 2),
-                  ),
-                  padding: const EdgeInsets.all(8),
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: StrategyTileThumbnail(
-                          assetPath: viewData.thumbnailAsset,
+          child: ShadContextMenuRegion(
+            controller: _rightClickMenuController,
+            items: _buildMenuItems(),
+            child: GestureDetector(
+              onTap: () => _openStrategy(context),
+              child: Stack(
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 100),
+                    decoration: BoxDecoration(
+                      color: ShadTheme.of(context).colorScheme.card,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: _highlightColor, width: 2),
+                    ),
+                    padding: const EdgeInsets.all(8),
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: StrategyTileThumbnail(
+                            assetPath: viewData.thumbnailAsset,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      Expanded(child: StrategyTileDetails(data: viewData)),
-                    ],
+                        const SizedBox(height: 10),
+                        Expanded(child: StrategyTileDetails(data: viewData)),
+                      ],
+                    ),
                   ),
-                ),
-                Align(
-                  alignment: Alignment.topRight,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: ShadContextMenuRegion(
-                      controller: _contextMenuController,
-                      items: _buildMenuItems(),
-                      child: ShadIconButton.secondary(
-                        width: 28,
-                        height: 28,
-                        onPressed: () {
-                          _contextMenuController.toggle();
-                        },
-                        icon: const Icon(
-                          Icons.more_vert_outlined,
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: ShadContextMenuRegion(
+                        controller: _menuButtonController,
+                        items: _buildMenuItems(),
+                        child: ShadIconButton.secondary(
+                          width: 28,
+                          height: 28,
+                          onPressed: () {
+                            _menuButtonController.toggle();
+                          },
+                          icon: const Icon(
+                            Icons.more_vert_outlined,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
