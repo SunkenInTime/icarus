@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/debug/debug_log.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 
@@ -57,6 +58,65 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
         group: ActionGroup.utility);
     ref.read(actionProvider.notifier).addAction(action);
     state = newState;
+  }
+
+  void updateCustomRectangleSize({
+    required String id,
+    required double widthMeters,
+    required double lengthMeters,
+  }) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+
+    newState[index].updateCustomShapeSize(
+      newWidth: widthMeters,
+      newLength: lengthMeters,
+    );
+
+    final action =
+        UserAction(type: ActionType.edit, id: id, group: ActionGroup.utility);
+    ref.read(actionProvider.notifier).addAction(action);
+    state = newState;
+    // #region agent log
+    appendDebugLog(
+      hypothesisId: 'D',
+      location: 'utility_provider.dart:${79 + 1}',
+      message: 'Rectangle size committed to provider',
+      data: <String, Object?>{
+        'id': id,
+        'widthMeters': newState[index].customWidth,
+        'lengthMeters': newState[index].customLength,
+      },
+    );
+    // #endregion
+  }
+
+  void updateCustomCircleDiameter({
+    required String id,
+    required double diameterMeters,
+  }) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+
+    newState[index].updateCustomShapeSize(newDiameter: diameterMeters);
+
+    final action =
+        UserAction(type: ActionType.edit, id: id, group: ActionGroup.utility);
+    ref.read(actionProvider.notifier).addAction(action);
+    state = newState;
+    // #region agent log
+    appendDebugLog(
+      hypothesisId: 'D',
+      location: 'utility_provider.dart:${95 + 1}',
+      message: 'Circle diameter committed to provider',
+      data: <String, Object?>{
+        'id': id,
+        'diameterMeters': newState[index].customDiameter,
+      },
+    );
+    // #endregion
   }
 
   void updateRotationHistory(int index) {
