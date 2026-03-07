@@ -11,6 +11,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -132,6 +133,9 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 return;
               }
               ref.read(agentProvider.notifier).addAgent(placedAgent);
+              ref
+                  .read(abilityBarProvider.notifier)
+                  .updateData(AgentData.agents[placedAgent.type]!);
             } else if (details.data is AbilityInfo) {
               PlacedAbility placedAbility = PlacedAbility(
                 id: uuid.v4(),
