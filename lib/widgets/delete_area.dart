@@ -189,7 +189,7 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
                 heightFactor: 1,
                 child: SizedBox(
                   width: 146,
-                  height: 102,
+                  height: 94,
                   child: Material(
                     color: Colors.transparent,
                     child: TapRegion(

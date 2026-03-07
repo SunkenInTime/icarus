@@ -56,7 +56,7 @@ class DeleteOptions extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final panel = Container(
       width: 146,
-      height: 102,
+      height: 94,
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
