@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_scale_controller.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
@@ -45,14 +46,21 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
 
   @override
   Widget build(BuildContext context) {
-    final index = PlacedWidget.getIndexByID(
-        widget.placedText.id, ref.watch(textProvider));
+    final texts = ref.watch(textProvider);
+    final index = PlacedWidget.getIndexByID(widget.placedText.id, texts);
+    final draftText = ref.watch(
+      textDraftProvider.select((drafts) => drafts[widget.placedText.id]),
+    );
     if (localSize == null) {
       return const SizedBox.shrink();
     }
 
-    if (ref.watch(textProvider)[index].size != localSize && !isPanning) {
-      localSize = ref.read(textProvider)[index].size;
+    if (index < 0) {
+      return const SizedBox.shrink();
+    }
+
+    if (texts[index].size != localSize && !isPanning) {
+      localSize = texts[index].size;
     }
     return TextScaleController(
       isDragging: isDragging,
@@ -87,7 +95,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           child: ZoomTransform(
             child: TextWidget(
               id: widget.placedText.id,
-              text: widget.placedText.text,
+              text: draftText ?? widget.placedText.text,
               size: localSize!,
               tagColorValue: widget.placedText.tagColorValue,
               isFeedback: true,
@@ -98,6 +106,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         dragAnchorStrategy:
             ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
         onDragStarted: () {
+          ref.read(textDraftProvider.notifier).commitDraft(widget.placedText.id);
           setState(() {
             isDragging = true;
           });

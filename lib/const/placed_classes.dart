@@ -142,6 +142,51 @@ class PlacedText extends PlacedWidget {
   @JsonKey(defaultValue: null)
   int? tagColorValue;
 
+  void commitText(String nextText) {
+    final action = TextContentAction(text: text);
+    _actionHistory.add(action);
+    _poppedAction.clear();
+    text = nextText;
+  }
+
+  void _undoText() {
+    final action = TextContentAction(text: text);
+
+    _poppedAction.add(action);
+    text = (_actionHistory.last as TextContentAction).text;
+    _actionHistory.removeLast();
+  }
+
+  void _redoText() {
+    final action = TextContentAction(text: text);
+
+    _actionHistory.add(action);
+    text = (_poppedAction.last as TextContentAction).text;
+    _poppedAction.removeLast();
+  }
+
+  @override
+  void undoAction() {
+    if (_actionHistory.isEmpty) return;
+
+    if (_actionHistory.last is PositionAction) {
+      _undoPosition();
+    } else if (_actionHistory.last is TextContentAction) {
+      _undoText();
+    }
+  }
+
+  @override
+  void redoAction() {
+    if (_poppedAction.isEmpty) return;
+
+    if (_poppedAction.last is PositionAction) {
+      _redoPosition();
+    } else if (_poppedAction.last is TextContentAction) {
+      _redoText();
+    }
+  }
+
   factory PlacedText.fromJson(Map<String, dynamic> json) =>
       _$PlacedTextFromJson(json);
   @override
@@ -504,6 +549,12 @@ class PositionAction extends WidgetAction {
   PositionAction copyWith({Offset? position}) {
     return PositionAction(position: position ?? this.position);
   }
+}
+
+class TextContentAction extends WidgetAction {
+  final String text;
+
+  TextContentAction({required this.text});
 }
 
 @JsonSerializable()

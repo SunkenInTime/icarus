@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
 
 final textProvider =
@@ -74,15 +75,17 @@ class TextProvider extends Notifier<List<PlacedText>> {
     state = newState;
   }
 
-  void editText(String text, String id) {
+  void commitText(String id, String nextText) {
     final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
 
-    newState
-        .firstWhere(
-          (element) => element.id == id,
-        )
-        .text = text;
-    // newState[index].text = text;
+    if (newState[index].text == nextText) return;
+
+    newState[index].commitText(nextText);
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(type: ActionType.edit, id: id, group: ActionGroup.text),
+        );
     state = newState;
   }
 
@@ -162,6 +165,11 @@ class TextProvider extends Notifier<List<PlacedText>> {
     if (index < 0) return;
 
     final text = newState.removeAt(index);
+    final draft = ref.read(textDraftProvider.notifier).draftFor(id);
+    if (draft != null) {
+      text.text = draft;
+      ref.read(textDraftProvider.notifier).clearDraft(id);
+    }
     poppedText.add(text);
 
     state = newState;
@@ -180,6 +188,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   void fromHive(List<PlacedText> hiveText) {
+    ref.read(textDraftProvider.notifier).clearAllDrafts();
     poppedText = [];
     state = hiveText;
   }
@@ -198,6 +207,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   void clearAll() {
+    ref.read(textDraftProvider.notifier).clearAllDrafts();
     poppedText = [];
     state = [];
   }
@@ -210,6 +220,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   void restoreSnapshot(TextProviderSnapshot snapshot) {
+    ref.read(textDraftProvider.notifier).clearAllDrafts();
     poppedText = [...snapshot.poppedText];
     state = [...snapshot.texts];
   }
