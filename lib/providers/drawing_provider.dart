@@ -63,6 +63,16 @@ class DrawingState {
 final drawingProvider =
     NotifierProvider<DrawingProvider, DrawingState>(DrawingProvider.new);
 
+class DrawingProviderSnapshot {
+  final DrawingState state;
+  final List<DrawingElement> poppedElements;
+
+  const DrawingProviderSnapshot({
+    required this.state,
+    required this.poppedElements,
+  });
+}
+
 class DrawingProvider extends Notifier<DrawingState> {
   List<DrawingElement> poppedElements = [];
 
@@ -590,6 +600,27 @@ class DrawingProvider extends Notifier<DrawingState> {
   void clearAll() {
     poppedElements = [];
     state = DrawingState(elements: []);
+    _triggerRepaint();
+  }
+
+  DrawingProviderSnapshot takeSnapshot() {
+    return DrawingProviderSnapshot(
+      state: DrawingState(
+        elements: [...state.elements],
+        updateCounter: state.updateCounter,
+        currentElement: state.currentElement,
+      ),
+      poppedElements: [...poppedElements],
+    );
+  }
+
+  void restoreSnapshot(DrawingProviderSnapshot snapshot) {
+    poppedElements = [...snapshot.poppedElements];
+    state = DrawingState(
+      elements: [...snapshot.state.elements],
+      updateCounter: snapshot.state.updateCounter,
+      currentElement: snapshot.state.currentElement,
+    );
     _triggerRepaint();
   }
 }

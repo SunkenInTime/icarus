@@ -10,6 +10,16 @@ import 'package:icarus/providers/text_widget_height_provider.dart';
 final textProvider =
     NotifierProvider<TextProvider, List<PlacedText>>(TextProvider.new);
 
+class TextProviderSnapshot {
+  final List<PlacedText> texts;
+  final List<PlacedText> poppedText;
+
+  const TextProviderSnapshot({
+    required this.texts,
+    required this.poppedText,
+  });
+}
+
 class TextProvider extends Notifier<List<PlacedText>> {
   List<PlacedText> poppedText = [];
 
@@ -105,6 +115,8 @@ class TextProvider extends Notifier<List<PlacedText>> {
         newState[index].undoAction();
 
         state = newState;
+      case ActionType.bulkDeletion:
+        return;
     }
   }
 
@@ -126,6 +138,8 @@ class TextProvider extends Notifier<List<PlacedText>> {
           final index = PlacedWidget.getIndexByID(action.id, newState);
 
           newState[index].redoAction();
+        case ActionType.bulkDeletion:
+          return;
       }
     } catch (_) {
       log("oops");
@@ -186,5 +200,17 @@ class TextProvider extends Notifier<List<PlacedText>> {
   void clearAll() {
     poppedText = [];
     state = [];
+  }
+
+  TextProviderSnapshot takeSnapshot() {
+    return TextProviderSnapshot(
+      texts: [...state],
+      poppedText: [...poppedText],
+    );
+  }
+
+  void restoreSnapshot(TextProviderSnapshot snapshot) {
+    poppedText = [...snapshot.poppedText];
+    state = [...snapshot.texts];
   }
 }

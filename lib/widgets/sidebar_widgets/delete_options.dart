@@ -22,13 +22,13 @@ class DeleteOptions extends ConsumerWidget {
                 context: context,
                 title: "Clear All Items",
                 content:
-                    "Are you sure you want to clear all items? This cannot be undone.",
+                    "Are you sure you want to clear all items? You can undo this action.",
                 confirmText: "Clear All",
                 cancelText: "Cancel",
                 isDestructive: true,
               ).then((confirmed) {
                 if (confirmed) {
-                  ref.read(actionProvider.notifier).clearAllActions();
+                  ref.read(actionProvider.notifier).clearAllAsAction();
                 }
               });
             },
@@ -52,63 +52,84 @@ class DeleteOptions extends ConsumerWidget {
                 ),
               ),
             ),
-            child: Row(
+            child: Column(
               spacing: 10,
               children: [
-                Expanded(
-                  child: IconButton(
-                    tooltip: "Clear Agent",
-                    onPressed: () {
-                      ref
-                          .read(actionProvider.notifier)
-                          .clearAction(ActionGroup.agent);
-                    },
-                    icon: const Icon(Icons.person),
-                  ),
+                Row(
+                  spacing: 10,
+                  children: [
+                    Expanded(
+                      child: IconButton(
+                        tooltip: "Clear Agent",
+                        onPressed: () {
+                          ref
+                              .read(actionProvider.notifier)
+                              .clearGroupAsAction(ActionGroup.agent);
+                        },
+                        icon: const Icon(Icons.person),
+                      ),
+                    ),
+                    Expanded(
+                      child: IconButton(
+                        tooltip: "Clear Ability",
+                        onPressed: () {
+                          ref
+                              .read(actionProvider.notifier)
+                              .clearGroupAsAction(ActionGroup.ability);
+                        },
+                        icon: const Icon(Icons.bolt),
+                      ),
+                    ),
+                    Expanded(
+                      child: IconButton(
+                        tooltip: "Clear Drawing",
+                        onPressed: () {
+                          ref
+                              .read(actionProvider.notifier)
+                              .clearGroupAsAction(ActionGroup.drawing);
+                        },
+                        icon: const Icon(Icons.draw),
+                      ),
+                    ),
+                  ],
                 ),
-                Expanded(
-                  child: IconButton(
-                    tooltip: "Clear Ability",
-                    onPressed: () {
-                      ref
-                          .read(actionProvider.notifier)
-                          .clearAction(ActionGroup.ability);
-                    },
-                    icon: const Icon(Icons.bolt),
-                  ),
-                ),
-                Expanded(
-                  child: IconButton(
-                    tooltip: "Clear Drawing",
-                    onPressed: () {
-                      ref
-                          .read(actionProvider.notifier)
-                          .clearAction(ActionGroup.drawing);
-                    },
-                    icon: const Icon(Icons.draw),
-                  ),
-                ),
-                Expanded(
-                  child: IconButton(
-                    tooltip: "Clear Text",
-                    onPressed: () {
-                      ref
-                          .read(actionProvider.notifier)
-                          .clearAction(ActionGroup.text);
-                    },
-                    icon: const Icon(Icons.text_fields),
-                  ),
-                ),
-                Expanded(
-                  child: IconButton(
-                    tooltip: "Clear Image",
-                    onPressed: () {
-                      ref
-                          .read(actionProvider.notifier)
-                          .clearAction(ActionGroup.image);
-                    },
-                    icon: const Icon(Icons.image),
-                  ),
+                Row(
+                  spacing: 10,
+                  children: [
+                    Expanded(
+                      child: IconButton(
+                        tooltip: "Clear Text",
+                        onPressed: () {
+                          ref
+                              .read(actionProvider.notifier)
+                              .clearGroupAsAction(ActionGroup.text);
+                        },
+                        icon: const Icon(Icons.text_fields),
+                      ),
+                    ),
+                    Expanded(
+                      child: IconButton(
+                        tooltip: "Clear Image",
+                        onPressed: () {
+                          ref
+                              .read(actionProvider.notifier)
+                              .clearGroupAsAction(ActionGroup.image);
+                        },
+                        icon: const Icon(Icons.image),
+                      ),
+                    ),
+                    Expanded(
+                      child: IconButton(
+                        tooltip: "Clear Utility",
+                        onPressed: () {
+                          ref
+                              .read(actionProvider.notifier)
+                              .clearGroupAsAction(ActionGroup.utility);
+                        },
+                        icon: const Icon(Icons.crop_square),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

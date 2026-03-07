@@ -14,6 +14,16 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 final abilityProvider =
     NotifierProvider<AbilityProvider, List<PlacedAbility>>(AbilityProvider.new);
 
+class AbilityProviderSnapshot {
+  final List<PlacedAbility> abilities;
+  final List<PlacedAbility> poppedAbilities;
+
+  const AbilityProviderSnapshot({
+    required this.abilities,
+    required this.poppedAbilities,
+  });
+}
+
 class AbilitySnapshot {
   final String id;
   final List<PlacedAbility> snapshot;
@@ -157,6 +167,8 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
         log("Current rotation: ${newState[index].rotation} Current length: ${newState[index].length}");
         state = newState;
+      case ActionType.bulkDeletion:
+        return;
     }
   }
 
@@ -176,6 +188,8 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
           newState[index].redoAction();
+        case ActionType.bulkDeletion:
+          return;
       }
     } catch (_) {
       log("failed to find index");
@@ -203,6 +217,18 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   void clearAll() {
     poppedAbility = [];
     state = [];
+  }
+
+  AbilityProviderSnapshot takeSnapshot() {
+    return AbilityProviderSnapshot(
+      abilities: [...state],
+      poppedAbilities: [...poppedAbility],
+    );
+  }
+
+  void restoreSnapshot(AbilityProviderSnapshot snapshot) {
+    poppedAbility = [...snapshot.poppedAbilities];
+    state = [...snapshot.abilities];
   }
 
   String toJson() {

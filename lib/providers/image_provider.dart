@@ -19,6 +19,16 @@ import 'package:uuid/uuid.dart';
 final placedImageProvider =
     NotifierProvider<PlacedImageProvider, ImageState>(PlacedImageProvider.new);
 
+class PlacedImageProviderSnapshot {
+  final List<PlacedImage> images;
+  final List<PlacedImage> poppedImages;
+
+  const PlacedImageProviderSnapshot({
+    required this.images,
+    required this.poppedImages,
+  });
+}
+
 class ImageState {
   ImageState({
     required this.images,
@@ -114,7 +124,8 @@ class PlacedImageProvider extends Notifier<ImageState> {
         .read(placedImageProvider.notifier)
         .saveSecureImage(imageBytes, imageID, fileExtension);
 
-    final effectiveAspectRatio = aspectRatio ?? await getImageAspectRatio(imageBytes);
+    final effectiveAspectRatio =
+        aspectRatio ?? await getImageAspectRatio(imageBytes);
     final placedImage = PlacedImage(
       fileExtension: fileExtension,
       position: position ?? const Offset(500, 500),
@@ -206,6 +217,8 @@ class PlacedImageProvider extends Notifier<ImageState> {
         state = state.copyWith(images: newImages);
       case ActionType.edit:
         undoPosition(action.id);
+      case ActionType.bulkDeletion:
+        return;
     }
   }
 
@@ -235,6 +248,8 @@ class PlacedImageProvider extends Notifier<ImageState> {
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newImages);
           newImages[index].redoAction();
+        case ActionType.bulkDeletion:
+          return;
       }
     } catch (_) {
       log("Failed to find index");
@@ -289,7 +304,8 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
     final images = jsonList
         .map((json) => PlacedImage.fromJson(json as Map<String, dynamic>))
-        .map((image) => image.copyWith(scale: ImageScalePolicy.clamp(image.scale)))
+        .map((image) =>
+            image.copyWith(scale: ImageScalePolicy.clamp(image.scale)))
         .toList();
 
     return images;
@@ -306,7 +322,8 @@ class PlacedImageProvider extends Notifier<ImageState> {
     );
 
     return images
-        .map((image) => image.copyWith(scale: ImageScalePolicy.clamp(image.scale)))
+        .map((image) =>
+            image.copyWith(scale: ImageScalePolicy.clamp(image.scale)))
         .toList();
   }
 
@@ -372,6 +389,18 @@ class PlacedImageProvider extends Notifier<ImageState> {
   void clearAll() {
     poppedImages = [];
     state = state.copyWith(images: []);
+  }
+
+  PlacedImageProviderSnapshot takeSnapshot() {
+    return PlacedImageProviderSnapshot(
+      images: [...state.images],
+      poppedImages: [...poppedImages],
+    );
+  }
+
+  void restoreSnapshot(PlacedImageProviderSnapshot snapshot) {
+    poppedImages = [...snapshot.poppedImages];
+    state = state.copyWith(images: [...snapshot.images]);
   }
 }
 

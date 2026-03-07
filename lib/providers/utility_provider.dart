@@ -11,6 +11,16 @@ import 'package:icarus/providers/map_provider.dart';
 final utilityProvider =
     NotifierProvider<UtilityProvider, List<PlacedUtility>>(UtilityProvider.new);
 
+class UtilityProviderSnapshot {
+  final List<PlacedUtility> utilities;
+  final List<PlacedUtility> poppedUtilities;
+
+  const UtilityProviderSnapshot({
+    required this.utilities,
+    required this.poppedUtilities,
+  });
+}
+
 class UtilityProvider extends Notifier<List<PlacedUtility>> {
   List<PlacedUtility> poppedUtilities = [];
 
@@ -104,6 +114,8 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
 
         // log("Current rotation: ${newState[index].rotation} Current length: ${newState[index].length}");
         state = newState;
+      case ActionType.bulkDeletion:
+        return;
     }
   }
 
@@ -123,6 +135,8 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
           newState[index].redoAction();
+        case ActionType.bulkDeletion:
+          return;
       }
     } catch (_) {
       log("failed to find index");
@@ -175,5 +189,17 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     final List<Map<String, dynamic>> jsonList =
         utilities.map((utility) => utility.toJson()).toList();
     return jsonEncode(jsonList);
+  }
+
+  UtilityProviderSnapshot takeSnapshot() {
+    return UtilityProviderSnapshot(
+      utilities: [...state],
+      poppedUtilities: [...poppedUtilities],
+    );
+  }
+
+  void restoreSnapshot(UtilityProviderSnapshot snapshot) {
+    poppedUtilities = [...snapshot.poppedUtilities];
+    state = [...snapshot.utilities];
   }
 }

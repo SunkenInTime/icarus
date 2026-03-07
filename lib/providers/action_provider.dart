@@ -1,4 +1,5 @@
 import 'dart:developer';
+import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -12,6 +13,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:uuid/uuid.dart';
 
 enum ActionGroup {
   agent,
@@ -21,24 +23,57 @@ enum ActionGroup {
   image,
   utility,
   lineUp,
+  bulk,
 }
 
 enum ActionType {
   addition,
   deletion,
   edit,
-  // clearAll,
+  bulkDeletion,
+}
+
+class BulkActionSnapshot {
+  final List<ActionGroup> targetGroups;
+  final List<UserAction> actionStateBefore;
+  final List<UserAction> redoStateBefore;
+  final AgentProviderSnapshot? agentSnapshot;
+  final AbilityProviderSnapshot? abilitySnapshot;
+  final DrawingProviderSnapshot? drawingSnapshot;
+  final TextProviderSnapshot? textSnapshot;
+  final PlacedImageProviderSnapshot? imageSnapshot;
+  final UtilityProviderSnapshot? utilitySnapshot;
+  final LineUpProviderSnapshot? lineUpSnapshot;
+  final Map<String, Offset> imageSizeSnapshot;
+  final Map<String, Offset> textHeightSnapshot;
+
+  const BulkActionSnapshot({
+    required this.targetGroups,
+    required this.actionStateBefore,
+    required this.redoStateBefore,
+    this.agentSnapshot,
+    this.abilitySnapshot,
+    this.drawingSnapshot,
+    this.textSnapshot,
+    this.imageSnapshot,
+    this.utilitySnapshot,
+    this.lineUpSnapshot,
+    this.imageSizeSnapshot = const {},
+    this.textHeightSnapshot = const {},
+  });
 }
 
 class UserAction {
   final ActionGroup group;
   final String id;
   final ActionType type;
+  final BulkActionSnapshot? bulkSnapshot;
 
   UserAction({
     required this.type,
     required this.id,
     required this.group,
+    this.bulkSnapshot,
   });
 
   @override
@@ -55,6 +90,16 @@ final actionProvider =
     NotifierProvider<ActionProvider, List<UserAction>>(ActionProvider.new);
 
 class ActionProvider extends Notifier<List<UserAction>> {
+  static const List<ActionGroup> _undoableGroups = [
+    ActionGroup.agent,
+    ActionGroup.ability,
+    ActionGroup.drawing,
+    ActionGroup.text,
+    ActionGroup.image,
+    ActionGroup.utility,
+    ActionGroup.lineUp,
+  ];
+  static const _uuid = Uuid();
   List<UserAction> poppedItems = [];
 
   @override
@@ -69,6 +114,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
           .read(abilityBarProvider.notifier)
           .updateData(null); // Make the agent tab disappear after an action
     }
+    poppedItems = [];
     state = [...state, action];
 
     // log("\n Current state \n ${state.toString()}");
@@ -83,6 +129,11 @@ class ActionProvider extends Notifier<List<UserAction>> {
 
     final poppedAction = poppedItems.last;
     log(poppedItems.length.toString());
+    if (poppedAction.type == ActionType.bulkDeletion) {
+      _redoBulkAction(poppedAction);
+      return;
+    }
+
     switch (poppedAction.group) {
       case ActionGroup.agent:
         ref.read(agentProvider.notifier).redoAction(poppedAction);
@@ -98,6 +149,8 @@ class ActionProvider extends Notifier<List<UserAction>> {
         ref.read(utilityProvider.notifier).redoAction(poppedAction);
       case ActionGroup.lineUp:
         ref.read(lineUpProvider.notifier).redoAction(poppedAction);
+      case ActionGroup.bulk:
+        return;
     }
 
     final newState = [...state];
@@ -114,6 +167,10 @@ class ActionProvider extends Notifier<List<UserAction>> {
 
     if (state.isEmpty) return;
     final currentAction = state.last;
+    if (currentAction.type == ActionType.bulkDeletion) {
+      _undoBulkAction(currentAction);
+      return;
+    }
 
     switch (currentAction.group) {
       case ActionGroup.agent:
@@ -130,6 +187,8 @@ class ActionProvider extends Notifier<List<UserAction>> {
         ref.read(utilityProvider.notifier).undoAction(currentAction);
       case ActionGroup.lineUp:
         ref.read(lineUpProvider.notifier).undoAction(currentAction);
+      case ActionGroup.bulk:
+        return;
     }
     // log("Undo action was called");
     final newState = [...state];
@@ -143,7 +202,8 @@ class ActionProvider extends Notifier<List<UserAction>> {
     // log("\n Popped State \n ${poppedItems.toString()}");
   }
 
-  void clearAllActions() {
+  // Hard reset used by strategy/page lifecycle flows. This is not undoable.
+  void resetActionState() {
     poppedItems = [];
     ref.read(agentProvider.notifier).clearAll();
     ref.read(abilityProvider.notifier).clearAll();
@@ -159,33 +219,238 @@ class ActionProvider extends Notifier<List<UserAction>> {
     state = [];
   }
 
-  void clearAction(ActionGroup group) {
-    // Filter out all actions with the specified group from the current state.
-    final newState = state.where((action) => action.group != group).toList();
+  void clearAllAsAction() {
+    _performBulkClear(_undoableGroups);
+  }
 
-    // Similarly, filter out the actions in poppedItems.
-    poppedItems = poppedItems.where((action) => action.group != group).toList();
+  void clearGroupAsAction(ActionGroup group) {
+    if (group == ActionGroup.bulk) return;
+    _performBulkClear([group]);
+  }
 
-    switch (group) {
-      case ActionGroup.agent:
-        ref.read(agentProvider.notifier).clearAll();
-      case ActionGroup.ability:
-        ref.read(abilityProvider.notifier).clearAll();
-      case ActionGroup.drawing:
-        ref.read(drawingProvider.notifier).clearAll();
-      case ActionGroup.text:
-        ref.read(textProvider.notifier).clearAll();
-      case ActionGroup.image:
-        ref.read(placedImageProvider.notifier).clearAll();
-      case ActionGroup.utility:
-        ref.read(utilityProvider.notifier).clearAll();
-      case ActionGroup.lineUp:
-        ref.read(lineUpProvider.notifier).clearAll();
+  void _performBulkClear(List<ActionGroup> groups) {
+    final targetGroups = <ActionGroup>[];
+    for (final group in groups) {
+      if (_undoableGroups.contains(group) && !targetGroups.contains(group)) {
+        targetGroups.add(group);
+      }
     }
-    // Optionally, you may want to notify or update strategy provider state.
-    ref.read(strategyProvider.notifier).setUnsaved();
 
-    // Updating the state with filtered actions.
+    if (targetGroups.isEmpty || !_hasAnyItemsForGroups(targetGroups)) {
+      return;
+    }
+
+    final snapshot = _captureBulkSnapshot(targetGroups);
+    final filteredActions = _filterActionsForGroups(
+      snapshot.actionStateBefore,
+      targetGroups,
+    );
+
+    _clearProvidersForGroups(targetGroups);
+    _clearAncillaryState(snapshot);
+
+    state = filteredActions;
+    addAction(
+      UserAction(
+        type: ActionType.bulkDeletion,
+        id: _uuid.v4(),
+        group: ActionGroup.bulk,
+        bulkSnapshot: snapshot,
+      ),
+    );
+  }
+
+  bool _hasAnyItemsForGroups(List<ActionGroup> groups) {
+    for (final group in groups) {
+      switch (group) {
+        case ActionGroup.agent:
+          if (ref.read(agentProvider).isNotEmpty) return true;
+        case ActionGroup.ability:
+          if (ref.read(abilityProvider).isNotEmpty) return true;
+        case ActionGroup.drawing:
+          if (ref.read(drawingProvider).elements.isNotEmpty) return true;
+        case ActionGroup.text:
+          if (ref.read(textProvider).isNotEmpty) return true;
+        case ActionGroup.image:
+          if (ref.read(placedImageProvider).images.isNotEmpty) return true;
+        case ActionGroup.utility:
+          if (ref.read(utilityProvider).isNotEmpty) return true;
+        case ActionGroup.lineUp:
+          if (ref.read(lineUpProvider).lineUps.isNotEmpty) return true;
+        case ActionGroup.bulk:
+          break;
+      }
+    }
+    return false;
+  }
+
+  BulkActionSnapshot _captureBulkSnapshot(List<ActionGroup> groups) {
+    final imageIds = groups.contains(ActionGroup.image)
+        ? ref.read(placedImageProvider).images.map((image) => image.id)
+        : const <String>[];
+    final textIds = groups.contains(ActionGroup.text)
+        ? ref.read(textProvider).map((text) => text.id)
+        : const <String>[];
+
+    return BulkActionSnapshot(
+      targetGroups: [...groups],
+      actionStateBefore: [...state],
+      redoStateBefore: [...poppedItems],
+      agentSnapshot: groups.contains(ActionGroup.agent)
+          ? ref.read(agentProvider.notifier).takeSnapshot()
+          : null,
+      abilitySnapshot: groups.contains(ActionGroup.ability)
+          ? ref.read(abilityProvider.notifier).takeSnapshot()
+          : null,
+      drawingSnapshot: groups.contains(ActionGroup.drawing)
+          ? ref.read(drawingProvider.notifier).takeSnapshot()
+          : null,
+      textSnapshot: groups.contains(ActionGroup.text)
+          ? ref.read(textProvider.notifier).takeSnapshot()
+          : null,
+      imageSnapshot: groups.contains(ActionGroup.image)
+          ? ref.read(placedImageProvider.notifier).takeSnapshot()
+          : null,
+      utilitySnapshot: groups.contains(ActionGroup.utility)
+          ? ref.read(utilityProvider.notifier).takeSnapshot()
+          : null,
+      lineUpSnapshot: groups.contains(ActionGroup.lineUp)
+          ? ref.read(lineUpProvider.notifier).takeSnapshot()
+          : null,
+      imageSizeSnapshot: ref
+          .read(imageWidgetSizeProvider.notifier)
+          .takeSnapshotForIds(imageIds),
+      textHeightSnapshot: ref
+          .read(textWidgetHeightProvider.notifier)
+          .takeSnapshotForIds(textIds),
+    );
+  }
+
+  List<UserAction> _filterActionsForGroups(
+    List<UserAction> actions,
+    List<ActionGroup> targetGroups,
+  ) {
+    final groupSet = targetGroups.toSet();
+
+    return actions
+        .where((action) => !_actionIntersectsGroups(action, groupSet))
+        .toList();
+  }
+
+  bool _actionIntersectsGroups(
+      UserAction action, Set<ActionGroup> targetGroups) {
+    if (action.group == ActionGroup.bulk) {
+      final bulkSnapshot = action.bulkSnapshot;
+      if (bulkSnapshot == null) return false;
+      return bulkSnapshot.targetGroups.any(targetGroups.contains);
+    }
+
+    return targetGroups.contains(action.group);
+  }
+
+  void _clearProvidersForGroups(List<ActionGroup> groups) {
+    for (final group in groups) {
+      switch (group) {
+        case ActionGroup.agent:
+          ref.read(agentProvider.notifier).clearAll();
+        case ActionGroup.ability:
+          ref.read(abilityProvider.notifier).clearAll();
+        case ActionGroup.drawing:
+          ref.read(drawingProvider.notifier).clearAll();
+        case ActionGroup.text:
+          ref.read(textProvider.notifier).clearAll();
+        case ActionGroup.image:
+          ref.read(placedImageProvider.notifier).clearAll();
+        case ActionGroup.utility:
+          ref.read(utilityProvider.notifier).clearAll();
+        case ActionGroup.lineUp:
+          ref.read(lineUpProvider.notifier).clearAll();
+        case ActionGroup.bulk:
+          break;
+      }
+    }
+  }
+
+  void _clearAncillaryState(BulkActionSnapshot snapshot) {
+    if (snapshot.imageSizeSnapshot.isNotEmpty) {
+      ref
+          .read(imageWidgetSizeProvider.notifier)
+          .clearEntries(snapshot.imageSizeSnapshot.keys);
+    }
+    if (snapshot.textHeightSnapshot.isNotEmpty) {
+      ref
+          .read(textWidgetHeightProvider.notifier)
+          .clearEntries(snapshot.textHeightSnapshot.keys);
+    }
+  }
+
+  void _restoreBulkSnapshot(BulkActionSnapshot snapshot) {
+    if (snapshot.agentSnapshot != null) {
+      ref.read(agentProvider.notifier).restoreSnapshot(snapshot.agentSnapshot!);
+    }
+    if (snapshot.abilitySnapshot != null) {
+      ref
+          .read(abilityProvider.notifier)
+          .restoreSnapshot(snapshot.abilitySnapshot!);
+    }
+    if (snapshot.drawingSnapshot != null) {
+      ref
+          .read(drawingProvider.notifier)
+          .restoreSnapshot(snapshot.drawingSnapshot!);
+    }
+    if (snapshot.textSnapshot != null) {
+      ref.read(textProvider.notifier).restoreSnapshot(snapshot.textSnapshot!);
+    }
+    if (snapshot.imageSnapshot != null) {
+      ref
+          .read(placedImageProvider.notifier)
+          .restoreSnapshot(snapshot.imageSnapshot!);
+    }
+    if (snapshot.utilitySnapshot != null) {
+      ref
+          .read(utilityProvider.notifier)
+          .restoreSnapshot(snapshot.utilitySnapshot!);
+    }
+    if (snapshot.lineUpSnapshot != null) {
+      ref
+          .read(lineUpProvider.notifier)
+          .restoreSnapshot(snapshot.lineUpSnapshot!);
+    }
+
+    if (snapshot.imageSizeSnapshot.isNotEmpty) {
+      ref
+          .read(imageWidgetSizeProvider.notifier)
+          .restoreSnapshot(snapshot.imageSizeSnapshot);
+    }
+    if (snapshot.textHeightSnapshot.isNotEmpty) {
+      ref
+          .read(textWidgetHeightProvider.notifier)
+          .restoreSnapshot(snapshot.textHeightSnapshot);
+    }
+  }
+
+  void _undoBulkAction(UserAction action) {
+    final snapshot = action.bulkSnapshot;
+    if (snapshot == null) return;
+
+    _restoreBulkSnapshot(snapshot);
+    poppedItems.add(action);
+    ref.read(strategyProvider.notifier).setUnsaved();
+    state = [...snapshot.actionStateBefore];
+  }
+
+  void _redoBulkAction(UserAction action) {
+    final snapshot = action.bulkSnapshot;
+    if (snapshot == null) return;
+
+    _clearProvidersForGroups(snapshot.targetGroups);
+    _clearAncillaryState(snapshot);
+
+    final newState = _filterActionsForGroups(state, snapshot.targetGroups)
+      ..add(poppedItems.removeLast());
+
+    ref.read(strategyProvider.notifier).setUnsaved();
+    ref.read(abilityBarProvider.notifier).updateData(null);
     state = newState;
   }
 }

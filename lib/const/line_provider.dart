@@ -133,6 +133,16 @@ class LineUpState {
   }
 }
 
+class LineUpProviderSnapshot {
+  final List<LineUp> lineUps;
+  final List<LineUp> poppedLineUps;
+
+  const LineUpProviderSnapshot({
+    required this.lineUps,
+    required this.poppedLineUps,
+  });
+}
+
 class LineUpProvider extends Notifier<LineUpState> {
   final List<LineUp> _poppedLineUps = [];
   @override
@@ -296,6 +306,8 @@ class LineUpProvider extends Notifier<LineUpState> {
         state = newState;
       case ActionType.edit:
       //Do nothing
+      case ActionType.bulkDeletion:
+        return;
     }
   }
 
@@ -317,6 +329,8 @@ class LineUpProvider extends Notifier<LineUpState> {
         state = newState;
       case ActionType.edit:
       //Do nothing
+      case ActionType.bulkDeletion:
+        return;
     }
   }
 
@@ -324,6 +338,20 @@ class LineUpProvider extends Notifier<LineUpState> {
     log("Clearing all line ups");
     _poppedLineUps.clear();
     state = state.copyWith(lineUps: []);
+  }
+
+  LineUpProviderSnapshot takeSnapshot() {
+    return LineUpProviderSnapshot(
+      lineUps: [...state.lineUps],
+      poppedLineUps: [..._poppedLineUps],
+    );
+  }
+
+  void restoreSnapshot(LineUpProviderSnapshot snapshot) {
+    _poppedLineUps
+      ..clear()
+      ..addAll(snapshot.poppedLineUps);
+    state = state.copyWith(lineUps: [...snapshot.lineUps]);
   }
 }
 

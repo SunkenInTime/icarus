@@ -14,6 +14,16 @@ import 'package:icarus/const/placed_classes.dart';
 final agentProvider =
     NotifierProvider<AgentProvider, List<PlacedAgent>>(AgentProvider.new);
 
+class AgentProviderSnapshot {
+  final List<PlacedAgent> agents;
+  final List<PlacedAgent> poppedAgents;
+
+  const AgentProviderSnapshot({
+    required this.agents,
+    required this.poppedAgents,
+  });
+}
+
 class AgentProvider extends Notifier<List<PlacedAgent>> {
   List<PlacedAgent> poppedAgents = [];
   static const _uuid = Uuid();
@@ -128,6 +138,8 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
         state = newState;
       case ActionType.edit:
         undoPosition(action.id);
+      case ActionType.bulkDeletion:
+        return;
     }
   }
 
@@ -158,6 +170,8 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
           newState[index].redoAction();
+        case ActionType.bulkDeletion:
+          return;
       }
     } catch (_) {
       log("failed to find index");
@@ -223,5 +237,17 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
   void clearAll() {
     poppedAgents = [];
     state = [];
+  }
+
+  AgentProviderSnapshot takeSnapshot() {
+    return AgentProviderSnapshot(
+      agents: [...state],
+      poppedAgents: [...poppedAgents],
+    );
+  }
+
+  void restoreSnapshot(AgentProviderSnapshot snapshot) {
+    poppedAgents = [...snapshot.poppedAgents];
+    state = [...snapshot.agents];
   }
 }

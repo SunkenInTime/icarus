@@ -627,7 +627,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     activePageID = page.id;
     state = state.copyWith(activePageId: page.id);
 
-    ref.read(actionProvider.notifier).clearAllActions();
+    ref.read(actionProvider.notifier).resetActionState();
     final migrated = migrateToCurrentVersion(doc);
     final migratedPage = migrated.pages.firstWhere(
       (p) => p.id == page.id,
@@ -919,7 +919,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       log("Couldn't find save");
       return;
     }
-    ref.read(actionProvider.notifier).clearAllActions();
+    ref.read(actionProvider.notifier).resetActionState();
 
     List<PlacedImage> pageImageData = [];
     for (final page in newStrat.pages) {
