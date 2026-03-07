@@ -177,6 +177,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       return {
         'type': 'lineDrawing',
         'color': colorConverter.toJson(element.color),
+        'thickness': element.thickness,
         'isDotted': element.isDotted,
         'hasArrow': element.hasArrow,
         'id': element.id,
@@ -194,6 +195,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       return {
         'type': 'rectangleDrawing',
         'color': colorConverter.toJson(element.color),
+        'thickness': element.thickness,
         'isDotted': element.isDotted,
         'hasArrow': element.hasArrow,
         'id': element.id,
@@ -246,6 +248,8 @@ class DrawingProvider extends Notifier<DrawingState> {
         lineStart: lineStart,
         lineEnd: lineEnd,
         color: colorConverter.fromJson(json['color'] as String),
+        thickness: (json['thickness'] as num?)?.toDouble() ??
+            Settings.defaultStrokeThickness,
         isDotted: json['isDotted'] as bool? ?? false,
         hasArrow: json['hasArrow'] as bool? ?? false,
         id: json['id'] as String,
@@ -287,6 +291,8 @@ class DrawingProvider extends Notifier<DrawingState> {
         start: start,
         end: end,
         color: colorConverter.fromJson(json['color'] as String),
+        thickness: (json['thickness'] as num?)?.toDouble() ??
+            Settings.defaultStrokeThickness,
         isDotted: json['isDotted'] as bool? ?? false,
         hasArrow: json['hasArrow'] as bool? ?? false,
         id: json['id'] as String,
@@ -445,6 +451,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       Offset start,
       CoordinateSystem coordinateSystem,
       Color activeColor,
+      double thickness,
       bool isDotted,
       bool hasArrow,
       bool showTraversalTime,
@@ -461,6 +468,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       hasArrow: hasArrow,
       isDotted: isDotted,
       color: activeColor,
+      thickness: thickness,
       boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
       id: id,
       showTraversalTime: showTraversalTime,
@@ -536,6 +544,7 @@ class DrawingProvider extends Notifier<DrawingState> {
     Offset start,
     CoordinateSystem coordinateSystem,
     Color activeColor,
+    double thickness,
     bool isDotted,
   ) {
     if (state.currentElement != null) {
@@ -551,6 +560,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       start: normalizedStart,
       end: normalizedStart,
       color: activeColor,
+      thickness: thickness,
       isDotted: isDotted,
       hasArrow: false,
       id: id,
@@ -620,6 +630,7 @@ class DrawingProvider extends Notifier<DrawingState> {
     Offset start,
     CoordinateSystem coordinateSystem,
     Color activeColor,
+    double thickness,
     bool isDotted,
     bool hasArrow,
     bool showTraversalTime,
@@ -636,6 +647,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       lineStart: normalizedStart,
       lineEnd: normalizedStart,
       color: activeColor,
+      thickness: thickness,
       boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
       isDotted: isDotted,
       hasArrow: hasArrow,

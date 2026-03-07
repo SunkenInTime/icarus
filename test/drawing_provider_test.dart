@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -140,6 +141,7 @@ void main() {
         const Offset(100, 120),
         coordinateSystem,
         Colors.white,
+        Settings.defaultStrokeThickness,
         true,
         true,
         true,

@@ -125,6 +125,7 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                             details.localPosition,
                             coordinateSystem,
                             penState.color,
+                            penState.thickness,
                             penState.isDotted,
                             penState.hasArrow,
                             penState.traversalTimeEnabled,
@@ -135,6 +136,7 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                             details.localPosition,
                             coordinateSystem,
                             penState.color,
+                            penState.thickness,
                             penState.isDotted,
                             penState.hasArrow,
                             penState.traversalTimeEnabled,
@@ -145,6 +147,7 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                             details.localPosition,
                             coordinateSystem,
                             penState.color,
+                            penState.thickness,
                             penState.isDotted,
                           );
                   }
@@ -520,15 +523,20 @@ class DrawingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = Colors.white
-      ..strokeWidth = coordinateSystem.scale(Settings.brushSize)
       ..style = PaintingStyle.stroke
       ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true
       ..strokeCap = StrokeCap.round;
 
     // Helper function to draw an arrow
-    void drawArrow(Canvas canvas, Paint paint, Offset from, Offset to) {
-      const double arrowHeadSize = 8; // Size of the arrowhead
+    void drawArrow(
+      Canvas canvas,
+      Paint paint,
+      Offset from,
+      Offset to,
+      double thickness,
+    ) {
+      final arrowHeadSize = 8 * (thickness / Settings.defaultStrokeThickness);
       const double arrowAngle = math.pi / 4; // 30 degrees arrow head angle
 
       // Calculate the direction angle from `from` to `to`
@@ -556,6 +564,7 @@ class DrawingPainter extends CustomPainter {
     }
 
     void paintLine(Canvas canvas, Paint paint, Line line) {
+      paint.strokeWidth = coordinateSystem.scale(line.thickness);
       final screenStartOffset =
           coordinateSystem.coordinateToScreen(line.lineStart);
       final screenEndOffset = coordinateSystem.coordinateToScreen(line.lineEnd);
@@ -571,7 +580,13 @@ class DrawingPainter extends CustomPainter {
       }
 
       if (line.hasArrow) {
-        drawArrow(canvas, paint, screenStartOffset, screenEndOffset);
+        drawArrow(
+          canvas,
+          paint,
+          screenStartOffset,
+          screenEndOffset,
+          line.thickness,
+        );
       }
     }
 
@@ -581,6 +596,7 @@ class DrawingPainter extends CustomPainter {
         paintLine(canvas, paint, elements[i] as Line);
       } else if (elements[i] is RectangleDrawing) {
         final rectangle = elements[i] as RectangleDrawing;
+        paint.strokeWidth = coordinateSystem.scale(rectangle.thickness);
         final screenRect = Rect.fromPoints(
           coordinateSystem.coordinateToScreen(rectangle.start),
           coordinateSystem.coordinateToScreen(rectangle.end),
@@ -595,6 +611,7 @@ class DrawingPainter extends CustomPainter {
         }
       } else if (elements[i] is FreeDrawing) {
         FreeDrawing freeDrawing = elements[i] as FreeDrawing;
+        paint.strokeWidth = coordinateSystem.scale(freeDrawing.thickness);
         List<Offset> points = freeDrawing.listOfPoints;
         if (points.length < 2) continue;
 
@@ -612,7 +629,7 @@ class DrawingPainter extends CustomPainter {
           final from =
               coordinateSystem.coordinateToScreen(points[points.length - 2]);
           final to = coordinateSystem.coordinateToScreen(points.last);
-          drawArrow(canvas, paint, from, to);
+          drawArrow(canvas, paint, from, to, freeDrawing.thickness);
         }
       }
     }
@@ -621,6 +638,7 @@ class DrawingPainter extends CustomPainter {
       paint.color = currentLine!.color;
       if (currentLine is FreeDrawing) {
         final drawingElement = currentLine as FreeDrawing;
+        paint.strokeWidth = coordinateSystem.scale(drawingElement.thickness);
 
         if (drawingElement.isDotted) {
           final space = coordinateSystem.scale(10);
@@ -637,12 +655,13 @@ class DrawingPainter extends CustomPainter {
           final from =
               coordinateSystem.coordinateToScreen(points[points.length - 2]);
           final to = coordinateSystem.coordinateToScreen(points.last);
-          drawArrow(canvas, paint, from, to);
+          drawArrow(canvas, paint, from, to, drawingElement.thickness);
         }
       } else if (currentLine is Line) {
         paintLine(canvas, paint, currentLine as Line);
       } else if (currentLine is RectangleDrawing) {
         final rectangle = currentLine as RectangleDrawing;
+        paint.strokeWidth = coordinateSystem.scale(rectangle.thickness);
         final screenRect = Rect.fromPoints(
           coordinateSystem.coordinateToScreen(rectangle.start),
           coordinateSystem.coordinateToScreen(rectangle.end),
