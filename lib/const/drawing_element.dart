@@ -35,18 +35,48 @@ abstract class DrawingElement {
 class Line extends DrawingElement with HiveObjectMixin {
   final Offset lineStart;
   Offset lineEnd;
+  final bool showTraversalTime;
+  final TraversalSpeedProfile traversalSpeedProfile;
 
   Line({
     required this.lineStart,
     required this.lineEnd,
     required super.color,
+    super.boundingBox,
     required super.isDotted,
     required super.hasArrow,
     required super.id,
+    this.showTraversalTime = false,
+    this.traversalSpeedProfile = TraversalSpeed.defaultProfile,
   });
 
   void updateEndPoint(Offset endPoint) {
     lineEnd = endPoint;
+  }
+
+  Line copyWith({
+    Offset? lineStart,
+    Offset? lineEnd,
+    Color? color,
+    BoundingBox? boundingBox,
+    bool? isDotted,
+    bool? hasArrow,
+    String? id,
+    bool? showTraversalTime,
+    TraversalSpeedProfile? traversalSpeedProfile,
+  }) {
+    return Line(
+      lineStart: lineStart ?? this.lineStart,
+      lineEnd: lineEnd ?? this.lineEnd,
+      color: color ?? this.color,
+      boundingBox: boundingBox ?? this.boundingBox,
+      isDotted: isDotted ?? this.isDotted,
+      hasArrow: hasArrow ?? this.hasArrow,
+      id: id ?? this.id,
+      showTraversalTime: showTraversalTime ?? this.showTraversalTime,
+      traversalSpeedProfile:
+          traversalSpeedProfile ?? this.traversalSpeedProfile,
+    );
   }
 }
 
@@ -100,7 +130,7 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
   @JsonKey(defaultValue: false)
   final bool showTraversalTime;
 
-  @JsonKey(defaultValue: TraversalSpeedProfile.running)
+  @JsonKey(defaultValue: TraversalSpeed.defaultProfile)
   final TraversalSpeedProfile traversalSpeedProfile;
 
   @JsonKey(includeFromJson: false, includeToJson: false)

@@ -171,6 +171,23 @@ class DrawingProvider extends Notifier<DrawingState> {
       };
     }
 
+    if (element is Line) {
+      const colorConverter = ColorConverter();
+      const offsetConverter = OffsetConverter();
+      return {
+        'type': 'lineDrawing',
+        'color': colorConverter.toJson(element.color),
+        'isDotted': element.isDotted,
+        'hasArrow': element.hasArrow,
+        'id': element.id,
+        'boundingBox': element.boundingBox?.toJson(),
+        'lineStart': offsetConverter.toJson(element.lineStart),
+        'lineEnd': offsetConverter.toJson(element.lineEnd),
+        'showTraversalTime': element.showTraversalTime,
+        'traversalSpeedProfile': element.traversalSpeedProfile.name,
+      };
+    }
+
     if (element is RectangleDrawing) {
       const colorConverter = ColorConverter();
       const offsetConverter = OffsetConverter();
@@ -202,6 +219,44 @@ class DrawingProvider extends Notifier<DrawingState> {
     if (type == 'freeDrawing') {
       final freeJson = Map<String, dynamic>.from(json)..remove('type');
       return FreeDrawing.fromJson(freeJson);
+    }
+
+    if (type == 'lineDrawing' ||
+        (type == null &&
+            json.containsKey('lineStart') &&
+            json.containsKey('lineEnd'))) {
+      const colorConverter = ColorConverter();
+      const offsetConverter = OffsetConverter();
+
+      final lineStart = offsetConverter
+          .fromJson(Map<String, dynamic>.from(json['lineStart'] as Map));
+      final lineEnd = offsetConverter
+          .fromJson(Map<String, dynamic>.from(json['lineEnd'] as Map));
+
+      BoundingBox? boundingBox;
+      if (json['boundingBox'] != null) {
+        boundingBox = BoundingBox.fromJson(
+          Map<String, dynamic>.from(json['boundingBox'] as Map),
+        );
+      } else {
+        boundingBox = _boundingBoxForPoints(lineStart, lineEnd);
+      }
+
+      return Line(
+        lineStart: lineStart,
+        lineEnd: lineEnd,
+        color: colorConverter.fromJson(json['color'] as String),
+        isDotted: json['isDotted'] as bool? ?? false,
+        hasArrow: json['hasArrow'] as bool? ?? false,
+        id: json['id'] as String,
+        boundingBox: boundingBox,
+        showTraversalTime: json['showTraversalTime'] as bool? ?? false,
+        traversalSpeedProfile: json['traversalSpeedProfile'] == null
+            ? TraversalSpeed.defaultProfile
+            : TraversalSpeedProfile.values.byName(
+                json['traversalSpeedProfile'] as String,
+              ),
+      );
     }
 
     if (type == 'rectangleDrawing' ||
@@ -288,6 +343,18 @@ class DrawingProvider extends Notifier<DrawingState> {
                 .isWithinOrNear(mousePos, Settings.erasingSize) &&
             _isPointNearRectangleStroke(
                 mousePos, drawing, Settings.erasingSize)) {
+          indicesToDelete.add(index);
+        }
+      } else if (drawing is Line) {
+        if (drawing.boundingBox != null &&
+            drawing.boundingBox!
+                .isWithinOrNear(mousePos, Settings.erasingSize) &&
+            distanceToLineSegment(
+                  mousePos,
+                  drawing.lineStart,
+                  drawing.lineEnd,
+                ) <=
+                Settings.erasingSize) {
           indicesToDelete.add(index);
         }
       }
@@ -549,38 +616,70 @@ class DrawingProvider extends Notifier<DrawingState> {
     return BoundingBox(min: Offset(minX, minY), max: Offset(maxX, maxY));
   }
 
-  void startLine(Offset start) {
-    final listOfElements = state.elements;
-
+  void startLine(
+    Offset start,
+    CoordinateSystem coordinateSystem,
+    Color activeColor,
+    bool isDotted,
+    bool hasArrow,
+    bool showTraversalTime,
+    TraversalSpeedProfile traversalSpeedProfile,
+  ) {
     if (state.currentElement != null) {
       dev.log(
           "An error occured the gesture detecture is attempting to draw while another line is active");
       return;
     }
 
-    // Line newLine = Line(color: Colors.white, lineStart: start, lineEnd: start);
-    // listOfElements.add(newLine);
+    final normalizedStart = coordinateSystem.screenToCoordinate(start);
+    final line = Line(
+      lineStart: normalizedStart,
+      lineEnd: normalizedStart,
+      color: activeColor,
+      boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
+      isDotted: isDotted,
+      hasArrow: hasArrow,
+      id: const Uuid().v4(),
+      showTraversalTime: showTraversalTime,
+      traversalSpeedProfile: traversalSpeedProfile,
+    );
 
-    state = state.copyWith(elements: listOfElements);
-    // _indexOfCurrentEdit = listOfElements.length - 1;
+    state = state.copyWith(currentElement: line);
     _triggerRepaint();
   }
 
-  void updateCurrentLine(Offset endpoint) {
-    final listOfElements = state.elements;
-    // (listOfElements[_indexOfCurrentEdit] as Line).updateEndPoint(endpoint);
+  void updateCurrentLine(Offset endpoint, CoordinateSystem coordinateSystem) {
+    if (state.currentElement == null || state.currentElement is! Line) return;
 
-    state = state.copyWith(elements: listOfElements);
+    final line = state.currentElement as Line;
+    final normalizedEndpoint = coordinateSystem.screenToCoordinate(endpoint);
+    line.updateEndPoint(normalizedEndpoint);
+    line.boundingBox = _boundingBoxForPoints(line.lineStart, line.lineEnd);
+
+    state = state.copyWith(currentElement: line);
     _triggerRepaint();
   }
 
-  void finishCurrentLine(Offset endpoint) {
-    final listOfElements = state.elements;
+  void finishCurrentLine(Offset? endpoint, CoordinateSystem coordinateSystem) {
+    if (state.currentElement == null || state.currentElement is! Line) return;
 
-    // (listOfElements[_indexOfCurrentEdit] as Line).updateEndPoint(endpoint);
-    // _indexOfCurrentEdit = -1;
+    final line = state.currentElement as Line;
+    if (endpoint != null) {
+      line.updateEndPoint(coordinateSystem.screenToCoordinate(endpoint));
+    }
+    line.boundingBox = _boundingBoxForPoints(line.lineStart, line.lineEnd);
 
-    state = state.copyWith(elements: listOfElements);
+    state = state.copyWithButEvil(
+      elements: [...state.elements, line],
+    );
+
+    final action = UserAction(
+      type: ActionType.addition,
+      id: line.id,
+      group: ActionGroup.drawing,
+    );
+    ref.read(actionProvider.notifier).addAction(action);
+
     _triggerRepaint();
   }
 
@@ -623,6 +722,13 @@ class DrawingProvider extends Notifier<DrawingState> {
     );
     _triggerRepaint();
   }
+}
+
+BoundingBox _boundingBoxForPoints(Offset a, Offset b) {
+  return BoundingBox(
+    min: Offset(min(a.dx, b.dx), min(a.dy, b.dy)),
+    max: Offset(max(a.dx, b.dx), max(a.dy, b.dy)),
+  );
 }
 
 //Yes I used AI to write the algo. I promise you I understand how it works

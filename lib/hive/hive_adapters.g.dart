@@ -629,13 +629,14 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       traversalSpeedProfile: fields[9] == null
           ? TraversalSpeed.defaultProfile
           : fields[9] as TraversalSpeedProfile,
+      cachedPolylineLengthUnits: (fields[10] as num?)?.toDouble(),
     );
   }
 
   @override
   void write(BinaryWriter writer, FreeDrawing obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.listOfPoints)
       ..writeByte(2)
@@ -651,7 +652,9 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       ..writeByte(8)
       ..write(obj.showTraversalTime)
       ..writeByte(9)
-      ..write(obj.traversalSpeedProfile);
+      ..write(obj.traversalSpeedProfile)
+      ..writeByte(10)
+      ..write(obj.cachedPolylineLengthUnits);
   }
 
   @override
@@ -679,16 +682,21 @@ class LineAdapter extends TypeAdapter<Line> {
       lineStart: fields[0] as Offset,
       lineEnd: fields[1] as Offset,
       color: fields[2] as Color,
+      boundingBox: fields[6] as BoundingBox?,
       isDotted: fields[3] as bool,
       hasArrow: fields[4] as bool,
       id: fields[5] as String,
-    )..boundingBox = fields[6] as BoundingBox?;
+      showTraversalTime: fields[7] == null ? false : fields[7] as bool,
+      traversalSpeedProfile: fields[8] == null
+          ? TraversalSpeed.defaultProfile
+          : fields[8] as TraversalSpeedProfile,
+    );
   }
 
   @override
   void write(BinaryWriter writer, Line obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.lineStart)
       ..writeByte(1)
@@ -702,7 +710,11 @@ class LineAdapter extends TypeAdapter<Line> {
       ..writeByte(5)
       ..write(obj.id)
       ..writeByte(6)
-      ..write(obj.boundingBox);
+      ..write(obj.boundingBox)
+      ..writeByte(7)
+      ..write(obj.showTraversalTime)
+      ..writeByte(8)
+      ..write(obj.traversalSpeedProfile);
   }
 
   @override

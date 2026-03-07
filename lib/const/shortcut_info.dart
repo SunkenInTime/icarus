@@ -11,6 +11,10 @@ class ShortcutInfo {
         const UndoActionIntent(),
     LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyZ):
         const UndoActionIntent(),
+    LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyS):
+        const SaveStrategyIntent(),
+    LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyS):
+        const SaveStrategyIntent(),
     LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyZ,
         LogicalKeyboardKey.shift): const RedoActionIntent(),
     LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyZ,
@@ -22,6 +26,8 @@ class ShortcutInfo {
     LogicalKeySet(LogicalKeyboardKey.keyR): const ToggleAgentFilterIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyD): const ForwardPageIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyA): const BackwardPageIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyC): const AddPageIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyG): const ToggleLineupIntent(),
     LogicalKeySet(LogicalKeyboardKey.f12): const OpenInAppDebugIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyV, LogicalKeyboardKey.control):
         const PasteImageIntent(),
@@ -46,6 +52,8 @@ class ShortcutInfo {
         const DoNothingAndStopPropagationIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyD):
         const DoNothingAndStopPropagationIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyC):
+        const DoNothingAndStopPropagationIntent(),
     // Override Q and W shortcuts
     LogicalKeySet(LogicalKeyboardKey.keyQ):
         const DoNothingAndStopPropagationIntent(),
@@ -55,6 +63,8 @@ class ShortcutInfo {
     LogicalKeySet(LogicalKeyboardKey.keyS):
         const DoNothingAndStopPropagationIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyR):
+        const DoNothingAndStopPropagationIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyG):
         const DoNothingAndStopPropagationIntent(),
 
     LogicalKeySet(LogicalKeyboardKey.enter): const EnterTextIntent(),
@@ -95,6 +105,10 @@ class RedoActionIntent extends Intent {
   const RedoActionIntent();
 }
 
+class SaveStrategyIntent extends Intent {
+  const SaveStrategyIntent();
+}
+
 class NavigationActionIntent extends Intent {
   const NavigationActionIntent();
 }
@@ -109,6 +123,14 @@ class ForwardPageIntent extends Intent {
 
 class BackwardPageIntent extends Intent {
   const BackwardPageIntent();
+}
+
+class AddPageIntent extends Intent {
+  const AddPageIntent();
+}
+
+class ToggleLineupIntent extends Intent {
+  const ToggleLineupIntent();
 }
 
 class OpenInAppDebugIntent extends Intent {

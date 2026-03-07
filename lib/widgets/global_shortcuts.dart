@@ -102,6 +102,15 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
                 return null;
               },
             ),
+            SaveStrategyIntent: CallbackAction<SaveStrategyIntent>(
+              onInvoke: (intent) async {
+                final strategyId = ref.read(strategyProvider).id;
+                await ref.read(strategyProvider.notifier).forceSaveNow(
+                      strategyId,
+                    );
+                return null;
+              },
+            ),
             NavigationActionIntent: CallbackAction<NavigationActionIntent>(
               onInvoke: (intent) {
                 log("I triggered");
@@ -131,6 +140,27 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
                 log("I triggered");
 
                 await ref.read(strategyProvider.notifier).backwardPage();
+                return null;
+              },
+            ),
+            AddPageIntent: CallbackAction<AddPageIntent>(
+              onInvoke: (intent) async {
+                await ref.read(strategyProvider.notifier).addPage();
+                return null;
+              },
+            ),
+            ToggleLineupIntent: CallbackAction<ToggleLineupIntent>(
+              onInvoke: (intent) {
+                if (ref.read(interactionStateProvider) ==
+                    InteractionState.lineUpPlacing) {
+                  ref
+                      .read(interactionStateProvider.notifier)
+                      .update(InteractionState.navigation);
+                } else {
+                  ref
+                      .read(interactionStateProvider.notifier)
+                      .update(InteractionState.lineUpPlacing);
+                }
                 return null;
               },
             ),

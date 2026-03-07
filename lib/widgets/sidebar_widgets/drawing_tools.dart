@@ -93,6 +93,19 @@ class DrawingTools extends ConsumerWidget {
                               ),
                               SelectableIconButton(
                                 icon: const Icon(
+                                  LucideIcons.minus,
+                                  size: 20,
+                                ),
+                                isSelected: penMode == PenMode.line,
+                                onPressed: () {
+                                  ref
+                                      .read(penProvider.notifier)
+                                      .updateValue(penMode: PenMode.line);
+                                },
+                                tooltip: "Straight line",
+                              ),
+                              SelectableIconButton(
+                                icon: const Icon(
                                   Icons.crop_square,
                                   size: 20,
                                 ),

@@ -149,8 +149,11 @@ class ScreenshotView extends ConsumerWidget {
           ),
 
           //Painting
-          const Positioned.fill(
-            child: InteractivePainter(),
+          Positioned.fill(
+            child: InteractivePainter(
+              mapScaleOverride: Maps.mapScale[mapValue] ?? 1.0,
+              isAttackOverride: isAttack,
+            ),
           ),
           // Add any other widgets you want to include in the screenshot
         ],

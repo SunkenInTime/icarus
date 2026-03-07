@@ -547,6 +547,14 @@ class StrategyProvider extends Notifier<StrategyState> {
       ];
     }
 
+    BoundingBox? shiftBoundingBox(BoundingBox? boundingBox) {
+      if (boundingBox == null) return null;
+      return BoundingBox(
+        min: shift(boundingBox.min),
+        max: shift(boundingBox.max),
+      );
+    }
+
     List<DrawingElement> shiftDrawings(List<DrawingElement> drawings) {
       return drawings
           .map((element) {
@@ -555,25 +563,35 @@ class StrategyProvider extends Notifier<StrategyState> {
                 lineStart: shift(element.lineStart),
                 lineEnd: shift(element.lineEnd),
                 color: element.color,
+                boundingBox: shiftBoundingBox(element.boundingBox),
                 isDotted: element.isDotted,
                 hasArrow: element.hasArrow,
                 id: element.id,
+                showTraversalTime: element.showTraversalTime,
+                traversalSpeedProfile: element.traversalSpeedProfile,
               );
             }
             if (element is FreeDrawing) {
               final shiftedPoints =
                   element.listOfPoints.map(shift).toList(growable: false);
-              final shiftedBoundingBox = element.boundingBox == null
-                  ? null
-                  : BoundingBox(
-                      min: shift(element.boundingBox!.min),
-                      max: shift(element.boundingBox!.max),
-                    );
 
               return FreeDrawing(
                 listOfPoints: shiftedPoints,
                 color: element.color,
-                boundingBox: shiftedBoundingBox,
+                boundingBox: shiftBoundingBox(element.boundingBox),
+                isDotted: element.isDotted,
+                hasArrow: element.hasArrow,
+                id: element.id,
+                showTraversalTime: element.showTraversalTime,
+                traversalSpeedProfile: element.traversalSpeedProfile,
+              );
+            }
+            if (element is RectangleDrawing) {
+              return RectangleDrawing(
+                start: shift(element.start),
+                end: shift(element.end),
+                color: element.color,
+                boundingBox: shiftBoundingBox(element.boundingBox),
                 isDotted: element.isDotted,
                 hasArrow: element.hasArrow,
                 id: element.id,

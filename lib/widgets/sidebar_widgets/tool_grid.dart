@@ -263,6 +263,7 @@ class ToolGrid extends ConsumerWidget {
               ),
               SelectableIconButton(
                 tooltip: "Add Lineup",
+                shortcutLabel: 'G',
                 onPressed: () async {
                   if (kIsWeb) {
                     Settings.showToast(
