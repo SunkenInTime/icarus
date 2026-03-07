@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:io';
 
 import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,6 +21,27 @@ import 'package:uuid/uuid.dart';
 
 final cloudMigrationProvider =
     NotifierProvider<CloudMigrationNotifier, bool>(CloudMigrationNotifier.new);
+
+void _appendCloudMigrationDebugLog({
+  required String hypothesisId,
+  required String location,
+  required String message,
+  Map<String, dynamic>? data,
+}) {
+  try {
+    final payload = <String, dynamic>{
+      'hypothesisId': hypothesisId,
+      'location': location,
+      'message': message,
+      'data': data ?? const <String, dynamic>{},
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+    File('/opt/cursor/logs/debug.log').writeAsStringSync(
+      '${jsonEncode(payload)}\n',
+      mode: FileMode.append,
+    );
+  } catch (_) {}
+}
 
 class CloudMigrationNotifier extends Notifier<bool> {
   @override
@@ -51,6 +73,36 @@ class CloudMigrationNotifier extends Notifier<bool> {
     }
 
     for (final strategy in strategies) {
+      final allElementIds = <String>[
+        for (final page in strategy.pages)
+          ...page.agentData.map((item) => item.id),
+        for (final page in strategy.pages)
+          ...page.abilityData.map((item) => item.id),
+        for (final page in strategy.pages)
+          ...page.drawingData.map((item) => item.id),
+        for (final page in strategy.pages)
+          ...page.textData.map((item) => item.id),
+        for (final page in strategy.pages)
+          ...page.imageData.map((item) => item.id),
+        for (final page in strategy.pages)
+          ...page.utilityData.map((item) => item.id),
+      ];
+      final allLineupIds = <String>[
+        for (final page in strategy.pages) ...page.lineUps.map((lineup) => lineup.id),
+      ];
+      // #region agent log
+      _appendCloudMigrationDebugLog(
+        hypothesisId: 'H3',
+        location: 'cloud_migration_provider.dart:maybeMigrate',
+        message: 'Migration preflight ID uniqueness',
+        data: {
+          'strategyId': strategy.id,
+          'pageCount': strategy.pages.length,
+          'elementIdDuplicates': allElementIds.length - allElementIds.toSet().length,
+          'lineupIdDuplicates': allLineupIds.length - allLineupIds.toSet().length,
+        },
+      );
+      // #endregion
       try {
         await repo.createStrategy(
           publicId: strategy.id,
@@ -74,6 +126,8 @@ class CloudMigrationNotifier extends Notifier<bool> {
         ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
 
       final allOps = <StrategyOp>[];
+      final usedElementIds = <String>{};
+      final usedLineupIds = <String>{};
       for (final page in pages) {
         try {
           await ConvexClient.instance.mutation(name: 'pages:add', args: {
@@ -92,7 +146,12 @@ class CloudMigrationNotifier extends Notifier<bool> {
           );
         }
 
-        _appendPageElementOps(allOps, page);
+        _appendPageElementOps(
+          allOps,
+          page,
+          usedElementIds: usedElementIds,
+          usedLineupIds: usedLineupIds,
+        );
       }
 
       if (allOps.isNotEmpty) {
@@ -116,60 +175,93 @@ class CloudMigrationNotifier extends Notifier<bool> {
     state = true;
   }
 
-  void _appendPageElementOps(List<StrategyOp> ops, StrategyPage page) {
+  void _appendPageElementOps(
+    List<StrategyOp> ops,
+    StrategyPage page, {
+    required Set<String> usedElementIds,
+    required Set<String> usedLineupIds,
+  }) {
     var elementOrder = 0;
 
     for (final agent in page.agentData) {
+      final elementId = _nextUniquePublicId(agent.id, usedElementIds);
       final payload = Map<String, dynamic>.from(agent.toJson())
-        ..putIfAbsent('elementType', () => 'agent');
-      ops.add(_addElementOp(page.id, agent.id, payload, elementOrder++));
+        ..putIfAbsent('elementType', () => 'agent')
+        ..['id'] = elementId;
+      ops.add(_addElementOp(page.id, elementId, payload, elementOrder++));
     }
 
     for (final ability in page.abilityData) {
+      final elementId = _nextUniquePublicId(ability.id, usedElementIds);
       final payload = Map<String, dynamic>.from(ability.toJson())
-        ..putIfAbsent('elementType', () => 'ability');
-      ops.add(_addElementOp(page.id, ability.id, payload, elementOrder++));
+        ..putIfAbsent('elementType', () => 'ability')
+        ..['id'] = elementId;
+      ops.add(_addElementOp(page.id, elementId, payload, elementOrder++));
     }
 
     for (final drawing in page.drawingData) {
+      final elementId = _nextUniquePublicId(drawing.id, usedElementIds);
       final encodedList =
           jsonDecode(DrawingProvider.objectToJson([drawing])) as List<dynamic>;
       final payload = Map<String, dynamic>.from(
         (encodedList.isNotEmpty ? encodedList.first : <String, dynamic>{}) as Map,
-      )..putIfAbsent('elementType', () => 'drawing');
-      ops.add(_addElementOp(page.id, drawing.id, payload, elementOrder++));
+      )
+        ..putIfAbsent('elementType', () => 'drawing')
+        ..['id'] = elementId;
+      ops.add(_addElementOp(page.id, elementId, payload, elementOrder++));
     }
 
     for (final text in page.textData) {
+      final elementId = _nextUniquePublicId(text.id, usedElementIds);
       final payload = Map<String, dynamic>.from(text.toJson())
-        ..putIfAbsent('elementType', () => 'text');
-      ops.add(_addElementOp(page.id, text.id, payload, elementOrder++));
+        ..putIfAbsent('elementType', () => 'text')
+        ..['id'] = elementId;
+      ops.add(_addElementOp(page.id, elementId, payload, elementOrder++));
     }
 
     for (final image in page.imageData) {
+      final elementId = _nextUniquePublicId(image.id, usedElementIds);
       final payload = Map<String, dynamic>.from(image.toJson())
-        ..putIfAbsent('elementType', () => 'image');
-      ops.add(_addElementOp(page.id, image.id, payload, elementOrder++));
+        ..putIfAbsent('elementType', () => 'image')
+        ..['id'] = elementId;
+      ops.add(_addElementOp(page.id, elementId, payload, elementOrder++));
     }
 
     for (final utility in page.utilityData) {
+      final elementId = _nextUniquePublicId(utility.id, usedElementIds);
       final payload = Map<String, dynamic>.from(utility.toJson())
-        ..putIfAbsent('elementType', () => 'utility');
-      ops.add(_addElementOp(page.id, utility.id, payload, elementOrder++));
+        ..putIfAbsent('elementType', () => 'utility')
+        ..['id'] = elementId;
+      ops.add(_addElementOp(page.id, elementId, payload, elementOrder++));
     }
 
     var lineupOrder = 0;
     for (final lineup in page.lineUps) {
+      final lineupId = _nextUniquePublicId(lineup.id, usedLineupIds);
+      final lineupPayload = Map<String, dynamic>.from(lineup.toJson())
+        ..['id'] = lineupId;
       ops.add(StrategyOp(
         opId: const Uuid().v4(),
         kind: StrategyOpKind.add,
         entityType: StrategyOpEntityType.lineup,
-        entityPublicId: lineup.id,
+        entityPublicId: lineupId,
         pagePublicId: page.id,
-        payload: jsonEncode(lineup.toJson()),
+        payload: jsonEncode(lineupPayload),
         sortIndex: lineupOrder++,
       ));
     }
+  }
+
+  String _nextUniquePublicId(String preferredId, Set<String> usedIds) {
+    if (usedIds.add(preferredId)) {
+      return preferredId;
+    }
+
+    var generated = const Uuid().v4();
+    while (!usedIds.add(generated)) {
+      generated = const Uuid().v4();
+    }
+    return generated;
   }
 
   StrategyOp _addElementOp(

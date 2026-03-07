@@ -200,6 +200,27 @@ class StrategyState {
 final strategyProvider =
     NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
 
+void _appendDebugLog({
+  required String hypothesisId,
+  required String location,
+  required String message,
+  Map<String, dynamic>? data,
+}) {
+  try {
+    final payload = <String, dynamic>{
+      'hypothesisId': hypothesisId,
+      'location': location,
+      'message': message,
+      'data': data ?? const <String, dynamic>{},
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    };
+    File('/opt/cursor/logs/debug.log').writeAsStringSync(
+      '${jsonEncode(payload)}\n',
+      mode: FileMode.append,
+    );
+  } catch (_) {}
+}
+
 class NewerVersionImportException implements Exception {
   const NewerVersionImportException({
     required this.importedVersion,
@@ -224,6 +245,9 @@ class NewerVersionImportException implements Exception {
 
 class StrategyProvider extends Notifier<StrategyState> {
   String? activePageID;
+  int? _lastHydratedRemoteSequence;
+  String? _lastHydratedRemoteStrategyId;
+  String? _lastHydratedRemotePageId;
 
   @override
   StrategyState build() {
@@ -234,6 +258,45 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
       unawaited(reconcile(next.lastAcks));
     });
+    ref.listen<AsyncValue<RemoteStrategySnapshot?>>(
+      remoteStrategySnapshotProvider,
+      (previous, next) {
+        if (!_isCloudMode()) {
+          return;
+        }
+
+        final snapshot = next.valueOrNull;
+        if (snapshot == null || snapshot.pages.isEmpty) {
+          return;
+        }
+
+        final activeRemoteStrategy = ref
+            .read(remoteStrategySnapshotProvider.notifier)
+            .activeStrategyPublicId;
+        if (activeRemoteStrategy != snapshot.header.publicId ||
+            state.id != snapshot.header.publicId) {
+          return;
+        }
+
+        final prevSequence = previous?.valueOrNull?.header.sequence;
+        final sequenceChanged =
+            prevSequence == null || prevSequence != snapshot.header.sequence;
+        final targetPageId = _resolveHydrationTargetPage(snapshot);
+        if (!sequenceChanged || targetPageId == null) {
+          return;
+        }
+
+        final alreadyHydratedForSequence =
+            _lastHydratedRemoteStrategyId == snapshot.header.publicId &&
+                _lastHydratedRemoteSequence == snapshot.header.sequence &&
+                _lastHydratedRemotePageId == targetPageId;
+        if (alreadyHydratedForSequence) {
+          return;
+        }
+
+        unawaited(_hydrateFromRemotePage(snapshot, targetPageId));
+      },
+    );
 
     return StrategyState(
       isSaved: false,
@@ -287,6 +350,20 @@ class StrategyProvider extends Notifier<StrategyState> {
         .openStrategy(strategyID);
     final snapshotAsync = ref.read(remoteStrategySnapshotProvider);
     final snapshot = snapshotAsync.valueOrNull;
+    // #region agent log
+    _appendDebugLog(
+      hypothesisId: 'H1',
+      location: 'strategy_provider.dart:openStrategy',
+      message: 'Cloud open fetched snapshot',
+      data: {
+        'strategyId': strategyID,
+        'hasSnapshot': snapshot != null,
+        'pageCount': snapshot?.pages.length ?? 0,
+        'sequence': snapshot?.header.sequence,
+        'activePageBefore': state.activePageId,
+      },
+    );
+    // #endregion
     if (snapshot == null || snapshot.pages.isEmpty) {
       return;
     }
@@ -375,6 +452,20 @@ class StrategyProvider extends Notifier<StrategyState> {
     RemoteStrategySnapshot snapshot,
     String pagePublicId,
   ) async {
+    // #region agent log
+    _appendDebugLog(
+      hypothesisId: 'H1',
+      location: 'strategy_provider.dart:_hydrateFromRemotePage:entry',
+      message: 'Hydration started',
+      data: {
+        'strategyId': snapshot.header.publicId,
+        'sequence': snapshot.header.sequence,
+        'targetPagePublicId': pagePublicId,
+        'snapshotPages': snapshot.pages.length,
+        'activePageBefore': state.activePageId,
+      },
+    );
+    // #endregion
     final page = snapshot.pages.firstWhere(
       (p) => p.publicId == pagePublicId,
       orElse: () => snapshot.pages.first,
@@ -492,9 +583,42 @@ class StrategyProvider extends Notifier<StrategyState> {
         isSaved: true,
         storageDirectory: null,
       );
+      _lastHydratedRemoteStrategyId = snapshot.header.publicId;
+      _lastHydratedRemoteSequence = snapshot.header.sequence;
+      _lastHydratedRemotePageId = page.publicId;
+      // #region agent log
+      _appendDebugLog(
+        hypothesisId: 'H1',
+        location: 'strategy_provider.dart:_hydrateFromRemotePage:exit',
+        message: 'Hydration completed',
+        data: {
+          'strategyId': snapshot.header.publicId,
+          'hydratedPagePublicId': page.publicId,
+          'elementsCount': pageElements.length,
+          'lineupsCount': pageLineups.length,
+          'activePageAfter': state.activePageId,
+        },
+      );
+      // #endregion
     } finally {
       _skipQueueingDuringHydration = false;
     }
+  }
+
+  String? _resolveHydrationTargetPage(RemoteStrategySnapshot snapshot) {
+    if (snapshot.pages.isEmpty) {
+      return null;
+    }
+
+    final candidate = state.activePageId ?? activePageID;
+    if (candidate != null &&
+        snapshot.pages.any((page) => page.publicId == candidate)) {
+      return candidate;
+    }
+
+    final orderedPages = [...snapshot.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    return orderedPages.first.publicId;
   }
 
   List<_CollabElementEnvelope> _collectLocalElementEnvelopes() {
@@ -585,6 +709,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     final localById = {
       for (var i = 0; i < local.length; i++) local[i].publicId: (local[i], i),
     };
+    final missingRemoteIds =
+        localById.keys.where((id) => !remoteById.containsKey(id)).length;
+    final missingLocalIds = remoteElements
+        .where((element) => !element.deleted && !localById.containsKey(element.publicId))
+        .length;
 
     final ops = <StrategyOp>[];
 
@@ -728,6 +857,28 @@ class StrategyProvider extends Notifier<StrategyState> {
         }),
       ));
     }
+    final opKindCounts = <String, int>{};
+    for (final op in ops) {
+      final key = '${op.entityType.name}.${op.kind.name}';
+      opKindCounts[key] = (opKindCounts[key] ?? 0) + 1;
+    }
+    // #region agent log
+    _appendDebugLog(
+      hypothesisId: 'H2',
+      location: 'strategy_provider.dart:_buildOpsFromCurrentPageSnapshot',
+      message: 'Local/remote ID diff and queued ops',
+      data: {
+        'strategyId': snapshot.header.publicId,
+        'activePageId': activePageId,
+        'remoteElements': remoteElements.length,
+        'localElements': local.length,
+        'missingRemoteIds': missingRemoteIds,
+        'missingLocalIds': missingLocalIds,
+        'opsTotal': ops.length,
+        'opKindCounts': opKindCounts,
+      },
+    );
+    // #endregion
     return ops;
   }
 
@@ -2195,11 +2346,13 @@ class StrategyProvider extends Notifier<StrategyState> {
           if (element.deleted) continue;
           final payloadMap = element.decodedPayload();
           payloadMap.putIfAbsent("elementType", () => element.elementType);
+          final newElementId = const Uuid().v4();
+          payloadMap["id"] = newElementId;
           ops.add(StrategyOp(
             opId: const Uuid().v4(),
             kind: StrategyOpKind.add,
             entityType: StrategyOpEntityType.element,
-            entityPublicId: const Uuid().v4(),
+            entityPublicId: newElementId,
             pagePublicId: newPageId,
             payload: jsonEncode(payloadMap),
             sortIndex: element.sortIndex,
@@ -2209,13 +2362,27 @@ class StrategyProvider extends Notifier<StrategyState> {
         final lineups = snapshot.lineupsByPage[page.publicId] ?? const [];
         for (final lineup in lineups) {
           if (lineup.deleted) continue;
+          final newLineupId = const Uuid().v4();
+          String lineupPayload = lineup.payload;
+          try {
+            final decoded = jsonDecode(lineup.payload);
+            if (decoded is Map<String, dynamic>) {
+              final payload = Map<String, dynamic>.from(decoded)
+                ..["id"] = newLineupId;
+              lineupPayload = jsonEncode(payload);
+            } else if (decoded is Map) {
+              final payload = Map<String, dynamic>.from(decoded)
+                ..["id"] = newLineupId;
+              lineupPayload = jsonEncode(payload);
+            }
+          } catch (_) {}
           ops.add(StrategyOp(
             opId: const Uuid().v4(),
             kind: StrategyOpKind.add,
             entityType: StrategyOpEntityType.lineup,
-            entityPublicId: const Uuid().v4(),
+            entityPublicId: newLineupId,
             pagePublicId: newPageId,
-            payload: lineup.payload,
+            payload: lineupPayload,
             sortIndex: lineup.sortIndex,
           ));
         }

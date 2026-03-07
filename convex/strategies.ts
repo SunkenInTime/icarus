@@ -120,6 +120,18 @@ export const create = mutation({
       folderId = folder._id;
     }
 
+    const existing = await ctx.db
+      .query("strategies")
+      .withIndex("by_publicId", (q) => q.eq("publicId", args.publicId))
+      .collect();
+    const existingOwned = existing.find((item) => item.ownerId === user._id);
+    if (existingOwned !== undefined) {
+      return { ok: true, reused: true };
+    }
+    if (existing.length > 0) {
+      throw new Error(`Strategy publicId already exists: ${args.publicId}`);
+    }
+
     await ctx.db.insert("strategies", {
       publicId: args.publicId,
       ownerId: user._id,

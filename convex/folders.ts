@@ -59,6 +59,18 @@ export const create = mutation({
       parentFolderId = parent._id;
     }
 
+    const existing = await ctx.db
+      .query("folders")
+      .withIndex("by_publicId", (q) => q.eq("publicId", args.publicId))
+      .collect();
+    const existingOwned = existing.find((item) => item.ownerId === user._id);
+    if (existingOwned !== undefined) {
+      return { ok: true, reused: true };
+    }
+    if (existing.length > 0) {
+      throw new Error(`Folder publicId already exists: ${args.publicId}`);
+    }
+
     await ctx.db.insert("folders", {
       publicId: args.publicId,
       ownerId: user._id,

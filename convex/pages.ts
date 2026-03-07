@@ -48,6 +48,42 @@ export const add = mutation({
     await assertStrategyRole(ctx, strategy, "editor");
 
     const now = Date.now();
+    const existingPage = await ctx.db
+      .query("pages")
+      .withIndex("by_publicId", (q) => q.eq("publicId", args.pagePublicId))
+      .first();
+    if (existingPage !== null) {
+      if (existingPage.strategyId !== strategy._id) {
+        throw new Error(`Page publicId already exists: ${args.pagePublicId}`);
+      }
+
+      const settingsChanged =
+        (existingPage.settings ?? null) !== (args.settings ?? null);
+      const hasChanges =
+        existingPage.name !== args.name ||
+        existingPage.sortIndex !== args.sortIndex ||
+        existingPage.isAttack !== args.isAttack ||
+        settingsChanged;
+      if (!hasChanges) {
+        return { ok: true, reused: true };
+      }
+
+      await ctx.db.patch(existingPage._id, {
+        name: args.name,
+        sortIndex: args.sortIndex,
+        isAttack: args.isAttack,
+        settings: args.settings,
+        revision: existingPage.revision + 1,
+        updatedAt: now,
+      });
+
+      await ctx.db.patch(strategy._id, {
+        sequence: strategy.sequence + 1,
+        updatedAt: now,
+      });
+      return { ok: true, reused: true };
+    }
+
     await ctx.db.insert("pages", {
       publicId: args.pagePublicId,
       strategyId: strategy._id,
