@@ -30,7 +30,9 @@ Prefer structural assertions; avoid brittle full-text snapshots.
 
 ## Fixture policy
 
-- Keep [base-test.ica](base-test.ica) as a stable baseline fixture.
+- Keep fixtures under `test/fixtures/strategy_integrity/`.
+- Keep [base-test.ica](fixtures/strategy_integrity/base-test.ica) as a stable baseline fixture.
+- Keep [base-test-v43.ica](fixtures/strategy_integrity/base-test-v43.ica) as the previous-version custom-shape fixture.
 - Add new fixtures for significant schema eras, not every release.
 - Do not rewrite old fixtures unless corrupted; add new fixtures instead.
 - Keep assertions focused on semantic fields (not formatting/order).

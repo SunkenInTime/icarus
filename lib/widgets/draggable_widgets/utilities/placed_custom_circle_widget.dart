@@ -1,5 +1,3 @@
-import 'dart:async';
-import 'dart:developer';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -8,7 +6,6 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/debug/debug_log.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -43,20 +40,11 @@ class _PlacedCustomCircleWidgetState
 
   double? _localDiameterMeters;
   bool _isDragging = false;
-  bool _isResizing = false;
-  bool _isResizePointerActive = false;
-  Timer? _tooltipTimer;
 
   @override
   void initState() {
     super.initState();
     _localDiameterMeters = widget.utility.customDiameter;
-  }
-
-  @override
-  void dispose() {
-    _tooltipTimer?.cancel();
-    super.dispose();
   }
 
   @override
@@ -79,7 +67,7 @@ class _PlacedCustomCircleWidgetState
       return const SizedBox.shrink();
     }
 
-    if (!_isResizing && !_isDragging && _localDiameterMeters != providerDiameterMeters) {
+    if (!_isDragging && _localDiameterMeters != providerDiameterMeters) {
       _localDiameterMeters = providerDiameterMeters;
     }
 
@@ -87,100 +75,81 @@ class _PlacedCustomCircleWidgetState
     final meterScale = AgentData.inGameMetersDiameter * mapScale;
     final scaledDiameter = coordinateSystem.scale(diameterMeters * meterScale);
 
-    if (_isResizing || _isDragging) {
-      // #region agent log
-      appendDebugLog(
-        hypothesisId: 'B',
-        location: 'placed_custom_circle_widget.dart:${85 + 1}',
-        message: 'Circle widget rebuild during resize state',
-        data: <String, Object?>{
-          'id': widget.id,
-          'isResizing': _isResizing,
-          'isDragging': _isDragging,
-          'isScreenshot': isScreenshot,
-          'diameterMeters': diameterMeters,
-          'scaledDiameter': scaledDiameter,
-        },
-      );
-      // #endregion
-    }
-
     return SizedBox(
       width: scaledDiameter,
       height: scaledDiameter,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          _buildDraggableBody(
-            utilityRef: utilityRef,
-            diameterMeters: diameterMeters,
-            mapScale: mapScale,
+          Draggable<PlacedUtility>(
+            data: utilityRef,
+            dragAnchorStrategy:
+                ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
+            feedback: Opacity(
+              opacity: Settings.feedbackOpacity,
+              child: ZoomTransform(
+                child: CustomCircleUtilityWidget(
+                  id: null,
+                  diameterMeters: diameterMeters,
+                  colorValue: utilityRef.customColorValue,
+                  opacityPercent: utilityRef.customOpacityPercent,
+                  mapScale: mapScale,
+                ),
+              ),
+            ),
+            childWhenDragging: const SizedBox.shrink(),
+            onDragStarted: () {
+              setState(() {
+                _isDragging = true;
+              });
+            },
+            onDragEnd: (details) {
+              widget.onDragEnd(details);
+              setState(() {
+                _isDragging = false;
+              });
+            },
+            child: CustomCircleUtilityWidget(
+              id: widget.id,
+              diameterMeters: diameterMeters,
+              colorValue: utilityRef.customColorValue,
+              opacityPercent: utilityRef.customOpacityPercent,
+              mapScale: mapScale,
+            ),
           ),
-            if (!_isDragging && !isScreenshot)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: CustomPaint(
-                    painter: _CircleResizeArcPainter(
-                      color: Colors.white,
-                      strokeWidth: coordinateSystem.scale(4),
+          if (!_isDragging && !isScreenshot)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _CircleResizeArcPainter(
+                    color: Colors.white,
+                    strokeWidth: coordinateSystem.scale(4),
+                  ),
+                ),
+              ),
+            ),
+          if (!_isDragging && !isScreenshot)
+            _buildCircleHandle(
+              coordinateSystem: coordinateSystem,
+              scaledDiameter: scaledDiameter,
+              mapScale: mapScale,
+            ),
+          if (!isScreenshot)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: Transform.translate(
+                    offset: Offset(0, -coordinateSystem.scale(8)),
+                    child: _ResizeBadge(
+                      label: 'D',
+                      valueMeters: diameterMeters,
                     ),
                   ),
                 ),
               ),
-            if (!_isDragging && !isScreenshot)
-              _buildCircleHandle(
-                coordinateSystem: coordinateSystem,
-                scaledDiameter: scaledDiameter,
-                mapScale: mapScale,
-              ),
-            if (_isResizing)
-              _buildCircleTooltip(
-                diameterMeters: diameterMeters,
-              ),
+            ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildDraggableBody({
-    required PlacedUtility utilityRef,
-    required double diameterMeters,
-    required double mapScale,
-  }) {
-    return Draggable<PlacedUtility>(
-      data: utilityRef,
-      dragAnchorStrategy:
-          ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
-      feedback: Opacity(
-        opacity: Settings.feedbackOpacity,
-        child: ZoomTransform(
-          child: CustomCircleUtilityWidget(
-            id: null,
-            diameterMeters: diameterMeters,
-            colorValue: utilityRef.customColorValue,
-            opacityPercent: utilityRef.customOpacityPercent,
-            mapScale: mapScale,
-          ),
-        ),
-      ),
-      childWhenDragging: const SizedBox.shrink(),
-      onDragStarted: () {
-        setState(() {
-          _isDragging = true;
-        });
-      },
-      onDragEnd: (details) {
-        widget.onDragEnd(details);
-        setState(() {
-          _isDragging = false;
-        });
-      },
-      child: CustomCircleUtilityWidget(
-        id: widget.id,
-        diameterMeters: diameterMeters,
-        colorValue: utilityRef.customColorValue,
-        opacityPercent: utilityRef.customOpacityPercent,
-        mapScale: mapScale,
       ),
     );
   }
@@ -202,56 +171,12 @@ class _PlacedCustomCircleWidgetState
       top: handleCenter.dy - (hitSize / 2),
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeUpLeftDownRight,
-        child: Listener(
+        child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onPointerDown: (_) => _beginCircleResize(),
-          onPointerMove: (event) {
-            if (_isResizePointerActive) {
-              _updateDiameter(event.position, mapScale);
-            }
-          },
-          onPointerUp: (_) => _commitCircleResize(),
-          onPointerCancel: (_) => _commitCircleResize(),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanStart: (_) {
-              log('CIRCLE_PAN_START');
-              _tooltipTimer?.cancel();
-              // #region agent log
-              appendDebugLog(
-                hypothesisId: 'A',
-                location: 'placed_custom_circle_widget.dart:${187 + 1}',
-                message: 'Circle resize handle pan start',
-                data: <String, Object?>{
-                  'id': widget.id,
-                  'wasResizing': _isResizing,
-                  'localDiameterMeters': _localDiameterMeters,
-                },
-              );
-              // #endregion
-              _beginCircleResize();
-            },
-            onPanUpdate: (details) =>
-                _updateDiameter(details.globalPosition, mapScale),
-            onPanEnd: (_) => _commitCircleResize(),
-            child: SizedBox(width: hitSize, height: hitSize),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCircleTooltip({
-    required double diameterMeters,
-  }) {
-    return Positioned.fill(
-      child: IgnorePointer(
-        child: Align(
-          alignment: Alignment.center,
-          child: _ResizeTooltip(
-            label: 'Diameter',
-            valueMeters: diameterMeters,
-          ),
+          onPanUpdate: (details) =>
+              _updateDiameter(details.globalPosition, mapScale),
+          onPanEnd: (_) => _commitCircleResize(),
+          child: SizedBox(width: hitSize, height: hitSize),
         ),
       ),
     );
@@ -277,54 +202,18 @@ class _PlacedCustomCircleWidgetState
         .clamp(_minDiameterMeters, _maxDiameterMeters);
 
     setState(() {
-      _isResizePointerActive = true;
-      _isResizing = true;
       _localDiameterMeters = nextDiameter.toDouble();
     });
   }
 
   void _commitCircleResize() {
-    if (!_isResizing || !_isResizePointerActive) {
-      return;
-    }
-
     final diameterMeters = _localDiameterMeters;
     if (diameterMeters != null) {
-      log('CIRCLE_RESIZE_COMMIT diameter=$diameterMeters');
-      // #region agent log
-      appendDebugLog(
-        hypothesisId: 'D',
-        location: 'placed_custom_circle_widget.dart:${243 + 1}',
-        message: 'Circle resize commit requested',
-        data: <String, Object?>{
-          'id': widget.id,
-          'diameterMeters': diameterMeters,
-          'isResizing': _isResizing,
-        },
-      );
-      // #endregion
       ref.read(utilityProvider.notifier).updateCustomCircleDiameter(
             id: widget.id,
             diameterMeters: diameterMeters,
           );
     }
-
-    _tooltipTimer?.cancel();
-    _isResizePointerActive = false;
-    _tooltipTimer = Timer(const Duration(milliseconds: 1200), () {
-      if (!mounted) return;
-      setState(() {
-        _isResizing = false;
-      });
-    });
-  }
-
-  void _beginCircleResize() {
-    _tooltipTimer?.cancel();
-    setState(() {
-      _isResizePointerActive = true;
-      _isResizing = true;
-    });
   }
 }
 
@@ -368,8 +257,8 @@ class _CircleResizeArcPainter extends CustomPainter {
   }
 }
 
-class _ResizeTooltip extends StatelessWidget {
-  const _ResizeTooltip({
+class _ResizeBadge extends StatelessWidget {
+  const _ResizeBadge({
     required this.label,
     required this.valueMeters,
   });

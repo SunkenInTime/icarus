@@ -506,6 +506,18 @@ class PositionAction extends WidgetAction {
   }
 }
 
+class CustomShapeResizeAction extends WidgetAction {
+  final double? customDiameter;
+  final double? customWidth;
+  final double? customLength;
+
+  CustomShapeResizeAction({
+    required this.customDiameter,
+    required this.customWidth,
+    required this.customLength,
+  });
+}
+
 @JsonSerializable()
 class PlacedUtility extends PlacedWidget {
   final UtilityType type;
@@ -618,6 +630,54 @@ class PlacedUtility extends PlacedWidget {
     _poppedAction.removeLast();
   }
 
+  void updateCustomShapeSize({
+    double? newDiameter,
+    double? newWidth,
+    double? newLength,
+  }) {
+    final action = CustomShapeResizeAction(
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+    );
+    _actionHistory.add(action);
+    customDiameter = newDiameter ?? customDiameter;
+    customWidth = newWidth ?? customWidth;
+    customLength = newLength ?? customLength;
+  }
+
+  void _undoCustomShapeResize() {
+    final action = CustomShapeResizeAction(
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+    );
+
+    _poppedAction.add(action);
+    final previous = _actionHistory.last as CustomShapeResizeAction;
+    customDiameter = previous.customDiameter;
+    customWidth = previous.customWidth;
+    customLength = previous.customLength;
+    _actionHistory.removeLast();
+  }
+
+  void _redoCustomShapeResize() {
+    if (_poppedAction.isEmpty) return;
+
+    final action = CustomShapeResizeAction(
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+    );
+
+    _actionHistory.add(action);
+    final next = _poppedAction.last as CustomShapeResizeAction;
+    customDiameter = next.customDiameter;
+    customWidth = next.customWidth;
+    customLength = next.customLength;
+    _poppedAction.removeLast();
+  }
+
   @override
   void undoAction() {
     if (_actionHistory.isEmpty) return;
@@ -626,6 +686,8 @@ class PlacedUtility extends PlacedWidget {
       _undoPosition();
     } else if (_actionHistory.last is RotationAction) {
       _undoRotation();
+    } else if (_actionHistory.last is CustomShapeResizeAction) {
+      _undoCustomShapeResize();
     }
   }
 
@@ -637,6 +699,8 @@ class PlacedUtility extends PlacedWidget {
       _redoPosition();
     } else if (_poppedAction.last is RotationAction) {
       _redoRotation();
+    } else if (_poppedAction.last is CustomShapeResizeAction) {
+      _redoCustomShapeResize();
     }
   }
 

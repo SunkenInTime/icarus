@@ -1,5 +1,3 @@
-import 'dart:async';
-import 'dart:developer';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -8,7 +6,6 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/debug/debug_log.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -46,21 +43,13 @@ class _PlacedCustomRectangleWidgetState
   double? _localWidthMeters;
   double? _localLengthMeters;
   bool _isDragging = false;
-  bool _isResizePointerActive = false;
   _RectangleResizeHandle _activeHandle = _RectangleResizeHandle.none;
-  Timer? _tooltipTimer;
 
   @override
   void initState() {
     super.initState();
     _localWidthMeters = widget.utility.customWidth;
     _localLengthMeters = widget.utility.customLength;
-  }
-
-  @override
-  void dispose() {
-    _tooltipTimer?.cancel();
-    super.dispose();
   }
 
   @override
@@ -99,124 +88,95 @@ class _PlacedCustomRectangleWidgetState
     final scaledWidth = coordinateSystem.scale(widthMeters * meterScale);
     final scaledLength = coordinateSystem.scale(lengthMeters * meterScale);
 
-    if (_activeHandle != _RectangleResizeHandle.none || _isDragging) {
-      // #region agent log
-      appendDebugLog(
-        hypothesisId: 'B',
-        location:
-            'placed_custom_rectangle_widget.dart:${97 + 1}',
-        message: 'Rectangle widget rebuild during resize state',
-        data: <String, Object?>{
-          'id': widget.id,
-          'activeHandle': _activeHandle.name,
-          'isDragging': _isDragging,
-          'isScreenshot': isScreenshot,
-          'widthMeters': widthMeters,
-          'lengthMeters': lengthMeters,
-          'scaledWidth': scaledWidth,
-          'scaledLength': scaledLength,
-        },
-      );
-      // #endregion
-    }
-
     return SizedBox(
       width: scaledLength,
       height: scaledWidth,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          _buildDraggableBody(
-            utilityRef: utilityRef,
-            widthMeters: widthMeters,
-            lengthMeters: lengthMeters,
-            mapScale: mapScale,
+          Draggable<PlacedUtility>(
+            data: utilityRef,
+            dragAnchorStrategy:
+                ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
+            feedback: Opacity(
+              opacity: Settings.feedbackOpacity,
+              child: ZoomTransform(
+                child: CustomRectangleUtilityWidget(
+                  id: null,
+                  widthMeters: widthMeters,
+                  rectLengthMeters: lengthMeters,
+                  colorValue: utilityRef.customColorValue,
+                  opacityPercent: utilityRef.customOpacityPercent,
+                  mapScale: mapScale,
+                ),
+              ),
+            ),
+            childWhenDragging: const SizedBox.shrink(),
+            onDragStarted: () {
+              setState(() {
+                _isDragging = true;
+              });
+            },
+            onDragEnd: (details) {
+              widget.onDragEnd(details);
+              setState(() {
+                _isDragging = false;
+              });
+            },
+            child: CustomRectangleUtilityWidget(
+              id: widget.id,
+              widthMeters: widthMeters,
+              rectLengthMeters: lengthMeters,
+              colorValue: utilityRef.customColorValue,
+              opacityPercent: utilityRef.customOpacityPercent,
+              mapScale: mapScale,
+            ),
           ),
-            if (!_isDragging && !isScreenshot)
-              _buildLengthHandle(
-                coordinateSystem: coordinateSystem,
-                scaledWidth: scaledWidth,
-                scaledLength: scaledLength,
-                mapScale: mapScale,
-              ),
-            if (!_isDragging && !isScreenshot)
-              _buildWidthHandle(
-                coordinateSystem: coordinateSystem,
-                scaledWidth: scaledWidth,
-                scaledLength: scaledLength,
-                mapScale: mapScale,
-              ),
-            if (_activeHandle == _RectangleResizeHandle.length)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Align(
-                    alignment: Alignment.center,
-                    child: _ResizeTooltip(
-                      label: 'Length',
+          if (!_isDragging && !isScreenshot)
+            _buildLengthHandle(
+              coordinateSystem: coordinateSystem,
+              scaledWidth: scaledWidth,
+              scaledLength: scaledLength,
+              mapScale: mapScale,
+            ),
+          if (!_isDragging && !isScreenshot)
+            _buildWidthHandle(
+              coordinateSystem: coordinateSystem,
+              scaledWidth: scaledWidth,
+              scaledLength: scaledLength,
+              mapScale: mapScale,
+            ),
+          if (!isScreenshot)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Transform.translate(
+                    offset: Offset(0, coordinateSystem.scale(20)),
+                    child: _ResizeBadge(
+                      label: 'L',
                       valueMeters: lengthMeters,
                     ),
                   ),
                 ),
               ),
-            if (_activeHandle == _RectangleResizeHandle.width)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Align(
-                    alignment: Alignment.center,
-                    child: _ResizeTooltip(
-                      label: 'Width',
+            ),
+          if (!isScreenshot)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: Transform.translate(
+                    offset: Offset(coordinateSystem.scale(54), 0),
+                    child: _ResizeBadge(
+                      label: 'W',
                       valueMeters: widthMeters,
                     ),
                   ),
                 ),
               ),
+            ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildDraggableBody({
-    required PlacedUtility utilityRef,
-    required double widthMeters,
-    required double lengthMeters,
-    required double mapScale,
-  }) {
-    return Draggable<PlacedUtility>(
-      data: utilityRef,
-      dragAnchorStrategy:
-          ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
-      feedback: Opacity(
-        opacity: Settings.feedbackOpacity,
-        child: ZoomTransform(
-          child: CustomRectangleUtilityWidget(
-            id: null,
-            widthMeters: widthMeters,
-            rectLengthMeters: lengthMeters,
-            colorValue: utilityRef.customColorValue,
-            opacityPercent: utilityRef.customOpacityPercent,
-            mapScale: mapScale,
-          ),
-        ),
-      ),
-      childWhenDragging: const SizedBox.shrink(),
-      onDragStarted: () {
-        setState(() {
-          _isDragging = true;
-        });
-      },
-      onDragEnd: (details) {
-        widget.onDragEnd(details);
-        setState(() {
-          _isDragging = false;
-        });
-      },
-      child: CustomRectangleUtilityWidget(
-        id: widget.id,
-        widthMeters: widthMeters,
-        rectLengthMeters: lengthMeters,
-        colorValue: utilityRef.customColorValue,
-        opacityPercent: utilityRef.customOpacityPercent,
-        mapScale: mapScale,
       ),
     );
   }
@@ -235,43 +195,19 @@ class _PlacedCustomRectangleWidgetState
       top: scaledWidth - (handleHeight / 2),
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeLeftRight,
-        child: Listener(
+        child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onPointerDown: (_) => _beginRectangleResize(_RectangleResizeHandle.length),
-          onPointerMove: (event) {
-            if (_isResizePointerActive) {
-              _updateLength(event.position, mapScale);
-            }
+          onPanStart: (_) {
+            setState(() {
+              _activeHandle = _RectangleResizeHandle.length;
+            });
           },
-          onPointerUp: (_) => _commitRectangleResize(),
-          onPointerCancel: (_) => _commitRectangleResize(),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanStart: (_) {
-              log('RECT_LENGTH_PAN_START');
-              _tooltipTimer?.cancel();
-              // #region agent log
-              appendDebugLog(
-                hypothesisId: 'A',
-                location:
-                    'placed_custom_rectangle_widget.dart:${217 + 1}',
-                message: 'Rectangle length handle pan start',
-                data: <String, Object?>{
-                  'id': widget.id,
-                  'previousHandle': _activeHandle.name,
-                  'localLengthMeters': _localLengthMeters,
-                },
-              );
-              // #endregion
-              _beginRectangleResize(_RectangleResizeHandle.length);
-            },
-            onPanUpdate: (details) =>
-                _updateLength(details.globalPosition, mapScale),
-            onPanEnd: (_) => _commitRectangleResize(),
-            child: _ResizePill(
-              width: handleWidth,
-              height: handleHeight,
-            ),
+          onPanUpdate: (details) =>
+              _updateLength(details.globalPosition, mapScale),
+          onPanEnd: (_) => _commitRectangleResize(),
+          child: _ResizePill(
+            width: handleWidth,
+            height: handleHeight,
           ),
         ),
       ),
@@ -292,43 +228,19 @@ class _PlacedCustomRectangleWidgetState
       top: (scaledWidth - handleHeight) / 2,
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeUpDown,
-        child: Listener(
+        child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onPointerDown: (_) => _beginRectangleResize(_RectangleResizeHandle.width),
-          onPointerMove: (event) {
-            if (_isResizePointerActive) {
-              _updateWidth(event.position, mapScale);
-            }
+          onPanStart: (_) {
+            setState(() {
+              _activeHandle = _RectangleResizeHandle.width;
+            });
           },
-          onPointerUp: (_) => _commitRectangleResize(),
-          onPointerCancel: (_) => _commitRectangleResize(),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanStart: (_) {
-              log('RECT_WIDTH_PAN_START');
-              _tooltipTimer?.cancel();
-              // #region agent log
-              appendDebugLog(
-                hypothesisId: 'A',
-                location:
-                    'placed_custom_rectangle_widget.dart:${251 + 1}',
-                message: 'Rectangle width handle pan start',
-                data: <String, Object?>{
-                  'id': widget.id,
-                  'previousHandle': _activeHandle.name,
-                  'localWidthMeters': _localWidthMeters,
-                },
-              );
-              // #endregion
-              _beginRectangleResize(_RectangleResizeHandle.width);
-            },
-            onPanUpdate: (details) =>
-                _updateWidth(details.globalPosition, mapScale),
-            onPanEnd: (_) => _commitRectangleResize(),
-            child: _ResizePill(
-              width: handleWidth,
-              height: handleHeight,
-            ),
+          onPanUpdate: (details) =>
+              _updateWidth(details.globalPosition, mapScale),
+          onPanEnd: (_) => _commitRectangleResize(),
+          child: _ResizePill(
+            width: handleWidth,
+            height: handleHeight,
           ),
         ),
       ),
@@ -349,8 +261,6 @@ class _PlacedCustomRectangleWidgetState
         .clamp(_minLengthMeters, _maxLengthMeters);
 
     setState(() {
-      _isResizePointerActive = true;
-      _activeHandle = _RectangleResizeHandle.length;
       _localLengthMeters = nextLength.toDouble();
     });
   }
@@ -369,21 +279,14 @@ class _PlacedCustomRectangleWidgetState
         (halfWidthVirtual * 2 / meterScale).clamp(_minWidthMeters, _maxWidthMeters);
 
     setState(() {
-      _isResizePointerActive = true;
-      _activeHandle = _RectangleResizeHandle.width;
       _localWidthMeters = nextWidth.toDouble();
     });
   }
 
   void _commitRectangleResize() {
-    if (_activeHandle == _RectangleResizeHandle.none || !_isResizePointerActive) {
-      return;
-    }
-
     final widthMeters = _localWidthMeters;
     final lengthMeters = _localLengthMeters;
     if (widthMeters != null && lengthMeters != null) {
-      log('RECT_RESIZE_COMMIT width=$widthMeters length=$lengthMeters');
       ref.read(utilityProvider.notifier).updateCustomRectangleSize(
             id: widget.id,
             widthMeters: widthMeters,
@@ -391,24 +294,10 @@ class _PlacedCustomRectangleWidgetState
           );
     }
 
-    _tooltipTimer?.cancel();
-    _isResizePointerActive = false;
-    _tooltipTimer = Timer(const Duration(milliseconds: 1200), () {
-      if (!mounted) return;
-      setState(() {
-        _activeHandle = _RectangleResizeHandle.none;
-      });
-    });
-  }
-
-  void _beginRectangleResize(_RectangleResizeHandle handle) {
-    _tooltipTimer?.cancel();
     setState(() {
-      _isResizePointerActive = true;
-      _activeHandle = handle;
+      _activeHandle = _RectangleResizeHandle.none;
     });
   }
-
 }
 
 class _ResizePill extends StatelessWidget {
@@ -440,8 +329,8 @@ class _ResizePill extends StatelessWidget {
   }
 }
 
-class _ResizeTooltip extends StatelessWidget {
-  const _ResizeTooltip({
+class _ResizeBadge extends StatelessWidget {
+  const _ResizeBadge({
     required this.label,
     required this.valueMeters,
   });

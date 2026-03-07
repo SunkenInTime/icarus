@@ -31,10 +31,10 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
     final utility = _getUtility(ref);
     final effectiveMapScale = mapScale ?? 1.0;
 
-    final effectiveDiameterMeters = utility?.customDiameter ?? diameterMeters;
-    final effectiveColorValue = utility?.customColorValue ?? colorValue;
+    final effectiveDiameterMeters = diameterMeters ?? utility?.customDiameter;
+    final effectiveColorValue = colorValue ?? utility?.customColorValue;
     final effectiveOpacityPercent =
-        utility?.customOpacityPercent ?? opacityPercent;
+        opacityPercent ?? utility?.customOpacityPercent;
     final hasAllRequiredValues = effectiveDiameterMeters != null &&
         effectiveColorValue != null &&
         effectiveOpacityPercent != null;
