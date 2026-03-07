@@ -4,6 +4,10 @@ import 'dart:io';
 import 'package:win32_registry/win32_registry.dart';
 
 Future<void> registerDeepLinkProtocol(String scheme) async {
+  if (!Platform.isWindows) {
+    return;
+  }
+
   final appPath = Platform.resolvedExecutable;
   final expectedCommand = '"$appPath" "%1"';
 

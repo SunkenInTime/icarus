@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
-import 'dart:io';
 
 import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,27 +20,6 @@ import 'package:uuid/uuid.dart';
 
 final cloudMigrationProvider =
     NotifierProvider<CloudMigrationNotifier, bool>(CloudMigrationNotifier.new);
-
-void _appendCloudMigrationDebugLog({
-  required String hypothesisId,
-  required String location,
-  required String message,
-  Map<String, dynamic>? data,
-}) {
-  try {
-    final payload = <String, dynamic>{
-      'hypothesisId': hypothesisId,
-      'location': location,
-      'message': message,
-      'data': data ?? const <String, dynamic>{},
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-    };
-    File('/opt/cursor/logs/debug.log').writeAsStringSync(
-      '${jsonEncode(payload)}\n',
-      mode: FileMode.append,
-    );
-  } catch (_) {}
-}
 
 class CloudMigrationNotifier extends Notifier<bool> {
   @override
@@ -73,36 +51,6 @@ class CloudMigrationNotifier extends Notifier<bool> {
     }
 
     for (final strategy in strategies) {
-      final allElementIds = <String>[
-        for (final page in strategy.pages)
-          ...page.agentData.map((item) => item.id),
-        for (final page in strategy.pages)
-          ...page.abilityData.map((item) => item.id),
-        for (final page in strategy.pages)
-          ...page.drawingData.map((item) => item.id),
-        for (final page in strategy.pages)
-          ...page.textData.map((item) => item.id),
-        for (final page in strategy.pages)
-          ...page.imageData.map((item) => item.id),
-        for (final page in strategy.pages)
-          ...page.utilityData.map((item) => item.id),
-      ];
-      final allLineupIds = <String>[
-        for (final page in strategy.pages) ...page.lineUps.map((lineup) => lineup.id),
-      ];
-      // #region agent log
-      _appendCloudMigrationDebugLog(
-        hypothesisId: 'H3',
-        location: 'cloud_migration_provider.dart:maybeMigrate',
-        message: 'Migration preflight ID uniqueness',
-        data: {
-          'strategyId': strategy.id,
-          'pageCount': strategy.pages.length,
-          'elementIdDuplicates': allElementIds.length - allElementIds.toSet().length,
-          'lineupIdDuplicates': allLineupIds.length - allLineupIds.toSet().length,
-        },
-      );
-      // #endregion
       try {
         await repo.createStrategy(
           publicId: strategy.id,

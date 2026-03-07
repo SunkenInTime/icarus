@@ -200,27 +200,6 @@ class StrategyState {
 final strategyProvider =
     NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
 
-void _appendDebugLog({
-  required String hypothesisId,
-  required String location,
-  required String message,
-  Map<String, dynamic>? data,
-}) {
-  try {
-    final payload = <String, dynamic>{
-      'hypothesisId': hypothesisId,
-      'location': location,
-      'message': message,
-      'data': data ?? const <String, dynamic>{},
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-    };
-    File('/opt/cursor/logs/debug.log').writeAsStringSync(
-      '${jsonEncode(payload)}\n',
-      mode: FileMode.append,
-    );
-  } catch (_) {}
-}
-
 class NewerVersionImportException implements Exception {
   const NewerVersionImportException({
     required this.importedVersion,
@@ -275,6 +254,11 @@ class StrategyProvider extends Notifier<StrategyState> {
             .activeStrategyPublicId;
         if (activeRemoteStrategy != snapshot.header.publicId ||
             state.id != snapshot.header.publicId) {
+          return;
+        }
+
+        final queue = ref.read(strategyOpQueueProvider);
+        if (queue.isFlushing || queue.pending.isNotEmpty || !state.isSaved) {
           return;
         }
 
@@ -350,20 +334,6 @@ class StrategyProvider extends Notifier<StrategyState> {
         .openStrategy(strategyID);
     final snapshotAsync = ref.read(remoteStrategySnapshotProvider);
     final snapshot = snapshotAsync.valueOrNull;
-    // #region agent log
-    _appendDebugLog(
-      hypothesisId: 'H1',
-      location: 'strategy_provider.dart:openStrategy',
-      message: 'Cloud open fetched snapshot',
-      data: {
-        'strategyId': strategyID,
-        'hasSnapshot': snapshot != null,
-        'pageCount': snapshot?.pages.length ?? 0,
-        'sequence': snapshot?.header.sequence,
-        'activePageBefore': state.activePageId,
-      },
-    );
-    // #endregion
     if (snapshot == null || snapshot.pages.isEmpty) {
       return;
     }
@@ -452,20 +422,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     RemoteStrategySnapshot snapshot,
     String pagePublicId,
   ) async {
-    // #region agent log
-    _appendDebugLog(
-      hypothesisId: 'H1',
-      location: 'strategy_provider.dart:_hydrateFromRemotePage:entry',
-      message: 'Hydration started',
-      data: {
-        'strategyId': snapshot.header.publicId,
-        'sequence': snapshot.header.sequence,
-        'targetPagePublicId': pagePublicId,
-        'snapshotPages': snapshot.pages.length,
-        'activePageBefore': state.activePageId,
-      },
-    );
-    // #endregion
     final page = snapshot.pages.firstWhere(
       (p) => p.publicId == pagePublicId,
       orElse: () => snapshot.pages.first,
@@ -586,20 +542,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       _lastHydratedRemoteStrategyId = snapshot.header.publicId;
       _lastHydratedRemoteSequence = snapshot.header.sequence;
       _lastHydratedRemotePageId = page.publicId;
-      // #region agent log
-      _appendDebugLog(
-        hypothesisId: 'H1',
-        location: 'strategy_provider.dart:_hydrateFromRemotePage:exit',
-        message: 'Hydration completed',
-        data: {
-          'strategyId': snapshot.header.publicId,
-          'hydratedPagePublicId': page.publicId,
-          'elementsCount': pageElements.length,
-          'lineupsCount': pageLineups.length,
-          'activePageAfter': state.activePageId,
-        },
-      );
-      // #endregion
     } finally {
       _skipQueueingDuringHydration = false;
     }
@@ -709,11 +651,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     final localById = {
       for (var i = 0; i < local.length; i++) local[i].publicId: (local[i], i),
     };
-    final missingRemoteIds =
-        localById.keys.where((id) => !remoteById.containsKey(id)).length;
-    final missingLocalIds = remoteElements
-        .where((element) => !element.deleted && !localById.containsKey(element.publicId))
-        .length;
 
     final ops = <StrategyOp>[];
 
@@ -857,28 +794,6 @@ class StrategyProvider extends Notifier<StrategyState> {
         }),
       ));
     }
-    final opKindCounts = <String, int>{};
-    for (final op in ops) {
-      final key = '${op.entityType.name}.${op.kind.name}';
-      opKindCounts[key] = (opKindCounts[key] ?? 0) + 1;
-    }
-    // #region agent log
-    _appendDebugLog(
-      hypothesisId: 'H2',
-      location: 'strategy_provider.dart:_buildOpsFromCurrentPageSnapshot',
-      message: 'Local/remote ID diff and queued ops',
-      data: {
-        'strategyId': snapshot.header.publicId,
-        'activePageId': activePageId,
-        'remoteElements': remoteElements.length,
-        'localElements': local.length,
-        'missingRemoteIds': missingRemoteIds,
-        'missingLocalIds': missingLocalIds,
-        'opsTotal': ops.length,
-        'opKindCounts': opKindCounts,
-      },
-    );
-    // #endregion
     return ops;
   }
 
@@ -2036,8 +1951,10 @@ class StrategyProvider extends Notifier<StrategyState> {
           error: error,
           stackTrace: stackTrace,
         );
-        if (!handled) rethrow;
-        return newID;
+        if (handled) {
+          throw StateError('Cloud authentication required to create strategy.');
+        }
+        rethrow;
       }
       await openStrategy(newID);
       return newID;

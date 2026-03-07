@@ -1,7 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer';
-import 'dart:io';
 
 import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,27 +12,6 @@ final remoteStrategySnapshotProvider = AsyncNotifierProvider<
     RemoteStrategySnapshotNotifier, RemoteStrategySnapshot?>(
   RemoteStrategySnapshotNotifier.new,
 );
-
-void _appendRemoteSnapshotDebugLog({
-  required String hypothesisId,
-  required String location,
-  required String message,
-  Map<String, dynamic>? data,
-}) {
-  try {
-    final payload = <String, dynamic>{
-      'hypothesisId': hypothesisId,
-      'location': location,
-      'message': message,
-      'data': data ?? const <String, dynamic>{},
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-    };
-    File('/opt/cursor/logs/debug.log').writeAsStringSync(
-      '${jsonEncode(payload)}\n',
-      mode: FileMode.append,
-    );
-  } catch (_) {}
-}
 
 class RemoteStrategySnapshotNotifier
     extends AsyncNotifier<RemoteStrategySnapshot?> {
@@ -93,19 +70,6 @@ class RemoteStrategySnapshotNotifier
           .read(convexStrategyRepositoryProvider)
           .fetchSnapshot(strategyPublicId);
       state = AsyncData(snapshot);
-      // #region agent log
-      _appendRemoteSnapshotDebugLog(
-        hypothesisId: 'H1',
-        location: 'remote_strategy_snapshot_provider.dart:_refreshFromServer',
-        message: 'Remote snapshot refreshed',
-        data: {
-          'strategyId': strategyPublicId,
-          'sequence': snapshot.header.sequence,
-          'pages': snapshot.pages.length,
-          'activeStrategyPublicId': _activeStrategyPublicId,
-        },
-      );
-      // #endregion
       await _syncPageSubscriptions(snapshot);
     } catch (error, stackTrace) {
       if (isConvexUnauthenticatedError(error)) {
@@ -235,19 +199,6 @@ class RemoteStrategySnapshotNotifier
         });
       }
     }
-    // #region agent log
-    _appendRemoteSnapshotDebugLog(
-      hypothesisId: 'H1',
-      location: 'remote_strategy_snapshot_provider.dart:_syncPageWatchersFromIds',
-      message: 'Page watcher sync applied',
-      data: {
-        'strategyId': strategyPublicId,
-        'pageCount': pageIds.length,
-        'elementWatcherCount': _elementSubscriptions.length,
-        'lineupWatcherCount': _lineupSubscriptions.length,
-      },
-    );
-    // #endregion
   }
 
   void _handleSubscriptionError({
@@ -276,18 +227,6 @@ class RemoteStrategySnapshotNotifier
       return;
     }
 
-    // #region agent log
-    _appendRemoteSnapshotDebugLog(
-      hypothesisId: 'H1',
-      location: 'remote_strategy_snapshot_provider.dart:_scheduleRefresh',
-      message: 'Snapshot refresh scheduled from subscription update',
-      data: {
-        'strategyId': _activeStrategyPublicId,
-        'elementWatcherCount': _elementSubscriptions.length,
-        'lineupWatcherCount': _lineupSubscriptions.length,
-      },
-    );
-    // #endregion
     _refreshDebounce?.cancel();
     _refreshDebounce = Timer(const Duration(milliseconds: 120), () async {
       await _refreshFromServer();
