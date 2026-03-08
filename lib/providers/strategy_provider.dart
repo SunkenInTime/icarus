@@ -17,6 +17,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
+import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -319,7 +320,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       final worldMigrated = migrateToWorld16x9(legacyMigrated);
       final abilityScaleMigrated = migrateAbilityScale(worldMigrated);
       final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
-      if (squareAoeMigrated != abilityScaleMigrated) {
+      final customCircleMigrated =
+          migrateCustomCircleWrapper(squareAoeMigrated);
+      if (customCircleMigrated != squareAoeMigrated) {
+        await box.put(customCircleMigrated.id, customCircleMigrated);
+      } else if (squareAoeMigrated != abilityScaleMigrated) {
         await box.put(squareAoeMigrated.id, squareAoeMigrated);
       } else if (abilityScaleMigrated != worldMigrated) {
         await box.put(abilityScaleMigrated.id, abilityScaleMigrated);
@@ -386,12 +391,41 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
+  static StrategyData migrateCustomCircleWrapper(StrategyData strat,
+      {bool force = false}) {
+    if (!force && strat.versionNumber >= CustomCircleWrapperMigration.version) {
+      return strat;
+    }
+
+    final migratedPages = CustomCircleWrapperMigration.migratePages(
+      pages: strat.pages,
+      map: strat.mapData,
+    );
+
+    final hasPageChanged = migratedPages.length == strat.pages.length &&
+        migratedPages.asMap().entries.any((entry) {
+          final index = entry.key;
+          return entry.value != strat.pages[index];
+        });
+
+    if (!hasPageChanged && !force) {
+      return strat;
+    }
+
+    return strat.copyWith(
+      pages: migratedPages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
   static StrategyData migrateToCurrentVersion(StrategyData strat,
       {bool forceAbilityScale = false}) {
     final worldMigrated = migrateToWorld16x9(strat);
     final abilityScaleMigrated =
         migrateAbilityScale(worldMigrated, force: forceAbilityScale);
-    return migrateSquareAoeCenter(abilityScaleMigrated);
+    final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
+    return migrateCustomCircleWrapper(squareAoeMigrated);
   }
 
   static Future<StrategyData> migrateLegacyData(StrategyData strat) async {
@@ -452,9 +486,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       worldMigrated,
       force: originalVersion < AbilityScaleMigration.version,
     );
-    return migrateSquareAoeCenter(
+    final squareAoeMigrated = migrateSquareAoeCenter(
       abilityScaleMigrated,
       force: originalVersion < SquareAoeCenterMigration.version,
+    );
+    return migrateCustomCircleWrapper(
+      squareAoeMigrated,
+      force: originalVersion < CustomCircleWrapperMigration.version,
     );
   }
 
@@ -868,7 +906,13 @@ class StrategyProvider extends Notifier<StrategyState> {
             PageTransitionEntry.scaleOf(from) !=
                 PageTransitionEntry.scaleOf(to) ||
             PageTransitionEntry.textSizeOf(from) !=
-                PageTransitionEntry.textSizeOf(to)) {
+                PageTransitionEntry.textSizeOf(to) ||
+            PageTransitionEntry.customDiameterOf(from) !=
+                PageTransitionEntry.customDiameterOf(to) ||
+            PageTransitionEntry.customWidthOf(from) !=
+                PageTransitionEntry.customWidthOf(to) ||
+            PageTransitionEntry.customLengthOf(from) !=
+                PageTransitionEntry.customLengthOf(to)) {
           entries
               .add(PageTransitionEntry.move(from: from, to: to, order: order));
         } else {

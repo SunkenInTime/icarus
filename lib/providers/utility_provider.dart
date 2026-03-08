@@ -69,6 +69,61 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     state = newState;
   }
 
+  void updateCustomRectangleSize({
+    required String id,
+    required double widthMeters,
+    required double lengthMeters,
+  }) {
+    updateCustomShapeGeometry(
+      id: id,
+      widthMeters: widthMeters,
+      lengthMeters: lengthMeters,
+    );
+  }
+
+  void updateCustomCircleDiameter({
+    required String id,
+    required double diameterMeters,
+  }) {
+    updateCustomShapeGeometry(id: id, diameterMeters: diameterMeters);
+  }
+
+  void updateCustomShapeGeometry({
+    required String id,
+    Offset? position,
+    double? diameterMeters,
+    double? widthMeters,
+    double? lengthMeters,
+  }) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+
+    final utility = newState[index];
+    final nextPosition = position ?? utility.position;
+    final nextDiameter = diameterMeters ?? utility.customDiameter;
+    final nextWidth = widthMeters ?? utility.customWidth;
+    final nextLength = lengthMeters ?? utility.customLength;
+
+    final hasGeometryChange = utility.position != nextPosition ||
+        utility.customDiameter != nextDiameter ||
+        utility.customWidth != nextWidth ||
+        utility.customLength != nextLength;
+    if (!hasGeometryChange) return;
+
+    utility.updateCustomShapeGeometry(
+      newPosition: position,
+      newDiameter: diameterMeters,
+      newWidth: widthMeters,
+      newLength: lengthMeters,
+    );
+
+    final action =
+        UserAction(type: ActionType.edit, id: id, group: ActionGroup.utility);
+    ref.read(actionProvider.notifier).addAction(action);
+    state = newState;
+  }
+
   void updateRotationHistory(int index) {
     final newState = [...state];
 

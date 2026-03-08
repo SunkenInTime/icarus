@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 
-// ignore: must_be_immutable
 class RotatableWidget extends ConsumerStatefulWidget {
   final Widget child;
   final double rotation;
@@ -17,7 +16,7 @@ class RotatableWidget extends ConsumerStatefulWidget {
   final bool isDragging;
   final double? buttonLeft;
   final double? buttonTop;
-  RotatableWidget({
+  const RotatableWidget({
     super.key,
     required this.child,
     required this.rotation,
@@ -29,20 +28,48 @@ class RotatableWidget extends ConsumerStatefulWidget {
     this.buttonLeft,
     this.buttonTop,
   });
-  bool isHovered = false;
 
   @override
   ConsumerState<ConsumerStatefulWidget> createState() =>
       _RotatableWidgetState();
 }
 
-class _RotatableWidgetState extends ConsumerState<RotatableWidget> {
+class _RotatableWidgetState extends ConsumerState<RotatableWidget>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animationController;
+  late final Animation<double> _scaleAnimation;
+  bool _isHovered = false;
+  bool _isHandleDragging = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 150),
+      vsync: this,
+    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 1.03,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeOut,
+    ));
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final coordinateSystem = CoordinateSystem.instance;
     final rotationOrigin = widget.origin
         .scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
     final isScreenshot = ref.watch(screenshotProvider);
+    final buttonSize = coordinateSystem.scale(15);
     return Transform.rotate(
       angle: widget.rotation,
       alignment: Alignment.topLeft,
@@ -59,31 +86,64 @@ class _RotatableWidgetState extends ConsumerState<RotatableWidget> {
               child: MouseRegion(
                 onEnter: (event) {
                   setState(() {
-                    widget.isHovered = true;
+                    _isHovered = true;
                   });
+                  _animationController.forward();
                 },
                 onExit: (event) {
                   setState(() {
-                    widget.isHovered = false;
+                    _isHovered = false;
                   });
+                  if (!_isHandleDragging) {
+                    _animationController.reverse();
+                  }
                 },
                 child: SizedBox(
-                  width: coordinateSystem.scale(15),
-                  height: coordinateSystem.scale(15),
+                  width: buttonSize,
+                  height: buttonSize,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onPanStart: widget.onPanStart,
+                    onPanStart: (details) {
+                      setState(() {
+                        _isHandleDragging = true;
+                      });
+                      _animationController.forward();
+                      widget.onPanStart(details);
+                    },
                     onPanUpdate: widget.onPanUpdate,
-                    onPanEnd: widget.onPanEnd,
+                    onPanEnd: (details) {
+                      widget.onPanEnd(details);
+                      setState(() {
+                        _isHandleDragging = false;
+                      });
+                      if (!_isHovered) {
+                        _animationController.reverse();
+                      }
+                    },
                     onTap: () {
                       log("I'm being hit");
                     },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: widget.isHovered
-                            ? Colors.white
-                            : Colors.white.withAlpha(200),
-                        shape: BoxShape.circle,
+                    child: Center(
+                      child: AnimatedBuilder(
+                        animation: _scaleAnimation,
+                        builder: (context, child) {
+                          return Transform.scale(
+                            scale: _scaleAnimation.value,
+                            child: child,
+                          );
+                        },
+                        child: SizedBox(
+                          width: buttonSize,
+                          height: buttonSize,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: _isHovered
+                                  ? Colors.white
+                                  : Colors.white.withAlpha(200),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),

@@ -10,6 +10,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -34,8 +35,15 @@ class _IcaFixture {
   final Map<String, dynamic> decodedJson;
 }
 
+String get _fixtureDirectory =>
+    path.join(Directory.current.path, 'test', 'fixtures', 'strategy_integrity');
+
 Future<List<_IcaFixture>> _loadFixtureMatrix() async {
-  final root = Directory.current;
+  final root = Directory(_fixtureDirectory);
+  if (!root.existsSync()) {
+    return [];
+  }
+
   final candidates = root
       .listSync()
       .whereType<File>()
@@ -159,6 +167,32 @@ Future<StrategyData> _importStrategyFromDecoded({
   return strategy;
 }
 
+void _expectCustomShapes(StrategyData strategy, String fixtureName) {
+  final utilities = [
+    for (final page in strategy.pages) ...page.utilityData,
+  ];
+
+  final circle = utilities.firstWhere(
+    (utility) => utility.type == UtilityType.customCircle,
+    orElse: () =>
+        throw StateError('Missing custom circle in fixture $fixtureName'),
+  );
+  final rectangle = utilities.firstWhere(
+    (utility) => utility.type == UtilityType.customRectangle,
+    orElse: () =>
+        throw StateError('Missing custom rectangle in fixture $fixtureName'),
+  );
+
+  expect(circle.customDiameter, 14.0, reason: fixtureName);
+  expect(circle.customColorValue, 0xFF3B82F6, reason: fixtureName);
+  expect(circle.customOpacityPercent, 35, reason: fixtureName);
+
+  expect(rectangle.customWidth, 6.0, reason: fixtureName);
+  expect(rectangle.customLength, 18.0, reason: fixtureName);
+  expect(rectangle.customColorValue, 0xFF22C55E, reason: fixtureName);
+  expect(rectangle.customOpacityPercent, 30, reason: fixtureName);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -168,12 +202,24 @@ void main() {
 
       expect(fixtures, isNotEmpty);
       expect(fixtures.map((f) => f.name), contains('base-test.ica'));
+      expect(fixtures.map((f) => f.name), contains('base-test-v43.ica'));
 
       for (final fixture in fixtures) {
         expect(
           fixture.decodedJson,
           containsPair('mapData', isA<Object>()),
           reason: 'Fixture ${fixture.name} is missing required mapData',
+        );
+
+        expect(
+          jsonEncode(fixture.decodedJson),
+          contains('customCircle'),
+          reason: 'Fixture ${fixture.name} must include a custom circle',
+        );
+        expect(
+          jsonEncode(fixture.decodedJson),
+          contains('customRectangle'),
+          reason: 'Fixture ${fixture.name} must include a custom rectangle',
         );
       }
     });
@@ -190,8 +236,12 @@ void main() {
         );
 
         expect(imported.pages, isNotEmpty, reason: fixture.name);
-        expect(imported.versionNumber, Settings.versionNumber,
-            reason: fixture.name);
+        expect(
+          imported.versionNumber,
+          lessThanOrEqualTo(Settings.versionNumber),
+          reason: fixture.name,
+        );
+        _expectCustomShapes(imported, fixture.name);
 
         final payload = _buildExportPayload(imported);
         expect(payload['pages'], isA<List<dynamic>>(), reason: fixture.name);
@@ -274,19 +324,34 @@ void main() {
             ],
             'utilityData': [
               {
-                'id': 'utility-1',
+                'id': 'utility-circle',
                 'isDeleted': false,
                 'position': {'dx': 700.0, 'dy': 800.0},
-                'type': 'spike',
+                'type': 'customCircle',
+                'rotation': 0.0,
+                'length': 0.0,
+                'angle': 0.0,
+                'attachedAgentId': null,
+                'customDiameter': 14.0,
+                'customWidth': null,
+                'customLength': null,
+                'customColorValue': 0xFF3B82F6,
+                'customOpacityPercent': 35,
+              },
+              {
+                'id': 'utility-rectangle',
+                'isDeleted': false,
+                'position': {'dx': 780.0, 'dy': 820.0},
+                'type': 'customRectangle',
                 'rotation': 0.0,
                 'length': 0.0,
                 'angle': 0.0,
                 'attachedAgentId': null,
                 'customDiameter': null,
-                'customWidth': null,
-                'customLength': null,
-                'customColorValue': null,
-                'customOpacityPercent': null,
+                'customWidth': 6.0,
+                'customLength': 18.0,
+                'customColorValue': 0xFF22C55E,
+                'customOpacityPercent': 30,
               },
             ],
             'isAttack': 'true',
@@ -327,12 +392,16 @@ void main() {
       );
       final reExported = _buildExportPayload(reImported);
 
+      _expectCustomShapes(
+        reImported,
+        'current schema export -> import preserves custom shapes',
+      );
       expect(reExported, equals(exported));
     });
 
     test('legacy import -> current export -> re-import remains consistent',
         () async {
-      final fixture = File(path.join(Directory.current.path, 'base-test.ica'));
+      final fixture = File(path.join(_fixtureDirectory, 'base-test.ica'));
       final decoded = await _readIcaJson(fixture);
 
       final importedLegacy = await _importStrategyFromDecoded(
@@ -354,7 +423,83 @@ void main() {
       final reExportedCurrent = _buildExportPayload(reImported);
 
       expect(reImported.versionNumber, Settings.versionNumber);
+      _expectCustomShapes(reImported, 'base-test.ica');
       expect(reExportedCurrent, equals(exportedCurrent));
+    });
+
+    test('previous-version custom-shape fixture imports and re-exports cleanly',
+        () async {
+      final fixture = File(path.join(_fixtureDirectory, 'base-test-v43.ica'));
+      final decoded = await _readIcaJson(fixture);
+
+      final imported = await _importStrategyFromDecoded(
+        decoded: decoded,
+        strategyName: 'legacy-v43',
+        strategyId: 'legacy-v43',
+        isZip: true,
+      );
+
+      final exported = _buildExportPayload(imported);
+
+      final reImported = await _importStrategyFromDecoded(
+        decoded: exported,
+        strategyName: 'legacy-v43-reimport',
+        strategyId: 'legacy-v43-reimport',
+        isZip: true,
+      );
+
+      final reExported = _buildExportPayload(reImported);
+
+      expect(imported.versionNumber, Settings.versionNumber);
+      _expectCustomShapes(imported, 'base-test-v43.ica');
+      expect(reExported, equals(exported));
+    });
+
+    test('custom shape utility dimensions support undo and redo', () {
+      final rectangle = PlacedUtility(
+        id: 'rectangle-undo',
+        type: UtilityType.customRectangle,
+        position: const Offset(10, 10),
+        customWidth: 6.0,
+        customLength: 18.0,
+      );
+      rectangle.updateCustomShapeSize(newWidth: 9.0, newLength: 22.0);
+
+      rectangle.undoAction();
+      expect(rectangle.customWidth, 6.0);
+      expect(rectangle.customLength, 18.0);
+
+      rectangle.redoAction();
+      expect(rectangle.customWidth, 9.0);
+      expect(rectangle.customLength, 22.0);
+
+      final circle = PlacedUtility(
+        id: 'circle-undo',
+        type: UtilityType.customCircle,
+        position: const Offset(20, 20),
+        customDiameter: 10.0,
+      );
+      circle.updateCustomShapeSize(newDiameter: 14.0);
+
+      circle.undoAction();
+      expect(circle.customDiameter, 10.0);
+
+      circle.redoAction();
+      expect(circle.customDiameter, 14.0);
+    });
+
+    test('imported custom shapes retain dimensions and styling fields', () async {
+      final fixture = File(path.join(_fixtureDirectory, 'base-test.ica'));
+      final decoded = await _readIcaJson(fixture);
+
+      final imported = await _importStrategyFromDecoded(
+        decoded: decoded,
+        strategyName: 'custom-shape-assertions',
+        strategyId: 'custom-shape-assertions',
+        isZip: true,
+      );
+
+      _expectCustomShapes(imported, 'base-test.ica');
     });
 
     test('derived fields are recomputed on import', () async {

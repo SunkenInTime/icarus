@@ -26,6 +26,8 @@ import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_circle_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_rectangle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/utility_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_view_cone_widget.dart';
 import 'package:icarus/const/utilities.dart';
@@ -575,61 +577,87 @@ class _CustomShapeUtilityList extends ConsumerWidget {
             left:
                 coordinateSystem.coordinateToScreen(placedUtility.position).dx,
             top: coordinateSystem.coordinateToScreen(placedUtility.position).dy,
-            child: UtilityWidgetBuilder(
-              rotation: placedUtility.rotation,
-              length: placedUtility.length,
-              utility: placedUtility,
-              id: placedUtility.id,
-              onDragEnd: (details) {
-                final renderBox = context.findRenderObject() as RenderBox;
-                final localOffset = renderBox.globalToLocal(details.offset);
-                final virtualOffset =
-                    coordinateSystem.screenToCoordinate(localOffset);
+            child: placedUtility.type == UtilityType.customCircle
+                ? PlacedCustomCircleWidget(
+                    utility: placedUtility,
+                    id: placedUtility.id,
+                    onDragEnd: (details) {
+                      final renderBox = context.findRenderObject() as RenderBox;
+                      final localOffset =
+                          renderBox.globalToLocal(details.offset);
+                      final virtualOffset =
+                          coordinateSystem.screenToCoordinate(localOffset);
 
-                Offset safeArea;
-                if (placedUtility.type == UtilityType.customCircle) {
-                  final diameterMeters = placedUtility.customDiameter;
-                  if (diameterMeters == null) {
-                    log('Missing customDiameter for custom circle ${placedUtility.id}, removing malformed utility.');
-                    ref
-                        .read(utilityProvider.notifier)
-                        .removeUtility(placedUtility.id);
-                    return;
-                  }
-                  final diameter = diameterMeters *
-                      AgentData.inGameMetersDiameter *
-                      mapScale;
-                  safeArea = Offset(diameter / 2, diameter / 2);
-                } else {
-                  final widthMeters = placedUtility.customWidth;
-                  final lengthMeters = placedUtility.customLength;
-                  if (widthMeters == null || lengthMeters == null) {
-                    log('Missing custom rectangle dimensions for ${placedUtility.id}, removing malformed utility.');
-                    ref
-                        .read(utilityProvider.notifier)
-                        .removeUtility(placedUtility.id);
-                    return;
-                  }
-                  final width =
-                      widthMeters * AgentData.inGameMetersDiameter * mapScale;
-                  final length =
-                      lengthMeters * AgentData.inGameMetersDiameter * mapScale;
-                  safeArea = Offset(length / 2, width / 2);
-                }
+                      final diameterMeters = placedUtility.customDiameter;
+                      if (diameterMeters == null) {
+                        log('Missing customDiameter for custom circle ${placedUtility.id}, removing malformed utility.');
+                        ref
+                            .read(utilityProvider.notifier)
+                            .removeUtility(placedUtility.id);
+                        return;
+                      }
 
-                if (coordinateSystem.isOutOfBounds(virtualOffset.translate(
-                    safeArea.dx / 2, safeArea.dy / 2))) {
-                  ref
-                      .read(utilityProvider.notifier)
-                      .removeUtility(placedUtility.id);
-                  return;
-                }
+                      final safeArea = UtilityData
+                          .utilityWidgets[placedUtility.type]!
+                          .getAnchorPoint(
+                        mapScale: mapScale,
+                        diameterMeters: diameterMeters,
+                      );
 
-                ref
-                    .read(utilityProvider.notifier)
-                    .updatePosition(virtualOffset, placedUtility.id);
-              },
-            ),
+                      if (coordinateSystem.isOutOfBounds(
+                          virtualOffset.translate(safeArea.dx, safeArea.dy))) {
+                        ref
+                            .read(utilityProvider.notifier)
+                            .removeUtility(placedUtility.id);
+                        return;
+                      }
+
+                      ref
+                          .read(utilityProvider.notifier)
+                          .updatePosition(virtualOffset, placedUtility.id);
+                    },
+                  )
+                : PlacedCustomRectangleWidget(
+                    utility: placedUtility,
+                    id: placedUtility.id,
+                    onDragEnd: (details) {
+                      final renderBox = context.findRenderObject() as RenderBox;
+                      final localOffset =
+                          renderBox.globalToLocal(details.offset);
+                      final virtualOffset =
+                          coordinateSystem.screenToCoordinate(localOffset);
+
+                      final widthMeters = placedUtility.customWidth;
+                      final lengthMeters = placedUtility.customLength;
+                      if (widthMeters == null || lengthMeters == null) {
+                        log('Missing custom rectangle dimensions for ${placedUtility.id}, removing malformed utility.');
+                        ref
+                            .read(utilityProvider.notifier)
+                            .removeUtility(placedUtility.id);
+                        return;
+                      }
+
+                      final width = widthMeters *
+                          AgentData.inGameMetersDiameter *
+                          mapScale;
+                      final length = lengthMeters *
+                          AgentData.inGameMetersDiameter *
+                          mapScale;
+                      final safeArea = Offset(length / 2, width / 2);
+
+                      if (coordinateSystem.isOutOfBounds(
+                          virtualOffset.translate(safeArea.dx, safeArea.dy))) {
+                        ref
+                            .read(utilityProvider.notifier)
+                            .removeUtility(placedUtility.id);
+                        return;
+                      }
+
+                      ref
+                          .read(utilityProvider.notifier)
+                          .updatePosition(virtualOffset, placedUtility.id);
+                    },
+                  ),
           ),
       ],
     );

@@ -33,11 +33,11 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
     final utility = _getUtility(ref);
     final effectiveMapScale = mapScale ?? 1.0;
 
-    final effectiveWidthMeters = utility?.customWidth ?? widthMeters;
-    final effectiveLengthMeters = utility?.customLength ?? rectLengthMeters;
-    final effectiveColorValue = utility?.customColorValue ?? colorValue;
+    final effectiveWidthMeters = widthMeters ?? utility?.customWidth;
+    final effectiveLengthMeters = rectLengthMeters ?? utility?.customLength;
+    final effectiveColorValue = colorValue ?? utility?.customColorValue;
     final effectiveOpacityPercent =
-        utility?.customOpacityPercent ?? opacityPercent;
+        opacityPercent ?? utility?.customOpacityPercent;
     final hasAllRequiredValues = effectiveWidthMeters != null &&
         effectiveLengthMeters != null &&
         effectiveColorValue != null &&

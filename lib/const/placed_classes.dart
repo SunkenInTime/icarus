@@ -551,6 +551,34 @@ class PositionAction extends WidgetAction {
   }
 }
 
+class CustomShapeGeometryAction extends WidgetAction {
+  final Offset position;
+  final double? customDiameter;
+  final double? customWidth;
+  final double? customLength;
+
+  CustomShapeGeometryAction({
+    required this.position,
+    required this.customDiameter,
+    required this.customWidth,
+    required this.customLength,
+  });
+
+  CustomShapeGeometryAction copyWith({
+    Offset? position,
+    double? customDiameter,
+    double? customWidth,
+    double? customLength,
+  }) {
+    return CustomShapeGeometryAction(
+      position: position ?? this.position,
+      customDiameter: customDiameter ?? this.customDiameter,
+      customWidth: customWidth ?? this.customWidth,
+      customLength: customLength ?? this.customLength,
+    );
+  }
+}
+
 class TextContentAction extends WidgetAction {
   final String text;
 
@@ -627,6 +655,13 @@ class PlacedUtility extends PlacedWidget {
       } else if (action is RotationAction) {
         _actionHistory[index] =
             action.copyWith(rotation: action.rotation + math.pi);
+      } else if (action is CustomShapeGeometryAction) {
+        final actionFlippedPosition = getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledSize,
+            isRotatable: _getIsRotationUtility(type));
+        _actionHistory[index] =
+            action.copyWith(position: actionFlippedPosition);
       }
     }
     for (final (index, action) in _poppedAction.indexed) {
@@ -640,6 +675,12 @@ class PlacedUtility extends PlacedWidget {
       } else if (action is RotationAction) {
         _poppedAction[index] =
             action.copyWith(rotation: action.rotation + math.pi);
+      } else if (action is CustomShapeGeometryAction) {
+        final actionFlippedPosition = getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledSize,
+            isRotatable: _getIsRotationUtility(type));
+        _poppedAction[index] = action.copyWith(position: actionFlippedPosition);
       }
     }
   }
@@ -669,6 +710,73 @@ class PlacedUtility extends PlacedWidget {
     _poppedAction.removeLast();
   }
 
+  void updateCustomShapeGeometry({
+    Offset? newPosition,
+    double? newDiameter,
+    double? newWidth,
+    double? newLength,
+  }) {
+    final action = CustomShapeGeometryAction(
+      position: position,
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+    );
+    _actionHistory.add(action);
+    position = newPosition ?? position;
+    customDiameter = newDiameter ?? customDiameter;
+    customWidth = newWidth ?? customWidth;
+    customLength = newLength ?? customLength;
+  }
+
+  void updateCustomShapeSize({
+    double? newDiameter,
+    double? newWidth,
+    double? newLength,
+  }) {
+    updateCustomShapeGeometry(
+      newDiameter: newDiameter,
+      newWidth: newWidth,
+      newLength: newLength,
+    );
+  }
+
+  void _undoCustomShapeGeometry() {
+    final action = CustomShapeGeometryAction(
+      position: position,
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+    );
+
+    _poppedAction.add(action);
+    final previous = _actionHistory.last as CustomShapeGeometryAction;
+    position = previous.position;
+    customDiameter = previous.customDiameter;
+    customWidth = previous.customWidth;
+    customLength = previous.customLength;
+    _actionHistory.removeLast();
+  }
+
+  void _redoCustomShapeGeometry() {
+    if (_poppedAction.isEmpty) return;
+
+    final action = CustomShapeGeometryAction(
+      position: position,
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+    );
+
+    _actionHistory.add(action);
+    final next = _poppedAction.last as CustomShapeGeometryAction;
+    position = next.position;
+    customDiameter = next.customDiameter;
+    customWidth = next.customWidth;
+    customLength = next.customLength;
+    _poppedAction.removeLast();
+  }
+
   @override
   void undoAction() {
     if (_actionHistory.isEmpty) return;
@@ -677,6 +785,8 @@ class PlacedUtility extends PlacedWidget {
       _undoPosition();
     } else if (_actionHistory.last is RotationAction) {
       _undoRotation();
+    } else if (_actionHistory.last is CustomShapeGeometryAction) {
+      _undoCustomShapeGeometry();
     }
   }
 
@@ -688,6 +798,8 @@ class PlacedUtility extends PlacedWidget {
       _redoPosition();
     } else if (_poppedAction.last is RotationAction) {
       _redoRotation();
+    } else if (_poppedAction.last is CustomShapeGeometryAction) {
+      _redoCustomShapeGeometry();
     }
   }
 
