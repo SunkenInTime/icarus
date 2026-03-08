@@ -280,6 +280,105 @@ class AuthProvider extends Notifier<AppAuthState> {
     state = state.copyWith(isLoading: false);
   }
 
+  Future<String?> signInWithEmailPassword({
+    required String email,
+    required String password,
+  }) async {
+    state = state.copyWith(
+      isLoading: true,
+      isConvexUserReady: false,
+      convexAuthStatus: ConvexAuthStatus.configuring,
+      clearError: true,
+    );
+
+    try {
+      final response = await _supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+
+      if (response.session == null) {
+        const message = 'Sign in did not return a session.';
+        state = state.copyWith(
+          isLoading: false,
+          isConvexUserReady: false,
+          convexAuthStatus: ConvexAuthStatus.incident,
+          errorMessage: message,
+        );
+        return message;
+      }
+
+      await _configureConvexAuth(trigger: 'email_password_sign_in');
+      state = state.copyWith(isLoading: false);
+      return null;
+    } catch (error, stackTrace) {
+      log(
+        'Email/password sign-in failed: $error',
+        name: 'auth',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      final message = 'Email/password sign-in failed: $error';
+      state = state.copyWith(
+        isLoading: false,
+        isConvexUserReady: false,
+        convexAuthStatus: ConvexAuthStatus.incident,
+        errorMessage: message,
+      );
+      return message;
+    }
+  }
+
+  Future<String?> signUpWithEmailPassword({
+    required String email,
+    required String password,
+  }) async {
+    state = state.copyWith(
+      isLoading: true,
+      isConvexUserReady: false,
+      convexAuthStatus: ConvexAuthStatus.configuring,
+      clearError: true,
+    );
+
+    try {
+      final response = await _supabase.auth.signUp(
+        email: email,
+        password: password,
+      );
+
+      if (response.session == null) {
+        const message =
+            'Account created, but email confirmation is required before sign in.';
+        state = state.copyWith(
+          isLoading: false,
+          isConvexUserReady: false,
+          convexAuthStatus: ConvexAuthStatus.signedOut,
+          errorMessage: message,
+        );
+        return message;
+      }
+
+      await _configureConvexAuth(trigger: 'email_password_sign_up');
+      state = state.copyWith(isLoading: false);
+      return null;
+    } catch (error, stackTrace) {
+      log(
+        'Email/password sign-up failed: $error',
+        name: 'auth',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      final message = 'Email/password sign-up failed: $error';
+      state = state.copyWith(
+        isLoading: false,
+        isConvexUserReady: false,
+        convexAuthStatus: ConvexAuthStatus.incident,
+        errorMessage: message,
+      );
+      return message;
+    }
+  }
+
   Future<void> signOut() async {
     state = state.copyWith(
       isLoading: true,

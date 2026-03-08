@@ -4,6 +4,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -72,9 +73,15 @@ class SettingsTab extends ConsumerWidget {
                           : ShadButton(
                               onPressed: authState.isLoading
                                   ? null
-                                  : () => ref
-                                      .read(authProvider.notifier)
-                                      .signInWithDiscord(),
+                                  : () {
+                                      showDialog<void>(
+                                        context: context,
+                                        builder: (_) =>
+                                            const AuthDialog(
+                                              initialMode: AuthDialogMode.signIn,
+                                            ),
+                                      );
+                                    },
                               child: authState.isLoading
                                   ? const SizedBox(
                                       width: 16,
@@ -83,7 +90,7 @@ class SettingsTab extends ConsumerWidget {
                                         strokeWidth: 2,
                                       ),
                                     )
-                                  : const Text("Sign in with Discord"),
+                                  : const Text("Sign in / sign up"),
                             ),
                     ),
                     if (authState.errorMessage != null) ...[

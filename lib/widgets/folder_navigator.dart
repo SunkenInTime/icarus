@@ -20,6 +20,7 @@ import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
+import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:hive_ce_flutter/adapters.dart';
@@ -184,8 +185,10 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                         if (authState.isAuthenticated) {
                           unawaited(ref.read(authProvider.notifier).signOut());
                         } else {
-                          unawaited(
-                              ref.read(authProvider.notifier).signInWithDiscord());
+                            showDialog<void>(
+                              context: context,
+                              builder: (_) => const AuthDialog(),
+                            );
                         }
                       },
                 leading: Icon(
