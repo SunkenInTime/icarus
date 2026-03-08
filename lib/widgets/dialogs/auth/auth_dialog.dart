@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 enum AuthDialogMode { signIn, signUp }
@@ -107,26 +108,32 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ShadInput(
+            CustomTextField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               autofillHints: const [AutofillHints.email],
-              placeholder: const Text('Email'),
+              hintText: 'Email',
+              textInputAction: TextInputAction.next,
             ),
             const SizedBox(height: 10),
-            ShadInput(
+            CustomTextField(
               controller: _passwordController,
               obscureText: true,
               autofillHints: const [AutofillHints.password],
-              placeholder: const Text('Password'),
+              hintText: 'Password',
+              textInputAction:
+                  _isSignUp ? TextInputAction.next : TextInputAction.done,
+              onSubmitted: _isSignUp ? null : (_) => _submit(),
             ),
             if (_isSignUp) ...[
               const SizedBox(height: 10),
-              ShadInput(
+              CustomTextField(
                 controller: _confirmController,
                 obscureText: true,
                 autofillHints: const [AutofillHints.password],
-                placeholder: const Text('Confirm password'),
+                hintText: 'Confirm password',
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _submit(),
               ),
             ],
             const SizedBox(height: 12),
