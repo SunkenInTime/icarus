@@ -678,6 +678,18 @@ class PlacedUtility extends PlacedWidget {
     customLength = newLength ?? customLength;
   }
 
+  void updateCustomShapeSize({
+    double? newDiameter,
+    double? newWidth,
+    double? newLength,
+  }) {
+    updateCustomShapeGeometry(
+      newDiameter: newDiameter,
+      newWidth: newWidth,
+      newLength: newLength,
+    );
+  }
+
   void _undoCustomShapeGeometry() {
     final action = CustomShapeGeometryAction(
       position: position,

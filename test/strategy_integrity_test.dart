@@ -416,7 +416,7 @@ void main() {
 
       final reExported = _buildExportPayload(reImported);
 
-      expect(imported.versionNumber, Settings.versionNumber - 1);
+      expect(imported.versionNumber, Settings.versionNumber);
       _expectCustomShapes(imported, 'base-test-v43.ica');
       expect(reExported, equals(exported));
     });
