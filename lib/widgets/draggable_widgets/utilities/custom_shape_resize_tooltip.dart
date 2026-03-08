@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -42,7 +44,7 @@ class CustomShapeResizeTooltip extends StatelessWidget {
             Transform.translate(
               offset: const Offset(0, -4),
               child: Transform.rotate(
-                angle: 0.7853981634,
+                angle: math.pi / 4,
                 child: Container(
                   width: 10,
                   height: 10,

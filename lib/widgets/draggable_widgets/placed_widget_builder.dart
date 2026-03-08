@@ -645,8 +645,8 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                           mapScale;
                       final safeArea = Offset(length / 2, width / 2);
 
-                      if (coordinateSystem.isOutOfBounds(virtualOffset
-                          .translate(safeArea.dx / 2, safeArea.dy / 2))) {
+                      if (coordinateSystem.isOutOfBounds(
+                          virtualOffset.translate(safeArea.dx, safeArea.dy))) {
                         ref
                             .read(utilityProvider.notifier)
                             .removeUtility(placedUtility.id);
