@@ -42,13 +42,14 @@ class _PlacedCustomCircleWidgetState
   static const double _maxHandleSweep = math.pi / 7;
   static const double _handleArcLengthVirtual = 18.0;
   static const double _circleBorderStrokeVirtual = 2.0;
-  static const double _handleStrokeWidthVirtual = 5.0;
+  static const double _handleStrokeWidthVirtual = 8.0;
 
   double? _localDiameterMeters;
   double? _resizeStartDiameterMeters;
   double _diameterDragOffsetMeters = 0;
   bool _isDragging = false;
   bool _isResizing = false;
+  bool _isHandleHovered = false;
 
   @override
   void initState() {
@@ -196,6 +197,16 @@ class _PlacedCustomCircleWidgetState
       top: arcRegionTop,
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeUpLeftDownRight,
+        onEnter: (_) {
+          setState(() {
+            _isHandleHovered = true;
+          });
+        },
+        onExit: (_) {
+          setState(() {
+            _isHandleHovered = false;
+          });
+        },
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onPanStart: (details) => _startCircleResize(
@@ -210,17 +221,24 @@ class _PlacedCustomCircleWidgetState
           child: SizedBox(
             width: arcRegionSize,
             height: arcRegionSize,
-            child: IgnorePointer(
-              child: CustomPaint(
-                size: Size(arcRegionSize, arcRegionSize),
-                painter: _CircleResizeArcPainter(
-                  color: Colors.white,
-                  strokeWidth: strokeWidth,
-                  circleDiameter: scaledDiameter,
-                  circleOffset: Offset(
-                      circleInset - arcRegionLeft, circleInset - arcRegionTop),
-                  circleBorderStrokeWidth: circleBorderStrokeWidth,
-                  handleSweep: handleSweep,
+            child: Center(
+              child: IgnorePointer(
+                child: AnimatedScale(
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOutCubic,
+                  scale: _isResizing || _isHandleHovered ? 1.0 : 0.9,
+                  child: CustomPaint(
+                    size: Size(arcRegionSize, arcRegionSize),
+                    painter: _CircleResizeArcPainter(
+                      color: Colors.white,
+                      strokeWidth: strokeWidth,
+                      circleDiameter: scaledDiameter,
+                      circleOffset: Offset(circleInset - arcRegionLeft,
+                          circleInset - arcRegionTop),
+                      circleBorderStrokeWidth: circleBorderStrokeWidth,
+                      handleSweep: handleSweep,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -237,6 +255,7 @@ class _PlacedCustomCircleWidgetState
   }) {
     setState(() {
       _isResizing = true;
+      _isHandleHovered = true;
       _resizeStartDiameterMeters = diameterMeters;
       _diameterDragOffsetMeters =
           diameterMeters - _estimateDiameterMeters(globalPosition, mapScale);
@@ -327,6 +346,7 @@ class _PlacedCustomCircleWidgetState
 
     setState(() {
       _isResizing = false;
+      _isHandleHovered = false;
       _diameterDragOffsetMeters = 0;
       _resizeStartDiameterMeters = null;
     });
@@ -335,6 +355,7 @@ class _PlacedCustomCircleWidgetState
   void _cancelCircleResize() {
     setState(() {
       _isResizing = false;
+      _isHandleHovered = false;
       _diameterDragOffsetMeters = 0;
       _localDiameterMeters = _resizeStartDiameterMeters ?? _localDiameterMeters;
       _resizeStartDiameterMeters = null;

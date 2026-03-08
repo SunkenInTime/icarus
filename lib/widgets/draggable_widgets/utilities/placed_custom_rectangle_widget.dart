@@ -48,6 +48,8 @@ class _PlacedCustomRectangleWidgetState
   double _lengthDragOffsetMeters = 0;
   bool _isDragging = false;
   _RectangleResizeHandle _activeHandle = _RectangleResizeHandle.none;
+  bool _isLengthHandleHovered = false;
+  bool _isWidthHandleHovered = false;
 
   @override
   void initState() {
@@ -186,11 +188,22 @@ class _PlacedCustomRectangleWidgetState
       top: (scaledWidth - handleHeight) / 2,
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeLeftRight,
+        onEnter: (_) {
+          setState(() {
+            _isLengthHandleHovered = true;
+          });
+        },
+        onExit: (_) {
+          setState(() {
+            _isLengthHandleHovered = false;
+          });
+        },
         child: GestureDetector(
-          behavior: HitTestBehavior.deferToChild,
+          behavior: HitTestBehavior.opaque,
           onPanStart: (details) {
             setState(() {
               _activeHandle = _RectangleResizeHandle.length;
+              _isLengthHandleHovered = true;
               _lengthDragOffsetMeters = lengthMeters -
                   _estimateLengthMeters(details.globalPosition, mapScale);
             });
@@ -202,6 +215,8 @@ class _PlacedCustomRectangleWidgetState
           child: _ResizePill(
             width: handleWidth,
             height: handleHeight,
+            isActive: _activeHandle == _RectangleResizeHandle.length ||
+                _isLengthHandleHovered,
           ),
         ),
       ),
@@ -227,11 +242,22 @@ class _PlacedCustomRectangleWidgetState
       top: handleCenterY - (handleHeight / 2),
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeUpDown,
+        onEnter: (_) {
+          setState(() {
+            _isWidthHandleHovered = true;
+          });
+        },
+        onExit: (_) {
+          setState(() {
+            _isWidthHandleHovered = false;
+          });
+        },
         child: GestureDetector(
-          behavior: HitTestBehavior.deferToChild,
+          behavior: HitTestBehavior.opaque,
           onPanStart: (details) {
             setState(() {
               _activeHandle = _RectangleResizeHandle.width;
+              _isWidthHandleHovered = true;
               _widthDragOffsetMeters = widthMeters -
                   _estimateWidthMeters(details.globalPosition, mapScale);
             });
@@ -243,6 +269,8 @@ class _PlacedCustomRectangleWidgetState
           child: _ResizePill(
             width: handleWidth,
             height: handleHeight,
+            isActive: _activeHandle == _RectangleResizeHandle.width ||
+                _isWidthHandleHovered,
           ),
         ),
       ),
@@ -312,6 +340,8 @@ class _PlacedCustomRectangleWidgetState
       _activeHandle = _RectangleResizeHandle.none;
       _lengthDragOffsetMeters = 0;
       _widthDragOffsetMeters = 0;
+      _isLengthHandleHovered = false;
+      _isWidthHandleHovered = false;
     });
   }
 
@@ -381,26 +411,39 @@ class _ResizePill extends StatelessWidget {
   const _ResizePill({
     required this.width,
     required this.height,
+    required this.isActive,
   });
 
   final double width;
   final double height;
+  final bool isActive;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       width: width,
       height: height,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(999),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black26,
-            blurRadius: 3,
-            offset: Offset(0, 1),
+      child: Center(
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          scale: isActive ? 1.0 : 0.9,
+          child: Container(
+            width: width,
+            height: height,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: const [
+                BoxShadow(
+                  color: Colors.black26,
+                  blurRadius: 3,
+                  offset: Offset(0, 1),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
