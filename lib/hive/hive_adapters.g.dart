@@ -621,6 +621,9 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
     return FreeDrawing(
       listOfPoints: (fields[0] as List?)?.cast<Offset>(),
       color: fields[2] as Color,
+      thickness: fields[11] == null
+          ? Settings.defaultStrokeThickness
+          : (fields[11] as num).toDouble(),
       boundingBox: fields[6] as BoundingBox?,
       isDotted: fields[3] as bool,
       hasArrow: fields[4] as bool,
@@ -629,13 +632,14 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       traversalSpeedProfile: fields[9] == null
           ? TraversalSpeed.defaultProfile
           : fields[9] as TraversalSpeedProfile,
+      cachedPolylineLengthUnits: (fields[10] as num?)?.toDouble(),
     );
   }
 
   @override
   void write(BinaryWriter writer, FreeDrawing obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.listOfPoints)
       ..writeByte(2)
@@ -651,7 +655,11 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       ..writeByte(8)
       ..write(obj.showTraversalTime)
       ..writeByte(9)
-      ..write(obj.traversalSpeedProfile);
+      ..write(obj.traversalSpeedProfile)
+      ..writeByte(10)
+      ..write(obj.cachedPolylineLengthUnits)
+      ..writeByte(11)
+      ..write(obj.thickness);
   }
 
   @override
@@ -679,16 +687,24 @@ class LineAdapter extends TypeAdapter<Line> {
       lineStart: fields[0] as Offset,
       lineEnd: fields[1] as Offset,
       color: fields[2] as Color,
+      thickness: fields[9] == null
+          ? Settings.defaultStrokeThickness
+          : (fields[9] as num).toDouble(),
+      boundingBox: fields[6] as BoundingBox?,
       isDotted: fields[3] as bool,
       hasArrow: fields[4] as bool,
       id: fields[5] as String,
-    )..boundingBox = fields[6] as BoundingBox?;
+      showTraversalTime: fields[7] == null ? false : fields[7] as bool,
+      traversalSpeedProfile: fields[8] == null
+          ? TraversalSpeed.defaultProfile
+          : fields[8] as TraversalSpeedProfile,
+    );
   }
 
   @override
   void write(BinaryWriter writer, Line obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.lineStart)
       ..writeByte(1)
@@ -702,7 +718,13 @@ class LineAdapter extends TypeAdapter<Line> {
       ..writeByte(5)
       ..write(obj.id)
       ..writeByte(6)
-      ..write(obj.boundingBox);
+      ..write(obj.boundingBox)
+      ..writeByte(7)
+      ..write(obj.showTraversalTime)
+      ..writeByte(8)
+      ..write(obj.traversalSpeedProfile)
+      ..writeByte(9)
+      ..write(obj.thickness);
   }
 
   @override
@@ -1277,6 +1299,9 @@ class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
       start: fields[0] as Offset,
       end: fields[1] as Offset,
       color: fields[2] as Color,
+      thickness: fields[7] == null
+          ? Settings.defaultStrokeThickness
+          : (fields[7] as num).toDouble(),
       boundingBox: fields[6] as BoundingBox?,
       isDotted: fields[3] as bool,
       hasArrow: fields[4] as bool,
@@ -1287,7 +1312,7 @@ class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
   @override
   void write(BinaryWriter writer, RectangleDrawing obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.start)
       ..writeByte(1)
@@ -1301,7 +1326,9 @@ class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
       ..writeByte(5)
       ..write(obj.id)
       ..writeByte(6)
-      ..write(obj.boundingBox);
+      ..write(obj.boundingBox)
+      ..writeByte(7)
+      ..write(obj.thickness);
   }
 
   @override

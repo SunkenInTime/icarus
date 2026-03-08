@@ -15,7 +15,16 @@ class Settings {
 
   static const Color abilityBGColor = Color(0xFF1B1B1B);
   static const double feedbackOpacity = 0.7;
-  static const double brushSize = 5;
+  static const double strokeThicknessSmall = 3;
+  static const double strokeThicknessMedium = 5;
+  static const double strokeThicknessLarge = 8;
+  static const double defaultStrokeThickness = strokeThicknessMedium;
+  static const List<double> strokeThicknessOptions = [
+    strokeThicknessSmall,
+    strokeThicknessMedium,
+    strokeThicknessLarge,
+  ];
+  static const double brushSize = defaultStrokeThickness;
   static const double freeDrawMinDistance = 3;
   static const bool enableStrokeSimplification = false;
   static const double strokeSimplificationEpsilon = 1.4;

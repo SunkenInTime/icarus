@@ -225,7 +225,7 @@ types:
         index: 1
   FreeDrawing:
     typeId: 11
-    nextIndex: 10
+    nextIndex: 12
     fields:
       listOfPoints:
         index: 0
@@ -243,9 +243,13 @@ types:
         index: 8
       traversalSpeedProfile:
         index: 9
+      cachedPolylineLengthUnits:
+        index: 10
+      thickness:
+        index: 11
   Line:
     typeId: 12
-    nextIndex: 7
+    nextIndex: 10
     fields:
       lineStart:
         index: 0
@@ -261,6 +265,12 @@ types:
         index: 5
       boundingBox:
         index: 6
+      showTraversalTime:
+        index: 7
+      traversalSpeedProfile:
+        index: 8
+      thickness:
+        index: 9
   BoundingBox:
     typeId: 13
     nextIndex: 2
@@ -435,7 +445,7 @@ types:
         index: 1
   RectangleDrawing:
     typeId: 24
-    nextIndex: 7
+    nextIndex: 8
     fields:
       start:
         index: 0
@@ -451,6 +461,8 @@ types:
         index: 5
       boundingBox:
         index: 6
+      thickness:
+        index: 7
   TraversalSpeedProfile:
     typeId: 25
     nextIndex: 4

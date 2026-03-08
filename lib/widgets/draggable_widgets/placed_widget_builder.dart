@@ -2,6 +2,7 @@
 
 import 'dart:developer';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -10,6 +11,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -133,6 +135,9 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 return;
               }
               ref.read(agentProvider.notifier).addAgent(placedAgent);
+              ref
+                  .read(abilityBarProvider.notifier)
+                  .updateData(AgentData.agents[placedAgent.type]!);
             } else if (details.data is AbilityInfo) {
               PlacedAbility placedAbility = PlacedAbility(
                 id: uuid.v4(),
@@ -258,13 +263,20 @@ class _AbilityList extends ConsumerWidget {
   }
 }
 
-class _AgentList extends ConsumerWidget {
+class _AgentList extends ConsumerStatefulWidget {
   const _AgentList({required this.coordinateSystem});
 
   final CoordinateSystem coordinateSystem;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AgentList> createState() => _AgentListState();
+}
+
+class _AgentListState extends ConsumerState<_AgentList> {
+  final Map<String, String> _pendingDuplicateDragBySource = {};
+
+  @override
+  Widget build(BuildContext context) {
     final agents = ref.watch(agentProvider);
     final zoomDragAnchorStrategy =
         ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy;
@@ -275,11 +287,26 @@ class _AgentList extends ConsumerWidget {
         for (final agent in agents)
           Positioned(
             key: ValueKey(agent.id),
-            left: coordinateSystem.coordinateToScreen(agent.position).dx,
-            top: coordinateSystem.coordinateToScreen(agent.position).dy,
+            left: widget.coordinateSystem.coordinateToScreen(agent.position).dx,
+            top: widget.coordinateSystem.coordinateToScreen(agent.position).dy,
             child: Draggable<PlacedWidget>(
               data: agent,
               dragAnchorStrategy: zoomDragAnchorStrategy,
+              onDragStarted: () {
+                final shouldDuplicate =
+                    HardwareKeyboard.instance.isControlPressed ||
+                        HardwareKeyboard.instance.isMetaPressed;
+                if (!shouldDuplicate) return;
+
+                final duplicatedId =
+                    ref.read(agentProvider.notifier).duplicateAgentAt(
+                          sourceId: agent.id,
+                          position: agent.position,
+                        );
+                if (duplicatedId != null) {
+                  _pendingDuplicateDragBySource[agent.id] = duplicatedId;
+                }
+              },
               feedback: Opacity(
                 opacity: Settings.feedbackOpacity,
                 child: ZoomTransform(
@@ -296,7 +323,16 @@ class _AgentList extends ConsumerWidget {
                 final renderBox = context.findRenderObject() as RenderBox;
                 final localOffset = renderBox.globalToLocal(details.offset);
                 final virtualOffset =
-                    coordinateSystem.screenToCoordinate(localOffset);
+                    widget.coordinateSystem.screenToCoordinate(localOffset);
+
+                final duplicateId =
+                    _pendingDuplicateDragBySource.remove(agent.id);
+                if (duplicateId != null) {
+                  ref
+                      .read(agentProvider.notifier)
+                      .updatePosition(virtualOffset, duplicateId);
+                  return;
+                }
 
                 ref
                     .read(agentProvider.notifier)

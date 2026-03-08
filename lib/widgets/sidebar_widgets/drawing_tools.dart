@@ -4,6 +4,7 @@ import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/pen_provider.dart';
+import 'package:icarus/widgets/custom_segmented_tabs.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -16,6 +17,7 @@ class DrawingTools extends ConsumerWidget {
     final isDotted = ref.watch(penProvider).isDotted;
     final hasArrow = ref.watch(penProvider).hasArrow;
     final penMode = ref.watch(penProvider).penMode;
+    final thickness = ref.watch(penProvider.select((state) => state.thickness));
     final traversalTimeEnabled = ref.watch(penProvider).traversalTimeEnabled;
     final activeTraversalSpeedProfile = ref.watch(
       penProvider.select((state) => state.activeTraversalSpeedProfile),
@@ -93,6 +95,19 @@ class DrawingTools extends ConsumerWidget {
                               ),
                               SelectableIconButton(
                                 icon: const Icon(
+                                  LucideIcons.minus,
+                                  size: 20,
+                                ),
+                                isSelected: penMode == PenMode.line,
+                                onPressed: () {
+                                  ref
+                                      .read(penProvider.notifier)
+                                      .updateValue(penMode: PenMode.line);
+                                },
+                                tooltip: "Straight line",
+                              ),
+                              SelectableIconButton(
+                                icon: const Icon(
                                   Icons.crop_square,
                                   size: 20,
                                 ),
@@ -151,6 +166,22 @@ class DrawingTools extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 4),
+          const Text("Thickness"),
+          const SizedBox(height: 4),
+          CustomSegmentedTabs<double>(
+            compactness: 0.55,
+            value: thickness,
+            items: [
+              for (final value in Settings.strokeThicknessOptions)
+                SegmentedTabItem<double>(
+                  value: value,
+                  child: _ThicknessSwatch(thickness: value),
+                ),
+            ],
+            onChanged: (value) {
+              ref.read(penProvider.notifier).updateValue(thickness: value);
+            },
+          ),
 
           const SizedBox(height: 4),
           const Text("Traversal Time"),
@@ -223,6 +254,29 @@ class DrawingTools extends ConsumerWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ThicknessSwatch extends StatelessWidget {
+  const _ThicknessSwatch({required this.thickness});
+
+  final double thickness;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 30,
+      child: Center(
+        child: Container(
+          width: 20,
+          height: thickness.clamp(2.0, 8.0),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
       ),
     );
   }

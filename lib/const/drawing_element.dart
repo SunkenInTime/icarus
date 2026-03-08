@@ -12,6 +12,8 @@ part "drawing_element.g.dart";
 abstract class DrawingElement {
   @ColorConverter()
   final Color color;
+  @JsonKey(defaultValue: Settings.defaultStrokeThickness)
+  final double thickness;
   final bool isDotted;
   final bool hasArrow;
   final String id;
@@ -19,6 +21,7 @@ abstract class DrawingElement {
 
   DrawingElement({
     required this.color,
+    this.thickness = Settings.defaultStrokeThickness,
     this.boundingBox,
     required this.isDotted,
     required this.hasArrow,
@@ -35,18 +38,51 @@ abstract class DrawingElement {
 class Line extends DrawingElement with HiveObjectMixin {
   final Offset lineStart;
   Offset lineEnd;
+  final bool showTraversalTime;
+  final TraversalSpeedProfile traversalSpeedProfile;
 
   Line({
     required this.lineStart,
     required this.lineEnd,
     required super.color,
+    super.thickness = Settings.defaultStrokeThickness,
+    super.boundingBox,
     required super.isDotted,
     required super.hasArrow,
     required super.id,
+    this.showTraversalTime = false,
+    this.traversalSpeedProfile = TraversalSpeed.defaultProfile,
   });
 
   void updateEndPoint(Offset endPoint) {
     lineEnd = endPoint;
+  }
+
+  Line copyWith({
+    Offset? lineStart,
+    Offset? lineEnd,
+    Color? color,
+    double? thickness,
+    BoundingBox? boundingBox,
+    bool? isDotted,
+    bool? hasArrow,
+    String? id,
+    bool? showTraversalTime,
+    TraversalSpeedProfile? traversalSpeedProfile,
+  }) {
+    return Line(
+      lineStart: lineStart ?? this.lineStart,
+      lineEnd: lineEnd ?? this.lineEnd,
+      color: color ?? this.color,
+      thickness: thickness ?? this.thickness,
+      boundingBox: boundingBox ?? this.boundingBox,
+      isDotted: isDotted ?? this.isDotted,
+      hasArrow: hasArrow ?? this.hasArrow,
+      id: id ?? this.id,
+      showTraversalTime: showTraversalTime ?? this.showTraversalTime,
+      traversalSpeedProfile:
+          traversalSpeedProfile ?? this.traversalSpeedProfile,
+    );
   }
 }
 
@@ -58,6 +94,7 @@ class RectangleDrawing extends DrawingElement with HiveObjectMixin {
     required this.start,
     required this.end,
     required super.color,
+    super.thickness = Settings.defaultStrokeThickness,
     super.boundingBox,
     required super.isDotted,
     required super.hasArrow,
@@ -82,6 +119,7 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
     List<Offset>? listOfPoints,
     Path? path,
     required super.color,
+    super.thickness = Settings.defaultStrokeThickness,
     super.boundingBox,
     required super.isDotted,
     required super.hasArrow,
@@ -100,7 +138,7 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
   @JsonKey(defaultValue: false)
   final bool showTraversalTime;
 
-  @JsonKey(defaultValue: TraversalSpeedProfile.running)
+  @JsonKey(defaultValue: TraversalSpeed.defaultProfile)
   final TraversalSpeedProfile traversalSpeedProfile;
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -154,7 +192,7 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
 
       final path = Path();
       final screenPoint = coordinateSystem.coordinateToScreen(listOfPoints[0]);
-      final dotRadius = (coordinateSystem.scale(Settings.brushSize * 0.25))
+      final dotRadius = (coordinateSystem.scale(thickness * 0.25))
           .clamp(1.0, coordinateSystem.scale(2.0))
           .toDouble();
 
@@ -198,6 +236,7 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
     List<Offset>? listOfPoints,
     Path? path,
     Color? color,
+    double? thickness,
     BoundingBox? boundingBox,
     bool? isDotted,
     bool? hasArrow,
@@ -208,6 +247,7 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
   }) {
     return FreeDrawing(
       color: color ?? this.color,
+      thickness: thickness ?? this.thickness,
       listOfPoints: listOfPoints ?? this.listOfPoints,
       path: path ?? _path,
       boundingBox: boundingBox ?? this.boundingBox,

@@ -28,6 +28,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -584,6 +585,14 @@ class StrategyProvider extends Notifier<StrategyState> {
       ];
     }
 
+    BoundingBox? shiftBoundingBox(BoundingBox? boundingBox) {
+      if (boundingBox == null) return null;
+      return BoundingBox(
+        min: shift(boundingBox.min),
+        max: shift(boundingBox.max),
+      );
+    }
+
     List<DrawingElement> shiftDrawings(List<DrawingElement> drawings) {
       return drawings
           .map((element) {
@@ -592,25 +601,38 @@ class StrategyProvider extends Notifier<StrategyState> {
                 lineStart: shift(element.lineStart),
                 lineEnd: shift(element.lineEnd),
                 color: element.color,
+                thickness: element.thickness,
+                boundingBox: shiftBoundingBox(element.boundingBox),
                 isDotted: element.isDotted,
                 hasArrow: element.hasArrow,
                 id: element.id,
+                showTraversalTime: element.showTraversalTime,
+                traversalSpeedProfile: element.traversalSpeedProfile,
               );
             }
             if (element is FreeDrawing) {
               final shiftedPoints =
                   element.listOfPoints.map(shift).toList(growable: false);
-              final shiftedBoundingBox = element.boundingBox == null
-                  ? null
-                  : BoundingBox(
-                      min: shift(element.boundingBox!.min),
-                      max: shift(element.boundingBox!.max),
-                    );
 
               return FreeDrawing(
                 listOfPoints: shiftedPoints,
                 color: element.color,
-                boundingBox: shiftedBoundingBox,
+                thickness: element.thickness,
+                boundingBox: shiftBoundingBox(element.boundingBox),
+                isDotted: element.isDotted,
+                hasArrow: element.hasArrow,
+                id: element.id,
+                showTraversalTime: element.showTraversalTime,
+                traversalSpeedProfile: element.traversalSpeedProfile,
+              );
+            }
+            if (element is RectangleDrawing) {
+              return RectangleDrawing(
+                start: shift(element.start),
+                end: shift(element.end),
+                color: element.color,
+                thickness: element.thickness,
+                boundingBox: shiftBoundingBox(element.boundingBox),
                 isDotted: element.isDotted,
                 hasArrow: element.hasArrow,
                 id: element.id,
@@ -665,7 +687,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     activePageID = page.id;
     state = state.copyWith(activePageId: page.id);
 
-    ref.read(actionProvider.notifier).clearAllActions();
+    ref.read(actionProvider.notifier).resetActionState();
     final migrated = migrateToCurrentVersion(doc);
     final migratedPage = migrated.pages.firstWhere(
       (p) => p.id == page.id,
@@ -963,7 +985,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       log("Couldn't find save");
       return;
     }
-    ref.read(actionProvider.notifier).clearAllActions();
+    ref.read(actionProvider.notifier).resetActionState();
 
     List<PlacedImage> pageImageData = [];
     for (final page in newStrat.pages) {
@@ -1580,6 +1602,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   // Flush currently active page (uses activePageID). Safe if null/missing.
   Future<void> _syncCurrentPageToHive() async {
+    ref.read(textDraftProvider.notifier).commitAllDrafts();
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     log("Syncing current page to hive for strategy ${state.id}");
     final strat = box.get(state.id);
