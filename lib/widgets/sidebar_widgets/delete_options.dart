@@ -84,19 +84,7 @@ class DeleteOptions extends ConsumerWidget {
               height: 24,
               child: ShadButton.destructive(
                 onPressed: () async {
-                  onCloseRequested?.call();
-                  final confirmed = await ConfirmAlertDialog.show(
-                    context: context,
-                    title: "Clear All Items",
-                    content:
-                        "Are you sure you want to clear all items? You can undo this action.",
-                    confirmText: "Clear All",
-                    cancelText: "Cancel",
-                    isDestructive: true,
-                  );
-                  if (confirmed) {
-                    ref.read(actionProvider.notifier).clearAllAsAction();
-                  }
+                  ref.read(actionProvider.notifier).clearAllAsAction();
                 },
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 child: Text(
