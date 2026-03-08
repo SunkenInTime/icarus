@@ -30,6 +30,7 @@ import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
+import 'package:icarus/widgets/cloud_library_widgets.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_pill.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
@@ -185,10 +186,10 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                         if (authState.isAuthenticated) {
                           unawaited(ref.read(authProvider.notifier).signOut());
                         } else {
-                            showDialog<void>(
-                              context: context,
-                              builder: (_) => const AuthDialog(),
-                            );
+                          showDialog<void>(
+                            context: context,
+                            builder: (_) => const AuthDialog(),
+                          );
                         }
                       },
                 leading: Icon(
@@ -303,8 +304,8 @@ class _CloudFolderContent extends ConsumerWidget {
     }
 
     Comparator<CloudStrategySummary> comparator = switch (filter.sortBy) {
-      SortBy.alphabetical =>
-        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      SortBy.alphabetical => (a, b) =>
+          a.name.toLowerCase().compareTo(b.name.toLowerCase()),
       SortBy.dateCreated => (a, b) => a.createdAt.compareTo(b.createdAt),
       SortBy.dateUpdated => (a, b) => a.updatedAt.compareTo(b.updatedAt),
     };
@@ -326,55 +327,48 @@ class _CloudFolderContent extends ConsumerWidget {
               const _FolderToolbar(),
               Expanded(
                 child: IcaDropTarget(
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
+                  child: CustomScrollView(
+                    slivers: [
                       if (folders.isNotEmpty)
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            for (final cloudFolder in folders)
-                              ActionChip(
-                                label: Text(cloudFolder.name),
-                                onPressed: () {
-                                  ref
-                                      .read(folderProvider.notifier)
-                                      .updateID(cloudFolder.publicId);
-                                },
-                              ),
-                          ],
-                        ),
-                      if (folders.isNotEmpty) const SizedBox(height: 16),
-                      if (strategies.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 24),
-                          child: Center(
-                            child: Text('No cloud strategies in this folder'),
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                            child: Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                for (final cloudFolder in folders)
+                                  CloudFolderPill(folder: cloudFolder),
+                              ],
+                            ),
                           ),
                         ),
-                      for (final strategy in strategies)
-                        Card(
-                          color: Settings.tacticalVioletTheme.card,
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: ListTile(
-                            title: Text(strategy.name),
-                            subtitle: Text(
-                              '${strategy.mapData} • Updated ${strategy.updatedAt.toLocal()}',
+                      if (strategies.isNotEmpty)
+                        SliverPadding(
+                          padding: const EdgeInsets.all(16),
+                          sliver: SliverGrid(
+                            gridDelegate:
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: 320,
+                              mainAxisExtent: 250,
+                              crossAxisSpacing: 20,
+                              mainAxisSpacing: 20,
                             ),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () async {
-                              await ref
-                                  .read(strategyProvider.notifier)
-                                  .openStrategy(strategy.publicId);
-                              if (!context.mounted) return;
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const StrategyView(),
-                                ),
-                              );
-                            },
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                return CloudStrategyTile(
+                                  strategy: strategies[index],
+                                );
+                              },
+                              childCount: strategies.length,
+                            ),
+                          ),
+                        )
+                      else
+                        const SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Center(
+                            child: Text('No cloud strategies in this folder'),
                           ),
                         ),
                     ],
@@ -434,19 +428,20 @@ class _LocalFolderContent extends ConsumerWidget {
 
                         if (search.isNotEmpty) {
                           strategies = strategies
-                              .where((s) =>
-                                  s.name.toLowerCase().contains(search))
+                              .where(
+                                  (s) => s.name.toLowerCase().contains(search))
                               .toList(growable: false);
                         }
 
                         Comparator<StrategyData> comparator =
                             switch (filter.sortBy) {
-                          SortBy.alphabetical => (a, b) =>
-                            a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-                          SortBy.dateCreated =>
-                            (a, b) => a.createdAt.compareTo(b.createdAt),
-                          SortBy.dateUpdated =>
-                            (a, b) => a.lastEdited.compareTo(b.lastEdited),
+                          SortBy.alphabetical => (a, b) => a.name
+                              .toLowerCase()
+                              .compareTo(b.name.toLowerCase()),
+                          SortBy.dateCreated => (a, b) =>
+                              a.createdAt.compareTo(b.createdAt),
+                          SortBy.dateUpdated => (a, b) =>
+                              a.lastEdited.compareTo(b.lastEdited),
                         };
                         final direction =
                             filter.sortOrder == SortOrder.ascending ? 1 : -1;
@@ -540,9 +535,8 @@ class _FolderToolbar extends ConsumerWidget {
                       child: Text(StrategyFilterProvider.sortByLabels[value]!),
                     ),
                 ],
-                onChanged: (value) => ref
-                    .read(strategyFilterProvider.notifier)
-                    .setSortBy(value!),
+                onChanged: (value) =>
+                    ref.read(strategyFilterProvider.notifier).setSortBy(value!),
               ),
               const SizedBox(width: 8),
               ShadSelect<SortOrder>(
@@ -580,8 +574,3 @@ class _FolderToolbar extends ConsumerWidget {
     );
   }
 }
-
-
-
-
-
