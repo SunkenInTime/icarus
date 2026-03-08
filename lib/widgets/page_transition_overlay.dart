@@ -127,6 +127,9 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           rotation: entry.endRotation,
           scale: entry.endScale,
           textSize: entry.endTextSize,
+          customDiameter: entry.endCustomDiameter,
+          customWidth: entry.endCustomWidth,
+          customLength: entry.endCustomLength,
           agentSize: agentSize,
           abilitySize: abilitySize,
         );
@@ -144,6 +147,9 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           rotation: entry.startRotation,
           scale: entry.startScale,
           textSize: entry.startTextSize,
+          customDiameter: entry.startCustomDiameter,
+          customWidth: entry.startCustomWidth,
+          customLength: entry.startCustomLength,
           agentSize: agentSize,
           abilitySize: abilitySize,
         );
@@ -159,6 +165,21 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           rotation: _lerpAngle(entry.startRotation, entry.endRotation, t),
           scale: _lerpDouble(entry.startScale, entry.endScale, t),
           textSize: _lerpDouble(entry.startTextSize, entry.endTextSize, t),
+          customDiameter: _lerpDouble(
+            entry.startCustomDiameter,
+            entry.endCustomDiameter,
+            t,
+          ),
+          customWidth: _lerpDouble(
+            entry.startCustomWidth,
+            entry.endCustomWidth,
+            t,
+          ),
+          customLength: _lerpDouble(
+            entry.startCustomLength,
+            entry.endCustomLength,
+            t,
+          ),
           agentSize: agentSize,
           abilitySize: abilitySize,
         );
@@ -176,6 +197,9 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           rotation: entry.endRotation,
           scale: entry.endScale,
           textSize: entry.endTextSize,
+          customDiameter: entry.endCustomDiameter,
+          customWidth: entry.endCustomWidth,
+          customLength: entry.endCustomLength,
           agentSize: agentSize,
           abilitySize: abilitySize,
         );
@@ -245,6 +269,9 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     double? rotation,
     double? scale,
     double? textSize,
+    double? customDiameter,
+    double? customWidth,
+    double? customLength,
     required double agentSize,
     required double abilitySize,
   }) {
@@ -255,6 +282,9 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       length: length,
       scale: scale,
       textSize: textSize,
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
       agentSize: agentSize,
       abilitySize: abilitySize,
     ); // central factory (below)
@@ -314,6 +344,9 @@ class PlacedWidgetPreview {
     double? length,
     double? scale,
     double? textSize,
+    double? customDiameter,
+    double? customWidth,
+    double? customLength,
     required double agentSize,
     required double abilitySize,
   }) {
@@ -388,9 +421,9 @@ class PlacedWidgetPreview {
           rotation: w.rotation,
           length: length ?? w.length,
           mapScale: mapScale,
-          diameterMeters: w.customDiameter,
-          widthMeters: w.customWidth,
-          rectLengthMeters: w.customLength,
+          diameterMeters: customDiameter ?? w.customDiameter,
+          widthMeters: customWidth ?? w.customWidth,
+          rectLengthMeters: customLength ?? w.customLength,
           colorValue: w.customColorValue,
           opacityPercent: w.customOpacityPercent);
     }

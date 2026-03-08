@@ -547,7 +547,8 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                     id: placedUtility.id,
                     onDragEnd: (details) {
                       final renderBox = context.findRenderObject() as RenderBox;
-                      final localOffset = renderBox.globalToLocal(details.offset);
+                      final localOffset =
+                          renderBox.globalToLocal(details.offset);
                       final virtualOffset =
                           coordinateSystem.screenToCoordinate(localOffset);
 
@@ -560,12 +561,15 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                         return;
                       }
 
-                      final diameter =
-                          diameterMeters * AgentData.inGameMetersDiameter * mapScale;
-                      final safeArea = Offset(diameter / 2, diameter / 2);
+                      final safeArea = UtilityData
+                          .utilityWidgets[placedUtility.type]!
+                          .getAnchorPoint(
+                        mapScale: mapScale,
+                        diameterMeters: diameterMeters,
+                      );
 
-                      if (coordinateSystem.isOutOfBounds(virtualOffset.translate(
-                          safeArea.dx / 2, safeArea.dy / 2))) {
+                      if (coordinateSystem.isOutOfBounds(
+                          virtualOffset.translate(safeArea.dx, safeArea.dy))) {
                         ref
                             .read(utilityProvider.notifier)
                             .removeUtility(placedUtility.id);
@@ -582,7 +586,8 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                     id: placedUtility.id,
                     onDragEnd: (details) {
                       final renderBox = context.findRenderObject() as RenderBox;
-                      final localOffset = renderBox.globalToLocal(details.offset);
+                      final localOffset =
+                          renderBox.globalToLocal(details.offset);
                       final virtualOffset =
                           coordinateSystem.screenToCoordinate(localOffset);
 
@@ -596,14 +601,16 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                         return;
                       }
 
-                      final width =
-                          widthMeters * AgentData.inGameMetersDiameter * mapScale;
-                      final length =
-                          lengthMeters * AgentData.inGameMetersDiameter * mapScale;
+                      final width = widthMeters *
+                          AgentData.inGameMetersDiameter *
+                          mapScale;
+                      final length = lengthMeters *
+                          AgentData.inGameMetersDiameter *
+                          mapScale;
                       final safeArea = Offset(length / 2, width / 2);
 
-                      if (coordinateSystem.isOutOfBounds(virtualOffset.translate(
-                          safeArea.dx / 2, safeArea.dy / 2))) {
+                      if (coordinateSystem.isOutOfBounds(virtualOffset
+                          .translate(safeArea.dx / 2, safeArea.dy / 2))) {
                         ref
                             .read(utilityProvider.notifier)
                             .removeUtility(placedUtility.id);

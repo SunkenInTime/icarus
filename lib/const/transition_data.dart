@@ -154,6 +154,21 @@ class PageTransitionEntry {
     return null;
   }
 
+  static double? customDiameterOf(PlacedWidget w) {
+    if (w is PlacedUtility) return w.customDiameter;
+    return null;
+  }
+
+  static double? customWidthOf(PlacedWidget w) {
+    if (w is PlacedUtility) return w.customWidth;
+    return null;
+  }
+
+  static double? customLengthOf(PlacedWidget w) {
+    if (w is PlacedUtility) return w.customLength;
+    return null;
+  }
+
   double? get startRotation => from != null ? rotationOf(from!) : null;
   double? get endRotation => to != null ? rotationOf(to!) : null;
 
@@ -165,4 +180,14 @@ class PageTransitionEntry {
 
   double? get startTextSize => from != null ? textSizeOf(from!) : null;
   double? get endTextSize => to != null ? textSizeOf(to!) : null;
+
+  double? get startCustomDiameter =>
+      from != null ? customDiameterOf(from!) : null;
+  double? get endCustomDiameter => to != null ? customDiameterOf(to!) : null;
+
+  double? get startCustomWidth => from != null ? customWidthOf(from!) : null;
+  double? get endCustomWidth => to != null ? customWidthOf(to!) : null;
+
+  double? get startCustomLength => from != null ? customLengthOf(from!) : null;
+  double? get endCustomLength => to != null ? customLengthOf(to!) : null;
 }

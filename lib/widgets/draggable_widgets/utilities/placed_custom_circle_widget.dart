@@ -7,11 +7,13 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_resize_tooltip.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
 class PlacedCustomCircleWidget extends ConsumerStatefulWidget {
@@ -34,12 +36,19 @@ class PlacedCustomCircleWidget extends ConsumerStatefulWidget {
 class _PlacedCustomCircleWidgetState
     extends ConsumerState<PlacedCustomCircleWidget> {
   static const double _minDiameterMeters = 1.0;
-  static const double _maxDiameterMeters = 40.0;
+  static const double _maxDiameterMeters =
+      CustomCircleUtility.maxDiameterMeters;
   static const double _handleAngle = math.pi / 4;
-  static const double _handleSweep = math.pi / 5;
+  static const double _maxHandleSweep = math.pi / 7;
+  static const double _handleArcLengthVirtual = 18.0;
+  static const double _circleBorderStrokeVirtual = 2.0;
+  static const double _handleStrokeWidthVirtual = 5.0;
 
   double? _localDiameterMeters;
+  double? _resizeStartDiameterMeters;
+  double _diameterDragOffsetMeters = 0;
   bool _isDragging = false;
+  bool _isResizing = false;
 
   @override
   void initState() {
@@ -67,17 +76,39 @@ class _PlacedCustomCircleWidgetState
       return const SizedBox.shrink();
     }
 
-    if (!_isDragging && _localDiameterMeters != providerDiameterMeters) {
+    if (!_isDragging &&
+        !_isResizing &&
+        _localDiameterMeters != providerDiameterMeters) {
       _localDiameterMeters = providerDiameterMeters;
     }
 
     final diameterMeters = _localDiameterMeters ?? providerDiameterMeters;
     final meterScale = AgentData.inGameMetersDiameter * mapScale;
     final scaledDiameter = coordinateSystem.scale(diameterMeters * meterScale);
+    final scaledMaxDiameter = coordinateSystem.scale(
+      CustomCircleUtility.maxDiameterInVirtual(mapScale),
+    );
+    final circleInset = (scaledMaxDiameter - scaledDiameter) / 2;
+    final arcRegionSize = coordinateSystem.scale(32);
+    final handleCenter = _computeHandleCenter(
+      coordinateSystem: coordinateSystem,
+      scaledDiameter: scaledDiameter,
+      scaledMaxDiameter: scaledMaxDiameter,
+    );
+    final arcRegionLeft = handleCenter.dx - (arcRegionSize / 2);
+    final arcRegionTop = handleCenter.dy - (arcRegionSize / 2);
+    final rightOverflow = math.max(
+      0.0,
+      (arcRegionLeft + arcRegionSize) - scaledMaxDiameter,
+    );
+    final bottomOverflow = math.max(
+      0.0,
+      (arcRegionTop + arcRegionSize) - scaledMaxDiameter,
+    );
 
     return SizedBox(
-      width: scaledDiameter,
-      height: scaledDiameter,
+      width: scaledMaxDiameter + rightOverflow,
+      height: scaledMaxDiameter + bottomOverflow,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -118,36 +149,23 @@ class _PlacedCustomCircleWidgetState
             ),
           ),
           if (!_isDragging && !isScreenshot)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: CustomPaint(
-                  painter: _CircleResizeArcPainter(
-                    color: Colors.white,
-                    strokeWidth: coordinateSystem.scale(4),
-                  ),
-                ),
-              ),
-            ),
-          if (!_isDragging && !isScreenshot)
             _buildCircleHandle(
               coordinateSystem: coordinateSystem,
               scaledDiameter: scaledDiameter,
+              scaledMaxDiameter: scaledMaxDiameter,
+              circleInset: circleInset,
               mapScale: mapScale,
+              arcRegionSize: arcRegionSize,
+              arcRegionLeft: arcRegionLeft,
+              arcRegionTop: arcRegionTop,
+              diameterMeters: diameterMeters,
             ),
-          if (!isScreenshot)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: Transform.translate(
-                    offset: Offset(0, -coordinateSystem.scale(8)),
-                    child: _ResizeBadge(
-                      label: 'D',
-                      valueMeters: diameterMeters,
-                    ),
-                  ),
-                ),
-              ),
+          if (!isScreenshot && _isResizing)
+            _buildResizeTooltip(
+              coordinateSystem: coordinateSystem,
+              scaledDiameter: scaledDiameter,
+              scaledMaxDiameter: scaledMaxDiameter,
+              diameterMeters: diameterMeters,
             ),
         ],
       ),
@@ -157,48 +175,116 @@ class _PlacedCustomCircleWidgetState
   Widget _buildCircleHandle({
     required CoordinateSystem coordinateSystem,
     required double scaledDiameter,
+    required double scaledMaxDiameter,
+    required double circleInset,
     required double mapScale,
+    required double arcRegionSize,
+    required double arcRegionLeft,
+    required double arcRegionTop,
+    required double diameterMeters,
   }) {
-    final radius = scaledDiameter / 2;
-    final handleCenter = Offset(
-      radius + (radius * math.cos(_handleAngle)),
-      radius + (radius * math.sin(_handleAngle)),
+    final strokeWidth = coordinateSystem.scale(_handleStrokeWidthVirtual);
+    final circleBorderStrokeWidth =
+        coordinateSystem.scale(_circleBorderStrokeVirtual);
+    final handleSweep = _computeHandleSweep(
+      coordinateSystem: coordinateSystem,
+      scaledDiameter: scaledDiameter,
     );
-    final hitSize = coordinateSystem.scale(28);
 
     return Positioned(
-      left: handleCenter.dx - (hitSize / 2),
-      top: handleCenter.dy - (hitSize / 2),
+      left: arcRegionLeft,
+      top: arcRegionTop,
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeUpLeftDownRight,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
+          onPanStart: (details) => _startCircleResize(
+            globalPosition: details.globalPosition,
+            mapScale: mapScale,
+            diameterMeters: diameterMeters,
+          ),
           onPanUpdate: (details) =>
               _updateDiameter(details.globalPosition, mapScale),
-          onPanEnd: (_) => _commitCircleResize(),
-          child: SizedBox(width: hitSize, height: hitSize),
+          onPanEnd: (_) => _finishCircleResize(),
+          onPanCancel: _cancelCircleResize,
+          child: SizedBox(
+            width: arcRegionSize,
+            height: arcRegionSize,
+            child: IgnorePointer(
+              child: CustomPaint(
+                size: Size(arcRegionSize, arcRegionSize),
+                painter: _CircleResizeArcPainter(
+                  color: Colors.white,
+                  strokeWidth: strokeWidth,
+                  circleDiameter: scaledDiameter,
+                  circleOffset: Offset(
+                      circleInset - arcRegionLeft, circleInset - arcRegionTop),
+                  circleBorderStrokeWidth: circleBorderStrokeWidth,
+                  handleSweep: handleSweep,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
 
-  void _updateDiameter(Offset globalPosition, double mapScale) {
-    final renderBox = context.findRenderObject() as RenderBox?;
-    if (renderBox == null) return;
+  void _startCircleResize({
+    required Offset globalPosition,
+    required double mapScale,
+    required double diameterMeters,
+  }) {
+    setState(() {
+      _isResizing = true;
+      _resizeStartDiameterMeters = diameterMeters;
+      _diameterDragOffsetMeters =
+          diameterMeters - _estimateDiameterMeters(globalPosition, mapScale);
+    });
+  }
 
-    final coordinateSystem = CoordinateSystem.instance;
-    final zoom = ref.read(screenZoomProvider);
-    final meterScale = AgentData.inGameMetersDiameter * mapScale;
-    final localPosition = renderBox.globalToLocal(globalPosition);
-    final localVirtual = Offset(
-      coordinateSystem.normalize(math.max(localPosition.dx, 0)) / zoom,
-      coordinateSystem.normalize(math.max(localPosition.dy, 0)) / zoom,
+  double _computeHandleSweep({
+    required CoordinateSystem coordinateSystem,
+    required double scaledDiameter,
+  }) {
+    final radius = _computeCircleBorderRadius(
+      coordinateSystem: coordinateSystem,
+      scaledDiameter: scaledDiameter,
     );
+    if (radius <= 0) return _maxHandleSweep;
 
-    final radiusEstimateX = localVirtual.dx / (1 + math.cos(_handleAngle));
-    final radiusEstimateY = localVirtual.dy / (1 + math.sin(_handleAngle));
-    final radiusVirtual = math.max((radiusEstimateX + radiusEstimateY) / 2, 0.0);
-    final nextDiameter = ((radiusVirtual * 2) / meterScale)
+    final arcLength = coordinateSystem.scale(_handleArcLengthVirtual);
+    return (arcLength / radius).clamp(0.0, _maxHandleSweep);
+  }
+
+  Offset _computeHandleCenter({
+    required CoordinateSystem coordinateSystem,
+    required double scaledDiameter,
+    required double scaledMaxDiameter,
+  }) {
+    final radius = _computeCircleBorderRadius(
+      coordinateSystem: coordinateSystem,
+      scaledDiameter: scaledDiameter,
+    );
+    final center = scaledMaxDiameter / 2;
+    return Offset(
+      center + (radius * math.cos(_handleAngle)),
+      center + (radius * math.sin(_handleAngle)),
+    );
+  }
+
+  double _computeCircleBorderRadius({
+    required CoordinateSystem coordinateSystem,
+    required double scaledDiameter,
+  }) {
+    final circleBorderStrokeWidth =
+        coordinateSystem.scale(_circleBorderStrokeVirtual);
+    return math.max(0.0, (scaledDiameter / 2) - (circleBorderStrokeWidth / 2));
+  }
+
+  void _updateDiameter(Offset globalPosition, double mapScale) {
+    final nextDiameter = (_estimateDiameterMeters(globalPosition, mapScale) +
+            _diameterDragOffsetMeters)
         .clamp(_minDiameterMeters, _maxDiameterMeters);
 
     setState(() {
@@ -206,7 +292,31 @@ class _PlacedCustomCircleWidgetState
     });
   }
 
-  void _commitCircleResize() {
+  double _estimateDiameterMeters(Offset globalPosition, double mapScale) {
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null) return _localDiameterMeters ?? _minDiameterMeters;
+
+    final coordinateSystem = CoordinateSystem.instance;
+    final meterScale = AgentData.inGameMetersDiameter * mapScale;
+    final scaledMaxDiameter = coordinateSystem.scale(
+      CustomCircleUtility.maxDiameterInVirtual(mapScale),
+    );
+    final localPosition = renderBox.globalToLocal(globalPosition);
+    final localCenter = Offset(scaledMaxDiameter / 2, scaledMaxDiameter / 2);
+    final deltaFromCenter = localPosition - localCenter;
+    final deltaVirtual = Offset(
+      coordinateSystem.normalize(deltaFromCenter.dx),
+      coordinateSystem.normalize(deltaFromCenter.dy),
+    );
+
+    final radiusEstimateX = deltaVirtual.dx / math.cos(_handleAngle);
+    final radiusEstimateY = deltaVirtual.dy / math.sin(_handleAngle);
+    final radiusVirtual =
+        math.max((radiusEstimateX + radiusEstimateY) / 2, 0.0);
+    return ((radiusVirtual * 2) / meterScale).toDouble();
+  }
+
+  void _finishCircleResize() {
     final diameterMeters = _localDiameterMeters;
     if (diameterMeters != null) {
       ref.read(utilityProvider.notifier).updateCustomCircleDiameter(
@@ -214,6 +324,47 @@ class _PlacedCustomCircleWidgetState
             diameterMeters: diameterMeters,
           );
     }
+
+    setState(() {
+      _isResizing = false;
+      _diameterDragOffsetMeters = 0;
+      _resizeStartDiameterMeters = null;
+    });
+  }
+
+  void _cancelCircleResize() {
+    setState(() {
+      _isResizing = false;
+      _diameterDragOffsetMeters = 0;
+      _localDiameterMeters = _resizeStartDiameterMeters ?? _localDiameterMeters;
+      _resizeStartDiameterMeters = null;
+    });
+  }
+
+  Widget _buildResizeTooltip({
+    required CoordinateSystem coordinateSystem,
+    required double scaledDiameter,
+    required double scaledMaxDiameter,
+    required double diameterMeters,
+  }) {
+    final handleCenter = _computeHandleCenter(
+      coordinateSystem: coordinateSystem,
+      scaledDiameter: scaledDiameter,
+      scaledMaxDiameter: scaledMaxDiameter,
+    );
+    final gap = coordinateSystem.scale(16);
+
+    return Positioned(
+      left: handleCenter.dx,
+      top: handleCenter.dy - gap,
+      child: FractionalTranslation(
+        translation: const Offset(-0.5, -1.0),
+        child: CustomShapeResizeTooltip(
+          label: 'D',
+          valueMeters: diameterMeters,
+        ),
+      ),
+    );
   }
 }
 
@@ -221,18 +372,26 @@ class _CircleResizeArcPainter extends CustomPainter {
   const _CircleResizeArcPainter({
     required this.color,
     required this.strokeWidth,
+    required this.circleDiameter,
+    required this.circleOffset,
+    required this.circleBorderStrokeWidth,
+    required this.handleSweep,
   });
 
   final Color color;
   final double strokeWidth;
+  final double circleDiameter;
+  final Offset circleOffset;
+  final double circleBorderStrokeWidth;
+  final double handleSweep;
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Rect.fromLTWH(
-      strokeWidth / 2,
-      strokeWidth / 2,
-      size.width - strokeWidth,
-      size.height - strokeWidth,
+      circleOffset.dx + (circleBorderStrokeWidth / 2),
+      circleOffset.dy + (circleBorderStrokeWidth / 2),
+      circleDiameter - circleBorderStrokeWidth,
+      circleDiameter - circleBorderStrokeWidth,
     );
     final paint = Paint()
       ..color = color
@@ -242,9 +401,8 @@ class _CircleResizeArcPainter extends CustomPainter {
 
     canvas.drawArc(
       rect,
-      _PlacedCustomCircleWidgetState._handleAngle -
-          (_PlacedCustomCircleWidgetState._handleSweep / 2),
-      _PlacedCustomCircleWidgetState._handleSweep,
+      _PlacedCustomCircleWidgetState._handleAngle - (handleSweep / 2),
+      handleSweep,
       false,
       paint,
     );
@@ -253,36 +411,10 @@ class _CircleResizeArcPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _CircleResizeArcPainter oldDelegate) {
     return oldDelegate.color != color ||
-        oldDelegate.strokeWidth != strokeWidth;
-  }
-}
-
-class _ResizeBadge extends StatelessWidget {
-  const _ResizeBadge({
-    required this.label,
-    required this.valueMeters,
-  });
-
-  final String label;
-  final double valueMeters;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white70, width: 1.5),
-      ),
-      child: Text(
-        '$label ${valueMeters.toStringAsFixed(1)} m',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
+        oldDelegate.strokeWidth != strokeWidth ||
+        oldDelegate.circleDiameter != circleDiameter ||
+        oldDelegate.circleOffset != circleOffset ||
+        oldDelegate.circleBorderStrokeWidth != circleBorderStrokeWidth ||
+        oldDelegate.handleSweep != handleSweep;
   }
 }

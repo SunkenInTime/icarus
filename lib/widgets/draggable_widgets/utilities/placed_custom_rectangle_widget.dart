@@ -12,6 +12,7 @@ import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_resize_tooltip.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
 enum _RectangleResizeHandle { none, length, width }
@@ -39,9 +40,12 @@ class _PlacedCustomRectangleWidgetState
   static const double _maxWidthMeters = 30.0;
   static const double _minLengthMeters = 1.0;
   static const double _maxLengthMeters = 60.0;
+  static const double _rectangleBorderStrokeVirtual = 2.0;
 
   double? _localWidthMeters;
   double? _localLengthMeters;
+  double _widthDragOffsetMeters = 0;
+  double _lengthDragOffsetMeters = 0;
   bool _isDragging = false;
   _RectangleResizeHandle _activeHandle = _RectangleResizeHandle.none;
 
@@ -87,10 +91,12 @@ class _PlacedCustomRectangleWidgetState
     final meterScale = AgentData.inGameMetersDiameter * mapScale;
     final scaledWidth = coordinateSystem.scale(widthMeters * meterScale);
     final scaledLength = coordinateSystem.scale(lengthMeters * meterScale);
+    final rightHandleOverflow = coordinateSystem.scale(4);
+    final bottomHandleOverflow = coordinateSystem.scale(4);
 
     return SizedBox(
-      width: scaledLength,
-      height: scaledWidth,
+      width: scaledLength + rightHandleOverflow,
+      height: scaledWidth + bottomHandleOverflow,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -138,6 +144,7 @@ class _PlacedCustomRectangleWidgetState
               scaledWidth: scaledWidth,
               scaledLength: scaledLength,
               mapScale: mapScale,
+              lengthMeters: lengthMeters,
             ),
           if (!_isDragging && !isScreenshot)
             _buildWidthHandle(
@@ -145,36 +152,15 @@ class _PlacedCustomRectangleWidgetState
               scaledWidth: scaledWidth,
               scaledLength: scaledLength,
               mapScale: mapScale,
+              widthMeters: widthMeters,
             ),
-          if (!isScreenshot)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Align(
-                  alignment: Alignment.bottomCenter,
-                  child: Transform.translate(
-                    offset: Offset(0, coordinateSystem.scale(20)),
-                    child: _ResizeBadge(
-                      label: 'L',
-                      valueMeters: lengthMeters,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          if (!isScreenshot)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: Transform.translate(
-                    offset: Offset(coordinateSystem.scale(54), 0),
-                    child: _ResizeBadge(
-                      label: 'W',
-                      valueMeters: widthMeters,
-                    ),
-                  ),
-                ),
-              ),
+          if (!isScreenshot && _activeHandle != _RectangleResizeHandle.none)
+            _buildResizeTooltip(
+              coordinateSystem: coordinateSystem,
+              scaledWidth: scaledWidth,
+              scaledLength: scaledLength,
+              widthMeters: widthMeters,
+              lengthMeters: lengthMeters,
             ),
         ],
       ),
@@ -186,25 +172,33 @@ class _PlacedCustomRectangleWidgetState
     required double scaledWidth,
     required double scaledLength,
     required double mapScale,
+    required double lengthMeters,
   }) {
-    final handleWidth = coordinateSystem.scale(28);
-    final handleHeight = coordinateSystem.scale(8);
+    final handleWidth = coordinateSystem.scale(8);
+    final handleHeight = coordinateSystem.scale(28);
+    final handleCenterX = _computeLengthHandleCenterX(
+      coordinateSystem: coordinateSystem,
+      scaledLength: scaledLength,
+    );
 
     return Positioned(
-      left: (scaledLength - handleWidth) / 2,
-      top: scaledWidth - (handleHeight / 2),
+      left: handleCenterX - (handleWidth / 2),
+      top: (scaledWidth - handleHeight) / 2,
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeLeftRight,
         child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanStart: (_) {
+          behavior: HitTestBehavior.deferToChild,
+          onPanStart: (details) {
             setState(() {
               _activeHandle = _RectangleResizeHandle.length;
+              _lengthDragOffsetMeters = lengthMeters -
+                  _estimateLengthMeters(details.globalPosition, mapScale);
             });
           },
           onPanUpdate: (details) =>
               _updateLength(details.globalPosition, mapScale),
           onPanEnd: (_) => _commitRectangleResize(),
+          onPanCancel: _resetActiveHandle,
           child: _ResizePill(
             width: handleWidth,
             height: handleHeight,
@@ -219,25 +213,33 @@ class _PlacedCustomRectangleWidgetState
     required double scaledWidth,
     required double scaledLength,
     required double mapScale,
+    required double widthMeters,
   }) {
-    final handleWidth = coordinateSystem.scale(8);
-    final handleHeight = coordinateSystem.scale(28);
+    final handleWidth = coordinateSystem.scale(28);
+    final handleHeight = coordinateSystem.scale(8);
+    final handleCenterY = _computeWidthHandleCenterY(
+      coordinateSystem: coordinateSystem,
+      scaledWidth: scaledWidth,
+    );
 
     return Positioned(
-      left: scaledLength - (handleWidth / 2),
-      top: (scaledWidth - handleHeight) / 2,
+      left: (scaledLength - handleWidth) / 2,
+      top: handleCenterY - (handleHeight / 2),
       child: MouseRegion(
         cursor: SystemMouseCursors.resizeUpDown,
         child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanStart: (_) {
+          behavior: HitTestBehavior.deferToChild,
+          onPanStart: (details) {
             setState(() {
               _activeHandle = _RectangleResizeHandle.width;
+              _widthDragOffsetMeters = widthMeters -
+                  _estimateWidthMeters(details.globalPosition, mapScale);
             });
           },
           onPanUpdate: (details) =>
               _updateWidth(details.globalPosition, mapScale),
           onPanEnd: (_) => _commitRectangleResize(),
+          onPanCancel: _resetActiveHandle,
           child: _ResizePill(
             width: handleWidth,
             height: handleHeight,
@@ -248,16 +250,8 @@ class _PlacedCustomRectangleWidgetState
   }
 
   void _updateLength(Offset globalPosition, double mapScale) {
-    final renderBox = context.findRenderObject() as RenderBox?;
-    if (renderBox == null) return;
-
-    final coordinateSystem = CoordinateSystem.instance;
-    final zoom = ref.read(screenZoomProvider);
-    final meterScale = AgentData.inGameMetersDiameter * mapScale;
-    final localPosition = renderBox.globalToLocal(globalPosition);
-    final halfLengthVirtual =
-        coordinateSystem.normalize(math.max(localPosition.dx, 0)) / zoom;
-    final nextLength = (halfLengthVirtual * 2 / meterScale)
+    final nextLength = (_estimateLengthMeters(globalPosition, mapScale) +
+            _lengthDragOffsetMeters)
         .clamp(_minLengthMeters, _maxLengthMeters);
 
     setState(() {
@@ -266,21 +260,37 @@ class _PlacedCustomRectangleWidgetState
   }
 
   void _updateWidth(Offset globalPosition, double mapScale) {
-    final renderBox = context.findRenderObject() as RenderBox?;
-    if (renderBox == null) return;
-
-    final coordinateSystem = CoordinateSystem.instance;
-    final zoom = ref.read(screenZoomProvider);
-    final meterScale = AgentData.inGameMetersDiameter * mapScale;
-    final localPosition = renderBox.globalToLocal(globalPosition);
-    final halfWidthVirtual =
-        coordinateSystem.normalize(math.max(localPosition.dy, 0)) / zoom;
-    final nextWidth =
-        (halfWidthVirtual * 2 / meterScale).clamp(_minWidthMeters, _maxWidthMeters);
+    final nextWidth = (_estimateWidthMeters(globalPosition, mapScale) +
+            _widthDragOffsetMeters)
+        .clamp(_minWidthMeters, _maxWidthMeters);
 
     setState(() {
       _localWidthMeters = nextWidth.toDouble();
     });
+  }
+
+  double _estimateLengthMeters(Offset globalPosition, double mapScale) {
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null) return _localLengthMeters ?? _minLengthMeters;
+
+    final coordinateSystem = CoordinateSystem.instance;
+    final meterScale = AgentData.inGameMetersDiameter * mapScale;
+    final localPosition = renderBox.globalToLocal(globalPosition);
+    final lengthVirtual =
+        coordinateSystem.normalize(math.max(localPosition.dx, 0));
+    return (lengthVirtual / meterScale).toDouble();
+  }
+
+  double _estimateWidthMeters(Offset globalPosition, double mapScale) {
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null) return _localWidthMeters ?? _minWidthMeters;
+
+    final coordinateSystem = CoordinateSystem.instance;
+    final meterScale = AgentData.inGameMetersDiameter * mapScale;
+    final localPosition = renderBox.globalToLocal(globalPosition);
+    final widthVirtual =
+        coordinateSystem.normalize(math.max(localPosition.dy, 0));
+    return (widthVirtual / meterScale).toDouble();
   }
 
   void _commitRectangleResize() {
@@ -294,9 +304,76 @@ class _PlacedCustomRectangleWidgetState
           );
     }
 
+    _resetActiveHandle();
+  }
+
+  void _resetActiveHandle() {
     setState(() {
       _activeHandle = _RectangleResizeHandle.none;
+      _lengthDragOffsetMeters = 0;
+      _widthDragOffsetMeters = 0;
     });
+  }
+
+  Widget _buildResizeTooltip({
+    required CoordinateSystem coordinateSystem,
+    required double scaledWidth,
+    required double scaledLength,
+    required double widthMeters,
+    required double lengthMeters,
+  }) {
+    final handleCenter = _activeHandle == _RectangleResizeHandle.length
+        ? Offset(
+            _computeLengthHandleCenterX(
+              coordinateSystem: coordinateSystem,
+              scaledLength: scaledLength,
+            ),
+            scaledWidth / 2,
+          )
+        : Offset(
+            scaledLength / 2,
+            _computeWidthHandleCenterY(
+              coordinateSystem: coordinateSystem,
+              scaledWidth: scaledWidth,
+            ),
+          );
+    final label = _activeHandle == _RectangleResizeHandle.length ? 'L' : 'W';
+    final valueMeters = _activeHandle == _RectangleResizeHandle.length
+        ? lengthMeters
+        : widthMeters;
+    final gap = coordinateSystem.scale(16);
+
+    return Positioned(
+      left: handleCenter.dx,
+      top: handleCenter.dy - gap,
+      child: FractionalTranslation(
+        translation: const Offset(-0.5, -1.0),
+        child: CustomShapeResizeTooltip(
+          label: label,
+          valueMeters: valueMeters,
+        ),
+      ),
+    );
+  }
+
+  double _computeLengthHandleCenterX({
+    required CoordinateSystem coordinateSystem,
+    required double scaledLength,
+  }) {
+    return scaledLength -
+        (_computeRectangleBorderStrokeWidth(coordinateSystem) / 2);
+  }
+
+  double _computeWidthHandleCenterY({
+    required CoordinateSystem coordinateSystem,
+    required double scaledWidth,
+  }) {
+    return scaledWidth -
+        (_computeRectangleBorderStrokeWidth(coordinateSystem) / 2);
+  }
+
+  double _computeRectangleBorderStrokeWidth(CoordinateSystem coordinateSystem) {
+    return coordinateSystem.scale(_rectangleBorderStrokeVirtual);
   }
 }
 
@@ -324,36 +401,6 @@ class _ResizePill extends StatelessWidget {
             offset: Offset(0, 1),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ResizeBadge extends StatelessWidget {
-  const _ResizeBadge({
-    required this.label,
-    required this.valueMeters,
-  });
-
-  final String label;
-  final double valueMeters;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white70, width: 1.5),
-      ),
-      child: Text(
-        '$label ${valueMeters.toStringAsFixed(1)} m',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 13,
-          fontWeight: FontWeight.w600,
-        ),
       ),
     );
   }
