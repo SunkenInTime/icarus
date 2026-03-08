@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
-import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DeleteOptions extends ConsumerWidget {
@@ -56,7 +55,7 @@ class DeleteOptions extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final panel = Container(
       width: 146,
-      height: 94,
+      height: 98,
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
@@ -82,17 +81,21 @@ class DeleteOptions extends ConsumerWidget {
             end: 0.45,
             child: SizedBox(
               height: 24,
-              child: ShadButton.destructive(
-                onPressed: () async {
-                  ref.read(actionProvider.notifier).clearAllAsAction();
-                },
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                child: Text(
-                  "Delete all",
-                  style: ShadTheme.of(context).textTheme.small.copyWith(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
+              child: ShadTooltip(
+                builder: (_) => const Text("Delete all"),
+                child: ShadButton.destructive(
+                  onPressed: () async {
+                    ref.read(actionProvider.notifier).clearAllAsAction();
+                  },
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  child: Text(
+                    "Delete all",
+                    style: ShadTheme.of(context).textTheme.small.copyWith(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
                 ),
               ),
             ),
@@ -117,8 +120,31 @@ class DeleteOptions extends ConsumerWidget {
                         child: ShadTooltip(
                           builder: (_) =>
                               Text("Clear ${rowOptions[columnIndex].label}"),
-                          child: _DeleteOptionButton(
-                            icon: rowOptions[columnIndex].icon,
+                          child: ShadIconButton.secondary(
+                            cursor: SystemMouseCursors.click,
+                            width: double.infinity,
+                            height: 24,
+                            padding: const EdgeInsets.all(4),
+                            backgroundColor: Settings
+                                .tacticalVioletTheme.secondary
+                                .withValues(alpha: 0.75),
+                            hoverBackgroundColor: Settings
+                                .tacticalVioletTheme.secondary
+                                .withValues(alpha: 0.95),
+                            foregroundColor: Colors.white,
+                            hoverForegroundColor: Colors.white,
+                            decoration: ShadDecoration(
+                              border: ShadBorder.all(
+                                radius: BorderRadius.circular(6),
+                                color: Settings.tacticalVioletTheme.border
+                                    .withValues(alpha: 0.75),
+                              ),
+                            ),
+                            icon: Icon(
+                              rowOptions[columnIndex].icon,
+                              size: 14,
+                              color: Colors.white,
+                            ),
                             onPressed: () {
                               onCloseRequested?.call();
                               ref
@@ -173,39 +199,6 @@ class DeleteOptions extends ConsumerWidget {
               },
               child: panel,
             ),
-    );
-  }
-}
-
-class _DeleteOptionButton extends StatelessWidget {
-  const _DeleteOptionButton({
-    required this.icon,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.secondary.withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: Settings.tacticalVioletTheme.border.withValues(alpha: 0.75),
-        ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(6),
-        onTap: onPressed,
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Center(
-            child: Icon(icon, size: 14, color: Colors.white),
-          ),
-        ),
-      ),
     );
   }
 }

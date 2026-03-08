@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class ShortcutInfo {
+  static const LogicalKeyboardKey openDeleteMenuKey = LogicalKeyboardKey.keyE;
+
   static final Map<ShortcutActivator, Intent> widgetShortcuts = {
     LogicalKeySet(LogicalKeyboardKey.keyE): const WidgetDeleteIntent()
   };
@@ -21,7 +23,7 @@ class ShortcutInfo {
         LogicalKeyboardKey.shift): const RedoActionIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyQ): const ToggleDrawingIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyW): const ToggleErasingIntent(),
-    LogicalKeySet(LogicalKeyboardKey.keyE): const OpenDeleteMenuIntent(),
+    LogicalKeySet(openDeleteMenuKey): const OpenDeleteMenuIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyT): const AddedTextIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyS): const NavigationActionIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyR): const ToggleAgentFilterIntent(),

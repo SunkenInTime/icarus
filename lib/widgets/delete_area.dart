@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/widgets/delete_helpers.dart';
@@ -35,22 +36,49 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
   );
 
   Timer? _closeTimer;
+  late final ProviderSubscription<DeleteMenuState> _deleteMenuSubscription;
   bool _isMenuOpen = false;
   bool _isPointerOverTarget = false;
   bool _isPointerOverMenu = false;
   bool _isDragHoveringTarget = false;
   bool _openedByExplicitAction = false;
   int _lastHandledRequestId = -1;
+  bool _isTearingDown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _deleteMenuSubscription = ref.listenManual(
+      deleteMenuProvider,
+      _handleProviderRequest,
+    );
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _isTearingDown = false;
+  }
+
+  @override
+  void deactivate() {
+    _isTearingDown = true;
+    _hideOverlayImmediate();
+    super.deactivate();
+  }
 
   @override
   void dispose() {
-    _closeTimer?.cancel();
+    _isTearingDown = true;
+    _deleteMenuSubscription.close();
+    _hideOverlayImmediate();
     _menuAnimationController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
   void _handleProviderRequest(DeleteMenuState? _, DeleteMenuState next) {
+    if (_isTearingDown || !mounted) return;
     if (_lastHandledRequestId == next.requestId) return;
     _lastHandledRequestId = next.requestId;
 
@@ -66,35 +94,58 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
     _closeTimer = null;
   }
 
+  void _hideOverlayImmediate() {
+    _cancelCloseTimer();
+    _menuAnimationController.stop(canceled: true);
+    _menuAnimationController.value = 0;
+    if (_focusNode.hasFocus) {
+      _focusNode.unfocus();
+    }
+    if (_overlayController.isShowing) {
+      _overlayController.hide();
+    }
+    _isMenuOpen = false;
+    _isPointerOverMenu = false;
+    _isPointerOverTarget = false;
+    _isDragHoveringTarget = false;
+    _openedByExplicitAction = false;
+  }
+
   Future<void> _openMenu(DeleteMenuOpenReason reason) async {
-    if (_isDragHoveringTarget) return;
+    if (_isTearingDown || !mounted || _isDragHoveringTarget) return;
 
     _cancelCloseTimer();
     _openedByExplicitAction = reason != DeleteMenuOpenReason.hover;
 
     if (!_isMenuOpen) {
-      _overlayController.show();
+      if (!_overlayController.isShowing) {
+        _overlayController.show();
+      }
       setState(() {
         _isMenuOpen = true;
       });
     }
 
-    if (!_focusNode.hasFocus) {
+    if (!_focusNode.hasFocus && !_isTearingDown && mounted) {
       _focusNode.requestFocus();
     }
 
     await _menuAnimationController.forward();
+    if (_isTearingDown || !mounted) return;
   }
 
   Future<void> _closeMenu() async {
+    if (_isTearingDown || !mounted) return;
     _cancelCloseTimer();
     _openedByExplicitAction = false;
     if (!_isMenuOpen) return;
 
     await _menuAnimationController.reverse();
-    if (!mounted) return;
+    if (_isTearingDown || !mounted) return;
 
-    _overlayController.hide();
+    if (_overlayController.isShowing) {
+      _overlayController.hide();
+    }
     setState(() {
       _isMenuOpen = false;
       _isPointerOverMenu = false;
@@ -108,6 +159,7 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
 
     _cancelCloseTimer();
     _closeTimer = Timer(_hoverCloseDelay, () {
+      if (_isTearingDown || !mounted) return;
       if (!_openedByExplicitAction &&
           !_isPointerOverTarget &&
           !_isPointerOverMenu) {
@@ -117,6 +169,7 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
   }
 
   void _handleTargetHover(bool isHovered) {
+    if (_isTearingDown || !mounted) return;
     setState(() {
       _isPointerOverTarget = isHovered;
     });
@@ -129,8 +182,8 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
   }
 
   void _handleMenuHover(bool isHovered) {
+    if (_isTearingDown || !mounted) return;
     _cancelCloseTimer();
-    if (!mounted) return;
     setState(() {
       _isPointerOverMenu = isHovered;
     });
@@ -145,8 +198,6 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
 
   @override
   Widget build(BuildContext context) {
-    ref.listen(deleteMenuProvider, _handleProviderRequest);
-
     if (ref.watch(screenshotProvider)) {
       return const SizedBox.shrink();
     }
@@ -166,6 +217,9 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
     final Color iconColor = _isDragHoveringTarget
         ? Settings.tacticalVioletTheme.foreground
         : Settings.tacticalVioletTheme.destructive;
+    final Color shortcutColor = _isDragHoveringTarget
+        ? Settings.tacticalVioletTheme.foreground.withValues(alpha: 0.9)
+        : Settings.tacticalVioletTheme.mutedForeground;
     final Duration targetDuration = _isDragHoveringTarget
         ? const Duration(milliseconds: 100)
         : const Duration(milliseconds: 140);
@@ -189,7 +243,7 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
                 heightFactor: 1,
                 child: SizedBox(
                   width: 146,
-                  height: 94,
+                  height: 98,
                   child: Material(
                     color: Colors.transparent,
                     child: TapRegion(
@@ -271,10 +325,35 @@ class _DeleteAreaState extends ConsumerState<DeleteArea>
                                 width: 2,
                               ),
                             ),
-                            child: Icon(
-                              Icons.delete_outline,
-                              size: 24,
-                              color: iconColor,
+                            child: Stack(
+                              children: [
+                                Center(
+                                  child: Icon(
+                                    Icons.delete_outline,
+                                    size: 24,
+                                    color: iconColor,
+                                  ),
+                                ),
+                                Positioned(
+                                  right: 0,
+                                  bottom: 0,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(4.0),
+                                    child: Text(
+                                      ShortcutInfo.openDeleteMenuKey.keyLabel
+                                          .toUpperCase(),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w700,
+                                            color: shortcutColor,
+                                          ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
