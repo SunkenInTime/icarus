@@ -4,6 +4,7 @@ import 'dart:developer';
 import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_payload.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -32,7 +33,9 @@ class RemoteStrategySnapshotNotifier
 
   Future<void> openStrategy(String strategyPublicId) async {
     _activeStrategyPublicId = strategyPublicId;
-    ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(strategyPublicId);
+    ref
+        .read(strategyOpQueueProvider.notifier)
+        .setActiveStrategy(strategyPublicId);
     state = const AsyncLoading();
 
     await _refreshFromServer();
@@ -107,7 +110,7 @@ class RemoteStrategySnapshotNotifier
       name: 'pages:listForStrategy',
       args: {'strategyPublicId': strategyPublicId},
       onUpdate: (value) {
-        final pageIds = ((value as List?) ?? const [])
+        final pageIds = decodeConvexList(value)
             .whereType<Map>()
             .map((item) => Map<String, dynamic>.from(item))
             .map((item) => item['publicId'] as String?)
