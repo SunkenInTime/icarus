@@ -3,9 +3,10 @@ import 'package:flutter/services.dart';
 
 class ShortcutInfo {
   static const LogicalKeyboardKey openDeleteMenuKey = LogicalKeyboardKey.keyE;
+  static const LogicalKeyboardKey widgetDeleteKey = LogicalKeyboardKey.delete;
 
   static final Map<ShortcutActivator, Intent> widgetShortcuts = {
-    LogicalKeySet(LogicalKeyboardKey.keyE): const WidgetDeleteIntent()
+    LogicalKeySet(widgetDeleteKey): const WidgetDeleteIntent(),
   };
 
   static final Map<ShortcutActivator, Intent> globalShortcuts = {
