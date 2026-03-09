@@ -19,9 +19,11 @@ Offset getFlippedPosition({
   bool isRotatable = false,
 }) {
   final coordinateSystem = CoordinateSystem.instance;
-  final wNorm = (scaledSize.dx / coordinateSystem.effectiveSize.width) *
+  final wNorm =
+      (scaledSize.dx / coordinateSystem.effectiveSize.width) *
       coordinateSystem.worldNormalizedWidth;
-  final hNorm = (scaledSize.dy / coordinateSystem.effectiveSize.height) *
+  final hNorm =
+      (scaledSize.dy / coordinateSystem.effectiveSize.height) *
       coordinateSystem.normalizedHeight;
   final flippedX = coordinateSystem.worldNormalizedWidth - position.dx - wNorm;
   double flippedY = 0;
@@ -121,9 +123,7 @@ class PlacedWidget extends HiveObject {
   Map<String, dynamic> toJson() => _$PlacedWidgetToJson(this);
 
   static int getIndexByID(String id, List<PlacedWidget> elements) {
-    return elements.indexWhere(
-      (element) => element.id == id,
-    );
+    return elements.indexWhere((element) => element.id == id);
   }
 }
 
@@ -198,15 +198,21 @@ class PlacedText extends PlacedWidget {
     for (final (index, action) in _actionHistory.indexed) {
       if (action is PositionAction) {
         _actionHistory[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position, scaledSize: size));
+          position: getFlippedPosition(
+            position: action.position,
+            scaledSize: size,
+          ),
+        );
       }
     }
     for (final (index, action) in _poppedAction.indexed) {
       if (action is PositionAction) {
         _poppedAction[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position, scaledSize: size));
+          position: getFlippedPosition(
+            position: action.position,
+            scaledSize: size,
+          ),
+        );
       }
     }
   }
@@ -247,15 +253,21 @@ class PlacedImage extends PlacedWidget {
     for (final (index, action) in _actionHistory.indexed) {
       if (action is PositionAction) {
         _actionHistory[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position, scaledSize: size));
+          position: getFlippedPosition(
+            position: action.position,
+            scaledSize: size,
+          ),
+        );
       }
     }
     for (final (index, action) in _poppedAction.indexed) {
       if (action is PositionAction) {
         _poppedAction[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position, scaledSize: size));
+          position: getFlippedPosition(
+            position: action.position,
+            scaledSize: size,
+          ),
+        );
       }
     }
   }
@@ -341,22 +353,28 @@ class PlacedAgent extends PlacedWidget {
     final agentScreenPx = coordinateSystem.scale(agentSize);
 
     position = getFlippedPosition(
-        position: position, scaledSize: Offset(agentScreenPx, agentScreenPx));
+      position: position,
+      scaledSize: Offset(agentScreenPx, agentScreenPx),
+    );
 
     for (final (index, action) in _actionHistory.indexed) {
       if (action is PositionAction) {
         _actionHistory[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position,
-                scaledSize: Offset(agentScreenPx, agentScreenPx)));
+          position: getFlippedPosition(
+            position: action.position,
+            scaledSize: Offset(agentScreenPx, agentScreenPx),
+          ),
+        );
       }
     }
     for (final (index, action) in _poppedAction.indexed) {
       if (action is PositionAction) {
         _poppedAction[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position,
-                scaledSize: Offset(agentScreenPx, agentScreenPx)));
+          position: getFlippedPosition(
+            position: action.position,
+            scaledSize: Offset(agentScreenPx, agentScreenPx),
+          ),
+        );
       }
     }
   }
@@ -387,10 +405,10 @@ class PlacedAbility extends PlacedWidget {
     required super.position,
     required super.id,
     this.isAlly = true,
-    this.length = 0,
+    double? length,
     this.lineUpID,
     this.rotation = 0,
-  });
+  }) : length = _resolveInitialLength(data, length);
 
   @AbilityInfoConverter()
   final AbilityInfo data;
@@ -435,17 +453,21 @@ class PlacedAbility extends PlacedWidget {
   }
 
   void switchSides({required double mapScale, required double abilitySize}) {
-    final fullAbilityWidgetSize =
-        data.abilityData!.getSize(mapScale: mapScale, abilitySize: abilitySize);
+    final fullAbilityWidgetSize = data.abilityData!.getSize(
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
 
     final scaledAbilitySize = fullAbilityWidgetSize.scale(
-        CoordinateSystem.instance.scaleFactor,
-        CoordinateSystem.instance.scaleFactor);
+      CoordinateSystem.instance.scaleFactor,
+      CoordinateSystem.instance.scaleFactor,
+    );
 
     Offset flippedPosition = getFlippedPosition(
-        position: position,
-        scaledSize: scaledAbilitySize,
-        isRotatable: isRotatable(data.abilityData!));
+      position: position,
+      scaledSize: scaledAbilitySize,
+      isRotatable: isRotatable(data.abilityData!),
+    );
     position = flippedPosition;
 
     if (isRotatable(data.abilityData!)) {
@@ -455,26 +477,34 @@ class PlacedAbility extends PlacedWidget {
     for (final (index, action) in _actionHistory.indexed) {
       if (action is PositionAction) {
         _actionHistory[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position,
-                scaledSize: scaledAbilitySize,
-                isRotatable: isRotatable(data.abilityData!)));
+          position: getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledAbilitySize,
+            isRotatable: isRotatable(data.abilityData!),
+          ),
+        );
       } else if (action is RotationAction) {
         _actionHistory[index] = action.copyWith(
-            rotation: action.rotation + math.pi, length: action.length);
+          rotation: action.rotation + math.pi,
+          length: action.length,
+        );
       }
     }
 
     for (final (index, action) in _poppedAction.indexed) {
       if (action is PositionAction) {
         _poppedAction[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position,
-                scaledSize: scaledAbilitySize,
-                isRotatable: isRotatable(data.abilityData!)));
+          position: getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledAbilitySize,
+            isRotatable: isRotatable(data.abilityData!),
+          ),
+        );
       } else if (action is RotationAction) {
         _poppedAction[index] = action.copyWith(
-            rotation: action.rotation + math.pi, length: action.length);
+          rotation: action.rotation + math.pi,
+          length: action.length,
+        );
       }
     }
   }
@@ -525,6 +555,18 @@ class PlacedAbility extends PlacedWidget {
       _$PlacedAbilityFromJson(json);
   @override
   Map<String, dynamic> toJson() => _$PlacedAbilityToJson(this);
+
+  static double _resolveInitialLength(AbilityInfo data, double? length) {
+    if (length != null) return length;
+
+    final ability = data.abilityData;
+    if (ability is ResizableSquareAbility &&
+        ability.defaultToMaxLengthWhenUnspecified) {
+      return ability.height;
+    }
+
+    return 0;
+  }
 }
 
 abstract class WidgetAction {}
@@ -604,17 +646,23 @@ class PlacedUtility extends PlacedWidget {
   Offset _getEffectiveUtilitySize({required double mapScale}) {
     final utility = UtilityData.utilityWidgets[type]!;
     if (type == UtilityType.customCircle) {
-      assert(customDiameter != null,
-          'customDiameter is required for custom circle utility.');
+      assert(
+        customDiameter != null,
+        'customDiameter is required for custom circle utility.',
+      );
       if (customDiameter == null) {
         return Offset.zero;
       }
       return utility.getSize(
-          diameterMeters: customDiameter, mapScale: mapScale);
+        diameterMeters: customDiameter,
+        mapScale: mapScale,
+      );
     }
     if (type == UtilityType.customRectangle) {
-      assert(customWidth != null && customLength != null,
-          'customWidth and customLength are required for custom rectangle utility.');
+      assert(
+        customWidth != null && customLength != null,
+        'customWidth and customLength are required for custom rectangle utility.',
+      );
       if (customWidth == null || customLength == null) {
         return Offset.zero;
       }
@@ -629,13 +677,16 @@ class PlacedUtility extends PlacedWidget {
 
   void switchSides({required double mapScale}) {
     final size = _getEffectiveUtilitySize(mapScale: mapScale);
-    final scaledSize = size.scale(CoordinateSystem.instance.scaleFactor,
-        CoordinateSystem.instance.scaleFactor);
+    final scaledSize = size.scale(
+      CoordinateSystem.instance.scaleFactor,
+      CoordinateSystem.instance.scaleFactor,
+    );
 
     final flippedPosition = getFlippedPosition(
-        position: position,
-        scaledSize: scaledSize,
-        isRotatable: _getIsRotationUtility(type));
+      position: position,
+      scaledSize: scaledSize,
+      isRotatable: _getIsRotationUtility(type),
+    );
 
     position = flippedPosition;
 
@@ -646,40 +697,48 @@ class PlacedUtility extends PlacedWidget {
     for (final (index, action) in _actionHistory.indexed) {
       if (action is PositionAction) {
         Offset actionFlippedPosition = getFlippedPosition(
-            position: action.position,
-            scaledSize: scaledSize,
-            isRotatable: _getIsRotationUtility(type));
+          position: action.position,
+          scaledSize: scaledSize,
+          isRotatable: _getIsRotationUtility(type),
+        );
 
-        _actionHistory[index] =
-            action.copyWith(position: actionFlippedPosition);
+        _actionHistory[index] = action.copyWith(
+          position: actionFlippedPosition,
+        );
       } else if (action is RotationAction) {
-        _actionHistory[index] =
-            action.copyWith(rotation: action.rotation + math.pi);
+        _actionHistory[index] = action.copyWith(
+          rotation: action.rotation + math.pi,
+        );
       } else if (action is CustomShapeGeometryAction) {
         final actionFlippedPosition = getFlippedPosition(
-            position: action.position,
-            scaledSize: scaledSize,
-            isRotatable: _getIsRotationUtility(type));
-        _actionHistory[index] =
-            action.copyWith(position: actionFlippedPosition);
+          position: action.position,
+          scaledSize: scaledSize,
+          isRotatable: _getIsRotationUtility(type),
+        );
+        _actionHistory[index] = action.copyWith(
+          position: actionFlippedPosition,
+        );
       }
     }
     for (final (index, action) in _poppedAction.indexed) {
       if (action is PositionAction) {
         Offset actionFlippedPosition = getFlippedPosition(
-            position: action.position,
-            scaledSize: scaledSize,
-            isRotatable: _getIsRotationUtility(type));
+          position: action.position,
+          scaledSize: scaledSize,
+          isRotatable: _getIsRotationUtility(type),
+        );
 
         _poppedAction[index] = action.copyWith(position: actionFlippedPosition);
       } else if (action is RotationAction) {
-        _poppedAction[index] =
-            action.copyWith(rotation: action.rotation + math.pi);
+        _poppedAction[index] = action.copyWith(
+          rotation: action.rotation + math.pi,
+        );
       } else if (action is CustomShapeGeometryAction) {
         final actionFlippedPosition = getFlippedPosition(
-            position: action.position,
-            scaledSize: scaledSize,
-            isRotatable: _getIsRotationUtility(type));
+          position: action.position,
+          scaledSize: scaledSize,
+          isRotatable: _getIsRotationUtility(type),
+        );
         _poppedAction[index] = action.copyWith(position: actionFlippedPosition);
       }
     }

@@ -33,10 +33,7 @@ enum AgentType {
   veto,
 }
 
-enum AgentState {
-  dead,
-  none,
-}
+enum AgentState { dead, none }
 
 enum AgentRole { controller, duelist, initiator, sentinel }
 
@@ -163,38 +160,36 @@ class AgentData implements DraggableData {
   // static const double inGameMeters = 6;
 
   static const double inGameMetersDiameter = inGameMeters * 2;
-  AgentData({
-    required this.type,
-    required this.role,
-    required this.name,
-  })  : iconPath = 'assets/agents/$name/icon.webp',
-        abilities = List.generate(
-          4,
-          (index) => AbilityInfo(
-            name: 'Ability ${index + 1}', // You can override this later
+  AgentData({required this.type, required this.role, required this.name})
+    : iconPath = 'assets/agents/$name/icon.webp',
+      abilities = List.generate(
+        4,
+        (index) => AbilityInfo(
+          name: 'Ability ${index + 1}', // You can override this later
+          iconPath: 'assets/agents/$name/${index + 1}.webp',
+          type: type,
+          index: index,
+          abilityData: BaseAbility(
             iconPath: 'assets/agents/$name/${index + 1}.webp',
-            type: type,
-            index: index,
-            abilityData:
-                BaseAbility(iconPath: 'assets/agents/$name/${index + 1}.webp'),
           ),
-        );
+        ),
+      );
 
   static Map<AgentType, AgentData> agents = {
-    AgentType.jett: AgentData(
-      type: AgentType.jett,
-      role: AgentRole.duelist,
-      name: "Jett",
-    )..abilities[0] =
-          // Override the default abilities
-          AbilityInfo(
-        type: AgentType.jett,
-        index: 0,
-        name: "Cloudburst",
-        iconPath: 'assets/agents/Jett/1.webp',
-        abilityData:
-            ImageAbility(imagePath: 'assets/agents/Jett/Smoke.webp', size: 30),
-      ),
+    AgentType.jett:
+        AgentData(type: AgentType.jett, role: AgentRole.duelist, name: "Jett")
+          ..abilities[0] =
+              // Override the default abilities
+              AbilityInfo(
+                type: AgentType.jett,
+                index: 0,
+                name: "Cloudburst",
+                iconPath: 'assets/agents/Jett/1.webp',
+                abilityData: ImageAbility(
+                  imagePath: 'assets/agents/Jett/Smoke.webp',
+                  size: 30,
+                ),
+              ),
     AgentType.raze: AgentData(
       type: AgentType.raze,
       role: AgentRole.duelist,
@@ -223,20 +218,22 @@ class AgentData implements DraggableData {
       return agent;
     })(),
     AgentType.astra: (() {
-      final agent = AgentData(
-        type: AgentType.astra,
-        role: AgentRole.controller,
-        name: "Astra",
-      )..abilities[2] = AbilityInfo(
-          type: AgentType.astra,
-          index: 2,
-          name: "Nebula",
-          iconPath: 'assets/agents/Astra/3.webp',
-          abilityData: ImageAbility(
-            imagePath: 'assets/agents/Astra/Smoke.webp',
-            size: 4.75 * inGameMetersDiameter,
-          ),
-        );
+      final agent =
+          AgentData(
+              type: AgentType.astra,
+              role: AgentRole.controller,
+              name: "Astra",
+            )
+            ..abilities[2] = AbilityInfo(
+              type: AgentType.astra,
+              index: 2,
+              name: "Nebula",
+              iconPath: 'assets/agents/Astra/3.webp',
+              abilityData: ImageAbility(
+                imagePath: 'assets/agents/Astra/Smoke.webp',
+                size: 4.75 * inGameMetersDiameter,
+              ),
+            );
 
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
@@ -302,20 +299,22 @@ class AgentData implements DraggableData {
       return agent;
     })(),
     AgentType.viper: (() {
-      final agent = AgentData(
-        type: AgentType.viper,
-        role: AgentRole.controller,
-        name: "Viper",
-      )..abilities[1] = AbilityInfo(
-          type: AgentType.viper,
-          index: 1,
-          name: "Sky Smoke",
-          iconPath: 'assets/agents/Viper/2.webp',
-          abilityData: ImageAbility(
-            imagePath: 'assets/agents/Viper/Smoke.webp',
-            size: 4.5 * inGameMetersDiameter,
-          ),
-        );
+      final agent =
+          AgentData(
+              type: AgentType.viper,
+              role: AgentRole.controller,
+              name: "Viper",
+            )
+            ..abilities[1] = AbilityInfo(
+              type: AgentType.viper,
+              index: 1,
+              name: "Sky Smoke",
+              iconPath: 'assets/agents/Viper/2.webp',
+              abilityData: ImageAbility(
+                imagePath: 'assets/agents/Viper/Smoke.webp',
+                size: 4.5 * inGameMetersDiameter,
+              ),
+            );
 
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
@@ -447,8 +446,12 @@ class AgentData implements DraggableData {
         hasCenterDot: true,
         hasPerimeter: true, // Previously isDouble
         perimeterSize: 54.48, // Previously innerSize
-        fillColor:
-            const Color.fromARGB(255, 106, 14, 182), // Previously innerColor
+        fillColor: const Color.fromARGB(
+          255,
+          106,
+          14,
+          182,
+        ), // Previously innerColor
       );
 
       // Turret
@@ -464,20 +467,22 @@ class AgentData implements DraggableData {
       return agent;
     })(),
     AgentType.brimstone: (() {
-      final agent = AgentData(
-        type: AgentType.brimstone,
-        role: AgentRole.controller,
-        name: "Brimstone",
-      )..abilities[2] = AbilityInfo(
-          type: AgentType.brimstone,
-          index: 2,
-          name: "Sky Smoke",
-          iconPath: 'assets/agents/Brimstone/3.webp',
-          abilityData: ImageAbility(
-            imagePath: 'assets/agents/Brimstone/Smoke.webp',
-            size: 4.15 * inGameMetersDiameter,
-          ),
-        );
+      final agent =
+          AgentData(
+              type: AgentType.brimstone,
+              role: AgentRole.controller,
+              name: "Brimstone",
+            )
+            ..abilities[2] = AbilityInfo(
+              type: AgentType.brimstone,
+              index: 2,
+              name: "Sky Smoke",
+              iconPath: 'assets/agents/Brimstone/3.webp',
+              abilityData: ImageAbility(
+                imagePath: 'assets/agents/Brimstone/Smoke.webp',
+                size: 4.15 * inGameMetersDiameter,
+              ),
+            );
 
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
@@ -517,6 +522,7 @@ class AgentData implements DraggableData {
         color: Colors.white,
         minLength: inGameMeters * 1,
         isWall: true,
+        defaultToMaxLengthWhenUnspecified: true,
       );
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
@@ -588,13 +594,15 @@ class AgentData implements DraggableData {
         name: "Neon",
       );
 
-      agent.abilities.first.abilityData = SquareAbility(
+      agent.abilities.first.abilityData = ResizableSquareAbility(
         width: 3.5 * inGameMeters,
         height: 45 * inGameMeters,
         iconPath: agent.abilities.first.iconPath,
         color: Colors.blueAccent,
         hasSideBorders: true,
         isTransparent: true,
+        minLength: 1 * inGameMeters,
+        defaultToMaxLengthWhenUnspecified: true,
       );
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
@@ -606,20 +614,22 @@ class AgentData implements DraggableData {
       return agent;
     })(),
     AgentType.omen: (() {
-      final agent = AgentData(
-        type: AgentType.omen,
-        role: AgentRole.controller,
-        name: "Omen",
-      )..abilities[2] = AbilityInfo(
-          type: AgentType.omen,
-          index: 2,
-          name: "Smoke",
-          iconPath: 'assets/agents/Omen/3.webp',
-          abilityData: ImageAbility(
-            imagePath: 'assets/agents/Omen/Smoke.webp',
-            size: 4.1 * inGameMetersDiameter,
-          ),
-        );
+      final agent =
+          AgentData(
+              type: AgentType.omen,
+              role: AgentRole.controller,
+              name: "Omen",
+            )
+            ..abilities[2] = AbilityInfo(
+              type: AgentType.omen,
+              index: 2,
+              name: "Smoke",
+              iconPath: 'assets/agents/Omen/3.webp',
+              abilityData: ImageAbility(
+                imagePath: 'assets/agents/Omen/Smoke.webp',
+                size: 4.1 * inGameMetersDiameter,
+              ),
+            );
 
       agent.abilities[1].abilityData = SquareAbility(
         width: 4.3 * inGameMetersDiameter,
@@ -661,20 +671,22 @@ class AgentData implements DraggableData {
       return agent;
     })(),
     AgentType.clove: (() {
-      final agent = AgentData(
-        type: AgentType.clove,
-        role: AgentRole.controller,
-        name: "Clove",
-      )..abilities[2] = AbilityInfo(
-          type: AgentType.clove,
-          index: 2,
-          name: "Sky Smoke",
-          iconPath: 'assets/agents/Clove/3.webp',
-          abilityData: ImageAbility(
-            imagePath: 'assets/agents/Clove/Smoke.webp',
-            size: 4 * inGameMetersDiameter,
-          ),
-        );
+      final agent =
+          AgentData(
+              type: AgentType.clove,
+              role: AgentRole.controller,
+              name: "Clove",
+            )
+            ..abilities[2] = AbilityInfo(
+              type: AgentType.clove,
+              index: 2,
+              name: "Sky Smoke",
+              iconPath: 'assets/agents/Clove/3.webp',
+              abilityData: ImageAbility(
+                imagePath: 'assets/agents/Clove/Smoke.webp',
+                size: 4 * inGameMetersDiameter,
+              ),
+            );
 
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
@@ -757,20 +769,22 @@ class AgentData implements DraggableData {
       return agent;
     })(),
     AgentType.harbor: (() {
-      final agent = AgentData(
-        type: AgentType.harbor,
-        role: AgentRole.controller,
-        name: "Harbor",
-      )..abilities[2] = AbilityInfo(
-          type: AgentType.harbor,
-          index: 2,
-          name: "Sky Smoke",
-          iconPath: 'assets/agents/Harbor/3.webp',
-          abilityData: ImageAbility(
-            imagePath: 'assets/agents/Harbor/Smoke.webp',
-            size: 4.5 * inGameMetersDiameter,
-          ),
-        );
+      final agent =
+          AgentData(
+              type: AgentType.harbor,
+              role: AgentRole.controller,
+              name: "Harbor",
+            )
+            ..abilities[2] = AbilityInfo(
+              type: AgentType.harbor,
+              index: 2,
+              name: "Sky Smoke",
+              iconPath: 'assets/agents/Harbor/3.webp',
+              abilityData: ImageAbility(
+                imagePath: 'assets/agents/Harbor/Smoke.webp',
+                size: 4.5 * inGameMetersDiameter,
+              ),
+            );
 
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
@@ -866,7 +880,10 @@ class AgentData implements DraggableData {
     })(),
     AgentType.waylay: (() {
       final agent = AgentData(
-          type: AgentType.waylay, role: AgentRole.duelist, name: "Waylay");
+        type: AgentType.waylay,
+        role: AgentRole.duelist,
+        name: "Waylay",
+      );
 
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
@@ -887,7 +904,10 @@ class AgentData implements DraggableData {
     })(),
     AgentType.veto: (() {
       final agent = AgentData(
-          type: AgentType.veto, role: AgentRole.sentinel, name: "Veto");
+        type: AgentType.veto,
+        role: AgentRole.sentinel,
+        name: "Veto",
+      );
 
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
