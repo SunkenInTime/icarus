@@ -15,7 +15,7 @@ const List<double> deadlockBarrierMeshDefaultArmLengthsMeters = <double>[
   10.0,
   10.0,
 ];
-const double deadlockBarrierMeshArmThicknessVirtual = 8.0;
+const double deadlockBarrierMeshArmThicknessVirtual = 4.0;
 const double deadlockBarrierMeshHandleDiameterVirtual = 15.0;
 const double deadlockBarrierMeshHandleVisualDiameterVirtual = 11.0;
 const double deadlockBarrierMeshOverflowPaddingVirtual = 6.0;
