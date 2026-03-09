@@ -742,6 +742,11 @@ class AgentData implements DraggableData {
         color: Colors.blue,
       );
 
+      agent.abilities[2].abilityData = DeadlockBarrierMeshAbility(
+        iconPath: agent.abilities[2].iconPath,
+        color: Colors.blue,
+      );
+
       return agent;
     })(),
     AgentType.gekko: (() {

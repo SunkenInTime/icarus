@@ -102,15 +102,32 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void updateRotation(int index, double rotation, double length) {
+    updateGeometry(index, rotation: rotation, length: length);
+  }
+
+  void updateGeometry(
+    int index, {
+    double? rotation,
+    double? length,
+    List<double>? armLengthsMeters,
+  }) {
     final newState = [...state];
-    updateRotationHistory(index);
-    newState[index].updateRotation(rotation, length);
+    updateGeometryHistory(index);
+    newState[index].updateGeometry(
+      newRotation: rotation,
+      newLength: length,
+      newArmLengthsMeters: armLengthsMeters,
+    );
     final action = UserAction(
         type: ActionType.edit,
         id: newState[index].id,
         group: ActionGroup.ability);
     ref.read(actionProvider.notifier).addAction(action);
     state = newState;
+  }
+
+  void updateArmLengths(int index, List<double> armLengthsMeters) {
+    updateGeometry(index, armLengthsMeters: armLengthsMeters);
   }
 
   // void updateLength(int index, double length) {
@@ -127,9 +144,13 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   // }
 
   void updateRotationHistory(int index) {
+    updateGeometryHistory(index);
+  }
+
+  void updateGeometryHistory(int index) {
     final newState = [...state];
 
-    newState[index].updateRotationHistory();
+    newState[index].updateGeometryHistory();
 
     state = newState;
   }

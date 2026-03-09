@@ -213,13 +213,14 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       length: fields[6] == null ? 0 : (fields[6] as num).toDouble(),
       lineUpID: fields[7] as String?,
       rotation: fields[2] == null ? 0 : (fields[2] as num).toDouble(),
+      armLengthsMeters: (fields[8] as List?)?.cast<double>(),
     )..isDeleted = fields[4] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedAbility obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(9)
       ..writeByte(0)
       ..write(obj.data)
       ..writeByte(1)
@@ -235,7 +236,9 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       ..writeByte(6)
       ..write(obj.length)
       ..writeByte(7)
-      ..write(obj.lineUpID);
+      ..write(obj.lineUpID)
+      ..writeByte(8)
+      ..write(obj.armLengthsMeters);
   }
 
   @override

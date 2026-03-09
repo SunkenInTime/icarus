@@ -124,6 +124,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           pos: _endScreenPosition(entry, coordinateSystem),
           opacity: 1,
           length: entry.endLength,
+          armLengthsMeters: entry.endArmLengths,
           rotation: entry.endRotation,
           scale: entry.endScale,
           textSize: entry.endTextSize,
@@ -144,6 +145,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           pos: start,
           opacity: 1 - t,
           length: entry.startLength,
+          armLengthsMeters: entry.startArmLengths,
           rotation: entry.startRotation,
           scale: entry.startScale,
           textSize: entry.startTextSize,
@@ -162,6 +164,8 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           pos: Offset.lerp(start, end, t) ?? end,
           opacity: 1,
           length: _lerpLength(entry.startLength, entry.endLength, t),
+          armLengthsMeters:
+              _lerpArmLengths(entry.startArmLengths, entry.endArmLengths, t),
           rotation: _lerpAngle(entry.startRotation, entry.endRotation, t),
           scale: _lerpDouble(entry.startScale, entry.endScale, t),
           textSize: _lerpDouble(entry.startTextSize, entry.endTextSize, t),
@@ -194,6 +198,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           pos: end,
           opacity: t,
           length: entry.endLength,
+          armLengthsMeters: entry.endArmLengths,
           rotation: entry.endRotation,
           scale: entry.endScale,
           textSize: entry.endTextSize,
@@ -258,6 +263,17 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     return a + (b - a) * t;
   }
 
+  List<double>? _lerpArmLengths(List<double>? a, List<double>? b, double t) {
+    if (a == null || b == null || a.length != b.length) {
+      return null;
+    }
+
+    return List<double>.generate(
+      a.length,
+      (index) => a[index] + (b[index] - a[index]) * t,
+    );
+  }
+
   double _lerpRequired(double a, double b, double t) => a + (b - a) * t;
 
   Widget _overlayItem({
@@ -266,6 +282,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     required Offset pos,
     required double opacity,
     double? length,
+    List<double>? armLengthsMeters,
     double? rotation,
     double? scale,
     double? textSize,
@@ -280,6 +297,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       widget,
       mapScale,
       length: length,
+      armLengthsMeters: armLengthsMeters,
       scale: scale,
       textSize: textSize,
       customDiameter: customDiameter,
@@ -342,6 +360,7 @@ class PlacedWidgetPreview {
     PlacedWidget w,
     double mapScale, {
     double? length,
+    List<double>? armLengthsMeters,
     double? scale,
     double? textSize,
     double? customDiameter,
@@ -374,6 +393,13 @@ class PlacedWidgetPreview {
         case CircleAbility():
           return ability.createWidget(
               id: w.id, isAlly: w.isAlly, mapScale: mapScale);
+        case DeadlockBarrierMeshAbility():
+          return ability.createWidget(
+            id: w.id,
+            isAlly: w.isAlly,
+            mapScale: mapScale,
+            armLengthsMeters: armLengthsMeters ?? w.armLengthsMeters,
+          );
         case SquareAbility():
           return ability.createWidget(
               id: w.id,
@@ -508,6 +534,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
             widget,
             mapScale,
             length: widget.length,
+            armLengthsMeters: widget.armLengthsMeters,
             agentSize: agentSize,
             abilitySize: abilitySize,
           ),
@@ -520,6 +547,8 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
         child: PlacedWidgetPreview.build(
           widget,
           mapScale,
+          armLengthsMeters:
+              widget is PlacedAbility ? widget.armLengthsMeters : null,
           agentSize: agentSize,
           abilitySize: abilitySize,
         ),

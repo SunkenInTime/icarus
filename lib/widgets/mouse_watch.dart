@@ -28,6 +28,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
   bool isMouseInRegion = false;
   final Object _ownerToken = Object();
   ProviderContainer? _container;
+  bool _hoverCleanupScheduled = false;
 
   @override
   void didChangeDependencies() {
@@ -37,9 +38,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
 
   @override
   void dispose() {
-    _clearHoveredDeleteTargetIfOwned(
-      container: _container,
-    );
+    _scheduleHoverCleanup(container: _container);
     super.dispose();
   }
 
@@ -60,20 +59,45 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     activeContainer.read(hoveredDeleteTargetProvider.notifier).state = null;
   }
 
+  void _clearHoveredLineUpIfOwned({ProviderContainer? container}) {
+    final activeContainer = container ?? _container;
+    if (activeContainer == null || widget.lineUpId == null) return;
+    if (activeContainer.read(hoveredLineUpIdProvider) != widget.lineUpId) {
+      return;
+    }
+
+    activeContainer.read(hoveredLineUpIdProvider.notifier).setHoveredLineUpId(
+          null,
+        );
+  }
+
+  void _scheduleHoverCleanup({ProviderContainer? container}) {
+    final activeContainer = container ?? _container;
+    if (activeContainer == null || _hoverCleanupScheduled) return;
+
+    _hoverCleanupScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hoverCleanupScheduled = false;
+      _clearHoveredLineUpIfOwned(container: activeContainer);
+      _clearHoveredDeleteTargetIfOwned(container: activeContainer);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final lineUpState = ref.watch(lineUpProvider);
-
-    LineUp? lineUp;
-    String? lineUpNotes;
-    if (widget.lineUpId != null) {
-      final index = lineUpState.lineUps
-          .indexWhere((lineUp) => lineUp.id == widget.lineUpId);
-      if (index != -1) {
-        lineUp = lineUpState.lineUps[index];
-        lineUpNotes = lineUpState.lineUps[index].notes;
-      }
-    }
+    final LineUp? lineUp = widget.lineUpId == null
+        ? null
+        : ref.watch(
+            lineUpProvider.select((state) {
+              for (final lineUp in state.lineUps) {
+                if (lineUp.id == widget.lineUpId) {
+                  return lineUp;
+                }
+              }
+              return null;
+            }),
+          );
+    final lineUpNotes = lineUp?.notes;
     final hasLineUpNote = (lineUpNotes?.trim().isNotEmpty ?? false);
 
     final content = MouseRegion(
@@ -90,11 +114,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
         });
       },
       onExit: (_) {
-        if (widget.lineUpId != null &&
-            ref.read(hoveredLineUpIdProvider) == widget.lineUpId) {
-          ref.read(hoveredLineUpIdProvider.notifier).setHoveredLineUpId(null);
-        }
-        _clearHoveredDeleteTargetIfOwned();
+        _scheduleHoverCleanup();
         setState(() {
           isMouseInRegion = false;
         });

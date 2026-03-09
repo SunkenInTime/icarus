@@ -13,6 +13,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/placed_deadlock_barrier_mesh_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'dart:math' as math;
 
@@ -100,8 +101,20 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
 
     final abilityRef = widget.isLineUp
         ? ref.watch(lineUpProvider).currentAbility!
-        : ref.watch(abilityProvider)[index];
+        : index >= 0
+            ? ref.watch(abilityProvider)[index]
+            : widget.ability;
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1;
+
+    if (widget.ability.data.abilityData is DeadlockBarrierMeshAbility) {
+      return PlacedDeadlockBarrierMeshWidget(
+        ability: abilityRef,
+        onDragEnd: widget.onDragEnd,
+        id: widget.id,
+        data: widget.data,
+        isLineUp: widget.isLineUp,
+      );
+    }
     //Linking the local rotation with global rotation for things like undo redo
     if (!widget.isLineUp) {
       if (abilityRef.rotation != localRotation! &&
@@ -124,13 +137,22 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           feedback: Opacity(
             opacity: Settings.feedbackOpacity,
             child: ZoomTransform(
-                child: widget.ability.data.abilityData!.createWidget(
-                    id: null, isAlly: isAlly, mapScale: mapScale)),
+              child: widget.ability.data.abilityData!.createWidget(
+                id: null,
+                isAlly: isAlly,
+                mapScale: mapScale,
+                armLengthsMeters: widget.ability.armLengthsMeters,
+              ),
+            ),
           ),
           childWhenDragging: const SizedBox.shrink(),
           onDragEnd: widget.onDragEnd,
-          child: widget.ability.data.abilityData!
-              .createWidget(id: widget.id, isAlly: isAlly, mapScale: mapScale),
+          child: widget.ability.data.abilityData!.createWidget(
+            id: widget.id,
+            isAlly: isAlly,
+            mapScale: mapScale,
+            armLengthsMeters: widget.ability.armLengthsMeters,
+          ),
         );
       }
     }
@@ -281,7 +303,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                       isAlly: isAlly,
                       mapScale: mapScale,
                       rotation: localRotation!,
-                      length: localLength!),
+                      length: localLength!,
+                      armLengthsMeters: abilityRef.armLengthsMeters),
                 ),
               ),
             ),
@@ -303,7 +326,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                 isAlly: isAlly,
                 mapScale: mapScale,
                 rotation: localRotation!,
-                length: localLength!),
+                length: localLength!,
+                armLengthsMeters: abilityRef.armLengthsMeters),
           ),
         ),
       );
@@ -322,13 +346,21 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
         feedback: Opacity(
           opacity: Settings.feedbackOpacity,
           child: ZoomTransform(
-              child: widget.ability.data.abilityData!
-                  .createWidget(id: null, isAlly: isAlly, mapScale: mapScale)),
+              child: widget.ability.data.abilityData!.createWidget(
+            id: null,
+            isAlly: isAlly,
+            mapScale: mapScale,
+            armLengthsMeters: widget.ability.armLengthsMeters,
+          )),
         ),
         childWhenDragging: const SizedBox.shrink(),
         onDragEnd: widget.onDragEnd,
-        child: widget.ability.data.abilityData!
-            .createWidget(id: widget.id, isAlly: isAlly, mapScale: mapScale),
+        child: widget.ability.data.abilityData!.createWidget(
+          id: widget.id,
+          isAlly: isAlly,
+          mapScale: mapScale,
+          armLengthsMeters: widget.ability.armLengthsMeters,
+        ),
       ),
     );
   }

@@ -144,6 +144,13 @@ class PageTransitionEntry {
     return null;
   }
 
+  static List<double>? armLengthsOf(PlacedWidget w) {
+    if (w is PlacedAbility) {
+      return List<double>.from(w.armLengthsMeters);
+    }
+    return null;
+  }
+
   static double? scaleOf(PlacedWidget w) {
     if (w is PlacedImage) return w.scale;
     return null;
@@ -174,6 +181,8 @@ class PageTransitionEntry {
 
   double? get startLength => from != null ? lengthOf(from!) : null;
   double? get endLength => to != null ? lengthOf(to!) : null;
+  List<double>? get startArmLengths => from != null ? armLengthsOf(from!) : null;
+  List<double>? get endArmLengths => to != null ? armLengthsOf(to!) : null;
 
   double? get startScale => from != null ? scaleOf(from!) : null;
   double? get endScale => to != null ? scaleOf(to!) : null;

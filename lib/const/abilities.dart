@@ -1,4 +1,5 @@
 import 'dart:developer';
+import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 import 'package:icarus/const/agents.dart';
@@ -7,6 +8,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/center_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/custom_circle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/custom_square_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/deadlock_barrier_mesh_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_icon_widget.dart';
@@ -18,6 +20,8 @@ bool isRotatable(Ability ability) {
     case CenterSquareAbility():
       return true;
     case RotatableImageAbility():
+      return true;
+    case DeadlockBarrierMeshAbility():
       return true;
     default:
       return false;
@@ -34,6 +38,7 @@ sealed class Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
     String? lineUpId,
   });
 }
@@ -50,6 +55,7 @@ class BaseAbility extends Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
     String? lineUpId,
   }) {
     return AbilityWidget(
@@ -87,6 +93,7 @@ class ImageAbility extends Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
     String? lineUpId,
   }) {
     return AgentIconWidget(
@@ -156,6 +163,7 @@ class CircleAbility extends Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
     String? lineUpId,
   }) {
     return CustomCircleWidget(
@@ -235,6 +243,7 @@ class SquareAbility extends Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
     String? lineUpId,
   }) {
     return CustomSquareWidget(
@@ -291,6 +300,7 @@ class CenterSquareAbility extends Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
     String? lineUpId,
   }) {
     return CenterSquareWidget(
@@ -336,6 +346,7 @@ class RotatableImageAbility extends Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
     String? lineUpId,
   }) {
     return RotatableImageWidget(
@@ -382,6 +393,7 @@ class ResizableSquareAbility extends SquareAbility {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
     String? lineUpId,
   }) {
     return ResizableSquareWidget(
@@ -417,6 +429,84 @@ class ResizableSquareAbility extends SquareAbility {
     return Offset(
       (isWall ? abilitySize! * 2 : width * mapScale!) / 2,
       (height * mapScale!) + (distanceBetweenAOE * mapScale) + 7.5,
+    );
+  }
+}
+
+class DeadlockBarrierMeshAbility extends Ability {
+  DeadlockBarrierMeshAbility({
+    required this.iconPath,
+    required this.color,
+  });
+
+  final String iconPath;
+  final Color color;
+
+  static const double minArmLengthMeters = deadlockBarrierMeshMinArmLengthMeters;
+  static const double maxArmLengthMeters = deadlockBarrierMeshMaxArmLengthMeters;
+  static const List<double> defaultArmLengthsMeters =
+      deadlockBarrierMeshDefaultArmLengthsMeters;
+
+  static List<double> normalizeArmLengths(List<double>? armLengthsMeters) {
+    return normalizeDeadlockBarrierMeshArmLengths(armLengthsMeters);
+  }
+
+  static List<double> reorderArmLengthsForSideSwitch(
+      List<double> armLengthsMeters) {
+    return reorderDeadlockBarrierMeshArmLengthsForSideSwitch(armLengthsMeters);
+  }
+
+  static double maxExtentVirtual({
+    required double mapScale,
+    required double abilitySize,
+  }) {
+    final meterScale = AgentData.inGameMetersDiameter * mapScale;
+    final maxArmLengthVirtual = maxArmLengthMeters * meterScale;
+    final projectedReachVirtual = maxArmLengthVirtual * math.cos(math.pi / 4);
+    return math.max(abilitySize, projectedReachVirtual * 2) +
+        deadlockBarrierMeshHandleDiameterVirtual;
+  }
+
+  @override
+  Offset getAnchorPoint({double? mapScale, double? abilitySize}) {
+    assert(mapScale != null, 'mapScale must be provided');
+    assert(abilitySize != null, 'abilitySize must be provided');
+    final extent = maxExtentVirtual(
+      mapScale: mapScale!,
+      abilitySize: abilitySize!,
+    );
+    return Offset(extent / 2, extent / 2);
+  }
+
+  @override
+  Offset getSize({double? mapScale, double? abilitySize}) {
+    assert(mapScale != null, 'mapScale must be provided');
+    assert(abilitySize != null, 'abilitySize must be provided');
+    final extent = maxExtentVirtual(
+      mapScale: mapScale!,
+      abilitySize: abilitySize!,
+    );
+    return Offset(extent, extent);
+  }
+
+  @override
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    List<double>? armLengthsMeters,
+    String? lineUpId,
+  }) {
+    return DeadlockBarrierMeshWidget(
+      lineUpId: lineUpId,
+      iconPath: iconPath,
+      id: id,
+      isAlly: isAlly,
+      color: color,
+      mapScale: mapScale,
+      armLengthsMeters: normalizeArmLengths(armLengthsMeters),
     );
   }
 }

@@ -4,7 +4,8 @@ import 'dart:developer';
 import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, listEquals, visibleForTesting;
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -903,6 +904,10 @@ class StrategyProvider extends Notifier<StrategyState> {
                 PageTransitionEntry.rotationOf(to) ||
             PageTransitionEntry.lengthOf(from) !=
                 PageTransitionEntry.lengthOf(to) ||
+            !listEquals(
+              PageTransitionEntry.armLengthsOf(from),
+              PageTransitionEntry.armLengthsOf(to),
+            ) ||
             PageTransitionEntry.scaleOf(from) !=
                 PageTransitionEntry.scaleOf(to) ||
             PageTransitionEntry.textSizeOf(from) !=
