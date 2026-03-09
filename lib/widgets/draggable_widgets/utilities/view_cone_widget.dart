@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
-import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
@@ -89,18 +89,9 @@ class ViewConeWidget extends ConsumerWidget {
             left:
                 (totalWidth - Settings.utilityIconSize * coord.scaleFactor) / 2,
             child: MouseWatch(
-              onDeleteKeyPressed: () {
-                if (id == null) return;
-
-                final action = UserAction(
-                  type: ActionType.deletion,
-                  id: id!,
-                  group: ActionGroup.utility,
-                );
-
-                ref.read(actionProvider.notifier).addAction(action);
-                ref.read(utilityProvider.notifier).removeUtility(id!);
-              },
+              deleteTarget: (id?.isNotEmpty ?? false)
+                  ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
+                  : null,
               cursor: SystemMouseCursors.click,
               child: Container(
                 decoration: BoxDecoration(

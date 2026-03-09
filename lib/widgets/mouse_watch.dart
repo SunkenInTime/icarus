@@ -3,38 +3,52 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/widgets/line_up_media_carousel.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class MouseWatch extends ConsumerStatefulWidget {
   const MouseWatch({
-    this.onDeleteKeyPressed,
     required this.child,
     super.key,
     this.cursor = SystemMouseCursors.basic,
+    this.deleteTarget,
     this.lineUpId,
   });
 
   final String? lineUpId;
   final Widget child;
-  final VoidCallback? onDeleteKeyPressed;
+  final HoveredDeleteTarget? deleteTarget;
   final SystemMouseCursor cursor;
   @override
-  ConsumerState<ConsumerStatefulWidget> createState() => _MouseWatchState();
+  ConsumerState<MouseWatch> createState() => _MouseWatchState();
 }
 
 class _MouseWatchState extends ConsumerState<MouseWatch> {
   bool isMouseInRegion = false;
-  final _focusNode = FocusNode();
+  final Object _ownerToken = Object();
 
   @override
   void dispose() {
-    _focusNode.dispose();
+    _clearHoveredDeleteTargetIfOwned();
     super.dispose();
   }
 
-  // ...existing code...
+  void _publishHoveredDeleteTarget() {
+    final target = widget.deleteTarget;
+    if (target == null) return;
+
+    ref.read(hoveredDeleteTargetProvider.notifier).state =
+        target.copyWith(ownerToken: _ownerToken);
+  }
+
+  void _clearHoveredDeleteTargetIfOwned() {
+    final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
+    if (hoveredTarget?.ownerToken != _ownerToken) return;
+
+    ref.read(hoveredDeleteTargetProvider.notifier).state = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final lineUpState = ref.watch(lineUpProvider);
@@ -59,9 +73,9 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
               .read(hoveredLineUpIdProvider.notifier)
               .setHoveredLineUpId(widget.lineUpId);
         }
+        _publishHoveredDeleteTarget();
         setState(() {
           isMouseInRegion = true;
-          _focusNode.requestFocus();
         });
       },
       onExit: (_) {
@@ -69,23 +83,12 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
             ref.read(hoveredLineUpIdProvider) == widget.lineUpId) {
           ref.read(hoveredLineUpIdProvider.notifier).setHoveredLineUpId(null);
         }
+        _clearHoveredDeleteTargetIfOwned();
         setState(() {
           isMouseInRegion = false;
         });
       },
-      child: FocusableActionDetector(
-        focusNode: _focusNode,
-        shortcuts: ShortcutInfo.widgetShortcuts,
-        actions: {
-          WidgetDeleteIntent: CallbackAction<WidgetDeleteIntent>(
-            onInvoke: (intent) {
-              if (!isMouseInRegion) return;
-              return widget.onDeleteKeyPressed?.call();
-            },
-          ),
-        },
-        child: widget.child,
-      ),
+      child: widget.child,
     );
 
     return RepaintBoundary(
@@ -153,5 +156,4 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
             ),
     );
   }
-// ...existing code...
 }

@@ -9,11 +9,13 @@ import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/widgets/delete_helpers.dart';
 import 'package:icarus/widgets/dialogs/in_app_debug_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
@@ -201,11 +203,25 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
                 return null;
               },
             ),
-            OpenDeleteMenuIntent: CallbackAction<OpenDeleteMenuIntent>(
+            ContextualDeleteIntent: CallbackAction<ContextualDeleteIntent>(
               onInvoke: (intent) {
+                final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
+                if (hoveredTarget != null) {
+                  _dismissDeleteMenu();
+                  ref.read(hoveredDeleteTargetProvider.notifier).state = null;
+                  deleteHoveredTarget(ref, hoveredTarget);
+                  return null;
+                }
+
+                final deleteMenuState = ref.read(deleteMenuProvider);
+                if (deleteMenuState.isOpenRequested) {
+                  _dismissDeleteMenu();
+                  return null;
+                }
+
                 ref.read(deleteMenuProvider.notifier).requestOpen(
-                      reason: DeleteMenuOpenReason.keyboard,
-                    );
+                  reason: DeleteMenuOpenReason.keyboard,
+                );
                 return null;
               },
             ),

@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -118,14 +118,10 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
             items: _buildTagColorItems(ref),
             child: MouseWatch(
               cursor: SystemMouseCursors.click,
-              onDeleteKeyPressed: () {
-                final id = widget.placedImage.id;
-                final action = UserAction(
-                    type: ActionType.deletion, id: id, group: ActionGroup.image);
-
-                ref.read(actionProvider.notifier).addAction(action);
-                ref.read(placedImageProvider.notifier).removeImage(id);
-              },
+              deleteTarget: HoveredDeleteTarget.image(
+                id: widget.placedImage.id,
+                ownerToken: Object(),
+              ),
               child: ImageWidget(
                 fileExtension: widget.placedImage.fileExtension,
                 aspectRatio: widget.placedImage.aspectRatio,

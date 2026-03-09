@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -121,15 +121,10 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           items: _buildTagColorItems(),
           child: MouseWatch(
             cursor: SystemMouseCursors.click,
-            onDeleteKeyPressed: () {
-              final action = UserAction(
-                type: ActionType.deletion,
-                id: widget.placedText.id,
-                group: ActionGroup.text,
-              );
-              ref.read(actionProvider.notifier).addAction(action);
-              ref.read(textProvider.notifier).removeText(widget.placedText.id);
-            },
+            deleteTarget: HoveredDeleteTarget.text(
+              id: widget.placedText.id,
+              ownerToken: Object(),
+            ),
             child: TextWidget(
               id: widget.placedText.id,
               text: widget.placedText.text,

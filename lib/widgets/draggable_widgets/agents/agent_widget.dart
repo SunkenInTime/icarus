@@ -6,8 +6,8 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
@@ -140,6 +140,11 @@ class AgentWidget extends ConsumerWidget {
     );
 
     final scaledSize = coordinateSystem.scale(agentSize);
+    final deleteTarget = lineUpId != null
+        ? HoveredDeleteTarget.lineup(id: lineUpId!, ownerToken: Object())
+        : (id?.isNotEmpty ?? false)
+            ? HoveredDeleteTarget.agent(id: id!, ownerToken: Object())
+            : null;
 
     Widget agentCard;
     // Use Ink + InkWell so the ripple shows on top of the background
@@ -177,19 +182,7 @@ class AgentWidget extends ConsumerWidget {
     return MouseWatch(
       lineUpId: lineUpId,
       cursor: SystemMouseCursors.click,
-      onDeleteKeyPressed: () {
-        if (lineUpId != null) {
-          ref.read(lineUpProvider.notifier).deleteLineUpById(lineUpId!);
-          return;
-        }
-        if (id == null) return;
-
-        final action = UserAction(
-            type: ActionType.deletion, id: id!, group: ActionGroup.agent);
-
-        ref.read(actionProvider.notifier).addAction(action);
-        ref.read(agentProvider.notifier).removeAgent(id!);
-      },
+      deleteTarget: deleteTarget,
       child: agentCard,
     );
   }

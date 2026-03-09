@@ -3,11 +3,6 @@ import 'package:flutter/services.dart';
 
 class ShortcutInfo {
   static const LogicalKeyboardKey openDeleteMenuKey = LogicalKeyboardKey.keyE;
-  static const LogicalKeyboardKey widgetDeleteKey = LogicalKeyboardKey.delete;
-
-  static final Map<ShortcutActivator, Intent> widgetShortcuts = {
-    LogicalKeySet(widgetDeleteKey): const WidgetDeleteIntent(),
-  };
 
   static final Map<ShortcutActivator, Intent> globalShortcuts = {
     LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyZ):
@@ -24,7 +19,7 @@ class ShortcutInfo {
         LogicalKeyboardKey.shift): const RedoActionIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyQ): const ToggleDrawingIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyW): const ToggleErasingIntent(),
-    LogicalKeySet(openDeleteMenuKey): const OpenDeleteMenuIntent(),
+    LogicalKeySet(openDeleteMenuKey): const ContextualDeleteIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyT): const AddedTextIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyS): const NavigationActionIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyR): const ToggleAgentFilterIntent(),
@@ -83,10 +78,6 @@ class PasteImageIntent extends Intent {
   const PasteImageIntent();
 }
 
-class WidgetDeleteIntent extends Intent {
-  const WidgetDeleteIntent();
-}
-
 class ToggleDrawingIntent extends Intent {
   const ToggleDrawingIntent();
 }
@@ -99,8 +90,8 @@ class ToggleErasingIntent extends Intent {
   const ToggleErasingIntent();
 }
 
-class OpenDeleteMenuIntent extends Intent {
-  const OpenDeleteMenuIntent();
+class ContextualDeleteIntent extends Intent {
+  const ContextualDeleteIntent();
 }
 
 class EnterTextIntent extends Intent {
