@@ -52,11 +52,20 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
   double? localLength;
   bool isDragging = false;
 
+  double _resolvedLengthFor(PlacedAbility ability, double rawLength) {
+    final abilityData = ability.data.abilityData;
+    if (abilityData is ResizableSquareAbility) {
+      return abilityData.resolveLength(rawLength);
+    }
+
+    return rawLength;
+  }
+
   @override
   void initState() {
     super.initState();
     localRotation ??= widget.rotation;
-    localLength ??= widget.length;
+    localLength ??= _resolvedLengthFor(widget.ability, widget.length);
   }
 
   Offset rotateOffset(Offset point, Offset origin, double angle) {
@@ -101,7 +110,10 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       }
 
       if (abilityRef.length != localLength! && lengthOrigin == Offset.zero) {
-        localLength = ref.read(abilityProvider)[index].length;
+        localLength = _resolvedLengthFor(
+          ref.read(abilityProvider)[index],
+          ref.read(abilityProvider)[index].length,
+        );
       }
 
       if (index < 0) {
@@ -143,15 +155,10 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       } else if (widget.ability.data.abilityData is ResizableSquareAbility) {
         final resizeWidget =
             (widget.ability.data.abilityData! as ResizableSquareAbility);
+        final resolvedLength = resizeWidget.resolveLength(localLength ?? 0);
 
-        // final double anchorLength = coordinateSystem.scale(
-        //   resizeWidget.height -
-        //       (coordinateSystem.normalize(localLength ?? 0))
-        //           .clamp(resizeWidget.minLength, resizeWidget.height),
-        // );
         final double clampedLength = resizeWidget.height -
-            ((localLength ?? 0))
-                .clamp(resizeWidget.minLength, resizeWidget.height);
+            resolvedLength.clamp(resizeWidget.minLength, resizeWidget.height);
 
         final double anchorLength = (clampedLength * mapScale);
 

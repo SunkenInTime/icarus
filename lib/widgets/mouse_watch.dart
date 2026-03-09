@@ -27,10 +27,19 @@ class MouseWatch extends ConsumerStatefulWidget {
 class _MouseWatchState extends ConsumerState<MouseWatch> {
   bool isMouseInRegion = false;
   final Object _ownerToken = Object();
+  ProviderContainer? _container;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _container ??= ProviderScope.containerOf(context, listen: false);
+  }
 
   @override
   void dispose() {
-    _clearHoveredDeleteTargetIfOwned();
+    _clearHoveredDeleteTargetIfOwned(
+      container: _container,
+    );
     super.dispose();
   }
 
@@ -42,11 +51,13 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
         target.copyWith(ownerToken: _ownerToken);
   }
 
-  void _clearHoveredDeleteTargetIfOwned() {
-    final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
+  void _clearHoveredDeleteTargetIfOwned({ProviderContainer? container}) {
+    final activeContainer = container ?? _container;
+    if (activeContainer == null) return;
+    final hoveredTarget = activeContainer.read(hoveredDeleteTargetProvider);
     if (hoveredTarget?.ownerToken != _ownerToken) return;
 
-    ref.read(hoveredDeleteTargetProvider.notifier).state = null;
+    activeContainer.read(hoveredDeleteTargetProvider.notifier).state = null;
   }
 
   @override

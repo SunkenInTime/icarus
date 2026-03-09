@@ -224,9 +224,7 @@ class SquareAbility extends Ability {
 
     return Offset(
       width * mapScale!,
-      (height * mapScale) +
-          (distanceBetweenAOE * mapScale) +
-          7.5,
+      (height * mapScale) + (distanceBetweenAOE * mapScale) + 7.5,
     );
   }
 
@@ -352,6 +350,7 @@ class RotatableImageAbility extends Ability {
 //As much as I would love to extend square
 class ResizableSquareAbility extends SquareAbility {
   final double minLength;
+  final bool defaultToMaxLength;
 
   ResizableSquareAbility({
     required super.width,
@@ -365,7 +364,16 @@ class ResizableSquareAbility extends SquareAbility {
     super.isTransparent,
     super.minHeight,
     required this.minLength,
+    this.defaultToMaxLength = false,
   });
+
+  double resolveLength(double rawLength) {
+    if (rawLength <= 0) {
+      return defaultToMaxLength ? height : minLength;
+    }
+
+    return rawLength.clamp(minLength, height);
+  }
 
   @override
   Widget createWidget({
@@ -380,7 +388,7 @@ class ResizableSquareAbility extends SquareAbility {
       isWall: isWall,
       color: color,
       width: width * mapScale,
-      length: (length ?? 0) * mapScale,
+      length: resolveLength(length ?? 0) * mapScale,
       maxLength: height * mapScale,
       minLength: minLength * mapScale,
       iconPath: iconPath,
@@ -408,9 +416,7 @@ class ResizableSquareAbility extends SquareAbility {
   }) {
     return Offset(
       (isWall ? abilitySize! * 2 : width * mapScale!) / 2,
-      (height * mapScale!) +
-          (distanceBetweenAOE * mapScale) +
-          7.5,
+      (height * mapScale!) + (distanceBetweenAOE * mapScale) + 7.5,
     );
   }
 }
