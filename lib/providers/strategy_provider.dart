@@ -165,6 +165,8 @@ class StrategyState {
     required this.id,
     required this.storageDirectory,
     this.activePageId,
+    this.sessionKind = StrategySessionKind.saved,
+    this.sourceStrategyId,
   });
 
   final bool isSaved;
@@ -172,6 +174,12 @@ class StrategyState {
   final String id;
   final String? storageDirectory;
   final String? activePageId;
+  final StrategySessionKind sessionKind;
+  final String? sourceStrategyId;
+
+  bool get isTemporarySession => sessionKind != StrategySessionKind.saved;
+  bool get isQuickBoard => sessionKind == StrategySessionKind.quickBoard;
+  bool get isTemporaryCopy => sessionKind == StrategySessionKind.temporaryCopy;
 
   StrategyState copyWith({
     bool? isSaved,
@@ -179,7 +187,10 @@ class StrategyState {
     String? id,
     String? storageDirectory,
     String? activePageId,
+    StrategySessionKind? sessionKind,
+    String? sourceStrategyId,
     bool clearActivePageId = false,
+    bool clearSourceStrategyId = false,
   }) {
     return StrategyState(
       isSaved: isSaved ?? this.isSaved,
@@ -188,8 +199,18 @@ class StrategyState {
       storageDirectory: storageDirectory ?? this.storageDirectory,
       activePageId:
           clearActivePageId ? null : (activePageId ?? this.activePageId),
+      sessionKind: sessionKind ?? this.sessionKind,
+      sourceStrategyId: clearSourceStrategyId
+          ? null
+          : (sourceStrategyId ?? this.sourceStrategyId),
     );
   }
+}
+
+enum StrategySessionKind {
+  saved,
+  quickBoard,
+  temporaryCopy,
 }
 
 final strategyProvider =
@@ -218,16 +239,22 @@ class NewerVersionImportException implements Exception {
 }
 
 class StrategyProvider extends Notifier<StrategyState> {
+  static const String temporaryStrategyIdPrefix = '_temp_';
   String? activePageID;
 
   @override
   StrategyState build() {
+    Future.microtask(() async {
+      await cleanUpOrphanedTemporaryStrategies();
+    });
     return StrategyState(
       isSaved: false,
       stratName: null,
       id: "testID",
       storageDirectory: null,
       activePageId: null,
+      sessionKind: StrategySessionKind.saved,
+      sourceStrategyId: null,
     );
   }
 
@@ -235,6 +262,25 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   bool _saveInProgress = false;
   bool _pendingSave = false;
+
+  static bool isTemporaryStrategyId(String id) {
+    return id.startsWith(temporaryStrategyIdPrefix);
+  }
+
+  static String newTemporaryStrategyId() {
+    return '$temporaryStrategyIdPrefix${const Uuid().v4()}';
+  }
+
+  Future<void> cleanUpOrphanedTemporaryStrategies() async {
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final tempIds = box.values
+        .where((strategy) => isTemporaryStrategyId(strategy.id))
+        .map((strategy) => strategy.id)
+        .toList(growable: false);
+    for (final id in tempIds) {
+      await deleteStrategy(id);
+    }
+  }
 
   //Used For Images
   void setFromState(StrategyState newState) {
@@ -310,6 +356,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       id: "testID",
       storageDirectory: state.storageDirectory,
       activePageId: null,
+      sessionKind: StrategySessionKind.saved,
+      sourceStrategyId: null,
     );
   }
   // --- MIGRATION: create a first page from legacy flat fields ----------------
@@ -979,7 +1027,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     await setActivePageAnimated(newPage.id);
   }
 
-  Future<void> loadFromHive(String id) async {
+  Future<void> loadFromHive(
+    String id, {
+    StrategySessionKind sessionKind = StrategySessionKind.saved,
+    String? sourceStrategyId,
+    bool isSaved = true,
+  }) async {
     final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .values
         .where((StrategyData strategy) {
@@ -1042,22 +1095,26 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     if (kIsWeb) {
       state = StrategyState(
-        isSaved: true,
+        isSaved: isSaved,
         stratName: migratedStrategy.name,
         id: migratedStrategy.id,
         storageDirectory: null,
         activePageId: page.id,
+        sessionKind: sessionKind,
+        sourceStrategyId: sourceStrategyId,
       );
       return;
     }
     final newDir = await setStorageDirectory(migratedStrategy.id);
 
     state = StrategyState(
-      isSaved: true,
+      isSaved: isSaved,
       stratName: migratedStrategy.name,
       id: migratedStrategy.id,
       storageDirectory: newDir.path,
       activePageId: page.id,
+      sessionKind: sessionKind,
+      sourceStrategyId: sourceStrategyId,
     );
   }
 
@@ -1288,6 +1345,13 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<String> createNewStrategy(String name) async {
+    return createNewStrategyWithFolder(name: name, folderID: ref.read(folderProvider));
+  }
+
+  Future<String> createNewStrategyWithFolder({
+    required String name,
+    String? folderID,
+  }) async {
     final newID = const Uuid().v4();
     final pageID = const Uuid().v4();
     final defaultThemeProfileId =
@@ -1317,7 +1381,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
       // ignore: deprecated_member_use_from_same_package
       strategySettings: StrategySettings(),
-      folderID: ref.read(folderProvider),
+      folderID: folderID,
       themeProfileId: defaultThemeProfileId,
     );
 
@@ -1325,6 +1389,134 @@ class StrategyProvider extends Notifier<StrategyState> {
         .put(newStrategy.id, newStrategy);
 
     return newStrategy.id;
+  }
+
+  Future<String> createQuickBoard() async {
+    final tempId = newTemporaryStrategyId();
+    final boardId = await createNewStrategyWithFolder(
+      name: 'Quick Board',
+      folderID: null,
+    );
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final created = box.get(boardId);
+    if (created == null) {
+      return boardId;
+    }
+    final temporary = created.copyWith(id: tempId, folderID: null);
+    await box.delete(boardId);
+    await box.put(tempId, temporary);
+    await loadFromHive(
+      tempId,
+      sessionKind: StrategySessionKind.quickBoard,
+      isSaved: false,
+    );
+    return tempId;
+  }
+
+  Future<void> startTemporaryCopyFromCurrentStrategy() async {
+    if (state.stratName == null || state.isTemporarySession) return;
+    await _syncCurrentPageToHive();
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final source = box.get(state.id);
+    if (source == null) return;
+
+    final tempId = newTemporaryStrategyId();
+    final temporary = source.copyWith(
+      id: tempId,
+      lastEdited: DateTime.now(),
+    );
+    await box.put(tempId, temporary);
+    await loadFromHive(
+      tempId,
+      sessionKind: StrategySessionKind.temporaryCopy,
+      sourceStrategyId: source.id,
+      isSaved: false,
+    );
+  }
+
+  StrategyData? currentStrategyData() {
+    return Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(state.id);
+  }
+
+  Future<void> discardTemporarySession() async {
+    if (!state.isTemporarySession) return;
+    final tempId = state.id;
+    final sourceId = state.sourceStrategyId;
+    await deleteStrategy(tempId);
+    if (sourceId != null) {
+      await loadFromHive(sourceId);
+      return;
+    }
+    await clearCurrentStrategy();
+  }
+
+  static StrategyData buildOverwriteFromTemporary({
+    required StrategyData original,
+    required StrategyData temporary,
+  }) {
+    return temporary.copyWith(
+      id: original.id,
+      name: original.name,
+      folderID: original.folderID,
+      createdAt: original.createdAt,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData buildSavedCopyFromTemporary({
+    required StrategyData temporary,
+    required String id,
+    required String name,
+    required String? folderID,
+  }) {
+    final now = DateTime.now();
+    return temporary.copyWith(
+      id: id,
+      name: name,
+      folderID: folderID,
+      createdAt: now,
+      lastEdited: now,
+    );
+  }
+
+  Future<void> overwriteOriginalFromTemporaryCopy() async {
+    if (!state.isTemporaryCopy || state.sourceStrategyId == null) return;
+    await _syncCurrentPageToHive();
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final temporary = box.get(state.id);
+    final original = box.get(state.sourceStrategyId!);
+    if (temporary == null || original == null) return;
+
+    final merged = buildOverwriteFromTemporary(
+      original: original,
+      temporary: temporary,
+    );
+    await box.put(original.id, merged);
+    await deleteStrategy(temporary.id);
+    await loadFromHive(original.id);
+  }
+
+  Future<String?> saveTemporarySessionAsNewStrategy({
+    required String name,
+    required String? folderID,
+  }) async {
+    if (!state.isTemporarySession) return null;
+    await _syncCurrentPageToHive();
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final temporary = box.get(state.id);
+    if (temporary == null) return null;
+    final newId = const Uuid().v4();
+    final promoted = buildSavedCopyFromTemporary(
+      temporary: temporary,
+      id: newId,
+      name: name,
+      folderID: folderID,
+    );
+    await box.put(newId, promoted);
+    await deleteStrategy(temporary.id);
+    await loadFromHive(newId);
+    return newId;
   }
 
   void setThemeProfileForCurrentStrategy(String profileId) {
@@ -1387,7 +1579,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (currentFolder == null) return;
     final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .values
-        .where((strategy) => strategy.folderID == folderID)
+        .where((strategy) =>
+            strategy.folderID == folderID &&
+            !isTemporaryStrategyId(strategy.id))
         .toList();
 
     final subFolders =

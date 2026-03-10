@@ -9,6 +9,7 @@ import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/dialogs/strategy/temporary_session_flow.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Displays the current strategy name with a recent-strategies dropdown.
@@ -71,11 +72,19 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     setState(() => _isSwitching = true);
 
     try {
+      final canProceed = await resolveTemporarySessionForNavigation(
+        context: context,
+        ref: ref,
+      );
+      if (!canProceed) return;
+      final latestState = ref.read(strategyProvider);
       // Keep current work persisted before switching strategies.
-      if (currentStrategy.stratName != null) {
+      if (latestState.stratName != null &&
+          !latestState.isTemporarySession &&
+          !latestState.isSaved) {
         await ref
             .read(strategyProvider.notifier)
-            .forceSaveNow(currentStrategy.id);
+            .forceSaveNow(latestState.id);
       }
       ref
           .read(interactionStateProvider.notifier)
@@ -89,6 +98,13 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     }
   }
 
+  Future<void> _startTemporaryCopy() async {
+    if (_isSwitching || _isEditingName) return;
+    await ref
+        .read(strategyProvider.notifier)
+        .startTemporaryCopyFromCurrentStrategy();
+  }
+
   void _handleNameFocusChange() {
     if (_nameFocusNode.hasFocus || !_isEditingName) return;
     _commitEditingName();
@@ -97,7 +113,12 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   void _startEditingName() {
     final currentStrategy = ref.read(strategyProvider);
     final currentName = currentStrategy.stratName;
-    if (_isSwitching || _isEditingName || currentName == null) return;
+    if (_isSwitching ||
+        _isEditingName ||
+        currentName == null ||
+        currentStrategy.isTemporarySession) {
+      return;
+    }
 
     _closePortal();
     _originalName = currentName;
@@ -183,7 +204,11 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     required String currentStrategyId,
   }) {
     final strategies = box.values
-        .where((strategy) => strategy.id != currentStrategyId)
+        .where(
+          (strategy) =>
+              strategy.id != currentStrategyId &&
+              !StrategyProvider.isTemporaryStrategyId(strategy.id),
+        )
         .toList(growable: false);
     strategies.sort((a, b) => b.lastEdited.compareTo(a.lastEdited));
     return strategies;
@@ -241,6 +266,11 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   Widget build(BuildContext context) {
     final currentStrategy = ref.watch(strategyProvider);
     final strategyName = currentStrategy.stratName ?? 'Untitled Strategy';
+    final displayName = currentStrategy.isQuickBoard
+        ? 'Quick Board'
+        : currentStrategy.isTemporaryCopy
+            ? '$strategyName (Temporary Copy)'
+            : strategyName;
     final strategiesBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
     return Padding(
@@ -333,19 +363,21 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                   ],
                 );
               },
-              child: Container(
-                width: _barWidth,
-                decoration: BoxDecoration(
-                  color: Settings.tacticalVioletTheme.card,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Settings.tacticalVioletTheme.border,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _isEditingName
+              child: Row(
+                children: [
+                  Container(
+                    width: _barWidth,
+                    decoration: BoxDecoration(
+                      color: Settings.tacticalVioletTheme.card,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: Settings.tacticalVioletTheme.border,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _isEditingName
                           ? Padding(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
@@ -412,14 +444,18 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                           : Tooltip(
                               message: currentStrategy.stratName == null
                                   ? 'Load a strategy to rename it'
-                                  : 'Rename strategy',
+                                  : currentStrategy.isTemporarySession
+                                      ? 'Rename is disabled in temporary mode'
+                                      : 'Rename strategy',
                               child: Material(
                                 color: Colors.transparent,
                                 child: InkWell(
                                   onTap: currentStrategy.stratName == null
+                                          || currentStrategy.isTemporarySession
                                       ? null
                                       : _startEditingName,
                                   mouseCursor: currentStrategy.stratName == null
+                                          || currentStrategy.isTemporarySession
                                       ? SystemMouseCursors.basic
                                       : SystemMouseCursors.click,
                                   borderRadius: BorderRadius.circular(8),
@@ -429,7 +465,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                                       vertical: 8,
                                     ),
                                     child: Text(
-                                      strategyName,
+                                      displayName,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       textAlign: TextAlign.center,
@@ -442,36 +478,58 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                                 ),
                               ),
                             ),
+                        ),
+                        Container(
+                          width: 1,
+                          height: 30,
+                          color: Settings.tacticalVioletTheme.border,
+                        ),
+                        SizedBox(
+                          width: 38,
+                          child: ShadIconButton.ghost(
+                            onPressed: _isSwitching || _isEditingName
+                                ? null
+                                : () => _isOpen ? _closePortal() : _openPortal(),
+                            icon: _isSwitching
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child:
+                                        CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : Icon(
+                                    _isOpen
+                                        ? Icons.keyboard_arrow_up
+                                        : Icons.keyboard_arrow_down,
+                                    color: Colors.white,
+                                    size: 18,
+                                  ),
+                          ),
+                        ),
+                      ],
                     ),
-                    Container(
-                      width: 1,
-                      height: 30,
-                      color: Settings.tacticalVioletTheme.border,
+                  ),
+                  const SizedBox(width: 8),
+                  if (currentStrategy.isTemporarySession)
+                    ShadButton.secondary(
+                      onPressed: _isSwitching || _isEditingName
+                          ? null
+                          : () async {
+                              await resolveTemporarySessionForNavigation(
+                                context: context,
+                                ref: ref,
+                              );
+                            },
+                      child: const Text('Finish'),
+                    )
+                  else
+                    ShadButton.secondary(
+                      onPressed: currentStrategy.stratName == null
+                          ? null
+                          : _startTemporaryCopy,
+                      child: const Text('Temporary Copy'),
                     ),
-                    SizedBox(
-                      width: 38,
-                      child: ShadIconButton.ghost(
-                        onPressed: _isSwitching || _isEditingName
-                            ? null
-                            : () => _isOpen ? _closePortal() : _openPortal(),
-                        icon: _isSwitching
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : Icon(
-                                _isOpen
-                                    ? Icons.keyboard_arrow_up
-                                    : Icons.keyboard_arrow_down,
-                                color: Colors.white,
-                                size: 18,
-                              ),
-                      ),
-                    ),
-                  ],
-                ),
+                ],
               ),
             );
           },
