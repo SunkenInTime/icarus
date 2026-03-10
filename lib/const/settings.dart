@@ -33,6 +33,16 @@ class Settings {
   static const Color sideBarColor = Color(0xFF141114);
   static const Color highlightColor = Color(0xff27272a);
 
+  static const Color tempCopyAccent = Color(0xFFF59E0B);
+  static const Color tempCopyAccentMuted = Color(0x14F59E0B);
+  static const Color tempCopyAccentSubtle = Color(0x33F59E0B);
+  static const Color tempCopyAccentForeground = Color(0xFFFEF3C7);
+
+  static const Color quickBoardAccent = Color(0xFF06B6D4);
+  static const Color quickBoardAccentMuted = Color(0x1406B6D4);
+  static const Color quickBoardAccentSubtle = Color(0x3306B6D4);
+  static const Color quickBoardAccentForeground = Color(0xFFCFFAFE);
+
   static List<ColorOption> penColors = [
     ColorOption(color: Colors.white, isSelected: true),
     ColorOption(color: Colors.red, isSelected: false),
