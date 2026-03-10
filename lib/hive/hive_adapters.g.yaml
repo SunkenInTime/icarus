@@ -73,7 +73,7 @@ types:
         index: 6
   PlacedAbility:
     typeId: 3
-    nextIndex: 8
+    nextIndex: 9
     fields:
       data:
         index: 0
@@ -91,6 +91,8 @@ types:
         index: 6
       lineUpID:
         index: 7
+      armLengthsMeters:
+        index: 8
   PlacedText:
     typeId: 4
     nextIndex: 6

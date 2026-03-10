@@ -233,13 +233,28 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void updateRotation(double rotation, double length) {
+    updateGeometry(rotation: rotation, length: length);
+  }
+
+  void updateGeometry({
+    double? rotation,
+    double? length,
+    List<double>? armLengthsMeters,
+  }) {
     if (state.currentAbility != null) {
-      final updatedAbility =
-          state.currentAbility!.copyWith(rotation: rotation, length: length);
+      final updatedAbility = state.currentAbility!.copyWith(
+        rotation: rotation,
+        length: length,
+        armLengthsMeters: armLengthsMeters,
+      );
 
       log("Updated ability: ${updatedAbility.rotation} ${updatedAbility.length}");
       state = state.copyWith(currentAbility: updatedAbility);
     }
+  }
+
+  void updateArmLengths(List<double> armLengthsMeters) {
+    updateGeometry(armLengthsMeters: armLengthsMeters);
   }
   //Have a hover glow on what agent is selectabel in the sidebar list
 
