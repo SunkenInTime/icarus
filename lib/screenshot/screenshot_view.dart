@@ -150,9 +150,14 @@ class ScreenshotView extends ConsumerWidget {
 
           //Painting
           Positioned.fill(
-            child: InteractivePainter(
-              mapScaleOverride: Maps.mapScale[mapValue] ?? 1.0,
-              isAttackOverride: isAttack,
+            // Mirror the live map so defense-side screenshots flip drawings too.
+            child: Transform.flip(
+              flipX: !isAttack,
+              flipY: !isAttack,
+              child: InteractivePainter(
+                mapScaleOverride: Maps.mapScale[mapValue] ?? 1.0,
+                isAttackOverride: isAttack,
+              ),
             ),
           ),
           // Add any other widgets you want to include in the screenshot

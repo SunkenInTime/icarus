@@ -364,6 +364,12 @@ Widget _buildTraversalCard({
     unitsPerMeter: unitsPerMeter,
   );
   final label = "${timeSeconds.toStringAsFixed(2)}s";
+  final labelStyle = TextStyle(
+    fontSize: coordinateSystem.scale(10),
+    color: Settings.tacticalVioletTheme.foreground,
+    fontWeight: FontWeight.w600,
+    decoration: TextDecoration.none,
+  );
   final iconSize = coordinateSystem.scale(10).clamp(10.0, 20.0).toDouble();
   final leadingIcon = _buildTraversalModeIcon(
     profile: _traversalProfile(element),
@@ -402,11 +408,7 @@ Widget _buildTraversalCard({
                 const SizedBox(width: 4),
                 Text(
                   label,
-                  style: TextStyle(
-                    fontSize: coordinateSystem.scale(10),
-                    color: Settings.tacticalVioletTheme.foreground,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: labelStyle,
                 ),
               ],
             ),
