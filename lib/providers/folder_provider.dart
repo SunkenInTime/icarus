@@ -182,7 +182,8 @@ class FolderProvider extends Notifier<String?> {
     List<String> idsToDelete = [];
 
     for (final strategy in strategyList) {
-      if (strategy.folderID == folderID) {
+      if (strategy.folderID == folderID &&
+          !StrategyProvider.isTemporaryStrategyId(strategy.id)) {
         idsToDelete.add(strategy.id);
       }
     }

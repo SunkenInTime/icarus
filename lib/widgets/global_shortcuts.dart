@@ -17,6 +17,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/delete_helpers.dart';
 import 'package:icarus/widgets/dialogs/in_app_debug_dialog.dart';
+import 'package:icarus/widgets/dialogs/strategy/temporary_session_flow.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
@@ -117,10 +118,10 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             SaveStrategyIntent: CallbackAction<SaveStrategyIntent>(
               onInvoke: (intent) async {
                 _dismissDeleteMenu();
-                final strategyId = ref.read(strategyProvider).id;
-                await ref.read(strategyProvider.notifier).forceSaveNow(
-                      strategyId,
-                    );
+                await resolveTemporarySessionForManualSave(
+                  context: context,
+                  ref: ref,
+                );
                 return null;
               },
             ),

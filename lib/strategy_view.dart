@@ -19,6 +19,7 @@ import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/save_and_load_button.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
+import 'package:icarus/widgets/dialogs/strategy/temporary_session_flow.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
@@ -76,9 +77,20 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                     ShadIconButton.ghost(
                       foregroundColor: Colors.white,
                       onPressed: () async {
-                        await ref
-                            .read(strategyProvider.notifier)
-                            .forceSaveNow(ref.read(strategyProvider).id);
+                        final canProceed =
+                            await resolveTemporarySessionForNavigation(
+                          context: context,
+                          ref: ref,
+                        );
+                        if (!canProceed) return;
+                        final state = ref.read(strategyProvider);
+                        if (state.stratName != null &&
+                            !state.isTemporarySession &&
+                            !state.isSaved) {
+                          await ref
+                              .read(strategyProvider.notifier)
+                              .forceSaveNow(state.id);
+                        }
 
                         if (!context.mounted) return;
                         ref
@@ -169,14 +181,20 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     // bool isPreventClose = await windowManager.isPreventClose();
     // if (!isPreventClose) return;
 
-    if (ref.read(strategyProvider).isSaved) {
+    final canProceed = await resolveTemporarySessionForNavigation(
+      context: context,
+      ref: ref,
+    );
+    if (!canProceed) return;
+    final state = ref.read(strategyProvider);
+    if (state.isSaved) {
       await windowManager.close(); // Close the window/app
       return;
     }
 
-    await ref
-        .read(strategyProvider.notifier)
-        .forceSaveNow(ref.read(strategyProvider).id);
+    if (!state.isTemporarySession && state.stratName != null) {
+      await ref.read(strategyProvider.notifier).forceSaveNow(state.id);
+    }
     log("Window close");
     await windowManager.close(); // Close the window/app
   }

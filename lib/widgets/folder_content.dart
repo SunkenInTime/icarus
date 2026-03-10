@@ -126,7 +126,12 @@ class FolderContent extends ConsumerWidget {
                       builder: (context, folderBox, _) {
                         final folders = folderBox.values.toList();
 
-                        final strategies = strategyBox.values.toList();
+                        final strategies = strategyBox.values
+                            .where(
+                              (strategy) => !StrategyProvider
+                                  .isTemporaryStrategyId(strategy.id),
+                            )
+                            .toList();
 
                         final search = ref
                             .watch(strategySearchQueryProvider)

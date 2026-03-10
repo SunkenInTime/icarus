@@ -203,6 +203,17 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 leading: const Icon(Icons.add),
                 child: const Text('Create Strategy'),
               ),
+              ShadButton.secondary(
+                onPressed: () async {
+                  final strategyId = await ref
+                      .read(strategyProvider.notifier)
+                      .createQuickBoard();
+                  if (!context.mounted) return;
+                  await navigateWithLoading(context, strategyId);
+                },
+                leading: const Icon(Icons.bolt),
+                child: const Text('Quick Board'),
+              ),
             ],
           )
         ],
