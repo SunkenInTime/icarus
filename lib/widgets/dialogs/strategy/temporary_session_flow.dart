@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/dialogs/strategy/save_strategy_details_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -15,34 +16,49 @@ Future<TemporarySaveIntent?> _showTemporaryCopyDialog(
   BuildContext context, {
   required bool includeDiscard,
 }) {
+  const accent = Settings.tempCopyAccent;
+
   return showShadDialog<TemporarySaveIntent>(
     context: context,
     builder: (context) => ShadDialog(
-      title: const Text('Save Temporary Changes?'),
+      title: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(LucideIcons.penLine, size: 18, color: accent),
+          SizedBox(width: 8),
+          Text('Save Draft Changes?'),
+        ],
+      ),
       description: const Text(
-        'Choose where to apply this temporary copy before leaving.',
+        'You have unsaved changes in your draft. Choose how to save before continuing.',
       ),
       actions: [
-        ShadButton.secondary(
+        ShadButton.outline(
           onPressed: () =>
               Navigator.of(context).pop(TemporarySaveIntent.cancel),
           child: const Text('Cancel'),
         ),
         if (includeDiscard)
-          ShadButton.secondary(
+          ShadButton.destructive(
             onPressed: () =>
                 Navigator.of(context).pop(TemporarySaveIntent.discard),
+            leading: const Icon(LucideIcons.trash2, size: 14),
             child: const Text('Discard'),
           ),
         ShadButton.secondary(
           onPressed: () =>
               Navigator.of(context).pop(TemporarySaveIntent.saveAsNew),
+          leading: const Icon(LucideIcons.filePlus, size: 14),
           child: const Text('Save as New'),
         ),
         ShadButton(
+          backgroundColor: accent,
+          foregroundColor: const Color(0xFF1C1917),
+          hoverBackgroundColor: accent.withValues(alpha: 0.85),
           onPressed: () =>
               Navigator.of(context).pop(TemporarySaveIntent.overwriteOriginal),
-          child: const Text('Overwrite Original'),
+          leading: const Icon(LucideIcons.save, size: 14),
+          child: const Text('Save to Original'),
         ),
       ],
     ),
@@ -53,28 +69,43 @@ Future<TemporarySaveIntent?> _showQuickBoardDialog(
   BuildContext context, {
   required bool includeDiscard,
 }) {
+  const accent = Settings.quickBoardAccent;
+
   return showShadDialog<TemporarySaveIntent>(
     context: context,
     builder: (context) => ShadDialog(
-      title: const Text('Save Quick Board?'),
+      title: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(LucideIcons.zap, size: 18, color: accent),
+          SizedBox(width: 8),
+          Text('Save Quick Board?'),
+        ],
+      ),
       description: const Text(
-        'Quick Boards are temporary. Save now or discard this session.',
+        'Quick Boards are temporary workspaces. Save now to keep your work.',
       ),
       actions: [
-        ShadButton.secondary(
+        ShadButton.outline(
           onPressed: () =>
               Navigator.of(context).pop(TemporarySaveIntent.cancel),
           child: const Text('Cancel'),
         ),
         if (includeDiscard)
-          ShadButton.secondary(
+          ShadButton.destructive(
             onPressed: () =>
                 Navigator.of(context).pop(TemporarySaveIntent.discard),
+            leading: const Icon(LucideIcons.trash2, size: 14),
             child: const Text('Discard'),
           ),
         ShadButton(
-          onPressed: () => Navigator.of(context).pop(TemporarySaveIntent.saveAsNew),
-          child: const Text('Save'),
+          backgroundColor: accent,
+          foregroundColor: const Color(0xFF1C1917),
+          hoverBackgroundColor: accent.withValues(alpha: 0.85),
+          onPressed: () =>
+              Navigator.of(context).pop(TemporarySaveIntent.saveAsNew),
+          leading: const Icon(LucideIcons.save, size: 14),
+          child: const Text('Save Board'),
         ),
       ],
     ),
@@ -107,7 +138,7 @@ Future<bool> resolveTemporarySessionForNavigation({
   final sourceStrategy = strategyNotifier.currentStrategyData();
   final details = await showStrategySaveDetailsDialog(
     context: context,
-    title: strategyState.isQuickBoard ? 'Save Quick Board' : 'Save as New',
+    title: strategyState.isQuickBoard ? 'Save Quick Board' : 'Save as New Strategy',
     confirmLabel: 'Save',
     initialName: strategyState.isQuickBoard ? sourceName : '$sourceName (Copy)',
     initialFolderId: sourceStrategy?.folderID,
@@ -147,7 +178,7 @@ Future<bool> resolveTemporarySessionForManualSave({
   final sourceStrategy = strategyNotifier.currentStrategyData();
   final details = await showStrategySaveDetailsDialog(
     context: context,
-    title: strategyState.isQuickBoard ? 'Save Quick Board' : 'Save as New',
+    title: strategyState.isQuickBoard ? 'Save Quick Board' : 'Save as New Strategy',
     confirmLabel: 'Save',
     initialName: strategyState.isQuickBoard ? sourceName : '$sourceName (Copy)',
     initialFolderId: sourceStrategy?.folderID,

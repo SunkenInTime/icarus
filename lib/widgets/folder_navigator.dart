@@ -96,12 +96,14 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         ? ref.read(folderProvider.notifier).findFolderByID(currentFolderId)
         : null;
     Future<void> navigateWithLoading(
-        BuildContext context, String strategyId) async {
-      // Show loading overlay
-      // showLoadingOverlay(context);
-
+      BuildContext context,
+      String strategyId, {
+      bool skipLoad = false,
+    }) async {
       try {
-        await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
+        if (!skipLoad) {
+          await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
+        }
 
         if (!context.mounted) return;
 
@@ -110,7 +112,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           PageRouteBuilder(
             transitionDuration: const Duration(milliseconds: 200),
             reverseTransitionDuration:
-                const Duration(milliseconds: 200), // pop duration
+                const Duration(milliseconds: 200),
             pageBuilder: (context, animation, secondaryAnimation) =>
                 const StrategyView(),
             transitionsBuilder:
@@ -129,7 +131,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         );
       } catch (e) {
         // Handle errors
-        // Show error message
       }
     }
 
@@ -209,9 +210,13 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                       .read(strategyProvider.notifier)
                       .createQuickBoard();
                   if (!context.mounted) return;
-                  await navigateWithLoading(context, strategyId);
+                  await navigateWithLoading(context, strategyId, skipLoad: true);
                 },
-                leading: const Icon(Icons.bolt),
+                leading: const Icon(
+                  LucideIcons.zap,
+                  size: 16,
+                  color: Settings.quickBoardAccent,
+                ),
                 child: const Text('Quick Board'),
               ),
             ],

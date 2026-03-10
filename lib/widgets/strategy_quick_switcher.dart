@@ -262,16 +262,21 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     return '$months month$plural ago';
   }
 
+  Color? _sessionAccentColor(StrategyState strategy) {
+    if (strategy.isQuickBoard) return Settings.quickBoardAccent;
+    if (strategy.isTemporaryCopy) return Settings.tempCopyAccent;
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentStrategy = ref.watch(strategyProvider);
     final strategyName = currentStrategy.stratName ?? 'Untitled Strategy';
     final displayName = currentStrategy.isQuickBoard
         ? 'Quick Board'
-        : currentStrategy.isTemporaryCopy
-            ? '$strategyName (Temporary Copy)'
-            : strategyName;
+        : strategyName;
     final strategiesBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final accentColor = _sessionAccentColor(currentStrategy);
 
     return Padding(
       padding: _displayMargin,
@@ -365,17 +370,37 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
               },
               child: Row(
                 children: [
-                  Container(
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
                     width: _barWidth,
                     decoration: BoxDecoration(
                       color: Settings.tacticalVioletTheme.card,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: Settings.tacticalVioletTheme.border,
+                        color: accentColor?.withValues(alpha: 0.5)
+                            ?? Settings.tacticalVioletTheme.border,
                       ),
                     ),
                     child: Row(
                       children: [
+                        if (currentStrategy.isTemporarySession) ...[
+                          const SizedBox(width: 10),
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: accentColor,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: accentColor!.withValues(alpha: 0.5),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         Expanded(
                           child: _isEditingName
                           ? Padding(
@@ -445,7 +470,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                               message: currentStrategy.stratName == null
                                   ? 'Load a strategy to rename it'
                                   : currentStrategy.isTemporarySession
-                                      ? 'Rename is disabled in temporary mode'
+                                      ? 'Rename is disabled in draft mode'
                                       : 'Rename strategy',
                               child: Material(
                                 color: Colors.transparent,
@@ -482,7 +507,8 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                         Container(
                           width: 1,
                           height: 30,
-                          color: Settings.tacticalVioletTheme.border,
+                          color: accentColor?.withValues(alpha: 0.3)
+                              ?? Settings.tacticalVioletTheme.border,
                         ),
                         SizedBox(
                           width: 38,
@@ -499,40 +525,97 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                                   )
                                 : Icon(
                                     _isOpen
-                                        ? Icons.keyboard_arrow_up
-                                        : Icons.keyboard_arrow_down,
+                                        ? LucideIcons.chevronUp
+                                        : LucideIcons.chevronDown,
                                     color: Colors.white,
-                                    size: 18,
+                                    size: 16,
                                   ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  if (currentStrategy.isTemporarySession)
-                    ShadButton.secondary(
-                      onPressed: _isSwitching || _isEditingName
-                          ? null
-                          : () async {
-                              await resolveTemporarySessionForNavigation(
-                                context: context,
-                                ref: ref,
-                              );
-                            },
-                      child: const Text('Finish'),
-                    )
-                  else
-                    ShadButton.secondary(
+                  if (!currentStrategy.isTemporarySession) ...[
+                    const SizedBox(width: 8),
+                    _DraftCopyButton(
                       onPressed: currentStrategy.stratName == null
                           ? null
                           : _startTemporaryCopy,
-                      child: const Text('Temporary Copy'),
                     ),
+                  ],
                 ],
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _DraftCopyButton extends StatefulWidget {
+  const _DraftCopyButton({required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  State<_DraftCopyButton> createState() => _DraftCopyButtonState();
+}
+
+class _DraftCopyButtonState extends State<_DraftCopyButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isEnabled = widget.onPressed != null;
+    const accent = Settings.tempCopyAccent;
+
+    return MouseRegion(
+      cursor: isEnabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: widget.onPressed,
+        child: ShadTooltip(
+          builder: (context) =>
+              const Text('Create an editable draft copy of this strategy'),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: _isHovered && isEnabled
+                  ? accent.withValues(alpha: 0.12)
+                  : Settings.tacticalVioletTheme.secondary,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: _isHovered && isEnabled
+                    ? accent.withValues(alpha: 0.4)
+                    : Settings.tacticalVioletTheme.border,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  LucideIcons.penLine,
+                  size: 14,
+                  color: _isHovered && isEnabled
+                      ? accent
+                      : Colors.white.withValues(alpha: 0.7),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Draft Copy',
+                  style: ShadTheme.of(context).textTheme.small.copyWith(
+                        color: _isHovered && isEnabled
+                            ? accent
+                            : Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
