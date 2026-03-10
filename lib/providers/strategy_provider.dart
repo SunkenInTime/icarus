@@ -1525,6 +1525,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (strategy != null) {
       strategy.name = newName;
       await strategy.save();
+      if (state.id == strategyID) {
+        state = state.copyWith(stratName: newName);
+      }
     } else {
       log("Strategy with ID $strategyID not found.");
     }

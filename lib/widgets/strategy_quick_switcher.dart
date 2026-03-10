@@ -1,38 +1,56 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Displays the current strategy name with a recent-strategies dropdown.
-class InteractionStateDisplay extends ConsumerStatefulWidget {
-  const InteractionStateDisplay({super.key});
+class StrategyQuickSwitcher extends ConsumerStatefulWidget {
+  const StrategyQuickSwitcher({super.key});
 
   @override
-  ConsumerState<InteractionStateDisplay> createState() =>
-      _InteractionStateDisplayState();
+  ConsumerState<StrategyQuickSwitcher> createState() =>
+      _StrategyQuickSwitcherState();
 }
 
-class _InteractionStateDisplayState
-    extends ConsumerState<InteractionStateDisplay> {
+class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   static const double _barWidth = 280;
   static const EdgeInsets _displayMargin = EdgeInsets.all(16);
   final OverlayPortalController _controller = OverlayPortalController();
   final LayerLink _layerLink = LayerLink();
+  late final TextEditingController _nameController;
+  late final FocusNode _nameFocusNode;
   bool _isOpen = false;
   bool _isSwitching = false;
+  bool _isEditingName = false;
+  bool _isRenaming = false;
+  String? _originalName;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController();
+    _nameFocusNode = FocusNode()..addListener(_handleNameFocusChange);
+  }
 
   @override
   void dispose() {
+    _nameFocusNode
+      ..removeListener(_handleNameFocusChange)
+      ..dispose();
+    _nameController.dispose();
     super.dispose();
   }
 
   void _openPortal() {
+    if (_isEditingName) return;
     _controller.show();
     setState(() => _isOpen = true);
   }
@@ -45,7 +63,7 @@ class _InteractionStateDisplayState
   }
 
   Future<void> _switchStrategy(String strategyId) async {
-    if (_isSwitching) return;
+    if (_isSwitching || _isEditingName) return;
     final currentStrategy = ref.read(strategyProvider);
     if (currentStrategy.id == strategyId) return;
 
@@ -68,6 +86,95 @@ class _InteractionStateDisplayState
       if (mounted) {
         setState(() => _isSwitching = false);
       }
+    }
+  }
+
+  void _handleNameFocusChange() {
+    if (_nameFocusNode.hasFocus || !_isEditingName) return;
+    _commitEditingName();
+  }
+
+  void _startEditingName() {
+    final currentStrategy = ref.read(strategyProvider);
+    final currentName = currentStrategy.stratName;
+    if (_isSwitching || _isEditingName || currentName == null) return;
+
+    _closePortal();
+    _originalName = currentName;
+    _nameController.value = TextEditingValue(
+      text: currentName,
+      selection: TextSelection(baseOffset: 0, extentOffset: currentName.length),
+    );
+    setState(() => _isEditingName = true);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_isEditingName) return;
+      _nameFocusNode.requestFocus();
+      _nameController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _nameController.text.length,
+      );
+    });
+  }
+
+  void _cancelEditingName() {
+    final originalName = _originalName;
+    if (originalName != null) {
+      _nameController.text = originalName;
+    }
+
+    _originalName = null;
+    setState(() {
+      _isEditingName = false;
+      _isRenaming = false;
+    });
+    _nameFocusNode.unfocus();
+  }
+
+  Future<void> _commitEditingName() async {
+    if (!_isEditingName || _isRenaming) return;
+
+    final nextName = _nameController.text.trim();
+    final originalName = _originalName ?? '';
+    if (nextName == originalName) {
+      _originalName = null;
+      setState(() => _isEditingName = false);
+      _nameFocusNode.unfocus();
+      return;
+    }
+
+    if (nextName.isEmpty) {
+      Settings.showToast(
+        message: 'Strategy name cannot be empty.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_isEditingName) return;
+        _nameFocusNode.requestFocus();
+        _nameController.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _nameController.text.length,
+        );
+      });
+      return;
+    }
+
+    setState(() => _isRenaming = true);
+    try {
+      await ref
+          .read(strategyProvider.notifier)
+          .renameStrategy(ref.read(strategyProvider).id, nextName);
+      if (!mounted) return;
+      _originalName = null;
+      setState(() {
+        _isEditingName = false;
+        _isRenaming = false;
+      });
+      _nameFocusNode.unfocus();
+    } catch (_) {
+      if (!mounted) rethrow;
+      setState(() => _isRenaming = false);
+      rethrow;
     }
   }
 
@@ -212,7 +319,7 @@ class _InteractionStateDisplayState
                                         lastEdited:
                                             _timeAgo(strategy.lastEdited),
                                         thumbnailPath: thumbnail,
-                                        onTap: _isSwitching
+                                        onTap: _isSwitching || _isEditingName
                                             ? null
                                             : () =>
                                                 _switchStrategy(strategy.id),
@@ -238,21 +345,103 @@ class _InteractionStateDisplayState
                 child: Row(
                   children: [
                     Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Text(
-                          strategyName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: ShadTheme.of(context).textTheme.small.copyWith(
-                                color: Colors.white,
+                      child: _isEditingName
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
                               ),
-                        ),
-                      ),
+                              child: Shortcuts(
+                                shortcuts: <ShortcutActivator, Intent>{
+                                  ...ShortcutInfo.textEditingOverrides,
+                                  const SingleActivator(
+                                    LogicalKeyboardKey.escape,
+                                  ): const DismissIntent(),
+                                },
+                                child: Actions(
+                                  actions: <Type, Action<Intent>>{
+                                    EnterTextIntent:
+                                        CallbackAction<EnterTextIntent>(
+                                      onInvoke: (_) {
+                                        _commitEditingName();
+                                        return null;
+                                      },
+                                    ),
+                                    DismissIntent:
+                                        CallbackAction<DismissIntent>(
+                                      onInvoke: (_) {
+                                        _cancelEditingName();
+                                        return null;
+                                      },
+                                    ),
+                                  },
+                                  child: TextField(
+                                    controller: _nameController,
+                                    focusNode: _nameFocusNode,
+                                    enabled: !_isRenaming,
+                                    textAlign: TextAlign.center,
+                                    textInputAction: TextInputAction.done,
+                                    cursorColor:
+                                        Settings.tacticalVioletTheme.primary,
+                                    style: ShadTheme.of(context)
+                                        .textTheme
+                                        .small
+                                        .copyWith(color: Colors.white),
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      contentPadding:
+                                          const EdgeInsets.symmetric(
+                                        horizontal: 0,
+                                        vertical: 8,
+                                      ),
+                                      border: InputBorder.none,
+                                      hintText: 'Untitled Strategy',
+                                      hintStyle: ShadTheme.of(context)
+                                          .textTheme
+                                          .small
+                                          .copyWith(color: Colors.white54),
+                                    ),
+                                    onSubmitted: (_) => _commitEditingName(),
+                                    onTapOutside: (_) {
+                                      _nameFocusNode.unfocus();
+                                    },
+                                  ),
+                                ),
+                              ),
+                            )
+                          : Tooltip(
+                              message: currentStrategy.stratName == null
+                                  ? 'Load a strategy to rename it'
+                                  : 'Rename strategy',
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: currentStrategy.stratName == null
+                                      ? null
+                                      : _startEditingName,
+                                  mouseCursor: currentStrategy.stratName == null
+                                      ? SystemMouseCursors.basic
+                                      : SystemMouseCursors.click,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 8,
+                                    ),
+                                    child: Text(
+                                      strategyName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: ShadTheme.of(context)
+                                          .textTheme
+                                          .small
+                                          .copyWith(color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                     ),
                     Container(
                       width: 1,
@@ -262,7 +451,7 @@ class _InteractionStateDisplayState
                     SizedBox(
                       width: 38,
                       child: ShadIconButton.ghost(
-                        onPressed: _isSwitching
+                        onPressed: _isSwitching || _isEditingName
                             ? null
                             : () => _isOpen ? _closePortal() : _openPortal(),
                         icon: _isSwitching

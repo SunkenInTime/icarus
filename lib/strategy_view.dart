@@ -13,7 +13,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/sidebar.dart';
 import 'package:icarus/widgets/delete_capture.dart';
 import 'package:icarus/widgets/demo_tag.dart';
-import 'package:icarus/widgets/interaction_state_display.dart';
+import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
 import 'package:icarus/widgets/save_and_load_button.dart';
@@ -105,7 +105,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                       )
                   ],
                 ),
-                const InteractionStateDisplay(),
+                const StrategyQuickSwitcher(),
                 Row(
                   children: [
                     TextButton(
