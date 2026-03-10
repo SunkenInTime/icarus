@@ -57,7 +57,7 @@ void main() {
     });
   });
 
-  group('Neon/Cypher defaults', () {
+  group('Neon/Cypher/Harbor defaults', () {
     test('Neon first ability is a wall resizable square that defaults to max',
         () {
       final ability = AgentData.agents[AgentType.neon]!.abilities.first
@@ -87,6 +87,25 @@ void main() {
 
       final widget = ability.createWidget(
         id: 'cypher',
+        isAlly: true,
+        mapScale: 1,
+        length: 0,
+      ) as ResizableSquareWidget;
+
+      expect(widget.length, ability.height);
+      expect(widget.maxLength, ability.height);
+    });
+
+    test('Harbor last ability defaults to max and has a top border', () {
+      final ability = AgentData.agents[AgentType.harbor]!.abilities.last
+          .abilityData! as ResizableSquareAbility;
+
+      expect(ability.defaultToMaxLength, isTrue);
+      expect(ability.minLength, AgentData.inGameMeters);
+      expect(ability.hasTopborder, isTrue);
+
+      final widget = ability.createWidget(
+        id: 'harbor',
         isAlly: true,
         mapScale: 1,
         length: 0,

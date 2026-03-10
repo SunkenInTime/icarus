@@ -797,11 +797,14 @@ class AgentData implements DraggableData {
       //   color: Colors.lightBlue,
       // );
 
-      agent.abilities.last.abilityData = SquareAbility(
+      agent.abilities.last.abilityData = ResizableSquareAbility(
         width: 20 * inGameMeters,
         height: 40 * inGameMeters,
         iconPath: agent.abilities.last.iconPath,
         color: Colors.lightBlue,
+        minLength: inGameMeters * 1,
+        defaultToMaxLength: true,
+        hasTopborder: true,
       );
 
       return agent;
