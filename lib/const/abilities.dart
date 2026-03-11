@@ -1,6 +1,4 @@
 import 'dart:developer';
-import 'dart:math' as math;
-
 import 'package:flutter/widgets.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/settings.dart';
@@ -442,8 +440,10 @@ class DeadlockBarrierMeshAbility extends Ability {
   final String iconPath;
   final Color color;
 
-  static const double minArmLengthMeters = deadlockBarrierMeshMinArmLengthMeters;
-  static const double maxArmLengthMeters = deadlockBarrierMeshMaxArmLengthMeters;
+  static const double minArmLengthMeters =
+      deadlockBarrierMeshMinArmLengthMeters;
+  static const double maxArmLengthMeters =
+      deadlockBarrierMeshMaxArmLengthMeters;
   static const List<double> defaultArmLengthsMeters =
       deadlockBarrierMeshDefaultArmLengthsMeters;
 
@@ -460,11 +460,12 @@ class DeadlockBarrierMeshAbility extends Ability {
     required double mapScale,
     required double abilitySize,
   }) {
-    final meterScale = AgentData.inGameMetersDiameter * mapScale;
-    final maxArmLengthVirtual = maxArmLengthMeters * meterScale;
-    final projectedReachVirtual = maxArmLengthVirtual * math.cos(math.pi / 4);
-    return math.max(abilitySize, projectedReachVirtual * 2) +
-        deadlockBarrierMeshHandleDiameterVirtual;
+    // Deadlock side-switch, anchor, and render bounds must all derive from the
+    // same outer extent to avoid mirrored placement drift.
+    return deadlockBarrierMeshMaxExtent(
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
   }
 
   @override

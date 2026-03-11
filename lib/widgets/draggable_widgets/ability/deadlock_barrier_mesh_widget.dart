@@ -177,7 +177,7 @@ double deadlockBarrierMeshMaxExtent({
   final projectedReachVirtual = maxArmLengthVirtual * math.cos(math.pi / 4);
   final contentExtent = math.max(abilitySize, projectedReachVirtual * 2) +
       deadlockBarrierMeshHandleDiameterVirtual;
-  return contentExtent + (deadlockBarrierMeshOverflowPaddingVirtual * 2);
+  return contentExtent;
 }
 
 Offset deadlockBarrierMeshHandleCenter({

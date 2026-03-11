@@ -59,7 +59,8 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     final ability = newState[index];
 
     final coordinateSystem = CoordinateSystem.instance;
-    final mapScale = Maps.mapScale[ref.read(mapProvider)] ?? 1.0;
+    final mapState = ref.read(mapProvider);
+    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
 
     final abilitySize = ref.read(strategySettingsProvider).abilitySize;
 
@@ -90,11 +91,11 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     if (state.isEmpty) return;
 
     final newState = <PlacedAbility>[...state];
+    final mapState = ref.read(mapProvider);
+    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
+    final abilitySizeSetting = ref.read(strategySettingsProvider).abilitySize;
 
     for (final ability in state) {
-      final mapScale = Maps.mapScale[ref.read(mapProvider)] ?? 1.0;
-      final abilitySizeSetting = ref.read(strategySettingsProvider).abilitySize;
-
       ability.switchSides(mapScale: mapScale, abilitySize: abilitySizeSetting);
     }
 

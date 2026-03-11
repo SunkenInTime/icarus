@@ -82,8 +82,8 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                         renderBox.globalToLocal(details.offset);
                     // Updating info
 
-                    final mapScale =
-                        Maps.mapScale[ref.read(mapProvider)] ?? 1.0;
+                    final mapState = ref.read(mapProvider);
+                    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
                     final abilitySize =
                         ref.read(strategySettingsProvider).abilitySize;
 
