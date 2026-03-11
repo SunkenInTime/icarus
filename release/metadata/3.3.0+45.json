@@ -1,7 +1,7 @@
 {
-  "version": "3.2.5+44",
-  "shortVersion": 44,
-  "title": "3.2.5 Release: Editing, Cleanup, and Desktop Updates",
+  "version": "3.3.0+46",
+  "shortVersion": 46,
+  "title": "3.3.0 Release: Editing, Cleanup, and Desktop Updates",
   "description": "Desktop updater manifest for Icarus.",
   "date": "2026-03-11",
   "mandatory": false,
@@ -40,6 +40,22 @@
     {
       "type": "fix",
       "message": "Older strategy files, screenshots, and saved data now load and migrate more safely."
+    },
+    {
+      "type": "fix",
+      "message": "Deleted line up items will rotate correctly when flipped when undone, post side(ATK/DEF) change."
+    },
+    {
+      "type": "fix",
+      "message": "Screenshot drawings now render correctly and are flipped properly across sides."
+    },
+    {
+      "type": "fix",
+      "message": "Wall-style abilities now start with better default sizing and are flipped properly across sides."
+    },
+    {
+      "type": "fix",
+      "message": "Ability rotations will now be correctly preserved when undone, post side(ATK/DEF) change."
     },
     {
       "type": "feat",
