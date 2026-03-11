@@ -15,6 +15,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/current_path_bar.dart';
+import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
@@ -252,14 +253,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           body: FolderContent(folder: currentFolder),
         ),
         if (_desktopUpdaterController != null)
-          UpdateDialogListener(
+          DesktopUpdateDialogListener(
             controller: _desktopUpdaterController!,
-            backgroundColor: Settings.sideBarColor,
-            iconColor: Settings.tacticalVioletTheme.primary,
-            shadowColor: Colors.black54,
-            textColor: Colors.white,
-            buttonTextColor: Colors.white,
-            buttonIconColor: Settings.tacticalVioletTheme.primary,
           ),
       ],
     );

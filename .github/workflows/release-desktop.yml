@@ -26,7 +26,7 @@ on:
         required: true
         default: false
       publish_pages:
-        description: Deploy the staged desktop updater manifest to GitHub Pages.
+        description: Deploy the staged desktop updater manifest and installer downloads to GitHub Pages.
         type: boolean
         required: true
         default: true
@@ -122,6 +122,21 @@ jobs:
       - name: Deploy To GitHub Pages
         if: ${{ inputs.publish_pages }}
         uses: actions/deploy-pages@v4
+
+      - name: Print Published Download URLs
+        if: ${{ inputs.publish_pages }}
+        shell: pwsh
+        run: |
+          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+)\+\d+$'
+          $versionName = $versionLine.Matches[0].Groups[1].Value.Trim()
+          $channel = "${{ inputs.channel }}"
+
+          Write-Host "Latest installer:"
+          Write-Host "https://sunkenintime.github.io/icarus/downloads/windows/$channel/icarus-setup-latest.exe"
+          Write-Host "Versioned installer:"
+          Write-Host "https://sunkenintime.github.io/icarus/downloads/windows/$channel/icarus-setup-$versionName.exe"
+          Write-Host "Updater manifest:"
+          Write-Host "https://sunkenintime.github.io/icarus/updates/windows/$channel/app-archive.json"
 
       - name: Commit Version And Metadata Changes
         if: ${{ github.ref_type == 'branch' }}

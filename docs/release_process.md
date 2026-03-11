@@ -43,9 +43,11 @@ Use this when you want to publish the direct installer channel.
 6. Verify the desktop installer artifact was uploaded.
 7. Verify GitHub Pages published:
    - `https://sunkenintime.github.io/icarus/updates/windows/stable/app-archive.json`
+   - `https://sunkenintime.github.io/icarus/downloads/windows/stable/icarus-setup-latest.exe`
 8. Open the published `app-archive.json` and confirm it contains the expected version and notes.
-9. Install the direct desktop build on a test machine.
-10. Confirm the app detects the new desktop update and can download/restart successfully.
+9. Open the stable installer URL and confirm it downloads the current desktop installer.
+10. Install the direct desktop build on a test machine.
+11. Confirm the app detects the new desktop update and can download/restart successfully.
 
 ## Store Release Checklist
 

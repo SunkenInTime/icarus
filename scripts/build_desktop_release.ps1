@@ -84,6 +84,23 @@ if (Test-Path $installerOutputDir) {
     $desktopArtifactDir = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("release\out\desktop\{0}" -f $versionInfo.FullVersion)
     New-Item -ItemType Directory -Force -Path $desktopArtifactDir | Out-Null
     Copy-Item -Path (Join-Path $installerOutputDir "*") -Destination $desktopArtifactDir -Recurse -Force
+
+    $installerFileName = "icarus-setup-{0}.exe" -f $versionInfo.VersionName
+    $installerSourcePath = Join-Path $installerOutputDir $installerFileName
+    if (-not (Test-Path $installerSourcePath)) {
+        throw "Expected installer not found at $installerSourcePath"
+    }
+
+    $downloadsRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("{0}\downloads\windows\{1}" -f $PagesStageRoot, $Channel)
+    New-Item -ItemType Directory -Force -Path $downloadsRoot | Out-Null
+
+    $versionedInstallerPath = Join-Path $downloadsRoot $installerFileName
+    $latestInstallerPath = Join-Path $downloadsRoot "icarus-setup-latest.exe"
+    Copy-Item -Path $installerSourcePath -Destination $versionedInstallerPath -Force
+    Copy-Item -Path $installerSourcePath -Destination $latestInstallerPath -Force
+
+    Write-Host ("Published installer downloads to {0}" -f $downloadsRoot) -ForegroundColor Green
+    Write-Host ("Latest installer URL path: /downloads/windows/{0}/icarus-setup-latest.exe" -f $Channel) -ForegroundColor Green
 }
 
 Write-Host "Desktop release staging complete for $($versionInfo.FullVersion)." -ForegroundColor Green
