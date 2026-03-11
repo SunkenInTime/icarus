@@ -22,6 +22,10 @@
   #define MyOutputDir "E:\\Projects\\icarus\\build\\installer"
 #endif
 
+#ifndef MyRepoRoot
+  #define MyRepoRoot "E:\\Projects\\icarus"
+#endif
+
 [Setup]
 AppId={{2B31297D-A96B-4B4B-8899-0098A865B4BA}
 AppName={#MyAppName}
@@ -40,7 +44,7 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
-SetupIconFile=E:\Projects\icarus\windows\runner\resources\app_icon.ico
+SetupIconFile={#MyRepoRoot}\windows\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]

@@ -61,6 +61,7 @@ $arguments = @(
     "/DMyAppVersion=$appVersion",
     "/DMySourceDir=$sourceDir",
     "/DMyOutputDir=$outputDir",
+    "/DMyRepoRoot=$repoRoot",
     "/DMyAppExeName=icarus.exe",
     $issPath
 )

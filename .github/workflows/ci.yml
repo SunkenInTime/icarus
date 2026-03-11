@@ -9,16 +9,35 @@ on:
 jobs:
   validate:
     runs-on: windows-latest
+    env:
+      FVM_HOME: ${{ github.workspace }}/.fvm_cache
+      PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: dart-lang/setup-dart@v1
 
+      - name: Cache Pub Packages
+        uses: actions/cache@v4
+        with:
+          path: .pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Cache FVM SDK
+        uses: actions/cache@v4
+        with:
+          path: .fvm_cache
+          key: ${{ runner.os }}-fvm-${{ hashFiles('.fvmrc') }}
+          restore-keys: |
+            ${{ runner.os }}-fvm-
+
       - name: Add Pub Cache To PATH
         shell: pwsh
         run: |
-          "$env:LOCALAPPDATA\Pub\Cache\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "$env:PUB_CACHE\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Install FVM
         shell: pwsh
