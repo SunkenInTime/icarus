@@ -11,6 +11,16 @@ import 'package:icarus/providers/map_provider.dart';
 final utilityProvider =
     NotifierProvider<UtilityProvider, List<PlacedUtility>>(UtilityProvider.new);
 
+class UtilityProviderSnapshot {
+  final List<PlacedUtility> utilities;
+  final List<PlacedUtility> poppedUtilities;
+
+  const UtilityProviderSnapshot({
+    required this.utilities,
+    required this.poppedUtilities,
+  });
+}
+
 class UtilityProvider extends Notifier<List<PlacedUtility>> {
   List<PlacedUtility> poppedUtilities = [];
 
@@ -55,6 +65,61 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
         type: ActionType.edit,
         id: newState[index].id,
         group: ActionGroup.utility);
+    ref.read(actionProvider.notifier).addAction(action);
+    state = newState;
+  }
+
+  void updateCustomRectangleSize({
+    required String id,
+    required double widthMeters,
+    required double lengthMeters,
+  }) {
+    updateCustomShapeGeometry(
+      id: id,
+      widthMeters: widthMeters,
+      lengthMeters: lengthMeters,
+    );
+  }
+
+  void updateCustomCircleDiameter({
+    required String id,
+    required double diameterMeters,
+  }) {
+    updateCustomShapeGeometry(id: id, diameterMeters: diameterMeters);
+  }
+
+  void updateCustomShapeGeometry({
+    required String id,
+    Offset? position,
+    double? diameterMeters,
+    double? widthMeters,
+    double? lengthMeters,
+  }) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+
+    final utility = newState[index];
+    final nextPosition = position ?? utility.position;
+    final nextDiameter = diameterMeters ?? utility.customDiameter;
+    final nextWidth = widthMeters ?? utility.customWidth;
+    final nextLength = lengthMeters ?? utility.customLength;
+
+    final hasGeometryChange = utility.position != nextPosition ||
+        utility.customDiameter != nextDiameter ||
+        utility.customWidth != nextWidth ||
+        utility.customLength != nextLength;
+    if (!hasGeometryChange) return;
+
+    utility.updateCustomShapeGeometry(
+      newPosition: position,
+      newDiameter: diameterMeters,
+      newWidth: widthMeters,
+      newLength: lengthMeters,
+    );
+
+    final action =
+        UserAction(type: ActionType.edit, id: id, group: ActionGroup.utility);
     ref.read(actionProvider.notifier).addAction(action);
     state = newState;
   }
@@ -104,6 +169,8 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
 
         // log("Current rotation: ${newState[index].rotation} Current length: ${newState[index].length}");
         state = newState;
+      case ActionType.bulkDeletion:
+        return;
     }
   }
 
@@ -123,6 +190,8 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
           newState[index].redoAction();
+        case ActionType.bulkDeletion:
+          return;
       }
     } catch (_) {
       log("failed to find index");
@@ -175,5 +244,17 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     final List<Map<String, dynamic>> jsonList =
         utilities.map((utility) => utility.toJson()).toList();
     return jsonEncode(jsonList);
+  }
+
+  UtilityProviderSnapshot takeSnapshot() {
+    return UtilityProviderSnapshot(
+      utilities: [...state],
+      poppedUtilities: [...poppedUtilities],
+    );
+  }
+
+  void restoreSnapshot(UtilityProviderSnapshot snapshot) {
+    poppedUtilities = [...snapshot.poppedUtilities];
+    state = [...snapshot.utilities];
   }
 }

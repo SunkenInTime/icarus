@@ -142,6 +142,51 @@ class PlacedText extends PlacedWidget {
   @JsonKey(defaultValue: null)
   int? tagColorValue;
 
+  void commitText(String nextText) {
+    final action = TextContentAction(text: text);
+    _actionHistory.add(action);
+    _poppedAction.clear();
+    text = nextText;
+  }
+
+  void _undoText() {
+    final action = TextContentAction(text: text);
+
+    _poppedAction.add(action);
+    text = (_actionHistory.last as TextContentAction).text;
+    _actionHistory.removeLast();
+  }
+
+  void _redoText() {
+    final action = TextContentAction(text: text);
+
+    _actionHistory.add(action);
+    text = (_poppedAction.last as TextContentAction).text;
+    _poppedAction.removeLast();
+  }
+
+  @override
+  void undoAction() {
+    if (_actionHistory.isEmpty) return;
+
+    if (_actionHistory.last is PositionAction) {
+      _undoPosition();
+    } else if (_actionHistory.last is TextContentAction) {
+      _undoText();
+    }
+  }
+
+  @override
+  void redoAction() {
+    if (_poppedAction.isEmpty) return;
+
+    if (_poppedAction.last is PositionAction) {
+      _redoPosition();
+    } else if (_poppedAction.last is TextContentAction) {
+      _redoText();
+    }
+  }
+
   factory PlacedText.fromJson(Map<String, dynamic> json) =>
       _$PlacedTextFromJson(json);
   @override
@@ -345,7 +390,10 @@ class PlacedAbility extends PlacedWidget {
     this.length = 0,
     this.lineUpID,
     this.rotation = 0,
-  });
+    List<double>? armLengthsMeters,
+  }) : armLengthsMeters = DeadlockBarrierMeshAbility.normalizeArmLengths(
+          armLengthsMeters,
+        );
 
   @AbilityInfoConverter()
   final AbilityInfo data;
@@ -359,39 +407,81 @@ class PlacedAbility extends PlacedWidget {
 
   final String? lineUpID;
 
+  @JsonKey(defaultValue: <double>[10.0, 10.0, 10.0, 10.0])
+  List<double> armLengthsMeters;
+
   void updateRotation(double newRotation, double newLength) {
-    rotation = newRotation;
-    length = newLength;
+    updateGeometry(newRotation: newRotation, newLength: newLength);
+  }
+
+  void updateGeometry({
+    double? newRotation,
+    double? newLength,
+    List<double>? newArmLengthsMeters,
+  }) {
+    rotation = newRotation ?? rotation;
+    length = newLength ?? length;
+    armLengthsMeters = DeadlockBarrierMeshAbility.normalizeArmLengths(
+      newArmLengthsMeters ?? armLengthsMeters,
+    );
+  }
+
+  void updateArmLengths(List<double> newArmLengthsMeters) {
+    updateGeometry(newArmLengthsMeters: newArmLengthsMeters);
   }
 
   void updateRotationHistory() {
-    final action = RotationAction(rotation: rotation, length: length);
+    updateGeometryHistory();
+  }
+
+  void updateGeometryHistory() {
+    final action = AbilityGeometryAction(
+      rotation: rotation,
+      length: length,
+      armLengthsMeters: armLengthsMeters,
+    );
     _actionHistory.add(action);
   }
 
-  void _undoRotation() {
-    final action = RotationAction(rotation: rotation, length: length);
+  void _undoGeometry() {
+    final action = AbilityGeometryAction(
+      rotation: rotation,
+      length: length,
+      armLengthsMeters: armLengthsMeters,
+    );
 
     _poppedAction.add(action);
-    rotation = (_actionHistory.last as RotationAction).rotation;
-    length = (_actionHistory.last as RotationAction).length;
+    final previous = _actionHistory.last as AbilityGeometryAction;
+    rotation = previous.rotation;
+    length = previous.length;
+    armLengthsMeters = List<double>.from(previous.armLengthsMeters);
     _actionHistory.removeLast();
   }
 
-  void _redoRotation() {
+  void _redoGeometry() {
     if (_poppedAction.isEmpty) return;
 
-    final action = RotationAction(rotation: rotation, length: length);
+    final action = AbilityGeometryAction(
+      rotation: rotation,
+      length: length,
+      armLengthsMeters: armLengthsMeters,
+    );
 
     _actionHistory.add(action);
-    rotation = (_poppedAction.last as RotationAction).rotation;
-    length = (_poppedAction.last as RotationAction).length;
+    final next = _poppedAction.last as AbilityGeometryAction;
+    rotation = next.rotation;
+    length = next.length;
+    armLengthsMeters = List<double>.from(next.armLengthsMeters);
     _poppedAction.removeLast();
   }
 
   void switchSides({required double mapScale, required double abilitySize}) {
     final fullAbilityWidgetSize =
         data.abilityData!.getSize(mapScale: mapScale, abilitySize: abilitySize);
+    final abilityData = data.abilityData!;
+    final shouldRotate = isRotatable(abilityData);
+    final shouldUseRotatableFlipCompensation =
+        shouldRotate && abilityData is! DeadlockBarrierMeshAbility;
 
     final scaledAbilitySize = fullAbilityWidgetSize.scale(
         CoordinateSystem.instance.scaleFactor,
@@ -400,10 +490,10 @@ class PlacedAbility extends PlacedWidget {
     Offset flippedPosition = getFlippedPosition(
         position: position,
         scaledSize: scaledAbilitySize,
-        isRotatable: isRotatable(data.abilityData!));
+        isRotatable: shouldUseRotatableFlipCompensation);
     position = flippedPosition;
 
-    if (isRotatable(data.abilityData!)) {
+    if (shouldRotate) {
       rotation = rotation + math.pi;
     }
 
@@ -413,10 +503,11 @@ class PlacedAbility extends PlacedWidget {
             position: getFlippedPosition(
                 position: action.position,
                 scaledSize: scaledAbilitySize,
-                isRotatable: isRotatable(data.abilityData!)));
-      } else if (action is RotationAction) {
+                isRotatable: shouldUseRotatableFlipCompensation));
+      } else if (action is AbilityGeometryAction) {
         _actionHistory[index] = action.copyWith(
-            rotation: action.rotation + math.pi, length: action.length);
+          rotation: shouldRotate ? action.rotation + math.pi : action.rotation,
+        );
       }
     }
 
@@ -426,10 +517,11 @@ class PlacedAbility extends PlacedWidget {
             position: getFlippedPosition(
                 position: action.position,
                 scaledSize: scaledAbilitySize,
-                isRotatable: isRotatable(data.abilityData!)));
-      } else if (action is RotationAction) {
+                isRotatable: shouldUseRotatableFlipCompensation));
+      } else if (action is AbilityGeometryAction) {
         _poppedAction[index] = action.copyWith(
-            rotation: action.rotation + math.pi, length: action.length);
+          rotation: shouldRotate ? action.rotation + math.pi : action.rotation,
+        );
       }
     }
   }
@@ -440,8 +532,8 @@ class PlacedAbility extends PlacedWidget {
 
     if (_actionHistory.last is PositionAction) {
       _undoPosition();
-    } else if (_actionHistory.last is RotationAction) {
-      _undoRotation();
+    } else if (_actionHistory.last is AbilityGeometryAction) {
+      _undoGeometry();
     }
   }
 
@@ -451,8 +543,8 @@ class PlacedAbility extends PlacedWidget {
 
     if (_poppedAction.last is PositionAction) {
       _redoPosition();
-    } else if (_poppedAction.last is RotationAction) {
-      _redoRotation();
+    } else if (_poppedAction.last is AbilityGeometryAction) {
+      _redoGeometry();
     }
   }
 
@@ -461,6 +553,7 @@ class PlacedAbility extends PlacedWidget {
     Offset? position,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
     String? id,
     bool? isAlly,
     String? lineUpID,
@@ -473,6 +566,9 @@ class PlacedAbility extends PlacedWidget {
       lineUpID: lineUpID ?? this.lineUpID,
       length: length ?? this.length,
       rotation: rotation ?? this.rotation,
+      armLengthsMeters: List<double>.from(
+        armLengthsMeters ?? this.armLengthsMeters,
+      ),
     );
   }
 
@@ -483,6 +579,30 @@ class PlacedAbility extends PlacedWidget {
 }
 
 abstract class WidgetAction {}
+
+class AbilityGeometryAction extends WidgetAction {
+  final double rotation;
+  final double length;
+  final List<double> armLengthsMeters;
+
+  AbilityGeometryAction({
+    required this.rotation,
+    required this.length,
+    required List<double> armLengthsMeters,
+  }) : armLengthsMeters = List<double>.from(armLengthsMeters);
+
+  AbilityGeometryAction copyWith({
+    double? rotation,
+    double? length,
+    List<double>? armLengthsMeters,
+  }) {
+    return AbilityGeometryAction(
+      rotation: rotation ?? this.rotation,
+      length: length ?? this.length,
+      armLengthsMeters: armLengthsMeters ?? this.armLengthsMeters,
+    );
+  }
+}
 
 class RotationAction extends WidgetAction {
   final double rotation;
@@ -504,6 +624,40 @@ class PositionAction extends WidgetAction {
   PositionAction copyWith({Offset? position}) {
     return PositionAction(position: position ?? this.position);
   }
+}
+
+class CustomShapeGeometryAction extends WidgetAction {
+  final Offset position;
+  final double? customDiameter;
+  final double? customWidth;
+  final double? customLength;
+
+  CustomShapeGeometryAction({
+    required this.position,
+    required this.customDiameter,
+    required this.customWidth,
+    required this.customLength,
+  });
+
+  CustomShapeGeometryAction copyWith({
+    Offset? position,
+    double? customDiameter,
+    double? customWidth,
+    double? customLength,
+  }) {
+    return CustomShapeGeometryAction(
+      position: position ?? this.position,
+      customDiameter: customDiameter ?? this.customDiameter,
+      customWidth: customWidth ?? this.customWidth,
+      customLength: customLength ?? this.customLength,
+    );
+  }
+}
+
+class TextContentAction extends WidgetAction {
+  final String text;
+
+  TextContentAction({required this.text});
 }
 
 @JsonSerializable()
@@ -576,6 +730,13 @@ class PlacedUtility extends PlacedWidget {
       } else if (action is RotationAction) {
         _actionHistory[index] =
             action.copyWith(rotation: action.rotation + math.pi);
+      } else if (action is CustomShapeGeometryAction) {
+        final actionFlippedPosition = getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledSize,
+            isRotatable: _getIsRotationUtility(type));
+        _actionHistory[index] =
+            action.copyWith(position: actionFlippedPosition);
       }
     }
     for (final (index, action) in _poppedAction.indexed) {
@@ -589,6 +750,12 @@ class PlacedUtility extends PlacedWidget {
       } else if (action is RotationAction) {
         _poppedAction[index] =
             action.copyWith(rotation: action.rotation + math.pi);
+      } else if (action is CustomShapeGeometryAction) {
+        final actionFlippedPosition = getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledSize,
+            isRotatable: _getIsRotationUtility(type));
+        _poppedAction[index] = action.copyWith(position: actionFlippedPosition);
       }
     }
   }
@@ -618,6 +785,73 @@ class PlacedUtility extends PlacedWidget {
     _poppedAction.removeLast();
   }
 
+  void updateCustomShapeGeometry({
+    Offset? newPosition,
+    double? newDiameter,
+    double? newWidth,
+    double? newLength,
+  }) {
+    final action = CustomShapeGeometryAction(
+      position: position,
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+    );
+    _actionHistory.add(action);
+    position = newPosition ?? position;
+    customDiameter = newDiameter ?? customDiameter;
+    customWidth = newWidth ?? customWidth;
+    customLength = newLength ?? customLength;
+  }
+
+  void updateCustomShapeSize({
+    double? newDiameter,
+    double? newWidth,
+    double? newLength,
+  }) {
+    updateCustomShapeGeometry(
+      newDiameter: newDiameter,
+      newWidth: newWidth,
+      newLength: newLength,
+    );
+  }
+
+  void _undoCustomShapeGeometry() {
+    final action = CustomShapeGeometryAction(
+      position: position,
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+    );
+
+    _poppedAction.add(action);
+    final previous = _actionHistory.last as CustomShapeGeometryAction;
+    position = previous.position;
+    customDiameter = previous.customDiameter;
+    customWidth = previous.customWidth;
+    customLength = previous.customLength;
+    _actionHistory.removeLast();
+  }
+
+  void _redoCustomShapeGeometry() {
+    if (_poppedAction.isEmpty) return;
+
+    final action = CustomShapeGeometryAction(
+      position: position,
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+    );
+
+    _actionHistory.add(action);
+    final next = _poppedAction.last as CustomShapeGeometryAction;
+    position = next.position;
+    customDiameter = next.customDiameter;
+    customWidth = next.customWidth;
+    customLength = next.customLength;
+    _poppedAction.removeLast();
+  }
+
   @override
   void undoAction() {
     if (_actionHistory.isEmpty) return;
@@ -626,6 +860,8 @@ class PlacedUtility extends PlacedWidget {
       _undoPosition();
     } else if (_actionHistory.last is RotationAction) {
       _undoRotation();
+    } else if (_actionHistory.last is CustomShapeGeometryAction) {
+      _undoCustomShapeGeometry();
     }
   }
 
@@ -637,6 +873,8 @@ class PlacedUtility extends PlacedWidget {
       _redoPosition();
     } else if (_poppedAction.last is RotationAction) {
       _redoRotation();
+    } else if (_poppedAction.last is CustomShapeGeometryAction) {
+      _redoCustomShapeGeometry();
     }
   }
 

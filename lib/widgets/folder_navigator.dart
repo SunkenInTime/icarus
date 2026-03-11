@@ -1,6 +1,8 @@
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:desktop_updater/desktop_updater.dart';
+import 'package:desktop_updater/updater_controller.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,6 +34,13 @@ class FolderNavigator extends ConsumerStatefulWidget {
 class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   bool _warnedOnce = false;
   bool _hasPromptedUpdateDialog = false;
+  DesktopUpdaterController? _desktopUpdaterController;
+
+  @override
+  void dispose() {
+    _desktopUpdaterController?.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -77,9 +86,37 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     ref.listen<AsyncValue<UpdateCheckResult>>(appUpdateStatusProvider,
         (_, next) {
       next.whenData((result) {
-        if (!mounted || _hasPromptedUpdateDialog || !result.isUpdateAvailable) {
+        if (!mounted) {
           return;
         }
+
+        final bool isDirectWindowsInstall =
+            !kIsWeb && Platform.isWindows && !result.isSupported;
+        if (isDirectWindowsInstall && _desktopUpdaterController == null) {
+          _desktopUpdaterController = DesktopUpdaterController(
+            appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
+            localization: const DesktopUpdateLocalization(
+              updateAvailableText: 'Update Available',
+              newVersionAvailableText: '{} {} is available',
+              newVersionLongText:
+                  'A desktop update is ready. Downloading will fetch {} MB of files.',
+              downloadText: 'Download Update',
+              restartText: 'Restart to update',
+              skipThisVersionText: 'Later',
+              warningTitleText: 'Restart Required',
+              restartWarningText:
+                  'Icarus needs to restart to finish installing the update. Unsaved changes will be lost. Restart now?',
+              warningCancelText: 'Not now',
+              warningConfirmText: 'Restart',
+            ),
+          );
+          setState(() {});
+        }
+
+        if (_hasPromptedUpdateDialog || !result.isUpdateAvailable) {
+          return;
+        }
+
         _hasPromptedUpdateDialog = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -147,68 +184,84 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       }
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const CurrentPathBar(),
-        toolbarHeight: 70,
-        actionsPadding: const EdgeInsets.only(right: 24),
+    return Stack(
+      children: [
+        Scaffold(
+          appBar: AppBar(
+            title: const CurrentPathBar(),
+            toolbarHeight: 70,
+            actionsPadding: const EdgeInsets.only(right: 24),
 
-        actions: [
-          if (kIsWeb)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8.0),
-              child: DemoTag(),
-            ),
-          Row(
-            spacing: 15,
-            children: [
-              ShadButton.secondary(
-                onPressed: () async {
-                  if (kIsWeb) {
-                    Settings.showToast(
-                      message:
-                          'This feature is only supported in the Windows version.',
-                      backgroundColor: Settings.tacticalVioletTheme.destructive,
-                    );
-                    return;
-                  }
-                  try {
-                    await ref
-                        .read(strategyProvider.notifier)
-                        .loadFromFilePicker();
-                  } on NewerVersionImportException {
-                    Settings.showToast(
-                      message: NewerVersionImportException.userMessage,
-                      backgroundColor: Settings.tacticalVioletTheme.destructive,
-                    );
-                  }
-                },
-                leading: const Icon(Icons.file_download),
-                child: const Text('Import .ica'),
-              ),
-              ShadButton.secondary(
-                leading: const Icon(LucideIcons.folderPlus),
-                child: const Text('Add Folder'),
-                onPressed: () async {
-                  await showDialog<String>(
-                    context: context,
-                    builder: (context) {
-                      return const FolderEditDialog();
+            actions: [
+              if (kIsWeb)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8.0),
+                  child: DemoTag(),
+                ),
+              Row(
+                spacing: 15,
+                children: [
+                  ShadButton.secondary(
+                    onPressed: () async {
+                      if (kIsWeb) {
+                        Settings.showToast(
+                          message:
+                              'This feature is only supported in the Windows version.',
+                          backgroundColor:
+                              Settings.tacticalVioletTheme.destructive,
+                        );
+                        return;
+                      }
+                      try {
+                        await ref
+                            .read(strategyProvider.notifier)
+                            .loadFromFilePicker();
+                      } on NewerVersionImportException {
+                        Settings.showToast(
+                          message: NewerVersionImportException.userMessage,
+                          backgroundColor:
+                              Settings.tacticalVioletTheme.destructive,
+                        );
+                      }
                     },
-                  );
-                },
-              ),
-              ShadButton(
-                onPressed: showCreateDialog,
-                leading: const Icon(Icons.add),
-                child: const Text('Create Strategy'),
-              ),
+                    leading: const Icon(Icons.file_download),
+                    child: const Text('Import .ica'),
+                  ),
+                  ShadButton.secondary(
+                    leading: const Icon(LucideIcons.folderPlus),
+                    child: const Text('Add Folder'),
+                    onPressed: () async {
+                      await showDialog<String>(
+                        context: context,
+                        builder: (context) {
+                          return const FolderEditDialog();
+                        },
+                      );
+                    },
+                  ),
+                  ShadButton(
+                    onPressed: showCreateDialog,
+                    leading: const Icon(Icons.add),
+                    child: const Text('Create Strategy'),
+                  ),
+                ],
+              )
             ],
-          )
-        ],
-        // ... your existing actions
-      ),
-      body: FolderContent(folder: currentFolder),
+            // ... your existing actions
+          ),
+          body: FolderContent(folder: currentFolder),
+        ),
+        if (_desktopUpdaterController != null)
+          UpdateDialogListener(
+            controller: _desktopUpdaterController!,
+            backgroundColor: Settings.sideBarColor,
+            iconColor: Settings.tacticalVioletTheme.primary,
+            shadowColor: Colors.black54,
+            textColor: Colors.white,
+            buttonTextColor: Colors.white,
+            buttonIconColor: Settings.tacticalVioletTheme.primary,
+          ),
+      ],
     );
   }
 }

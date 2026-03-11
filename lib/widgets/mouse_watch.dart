@@ -3,52 +3,101 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/widgets/line_up_media_carousel.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class MouseWatch extends ConsumerStatefulWidget {
   const MouseWatch({
-    this.onDeleteKeyPressed,
     required this.child,
     super.key,
     this.cursor = SystemMouseCursors.basic,
+    this.deleteTarget,
     this.lineUpId,
   });
 
   final String? lineUpId;
   final Widget child;
-  final VoidCallback? onDeleteKeyPressed;
+  final HoveredDeleteTarget? deleteTarget;
   final SystemMouseCursor cursor;
   @override
-  ConsumerState<ConsumerStatefulWidget> createState() => _MouseWatchState();
+  ConsumerState<MouseWatch> createState() => _MouseWatchState();
 }
 
 class _MouseWatchState extends ConsumerState<MouseWatch> {
   bool isMouseInRegion = false;
-  final _focusNode = FocusNode();
+  final Object _ownerToken = Object();
+  ProviderContainer? _container;
+  bool _hoverCleanupScheduled = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _container ??= ProviderScope.containerOf(context, listen: false);
+  }
 
   @override
   void dispose() {
-    _focusNode.dispose();
+    _scheduleHoverCleanup(container: _container);
     super.dispose();
   }
 
-  // ...existing code...
+  void _publishHoveredDeleteTarget() {
+    final target = widget.deleteTarget;
+    if (target == null) return;
+
+    ref.read(hoveredDeleteTargetProvider.notifier).state =
+        target.copyWith(ownerToken: _ownerToken);
+  }
+
+  void _clearHoveredDeleteTargetIfOwned({ProviderContainer? container}) {
+    final activeContainer = container ?? _container;
+    if (activeContainer == null) return;
+    final hoveredTarget = activeContainer.read(hoveredDeleteTargetProvider);
+    if (hoveredTarget?.ownerToken != _ownerToken) return;
+
+    activeContainer.read(hoveredDeleteTargetProvider.notifier).state = null;
+  }
+
+  void _clearHoveredLineUpIfOwned({ProviderContainer? container}) {
+    final activeContainer = container ?? _container;
+    if (activeContainer == null || widget.lineUpId == null) return;
+    if (activeContainer.read(hoveredLineUpIdProvider) != widget.lineUpId) {
+      return;
+    }
+
+    activeContainer.read(hoveredLineUpIdProvider.notifier).setHoveredLineUpId(
+          null,
+        );
+  }
+
+  void _scheduleHoverCleanup({ProviderContainer? container}) {
+    final activeContainer = container ?? _container;
+    if (activeContainer == null || _hoverCleanupScheduled) return;
+
+    _hoverCleanupScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hoverCleanupScheduled = false;
+      _clearHoveredLineUpIfOwned(container: activeContainer);
+      _clearHoveredDeleteTargetIfOwned(container: activeContainer);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final lineUpState = ref.watch(lineUpProvider);
-
-    LineUp? lineUp;
-    String? lineUpNotes;
-    if (widget.lineUpId != null) {
-      final index = lineUpState.lineUps
-          .indexWhere((lineUp) => lineUp.id == widget.lineUpId);
-      if (index != -1) {
-        lineUp = lineUpState.lineUps[index];
-        lineUpNotes = lineUpState.lineUps[index].notes;
-      }
-    }
+    final LineUp? lineUp = widget.lineUpId == null
+        ? null
+        : ref.watch(
+            lineUpProvider.select((state) {
+              for (final lineUp in state.lineUps) {
+                if (lineUp.id == widget.lineUpId) {
+                  return lineUp;
+                }
+              }
+              return null;
+            }),
+          );
+    final lineUpNotes = lineUp?.notes;
     final hasLineUpNote = (lineUpNotes?.trim().isNotEmpty ?? false);
 
     final content = MouseRegion(
@@ -59,33 +108,18 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
               .read(hoveredLineUpIdProvider.notifier)
               .setHoveredLineUpId(widget.lineUpId);
         }
+        _publishHoveredDeleteTarget();
         setState(() {
           isMouseInRegion = true;
-          _focusNode.requestFocus();
         });
       },
       onExit: (_) {
-        if (widget.lineUpId != null &&
-            ref.read(hoveredLineUpIdProvider) == widget.lineUpId) {
-          ref.read(hoveredLineUpIdProvider.notifier).setHoveredLineUpId(null);
-        }
+        _scheduleHoverCleanup();
         setState(() {
           isMouseInRegion = false;
         });
       },
-      child: FocusableActionDetector(
-        focusNode: _focusNode,
-        shortcuts: ShortcutInfo.widgetShortcuts,
-        actions: {
-          WidgetDeleteIntent: CallbackAction<WidgetDeleteIntent>(
-            onInvoke: (intent) {
-              if (!isMouseInRegion) return;
-              return widget.onDeleteKeyPressed?.call();
-            },
-          ),
-        },
-        child: widget.child,
-      ),
+      child: widget.child,
     );
 
     return RepaintBoundary(
@@ -153,5 +187,4 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
             ),
     );
   }
-// ...existing code...
 }

@@ -145,10 +145,10 @@ class CustomShapeToolData implements DraggableData {
     required int colorValue,
     required int opacityPercent,
   }) {
-    final diameter = diameterMeters * AgentData.inGameMetersDiameter * mapScale;
+    final maxDiameter = CustomCircleUtility.maxDiameterInVirtual(mapScale);
     return CustomShapeToolData(
       type: UtilityType.customCircle,
-      centerPoint: Offset(diameter / 2, diameter / 2),
+      centerPoint: Offset(maxDiameter / 2, maxDiameter / 2),
       diameterMeters: diameterMeters,
       widthMeters: 0,
       rectLengthMeters: 0,
@@ -373,6 +373,22 @@ class ViewConeUtility extends Utilities {
 }
 
 class CustomCircleUtility extends Utilities {
+  static const double maxDiameterMeters = 40.0;
+
+  static double diameterInVirtual({
+    required double diameterMeters,
+    required double mapScale,
+  }) {
+    return diameterMeters * AgentData.inGameMetersDiameter * mapScale;
+  }
+
+  static double maxDiameterInVirtual(double mapScale) {
+    return diameterInVirtual(
+      diameterMeters: maxDiameterMeters,
+      mapScale: mapScale,
+    );
+  }
+
   @override
   Widget createWidget(
       {String? id,
@@ -407,9 +423,7 @@ class CustomCircleUtility extends Utilities {
       double? widthMeters,
       double? rectLengthMeters}) {
     assert(mapScale != null, 'mapScale must be provided');
-    assert(diameterMeters != null, 'diameterMeters must be provided');
-    final diameter =
-        diameterMeters! * AgentData.inGameMetersDiameter * mapScale!;
+    final diameter = maxDiameterInVirtual(mapScale!);
     return Offset(diameter / 2, diameter / 2);
   }
 
@@ -419,10 +433,8 @@ class CustomCircleUtility extends Utilities {
       double? widthMeters,
       double? rectLengthMeters,
       double? mapScale}) {
-    assert(diameterMeters != null, 'diameterMeters must be provided');
     assert(mapScale != null, 'mapScale must be provided');
-    final diameter =
-        diameterMeters! * AgentData.inGameMetersDiameter * mapScale!;
+    final diameter = maxDiameterInVirtual(mapScale!);
     return Offset(diameter, diameter);
   }
 }

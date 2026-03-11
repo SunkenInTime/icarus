@@ -22,7 +22,14 @@ final visualPositionProvider = StateProvider<Offset?>((ref) {
 });
 
 class InteractivePainter extends ConsumerStatefulWidget {
-  const InteractivePainter({super.key});
+  const InteractivePainter({
+    super.key,
+    this.mapScaleOverride,
+    this.isAttackOverride,
+  });
+
+  final double? mapScaleOverride;
+  final bool? isAttackOverride;
 
   @override
   ConsumerState<ConsumerStatefulWidget> createState() =>
@@ -54,8 +61,10 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
     final penState = ref.watch(penProvider);
     final currentMap =
         ref.watch(mapProvider.select((state) => state.currentMap));
-    final mapScale = Maps.mapScale[currentMap] ?? 1.0;
-    final isAttack = ref.watch(mapProvider.select((state) => state.isAttack));
+    final double mapScale =
+        widget.mapScaleOverride ?? (Maps.mapScale[currentMap] ?? 1.0);
+    final bool isAttack = widget.isAttackOverride ??
+        ref.watch(mapProvider.select((state) => state.isAttack));
 
     CustomPainter drawingPainter = DrawingPainter(
         updateCounter: drawingState.updateCounter,
@@ -110,23 +119,37 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
 
               switch (currentInteractionState) {
                 case InteractionState.drawing:
-                  if (penState.penMode == PenMode.square) {
-                    ref.read(drawingProvider.notifier).startRectangle(
-                          details.localPosition,
-                          coordinateSystem,
-                          penState.color,
-                          penState.isDotted,
-                        );
-                  } else {
-                    ref.read(drawingProvider.notifier).startFreeDrawing(
-                          details.localPosition,
-                          coordinateSystem,
-                          penState.color,
-                          penState.isDotted,
-                          penState.hasArrow,
-                          penState.traversalTimeEnabled,
-                          penState.activeTraversalSpeedProfile,
-                        );
+                  switch (penState.penMode) {
+                    case PenMode.freeDraw:
+                      ref.read(drawingProvider.notifier).startFreeDrawing(
+                            details.localPosition,
+                            coordinateSystem,
+                            penState.color,
+                            penState.thickness,
+                            penState.isDotted,
+                            penState.hasArrow,
+                            penState.traversalTimeEnabled,
+                            penState.activeTraversalSpeedProfile,
+                          );
+                    case PenMode.line:
+                      ref.read(drawingProvider.notifier).startLine(
+                            details.localPosition,
+                            coordinateSystem,
+                            penState.color,
+                            penState.thickness,
+                            penState.isDotted,
+                            penState.hasArrow,
+                            penState.traversalTimeEnabled,
+                            penState.activeTraversalSpeedProfile,
+                          );
+                    case PenMode.square:
+                      ref.read(drawingProvider.notifier).startRectangle(
+                            details.localPosition,
+                            coordinateSystem,
+                            penState.color,
+                            penState.thickness,
+                            penState.isDotted,
+                          );
                   }
 
                 case InteractionState.erasing:
@@ -149,14 +172,20 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
             onPanUpdate: (details) {
               switch (currentInteractionState) {
                 case InteractionState.drawing:
-                  if (penState.penMode == PenMode.square) {
-                    ref.read(drawingProvider.notifier).updateRectangle(
-                          details.localPosition,
-                          coordinateSystem,
-                        );
-                  } else {
-                    ref.read(drawingProvider.notifier).updateFreeDrawing(
-                        details.localPosition, coordinateSystem);
+                  switch (penState.penMode) {
+                    case PenMode.freeDraw:
+                      ref.read(drawingProvider.notifier).updateFreeDrawing(
+                          details.localPosition, coordinateSystem);
+                    case PenMode.line:
+                      ref.read(drawingProvider.notifier).updateCurrentLine(
+                            details.localPosition,
+                            coordinateSystem,
+                          );
+                    case PenMode.square:
+                      ref.read(drawingProvider.notifier).updateRectangle(
+                            details.localPosition,
+                            coordinateSystem,
+                          );
                   }
                 case InteractionState.erasing:
                   final normalizedPosition = CoordinateSystem.instance
@@ -176,14 +205,19 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
             onPanEnd: (details) {
               switch (currentInteractionState) {
                 case InteractionState.drawing:
-                  if (penState.penMode == PenMode.square) {
-                    ref
-                        .read(drawingProvider.notifier)
-                        .finishRectangle(null, coordinateSystem);
-                  } else {
-                    ref
-                        .read(drawingProvider.notifier)
-                        .finishFreeDrawing(null, coordinateSystem);
+                  switch (penState.penMode) {
+                    case PenMode.freeDraw:
+                      ref
+                          .read(drawingProvider.notifier)
+                          .finishFreeDrawing(null, coordinateSystem);
+                    case PenMode.line:
+                      ref
+                          .read(drawingProvider.notifier)
+                          .finishCurrentLine(null, coordinateSystem);
+                    case PenMode.square:
+                      ref
+                          .read(drawingProvider.notifier)
+                          .finishRectangle(null, coordinateSystem);
                   }
                 case InteractionState.erasing:
                   ref.read(visualPositionProvider.notifier).state = null;
@@ -274,18 +308,17 @@ class _TraversalTimeOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cards = <Widget>[
-      for (final element in elements.whereType<FreeDrawing>())
-        if (element.showTraversalTime)
+      for (final element in elements)
+        if (_showsTraversalTime(element))
           _buildTraversalCard(
-            drawing: element,
+            element: element,
             coordinateSystem: coordinateSystem,
             mapScale: mapScale,
             isAttack: isAttack,
           ),
-      if (currentLine is FreeDrawing &&
-          (currentLine as FreeDrawing).showTraversalTime)
+      if (currentLine != null && _showsTraversalTime(currentLine!))
         _buildTraversalCard(
-          drawing: currentLine as FreeDrawing,
+          element: currentLine!,
           coordinateSystem: coordinateSystem,
           mapScale: mapScale,
           isAttack: isAttack,
@@ -302,12 +335,13 @@ class _TraversalTimeOverlay extends StatelessWidget {
 }
 
 Widget _buildTraversalCard({
-  required FreeDrawing drawing,
+  required DrawingElement element,
   required CoordinateSystem coordinateSystem,
   required double mapScale,
   required bool isAttack,
 }) {
-  if (drawing.listOfPoints.isEmpty) return const SizedBox.shrink();
+  final anchor = _traversalAnchor(element);
+  if (anchor == null) return const SizedBox.shrink();
 
   final unitsPerMeter = AgentData.inGameMeters * mapScale;
   if (unitsPerMeter <= 0) return const SizedBox.shrink();
@@ -319,20 +353,26 @@ Widget _buildTraversalCard({
 
   final cardWidthScreen = coordinateSystem.scale(cardWidthMeters);
   final cardHeightScreen = coordinateSystem.scale(cardHeightMeters);
-  final anchor = drawing.listOfPoints.last.translate(
+  final cardTopLeft = anchor.translate(
     xOffsetMeters * unitsPerMeter,
     -yOffsetMeters * unitsPerMeter,
   );
-  final anchorScreen = coordinateSystem.coordinateToScreen(anchor);
+  final anchorScreen = coordinateSystem.coordinateToScreen(cardTopLeft);
 
   final timeSeconds = _calculateTraversalTime(
-    drawing: drawing,
+    element: element,
     unitsPerMeter: unitsPerMeter,
   );
   final label = "${timeSeconds.toStringAsFixed(2)}s";
+  final labelStyle = TextStyle(
+    fontSize: coordinateSystem.scale(10),
+    color: Settings.tacticalVioletTheme.foreground,
+    fontWeight: FontWeight.w600,
+    decoration: TextDecoration.none,
+  );
   final iconSize = coordinateSystem.scale(10).clamp(10.0, 20.0).toDouble();
   final leadingIcon = _buildTraversalModeIcon(
-    profile: drawing.traversalSpeedProfile,
+    profile: _traversalProfile(element),
     size: iconSize,
   );
 
@@ -368,11 +408,7 @@ Widget _buildTraversalCard({
                 const SizedBox(width: 4),
                 Text(
                   label,
-                  style: TextStyle(
-                    fontSize: coordinateSystem.scale(10),
-                    color: Settings.tacticalVioletTheme.foreground,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: labelStyle,
                 ),
               ],
             ),
@@ -416,26 +452,58 @@ Widget _buildTraversalModeIcon({
 }
 
 double _calculateTraversalTime({
-  required FreeDrawing drawing,
+  required DrawingElement element,
   required double unitsPerMeter,
 }) {
-  if (drawing.listOfPoints.length < 2) return 0.0;
+  double lengthUnits;
+  if (element is FreeDrawing) {
+    if (element.listOfPoints.length < 2) return 0.0;
 
-  double lengthUnits = drawing.cachedPolylineLengthUnits;
-  if (!lengthUnits.isFinite || lengthUnits < 0) {
-    lengthUnits = 0.0;
-    for (int i = 0; i < drawing.listOfPoints.length - 1; i++) {
-      lengthUnits +=
-          (drawing.listOfPoints[i + 1] - drawing.listOfPoints[i]).distance;
+    lengthUnits = element.cachedPolylineLengthUnits;
+    if (!lengthUnits.isFinite || lengthUnits < 0) {
+      lengthUnits = 0.0;
+      for (int i = 0; i < element.listOfPoints.length - 1; i++) {
+        lengthUnits +=
+            (element.listOfPoints[i + 1] - element.listOfPoints[i]).distance;
+      }
     }
+  } else if (element is Line) {
+    lengthUnits = (element.lineEnd - element.lineStart).distance;
+  } else {
+    return 0.0;
   }
 
   final distanceMeters = lengthUnits / unitsPerMeter;
-  final speed = TraversalSpeed.metersPerSecond[drawing.traversalSpeedProfile] ??
+  final speed = TraversalSpeed.metersPerSecond[_traversalProfile(element)] ??
       TraversalSpeed.metersPerSecond[TraversalSpeed.defaultProfile]!;
   if (speed <= 0) return 0.0;
 
   return distanceMeters / speed;
+}
+
+bool _showsTraversalTime(DrawingElement element) {
+  return switch (element) {
+    FreeDrawing drawing => drawing.showTraversalTime,
+    Line line => line.showTraversalTime,
+    _ => false,
+  };
+}
+
+TraversalSpeedProfile _traversalProfile(DrawingElement element) {
+  return switch (element) {
+    FreeDrawing drawing => drawing.traversalSpeedProfile,
+    Line line => line.traversalSpeedProfile,
+    _ => TraversalSpeed.defaultProfile,
+  };
+}
+
+Offset? _traversalAnchor(DrawingElement element) {
+  return switch (element) {
+    FreeDrawing drawing when drawing.listOfPoints.isNotEmpty =>
+      drawing.listOfPoints.last,
+    Line line => line.lineEnd,
+    _ => null,
+  };
 }
 
 class DrawingPainter extends CustomPainter {
@@ -457,15 +525,20 @@ class DrawingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = Colors.white
-      ..strokeWidth = coordinateSystem.scale(Settings.brushSize)
       ..style = PaintingStyle.stroke
       ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true
       ..strokeCap = StrokeCap.round;
 
     // Helper function to draw an arrow
-    void drawArrow(Canvas canvas, Paint paint, Offset from, Offset to) {
-      const double arrowHeadSize = 8; // Size of the arrowhead
+    void drawArrow(
+      Canvas canvas,
+      Paint paint,
+      Offset from,
+      Offset to,
+      double thickness,
+    ) {
+      final arrowHeadSize = 8 * (thickness / Settings.defaultStrokeThickness);
       const double arrowAngle = math.pi / 4; // 30 degrees arrow head angle
 
       // Calculate the direction angle from `from` to `to`
@@ -492,19 +565,40 @@ class DrawingPainter extends CustomPainter {
       canvas.drawPath(arrowPath, paint);
     }
 
+    void paintLine(Canvas canvas, Paint paint, Line line) {
+      paint.strokeWidth = coordinateSystem.scale(line.thickness);
+      final screenStartOffset =
+          coordinateSystem.coordinateToScreen(line.lineStart);
+      final screenEndOffset = coordinateSystem.coordinateToScreen(line.lineEnd);
+
+      if (line.isDotted) {
+        final space = coordinateSystem.scale(10);
+        final linePath = Path()
+          ..moveTo(screenStartOffset.dx, screenStartOffset.dy)
+          ..lineTo(screenEndOffset.dx, screenEndOffset.dy);
+        DashPainter(span: space, step: space).paint(canvas, linePath, paint);
+      } else {
+        canvas.drawLine(screenStartOffset, screenEndOffset, paint);
+      }
+
+      if (line.hasArrow) {
+        drawArrow(
+          canvas,
+          paint,
+          screenStartOffset,
+          screenEndOffset,
+          line.thickness,
+        );
+      }
+    }
+
     for (int i = 0; i < elements.length; i++) {
       paint.color = elements[i].color;
       if (elements[i] is Line) {
-        Line line = elements[i] as Line;
-        Offset screenStartOffset =
-            coordinateSystem.coordinateToScreen(line.lineStart);
-
-        Offset screenEndOffset =
-            coordinateSystem.coordinateToScreen(line.lineEnd);
-
-        canvas.drawLine(screenStartOffset, screenEndOffset, paint);
+        paintLine(canvas, paint, elements[i] as Line);
       } else if (elements[i] is RectangleDrawing) {
         final rectangle = elements[i] as RectangleDrawing;
+        paint.strokeWidth = coordinateSystem.scale(rectangle.thickness);
         final screenRect = Rect.fromPoints(
           coordinateSystem.coordinateToScreen(rectangle.start),
           coordinateSystem.coordinateToScreen(rectangle.end),
@@ -519,6 +613,7 @@ class DrawingPainter extends CustomPainter {
         }
       } else if (elements[i] is FreeDrawing) {
         FreeDrawing freeDrawing = elements[i] as FreeDrawing;
+        paint.strokeWidth = coordinateSystem.scale(freeDrawing.thickness);
         List<Offset> points = freeDrawing.listOfPoints;
         if (points.length < 2) continue;
 
@@ -536,7 +631,7 @@ class DrawingPainter extends CustomPainter {
           final from =
               coordinateSystem.coordinateToScreen(points[points.length - 2]);
           final to = coordinateSystem.coordinateToScreen(points.last);
-          drawArrow(canvas, paint, from, to);
+          drawArrow(canvas, paint, from, to, freeDrawing.thickness);
         }
       }
     }
@@ -545,6 +640,7 @@ class DrawingPainter extends CustomPainter {
       paint.color = currentLine!.color;
       if (currentLine is FreeDrawing) {
         final drawingElement = currentLine as FreeDrawing;
+        paint.strokeWidth = coordinateSystem.scale(drawingElement.thickness);
 
         if (drawingElement.isDotted) {
           final space = coordinateSystem.scale(10);
@@ -561,10 +657,13 @@ class DrawingPainter extends CustomPainter {
           final from =
               coordinateSystem.coordinateToScreen(points[points.length - 2]);
           final to = coordinateSystem.coordinateToScreen(points.last);
-          drawArrow(canvas, paint, from, to);
+          drawArrow(canvas, paint, from, to, drawingElement.thickness);
         }
+      } else if (currentLine is Line) {
+        paintLine(canvas, paint, currentLine as Line);
       } else if (currentLine is RectangleDrawing) {
         final rectangle = currentLine as RectangleDrawing;
+        paint.strokeWidth = coordinateSystem.scale(rectangle.thickness);
         final screenRect = Rect.fromPoints(
           coordinateSystem.coordinateToScreen(rectangle.start),
           coordinateSystem.coordinateToScreen(rectangle.end),

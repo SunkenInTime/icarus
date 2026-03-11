@@ -14,6 +14,16 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 final abilityProvider =
     NotifierProvider<AbilityProvider, List<PlacedAbility>>(AbilityProvider.new);
 
+class AbilityProviderSnapshot {
+  final List<PlacedAbility> abilities;
+  final List<PlacedAbility> poppedAbilities;
+
+  const AbilityProviderSnapshot({
+    required this.abilities,
+    required this.poppedAbilities,
+  });
+}
+
 class AbilitySnapshot {
   final String id;
   final List<PlacedAbility> snapshot;
@@ -49,7 +59,8 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     final ability = newState[index];
 
     final coordinateSystem = CoordinateSystem.instance;
-    final mapScale = Maps.mapScale[ref.read(mapProvider)] ?? 1.0;
+    final mapState = ref.read(mapProvider);
+    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
 
     final abilitySize = ref.read(strategySettingsProvider).abilitySize;
 
@@ -77,14 +88,18 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void switchSides() {
-    if (state.isEmpty) return;
+    if (state.isEmpty && poppedAbility.isEmpty) return;
 
     final newState = <PlacedAbility>[...state];
+    final mapState = ref.read(mapProvider);
+    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
+    final abilitySizeSetting = ref.read(strategySettingsProvider).abilitySize;
 
     for (final ability in state) {
-      final mapScale = Maps.mapScale[ref.read(mapProvider)] ?? 1.0;
-      final abilitySizeSetting = ref.read(strategySettingsProvider).abilitySize;
+      ability.switchSides(mapScale: mapScale, abilitySize: abilitySizeSetting);
+    }
 
+    for (final ability in poppedAbility) {
       ability.switchSides(mapScale: mapScale, abilitySize: abilitySizeSetting);
     }
 
@@ -92,15 +107,32 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void updateRotation(int index, double rotation, double length) {
+    updateGeometry(index, rotation: rotation, length: length);
+  }
+
+  void updateGeometry(
+    int index, {
+    double? rotation,
+    double? length,
+    List<double>? armLengthsMeters,
+  }) {
     final newState = [...state];
-    updateRotationHistory(index);
-    newState[index].updateRotation(rotation, length);
+    updateGeometryHistory(index);
+    newState[index].updateGeometry(
+      newRotation: rotation,
+      newLength: length,
+      newArmLengthsMeters: armLengthsMeters,
+    );
     final action = UserAction(
         type: ActionType.edit,
         id: newState[index].id,
         group: ActionGroup.ability);
     ref.read(actionProvider.notifier).addAction(action);
     state = newState;
+  }
+
+  void updateArmLengths(int index, List<double> armLengthsMeters) {
+    updateGeometry(index, armLengthsMeters: armLengthsMeters);
   }
 
   // void updateLength(int index, double length) {
@@ -117,9 +149,13 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   // }
 
   void updateRotationHistory(int index) {
+    updateGeometryHistory(index);
+  }
+
+  void updateGeometryHistory(int index) {
     final newState = [...state];
 
-    newState[index].updateRotationHistory();
+    newState[index].updateGeometryHistory();
 
     state = newState;
   }
@@ -157,6 +193,8 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
         log("Current rotation: ${newState[index].rotation} Current length: ${newState[index].length}");
         state = newState;
+      case ActionType.bulkDeletion:
+        return;
     }
   }
 
@@ -176,6 +214,8 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
           newState[index].redoAction();
+        case ActionType.bulkDeletion:
+          return;
       }
     } catch (_) {
       log("failed to find index");
@@ -203,6 +243,18 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   void clearAll() {
     poppedAbility = [];
     state = [];
+  }
+
+  AbilityProviderSnapshot takeSnapshot() {
+    return AbilityProviderSnapshot(
+      abilities: [...state],
+      poppedAbilities: [...poppedAbility],
+    );
+  }
+
+  void restoreSnapshot(AbilityProviderSnapshot snapshot) {
+    poppedAbility = [...snapshot.poppedAbilities];
+    state = [...snapshot.abilities];
   }
 
   String toJson() {

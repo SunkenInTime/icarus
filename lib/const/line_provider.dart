@@ -133,6 +133,16 @@ class LineUpState {
   }
 }
 
+class LineUpProviderSnapshot {
+  final List<LineUp> lineUps;
+  final List<LineUp> poppedLineUps;
+
+  const LineUpProviderSnapshot({
+    required this.lineUps,
+    required this.poppedLineUps,
+  });
+}
+
 class LineUpProvider extends Notifier<LineUpState> {
   final List<LineUp> _poppedLineUps = [];
   @override
@@ -179,13 +189,30 @@ class LineUpProvider extends Notifier<LineUpState> {
     final currentMap = ref.read(mapProvider).currentMap;
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final newState = [...state.lineUps];
+    final currentAgent = state.currentAgent;
+    final currentAbility = state.currentAbility;
 
     for (final lineUp in newState) {
       lineUp.switchSides(
           agentSize: agentSize, abilitySize: abilitySize, mapScale: mapScale);
     }
 
-    state = state.copyWith(lineUps: newState);
+    for (final lineUp in _poppedLineUps) {
+      lineUp.switchSides(
+          agentSize: agentSize, abilitySize: abilitySize, mapScale: mapScale);
+    }
+
+    currentAgent?.switchSides(agentSize);
+    currentAbility?.switchSides(
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
+
+    state = state.copyWith(
+      lineUps: newState,
+      currentAgent: currentAgent,
+      currentAbility: currentAbility,
+    );
   }
 
   void setSelectingPosition(bool isSelecting, {PlacingType? type}) {
@@ -223,13 +250,28 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void updateRotation(double rotation, double length) {
+    updateGeometry(rotation: rotation, length: length);
+  }
+
+  void updateGeometry({
+    double? rotation,
+    double? length,
+    List<double>? armLengthsMeters,
+  }) {
     if (state.currentAbility != null) {
-      final updatedAbility =
-          state.currentAbility!.copyWith(rotation: rotation, length: length);
+      final updatedAbility = state.currentAbility!.copyWith(
+        rotation: rotation,
+        length: length,
+        armLengthsMeters: armLengthsMeters,
+      );
 
       log("Updated ability: ${updatedAbility.rotation} ${updatedAbility.length}");
       state = state.copyWith(currentAbility: updatedAbility);
     }
+  }
+
+  void updateArmLengths(List<double> armLengthsMeters) {
+    updateGeometry(armLengthsMeters: armLengthsMeters);
   }
   //Have a hover glow on what agent is selectabel in the sidebar list
 
@@ -296,6 +338,8 @@ class LineUpProvider extends Notifier<LineUpState> {
         state = newState;
       case ActionType.edit:
       //Do nothing
+      case ActionType.bulkDeletion:
+        return;
     }
   }
 
@@ -317,6 +361,8 @@ class LineUpProvider extends Notifier<LineUpState> {
         state = newState;
       case ActionType.edit:
       //Do nothing
+      case ActionType.bulkDeletion:
+        return;
     }
   }
 
@@ -324,6 +370,20 @@ class LineUpProvider extends Notifier<LineUpState> {
     log("Clearing all line ups");
     _poppedLineUps.clear();
     state = state.copyWith(lineUps: []);
+  }
+
+  LineUpProviderSnapshot takeSnapshot() {
+    return LineUpProviderSnapshot(
+      lineUps: [...state.lineUps],
+      poppedLineUps: [..._poppedLineUps],
+    );
+  }
+
+  void restoreSnapshot(LineUpProviderSnapshot snapshot) {
+    _poppedLineUps
+      ..clear()
+      ..addAll(snapshot.poppedLineUps);
+    state = state.copyWith(lineUps: [...snapshot.lineUps]);
   }
 }
 

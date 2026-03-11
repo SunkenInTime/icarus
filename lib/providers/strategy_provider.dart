@@ -4,7 +4,8 @@ import 'dart:developer';
 import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, listEquals, visibleForTesting;
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -17,6 +18,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
+import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -27,6 +29,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -318,7 +321,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       final worldMigrated = migrateToWorld16x9(legacyMigrated);
       final abilityScaleMigrated = migrateAbilityScale(worldMigrated);
       final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
-      if (squareAoeMigrated != abilityScaleMigrated) {
+      final customCircleMigrated =
+          migrateCustomCircleWrapper(squareAoeMigrated);
+      if (customCircleMigrated != squareAoeMigrated) {
+        await box.put(customCircleMigrated.id, customCircleMigrated);
+      } else if (squareAoeMigrated != abilityScaleMigrated) {
         await box.put(squareAoeMigrated.id, squareAoeMigrated);
       } else if (abilityScaleMigrated != worldMigrated) {
         await box.put(abilityScaleMigrated.id, abilityScaleMigrated);
@@ -385,12 +392,41 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
+  static StrategyData migrateCustomCircleWrapper(StrategyData strat,
+      {bool force = false}) {
+    if (!force && strat.versionNumber >= CustomCircleWrapperMigration.version) {
+      return strat;
+    }
+
+    final migratedPages = CustomCircleWrapperMigration.migratePages(
+      pages: strat.pages,
+      map: strat.mapData,
+    );
+
+    final hasPageChanged = migratedPages.length == strat.pages.length &&
+        migratedPages.asMap().entries.any((entry) {
+          final index = entry.key;
+          return entry.value != strat.pages[index];
+        });
+
+    if (!hasPageChanged && !force) {
+      return strat;
+    }
+
+    return strat.copyWith(
+      pages: migratedPages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
   static StrategyData migrateToCurrentVersion(StrategyData strat,
       {bool forceAbilityScale = false}) {
     final worldMigrated = migrateToWorld16x9(strat);
     final abilityScaleMigrated =
         migrateAbilityScale(worldMigrated, force: forceAbilityScale);
-    return migrateSquareAoeCenter(abilityScaleMigrated);
+    final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
+    return migrateCustomCircleWrapper(squareAoeMigrated);
   }
 
   static Future<StrategyData> migrateLegacyData(StrategyData strat) async {
@@ -451,9 +487,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       worldMigrated,
       force: originalVersion < AbilityScaleMigration.version,
     );
-    return migrateSquareAoeCenter(
+    final squareAoeMigrated = migrateSquareAoeCenter(
       abilityScaleMigrated,
       force: originalVersion < SquareAoeCenterMigration.version,
+    );
+    return migrateCustomCircleWrapper(
+      squareAoeMigrated,
+      force: originalVersion < CustomCircleWrapperMigration.version,
     );
   }
 
@@ -546,6 +586,14 @@ class StrategyProvider extends Notifier<StrategyState> {
       ];
     }
 
+    BoundingBox? shiftBoundingBox(BoundingBox? boundingBox) {
+      if (boundingBox == null) return null;
+      return BoundingBox(
+        min: shift(boundingBox.min),
+        max: shift(boundingBox.max),
+      );
+    }
+
     List<DrawingElement> shiftDrawings(List<DrawingElement> drawings) {
       return drawings
           .map((element) {
@@ -554,25 +602,38 @@ class StrategyProvider extends Notifier<StrategyState> {
                 lineStart: shift(element.lineStart),
                 lineEnd: shift(element.lineEnd),
                 color: element.color,
+                thickness: element.thickness,
+                boundingBox: shiftBoundingBox(element.boundingBox),
                 isDotted: element.isDotted,
                 hasArrow: element.hasArrow,
                 id: element.id,
+                showTraversalTime: element.showTraversalTime,
+                traversalSpeedProfile: element.traversalSpeedProfile,
               );
             }
             if (element is FreeDrawing) {
               final shiftedPoints =
                   element.listOfPoints.map(shift).toList(growable: false);
-              final shiftedBoundingBox = element.boundingBox == null
-                  ? null
-                  : BoundingBox(
-                      min: shift(element.boundingBox!.min),
-                      max: shift(element.boundingBox!.max),
-                    );
 
               return FreeDrawing(
                 listOfPoints: shiftedPoints,
                 color: element.color,
-                boundingBox: shiftedBoundingBox,
+                thickness: element.thickness,
+                boundingBox: shiftBoundingBox(element.boundingBox),
+                isDotted: element.isDotted,
+                hasArrow: element.hasArrow,
+                id: element.id,
+                showTraversalTime: element.showTraversalTime,
+                traversalSpeedProfile: element.traversalSpeedProfile,
+              );
+            }
+            if (element is RectangleDrawing) {
+              return RectangleDrawing(
+                start: shift(element.start),
+                end: shift(element.end),
+                color: element.color,
+                thickness: element.thickness,
+                boundingBox: shiftBoundingBox(element.boundingBox),
                 isDotted: element.isDotted,
                 hasArrow: element.hasArrow,
                 id: element.id,
@@ -627,7 +688,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     activePageID = page.id;
     state = state.copyWith(activePageId: page.id);
 
-    ref.read(actionProvider.notifier).clearAllActions();
+    ref.read(actionProvider.notifier).resetActionState();
     final migrated = migrateToCurrentVersion(doc);
     final migratedPage = migrated.pages.firstWhere(
       (p) => p.id == page.id,
@@ -843,10 +904,20 @@ class StrategyProvider extends Notifier<StrategyState> {
                 PageTransitionEntry.rotationOf(to) ||
             PageTransitionEntry.lengthOf(from) !=
                 PageTransitionEntry.lengthOf(to) ||
+            !listEquals(
+              PageTransitionEntry.armLengthsOf(from),
+              PageTransitionEntry.armLengthsOf(to),
+            ) ||
             PageTransitionEntry.scaleOf(from) !=
                 PageTransitionEntry.scaleOf(to) ||
             PageTransitionEntry.textSizeOf(from) !=
-                PageTransitionEntry.textSizeOf(to)) {
+                PageTransitionEntry.textSizeOf(to) ||
+            PageTransitionEntry.customDiameterOf(from) !=
+                PageTransitionEntry.customDiameterOf(to) ||
+            PageTransitionEntry.customWidthOf(from) !=
+                PageTransitionEntry.customWidthOf(to) ||
+            PageTransitionEntry.customLengthOf(from) !=
+                PageTransitionEntry.customLengthOf(to)) {
           entries
               .add(PageTransitionEntry.move(from: from, to: to, order: order));
         } else {
@@ -919,7 +990,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       log("Couldn't find save");
       return;
     }
-    ref.read(actionProvider.notifier).clearAllActions();
+    ref.read(actionProvider.notifier).resetActionState();
 
     List<PlacedImage> pageImageData = [];
     for (final page in newStrat.pages) {
@@ -1454,6 +1525,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (strategy != null) {
       strategy.name = newName;
       await strategy.save();
+      if (state.id == strategyID) {
+        state = state.copyWith(stratName: newName);
+      }
     } else {
       log("Strategy with ID $strategyID not found.");
     }
@@ -1536,6 +1610,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   // Flush currently active page (uses activePageID). Safe if null/missing.
   Future<void> _syncCurrentPageToHive() async {
+    ref.read(textDraftProvider.notifier).commitAllDrafts();
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     log("Syncing current page to hive for strategy ${state.id}");
     final strat = box.get(state.id);

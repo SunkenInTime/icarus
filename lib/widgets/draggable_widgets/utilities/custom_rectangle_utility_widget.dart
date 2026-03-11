@@ -5,7 +5,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
@@ -33,11 +33,11 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
     final utility = _getUtility(ref);
     final effectiveMapScale = mapScale ?? 1.0;
 
-    final effectiveWidthMeters = utility?.customWidth ?? widthMeters;
-    final effectiveLengthMeters = utility?.customLength ?? rectLengthMeters;
-    final effectiveColorValue = utility?.customColorValue ?? colorValue;
+    final effectiveWidthMeters = widthMeters ?? utility?.customWidth;
+    final effectiveLengthMeters = rectLengthMeters ?? utility?.customLength;
+    final effectiveColorValue = colorValue ?? utility?.customColorValue;
     final effectiveOpacityPercent =
-        utility?.customOpacityPercent ?? opacityPercent;
+        opacityPercent ?? utility?.customOpacityPercent;
     final hasAllRequiredValues = effectiveWidthMeters != null &&
         effectiveLengthMeters != null &&
         effectiveColorValue != null &&
@@ -85,16 +85,9 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
           Center(
             child: MouseWatch(
               cursor: SystemMouseCursors.click,
-              onDeleteKeyPressed: () {
-                if (id == null) return;
-                final action = UserAction(
-                  type: ActionType.deletion,
-                  id: id!,
-                  group: ActionGroup.utility,
-                );
-                ref.read(actionProvider.notifier).addAction(action);
-                ref.read(utilityProvider.notifier).removeUtility(id!);
-              },
+              deleteTarget: (id?.isNotEmpty ?? false)
+                  ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
+                  : null,
               child: Container(
                 width: iconSize * 0.8,
                 height: iconSize * 0.8,

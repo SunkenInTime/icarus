@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+
+      - name: Add Pub Cache To PATH
+        shell: pwsh
+        run: |
+          "$env:LOCALAPPDATA\Pub\Cache\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install FVM
+        shell: pwsh
+        run: dart pub global activate fvm
+
+      - name: Install Flutter SDK
+        shell: pwsh
+        run: fvm install
+
+      - name: Get Dependencies
+        shell: pwsh
+        run: fvm flutter pub get
+
+      - name: Analyze
+        shell: pwsh
+        run: fvm flutter analyze --no-fatal-infos
+      - name: Run Tests
+        shell: pwsh
+        run: fvm flutter test

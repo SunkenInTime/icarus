@@ -7,14 +7,26 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:icarus/const/placed_classes.dart';
 
 final agentProvider =
     NotifierProvider<AgentProvider, List<PlacedAgent>>(AgentProvider.new);
 
+class AgentProviderSnapshot {
+  final List<PlacedAgent> agents;
+  final List<PlacedAgent> poppedAgents;
+
+  const AgentProviderSnapshot({
+    required this.agents,
+    required this.poppedAgents,
+  });
+}
+
 class AgentProvider extends Notifier<List<PlacedAgent>> {
   List<PlacedAgent> poppedAgents = [];
+  static const _uuid = Uuid();
 
   @override
   List<PlacedAgent> build() {
@@ -87,6 +99,26 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
     state = [...newState, temp];
   }
 
+  String? duplicateAgentAt({
+    required String sourceId,
+    required Offset position,
+  }) {
+    final agentSize = ref.read(strategySettingsProvider).agentSize;
+    final centerPosition =
+        Offset(position.dx + agentSize / 2, position.dy + agentSize / 2);
+    final coordinateSystem = CoordinateSystem.instance;
+    if (coordinateSystem.isOutOfBounds(centerPosition)) return null;
+
+    final sourceIndex = PlacedWidget.getIndexByID(sourceId, state);
+    if (sourceIndex < 0) return null;
+
+    final sourceAgent = state[sourceIndex];
+    final duplicatedAgent =
+        sourceAgent.copyWith(id: _uuid.v4(), position: position);
+    addAgent(duplicatedAgent);
+    return duplicatedAgent.id;
+  }
+
   void undoAction(UserAction action) {
     log("I tried to remove a deleted item");
 
@@ -106,6 +138,8 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
         state = newState;
       case ActionType.edit:
         undoPosition(action.id);
+      case ActionType.bulkDeletion:
+        return;
     }
   }
 
@@ -136,6 +170,8 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
           newState[index].redoAction();
+        case ActionType.bulkDeletion:
+          return;
       }
     } catch (_) {
       log("failed to find index");
@@ -201,5 +237,17 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
   void clearAll() {
     poppedAgents = [];
     state = [];
+  }
+
+  AgentProviderSnapshot takeSnapshot() {
+    return AgentProviderSnapshot(
+      agents: [...state],
+      poppedAgents: [...poppedAgents],
+    );
+  }
+
+  void restoreSnapshot(AgentProviderSnapshot snapshot) {
+    poppedAgents = [...snapshot.poppedAgents];
+    state = [...snapshot.agents];
   }
 }

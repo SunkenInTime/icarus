@@ -517,6 +517,7 @@ class AgentData implements DraggableData {
         color: Colors.white,
         minLength: inGameMeters * 1,
         isWall: true,
+        defaultToMaxLength: true,
       );
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
@@ -588,13 +589,16 @@ class AgentData implements DraggableData {
         name: "Neon",
       );
 
-      agent.abilities.first.abilityData = SquareAbility(
+      agent.abilities.first.abilityData = ResizableSquareAbility(
         width: 3.5 * inGameMeters,
         height: 45 * inGameMeters,
         iconPath: agent.abilities.first.iconPath,
         color: Colors.blueAccent,
         hasSideBorders: true,
         isTransparent: true,
+        isWall: true,
+        minLength: inGameMeters * 1,
+        defaultToMaxLength: true,
       );
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
@@ -738,6 +742,11 @@ class AgentData implements DraggableData {
         color: Colors.blue,
       );
 
+      agent.abilities[2].abilityData = DeadlockBarrierMeshAbility(
+        iconPath: agent.abilities[2].iconPath,
+        color: Colors.blue,
+      );
+
       return agent;
     })(),
     AgentType.gekko: (() {
@@ -788,11 +797,14 @@ class AgentData implements DraggableData {
       //   color: Colors.lightBlue,
       // );
 
-      agent.abilities.last.abilityData = SquareAbility(
+      agent.abilities.last.abilityData = ResizableSquareAbility(
         width: 20 * inGameMeters,
         height: 40 * inGameMeters,
         iconPath: agent.abilities.last.iconPath,
         color: Colors.lightBlue,
+        minLength: inGameMeters * 1,
+        defaultToMaxLength: true,
+        hasTopborder: true,
       );
 
       return agent;

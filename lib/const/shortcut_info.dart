@@ -2,25 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 class ShortcutInfo {
-  static final Map<ShortcutActivator, Intent> widgetShortcuts = {
-    LogicalKeySet(LogicalKeyboardKey.keyE): const WidgetDeleteIntent()
-  };
+  static const LogicalKeyboardKey openDeleteMenuKey = LogicalKeyboardKey.keyE;
 
   static final Map<ShortcutActivator, Intent> globalShortcuts = {
     LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyZ):
         const UndoActionIntent(),
     LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyZ):
         const UndoActionIntent(),
+    LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyS):
+        const SaveStrategyIntent(),
+    LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyS):
+        const SaveStrategyIntent(),
     LogicalKeySet(LogicalKeyboardKey.meta, LogicalKeyboardKey.keyZ,
         LogicalKeyboardKey.shift): const RedoActionIntent(),
     LogicalKeySet(LogicalKeyboardKey.control, LogicalKeyboardKey.keyZ,
         LogicalKeyboardKey.shift): const RedoActionIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyQ): const ToggleDrawingIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyW): const ToggleErasingIntent(),
+    LogicalKeySet(openDeleteMenuKey): const ContextualDeleteIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyT): const AddedTextIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyS): const NavigationActionIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyR): const ToggleAgentFilterIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyD): const ForwardPageIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyA): const BackwardPageIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyC): const AddPageIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyG): const ToggleLineupIntent(),
     LogicalKeySet(LogicalKeyboardKey.f12): const OpenInAppDebugIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyV, LogicalKeyboardKey.control):
         const PasteImageIntent(),
@@ -45,13 +51,21 @@ class ShortcutInfo {
         const DoNothingAndStopPropagationIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyD):
         const DoNothingAndStopPropagationIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyC):
+        const DoNothingAndStopPropagationIntent(),
     // Override Q and W shortcuts
     LogicalKeySet(LogicalKeyboardKey.keyQ):
         const DoNothingAndStopPropagationIntent(),
     LogicalKeySet(LogicalKeyboardKey.keyW):
         const DoNothingAndStopPropagationIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyE):
+        const DoNothingAndStopPropagationIntent(),
 
     LogicalKeySet(LogicalKeyboardKey.keyS):
+        const DoNothingAndStopPropagationIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyR):
+        const DoNothingAndStopPropagationIntent(),
+    LogicalKeySet(LogicalKeyboardKey.keyG):
         const DoNothingAndStopPropagationIntent(),
 
     LogicalKeySet(LogicalKeyboardKey.enter): const EnterTextIntent(),
@@ -62,10 +76,6 @@ class ShortcutInfo {
 
 class PasteImageIntent extends Intent {
   const PasteImageIntent();
-}
-
-class WidgetDeleteIntent extends Intent {
-  const WidgetDeleteIntent();
 }
 
 class ToggleDrawingIntent extends Intent {
@@ -80,6 +90,10 @@ class ToggleErasingIntent extends Intent {
   const ToggleErasingIntent();
 }
 
+class ContextualDeleteIntent extends Intent {
+  const ContextualDeleteIntent();
+}
+
 class EnterTextIntent extends Intent {
   const EnterTextIntent();
 }
@@ -92,8 +106,16 @@ class RedoActionIntent extends Intent {
   const RedoActionIntent();
 }
 
+class SaveStrategyIntent extends Intent {
+  const SaveStrategyIntent();
+}
+
 class NavigationActionIntent extends Intent {
   const NavigationActionIntent();
+}
+
+class ToggleAgentFilterIntent extends Intent {
+  const ToggleAgentFilterIntent();
 }
 
 class ForwardPageIntent extends Intent {
@@ -102,6 +124,14 @@ class ForwardPageIntent extends Intent {
 
 class BackwardPageIntent extends Intent {
   const BackwardPageIntent();
+}
+
+class AddPageIntent extends Intent {
+  const AddPageIntent();
+}
+
+class ToggleLineupIntent extends Intent {
+  const ToggleLineupIntent();
 }
 
 class OpenInAppDebugIntent extends Intent {

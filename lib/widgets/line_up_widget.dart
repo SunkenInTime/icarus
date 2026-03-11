@@ -69,6 +69,7 @@ class LineUpAbilityWidget extends ConsumerWidget {
                 lineUpId: lineUp.id,
                 rotation: lineUp.ability.rotation,
                 length: lineUp.ability.length,
+                armLengthsMeters: lineUp.ability.armLengthsMeters,
               ),
             )
           : lineUp.ability.data.abilityData!.createWidget(
@@ -78,6 +79,7 @@ class LineUpAbilityWidget extends ConsumerWidget {
               lineUpId: lineUp.id,
               rotation: lineUp.ability.rotation,
               length: lineUp.ability.length,
+              armLengthsMeters: lineUp.ability.armLengthsMeters,
             ),
     );
   }

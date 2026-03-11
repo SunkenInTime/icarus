@@ -2,6 +2,7 @@
 
 import 'dart:developer';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -10,6 +11,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -24,6 +26,8 @@ import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_circle_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_rectangle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/utility_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_view_cone_widget.dart';
 import 'package:icarus/const/utilities.dart';
@@ -131,6 +135,9 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 return;
               }
               ref.read(agentProvider.notifier).addAgent(placedAgent);
+              ref
+                  .read(abilityBarProvider.notifier)
+                  .updateData(AgentData.agents[placedAgent.type]!);
             } else if (details.data is AbilityInfo) {
               PlacedAbility placedAbility = PlacedAbility(
                 id: uuid.v4(),
@@ -256,13 +263,20 @@ class _AbilityList extends ConsumerWidget {
   }
 }
 
-class _AgentList extends ConsumerWidget {
+class _AgentList extends ConsumerStatefulWidget {
   const _AgentList({required this.coordinateSystem});
 
   final CoordinateSystem coordinateSystem;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AgentList> createState() => _AgentListState();
+}
+
+class _AgentListState extends ConsumerState<_AgentList> {
+  final Map<String, String> _pendingDuplicateDragBySource = {};
+
+  @override
+  Widget build(BuildContext context) {
     final agents = ref.watch(agentProvider);
     final zoomDragAnchorStrategy =
         ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy;
@@ -273,11 +287,26 @@ class _AgentList extends ConsumerWidget {
         for (final agent in agents)
           Positioned(
             key: ValueKey(agent.id),
-            left: coordinateSystem.coordinateToScreen(agent.position).dx,
-            top: coordinateSystem.coordinateToScreen(agent.position).dy,
+            left: widget.coordinateSystem.coordinateToScreen(agent.position).dx,
+            top: widget.coordinateSystem.coordinateToScreen(agent.position).dy,
             child: Draggable<PlacedWidget>(
               data: agent,
               dragAnchorStrategy: zoomDragAnchorStrategy,
+              onDragStarted: () {
+                final shouldDuplicate =
+                    HardwareKeyboard.instance.isControlPressed ||
+                        HardwareKeyboard.instance.isMetaPressed;
+                if (!shouldDuplicate) return;
+
+                final duplicatedId =
+                    ref.read(agentProvider.notifier).duplicateAgentAt(
+                          sourceId: agent.id,
+                          position: agent.position,
+                        );
+                if (duplicatedId != null) {
+                  _pendingDuplicateDragBySource[agent.id] = duplicatedId;
+                }
+              },
               feedback: Opacity(
                 opacity: Settings.feedbackOpacity,
                 child: ZoomTransform(
@@ -294,7 +323,16 @@ class _AgentList extends ConsumerWidget {
                 final renderBox = context.findRenderObject() as RenderBox;
                 final localOffset = renderBox.globalToLocal(details.offset);
                 final virtualOffset =
-                    coordinateSystem.screenToCoordinate(localOffset);
+                    widget.coordinateSystem.screenToCoordinate(localOffset);
+
+                final duplicateId =
+                    _pendingDuplicateDragBySource.remove(agent.id);
+                if (duplicateId != null) {
+                  ref
+                      .read(agentProvider.notifier)
+                      .updatePosition(virtualOffset, duplicateId);
+                  return;
+                }
 
                 ref
                     .read(agentProvider.notifier)
@@ -539,61 +577,87 @@ class _CustomShapeUtilityList extends ConsumerWidget {
             left:
                 coordinateSystem.coordinateToScreen(placedUtility.position).dx,
             top: coordinateSystem.coordinateToScreen(placedUtility.position).dy,
-            child: UtilityWidgetBuilder(
-              rotation: placedUtility.rotation,
-              length: placedUtility.length,
-              utility: placedUtility,
-              id: placedUtility.id,
-              onDragEnd: (details) {
-                final renderBox = context.findRenderObject() as RenderBox;
-                final localOffset = renderBox.globalToLocal(details.offset);
-                final virtualOffset =
-                    coordinateSystem.screenToCoordinate(localOffset);
+            child: placedUtility.type == UtilityType.customCircle
+                ? PlacedCustomCircleWidget(
+                    utility: placedUtility,
+                    id: placedUtility.id,
+                    onDragEnd: (details) {
+                      final renderBox = context.findRenderObject() as RenderBox;
+                      final localOffset =
+                          renderBox.globalToLocal(details.offset);
+                      final virtualOffset =
+                          coordinateSystem.screenToCoordinate(localOffset);
 
-                Offset safeArea;
-                if (placedUtility.type == UtilityType.customCircle) {
-                  final diameterMeters = placedUtility.customDiameter;
-                  if (diameterMeters == null) {
-                    log('Missing customDiameter for custom circle ${placedUtility.id}, removing malformed utility.');
-                    ref
-                        .read(utilityProvider.notifier)
-                        .removeUtility(placedUtility.id);
-                    return;
-                  }
-                  final diameter = diameterMeters *
-                      AgentData.inGameMetersDiameter *
-                      mapScale;
-                  safeArea = Offset(diameter / 2, diameter / 2);
-                } else {
-                  final widthMeters = placedUtility.customWidth;
-                  final lengthMeters = placedUtility.customLength;
-                  if (widthMeters == null || lengthMeters == null) {
-                    log('Missing custom rectangle dimensions for ${placedUtility.id}, removing malformed utility.');
-                    ref
-                        .read(utilityProvider.notifier)
-                        .removeUtility(placedUtility.id);
-                    return;
-                  }
-                  final width =
-                      widthMeters * AgentData.inGameMetersDiameter * mapScale;
-                  final length =
-                      lengthMeters * AgentData.inGameMetersDiameter * mapScale;
-                  safeArea = Offset(length / 2, width / 2);
-                }
+                      final diameterMeters = placedUtility.customDiameter;
+                      if (diameterMeters == null) {
+                        log('Missing customDiameter for custom circle ${placedUtility.id}, removing malformed utility.');
+                        ref
+                            .read(utilityProvider.notifier)
+                            .removeUtility(placedUtility.id);
+                        return;
+                      }
 
-                if (coordinateSystem.isOutOfBounds(virtualOffset.translate(
-                    safeArea.dx / 2, safeArea.dy / 2))) {
-                  ref
-                      .read(utilityProvider.notifier)
-                      .removeUtility(placedUtility.id);
-                  return;
-                }
+                      final safeArea = UtilityData
+                          .utilityWidgets[placedUtility.type]!
+                          .getAnchorPoint(
+                        mapScale: mapScale,
+                        diameterMeters: diameterMeters,
+                      );
 
-                ref
-                    .read(utilityProvider.notifier)
-                    .updatePosition(virtualOffset, placedUtility.id);
-              },
-            ),
+                      if (coordinateSystem.isOutOfBounds(
+                          virtualOffset.translate(safeArea.dx, safeArea.dy))) {
+                        ref
+                            .read(utilityProvider.notifier)
+                            .removeUtility(placedUtility.id);
+                        return;
+                      }
+
+                      ref
+                          .read(utilityProvider.notifier)
+                          .updatePosition(virtualOffset, placedUtility.id);
+                    },
+                  )
+                : PlacedCustomRectangleWidget(
+                    utility: placedUtility,
+                    id: placedUtility.id,
+                    onDragEnd: (details) {
+                      final renderBox = context.findRenderObject() as RenderBox;
+                      final localOffset =
+                          renderBox.globalToLocal(details.offset);
+                      final virtualOffset =
+                          coordinateSystem.screenToCoordinate(localOffset);
+
+                      final widthMeters = placedUtility.customWidth;
+                      final lengthMeters = placedUtility.customLength;
+                      if (widthMeters == null || lengthMeters == null) {
+                        log('Missing custom rectangle dimensions for ${placedUtility.id}, removing malformed utility.');
+                        ref
+                            .read(utilityProvider.notifier)
+                            .removeUtility(placedUtility.id);
+                        return;
+                      }
+
+                      final width = widthMeters *
+                          AgentData.inGameMetersDiameter *
+                          mapScale;
+                      final length = lengthMeters *
+                          AgentData.inGameMetersDiameter *
+                          mapScale;
+                      final safeArea = Offset(length / 2, width / 2);
+
+                      if (coordinateSystem.isOutOfBounds(
+                          virtualOffset.translate(safeArea.dx, safeArea.dy))) {
+                        ref
+                            .read(utilityProvider.notifier)
+                            .removeUtility(placedUtility.id);
+                        return;
+                      }
+
+                      ref
+                          .read(utilityProvider.notifier)
+                          .updatePosition(virtualOffset, placedUtility.id);
+                    },
+                  ),
           ),
       ],
     );

@@ -194,6 +194,7 @@ class _CollapsedPill extends StatelessWidget {
             onTap: onAdd,
             tooltip: "Add page",
             color: Settings.tacticalVioletTheme.primary,
+            shortcutLabel: 'C',
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -364,6 +365,7 @@ class _ExpandedPanel extends ConsumerWidget {
                   onTap: onAdd,
                   tooltip: "Add page",
                   color: Settings.tacticalVioletTheme.primary,
+                  shortcutLabel: 'C',
                 ),
                 const Spacer(),
                 ShadIconButton.ghost(
@@ -533,19 +535,24 @@ class _SquareIconButton extends StatelessWidget {
     required this.onTap,
     required this.tooltip,
     required this.color,
+    this.shortcutLabel,
   });
 
   final IconData icon;
   final VoidCallback onTap;
   final String tooltip;
   final Color color;
+  final String? shortcutLabel;
 
   @override
   Widget build(BuildContext context) {
-    return ShadTooltip(
+    final button = ShadTooltip(
       builder: (context) => Text(tooltip),
       child: ShadIconButton(
-        icon: const Icon(Icons.add),
+        backgroundColor: color,
+        hoverBackgroundColor: color,
+        foregroundColor: Colors.white,
+        icon: Icon(icon),
         width: 36,
         height: 36,
         onPressed: onTap,
@@ -554,6 +561,34 @@ class _SquareIconButton extends StatelessWidget {
             radius: BorderRadius.circular(12),
           ),
         ),
+      ),
+    );
+
+    if (shortcutLabel == null || shortcutLabel!.isEmpty) {
+      return button;
+    }
+
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(child: button),
+          Positioned(
+            right: 6,
+            bottom: 5,
+            child: Text(
+              shortcutLabel!,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontSize: 7,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white.withValues(alpha: 0.9),
+                    height: 1.0,
+                  ),
+            ),
+          ),
+        ],
       ),
     );
   }

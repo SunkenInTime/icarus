@@ -27,7 +27,8 @@ AppId={{2B31297D-A96B-4B4B-8899-0098A865B4BA}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={localappdata}\Programs\{#MyAppName}
+UsePreviousAppDir=yes
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 ChangesAssociations=yes
@@ -38,7 +39,7 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 SetupIconFile=E:\Projects\icarus\windows\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
@@ -57,11 +58,11 @@ Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Registry]
-; Machine-wide file association (installer runs as admin).
-Root: HKLM; Subkey: "Software\\Classes\\.ica"; ValueType: string; ValueName: ""; ValueData: "Icarus.Strategy"; Flags: uninsdeletevalue; Tasks: registerica
-Root: HKLM; Subkey: "Software\\Classes\\Icarus.Strategy"; ValueType: string; ValueName: ""; ValueData: "Icarus Strategy File"; Flags: uninsdeletekey; Tasks: registerica
-Root: HKLM; Subkey: "Software\\Classes\\Icarus.Strategy\\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"; Tasks: registerica
-Root: HKLM; Subkey: "Software\\Classes\\Icarus.Strategy\\shell\\open\\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: registerica
+; Per-user file association to keep install and updates non-admin.
+Root: HKCU; Subkey: "Software\\Classes\\.ica"; ValueType: string; ValueName: ""; ValueData: "Icarus.Strategy"; Flags: uninsdeletevalue; Tasks: registerica
+Root: HKCU; Subkey: "Software\\Classes\\Icarus.Strategy"; ValueType: string; ValueName: ""; ValueData: "Icarus Strategy File"; Flags: uninsdeletekey; Tasks: registerica
+Root: HKCU; Subkey: "Software\\Classes\\Icarus.Strategy\\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"; Tasks: registerica
+Root: HKCU; Subkey: "Software\\Classes\\Icarus.Strategy\\shell\\open\\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: registerica
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent

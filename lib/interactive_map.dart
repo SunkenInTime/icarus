@@ -63,6 +63,25 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   final controller = TransformationController();
   Size? _lastViewportSize;
   bool _placementCenterUpdateScheduled = false;
+  bool _zoomSyncScheduled = false;
+  double? _pendingZoom;
+
+  void _scheduleZoomSync() {
+    _pendingZoom = controller.value.getMaxScaleOnAxis();
+    if (_zoomSyncScheduled) return;
+    _zoomSyncScheduled = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _zoomSyncScheduled = false;
+      if (!mounted || _pendingZoom == null) return;
+
+      final nextZoom = _pendingZoom == 0 ? 1.0 : _pendingZoom!;
+      _pendingZoom = null;
+      final currentZoom = ref.read(screenZoomProvider);
+      if ((currentZoom - nextZoom).abs() < 0.0001) return;
+      ref.read(screenZoomProvider.notifier).updateZoom(nextZoom);
+    });
+  }
 
   Offset _clampToWorld(Offset value, CoordinateSystem coordinateSystem) {
     const double edgePadding = 10.0;
@@ -106,7 +125,14 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    controller.addListener(_scheduleZoomSync);
+  }
+
+  @override
   void dispose() {
+    controller.removeListener(_scheduleZoomSync);
     controller.dispose();
     super.dispose();
   }

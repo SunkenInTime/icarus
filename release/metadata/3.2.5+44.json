@@ -1,0 +1,49 @@
+{
+  "version": "3.2.5+44",
+  "shortVersion": 44,
+  "title": "3.2.5 Release: Editing, Cleanup, and Desktop Updates",
+  "description": "Desktop updater manifest for Icarus.",
+  "date": "2026-03-11",
+  "mandatory": false,
+  "channels": [
+    "desktop",
+    "stable"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "changes": [
+    {
+      "type": "feat",
+      "message": "Direct Windows installs can now update in-app, while Microsoft Store installs continue updating through the Store."
+    },
+    {
+      "type": "feat",
+      "message": "Deleting and clearing items is faster and safer, with new hover targets, keyboard shortcuts, bulk clear actions, and undo support."
+    },
+    {
+      "type": "feat",
+      "message": "Custom circles and rectangles are easier to resize and now save more reliably in existing strategies."
+    },
+    {
+      "type": "feat",
+      "message": "Deadlock Barrier Mesh can now be edited directly, and wall-style abilities start with better default sizing."
+    },
+    {
+      "type": "feat",
+      "message": "Drawing tools now support per-element stroke thickness, smoother line workflows, and better drag and resize behavior."
+    },
+    {
+      "type": "fix",
+      "message": "Text editing is more reliable, with drafts and in-progress changes preserved more consistently."
+    },
+    {
+      "type": "fix",
+      "message": "Older strategy files, screenshots, and saved data now load and migrate more safely."
+    },
+    {
+      "type": "feat",
+      "message": "Release and update delivery has been cleaned up behind the scenes for both desktop and Microsoft Store builds."
+    }
+  ]
+}

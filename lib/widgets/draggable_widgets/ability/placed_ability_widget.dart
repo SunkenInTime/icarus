@@ -13,6 +13,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/placed_deadlock_barrier_mesh_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'dart:math' as math;
 
@@ -52,11 +53,20 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
   double? localLength;
   bool isDragging = false;
 
+  double _resolvedLengthFor(PlacedAbility ability, double rawLength) {
+    final abilityData = ability.data.abilityData;
+    if (abilityData is ResizableSquareAbility) {
+      return abilityData.resolveLength(rawLength);
+    }
+
+    return rawLength;
+  }
+
   @override
   void initState() {
     super.initState();
     localRotation ??= widget.rotation;
-    localLength ??= widget.length;
+    localLength ??= _resolvedLengthFor(widget.ability, widget.length);
   }
 
   Offset rotateOffset(Offset point, Offset origin, double angle) {
@@ -91,8 +101,20 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
 
     final abilityRef = widget.isLineUp
         ? ref.watch(lineUpProvider).currentAbility!
-        : ref.watch(abilityProvider)[index];
+        : index >= 0
+            ? ref.watch(abilityProvider)[index]
+            : widget.ability;
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1;
+
+    if (widget.ability.data.abilityData is DeadlockBarrierMeshAbility) {
+      return PlacedDeadlockBarrierMeshWidget(
+        ability: abilityRef,
+        onDragEnd: widget.onDragEnd,
+        id: widget.id,
+        data: widget.data,
+        isLineUp: widget.isLineUp,
+      );
+    }
     //Linking the local rotation with global rotation for things like undo redo
     if (!widget.isLineUp) {
       if (abilityRef.rotation != localRotation! &&
@@ -101,7 +123,10 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       }
 
       if (abilityRef.length != localLength! && lengthOrigin == Offset.zero) {
-        localLength = ref.read(abilityProvider)[index].length;
+        localLength = _resolvedLengthFor(
+          ref.read(abilityProvider)[index],
+          ref.read(abilityProvider)[index].length,
+        );
       }
 
       if (index < 0) {
@@ -112,13 +137,22 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           feedback: Opacity(
             opacity: Settings.feedbackOpacity,
             child: ZoomTransform(
-                child: widget.ability.data.abilityData!.createWidget(
-                    id: null, isAlly: isAlly, mapScale: mapScale)),
+              child: widget.ability.data.abilityData!.createWidget(
+                id: null,
+                isAlly: isAlly,
+                mapScale: mapScale,
+                armLengthsMeters: widget.ability.armLengthsMeters,
+              ),
+            ),
           ),
           childWhenDragging: const SizedBox.shrink(),
           onDragEnd: widget.onDragEnd,
-          child: widget.ability.data.abilityData!
-              .createWidget(id: widget.id, isAlly: isAlly, mapScale: mapScale),
+          child: widget.ability.data.abilityData!.createWidget(
+            id: widget.id,
+            isAlly: isAlly,
+            mapScale: mapScale,
+            armLengthsMeters: widget.ability.armLengthsMeters,
+          ),
         );
       }
     }
@@ -143,15 +177,10 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       } else if (widget.ability.data.abilityData is ResizableSquareAbility) {
         final resizeWidget =
             (widget.ability.data.abilityData! as ResizableSquareAbility);
+        final resolvedLength = resizeWidget.resolveLength(localLength ?? 0);
 
-        // final double anchorLength = coordinateSystem.scale(
-        //   resizeWidget.height -
-        //       (coordinateSystem.normalize(localLength ?? 0))
-        //           .clamp(resizeWidget.minLength, resizeWidget.height),
-        // );
         final double clampedLength = resizeWidget.height -
-            ((localLength ?? 0))
-                .clamp(resizeWidget.minLength, resizeWidget.height);
+            resolvedLength.clamp(resizeWidget.minLength, resizeWidget.height);
 
         final double anchorLength = (clampedLength * mapScale);
 
@@ -274,7 +303,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                       isAlly: isAlly,
                       mapScale: mapScale,
                       rotation: localRotation!,
-                      length: localLength!),
+                      length: localLength!,
+                      armLengthsMeters: abilityRef.armLengthsMeters),
                 ),
               ),
             ),
@@ -296,7 +326,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                 isAlly: isAlly,
                 mapScale: mapScale,
                 rotation: localRotation!,
-                length: localLength!),
+                length: localLength!,
+                armLengthsMeters: abilityRef.armLengthsMeters),
           ),
         ),
       );
@@ -315,13 +346,21 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
         feedback: Opacity(
           opacity: Settings.feedbackOpacity,
           child: ZoomTransform(
-              child: widget.ability.data.abilityData!
-                  .createWidget(id: null, isAlly: isAlly, mapScale: mapScale)),
+              child: widget.ability.data.abilityData!.createWidget(
+            id: null,
+            isAlly: isAlly,
+            mapScale: mapScale,
+            armLengthsMeters: widget.ability.armLengthsMeters,
+          )),
         ),
         childWhenDragging: const SizedBox.shrink(),
         onDragEnd: widget.onDragEnd,
-        child: widget.ability.data.abilityData!
-            .createWidget(id: widget.id, isAlly: isAlly, mapScale: mapScale),
+        child: widget.ability.data.abilityData!.createWidget(
+          id: widget.id,
+          isAlly: isAlly,
+          mapScale: mapScale,
+          armLengthsMeters: widget.ability.armLengthsMeters,
+        ),
       ),
     );
   }

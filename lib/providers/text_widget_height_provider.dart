@@ -21,6 +21,28 @@ class TextWidgetHeightProvider extends Notifier<Map<String, Offset>> {
     return state[id] ?? Offset.zero;
   }
 
+  Map<String, Offset> takeSnapshotForIds(Iterable<String> ids) {
+    return {
+      for (final id in ids)
+        if (state.containsKey(id)) id: state[id]!,
+    };
+  }
+
+  void clearEntries(Iterable<String> ids) {
+    final newState = {...state};
+    for (final id in ids) {
+      newState.remove(id);
+    }
+    state = newState;
+  }
+
+  void restoreSnapshot(Map<String, Offset> snapshot) {
+    state = {
+      ...state,
+      ...snapshot,
+    };
+  }
+
   void clearAll() {
     state = {};
   }

@@ -133,6 +133,10 @@ PlacedAbility _$PlacedAbilityFromJson(Map<String, dynamic> json) =>
       length: (json['length'] as num?)?.toDouble() ?? 0,
       lineUpID: json['lineUpID'] as String?,
       rotation: (json['rotation'] as num?)?.toDouble() ?? 0,
+      armLengthsMeters: (json['armLengthsMeters'] as List<dynamic>?)
+              ?.map((e) => (e as num).toDouble())
+              .toList() ??
+          [10.0, 10.0, 10.0, 10.0],
     )..isDeleted = json['isDeleted'] as bool? ?? false;
 
 Map<String, dynamic> _$PlacedAbilityToJson(PlacedAbility instance) =>
@@ -145,6 +149,7 @@ Map<String, dynamic> _$PlacedAbilityToJson(PlacedAbility instance) =>
       'rotation': instance.rotation,
       'length': instance.length,
       'lineUpID': instance.lineUpID,
+      'armLengthsMeters': instance.armLengthsMeters,
     };
 
 PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
