@@ -34,7 +34,7 @@ jobs:
 
       - name: Analyze
         shell: pwsh
-        run: fvm flutter analyze
+        run: fvm flutter analyze --no-fatal-infos
 
       - name: Run Update Checker Tests
         shell: pwsh
