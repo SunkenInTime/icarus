@@ -127,7 +127,10 @@ jobs:
         if: ${{ inputs.publish_pages }}
         shell: pwsh
         run: |
-          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+)\+\d+$'
+          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+)\+\d+\b'
+          if ($null -eq $versionLine -or $versionLine.Matches.Count -eq 0) {
+            throw "Could not parse version name from pubspec.yaml"
+          }
           $versionName = $versionLine.Matches[0].Groups[1].Value.Trim()
           $channel = "${{ inputs.channel }}"
 
@@ -148,7 +151,10 @@ jobs:
             exit 0
           }
 
-          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$'
+          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(\d+\.\d+\.\d+\+\d+)\b'
+          if ($null -eq $versionLine -or $versionLine.Matches.Count -eq 0) {
+            throw "Could not parse full version from pubspec.yaml"
+          }
           $version = $versionLine.Matches[0].Groups[1].Value.Trim()
 
           git config user.name "github-actions[bot]"
