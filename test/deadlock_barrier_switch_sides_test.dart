@@ -179,6 +179,179 @@ void main() {
       );
     });
 
+    test('deleted deadlock ability is flipped while stored in poppedAbility',
+        () {
+      final container = _createContainer(MapValue.bind);
+      final notifier = container.read(abilityProvider.notifier);
+      final actualMapScale = Maps.mapScale[MapValue.bind]!;
+      final abilitySize = container.read(strategySettingsProvider).abilitySize;
+
+      const initialPosition = Offset(123.4, 234.5);
+      const initialRotation = math.pi / 3;
+
+      final placedAbility = PlacedAbility(
+        id: 'deadlock-popped-switch',
+        data: abilityInfo,
+        position: initialPosition,
+        rotation: initialRotation,
+      );
+
+      notifier.fromHive([placedAbility]);
+      notifier.removeAbility(placedAbility.id);
+
+      final fullSize = abilityData
+          .getSize(
+            mapScale: actualMapScale,
+            abilitySize: abilitySize,
+          )
+          .scale(
+            CoordinateSystem.instance.scaleFactor,
+            CoordinateSystem.instance.scaleFactor,
+          );
+      final expectedPosition = getFlippedPosition(
+        position: initialPosition,
+        scaledSize: fullSize,
+      );
+
+      notifier.switchSides();
+      notifier.undoAction(
+        UserAction(
+          type: ActionType.deletion,
+          id: placedAbility.id,
+          group: ActionGroup.ability,
+        ),
+      );
+
+      final restoredAbility = container.read(abilityProvider).single;
+      expect(restoredAbility.position.dx, closeTo(expectedPosition.dx, 0.0001));
+      expect(restoredAbility.position.dy, closeTo(expectedPosition.dy, 0.0001));
+      expect(
+        restoredAbility.rotation,
+        closeTo(initialRotation + math.pi, 0.0001),
+      );
+    });
+
+    test('switchSides still flips deleted abilities when live state is empty',
+        () {
+      final container = _createContainer(MapValue.bind);
+      final notifier = container.read(abilityProvider.notifier);
+      final actualMapScale = Maps.mapScale[MapValue.bind]!;
+      final abilitySize = container.read(strategySettingsProvider).abilitySize;
+
+      const initialPosition = Offset(300.0, 450.0);
+
+      final placedAbility = PlacedAbility(
+        id: 'deadlock-empty-state-switch',
+        data: abilityInfo,
+        position: initialPosition,
+      );
+
+      notifier.fromHive([placedAbility]);
+      notifier.removeAbility(placedAbility.id);
+      expect(container.read(abilityProvider), isEmpty);
+
+      final fullSize = abilityData
+          .getSize(
+            mapScale: actualMapScale,
+            abilitySize: abilitySize,
+          )
+          .scale(
+            CoordinateSystem.instance.scaleFactor,
+            CoordinateSystem.instance.scaleFactor,
+          );
+      final expectedPosition = getFlippedPosition(
+        position: initialPosition,
+        scaledSize: fullSize,
+      );
+
+      notifier.switchSides();
+      notifier.undoAction(
+        UserAction(
+          type: ActionType.deletion,
+          id: placedAbility.id,
+          group: ActionGroup.ability,
+        ),
+      );
+
+      final restoredAbility = container.read(abilityProvider).single;
+      expect(restoredAbility.position.dx, closeTo(expectedPosition.dx, 0.0001));
+      expect(restoredAbility.position.dy, closeTo(expectedPosition.dy, 0.0001));
+    });
+
+    test('switchSides flips both live and deleted deadlock abilities', () {
+      final container = _createContainer(MapValue.bind);
+      final notifier = container.read(abilityProvider.notifier);
+      final actualMapScale = Maps.mapScale[MapValue.bind]!;
+      final abilitySize = container.read(strategySettingsProvider).abilitySize;
+
+      const livePosition = Offset(100.0, 150.0);
+      const deletedPosition = Offset(200.0, 250.0);
+
+      final liveAbility = PlacedAbility(
+        id: 'deadlock-live-switch',
+        data: abilityInfo,
+        position: livePosition,
+      );
+      final deletedAbility = PlacedAbility(
+        id: 'deadlock-deleted-switch',
+        data: abilityInfo,
+        position: deletedPosition,
+      );
+
+      notifier.fromHive([liveAbility, deletedAbility]);
+      notifier.removeAbility(deletedAbility.id);
+
+      final fullSize = abilityData
+          .getSize(
+            mapScale: actualMapScale,
+            abilitySize: abilitySize,
+          )
+          .scale(
+            CoordinateSystem.instance.scaleFactor,
+            CoordinateSystem.instance.scaleFactor,
+          );
+      final expectedLivePosition = getFlippedPosition(
+        position: livePosition,
+        scaledSize: fullSize,
+      );
+      final expectedDeletedPosition = getFlippedPosition(
+        position: deletedPosition,
+        scaledSize: fullSize,
+      );
+
+      notifier.switchSides();
+
+      final flippedLiveAbility = container.read(abilityProvider).single;
+      expect(
+        flippedLiveAbility.position.dx,
+        closeTo(expectedLivePosition.dx, 0.0001),
+      );
+      expect(
+        flippedLiveAbility.position.dy,
+        closeTo(expectedLivePosition.dy, 0.0001),
+      );
+
+      notifier.undoAction(
+        UserAction(
+          type: ActionType.deletion,
+          id: deletedAbility.id,
+          group: ActionGroup.ability,
+        ),
+      );
+
+      final abilities = container.read(abilityProvider);
+      final restoredAbility =
+          abilities.firstWhere((ability) => ability.id == deletedAbility.id);
+      expect(
+        restoredAbility.position.dx,
+        closeTo(expectedDeletedPosition.dx, 0.0001),
+      );
+      expect(
+        restoredAbility.position.dy,
+        closeTo(expectedDeletedPosition.dy, 0.0001),
+      );
+    });
+
     testWidgets('rendered deadlock wall size matches modeled size',
         (tester) async {
       final container = _createContainer(MapValue.bind);

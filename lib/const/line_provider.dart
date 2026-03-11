@@ -189,13 +189,30 @@ class LineUpProvider extends Notifier<LineUpState> {
     final currentMap = ref.read(mapProvider).currentMap;
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final newState = [...state.lineUps];
+    final currentAgent = state.currentAgent;
+    final currentAbility = state.currentAbility;
 
     for (final lineUp in newState) {
       lineUp.switchSides(
           agentSize: agentSize, abilitySize: abilitySize, mapScale: mapScale);
     }
 
-    state = state.copyWith(lineUps: newState);
+    for (final lineUp in _poppedLineUps) {
+      lineUp.switchSides(
+          agentSize: agentSize, abilitySize: abilitySize, mapScale: mapScale);
+    }
+
+    currentAgent?.switchSides(agentSize);
+    currentAbility?.switchSides(
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
+
+    state = state.copyWith(
+      lineUps: newState,
+      currentAgent: currentAgent,
+      currentAbility: currentAbility,
+    );
   }
 
   void setSelectingPosition(bool isSelecting, {PlacingType? type}) {
