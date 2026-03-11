@@ -35,7 +35,6 @@ jobs:
       - name: Analyze
         shell: pwsh
         run: fvm flutter analyze
-
-      - name: Run Update Checker Tests
+      - name: Run Tests
         shell: pwsh
-        run: fvm flutter test test/update_checker_test.dart
+        run: fvm flutter test
