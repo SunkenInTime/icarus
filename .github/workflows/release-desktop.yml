@@ -1,0 +1,143 @@
+name: Release Desktop
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: Version bump to apply before building.
+        type: choice
+        required: true
+        default: patch
+        options:
+          - none
+          - patch
+          - minor
+          - major
+      channel:
+        description: Desktop updater channel.
+        type: choice
+        required: true
+        default: stable
+        options:
+          - stable
+      mandatory:
+        description: Mark the desktop update as mandatory.
+        type: boolean
+        required: true
+        default: false
+      publish_pages:
+        description: Deploy the staged desktop updater manifest to GitHub Pages.
+        type: boolean
+        required: true
+        default: true
+      release_title:
+        description: Title used if a new metadata file is created.
+        type: string
+        required: false
+        default: ""
+      change_message:
+        description: First change entry used if a new metadata file is created.
+        type: string
+        required: false
+        default: "Replace this with the desktop release summary."
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    environment: github-pages
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/configure-pages@v5
+        if: ${{ inputs.publish_pages }}
+
+      - uses: dart-lang/setup-dart@v1
+
+      - name: Add Pub Cache To PATH
+        shell: pwsh
+        run: |
+          "$env:LOCALAPPDATA\Pub\Cache\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install FVM
+        shell: pwsh
+        run: dart pub global activate fvm
+
+      - name: Install Flutter SDK
+        shell: pwsh
+        run: fvm install
+
+      - name: Bump Version
+        if: ${{ inputs.version_bump != 'none' }}
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 -Bump ${{ inputs.version_bump }}
+
+      - name: Build Desktop Release
+        shell: pwsh
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          MANDATORY: ${{ inputs.mandatory }}
+          RELEASE_TITLE: ${{ inputs.release_title }}
+          CHANGE_MESSAGE: ${{ inputs.change_message }}
+        run: |
+          $mandatorySwitch = @()
+          if ($env:MANDATORY -eq "true") {
+            $mandatorySwitch = @("-Mandatory")
+          }
+
+          $titleArgs = @()
+          if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_TITLE)) {
+            $titleArgs = @("-MetadataTitle", $env:RELEASE_TITLE)
+          }
+
+          & powershell -ExecutionPolicy Bypass -File scripts/build_desktop_release.ps1 `
+            -Channel $env:CHANNEL `
+            -AppArchiveBaseUrl "https://sunkenintime.github.io/icarus/updates/windows/$($env:CHANNEL)" `
+            -InitialChangeMessage $env:CHANGE_MESSAGE `
+            @mandatorySwitch `
+            @titleArgs
+
+      - name: Upload Desktop Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-release
+          path: |
+            release/out/desktop/**
+            dist/**
+          if-no-files-found: error
+
+      - name: Upload Pages Artifact
+        if: ${{ inputs.publish_pages }}
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: release/out/gh-pages
+
+      - name: Deploy To GitHub Pages
+        if: ${{ inputs.publish_pages }}
+        uses: actions/deploy-pages@v4
+
+      - name: Commit Version And Metadata Changes
+        if: ${{ github.ref_type == 'branch' }}
+        shell: pwsh
+        run: |
+          $changes = git status --porcelain -- pubspec.yaml lib/const/settings.dart release/metadata
+          if ([string]::IsNullOrWhiteSpace(($changes | Out-String))) {
+            Write-Host "No version or metadata changes to commit."
+            exit 0
+          }
+
+          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$'
+          $version = $versionLine.Matches[0].Groups[1].Value.Trim()
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml lib/const/settings.dart release/metadata
+          git commit -m "chore(release): desktop $version"
+          git push origin HEAD:${{ github.ref_name }}

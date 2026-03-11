@@ -73,13 +73,40 @@ class UpdateChecker {
 
     if (isWindows) {
       final windowsResult = await _checkWindowsStoreSignal();
-      if (!windowsResult.isUpdateAvailable) {
+      if (windowsResult.isSupported) {
+        if (!windowsResult.isUpdateAvailable) {
+          return windowsResult;
+        }
+        return _enrichResultWithRemoteInfo(windowsResult);
+      }
+
+      final remoteResult = await _checkRemoteVersionSignal();
+      if (!remoteResult.isSupported) {
         return windowsResult;
       }
-      return _enrichResultWithRemoteInfo(windowsResult);
+      return remoteResult;
     }
 
     return _checkRemoteVersionSignal();
+  }
+
+  static Future<UpdateCheckResult> checkForWindowsStoreUpdateSignal({
+    bool? isWebOverride,
+    bool? isWindowsOverride,
+  }) async {
+    final bool isWeb = isWebOverride ?? kIsWeb;
+    final bool isWindows = isWindowsOverride ?? (!isWeb && Platform.isWindows);
+
+    if (!isWindows) {
+      return _checkRemoteVersionSignal();
+    }
+
+    final windowsResult = await _checkWindowsStoreSignal();
+    if (!windowsResult.isSupported || !windowsResult.isUpdateAvailable) {
+      return windowsResult;
+    }
+
+    return _enrichResultWithRemoteInfo(windowsResult);
   }
 
   static Future<UpdateCheckResult> _checkWindowsStoreSignal() async {

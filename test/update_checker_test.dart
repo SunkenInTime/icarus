@@ -40,8 +40,7 @@ void main() {
     expect(result.releaseNotes, 'Store release notes');
   });
 
-  test(
-      'unsupported windows native signal does not use remote as update trigger',
+  test('unsupported windows native signal falls back to remote update check',
       () async {
     UpdateChecker.windowsStoreCheckOverride = () async {
       return <String, dynamic>{
@@ -64,9 +63,62 @@ void main() {
       isWindowsOverride: true,
     );
 
+    expect(result.source, 'remote_version_file');
+    expect(result.isSupported, isTrue);
+    expect(result.isUpdateAvailable, isTrue);
+    expect(result.remoteVersion, '9.9.9');
+    expect(result.releaseNotes, 'Test release');
+  });
+
+  test('windows store-only signal returns store update when supported',
+      () async {
+    UpdateChecker.windowsStoreCheckOverride = () async {
+      return <String, dynamic>{
+        'source': 'windows_store',
+        'isSupported': true,
+        'isUpdateAvailable': true,
+      };
+    };
+    UpdateChecker.fetchVersionInfoOverride = () async {
+      return <String, dynamic>{
+        'current_version': '3.2.0',
+        'current_version_number': '41',
+        'release_notes': 'Store release notes',
+      };
+    };
+
+    final result = await UpdateChecker.checkForWindowsStoreUpdateSignal(
+      isWebOverride: false,
+      isWindowsOverride: true,
+    );
+
+    expect(result.source, 'windows_store');
+    expect(result.isSupported, isTrue);
+    expect(result.isUpdateAvailable, isTrue);
+    expect(result.remoteVersion, '3.2.0');
+  });
+
+  test('unsupported windows native signal returns windows result if remote fails',
+      () async {
+    UpdateChecker.windowsStoreCheckOverride = () async {
+      return <String, dynamic>{
+        'source': 'windows_store',
+        'isSupported': false,
+        'isUpdateAvailable': false,
+        'message': 'No package identity',
+      };
+    };
+    UpdateChecker.fetchVersionInfoOverride = () async => null;
+
+    final result = await UpdateChecker.checkForUpdateSignal(
+      isWebOverride: false,
+      isWindowsOverride: true,
+    );
+
     expect(result.source, 'windows_store');
     expect(result.isSupported, isFalse);
     expect(result.isUpdateAvailable, isFalse);
+    expect(result.message, 'No package identity');
   });
 
   test('remote check handles invalid version number deterministically',
@@ -147,5 +199,30 @@ void main() {
     expect(result.isSupported, isFalse);
     expect(result.isUpdateAvailable, isFalse);
     expect(result.message, contains('not available'));
+  });
+
+  test('windows store-only signal returns unsupported result without remote',
+      () async {
+    UpdateChecker.windowsStoreCheckOverride = () async {
+      return <String, dynamic>{
+        'source': 'windows_store',
+        'isSupported': false,
+        'isUpdateAvailable': false,
+        'message': 'No package identity',
+      };
+    };
+    UpdateChecker.fetchVersionInfoOverride = () async {
+      throw Exception('remote should not be used for store-only signal');
+    };
+
+    final result = await UpdateChecker.checkForWindowsStoreUpdateSignal(
+      isWebOverride: false,
+      isWindowsOverride: true,
+    );
+
+    expect(result.source, 'windows_store');
+    expect(result.isSupported, isFalse);
+    expect(result.isUpdateAvailable, isFalse);
+    expect(result.message, 'No package identity');
   });
 }

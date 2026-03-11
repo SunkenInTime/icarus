@@ -52,6 +52,9 @@ class Settings {
   static const Duration autoSaveOffset = Duration(seconds: 15);
   static const int versionNumber = 45;
   static const String versionName = "3.2.5";
+  static final Uri desktopUpdaterArchiveUrl = Uri.parse(
+    "https://sunkenintime.github.io/icarus/updates/windows/stable/app-archive.json",
+  );
 
   static const double sideBarContentWidth = 325;
   static const double sideBarPanelWidth = sideBarContentWidth + 20;

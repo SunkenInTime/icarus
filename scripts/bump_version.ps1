@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-    Bumps the app version across pubspec.yaml and lib/const/settings.dart, then runs msix:create.
+    Bumps the app version across pubspec.yaml and lib/const/settings.dart.
 
 .DESCRIPTION
     Accepts a bump type (major, minor, or patch), increments the appropriate version segment,
-    always increments the build number by 1, updates all version locations, and builds the MSIX.
+    always increments the build number by 1, and updates all version locations.
 
 .PARAMETER Bump
     The type of version bump: major, minor, or patch.
@@ -162,32 +162,8 @@ Write-Host "  - pubspec.yaml (version + msix_version)"
 Write-Host "  - lib/const/settings.dart (versionNumber + versionName)"
 Write-Host ""
 
-# --- Run msix:create ---
-Write-Host "Running: dart run msix:create" -ForegroundColor Cyan
-Write-Host ""
-
-Push-Location $repoRoot
-try {
-    dart run msix:create
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "dart run msix:create failed with exit code $LASTEXITCODE"
-        exit $LASTEXITCODE
-    }
-}
-finally {
-    Pop-Location
-}
-
 Write-Host ""
 Write-Host "=== Done ===" -ForegroundColor Green
 Write-Host "  Version bumped to $newVersionFull"
-Write-Host "  MSIX created successfully."
 Write-Host ""
-
-# --- Open output folder ---
-$msixFolder = Join-Path $repoRoot "build\windows\x64\runner\Release"
-if (Test-Path $msixFolder) {
-    Write-Host "Opening output folder..." -ForegroundColor Cyan
-    Invoke-Item $msixFolder
-}
 
