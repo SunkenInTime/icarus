@@ -1,7 +1,7 @@
 {
-  "version": "3.3.0+46",
-  "shortVersion": 46,
-  "title": "3.3.0 Release: Editing, Cleanup, and Desktop Updates",
+  "version": "3.3.2+48",
+  "shortVersion": 48,
+  "title": "3.3.2 Release: Editing, Cleanup, and Desktop Updates",
   "description": "Desktop updater manifest for Icarus.",
   "date": "2026-03-11",
   "mandatory": false,
