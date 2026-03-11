@@ -26,6 +26,23 @@ bool isRotatable(Ability ability) {
   }
 }
 
+double _squareRenderedWidth({
+  required bool isWall,
+  required double width,
+  required double mapScale,
+  required double abilitySize,
+}) {
+  return isWall ? abilitySize * 2 : width * mapScale;
+}
+
+double _squareRenderedHeight({
+  required double height,
+  required double distanceBetweenAOE,
+  required double mapScale,
+}) {
+  return (height * mapScale) + (distanceBetweenAOE * mapScale) + 7.5;
+}
+
 sealed class Ability {
   //
   Offset getAnchorPoint({double? mapScale, double? abilitySize});
@@ -210,16 +227,25 @@ class SquareAbility extends Ability {
     double? mapScale,
     double? abilitySize,
   }) {
+    assert(mapScale != null, 'mapScale must be provided');
     if (abilitySize == null) {
       log("Warning: abilitySize is null in SquareAbility.getAnchorPoint");
       abilitySize = Settings.abilitySize;
     }
 
     return Offset(
-      (isWall ? abilitySize * 2 : width * mapScale!) / 2,
-      (height * mapScale!) +
-          (distanceBetweenAOE * mapScale) +
-          7.5, //This is the resize button offset
+      _squareRenderedWidth(
+            isWall: isWall,
+            width: width,
+            mapScale: mapScale!,
+            abilitySize: abilitySize,
+          ) /
+          2,
+      _squareRenderedHeight(
+        height: height,
+        distanceBetweenAOE: distanceBetweenAOE,
+        mapScale: mapScale,
+      ),
     );
   }
 
@@ -229,8 +255,17 @@ class SquareAbility extends Ability {
     assert(mapScale != null, 'mapScale must be provided');
 
     return Offset(
-      width * mapScale!,
-      (height * mapScale) + (distanceBetweenAOE * mapScale) + 7.5,
+      _squareRenderedWidth(
+        isWall: isWall,
+        width: width,
+        mapScale: mapScale!,
+        abilitySize: abilitySize!,
+      ),
+      _squareRenderedHeight(
+        height: height,
+        distanceBetweenAOE: distanceBetweenAOE,
+        mapScale: mapScale,
+      ),
     );
   }
 
@@ -414,7 +449,13 @@ class ResizableSquareAbility extends SquareAbility {
 
   Offset getLengthAnchor(double mapScale, double abilitySize) {
     return Offset(
-      (isWall ? abilitySize * 2 : width * mapScale) / 2,
+      _squareRenderedWidth(
+            isWall: isWall,
+            width: width,
+            mapScale: mapScale,
+            abilitySize: abilitySize,
+          ) /
+          2,
       (height * mapScale) + 7.5,
     );
   }
@@ -425,8 +466,18 @@ class ResizableSquareAbility extends SquareAbility {
     double? abilitySize,
   }) {
     return Offset(
-      (isWall ? abilitySize! * 2 : width * mapScale!) / 2,
-      (height * mapScale!) + (distanceBetweenAOE * mapScale) + 7.5,
+      _squareRenderedWidth(
+            isWall: isWall,
+            width: width,
+            mapScale: mapScale!,
+            abilitySize: abilitySize!,
+          ) /
+          2,
+      _squareRenderedHeight(
+        height: height,
+        distanceBetweenAOE: distanceBetweenAOE,
+        mapScale: mapScale,
+      ),
     );
   }
 }

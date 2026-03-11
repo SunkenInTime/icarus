@@ -214,4 +214,127 @@ void main() {
       );
     });
   });
+
+  group('LineUpProvider.switchSides wall square abilities', () {
+    setUp(() {
+      CoordinateSystem(playAreaSize: const Size(1920, 1080));
+    });
+
+    test('stored lineup flips square walls using the full rendered width', () {
+      final container = _createContainer(MapValue.bind);
+      final notifier = container.read(lineUpProvider.notifier);
+      final abilityInfo = AgentData.agents[AgentType.viper]!.abilities[2];
+      final abilitySize = container.read(strategySettingsProvider).abilitySize;
+      final mapScale = Maps.mapScale[MapValue.bind]!;
+
+      const initialAbilityPosition = Offset(280.0, 360.0);
+      const initialRotation = math.pi / 5;
+
+      final lineUp = LineUp(
+        id: 'viper-lineup',
+        agent: PlacedAgent(
+          id: 'viper-agent',
+          type: AgentType.viper,
+          position: const Offset(120.0, 240.0),
+        ),
+        ability: PlacedAbility(
+          id: 'viper-wall',
+          data: abilityInfo,
+          position: initialAbilityPosition,
+          rotation: initialRotation,
+        ),
+        youtubeLink: '',
+        images: const [],
+        notes: '',
+      );
+
+      notifier.fromHive([lineUp]);
+      notifier.switchSides();
+
+      final flippedLineUp = container.read(lineUpProvider).lineUps.single;
+      final abilitySizePx = abilityInfo.abilityData!
+          .getSize(mapScale: mapScale, abilitySize: abilitySize)
+          .scale(
+            CoordinateSystem.instance.scaleFactor,
+            CoordinateSystem.instance.scaleFactor,
+          );
+      final expectedAbilityPosition = getFlippedPosition(
+        position: initialAbilityPosition,
+        scaledSize: abilitySizePx,
+        isRotatable: true,
+      );
+
+      expect(
+        flippedLineUp.ability.position.dx,
+        closeTo(expectedAbilityPosition.dx, 0.0001),
+      );
+      expect(
+        flippedLineUp.ability.position.dy,
+        closeTo(expectedAbilityPosition.dy, 0.0001),
+      );
+      expect(
+        flippedLineUp.ability.rotation,
+        closeTo(initialRotation + math.pi, 0.0001),
+      );
+    });
+
+    test(
+        'current lineup flips resizable wall abilities using the full rendered width',
+        () {
+      final container = _createContainer(MapValue.bind);
+      final notifier = container.read(lineUpProvider.notifier);
+      final abilityInfo = AgentData.agents[AgentType.neon]!.abilities.first;
+      final abilitySize = container.read(strategySettingsProvider).abilitySize;
+      final mapScale = Maps.mapScale[MapValue.bind]!;
+
+      const initialAbilityPosition = Offset(320.0, 420.0);
+      const initialRotation = math.pi / 6;
+
+      notifier.setAgent(
+        PlacedAgent(
+          id: 'neon-agent',
+          type: AgentType.neon,
+          position: const Offset(140.0, 260.0),
+        ),
+      );
+      notifier.setAbility(
+        PlacedAbility(
+          id: 'neon-wall',
+          data: abilityInfo,
+          position: initialAbilityPosition,
+          rotation: initialRotation,
+        ),
+      );
+
+      notifier.switchSides();
+
+      final currentAbility = container.read(lineUpProvider).currentAbility;
+      expect(currentAbility, isNotNull);
+
+      final abilitySizePx = abilityInfo.abilityData!
+          .getSize(mapScale: mapScale, abilitySize: abilitySize)
+          .scale(
+            CoordinateSystem.instance.scaleFactor,
+            CoordinateSystem.instance.scaleFactor,
+          );
+      final expectedAbilityPosition = getFlippedPosition(
+        position: initialAbilityPosition,
+        scaledSize: abilitySizePx,
+        isRotatable: true,
+      );
+
+      expect(
+        currentAbility!.position.dx,
+        closeTo(expectedAbilityPosition.dx, 0.0001),
+      );
+      expect(
+        currentAbility.position.dy,
+        closeTo(expectedAbilityPosition.dy, 0.0001),
+      );
+      expect(
+        currentAbility.rotation,
+        closeTo(initialRotation + math.pi, 0.0001),
+      );
+    });
+  });
 }
