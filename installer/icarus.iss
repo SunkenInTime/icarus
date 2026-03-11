@@ -69,5 +69,5 @@ Root: HKCU; Subkey: "Software\\Classes\\Icarus.Strategy\\DefaultIcon"; ValueType
 Root: HKCU; Subkey: "Software\\Classes\\Icarus.Strategy\\shell\\open\\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Tasks: registerica
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifsilent
 
