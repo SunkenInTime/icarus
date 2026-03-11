@@ -703,12 +703,14 @@ void main() {
       archive.addFile(ArchiveFile('only.txt', 3, utf8.encode('bad')));
       await badFixture.writeAsBytes(ZipEncoder().encode(archive));
 
-      expect(
-        () => _readIcaJson(badFixture),
-        throwsA(isA<FormatException>()),
-      );
-
-      await tmpDir.delete(recursive: true);
+      try {
+        await expectLater(
+          _readIcaJson(badFixture),
+          throwsA(isA<FormatException>()),
+        );
+      } finally {
+        await tmpDir.delete(recursive: true);
+      }
     });
   });
 }
