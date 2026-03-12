@@ -15,6 +15,26 @@ class IcaDropTarget extends ConsumerStatefulWidget {
 
 class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
   bool isDragging = false;
+
+  String _buildImportSummary(ImportBatchResult result) {
+    final skippedCount = result.issues.length;
+
+    if (!result.hasImports) {
+      return skippedCount == 1
+          ? 'No compatible strategies or folders were imported. Skipped 1 file.'
+          : 'No compatible strategies or folders were imported. Skipped $skippedCount files.';
+    }
+
+    final strategiesLabel =
+        result.strategiesImported == 1 ? 'strategy' : 'strategies';
+    final foldersLabel = result.foldersCreated == 1 ? 'folder' : 'folders';
+    final skippedLabel = skippedCount == 1 ? 'file' : 'files';
+
+    return 'Imported ${result.strategiesImported} $strategiesLabel into '
+        '${result.foldersCreated} $foldersLabel. '
+        'Skipped $skippedCount $skippedLabel.';
+  }
+
   @override
   Widget build(BuildContext context) {
     return DropTarget(
@@ -30,14 +50,27 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
         });
       },
       onDragDone: (details) async {
-        isDragging = false;
+        if (mounted) {
+          setState(() {
+            isDragging = false;
+          });
+        }
         try {
-          await ref
+          final result = await ref
               .read(strategyProvider.notifier)
               .loadFromFileDrop(details.files);
-        } on NewerVersionImportException {
+
+          if (result.issues.isNotEmpty) {
+            Settings.showToast(
+              message: _buildImportSummary(result),
+              backgroundColor: result.hasImports
+                  ? Settings.tacticalVioletTheme.primary
+                  : Settings.tacticalVioletTheme.destructive,
+            );
+          }
+        } catch (_) {
           Settings.showToast(
-            message: NewerVersionImportException.userMessage,
+            message: 'Failed to import dropped items.',
             backgroundColor: Settings.tacticalVioletTheme.destructive,
           );
         }
@@ -62,7 +95,7 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
                       height: 10,
                     ),
                     Text(
-                      "Import .ica file",
+                      "Import strategies, folders, or .zip archives",
                       style:
                           TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     )

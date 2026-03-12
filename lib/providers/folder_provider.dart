@@ -116,24 +116,26 @@ final folderProvider =
     NotifierProvider<FolderProvider, String?>(FolderProvider.new);
 
 class FolderProvider extends Notifier<String?> {
-  Future<void> createFolder({
+  Future<Folder> createFolder({
     required String name,
     required IconData icon,
     required FolderColor color,
     Color? customColor,
+    String? parentID,
   }) async {
     final newFolder = Folder(
       icon: icon,
       name: name,
       id: const Uuid().v4(),
       dateCreated: DateTime.now(),
-      parentID: state,
+      parentID: parentID ?? state,
       customColor: customColor,
       color: color,
     );
 
     await Hive.box<Folder>(HiveBoxNames.foldersBox)
         .put(newFolder.id, newFolder);
+    return newFolder;
   }
 
   void updateID(String? id) {

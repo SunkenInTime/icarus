@@ -1,0 +1,29 @@
+{
+    "version":  "3.3.5+51",
+    "shortVersion":  51,
+    "title":  "3.3.5 Release",
+    "description":  "Desktop release metadata for Icarus.",
+    "date":  "2026-03-12",
+    "mandatory":  false,
+    "channels":  [
+                     "desktop",
+                     "stable"
+                 ],
+    "platforms":  [
+                      "windows"
+                  ],
+    "changes":  [
+                    {
+                        "message":  "Added drag-and-drop import support for folders, nested folder zips, and standalone .ica files.",
+                        "type":  "feature"
+                    },
+                    {
+                        "message":  "Imported folder drops now preserve nested hierarchy, including chained subfolders and empty folders.",
+                        "type":  "improvement"
+                    },
+                    {
+                        "message":  "Drop import now keeps valid strategies when some files are unsupported or from a newer app version, and shows a single summary warning.",
+                        "type":  "fix"
+                    }
+                ]
+}

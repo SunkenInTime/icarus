@@ -12,6 +12,7 @@ import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -214,6 +215,50 @@ class NewerVersionImportException implements Exception {
         'importedVersion: $importedVersion, '
         'currentVersion: $currentVersion'
         ')';
+  }
+}
+
+enum ImportIssueCode {
+  newerVersion,
+  invalidStrategy,
+  unsupportedFile,
+  ioError,
+}
+
+class ImportIssue {
+  const ImportIssue({
+    required this.path,
+    required this.code,
+  });
+
+  final String path;
+  final ImportIssueCode code;
+}
+
+class ImportBatchResult {
+  const ImportBatchResult({
+    required this.strategiesImported,
+    required this.foldersCreated,
+    required this.issues,
+  });
+
+  const ImportBatchResult.empty()
+      : strategiesImported = 0,
+        foldersCreated = 0,
+        issues = const [];
+
+  final int strategiesImported;
+  final int foldersCreated;
+  final List<ImportIssue> issues;
+
+  bool get hasImports => strategiesImported > 0 || foldersCreated > 0;
+
+  ImportBatchResult merge(ImportBatchResult other) {
+    return ImportBatchResult(
+      strategiesImported: strategiesImported + other.strategiesImported,
+      foldersCreated: foldersCreated + other.foldersCreated,
+      issues: [...issues, ...other.issues],
+    );
   }
 }
 
@@ -1062,7 +1107,10 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> loadFromFilePath(String filePath) async {
-    await _loadFromXFile(XFile(filePath));
+    await _importStrategyFile(
+      file: XFile(filePath),
+      targetFolderId: null,
+    );
   }
 
   Future<void> loadFromFilePicker() async {
@@ -1075,21 +1123,41 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (result == null) return;
 
     for (PlatformFile file in result.files) {
-      await _loadFromXFile(file.xFile);
+      await _importStrategyFile(
+        file: file.xFile,
+        targetFolderId: null,
+      );
     }
   }
 
-  Future<void> loadFromFileDrop(List<XFile> files) async {
+  Future<ImportBatchResult> loadFromFileDrop(List<XFile> files) async {
+    final targetFolderId = ref.read(folderProvider);
+    var result = const ImportBatchResult.empty();
+
     for (XFile file in files) {
-      await _loadFromXFile(file);
+      result = result.merge(
+        await _importDroppedItem(
+          file: file,
+          targetFolderId: targetFolderId,
+        ),
+      );
     }
+
+    return result;
   }
 
   Future<Directory> getTempDirectory(String strategyID) async {
-    final tempDirectory = await getTemporaryDirectory();
+    String tempDirectoryPath;
+    try {
+      tempDirectoryPath = (await getTemporaryDirectory()).path;
+    } on MissingPluginException {
+      tempDirectoryPath = Directory.systemTemp.path;
+    } on MissingPlatformDirectoryException {
+      tempDirectoryPath = Directory.systemTemp.path;
+    }
 
     Directory tempDir = await Directory(
-            path.join(tempDirectory.path, "xyz.icarus-strats", strategyID))
+            path.join(tempDirectoryPath, "xyz.icarus-strats", strategyID))
         .create(recursive: true);
     return tempDir;
   }
@@ -1114,12 +1182,292 @@ class StrategyProvider extends Notifier<StrategyState> {
         header[3] == 0x04;
   }
 
-  Future<void> _loadFromXFile(XFile xFile) async {
+  Future<ImportBatchResult> _importDroppedItem({
+    required XFile file,
+    required String? targetFolderId,
+  }) async {
+    if (file.path.isEmpty) {
+      return const ImportBatchResult(
+        strategiesImported: 0,
+        foldersCreated: 0,
+        issues: [
+          ImportIssue(path: '', code: ImportIssueCode.ioError),
+        ],
+      );
+    }
+
+    try {
+      final entityType =
+          await FileSystemEntity.type(file.path, followLinks: false);
+      switch (entityType) {
+        case FileSystemEntityType.directory:
+          return await _importDirectoryTree(
+            sourceDir: Directory(file.path),
+            parentFolderId: targetFolderId,
+          );
+        case FileSystemEntityType.file:
+          final extension = path.extension(file.path).toLowerCase();
+          if (extension == '.ica') {
+            await _importStrategyFile(
+              file: file,
+              targetFolderId: targetFolderId,
+            );
+            return const ImportBatchResult(
+              strategiesImported: 1,
+              foldersCreated: 0,
+              issues: [],
+            );
+          }
+
+          if (await isZipFile(File(file.path))) {
+            return await _importZipArchive(
+              zipFile: File(file.path),
+              parentFolderId: targetFolderId,
+            );
+          }
+
+          return ImportBatchResult(
+            strategiesImported: 0,
+            foldersCreated: 0,
+            issues: [
+              ImportIssue(
+                path: file.path,
+                code: ImportIssueCode.unsupportedFile,
+              ),
+            ],
+          );
+        case FileSystemEntityType.notFound:
+        case FileSystemEntityType.link:
+        case FileSystemEntityType.unixDomainSock:
+        case FileSystemEntityType.pipe:
+        default:
+          return ImportBatchResult(
+            strategiesImported: 0,
+            foldersCreated: 0,
+            issues: [
+              ImportIssue(
+                path: file.path,
+                code: ImportIssueCode.ioError,
+              ),
+            ],
+          );
+      }
+    } on NewerVersionImportException {
+      return ImportBatchResult(
+        strategiesImported: 0,
+        foldersCreated: 0,
+        issues: [
+          ImportIssue(
+            path: file.path,
+            code: ImportIssueCode.newerVersion,
+          ),
+        ],
+      );
+    } catch (error, stackTrace) {
+      log(
+        'Failed to import dropped item ${file.path}: $error',
+        stackTrace: stackTrace,
+      );
+      return ImportBatchResult(
+        strategiesImported: 0,
+        foldersCreated: 0,
+        issues: [
+          ImportIssue(
+            path: file.path,
+            code: ImportIssueCode.ioError,
+          ),
+        ],
+      );
+    }
+  }
+
+  Future<Folder> _createImportedFolder({
+    required String name,
+    required String? parentFolderId,
+  }) {
+    return ref.read(folderProvider.notifier).createFolder(
+          name: name,
+          icon: Icons.drive_folder_upload,
+          color: FolderColor.generic,
+          parentID: parentFolderId,
+        );
+  }
+
+  List<FileSystemEntity> _sortedImportEntities(
+    Iterable<FileSystemEntity> entities,
+  ) {
+    final filtered = entities.where((entity) {
+      final basename = path.basename(entity.path);
+      return !_shouldIgnoreImportedEntityName(basename);
+    }).toList();
+    filtered.sort((a, b) => a.path.compareTo(b.path));
+    return filtered;
+  }
+
+  bool _shouldIgnoreImportedEntityName(String name) {
+    return name.isEmpty ||
+        name == '__MACOSX' ||
+        name == '.DS_Store' ||
+        name.startsWith('._');
+  }
+
+  bool _isIcaFileEntity(FileSystemEntity entity) {
+    return entity is File &&
+        path.extension(entity.path).toLowerCase() == '.ica';
+  }
+
+  Future<ImportBatchResult> _importEntitiesIntoFolder({
+    required Iterable<FileSystemEntity> entities,
+    required String parentFolderId,
+  }) async {
+    var result = const ImportBatchResult.empty();
+    final sortedEntities = _sortedImportEntities(entities);
+
+    for (final entity in sortedEntities) {
+      if (entity is Directory) {
+        result = result.merge(
+          await _importDirectoryTree(
+            sourceDir: entity,
+            parentFolderId: parentFolderId,
+          ),
+        );
+        continue;
+      }
+
+      if (_isIcaFileEntity(entity)) {
+        try {
+          await _importStrategyFile(
+            file: XFile(entity.path),
+            targetFolderId: parentFolderId,
+          );
+          result = result.merge(
+            const ImportBatchResult(
+              strategiesImported: 1,
+              foldersCreated: 0,
+              issues: [],
+            ),
+          );
+        } on NewerVersionImportException {
+          result = result.merge(
+            ImportBatchResult(
+              strategiesImported: 0,
+              foldersCreated: 0,
+              issues: [
+                ImportIssue(
+                  path: entity.path,
+                  code: ImportIssueCode.newerVersion,
+                ),
+              ],
+            ),
+          );
+        } catch (error, stackTrace) {
+          log(
+            'Failed to import strategy file ${entity.path}: $error',
+            stackTrace: stackTrace,
+          );
+          result = result.merge(
+            ImportBatchResult(
+              strategiesImported: 0,
+              foldersCreated: 0,
+              issues: [
+                ImportIssue(
+                  path: entity.path,
+                  code: ImportIssueCode.invalidStrategy,
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    }
+
+    return result;
+  }
+
+  Future<ImportBatchResult> _importDirectoryTree({
+    required Directory sourceDir,
+    required String? parentFolderId,
+  }) async {
+    final importedFolder = await _createImportedFolder(
+      name: path.basename(sourceDir.path),
+      parentFolderId: parentFolderId,
+    );
+
+    var result = const ImportBatchResult(
+      strategiesImported: 0,
+      foldersCreated: 1,
+      issues: [],
+    );
+
+    result = result.merge(
+      await _importEntitiesIntoFolder(
+        entities: sourceDir.listSync(followLinks: false),
+        parentFolderId: importedFolder.id,
+      ),
+    );
+
+    return result;
+  }
+
+  Future<ImportBatchResult> _importZipArchive({
+    required File zipFile,
+    required String? parentFolderId,
+  }) async {
+    final tempDirectory = await getTempDirectory(const Uuid().v4());
+
+    try {
+      final archive = ZipDecoder().decodeBytes(await zipFile.readAsBytes());
+      await extractArchiveToDisk(archive, tempDirectory.path);
+
+      final topLevelEntities =
+          _sortedImportEntities(tempDirectory.listSync(followLinks: false));
+      final topLevelDirectories =
+          topLevelEntities.whereType<Directory>().toList();
+      final hasLooseIca = topLevelEntities.any(_isIcaFileEntity);
+
+      if (topLevelDirectories.length == 1 && !hasLooseIca) {
+        return await _importDirectoryTree(
+          sourceDir: topLevelDirectories.single,
+          parentFolderId: parentFolderId,
+        );
+      }
+
+      final wrapperFolder = await _createImportedFolder(
+        name: path.basenameWithoutExtension(zipFile.path),
+        parentFolderId: parentFolderId,
+      );
+
+      var result = const ImportBatchResult(
+        strategiesImported: 0,
+        foldersCreated: 1,
+        issues: [],
+      );
+
+      result = result.merge(
+        await _importEntitiesIntoFolder(
+          entities: topLevelEntities,
+          parentFolderId: wrapperFolder.id,
+        ),
+      );
+
+      return result;
+    } finally {
+      try {
+        await tempDirectory.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _importStrategyFile({
+    required XFile file,
+    required String? targetFolderId,
+    String? displayNameOverride,
+  }) async {
     final newID = const Uuid().v4();
-    final bool isZip = await isZipFile(File(xFile.path));
+    final bool isZip = await isZipFile(File(file.path));
 
     log("Is ZIP file: $isZip");
-    final bytes = await xFile.readAsBytes();
+    final bytes = await file.readAsBytes();
     String jsonData = "";
 
     try {
@@ -1151,7 +1499,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           throw Exception("No .ica file found");
         }
       } else {
-        jsonData = await xFile.readAsString();
+        jsonData = await file.readAsString();
       }
 
       Map<String, dynamic> json = jsonDecode(jsonData);
@@ -1245,12 +1593,12 @@ class StrategyProvider extends Notifier<StrategyState> {
 
         pages: pages,
         id: newID,
-        name: path.basenameWithoutExtension(xFile.name),
+        name: displayNameOverride ?? path.basenameWithoutExtension(file.name),
         mapData: mapData,
         versionNumber: versionNumber,
         lastEdited: DateTime.now(),
 
-        folderID: null,
+        folderID: targetFolderId,
         themeOverridePalette: importedThemeOverridePalette,
       );
 
