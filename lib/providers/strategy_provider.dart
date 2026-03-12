@@ -262,6 +262,16 @@ class ImportBatchResult {
   }
 }
 
+class _ImportEntityListing {
+  const _ImportEntityListing({
+    required this.entities,
+    required this.issues,
+  });
+
+  final List<FileSystemEntity> entities;
+  final List<ImportIssue> issues;
+}
+
 class StrategyProvider extends Notifier<StrategyState> {
   String? activePageID;
 
@@ -1316,6 +1326,57 @@ class StrategyProvider extends Notifier<StrategyState> {
         path.extension(entity.path).toLowerCase() == '.ica';
   }
 
+  Future<_ImportEntityListing> _listImportEntities(Directory directory) async {
+    final entities = <FileSystemEntity>[];
+    final issues = <ImportIssue>[];
+
+    final stream = directory.list(followLinks: false).handleError(
+      (Object error, StackTrace stackTrace) {
+        final errorPath = _resolveImportErrorPath(error, directory.path);
+        log(
+          'Failed to list import directory $errorPath: $error',
+          stackTrace: stackTrace,
+        );
+        issues.add(
+          ImportIssue(
+            path: errorPath,
+            code: ImportIssueCode.ioError,
+          ),
+        );
+      },
+    );
+
+    try {
+      await for (final entity in stream) {
+        entities.add(entity);
+      }
+    } on FileSystemException catch (error, stackTrace) {
+      final errorPath = _resolveImportErrorPath(error, directory.path);
+      log(
+        'Failed to list import directory $errorPath: $error',
+        stackTrace: stackTrace,
+      );
+      issues.add(
+        ImportIssue(
+          path: errorPath,
+          code: ImportIssueCode.ioError,
+        ),
+      );
+    }
+
+    return _ImportEntityListing(
+      entities: _sortedImportEntities(entities),
+      issues: issues,
+    );
+  }
+
+  String _resolveImportErrorPath(Object error, String fallbackPath) {
+    if (error is FileSystemException) {
+      return error.path ?? fallbackPath;
+    }
+    return fallbackPath;
+  }
+
   Future<ImportBatchResult> _importEntitiesIntoFolder({
     required Iterable<FileSystemEntity> entities,
     required String parentFolderId,
@@ -1413,9 +1474,20 @@ class StrategyProvider extends Notifier<StrategyState> {
       issues: [],
     );
 
+    final listing = await _listImportEntities(sourceDir);
+    if (listing.issues.isNotEmpty) {
+      result = result.merge(
+        ImportBatchResult(
+          strategiesImported: 0,
+          foldersCreated: 0,
+          issues: listing.issues,
+        ),
+      );
+    }
+
     result = result.merge(
       await _importEntitiesIntoFolder(
-        entities: sourceDir.listSync(followLinks: false),
+        entities: listing.entities,
         parentFolderId: importedFolder.id,
       ),
     );
@@ -1433,17 +1505,25 @@ class StrategyProvider extends Notifier<StrategyState> {
       final archive = ZipDecoder().decodeBytes(await zipFile.readAsBytes());
       await extractArchiveToDisk(archive, tempDirectory.path);
 
-      final topLevelEntities =
-          _sortedImportEntities(tempDirectory.listSync(followLinks: false));
+      final listing = await _listImportEntities(tempDirectory);
+      final topLevelEntities = listing.entities;
       final topLevelDirectories =
           topLevelEntities.whereType<Directory>().toList();
       final hasLooseIca = topLevelEntities.any(_isIcaFileEntity);
 
       if (topLevelDirectories.length == 1 && !hasLooseIca) {
-        return await _importDirectoryTree(
+        final nestedResult = await _importDirectoryTree(
           sourceDir: topLevelDirectories.single,
           parentFolderId: parentFolderId,
         );
+        if (listing.issues.isEmpty) {
+          return nestedResult;
+        }
+        return ImportBatchResult(
+          strategiesImported: 0,
+          foldersCreated: 0,
+          issues: listing.issues,
+        ).merge(nestedResult);
       }
 
       final wrapperFolder = await _createImportedFolder(
@@ -1456,6 +1536,16 @@ class StrategyProvider extends Notifier<StrategyState> {
         foldersCreated: 1,
         issues: [],
       );
+
+      if (listing.issues.isNotEmpty) {
+        result = result.merge(
+          ImportBatchResult(
+            strategiesImported: 0,
+            foldersCreated: 0,
+            issues: listing.issues,
+          ),
+        );
+      }
 
       result = result.merge(
         await _importEntitiesIntoFolder(
