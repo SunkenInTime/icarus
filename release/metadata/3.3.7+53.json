@@ -1,0 +1,21 @@
+{
+    "version": "3.3.7+53",
+    "shortVersion": 53,
+    "title": "3.3.7 Release",
+    "description": "Desktop release metadata for Icarus.",
+    "date": "2026-03-12",
+    "mandatory": false,
+    "channels": [
+        "desktop",
+        "stable"
+    ],
+    "platforms": [
+        "windows"
+    ],
+    "changes": [
+        {
+            "message": "Fixed performance issues with the app",
+            "type": "fix"
+        }
+    ]
+}
