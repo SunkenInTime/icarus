@@ -180,7 +180,7 @@ class FolderContent extends ConsumerWidget {
                                 children: [
                                   Text('No strategies available'),
                                   Text(
-                                      "Create a new strategy or drop an .ica file")
+                                      "Create a new strategy or drop strategies, folders, or .zip archives")
                                 ],
                               ),
                             ),
