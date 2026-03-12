@@ -4,6 +4,42 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
+@visibleForTesting
+String buildImportSummaryMessage(ImportBatchResult result) {
+  final skippedCount = result.issues.length;
+  final skippedLabel = skippedCount == 1 ? 'file' : 'files';
+
+  if (!result.hasImports) {
+    const baseMessage = 'No compatible strategies or folders were imported.';
+    if (skippedCount == 0) {
+      return baseMessage;
+    }
+    return '$baseMessage Skipped $skippedCount $skippedLabel.';
+  }
+
+  String message;
+  if (result.strategiesImported > 0 && result.foldersCreated > 0) {
+    final strategiesLabel =
+        result.strategiesImported == 1 ? 'strategy' : 'strategies';
+    final foldersLabel = result.foldersCreated == 1 ? 'folder' : 'folders';
+    message = 'Imported ${result.strategiesImported} $strategiesLabel into '
+        '${result.foldersCreated} $foldersLabel.';
+  } else if (result.strategiesImported > 0) {
+    final strategiesLabel =
+        result.strategiesImported == 1 ? 'strategy' : 'strategies';
+    message = 'Imported ${result.strategiesImported} $strategiesLabel.';
+  } else {
+    final foldersLabel = result.foldersCreated == 1 ? 'folder' : 'folders';
+    message = 'Imported ${result.foldersCreated} $foldersLabel.';
+  }
+
+  if (skippedCount == 0) {
+    return message;
+  }
+
+  return '$message Skipped $skippedCount $skippedLabel.';
+}
+
 class IcaDropTarget extends ConsumerStatefulWidget {
   const IcaDropTarget({super.key, required this.child});
   final Widget child;
@@ -15,25 +51,6 @@ class IcaDropTarget extends ConsumerStatefulWidget {
 
 class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
   bool isDragging = false;
-
-  String _buildImportSummary(ImportBatchResult result) {
-    final skippedCount = result.issues.length;
-
-    if (!result.hasImports) {
-      return skippedCount == 1
-          ? 'No compatible strategies or folders were imported. Skipped 1 file.'
-          : 'No compatible strategies or folders were imported. Skipped $skippedCount files.';
-    }
-
-    final strategiesLabel =
-        result.strategiesImported == 1 ? 'strategy' : 'strategies';
-    final foldersLabel = result.foldersCreated == 1 ? 'folder' : 'folders';
-    final skippedLabel = skippedCount == 1 ? 'file' : 'files';
-
-    return 'Imported ${result.strategiesImported} $strategiesLabel into '
-        '${result.foldersCreated} $foldersLabel. '
-        'Skipped $skippedCount $skippedLabel.';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -60,9 +77,9 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
               .read(strategyProvider.notifier)
               .loadFromFileDrop(details.files);
 
-          if (result.issues.isNotEmpty) {
+          if (result.hasImports || result.issues.isNotEmpty) {
             Settings.showToast(
-              message: _buildImportSummary(result),
+              message: buildImportSummaryMessage(result),
               backgroundColor: result.hasImports
                   ? Settings.tacticalVioletTheme.primary
                   : Settings.tacticalVioletTheme.destructive,

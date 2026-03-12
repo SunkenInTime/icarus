@@ -234,6 +234,77 @@ void main() {
     expect(_strategyByName('solo').folderID, currentFolder.id);
   });
 
+  test(
+      'nested unsupported files are reported and valid strategies still import',
+      () async {
+    final sourceRoot =
+        await Directory(path.join(tempDir.path, 'source', 'Mixed Folder'))
+            .create(recursive: true);
+    final nested =
+        await Directory(path.join(sourceRoot.path, 'Nested')).create();
+
+    await _writeStrategyFile(File(path.join(sourceRoot.path, 'valid.ica')));
+
+    final nestedText = File(path.join(nested.path, 'notes.txt'));
+    await nestedText.create(recursive: true);
+    await nestedText.writeAsString('notes');
+
+    final nestedZipSource =
+        await Directory(path.join(tempDir.path, 'zip-source', 'bundle'))
+            .create(recursive: true);
+    await _writeStrategyFile(
+        File(path.join(nestedZipSource.path, 'inside.ica')));
+    final nestedZip = await _zipDirectory(
+      sourceDirectory: nestedZipSource,
+      zipPath: path.join(nested.path, 'nested.zip'),
+    );
+
+    final result =
+        await container.read(strategyProvider.notifier).loadFromFileDrop(
+      [XFile(sourceRoot.path)],
+    );
+
+    expect(result.strategiesImported, 1);
+    expect(result.foldersCreated, 2);
+    expect(
+      result.issues
+          .where((issue) => issue.code == ImportIssueCode.unsupportedFile),
+      hasLength(2),
+    );
+    expect(
+      result.issues.map((issue) => issue.path),
+      containsAll([nestedText.path, nestedZip.path]),
+    );
+    expect(_strategyByName('valid').folderID, _folderByName('Mixed Folder').id);
+  });
+
+  test('empty folder plus unsupported nested file reports one skipped file',
+      () async {
+    final sourceRoot =
+        await Directory(path.join(tempDir.path, 'source', 'Folder Only'))
+            .create(recursive: true);
+    final emptyNested =
+        await Directory(path.join(sourceRoot.path, 'Empty Nested')).create();
+    final nestedText = File(path.join(sourceRoot.path, 'notes.txt'));
+    await nestedText.create(recursive: true);
+    await nestedText.writeAsString('notes');
+
+    final result =
+        await container.read(strategyProvider.notifier).loadFromFileDrop(
+      [XFile(sourceRoot.path)],
+    );
+
+    expect(result.strategiesImported, 0);
+    expect(result.foldersCreated, 2);
+    expect(result.issues, hasLength(1));
+    expect(result.issues.single.code, ImportIssueCode.unsupportedFile);
+    expect(result.issues.single.path, nestedText.path);
+    expect(_folderByName('Folder Only').parentID, isNull);
+    expect(_folderByName('Empty Nested').parentID,
+        _folderByName('Folder Only').id);
+    expect(await emptyNested.exists(), isTrue);
+  });
+
   test('unsupported dropped files are reported and ignored', () async {
     final file = File(path.join(tempDir.path, 'notes.txt'));
     await file.create(recursive: true);

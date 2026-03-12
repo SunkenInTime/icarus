@@ -1378,7 +1378,21 @@ class StrategyProvider extends Notifier<StrategyState> {
             ),
           );
         }
+        continue;
       }
+
+      result = result.merge(
+        ImportBatchResult(
+          strategiesImported: 0,
+          foldersCreated: 0,
+          issues: [
+            ImportIssue(
+              path: entity.path,
+              code: ImportIssueCode.unsupportedFile,
+            ),
+          ],
+        ),
+      );
     }
 
     return result;
