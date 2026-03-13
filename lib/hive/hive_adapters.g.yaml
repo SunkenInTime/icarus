@@ -335,24 +335,6 @@ types:
         index: 4
       customRectangle:
         index: 5
-  Folder:
-    typeId: 17
-    nextIndex: 7
-    fields:
-      name:
-        index: 0
-      id:
-        index: 1
-      parentID:
-        index: 2
-      dateCreated:
-        index: 3
-      icon:
-        index: 4
-      color:
-        index: 5
-      customColor:
-        index: 6
   IconData:
     typeId: 18
     nextIndex: 5

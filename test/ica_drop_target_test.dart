@@ -67,4 +67,21 @@ void main() {
 
     expect(summary, 'Imported 10 strategies into 3 folders.');
   });
+
+  test('summary mentions restored library globals', () {
+    final summary = buildImportSummaryMessage(
+      const ImportBatchResult(
+        strategiesImported: 2,
+        foldersCreated: 1,
+        themeProfilesImported: 1,
+        globalStateRestored: true,
+        issues: [],
+      ),
+    );
+
+    expect(
+      summary,
+      'Imported 2 strategies into 1 folder. Imported 1 theme profile. Restored library settings.',
+    );
+  });
 }

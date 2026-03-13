@@ -4,10 +4,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
-@visibleForTesting
 String buildImportSummaryMessage(ImportBatchResult result) {
   final skippedCount = result.issues.length;
   final skippedLabel = skippedCount == 1 ? 'file' : 'files';
+  final extraSegments = <String>[];
+
+  if (result.themeProfilesImported > 0) {
+    final profilesLabel =
+        result.themeProfilesImported == 1 ? 'theme profile' : 'theme profiles';
+    extraSegments.add(
+      'Imported ${result.themeProfilesImported} $profilesLabel.',
+    );
+  }
+  if (result.globalStateRestored) {
+    extraSegments.add('Restored library settings.');
+  }
 
   if (!result.hasImports) {
     const baseMessage = 'No compatible strategies or folders were imported.';
@@ -18,7 +29,12 @@ String buildImportSummaryMessage(ImportBatchResult result) {
   }
 
   String message;
-  if (result.strategiesImported > 0 && result.foldersCreated > 0) {
+  if (result.strategiesImported == 0 &&
+      result.foldersCreated == 0 &&
+      extraSegments.isNotEmpty) {
+    message = extraSegments.join(' ');
+    extraSegments.clear();
+  } else if (result.strategiesImported > 0 && result.foldersCreated > 0) {
     final strategiesLabel =
         result.strategiesImported == 1 ? 'strategy' : 'strategies';
     final foldersLabel = result.foldersCreated == 1 ? 'folder' : 'folders';
@@ -34,10 +50,15 @@ String buildImportSummaryMessage(ImportBatchResult result) {
   }
 
   if (skippedCount == 0) {
-    return message;
+    if (extraSegments.isEmpty) {
+      return message;
+    }
+    return '$message ${extraSegments.join(' ')}';
   }
 
-  return '$message Skipped $skippedCount $skippedLabel.';
+  final extraSuffix =
+      extraSegments.isEmpty ? '' : ' ${extraSegments.join(' ')}';
+  return '$message$extraSuffix Skipped $skippedCount $skippedLabel.';
 }
 
 class IcaDropTarget extends ConsumerStatefulWidget {
@@ -112,7 +133,7 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
                       height: 10,
                     ),
                     Text(
-                      "Import strategies, folders, or .zip archives",
+                      "Import strategies, folders, or backup archives",
                       style:
                           TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                     )

@@ -16,7 +16,7 @@ import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/second_instance_args.dart';
 import 'package:icarus/const/settings.dart' show Settings;
-import 'package:icarus/hive/hive_registrar.g.dart';
+import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
@@ -71,7 +71,7 @@ Future<void> main(List<String> args) async {
     color: Colors.white,
   );
 
-  Hive.registerAdapters();
+  registerIcarusAdapters(Hive);
 
   await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
   await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
