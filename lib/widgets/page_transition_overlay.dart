@@ -131,6 +131,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           customDiameter: entry.endCustomDiameter,
           customWidth: entry.endCustomWidth,
           customLength: entry.endCustomLength,
+          deadStateProgress: _deadStateProgressForEntry(entry, 1),
           agentSize: agentSize,
           abilitySize: abilitySize,
         );
@@ -152,6 +153,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           customDiameter: entry.startCustomDiameter,
           customWidth: entry.startCustomWidth,
           customLength: entry.startCustomLength,
+          deadStateProgress: _deadStateProgressForEntry(entry, 0),
           agentSize: agentSize,
           abilitySize: abilitySize,
         );
@@ -174,6 +176,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
             entry.endCustomDiameter,
             t,
           ),
+          deadStateProgress: _deadStateProgressForEntry(entry, t),
           customWidth: _lerpDouble(
             entry.startCustomWidth,
             entry.endCustomWidth,
@@ -205,6 +208,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           customDiameter: entry.endCustomDiameter,
           customWidth: entry.endCustomWidth,
           customLength: entry.endCustomLength,
+          deadStateProgress: _deadStateProgressForEntry(entry, 1),
           agentSize: agentSize,
           abilitySize: abilitySize,
         );
@@ -276,6 +280,28 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
 
   double _lerpRequired(double a, double b, double t) => a + (b - a) * t;
 
+  double? _deadStateProgressForEntry(PageTransitionEntry entry, double t) {
+    final start = _agentDeadValue(entry.startAgentState);
+    final end = _agentDeadValue(entry.endAgentState);
+    if (start == null && end == null) {
+      return null;
+    }
+    if (start == null) {
+      return end;
+    }
+    if (end == null) {
+      return start;
+    }
+    return _lerpRequired(start, end, t);
+  }
+
+  double? _agentDeadValue(AgentState? state) {
+    if (state == null) {
+      return null;
+    }
+    return state == AgentState.dead ? 1.0 : 0.0;
+  }
+
   Widget _overlayItem({
     required Key key,
     required PlacedWidget widget,
@@ -289,6 +315,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     double? customDiameter,
     double? customWidth,
     double? customLength,
+    double? deadStateProgress,
     required double agentSize,
     required double abilitySize,
   }) {
@@ -303,6 +330,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       customDiameter: customDiameter,
       customWidth: customWidth,
       customLength: customLength,
+      deadStateProgress: deadStateProgress,
       agentSize: agentSize,
       abilitySize: abilitySize,
     ); // central factory (below)
@@ -366,6 +394,7 @@ class PlacedWidgetPreview {
     double? customDiameter,
     double? customWidth,
     double? customLength,
+    double? deadStateProgress,
     required double agentSize,
     required double abilitySize,
   }) {
@@ -374,6 +403,8 @@ class PlacedWidgetPreview {
         isAlly: w.isAlly,
         id: w.id,
         agent: AgentData.agents[w.type]!,
+        state: w.state,
+        deadStateProgress: deadStateProgress,
         forcedAgentSize: agentSize,
       );
     }
