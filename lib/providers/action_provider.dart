@@ -31,6 +31,19 @@ enum ActionType {
   deletion,
   edit,
   bulkDeletion,
+  transaction,
+}
+
+class TransactionSnapshot {
+  final List<ActionGroup> targetGroups;
+  final BulkActionSnapshot before;
+  final BulkActionSnapshot after;
+
+  const TransactionSnapshot({
+    required this.targetGroups,
+    required this.before,
+    required this.after,
+  });
 }
 
 class BulkActionSnapshot {
@@ -68,12 +81,14 @@ class UserAction {
   final String id;
   final ActionType type;
   final BulkActionSnapshot? bulkSnapshot;
+  final TransactionSnapshot? transactionSnapshot;
 
   UserAction({
     required this.type,
     required this.id,
     required this.group,
     this.bulkSnapshot,
+    this.transactionSnapshot,
   });
 
   @override
@@ -101,6 +116,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
   ];
   static const _uuid = Uuid();
   List<UserAction> poppedItems = [];
+  bool _recordingDisabled = false;
 
   @override
   List<UserAction> build() {
@@ -108,6 +124,9 @@ class ActionProvider extends Notifier<List<UserAction>> {
   }
 
   void addAction(UserAction action) {
+    if (_recordingDisabled) {
+      return;
+    }
     ref.read(strategyProvider.notifier).setUnsaved();
     if (action.group != ActionGroup.ability) {
       ref
@@ -131,6 +150,10 @@ class ActionProvider extends Notifier<List<UserAction>> {
     log(poppedItems.length.toString());
     if (poppedAction.type == ActionType.bulkDeletion) {
       _redoBulkAction(poppedAction);
+      return;
+    }
+    if (poppedAction.type == ActionType.transaction) {
+      _redoTransaction(poppedAction);
       return;
     }
 
@@ -169,6 +192,10 @@ class ActionProvider extends Notifier<List<UserAction>> {
     final currentAction = state.last;
     if (currentAction.type == ActionType.bulkDeletion) {
       _undoBulkAction(currentAction);
+      return;
+    }
+    if (currentAction.type == ActionType.transaction) {
+      _undoTransaction(currentAction);
       return;
     }
 
@@ -226,6 +253,45 @@ class ActionProvider extends Notifier<List<UserAction>> {
   void clearGroupAsAction(ActionGroup group) {
     if (group == ActionGroup.bulk) return;
     _performBulkClear([group]);
+  }
+
+  void performTransaction({
+    required List<ActionGroup> groups,
+    required void Function() mutation,
+  }) {
+    final targetGroups = <ActionGroup>[];
+    for (final group in groups) {
+      if (_undoableGroups.contains(group) && !targetGroups.contains(group)) {
+        targetGroups.add(group);
+      }
+    }
+    if (targetGroups.isEmpty) {
+      mutation();
+      return;
+    }
+
+    final before = _captureBulkSnapshot(targetGroups);
+    final previousRecordingState = _recordingDisabled;
+    _recordingDisabled = true;
+    try {
+      mutation();
+    } finally {
+      _recordingDisabled = previousRecordingState;
+    }
+    final after = _captureBulkSnapshot(targetGroups);
+
+    addAction(
+      UserAction(
+        type: ActionType.transaction,
+        id: _uuid.v4(),
+        group: ActionGroup.bulk,
+        transactionSnapshot: TransactionSnapshot(
+          targetGroups: targetGroups,
+          before: before,
+          after: after,
+        ),
+      ),
+    );
   }
 
   void _performBulkClear(List<ActionGroup> groups) {
@@ -341,8 +407,14 @@ class ActionProvider extends Notifier<List<UserAction>> {
       UserAction action, Set<ActionGroup> targetGroups) {
     if (action.group == ActionGroup.bulk) {
       final bulkSnapshot = action.bulkSnapshot;
-      if (bulkSnapshot == null) return false;
-      return bulkSnapshot.targetGroups.any(targetGroups.contains);
+      if (bulkSnapshot != null) {
+        return bulkSnapshot.targetGroups.any(targetGroups.contains);
+      }
+      final transactionSnapshot = action.transactionSnapshot;
+      if (transactionSnapshot != null) {
+        return transactionSnapshot.targetGroups.any(targetGroups.contains);
+      }
+      return false;
     }
 
     return targetGroups.contains(action.group);
@@ -449,6 +521,29 @@ class ActionProvider extends Notifier<List<UserAction>> {
     final newState = _filterActionsForGroups(state, snapshot.targetGroups)
       ..add(poppedItems.removeLast());
 
+    ref.read(strategyProvider.notifier).setUnsaved();
+    ref.read(abilityBarProvider.notifier).updateData(null);
+    state = newState;
+  }
+
+  void _undoTransaction(UserAction action) {
+    final snapshot = action.transactionSnapshot;
+    if (snapshot == null) return;
+
+    _restoreBulkSnapshot(snapshot.before);
+    final newState = [...state];
+    poppedItems.add(newState.removeLast());
+    ref.read(strategyProvider.notifier).setUnsaved();
+    state = newState;
+  }
+
+  void _redoTransaction(UserAction action) {
+    final snapshot = action.transactionSnapshot;
+    if (snapshot == null) return;
+
+    _restoreBulkSnapshot(snapshot.after);
+    final newState = [...state];
+    newState.add(poppedItems.removeLast());
     ref.read(strategyProvider.notifier).setUnsaved();
     ref.read(abilityBarProvider.notifier).updateData(null);
     state = newState;

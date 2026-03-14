@@ -92,7 +92,10 @@ class DrawingProvider extends Notifier<DrawingState> {
         case ActionType.deletion:
           final index = DrawingElement.getIndexByID(action.id, poppedElements);
           newElements.add(poppedElements.removeAt(index));
-        default:
+        case ActionType.edit:
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          break;
       }
     } catch (_) {
       dev.log("Can't find index in undo action");
@@ -111,7 +114,10 @@ class DrawingProvider extends Notifier<DrawingState> {
         case ActionType.deletion:
           final index = DrawingElement.getIndexByID(action.id, newElements);
           poppedElements.add(newElements.removeAt(index));
-        default:
+        case ActionType.edit:
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          break;
       }
     } catch (_) {
       dev.log("Can't find index in redo action");

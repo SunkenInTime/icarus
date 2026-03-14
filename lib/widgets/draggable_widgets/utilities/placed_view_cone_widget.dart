@@ -94,6 +94,13 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
     // This is exactly like how abilities calculate their anchor points
     final anchorPoint = viewConeUtility.getAnchorPoint();
 
+    final utilityChild =
+        UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
+      id: widget.id,
+      rotation: localRotation,
+      length: localLength,
+    );
+
     return Positioned(
       left: coordinateSystem.coordinateToScreen(widget.utility.position).dx,
       top: coordinateSystem.coordinateToScreen(widget.utility.position).dy,
@@ -159,7 +166,6 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
         },
         child: Draggable<PlacedUtility>(
           data: widget.utility,
-          // Custom drag anchor strategy - same pattern as PlacedAbilityWidget
           dragAnchorStrategy: (draggable, context, position) {
             final RenderBox renderObject =
                 context.findRenderObject()! as RenderBox;
@@ -168,14 +174,15 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
               coordinateSystem.scaleFactor,
             );
 
-            // Rotate the local position around the anchor point
-            Offset rotatedPos = rotateOffset(
+            final rotatedPos = rotateOffset(
               renderObject.globalToLocal(position),
               scaledAnchor,
               localRotation!,
             );
 
-            return ref.read(screenZoomProvider.notifier).zoomOffset(rotatedPos);
+            return ref
+                .read(screenZoomProvider.notifier)
+                .zoomOffset(rotatedPos);
           },
           feedback: Opacity(
             opacity: Settings.feedbackOpacity,
@@ -189,7 +196,10 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
               child: ZoomTransform(
                 child: UtilityData.utilityWidgets[widget.utility.type]!
                     .createWidget(
-                        id: null, rotation: localRotation, length: localLength),
+                  id: null,
+                  rotation: localRotation,
+                  length: localLength,
+                ),
               ),
             ),
           ),
@@ -205,8 +215,7 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
             });
             widget.onDragEnd(details);
           },
-          child: UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
-              id: widget.id, rotation: localRotation, length: localLength),
+          child: utilityChild,
         ),
       ),
     );

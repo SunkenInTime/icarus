@@ -17,6 +17,7 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
     this.colorValue,
     this.opacityPercent,
     this.mapScale,
+    this.showCenterMarker = true,
   });
 
   final String? id;
@@ -24,6 +25,7 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
   final int? colorValue;
   final int? opacityPercent;
   final double? mapScale;
+  final bool showCenterMarker;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -82,24 +84,25 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
               ),
             ),
           ),
-          Center(
-            child: MouseWatch(
-              cursor: SystemMouseCursors.click,
-              deleteTarget: (id?.isNotEmpty ?? false)
-                  ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
-                  : null,
-              child: Container(
-                width: iconSize * 0.8,
-                height: iconSize * 0.8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.9),
-                  border:
-                      Border.all(color: Colors.white, width: coord.scale(2)),
+          if (showCenterMarker)
+            Center(
+              child: MouseWatch(
+                cursor: SystemMouseCursors.click,
+                deleteTarget: (id?.isNotEmpty ?? false)
+                    ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
+                    : null,
+                child: Container(
+                  width: iconSize * 0.8,
+                  height: iconSize * 0.8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.9),
+                    border:
+                        Border.all(color: Colors.white, width: coord.scale(2)),
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );

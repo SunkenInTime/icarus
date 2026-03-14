@@ -47,7 +47,7 @@ class PageLayering {
     if (widget is PlacedAbility) {
       return PageVisualLayer.ability;
     }
-    if (widget is PlacedAgent) {
+    if (widget is PlacedAgentNode) {
       return PageVisualLayer.agent;
     }
     if (widget is PlacedText) {
@@ -135,12 +135,14 @@ class PageTransitionEntry {
   static double? rotationOf(PlacedWidget w) {
     if (w is PlacedAbility) return w.rotation;
     if (w is PlacedUtility) return w.rotation;
+    if (w is PlacedViewConeAgent) return w.rotation;
     return null;
   }
 
   static double? lengthOf(PlacedWidget w) {
     if (w is PlacedAbility) return w.length;
     if (w is PlacedUtility) return w.length;
+    if (w is PlacedViewConeAgent) return w.length;
     return null;
   }
 
@@ -163,6 +165,7 @@ class PageTransitionEntry {
 
   static double? customDiameterOf(PlacedWidget w) {
     if (w is PlacedUtility) return w.customDiameter;
+    if (w is PlacedCircleAgent) return w.diameterMeters;
     return null;
   }
 

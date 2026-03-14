@@ -218,6 +218,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
       case ActionType.edit:
         undoPosition(action.id);
       case ActionType.bulkDeletion:
+      case ActionType.transaction:
         return;
     }
   }
@@ -249,6 +250,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
           final index = PlacedWidget.getIndexByID(action.id, newImages);
           newImages[index].redoAction();
         case ActionType.bulkDeletion:
+        case ActionType.transaction:
           return;
       }
     } catch (_) {

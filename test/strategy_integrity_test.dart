@@ -106,8 +106,9 @@ Future<StrategyData> _importStrategyFromDecoded({
 }) async {
   final drawingData =
       DrawingProvider.fromJson(jsonEncode(decoded['drawingData'] ?? []));
-  final agentData =
-      AgentProvider.fromJson(jsonEncode(decoded['agentData'] ?? []));
+  final agentData = AgentProvider.fromJson(jsonEncode(decoded['agentData'] ?? []))
+      .whereType<PlacedAgent>()
+      .toList(growable: false);
   final abilityData =
       AbilityProvider.fromJson(jsonEncode(decoded['abilityData'] ?? []));
   final textData = TextProvider.fromJson(jsonEncode(decoded['textData'] ?? []));

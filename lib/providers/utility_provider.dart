@@ -42,12 +42,9 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
 
   void updatePosition(Offset position, String id) {
     final newState = [...state];
-
     final index = PlacedWidget.getIndexByID(id, newState);
-
     if (index < 0) return;
     newState[index].updatePosition(position);
-
     final temp = newState.removeAt(index);
 
     final action =
@@ -150,26 +147,30 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     switch (action.type) {
       case ActionType.addition:
         removeUtility(action.id);
+        return;
       case ActionType.deletion:
-        if (poppedUtilities.isEmpty) {
+        final index = PlacedWidget.getIndexByID(action.id, poppedUtilities);
+        if (index < 0) {
           return;
         }
 
         final newState = [...state];
 
-        newState.add(poppedUtilities.removeLast());
+        final restoredUtility = poppedUtilities.removeAt(index);
+        newState.add(restoredUtility);
         state = newState;
+        return;
       case ActionType.edit:
         final newState = [...state];
 
         final index = PlacedWidget.getIndexByID(action.id, newState);
+        if (index < 0) return;
 
-        // log("Previous rotation: ${newState[index].rotation} Previous length: ${newState[index].length}");
         newState[index].undoAction();
-
-        // log("Current rotation: ${newState[index].rotation} Current length: ${newState[index].length}");
         state = newState;
+        return;
       case ActionType.bulkDeletion:
+      case ActionType.transaction:
         return;
     }
   }
@@ -181,22 +182,31 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
       switch (action.type) {
         case ActionType.addition:
           final index = PlacedWidget.getIndexByID(action.id, poppedUtilities);
-          newState.add(poppedUtilities.removeAt(index));
+          if (index < 0) return;
+          final restoredUtility = poppedUtilities.removeAt(index);
+          newState.add(restoredUtility);
+          state = newState;
+          return;
 
         case ActionType.deletion:
-          final index = PlacedWidget.getIndexByID(action.id, poppedUtilities);
-
+          final index = PlacedWidget.getIndexByID(action.id, newState);
+          if (index < 0) return;
           poppedUtilities.add(newState.removeAt(index));
+          state = newState;
+          return;
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
+          if (index < 0) return;
           newState[index].redoAction();
+          state = newState;
+          return;
         case ActionType.bulkDeletion:
+        case ActionType.transaction:
           return;
       }
     } catch (_) {
       log("failed to find index");
     }
-    state = newState;
   }
 
   void removeUtility(String id) {
@@ -248,13 +258,20 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
 
   UtilityProviderSnapshot takeSnapshot() {
     return UtilityProviderSnapshot(
-      utilities: [...state],
-      poppedUtilities: [...poppedUtilities],
+      utilities:
+          state.map((utility) => utility.deepCopy<PlacedUtility>()).toList(),
+      poppedUtilities: poppedUtilities
+          .map((utility) => utility.deepCopy<PlacedUtility>())
+          .toList(),
     );
   }
 
   void restoreSnapshot(UtilityProviderSnapshot snapshot) {
-    poppedUtilities = [...snapshot.poppedUtilities];
-    state = [...snapshot.utilities];
+    poppedUtilities = snapshot.poppedUtilities
+        .map((utility) => utility.deepCopy<PlacedUtility>())
+        .toList();
+    state = snapshot.utilities
+        .map((utility) => utility.deepCopy<PlacedUtility>())
+        .toList();
   }
 }

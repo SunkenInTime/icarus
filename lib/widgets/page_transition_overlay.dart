@@ -13,6 +13,8 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/placed_circle_agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 
@@ -298,6 +300,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       mapScale,
       length: length,
       armLengthsMeters: armLengthsMeters,
+      rotation: rotation,
       scale: scale,
       textSize: textSize,
       customDiameter: customDiameter,
@@ -361,6 +364,7 @@ class PlacedWidgetPreview {
     double mapScale, {
     double? length,
     List<double>? armLengthsMeters,
+    double? rotation,
     double? scale,
     double? textSize,
     double? customDiameter,
@@ -374,6 +378,20 @@ class PlacedWidgetPreview {
         isAlly: w.isAlly,
         id: w.id,
         agent: AgentData.agents[w.type]!,
+        forcedAgentSize: agentSize,
+      );
+    }
+    if (w is PlacedViewConeAgent) {
+      return ViewConeAgentComposite(
+        agent: w,
+        rotation: rotation ?? w.rotation,
+        length: length ?? w.length,
+        forcedAgentSize: agentSize,
+      );
+    }
+    if (w is PlacedCircleAgent) {
+      return CircleAgentComposite(
+        agent: w.copyWith(diameterMeters: customDiameter ?? w.diameterMeters),
         forcedAgentSize: agentSize,
       );
     }

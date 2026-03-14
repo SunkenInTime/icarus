@@ -24,10 +24,10 @@ import 'package:icarus/widgets/drawing_painter.dart';
 
 class _NoopAgentProvider extends AgentProvider {
   @override
-  List<PlacedAgent> build() => const [];
+  List<PlacedAgentNode> build() => const [];
 
   @override
-  void fromHive(List<PlacedAgent> hiveAgents) {}
+  void fromHive(List<PlacedAgentNode> hiveAgents) {}
 }
 
 class _NoopAbilityProvider extends AbilityProvider {

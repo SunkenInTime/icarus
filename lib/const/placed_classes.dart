@@ -310,8 +310,11 @@ class Uint8ListConverter {
   }
 }
 
-@JsonSerializable()
-class PlacedAgent extends PlacedWidget {
+sealed class PlacedAgentNode extends PlacedWidget {
+  static const String plainKind = 'plain';
+  static const String viewConeKind = 'viewCone';
+  static const String circleKind = 'circle';
+
   final AgentType type;
 
   @JsonKey(defaultValue: true)
@@ -320,46 +323,153 @@ class PlacedAgent extends PlacedWidget {
   @JsonKey(defaultValue: AgentState.none)
   AgentState state;
 
-  final String? lineUpID;
-
-  PlacedAgent({
+  PlacedAgentNode({
     required this.type,
     required super.position,
     required super.id,
-    this.isAlly = true, // Default parameter value
-    this.lineUpID,
+    this.isAlly = true,
     this.state = AgentState.none,
   });
 
-  factory PlacedAgent.fromJson(Map<String, dynamic> json) =>
-      _$PlacedAgentFromJson(json);
-  @override
-  Map<String, dynamic> toJson() => _$PlacedAgentToJson(this);
+  String get kind;
 
   void switchSides(double agentSize) {
     final coordinateSystem = CoordinateSystem.instance;
     final agentScreenPx = coordinateSystem.scale(agentSize);
+    final scaledSize = Offset(agentScreenPx, agentScreenPx);
 
-    position = getFlippedPosition(
-        position: position, scaledSize: Offset(agentScreenPx, agentScreenPx));
+    position = getFlippedPosition(position: position, scaledSize: scaledSize);
+    _flipSharedPositionHistory(scaledSize);
+  }
 
+  void _flipSharedPositionHistory(Offset scaledSize) {
     for (final (index, action) in _actionHistory.indexed) {
       if (action is PositionAction) {
         _actionHistory[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position,
-                scaledSize: Offset(agentScreenPx, agentScreenPx)));
+          position: getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledSize,
+          ),
+        );
       }
     }
     for (final (index, action) in _poppedAction.indexed) {
       if (action is PositionAction) {
         _poppedAction[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position,
-                scaledSize: Offset(agentScreenPx, agentScreenPx)));
+          position: getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledSize,
+          ),
+        );
       }
     }
   }
+
+  static Offset _offsetFromJson(Object? value) {
+    return const BaseOffsetConverter().fromJson(
+      Map<String, dynamic>.from(value as Map),
+    );
+  }
+
+  static Map<String, dynamic> _offsetToJson(Offset value) {
+    return const BaseOffsetConverter().toJson(value);
+  }
+
+  static bool _isDeletedFromJson(Map<String, dynamic> json) {
+    return json['isDeleted'] as bool? ?? false;
+  }
+
+  static bool _isAllyFromJson(Map<String, dynamic> json) {
+    return json['isAlly'] as bool? ?? true;
+  }
+
+  static AgentState _stateFromJson(Map<String, dynamic> json) {
+    final rawState = json['state'];
+    if (rawState is AgentState) return rawState;
+    if (rawState is String) {
+      return AgentState.values.firstWhere(
+        (value) => value.name == rawState,
+        orElse: () => AgentState.none,
+      );
+    }
+    if (rawState is int &&
+        rawState >= 0 &&
+        rawState < AgentState.values.length) {
+      return AgentState.values[rawState];
+    }
+    return AgentState.none;
+  }
+
+  static Map<String, dynamic> sharedJson(PlacedAgentNode node) {
+    return <String, dynamic>{
+      'kind': node.kind,
+      'type': node.type.name,
+      'isAlly': node.isAlly,
+      'id': node.id,
+      'isDeleted': node.isDeleted,
+      'position': _offsetToJson(node.position),
+      'state': node.state.name,
+    };
+  }
+
+  static AgentType _agentTypeFromJson(Map<String, dynamic> json) {
+    final rawType = json['type'];
+    if (rawType is AgentType) return rawType;
+    if (rawType is String) {
+      return AgentType.values.firstWhere(
+        (value) => value.name == rawType,
+      );
+    }
+    return AgentType.values[rawType as int];
+  }
+
+  factory PlacedAgentNode.fromJson(Map<String, dynamic> json) {
+    final kind = json['kind'] as String? ?? plainKind;
+    switch (kind) {
+      case viewConeKind:
+        return PlacedViewConeAgent.fromJson(json);
+      case circleKind:
+        return PlacedCircleAgent.fromJson(json);
+      case plainKind:
+      default:
+        return PlacedAgent.fromJson(json);
+    }
+  }
+}
+
+class PlacedAgent extends PlacedAgentNode {
+  final String? lineUpID;
+
+  PlacedAgent({
+    required super.type,
+    required super.position,
+    required super.id,
+    super.isAlly = true,
+    this.lineUpID,
+    super.state = AgentState.none,
+  });
+
+  @override
+  String get kind => PlacedAgentNode.plainKind;
+
+  factory PlacedAgent.fromJson(Map<String, dynamic> json) {
+    final agent = PlacedAgent(
+      type: PlacedAgentNode._agentTypeFromJson(json),
+      position: PlacedAgentNode._offsetFromJson(json['position']),
+      id: json['id'] as String,
+      isAlly: PlacedAgentNode._isAllyFromJson(json),
+      lineUpID: json['lineUpID'] as String?,
+      state: PlacedAgentNode._stateFromJson(json),
+    );
+    agent.isDeleted = PlacedAgentNode._isDeletedFromJson(json);
+    return agent;
+  }
+
+  @override
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        ...PlacedAgentNode.sharedJson(this),
+        'lineUpID': lineUpID,
+      };
 
   PlacedAgent copyWith({
     AgentType? type,
@@ -369,7 +479,7 @@ class PlacedAgent extends PlacedWidget {
     String? lineUpID,
     AgentState? state,
   }) {
-    return PlacedAgent(
+    final copied = PlacedAgent(
       type: type ?? this.type,
       position: position ?? this.position,
       id: id ?? this.id,
@@ -377,6 +487,327 @@ class PlacedAgent extends PlacedWidget {
       lineUpID: lineUpID ?? this.lineUpID,
       state: state ?? this.state,
     );
+    copied.isDeleted = isDeleted;
+    return copied;
+  }
+}
+
+class ViewConeAgentGeometryAction extends WidgetAction {
+  final double rotation;
+  final double length;
+
+  ViewConeAgentGeometryAction({
+    required this.rotation,
+    required this.length,
+  });
+
+  ViewConeAgentGeometryAction copyWith({
+    double? rotation,
+    double? length,
+  }) {
+    return ViewConeAgentGeometryAction(
+      rotation: rotation ?? this.rotation,
+      length: length ?? this.length,
+    );
+  }
+}
+
+class CircleAgentGeometryAction extends WidgetAction {
+  final double diameterMeters;
+  final int colorValue;
+  final int opacityPercent;
+
+  CircleAgentGeometryAction({
+    required this.diameterMeters,
+    required this.colorValue,
+    required this.opacityPercent,
+  });
+}
+
+class PlacedViewConeAgent extends PlacedAgentNode {
+  final UtilityType presetType;
+  double rotation;
+  double length;
+
+  PlacedViewConeAgent({
+    required super.type,
+    required super.position,
+    required super.id,
+    required this.presetType,
+    required this.rotation,
+    required this.length,
+    super.isAlly = true,
+    super.state = AgentState.none,
+  }) : assert(
+          UtilityData.isViewConePresetType(presetType),
+          'presetType must be a view cone preset.',
+        );
+
+  @override
+  String get kind => PlacedAgentNode.viewConeKind;
+
+  factory PlacedViewConeAgent.fromJson(Map<String, dynamic> json) {
+    final presetType = json['presetType'];
+    final agent = PlacedViewConeAgent(
+      type: PlacedAgentNode._agentTypeFromJson(json),
+      position: PlacedAgentNode._offsetFromJson(json['position']),
+      id: json['id'] as String,
+      isAlly: PlacedAgentNode._isAllyFromJson(json),
+      state: PlacedAgentNode._stateFromJson(json),
+      presetType: presetType is UtilityType
+          ? presetType
+          : UtilityType.values.firstWhere(
+              (value) => value.name == presetType,
+            ),
+      rotation: (json['rotation'] as num? ?? 0).toDouble(),
+      length: (json['length'] as num? ?? 0).toDouble(),
+    );
+    agent.isDeleted = PlacedAgentNode._isDeletedFromJson(json);
+    return agent;
+  }
+
+  @override
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        ...PlacedAgentNode.sharedJson(this),
+        'presetType': presetType.name,
+        'rotation': rotation,
+        'length': length,
+      };
+
+  void updateGeometryHistory() {
+    _actionHistory.add(
+      ViewConeAgentGeometryAction(rotation: rotation, length: length),
+    );
+  }
+
+  void updateGeometry({
+    required double newRotation,
+    required double newLength,
+  }) {
+    rotation = newRotation;
+    length = newLength;
+  }
+
+  void _undoGeometry() {
+    final action =
+        ViewConeAgentGeometryAction(rotation: rotation, length: length);
+    _poppedAction.add(action);
+    final previous = _actionHistory.last as ViewConeAgentGeometryAction;
+    rotation = previous.rotation;
+    length = previous.length;
+    _actionHistory.removeLast();
+  }
+
+  void _redoGeometry() {
+    final action =
+        ViewConeAgentGeometryAction(rotation: rotation, length: length);
+    _actionHistory.add(action);
+    final next = _poppedAction.last as ViewConeAgentGeometryAction;
+    rotation = next.rotation;
+    length = next.length;
+    _poppedAction.removeLast();
+  }
+
+  @override
+  void undoAction() {
+    if (_actionHistory.isEmpty) return;
+    if (_actionHistory.last is PositionAction) {
+      _undoPosition();
+    } else if (_actionHistory.last is ViewConeAgentGeometryAction) {
+      _undoGeometry();
+    }
+  }
+
+  @override
+  void redoAction() {
+    if (_poppedAction.isEmpty) return;
+    if (_poppedAction.last is PositionAction) {
+      _redoPosition();
+    } else if (_poppedAction.last is ViewConeAgentGeometryAction) {
+      _redoGeometry();
+    }
+  }
+
+  @override
+  void switchSides(double agentSize) {
+    super.switchSides(agentSize);
+    rotation = rotation + math.pi;
+
+    for (final (index, action) in _actionHistory.indexed) {
+      if (action is ViewConeAgentGeometryAction) {
+        _actionHistory[index] = action.copyWith(
+          rotation: action.rotation + math.pi,
+        );
+      }
+    }
+    for (final (index, action) in _poppedAction.indexed) {
+      if (action is ViewConeAgentGeometryAction) {
+        _poppedAction[index] = action.copyWith(
+          rotation: action.rotation + math.pi,
+        );
+      }
+    }
+  }
+
+  PlacedViewConeAgent copyWith({
+    AgentType? type,
+    Offset? position,
+    String? id,
+    bool? isAlly,
+    AgentState? state,
+    UtilityType? presetType,
+    double? rotation,
+    double? length,
+  }) {
+    final copied = PlacedViewConeAgent(
+      type: type ?? this.type,
+      position: position ?? this.position,
+      id: id ?? this.id,
+      isAlly: isAlly ?? this.isAlly,
+      state: state ?? this.state,
+      presetType: presetType ?? this.presetType,
+      rotation: rotation ?? this.rotation,
+      length: length ?? this.length,
+    );
+    copied.isDeleted = isDeleted;
+    return copied;
+  }
+}
+
+class PlacedCircleAgent extends PlacedAgentNode {
+  double diameterMeters;
+  int colorValue;
+  int opacityPercent;
+
+  PlacedCircleAgent({
+    required super.type,
+    required super.position,
+    required super.id,
+    required this.diameterMeters,
+    required this.colorValue,
+    required this.opacityPercent,
+    super.isAlly = true,
+    super.state = AgentState.none,
+  });
+
+  @override
+  String get kind => PlacedAgentNode.circleKind;
+
+  factory PlacedCircleAgent.fromJson(Map<String, dynamic> json) {
+    final agent = PlacedCircleAgent(
+      type: PlacedAgentNode._agentTypeFromJson(json),
+      position: PlacedAgentNode._offsetFromJson(json['position']),
+      id: json['id'] as String,
+      isAlly: PlacedAgentNode._isAllyFromJson(json),
+      state: PlacedAgentNode._stateFromJson(json),
+      diameterMeters: (json['diameterMeters'] as num? ?? 0).toDouble(),
+      colorValue: json['colorValue'] as int? ?? Colors.white.toARGB32(),
+      opacityPercent: json['opacityPercent'] as int? ?? 100,
+    );
+    agent.isDeleted = PlacedAgentNode._isDeletedFromJson(json);
+    return agent;
+  }
+
+  @override
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        ...PlacedAgentNode.sharedJson(this),
+        'diameterMeters': diameterMeters,
+        'colorValue': colorValue,
+        'opacityPercent': opacityPercent,
+      };
+
+  void updateGeometry({
+    required double newDiameterMeters,
+    required int newColorValue,
+    required int newOpacityPercent,
+  }) {
+    diameterMeters = newDiameterMeters;
+    colorValue = newColorValue;
+    opacityPercent = newOpacityPercent;
+  }
+
+  void updateGeometryHistory() {
+    _actionHistory.add(
+      CircleAgentGeometryAction(
+        diameterMeters: diameterMeters,
+        colorValue: colorValue,
+        opacityPercent: opacityPercent,
+      ),
+    );
+  }
+
+  void _undoGeometry() {
+    _poppedAction.add(
+      CircleAgentGeometryAction(
+        diameterMeters: diameterMeters,
+        colorValue: colorValue,
+        opacityPercent: opacityPercent,
+      ),
+    );
+    final previous = _actionHistory.last as CircleAgentGeometryAction;
+    diameterMeters = previous.diameterMeters;
+    colorValue = previous.colorValue;
+    opacityPercent = previous.opacityPercent;
+    _actionHistory.removeLast();
+  }
+
+  void _redoGeometry() {
+    _actionHistory.add(
+      CircleAgentGeometryAction(
+        diameterMeters: diameterMeters,
+        colorValue: colorValue,
+        opacityPercent: opacityPercent,
+      ),
+    );
+    final next = _poppedAction.last as CircleAgentGeometryAction;
+    diameterMeters = next.diameterMeters;
+    colorValue = next.colorValue;
+    opacityPercent = next.opacityPercent;
+    _poppedAction.removeLast();
+  }
+
+  @override
+  void undoAction() {
+    if (_actionHistory.isEmpty) return;
+    if (_actionHistory.last is PositionAction) {
+      _undoPosition();
+    } else if (_actionHistory.last is CircleAgentGeometryAction) {
+      _undoGeometry();
+    }
+  }
+
+  @override
+  void redoAction() {
+    if (_poppedAction.isEmpty) return;
+    if (_poppedAction.last is PositionAction) {
+      _redoPosition();
+    } else if (_poppedAction.last is CircleAgentGeometryAction) {
+      _redoGeometry();
+    }
+  }
+
+  PlacedCircleAgent copyWith({
+    AgentType? type,
+    Offset? position,
+    String? id,
+    bool? isAlly,
+    AgentState? state,
+    double? diameterMeters,
+    int? colorValue,
+    int? opacityPercent,
+  }) {
+    final copied = PlacedCircleAgent(
+      type: type ?? this.type,
+      position: position ?? this.position,
+      id: id ?? this.id,
+      isAlly: isAlly ?? this.isAlly,
+      state: state ?? this.state,
+      diameterMeters: diameterMeters ?? this.diameterMeters,
+      colorValue: colorValue ?? this.colorValue,
+      opacityPercent: opacityPercent ?? this.opacityPercent,
+    );
+    copied.isDeleted = isDeleted;
+    return copied;
   }
 }
 
@@ -702,11 +1133,12 @@ class PlacedUtility extends PlacedWidget {
     return utility.getSize();
   }
 
-  void switchSides({required double mapScale}) {
+  void switchSides({
+    required double mapScale,
+  }) {
     final size = _getEffectiveUtilitySize(mapScale: mapScale);
     final scaledSize = size.scale(CoordinateSystem.instance.scaleFactor,
         CoordinateSystem.instance.scaleFactor);
-
     final flippedPosition = getFlippedPosition(
         position: position,
         scaledSize: scaledSize,
@@ -882,9 +1314,6 @@ class PlacedUtility extends PlacedWidget {
   double angle;
 
   @JsonKey(defaultValue: null)
-  String? attachedAgentId;
-
-  @JsonKey(defaultValue: null)
   double? customDiameter;
 
   @JsonKey(defaultValue: null)
@@ -904,7 +1333,6 @@ class PlacedUtility extends PlacedWidget {
     required super.position,
     required super.id,
     this.angle = 0.0,
-    this.attachedAgentId,
     this.customDiameter,
     this.customWidth,
     this.customLength,
@@ -916,6 +1344,49 @@ class PlacedUtility extends PlacedWidget {
       _$PlacedUtilityFromJson(json);
   @override
   Map<String, dynamic> toJson() => _$PlacedUtilityToJson(this);
+
+  static const Object _noChange = Object();
+
+  PlacedUtility copyWith({
+    UtilityType? type,
+    Offset? position,
+    String? id,
+    double? angle,
+    Object? customDiameter = _noChange,
+    Object? customWidth = _noChange,
+    Object? customLength = _noChange,
+    Object? customColorValue = _noChange,
+    Object? customOpacityPercent = _noChange,
+    double? rotation,
+    double? length,
+    bool? isDeleted,
+  }) {
+    final copied = PlacedUtility(
+      type: type ?? this.type,
+      position: position ?? this.position,
+      id: id ?? this.id,
+      angle: angle ?? this.angle,
+      customDiameter: identical(customDiameter, _noChange)
+          ? this.customDiameter
+          : customDiameter as double?,
+      customWidth: identical(customWidth, _noChange)
+          ? this.customWidth
+          : customWidth as double?,
+      customLength: identical(customLength, _noChange)
+          ? this.customLength
+          : customLength as double?,
+      customColorValue: identical(customColorValue, _noChange)
+          ? this.customColorValue
+          : customColorValue as int?,
+      customOpacityPercent: identical(customOpacityPercent, _noChange)
+          ? this.customOpacityPercent
+          : customOpacityPercent as int?,
+    );
+    copied.rotation = rotation ?? this.rotation;
+    copied.length = length ?? this.length;
+    copied.isDeleted = isDeleted ?? this.isDeleted;
+    return copied;
+  }
 }
 // ...existing code...
 
@@ -928,6 +1399,10 @@ extension PlacedWidgetCopy on PlacedWidget {
       return PlacedText.fromJson(json) as T;
     } else if (this is PlacedImage) {
       return PlacedImage.fromJson(json) as T;
+    } else if (this is PlacedViewConeAgent) {
+      return PlacedViewConeAgent.fromJson(json) as T;
+    } else if (this is PlacedCircleAgent) {
+      return PlacedCircleAgent.fromJson(json) as T;
     } else if (this is PlacedAgent) {
       return PlacedAgent.fromJson(json) as T;
     } else if (this is PlacedAbility) {

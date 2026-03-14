@@ -48,5 +48,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
   AdapterSpec<MapThemePalette>(),
   AdapterSpec<MapThemeProfile>(),
   AdapterSpec<AppPreferences>(),
+  AdapterSpec<PlacedViewConeAgent>(),
+  AdapterSpec<PlacedCircleAgent>(),
 ])
 part 'hive_adapters.g.dart';

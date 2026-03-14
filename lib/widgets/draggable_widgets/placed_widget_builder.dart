@@ -11,9 +11,11 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -22,6 +24,8 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/team_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/placed_circle_agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
@@ -45,6 +49,54 @@ class PlacedWidgetBuilder extends ConsumerStatefulWidget {
 }
 
 class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
+  PlacedAgent? _hoveredAgentAttachmentTarget() {
+    final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
+    if (hoveredTarget == null || hoveredTarget.type != DeleteTargetType.agent) {
+      return null;
+    }
+
+    for (final agent in ref.read(agentProvider)) {
+      if (agent is PlacedAgent && agent.id == hoveredTarget.id) {
+        return agent;
+      }
+    }
+    return null;
+  }
+
+  void _convertToolbarConeToComposite({
+    required PlacedAgent targetAgent,
+    required VisionConeToolData toolData,
+  }) {
+    ref.read(actionProvider.notifier).performTransaction(
+      groups: const [ActionGroup.agent],
+      mutation: () {
+        ref.read(agentProvider.notifier).convertPlainAgentToViewCone(
+              id: targetAgent.id,
+              presetType: toolData.type,
+              rotation: 0,
+              length: UtilityData.getViewConePreset(toolData.type).defaultLength,
+            );
+      },
+    );
+  }
+
+  void _convertToolbarCircleToComposite({
+    required PlacedAgent targetAgent,
+    required CustomShapeToolData toolData,
+  }) {
+    ref.read(actionProvider.notifier).performTransaction(
+      groups: const [ActionGroup.agent],
+      mutation: () {
+        ref.read(agentProvider.notifier).convertPlainAgentToCircle(
+              id: targetAgent.id,
+              diameterMeters: toolData.diameterMeters,
+              colorValue: toolData.colorValue,
+              opacityPercent: toolData.opacityPercent,
+            );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final coordinateSystem = CoordinateSystem.instance;
@@ -155,13 +207,22 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
               ref.read(abilityProvider.notifier).addAbility(placedAbility);
             } else if (details.data is VisionConeToolData) {
               final visionConeData = details.data as VisionConeToolData;
-              final placedUtility = PlacedUtility(
-                id: uuid.v4(),
-                type: visionConeData.type,
-                position: normalizedPosition,
-                angle: visionConeData.angle,
-              );
-              ref.read(utilityProvider.notifier).addUtility(placedUtility);
+              final targetAgent = _hoveredAgentAttachmentTarget();
+              if (targetAgent != null) {
+                _convertToolbarConeToComposite(
+                  targetAgent: targetAgent,
+                  toolData: visionConeData,
+                );
+              } else {
+                ref.read(utilityProvider.notifier).addUtility(
+                      PlacedUtility(
+                        id: uuid.v4(),
+                        type: visionConeData.type,
+                        position: normalizedPosition,
+                        angle: visionConeData.angle,
+                      ),
+                    );
+              }
             } else if (details.data is SpikeToolData) {
               final spikeData = details.data as SpikeToolData;
               final placedUtility = PlacedUtility(
@@ -172,25 +233,36 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
               ref.read(utilityProvider.notifier).addUtility(placedUtility);
             } else if (details.data is CustomShapeToolData) {
               final customData = details.data as CustomShapeToolData;
-              final placedUtility = customData.type == UtilityType.customCircle
-                  ? PlacedUtility(
-                      id: uuid.v4(),
-                      type: customData.type,
-                      position: normalizedPosition,
-                      customDiameter: customData.diameterMeters,
-                      customColorValue: customData.colorValue,
-                      customOpacityPercent: customData.opacityPercent,
-                    )
-                  : PlacedUtility(
-                      id: uuid.v4(),
-                      type: customData.type,
-                      position: normalizedPosition,
-                      customWidth: customData.widthMeters,
-                      customLength: customData.rectLengthMeters,
-                      customColorValue: customData.colorValue,
-                      customOpacityPercent: customData.opacityPercent,
+              final targetAgent = _hoveredAgentAttachmentTarget();
+              if (targetAgent != null &&
+                  customData.type == UtilityType.customCircle) {
+                _convertToolbarCircleToComposite(
+                  targetAgent: targetAgent,
+                  toolData: customData,
+                );
+              } else {
+                ref.read(utilityProvider.notifier).addUtility(
+                      customData.type == UtilityType.customCircle
+                          ? PlacedUtility(
+                              id: uuid.v4(),
+                              type: customData.type,
+                              position: normalizedPosition,
+                              customDiameter: customData.diameterMeters,
+                              customColorValue: customData.colorValue,
+                              customOpacityPercent: customData.opacityPercent,
+                            )
+                          : PlacedUtility(
+                              id: uuid.v4(),
+                              type: customData.type,
+                              position: normalizedPosition,
+                              customWidth: customData.widthMeters,
+                              customLength: customData.rectLengthMeters,
+                              customColorValue: customData.colorValue,
+                              customOpacityPercent:
+                                  customData.opacityPercent,
+                            ),
                     );
-              ref.read(utilityProvider.notifier).addUtility(placedUtility);
+              }
             } else if (details.data is TextToolData) {
               final textData = details.data as TextToolData;
               final placedText = PlacedText(
@@ -209,6 +281,63 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
       },
     );
   }
+}
+
+PlacedAgent? _hoveredPlainAgentTarget(WidgetRef ref) {
+  final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
+  if (hoveredTarget == null || hoveredTarget.type != DeleteTargetType.agent) {
+    return null;
+  }
+
+  for (final agent in ref.read(agentProvider)) {
+    if (agent is PlacedAgent && agent.id == hoveredTarget.id) {
+      return agent;
+    }
+  }
+  return null;
+}
+
+bool _convertFreeUtilityToComposite({
+  required WidgetRef ref,
+  required PlacedUtility utility,
+  required PlacedAgent targetAgent,
+}) {
+  if (UtilityData.isViewCone(utility.type)) {
+    ref.read(actionProvider.notifier).performTransaction(
+      groups: const [ActionGroup.agent, ActionGroup.utility],
+      mutation: () {
+        ref.read(utilityProvider.notifier).removeUtility(utility.id);
+        ref.read(agentProvider.notifier).convertPlainAgentToViewCone(
+              id: targetAgent.id,
+              presetType: utility.type,
+              rotation: utility.rotation,
+              length: utility.length,
+            );
+      },
+    );
+    return true;
+  }
+
+  if (utility.type == UtilityType.customCircle &&
+      utility.customDiameter != null &&
+      utility.customColorValue != null &&
+      utility.customOpacityPercent != null) {
+    ref.read(actionProvider.notifier).performTransaction(
+      groups: const [ActionGroup.agent, ActionGroup.utility],
+      mutation: () {
+        ref.read(utilityProvider.notifier).removeUtility(utility.id);
+        ref.read(agentProvider.notifier).convertPlainAgentToCircle(
+              id: targetAgent.id,
+              diameterMeters: utility.customDiameter!,
+              colorValue: utility.customColorValue!,
+              opacityPercent: utility.customOpacityPercent!,
+            );
+      },
+    );
+    return true;
+  }
+
+  return false;
 }
 
 class _AbilityList extends ConsumerWidget {
@@ -285,67 +414,97 @@ class _AgentListState extends ConsumerState<_AgentList> {
       clipBehavior: Clip.none,
       children: [
         for (final agent in agents)
-          Positioned(
-            key: ValueKey(agent.id),
-            left: widget.coordinateSystem.coordinateToScreen(agent.position).dx,
-            top: widget.coordinateSystem.coordinateToScreen(agent.position).dy,
-            child: Draggable<PlacedWidget>(
-              data: agent,
-              dragAnchorStrategy: zoomDragAnchorStrategy,
-              onDragStarted: () {
-                final shouldDuplicate =
-                    HardwareKeyboard.instance.isControlPressed ||
-                        HardwareKeyboard.instance.isMetaPressed;
-                if (!shouldDuplicate) return;
+          switch (agent) {
+            PlacedAgent() => Positioned(
+                key: ValueKey(agent.id),
+                left:
+                    widget.coordinateSystem.coordinateToScreen(agent.position).dx,
+                top:
+                    widget.coordinateSystem.coordinateToScreen(agent.position).dy,
+                child: Draggable<PlacedWidget>(
+                  data: agent,
+                  dragAnchorStrategy: zoomDragAnchorStrategy,
+                  onDragStarted: () {
+                    final shouldDuplicate =
+                        HardwareKeyboard.instance.isControlPressed ||
+                            HardwareKeyboard.instance.isMetaPressed;
+                    if (!shouldDuplicate) return;
 
-                final duplicatedId =
-                    ref.read(agentProvider.notifier).duplicateAgentAt(
-                          sourceId: agent.id,
-                          position: agent.position,
-                        );
-                if (duplicatedId != null) {
-                  _pendingDuplicateDragBySource[agent.id] = duplicatedId;
-                }
-              },
-              feedback: Opacity(
-                opacity: Settings.feedbackOpacity,
-                child: ZoomTransform(
+                    final duplicatedId =
+                        ref.read(agentProvider.notifier).duplicateAgentAt(
+                              sourceId: agent.id,
+                              position: agent.position,
+                            );
+                    if (duplicatedId != null) {
+                      _pendingDuplicateDragBySource[agent.id] = duplicatedId;
+                    }
+                  },
+                  feedback: Opacity(
+                    opacity: Settings.feedbackOpacity,
+                    child: ZoomTransform(
+                      child: AgentWidget(
+                        state: agent.state,
+                        isAlly: agent.isAlly,
+                        id: "",
+                        agent: AgentData.agents[agent.type]!,
+                      ),
+                    ),
+                  ),
+                  childWhenDragging: const SizedBox.shrink(),
+                  onDragEnd: (details) {
+                    final renderBox = context.findRenderObject() as RenderBox;
+                    final localOffset = renderBox.globalToLocal(details.offset);
+                    final virtualOffset =
+                        widget.coordinateSystem.screenToCoordinate(localOffset);
+
+                    final duplicateId =
+                        _pendingDuplicateDragBySource.remove(agent.id);
+                    if (duplicateId != null) {
+                      ref
+                          .read(agentProvider.notifier)
+                          .updatePosition(virtualOffset, duplicateId);
+                      return;
+                    }
+
+                    ref
+                        .read(agentProvider.notifier)
+                        .updatePosition(virtualOffset, agent.id);
+                  },
                   child: AgentWidget(
                     state: agent.state,
                     isAlly: agent.isAlly,
-                    id: "",
+                    id: agent.id,
                     agent: AgentData.agents[agent.type]!,
                   ),
                 ),
               ),
-              childWhenDragging: const SizedBox.shrink(),
-              onDragEnd: (details) {
-                final renderBox = context.findRenderObject() as RenderBox;
-                final localOffset = renderBox.globalToLocal(details.offset);
-                final virtualOffset =
-                    widget.coordinateSystem.screenToCoordinate(localOffset);
-
-                final duplicateId =
-                    _pendingDuplicateDragBySource.remove(agent.id);
-                if (duplicateId != null) {
+            PlacedViewConeAgent() => PlacedViewConeAgentWidget(
+                key: ValueKey(agent.id),
+                agent: agent,
+                onDragEnd: (details, draggedId) {
+                  final renderBox = context.findRenderObject() as RenderBox;
+                  final localOffset = renderBox.globalToLocal(details.offset);
+                  final virtualOffset =
+                      widget.coordinateSystem.screenToCoordinate(localOffset);
                   ref
                       .read(agentProvider.notifier)
-                      .updatePosition(virtualOffset, duplicateId);
-                  return;
-                }
-
-                ref
-                    .read(agentProvider.notifier)
-                    .updatePosition(virtualOffset, agent.id);
-              },
-              child: AgentWidget(
-                state: agent.state,
-                isAlly: agent.isAlly,
-                id: agent.id,
-                agent: AgentData.agents[agent.type]!,
+                      .updatePosition(virtualOffset, draggedId);
+                },
               ),
-            ),
-          ),
+            PlacedCircleAgent() => PlacedCircleAgentWidget(
+                key: ValueKey(agent.id),
+                agent: agent,
+                onDragEnd: (details, draggedId) {
+                  final renderBox = context.findRenderObject() as RenderBox;
+                  final localOffset = renderBox.globalToLocal(details.offset);
+                  final virtualOffset =
+                      widget.coordinateSystem.screenToCoordinate(localOffset);
+                  ref
+                      .read(agentProvider.notifier)
+                      .updatePosition(virtualOffset, draggedId);
+                },
+              ),
+          },
       ],
     );
   }
@@ -485,9 +644,20 @@ class _ViewConeUtilityList extends ConsumerWidget {
               //   return;
               // }
 
-              ref
-                  .read(utilityProvider.notifier)
-                  .updatePosition(virtualOffset, placedUtility.id);
+              final targetAgent = _hoveredPlainAgentTarget(ref);
+              if (targetAgent != null &&
+                  _convertFreeUtilityToComposite(
+                    ref: ref,
+                    utility: placedUtility,
+                    targetAgent: targetAgent,
+                  )) {
+                return;
+              }
+
+              ref.read(utilityProvider.notifier).updatePosition(
+                    virtualOffset,
+                    placedUtility.id,
+                  );
             },
           ),
       ],
@@ -612,9 +782,20 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                         return;
                       }
 
-                      ref
-                          .read(utilityProvider.notifier)
-                          .updatePosition(virtualOffset, placedUtility.id);
+                      final targetAgent = _hoveredPlainAgentTarget(ref);
+                      if (targetAgent != null &&
+                          _convertFreeUtilityToComposite(
+                            ref: ref,
+                            utility: placedUtility,
+                            targetAgent: targetAgent,
+                          )) {
+                        return;
+                      }
+
+                      ref.read(utilityProvider.notifier).updatePosition(
+                            virtualOffset,
+                            placedUtility.id,
+                          );
                     },
                   )
                 : PlacedCustomRectangleWidget(

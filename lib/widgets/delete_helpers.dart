@@ -74,7 +74,7 @@ void deleteHoveredTarget(WidgetRef ref, HoveredDeleteTarget target) {
 }
 
 void deletePlacedWidget(WidgetRef ref, PlacedWidget placedData) {
-  if (placedData is PlacedAgent) {
+  if (placedData is PlacedAgentNode) {
     final action = UserAction(
       type: ActionType.deletion,
       id: placedData.id,
