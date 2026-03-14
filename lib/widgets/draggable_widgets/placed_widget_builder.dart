@@ -74,7 +74,8 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
               id: targetAgent.id,
               presetType: toolData.type,
               rotation: 0,
-              length: UtilityData.getViewConePreset(toolData.type).defaultLength,
+              length:
+                  UtilityData.getViewConePreset(toolData.type).defaultLength,
             );
       },
     );
@@ -258,8 +259,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                               customWidth: customData.widthMeters,
                               customLength: customData.rectLengthMeters,
                               customColorValue: customData.colorValue,
-                              customOpacityPercent:
-                                  customData.opacityPercent,
+                              customOpacityPercent: customData.opacityPercent,
                             ),
                     );
               }
@@ -417,10 +417,12 @@ class _AgentListState extends ConsumerState<_AgentList> {
           switch (agent) {
             PlacedAgent() => Positioned(
                 key: ValueKey(agent.id),
-                left:
-                    widget.coordinateSystem.coordinateToScreen(agent.position).dx,
-                top:
-                    widget.coordinateSystem.coordinateToScreen(agent.position).dy,
+                left: widget.coordinateSystem
+                    .coordinateToScreen(agent.position)
+                    .dx,
+                top: widget.coordinateSystem
+                    .coordinateToScreen(agent.position)
+                    .dy,
                 child: Draggable<PlacedWidget>(
                   data: agent,
                   dragAnchorStrategy: zoomDragAnchorStrategy,
@@ -483,7 +485,17 @@ class _AgentListState extends ConsumerState<_AgentList> {
                 agent: agent,
                 onDragEnd: (details, draggedId) {
                   final renderBox = context.findRenderObject() as RenderBox;
-                  final localOffset = renderBox.globalToLocal(details.offset);
+                  final screenZoom = ref.read(screenZoomProvider);
+                  final agentSize =
+                      ref.read(strategySettingsProvider).agentSize;
+                  final compositeOffset =
+                      viewConeAgentCompositeAgentOffsetScreen(
+                    coordinateSystem: widget.coordinateSystem,
+                    agentSize: agentSize,
+                  );
+                  final localOffset = renderBox.globalToLocal(
+                    details.offset + compositeOffset.scale(screenZoom, screenZoom),
+                  );
                   final virtualOffset =
                       widget.coordinateSystem.screenToCoordinate(localOffset);
                   ref
@@ -496,7 +508,19 @@ class _AgentListState extends ConsumerState<_AgentList> {
                 agent: agent,
                 onDragEnd: (details, draggedId) {
                   final renderBox = context.findRenderObject() as RenderBox;
-                  final localOffset = renderBox.globalToLocal(details.offset);
+                  final screenZoom = ref.read(screenZoomProvider);
+                  final agentSize =
+                      ref.read(strategySettingsProvider).agentSize;
+                  final mapScale =
+                      Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0;
+                  final compositeOffset = circleAgentCompositeAgentOffsetScreen(
+                    coordinateSystem: widget.coordinateSystem,
+                    agentSize: agentSize,
+                    mapScale: mapScale,
+                  );
+                  final localOffset = renderBox.globalToLocal(
+                    details.offset + compositeOffset.scale(screenZoom, screenZoom),
+                  );
                   final virtualOffset =
                       widget.coordinateSystem.screenToCoordinate(localOffset);
                   ref

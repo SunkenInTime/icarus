@@ -19,6 +19,33 @@ import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_resize_tooltip.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
+double circleAgentCompositeDiameterVirtual(double mapScale) {
+  return CustomCircleUtility.maxDiameterInVirtual(mapScale);
+}
+
+Offset circleAgentCompositeAgentOffsetVirtual({
+  required double agentSize,
+  required double mapScale,
+}) {
+  final inset = (circleAgentCompositeDiameterVirtual(mapScale) - agentSize) / 2;
+  return Offset(inset, inset);
+}
+
+Offset circleAgentCompositeAgentOffsetScreen({
+  required CoordinateSystem coordinateSystem,
+  required double agentSize,
+  required double mapScale,
+}) {
+  final offset = circleAgentCompositeAgentOffsetVirtual(
+    agentSize: agentSize,
+    mapScale: mapScale,
+  );
+  return Offset(
+    coordinateSystem.scale(offset.dx),
+    coordinateSystem.scale(offset.dy),
+  );
+}
+
 class CircleAgentComposite extends ConsumerWidget {
   const CircleAgentComposite({
     super.key,
@@ -34,24 +61,26 @@ class CircleAgentComposite extends ConsumerWidget {
     final coordinateSystem = CoordinateSystem.instance;
     final agentSize =
         forcedAgentSize ?? ref.watch(strategySettingsProvider).agentSize;
-    final scaledAgentSize = coordinateSystem.scale(agentSize);
-    final agentCenter = Offset(scaledAgentSize / 2, scaledAgentSize / 2);
     final currentMap =
         ref.watch(mapProvider.select((state) => state.currentMap));
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
-    final scaledMaxDiameter = coordinateSystem.scale(
-      CustomCircleUtility.maxDiameterInVirtual(mapScale),
+    final scaledMaxDiameter =
+        coordinateSystem.scale(circleAgentCompositeDiameterVirtual(mapScale));
+    final agentOffset = circleAgentCompositeAgentOffsetScreen(
+      coordinateSystem: coordinateSystem,
+      agentSize: agentSize,
+      mapScale: mapScale,
     );
 
     return SizedBox(
-      width: scaledAgentSize,
-      height: scaledAgentSize,
+      width: scaledMaxDiameter,
+      height: scaledMaxDiameter,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Positioned(
-            left: agentCenter.dx - (scaledMaxDiameter / 2),
-            top: agentCenter.dy - (scaledMaxDiameter / 2),
+            left: 0,
+            top: 0,
             child: CustomCircleUtilityWidget(
               id: null,
               diameterMeters: agent.diameterMeters,
@@ -61,12 +90,16 @@ class CircleAgentComposite extends ConsumerWidget {
               showCenterMarker: false,
             ),
           ),
-          AgentWidget(
-            state: agent.state,
-            isAlly: agent.isAlly,
-            id: agent.id,
-            agent: AgentData.agents[agent.type]!,
-            forcedAgentSize: agentSize,
+          Positioned(
+            left: agentOffset.dx,
+            top: agentOffset.dy,
+            child: AgentWidget(
+              state: agent.state,
+              isAlly: agent.isAlly,
+              id: agent.id,
+              agent: AgentData.agents[agent.type]!,
+              forcedAgentSize: agentSize,
+            ),
           ),
         ],
       ),
@@ -132,35 +165,52 @@ class _PlacedCircleAgentWidgetState
       return const SizedBox.shrink();
     }
 
-    if (!_isDragging && !_isResizing && _localDiameterMeters != current.diameterMeters) {
+    if (!_isDragging &&
+        !_isResizing &&
+        _localDiameterMeters != current.diameterMeters) {
       _localDiameterMeters = current.diameterMeters;
     }
 
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
-    final scaledAgentSize = coordinateSystem.scale(agentSize);
-    final agentCenter = Offset(scaledAgentSize / 2, scaledAgentSize / 2);
     final diameterMeters = _localDiameterMeters ?? current.diameterMeters;
     final meterScale = AgentData.inGameMetersDiameter * mapScale;
     final scaledDiameter = coordinateSystem.scale(diameterMeters * meterScale);
-    final scaledMaxDiameter = coordinateSystem.scale(
-      CustomCircleUtility.maxDiameterInVirtual(mapScale),
+    final scaledMaxDiameter =
+        coordinateSystem.scale(circleAgentCompositeDiameterVirtual(mapScale));
+    final circleCenter = Offset(
+      scaledMaxDiameter / 2,
+      scaledMaxDiameter / 2,
     );
-    final circleLeft = agentCenter.dx - (scaledMaxDiameter / 2);
-    final circleTop = agentCenter.dy - (scaledMaxDiameter / 2);
+    final compositeAgentOffset = circleAgentCompositeAgentOffsetScreen(
+      coordinateSystem: coordinateSystem,
+      agentSize: agentSize,
+      mapScale: mapScale,
+    );
     final arcRegionSize = coordinateSystem.scale(32);
     final handleCenter = _computeHandleCenter(
       coordinateSystem: coordinateSystem,
       scaledDiameter: scaledDiameter,
-      scaledMaxDiameter: scaledMaxDiameter,
-      agentCenter: agentCenter,
+      circleCenter: circleCenter,
+    );
+    final arcRegionLeft = handleCenter.dx - (arcRegionSize / 2);
+    final arcRegionTop = handleCenter.dy - (arcRegionSize / 2);
+    final rightOverflow = math.max(
+      0.0,
+      (arcRegionLeft + arcRegionSize) - scaledMaxDiameter,
+    );
+    final bottomOverflow = math.max(
+      0.0,
+      (arcRegionTop + arcRegionSize) - scaledMaxDiameter,
     );
 
     return Positioned(
-      left: coordinateSystem.coordinateToScreen(current.position).dx,
-      top: coordinateSystem.coordinateToScreen(current.position).dy,
+      left: coordinateSystem.coordinateToScreen(current.position).dx -
+          compositeAgentOffset.dx,
+      top: coordinateSystem.coordinateToScreen(current.position).dy -
+          compositeAgentOffset.dy,
       child: SizedBox(
-        width: scaledAgentSize,
-        height: scaledAgentSize,
+        width: scaledMaxDiameter + rightOverflow,
+        height: scaledMaxDiameter + bottomOverflow,
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -208,12 +258,12 @@ class _PlacedCircleAgentWidgetState
             ),
             if (!_isDragging && !isScreenshot)
               Positioned(
-                left: handleCenter.dx - (arcRegionSize / 2),
-                top: handleCenter.dy - (arcRegionSize / 2),
+                left: arcRegionLeft,
+                top: arcRegionTop,
                 child: _CircleResizeHandle(
                   arcRegionSize: arcRegionSize,
-                  circleLeft: circleLeft,
-                  circleTop: circleTop,
+                  circleLeft: -arcRegionLeft,
+                  circleTop: -arcRegionTop,
                   scaledDiameter: scaledDiameter,
                   handleSweep: _computeHandleSweep(
                     coordinateSystem: coordinateSystem,
@@ -277,16 +327,11 @@ class _PlacedCircleAgentWidgetState
   Offset _computeHandleCenter({
     required CoordinateSystem coordinateSystem,
     required double scaledDiameter,
-    required double scaledMaxDiameter,
-    required Offset agentCenter,
+    required Offset circleCenter,
   }) {
     final radius = _computeCircleBorderRadius(
       coordinateSystem: coordinateSystem,
       scaledDiameter: scaledDiameter,
-    );
-    final circleCenter = Offset(
-      agentCenter.dx,
-      agentCenter.dy,
     );
     return Offset(
       circleCenter.dx + (radius * math.cos(_handleAngle)),
@@ -332,9 +377,9 @@ class _PlacedCircleAgentWidgetState
     if (renderBox == null) return _localDiameterMeters ?? _minDiameterMeters;
 
     final coordinateSystem = CoordinateSystem.instance;
-    final agentSize = ref.read(strategySettingsProvider).agentSize;
-    final scaledAgentSize = coordinateSystem.scale(agentSize);
-    final localCenter = Offset(scaledAgentSize / 2, scaledAgentSize / 2);
+    final scaledMaxDiameter =
+        coordinateSystem.scale(circleAgentCompositeDiameterVirtual(mapScale));
+    final localCenter = Offset(scaledMaxDiameter / 2, scaledMaxDiameter / 2);
     final localPosition = renderBox.globalToLocal(globalPosition);
     final deltaFromCenter = localPosition - localCenter;
     final deltaVirtual = Offset(
@@ -414,7 +459,8 @@ class _CircleResizeHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final coordinateSystem = CoordinateSystem.instance;
-    final strokeWidth = coordinateSystem.scale(_PlacedCircleAgentWidgetState._handleStrokeWidthVirtual);
+    final strokeWidth = coordinateSystem
+        .scale(_PlacedCircleAgentWidgetState._handleStrokeWidthVirtual);
     final circleBorderStrokeWidth = coordinateSystem
         .scale(_PlacedCircleAgentWidgetState._circleBorderStrokeVirtual);
 

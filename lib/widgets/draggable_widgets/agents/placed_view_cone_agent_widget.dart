@@ -16,6 +16,31 @@ import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 
+Offset viewConeAgentCompositeAgentOffsetVirtual(double agentSize) {
+  return Offset(
+    ViewConeWidget.anchorPointVirtual.dx - (agentSize / 2),
+    ViewConeWidget.anchorPointVirtual.dy - (agentSize / 2),
+  );
+}
+
+Offset viewConeAgentCompositeAgentOffsetScreen({
+  required CoordinateSystem coordinateSystem,
+  required double agentSize,
+}) {
+  final offset = viewConeAgentCompositeAgentOffsetVirtual(agentSize);
+  return Offset(
+    coordinateSystem.scale(offset.dx),
+    coordinateSystem.scale(offset.dy),
+  );
+}
+
+Size viewConeAgentCompositeSizeVirtual(double agentSize) {
+  return Size(
+    ViewConeWidget.totalWidthVirtual,
+    ViewConeWidget.anchorPointVirtual.dy + (agentSize / 2),
+  );
+}
+
 class ViewConeAgentComposite extends ConsumerWidget {
   const ViewConeAgentComposite({
     super.key,
@@ -37,22 +62,29 @@ class ViewConeAgentComposite extends ConsumerWidget {
     final coordinateSystem = CoordinateSystem.instance;
     final agentSize =
         forcedAgentSize ?? ref.watch(strategySettingsProvider).agentSize;
-    final scaledAgentSize = coordinateSystem.scale(agentSize);
-    final agentCenter = Offset(scaledAgentSize / 2, scaledAgentSize / 2);
+    final compositeSize = viewConeAgentCompositeSizeVirtual(agentSize);
+    final scaledCompositeSize = Size(
+      coordinateSystem.scale(compositeSize.width),
+      coordinateSystem.scale(compositeSize.height),
+    );
+    final agentOffset = viewConeAgentCompositeAgentOffsetScreen(
+      coordinateSystem: coordinateSystem,
+      agentSize: agentSize,
+    );
     final scaledAnchor = ViewConeWidget.anchorPointVirtual.scale(
       coordinateSystem.scaleFactor,
       coordinateSystem.scaleFactor,
     );
 
     Widget composite = SizedBox(
-      width: scaledAgentSize,
-      height: scaledAgentSize,
+      width: scaledCompositeSize.width,
+      height: scaledCompositeSize.height,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           Positioned(
-            left: agentCenter.dx - scaledAnchor.dx,
-            top: agentCenter.dy - scaledAnchor.dy,
+            left: 0,
+            top: 0,
             child: ViewConeWidget(
               id: null,
               angle: UtilityData.getViewConeAngle(agent.presetType),
@@ -60,12 +92,20 @@ class ViewConeAgentComposite extends ConsumerWidget {
               showCenterMarker: false,
             ),
           ),
-          AgentWidget(
-            state: agent.state,
-            isAlly: agent.isAlly,
-            id: agent.id,
-            agent: AgentData.agents[agent.type]!,
-            forcedAgentSize: agentSize,
+          Positioned(
+            left: agentOffset.dx,
+            top: agentOffset.dy,
+            child: Transform.rotate(
+              angle: -rotation,
+              alignment: Alignment.center,
+              child: AgentWidget(
+                state: agent.state,
+                isAlly: agent.isAlly,
+                id: agent.id,
+                agent: AgentData.agents[agent.type]!,
+                forcedAgentSize: agentSize,
+              ),
+            ),
           ),
         ],
       ),
@@ -78,7 +118,7 @@ class ViewConeAgentComposite extends ConsumerWidget {
     return Transform.rotate(
       angle: rotation,
       alignment: Alignment.topLeft,
-      origin: agentCenter,
+      origin: scaledAnchor,
       child: composite,
     );
   }
@@ -139,9 +179,15 @@ class _PlacedViewConeAgentWidgetState
     }
 
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
-    final scaledAgentSize = coordinateSystem.scale(agentSize);
-    final agentCenterVirtual = Offset(agentSize / 2, agentSize / 2);
-    final agentCenterScaled = Offset(scaledAgentSize / 2, scaledAgentSize / 2);
+    const anchorVirtual = ViewConeWidget.anchorPointVirtual;
+    final anchorScaled = anchorVirtual.scale(
+      coordinateSystem.scaleFactor,
+      coordinateSystem.scaleFactor,
+    );
+    final compositeAgentOffset = viewConeAgentCompositeAgentOffsetScreen(
+      coordinateSystem: coordinateSystem,
+      agentSize: agentSize,
+    );
 
     if (!_isDragging && _rotationOrigin == Offset.zero) {
       if (_localRotation != current.rotation) {
@@ -156,18 +202,20 @@ class _PlacedViewConeAgentWidgetState
     final localLength = _localLength ?? current.length;
 
     return Positioned(
-      left: coordinateSystem.coordinateToScreen(current.position).dx,
-      top: coordinateSystem.coordinateToScreen(current.position).dy,
+      left: coordinateSystem.coordinateToScreen(current.position).dx -
+          compositeAgentOffset.dx,
+      top: coordinateSystem.coordinateToScreen(current.position).dy -
+          compositeAgentOffset.dy,
       child: RotatableWidget(
         rotation: localRotation,
         isDragging: _isDragging,
-        origin: agentCenterVirtual,
-        buttonTop: agentCenterVirtual.dy - localLength - 7.5,
-        buttonLeft: agentCenterVirtual.dx - 7.5,
+        origin: anchorVirtual,
+        buttonTop: anchorVirtual.dy - localLength - 7.5,
+        buttonLeft: anchorVirtual.dx - 7.5,
         onPanStart: (_) {
           ref.read(agentProvider.notifier).updateViewConeHistory(current.id);
           final box = context.findRenderObject() as RenderBox;
-          _rotationOrigin = box.localToGlobal(agentCenterScaled);
+          _rotationOrigin = box.localToGlobal(anchorScaled);
         },
         onPanUpdate: (details) {
           if (_rotationOrigin == Offset.zero) return;
@@ -200,7 +248,7 @@ class _PlacedViewConeAgentWidgetState
             final renderObject = context.findRenderObject()! as RenderBox;
             final rotatedPosition = _rotateOffset(
               renderObject.globalToLocal(position),
-              agentCenterScaled,
+              anchorScaled,
               localRotation,
             );
 
@@ -221,8 +269,9 @@ class _PlacedViewConeAgentWidgetState
           ),
           childWhenDragging: const SizedBox.shrink(),
           onDragStarted: () {
-            final shouldDuplicate = HardwareKeyboard.instance.isControlPressed ||
-                HardwareKeyboard.instance.isMetaPressed;
+            final shouldDuplicate =
+                HardwareKeyboard.instance.isControlPressed ||
+                    HardwareKeyboard.instance.isMetaPressed;
             final duplicateId = shouldDuplicate
                 ? ref.read(agentProvider.notifier).duplicateAgentAt(
                       sourceId: current.id,
@@ -244,7 +293,7 @@ class _PlacedViewConeAgentWidgetState
           },
           child: ViewConeAgentComposite(
             agent: current,
-            rotation: 0,
+            rotation: localRotation,
             length: localLength,
             forcedAgentSize: agentSize,
             applyRotation: false,
