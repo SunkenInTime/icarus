@@ -967,6 +967,8 @@ class StrategyProvider extends Notifier<StrategyState> {
                 PageTransitionEntry.scaleOf(to) ||
             PageTransitionEntry.textSizeOf(from) !=
                 PageTransitionEntry.textSizeOf(to) ||
+            PageTransitionEntry.agentStateOf(from) !=
+                PageTransitionEntry.agentStateOf(to) ||
             PageTransitionEntry.customDiameterOf(from) !=
                 PageTransitionEntry.customDiameterOf(to) ||
             PageTransitionEntry.customWidthOf(from) !=

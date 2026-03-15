@@ -13,7 +13,30 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
 /// Grayscale color matrix for dead agents
-const ColorFilter _grayscaleFilter = ColorFilter.matrix(<double>[
+const List<double> _identityColorMatrix = <double>[
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+];
+
+const List<double> _grayscaleColorMatrix = <double>[
   0.2126,
   0.7152,
   0.0722,
@@ -34,7 +57,7 @@ const ColorFilter _grayscaleFilter = ColorFilter.matrix(<double>[
   0,
   1,
   0,
-]);
+];
 
 /// Muted background colors for dead agents
 const Color _mutedAllyBGColor = Color.fromARGB(255, 60, 60, 60);
@@ -53,6 +76,7 @@ class AgentWidget extends ConsumerWidget {
     this.lineUpId,
     this.state = AgentState.none,
     this.forcedAgentSize,
+    this.deadStateProgress,
   });
 
   final String? lineUpId;
@@ -61,13 +85,17 @@ class AgentWidget extends ConsumerWidget {
   final AgentData agent;
   final AgentState state;
   final double? forcedAgentSize;
+  final double? deadStateProgress;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
     final agentSize =
         forcedAgentSize ?? ref.watch(strategySettingsProvider).agentSize;
     final isScreenshot = ref.watch(screenshotProvider);
-    final isDead = state == AgentState.dead;
+    final deadProgress =
+        (deadStateProgress ?? (state == AgentState.dead ? 1.0 : 0.0))
+            .clamp(0.0, 1.0);
+    final hasDeadStyling = deadProgress > 0;
 
     final agentImage = RepaintBoundary(child: Image.asset(agent.iconPath));
 
@@ -77,13 +105,8 @@ class AgentWidget extends ConsumerWidget {
       bgColor = Settings.allyBGColor;
     }
 
-    if (isDead) {
-      if (isAlly) {
-        bgColor = _mutedAllyBGColor;
-      } else {
-        bgColor = _mutedEnemyBGColor;
-      }
-    }
+    final deadBgColor = isAlly ? _mutedAllyBGColor : _mutedEnemyBGColor;
+    bgColor = Color.lerp(bgColor, deadBgColor, deadProgress) ?? bgColor;
 
     if (lineUpId != null && ref.watch(hoveredLineUpIdProvider) == lineUpId) {
       bgColor = Colors.deepPurple;
@@ -95,30 +118,35 @@ class AgentWidget extends ConsumerWidget {
       outlineColor = Settings.allyOutlineColor;
     }
 
-    if (isDead) {
-      if (isAlly) {
-        outlineColor = _mutedAllyOutlineColor;
-      } else {
-        outlineColor = _mutedEnemyOutlineColor;
-      }
-    }
+    final deadOutlineColor =
+        isAlly ? _mutedAllyOutlineColor : _mutedEnemyOutlineColor;
+    outlineColor =
+        Color.lerp(outlineColor, deadOutlineColor, deadProgress) ??
+            outlineColor;
 
     if (lineUpId != null && ref.watch(hoveredLineUpIdProvider) == lineUpId) {
       outlineColor = Colors.deepPurpleAccent;
     }
 
     Widget agentDisplay = agentImage;
-    if (isDead) {
+    if (hasDeadStyling) {
+      final xOpacity = Curves.easeIn.transform(
+        ((deadProgress - 0.45) / 0.55).clamp(0.0, 1.0),
+      );
       agentDisplay = Stack(
         children: [
           ColorFiltered(
-            colorFilter: _grayscaleFilter,
+            colorFilter:
+                ColorFilter.matrix(_lerpColorMatrix(deadProgress)),
             child: agentImage,
           ),
-          const Positioned.fill(
+          Positioned.fill(
             child: IgnorePointer(
-              child: CustomPaint(
-                painter: _DeadXOverlayPainter(),
+              child: Opacity(
+                opacity: xOpacity,
+                child: const CustomPaint(
+                  painter: _DeadXOverlayPainter(),
+                ),
               ),
             ),
           ),
@@ -186,6 +214,14 @@ class AgentWidget extends ConsumerWidget {
       child: agentCard,
     );
   }
+}
+
+List<double> _lerpColorMatrix(double t) {
+  return List<double>.generate(
+    _identityColorMatrix.length,
+    (index) => _identityColorMatrix[index] +
+        (_grayscaleColorMatrix[index] - _identityColorMatrix[index]) * t,
+  );
 }
 
 /// Draws a red X overlay for dead agents

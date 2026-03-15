@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -176,6 +177,11 @@ class PageTransitionEntry {
     return null;
   }
 
+  static AgentState? agentStateOf(PlacedWidget w) {
+    if (w is PlacedAgent) return w.state;
+    return null;
+  }
+
   double? get startRotation => from != null ? rotationOf(from!) : null;
   double? get endRotation => to != null ? rotationOf(to!) : null;
 
@@ -199,4 +205,7 @@ class PageTransitionEntry {
 
   double? get startCustomLength => from != null ? customLengthOf(from!) : null;
   double? get endCustomLength => to != null ? customLengthOf(to!) : null;
+
+  AgentState? get startAgentState => from != null ? agentStateOf(from!) : null;
+  AgentState? get endAgentState => to != null ? agentStateOf(to!) : null;
 }
