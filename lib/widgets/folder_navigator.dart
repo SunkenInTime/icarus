@@ -40,7 +40,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   final GlobalKey _importExportButtonKey = GlobalKey();
   final ShadPopoverController _importExportPopoverController =
       ShadPopoverController();
-  double? _importExportButtonWidth;
 
   @override
   void dispose() {
@@ -96,14 +95,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   }
 
   void _toggleImportExportPopover() {
-    final renderBox =
-        _importExportButtonKey.currentContext?.findRenderObject() as RenderBox?;
-    final buttonWidth = renderBox?.size.width;
-    if (buttonWidth != null && buttonWidth != _importExportButtonWidth) {
-      setState(() {
-        _importExportButtonWidth = buttonWidth;
-      });
-    }
     _importExportPopoverController.toggle();
   }
 
