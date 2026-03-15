@@ -2769,9 +2769,9 @@ class StrategyProvider extends Notifier<StrategyState> {
               rawImportedThemeProfileId.isNotEmpty
           ? rawImportedThemeProfileId
           : null;
-      final resolvedThemeProfileId = importedThemeProfileId == null
+      final String? resolvedThemeProfileId = importedThemeProfileId == null
           ? null
-          : themeProfileIdRemap[importedThemeProfileId];
+          : (themeProfileIdRemap[importedThemeProfileId] ?? importedThemeProfileId);
 
       // bool needsMigration = (versionNumber < 15);
       final List<StrategyPage> pages = json["pages"] != null
