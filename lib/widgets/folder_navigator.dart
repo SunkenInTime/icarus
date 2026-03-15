@@ -268,7 +268,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 children: [
                   ShadPopover(
                     controller: _importExportPopoverController,
-                    closeOnTapOutside: false,
                     padding: const EdgeInsets.all(8),
                     anchor: const ShadAnchor(
                       offset: Offset(0, 8),

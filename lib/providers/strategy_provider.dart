@@ -1618,14 +1618,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     required String? parentFolderId,
   }) async {
     final manifestFile = File(path.join(sourceDir.path, archiveMetadataFileName));
+    _ManifestImportData? manifestData;
     if (await manifestFile.exists()) {
       try {
-        final manifestData = await _loadManifestIfPresent(sourceDir);
+        manifestData = await _loadManifestIfPresent(sourceDir);
         if (manifestData != null) {
-          return _importManifestArchive(
-            manifestData: manifestData,
-            parentFolderId: parentFolderId,
-          );
+          _validateArchiveManifest(manifestData);
         }
       } catch (error, stackTrace) {
         log(
@@ -1650,6 +1648,13 @@ class StrategyProvider extends Notifier<StrategyState> {
           ),
         );
       }
+    }
+
+    if (manifestData != null) {
+      return _importManifestArchive(
+        manifestData: manifestData,
+        parentFolderId: parentFolderId,
+      );
     }
 
     return _importDirectoryTreeLegacy(
@@ -1703,13 +1708,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     required String? parentFolderId,
   }) async {
     final archive = ZipDecoder().decodeBytes(await zipFile.readAsBytes());
+    _ZipManifestData? manifestData;
     try {
-      final manifestData = _loadManifestFromArchive(archive);
+      manifestData = _loadManifestFromArchive(archive);
       if (manifestData != null) {
-        return _importManifestArchiveFromZip(
-          manifestData: manifestData,
-          parentFolderId: parentFolderId,
-        );
+        _validateArchiveManifestFromZip(manifestData);
       }
     } catch (error, stackTrace) {
       log(
@@ -1733,6 +1736,13 @@ class StrategyProvider extends Notifier<StrategyState> {
           parentFolderId: parentFolderId,
           zipFileName: path.basenameWithoutExtension(zipFile.path),
         ),
+      );
+    }
+
+    if (manifestData != null) {
+      return _importManifestArchiveFromZip(
+        manifestData: manifestData,
+        parentFolderId: parentFolderId,
       );
     }
 

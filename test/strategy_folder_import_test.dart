@@ -188,6 +188,115 @@ void main() {
     expect(_strategyByName('child').folderID, nestedFolder.id);
   });
 
+  test('manifest zip apply failure does not fall back to legacy import',
+      () async {
+    final currentFolder = await _createCurrentFolder(
+      container,
+      name: 'Current',
+    );
+    final sourceRoot = await Directory(
+      path.join(tempDir.path, 'source', 'Broken Manifest Zip'),
+    ).create(recursive: true);
+    final deepDirectory =
+        await Directory(path.join(sourceRoot.path, 'b', 'c')).create(
+      recursive: true,
+    );
+
+    await _writeStrategyFile(File(path.join(sourceRoot.path, 'root.ica')));
+    await _writeStrategyFile(File(path.join(deepDirectory.path, 'deep.ica')));
+    await _writeArchiveManifestFile(
+      File(path.join(sourceRoot.path, archiveMetadataFileName)),
+      _buildBrokenFolderTreeManifest(),
+    );
+
+    final zipFile = await _zipDirectory(
+      sourceDirectory: sourceRoot,
+      zipPath: path.join(tempDir.path, 'broken-manifest.zip'),
+    );
+
+    final result =
+        await container.read(strategyProvider.notifier).loadFromFileDrop(
+      [XFile(zipFile.path)],
+    );
+
+    expect(result.strategiesImported, 0);
+    expect(result.foldersCreated, 0);
+    expect(result.issues, hasLength(1));
+    expect(result.issues.single.code, ImportIssueCode.ioError);
+    expect(result.issues.single.path, zipFile.path);
+    expect(_folderByName('Manifest Root').parentID, currentFolder.id);
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox).values.map((folder) => folder.name),
+      containsAll(['Current', 'Manifest Root']),
+    );
+    expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, hasLength(2));
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .where((folder) => folder.name == 'broken-manifest'),
+      isEmpty,
+    );
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .where((folder) => folder.name == 'b' || folder.name == 'c'),
+      isEmpty,
+    );
+    expect(Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values, isEmpty);
+  });
+
+  test('manifest directory apply failure does not fall back to legacy import',
+      () async {
+    final currentFolder = await _createCurrentFolder(
+      container,
+      name: 'Current',
+    );
+    final sourceRoot = await Directory(
+      path.join(tempDir.path, 'source', 'broken-manifest-dir'),
+    ).create(recursive: true);
+    final deepDirectory =
+        await Directory(path.join(sourceRoot.path, 'b', 'c')).create(
+      recursive: true,
+    );
+
+    await _writeStrategyFile(File(path.join(sourceRoot.path, 'root.ica')));
+    await _writeStrategyFile(File(path.join(deepDirectory.path, 'deep.ica')));
+    await _writeArchiveManifestFile(
+      File(path.join(sourceRoot.path, archiveMetadataFileName)),
+      _buildBrokenFolderTreeManifest(),
+    );
+
+    final result =
+        await container.read(strategyProvider.notifier).loadFromFileDrop(
+      [XFile(sourceRoot.path)],
+    );
+
+    expect(result.strategiesImported, 0);
+    expect(result.foldersCreated, 0);
+    expect(result.issues, hasLength(1));
+    expect(result.issues.single.code, ImportIssueCode.ioError);
+    expect(result.issues.single.path, sourceRoot.path);
+    expect(_folderByName('Manifest Root').parentID, currentFolder.id);
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox).values.map((folder) => folder.name),
+      containsAll(['Current', 'Manifest Root']),
+    );
+    expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, hasLength(2));
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .where((folder) => folder.name == 'broken-manifest-dir'),
+      isEmpty,
+    );
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .where((folder) => folder.name == 'b' || folder.name == 'c'),
+      isEmpty,
+    );
+    expect(Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values, isEmpty);
+  });
+
   test('folder export manifest preserves folder visuals on round-trip',
       () async {
     final rootFolder = await _createFolder(
@@ -547,6 +656,69 @@ Future<File> _createLooseZip({
 
   await encoder.close();
   return File(zipPath);
+}
+
+Future<void> _writeArchiveManifestFile(
+  File file,
+  ArchiveManifest manifest,
+) async {
+  await file.parent.create(recursive: true);
+  await file.writeAsString(
+    const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
+  );
+}
+
+ArchiveManifest _buildBrokenFolderTreeManifest() {
+  final defaultIcon = ArchiveIconDescriptor.fromIconData(Icons.folder);
+
+  return ArchiveManifest(
+    schemaVersion: archiveManifestSchemaVersion,
+    archiveType: ArchiveType.folderTree,
+    exportedAt: DateTime.utc(2026, 1, 1),
+    appVersionNumber: Settings.versionNumber,
+    folders: [
+      ArchiveFolderEntry(
+        manifestId: 'root',
+        name: 'Manifest Root',
+        parentManifestId: null,
+        archivePath: '',
+        icon: defaultIcon,
+        color: FolderColor.red,
+        customColorValue: null,
+      ),
+      ArchiveFolderEntry(
+        manifestId: 'broken-child',
+        name: 'Broken Child',
+        parentManifestId: 'deep-parent',
+        archivePath: 'b',
+        icon: defaultIcon,
+        color: FolderColor.red,
+        customColorValue: null,
+      ),
+      ArchiveFolderEntry(
+        manifestId: 'deep-parent',
+        name: 'Deep Parent',
+        parentManifestId: 'root',
+        archivePath: 'b/c',
+        icon: defaultIcon,
+        color: FolderColor.red,
+        customColorValue: null,
+      ),
+    ],
+    strategies: const [
+      ArchiveStrategyEntry(
+        name: 'root',
+        archivePath: 'root.ica',
+        folderManifestId: 'root',
+      ),
+      ArchiveStrategyEntry(
+        name: 'deep',
+        archivePath: 'b/c/deep.ica',
+        folderManifestId: 'deep-parent',
+      ),
+    ],
+    globals: null,
+  );
 }
 
 Future<Folder> _createCurrentFolder(
