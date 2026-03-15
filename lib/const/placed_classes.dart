@@ -40,22 +40,6 @@ Offset getFlippedPosition({
   return Offset(flippedX, flippedY);
 }
 
-/// Converter for [Offset] to and from JSON.
-class BaseOffsetConverter {
-  const BaseOffsetConverter();
-
-  Offset fromJson(Map<String, dynamic> json) {
-    return Offset(
-      (json['dx'] as num).toDouble(),
-      (json['dy'] as num).toDouble(),
-    );
-  }
-
-  Map<String, dynamic> toJson(Offset offset) {
-    return {'dx': offset.dx, 'dy': offset.dy};
-  }
-}
-
 @JsonSerializable()
 class PlacedWidget extends HiveObject {
   PlacedWidget({
@@ -315,11 +299,13 @@ sealed class PlacedAgentNode extends PlacedWidget {
   static const String viewConeKind = 'viewCone';
   static const String circleKind = 'circle';
 
+  @AgentTypeCompatConverter()
   final AgentType type;
 
   @JsonKey(defaultValue: true)
   bool isAlly;
 
+  @AgentStateCompatConverter()
   @JsonKey(defaultValue: AgentState.none)
   AgentState state;
 
@@ -365,64 +351,6 @@ sealed class PlacedAgentNode extends PlacedWidget {
     }
   }
 
-  static Offset _offsetFromJson(Object? value) {
-    return const BaseOffsetConverter().fromJson(
-      Map<String, dynamic>.from(value as Map),
-    );
-  }
-
-  static Map<String, dynamic> _offsetToJson(Offset value) {
-    return const BaseOffsetConverter().toJson(value);
-  }
-
-  static bool _isDeletedFromJson(Map<String, dynamic> json) {
-    return json['isDeleted'] as bool? ?? false;
-  }
-
-  static bool _isAllyFromJson(Map<String, dynamic> json) {
-    return json['isAlly'] as bool? ?? true;
-  }
-
-  static AgentState _stateFromJson(Map<String, dynamic> json) {
-    final rawState = json['state'];
-    if (rawState is AgentState) return rawState;
-    if (rawState is String) {
-      return AgentState.values.firstWhere(
-        (value) => value.name == rawState,
-        orElse: () => AgentState.none,
-      );
-    }
-    if (rawState is int &&
-        rawState >= 0 &&
-        rawState < AgentState.values.length) {
-      return AgentState.values[rawState];
-    }
-    return AgentState.none;
-  }
-
-  static Map<String, dynamic> sharedJson(PlacedAgentNode node) {
-    return <String, dynamic>{
-      'kind': node.kind,
-      'type': node.type.name,
-      'isAlly': node.isAlly,
-      'id': node.id,
-      'isDeleted': node.isDeleted,
-      'position': _offsetToJson(node.position),
-      'state': node.state.name,
-    };
-  }
-
-  static AgentType _agentTypeFromJson(Map<String, dynamic> json) {
-    final rawType = json['type'];
-    if (rawType is AgentType) return rawType;
-    if (rawType is String) {
-      return AgentType.values.firstWhere(
-        (value) => value.name == rawType,
-      );
-    }
-    return AgentType.values[rawType as int];
-  }
-
   factory PlacedAgentNode.fromJson(Map<String, dynamic> json) {
     final kind = json['kind'] as String? ?? plainKind;
     switch (kind) {
@@ -437,6 +365,22 @@ sealed class PlacedAgentNode extends PlacedWidget {
   }
 }
 
+class PlacedAgentNodeConverter
+    implements JsonConverter<PlacedAgentNode, Map<String, dynamic>> {
+  const PlacedAgentNodeConverter();
+
+  @override
+  PlacedAgentNode fromJson(Map<String, dynamic> json) {
+    return PlacedAgentNode.fromJson(json);
+  }
+
+  @override
+  Map<String, dynamic> toJson(PlacedAgentNode object) {
+    return object.toJson();
+  }
+}
+
+@JsonSerializable()
 class PlacedAgent extends PlacedAgentNode {
   final String? lineUpID;
 
@@ -452,23 +396,13 @@ class PlacedAgent extends PlacedAgentNode {
   @override
   String get kind => PlacedAgentNode.plainKind;
 
-  factory PlacedAgent.fromJson(Map<String, dynamic> json) {
-    final agent = PlacedAgent(
-      type: PlacedAgentNode._agentTypeFromJson(json),
-      position: PlacedAgentNode._offsetFromJson(json['position']),
-      id: json['id'] as String,
-      isAlly: PlacedAgentNode._isAllyFromJson(json),
-      lineUpID: json['lineUpID'] as String?,
-      state: PlacedAgentNode._stateFromJson(json),
-    );
-    agent.isDeleted = PlacedAgentNode._isDeletedFromJson(json);
-    return agent;
-  }
+  factory PlacedAgent.fromJson(Map<String, dynamic> json) =>
+      _$PlacedAgentFromJson(json);
 
   @override
   Map<String, dynamic> toJson() => <String, dynamic>{
-        ...PlacedAgentNode.sharedJson(this),
-        'lineUpID': lineUpID,
+        'kind': kind,
+        ..._$PlacedAgentToJson(this),
       };
 
   PlacedAgent copyWith({
@@ -524,7 +458,9 @@ class CircleAgentGeometryAction extends WidgetAction {
   });
 }
 
+@JsonSerializable()
 class PlacedViewConeAgent extends PlacedAgentNode {
+  @UtilityTypeCompatConverter()
   final UtilityType presetType;
   double rotation;
   double length;
@@ -534,8 +470,8 @@ class PlacedViewConeAgent extends PlacedAgentNode {
     required super.position,
     required super.id,
     required this.presetType,
-    required this.rotation,
-    required this.length,
+    this.rotation = 0,
+    this.length = 0,
     super.isAlly = true,
     super.state = AgentState.none,
   }) : assert(
@@ -546,32 +482,13 @@ class PlacedViewConeAgent extends PlacedAgentNode {
   @override
   String get kind => PlacedAgentNode.viewConeKind;
 
-  factory PlacedViewConeAgent.fromJson(Map<String, dynamic> json) {
-    final presetType = json['presetType'];
-    final agent = PlacedViewConeAgent(
-      type: PlacedAgentNode._agentTypeFromJson(json),
-      position: PlacedAgentNode._offsetFromJson(json['position']),
-      id: json['id'] as String,
-      isAlly: PlacedAgentNode._isAllyFromJson(json),
-      state: PlacedAgentNode._stateFromJson(json),
-      presetType: presetType is UtilityType
-          ? presetType
-          : UtilityType.values.firstWhere(
-              (value) => value.name == presetType,
-            ),
-      rotation: (json['rotation'] as num? ?? 0).toDouble(),
-      length: (json['length'] as num? ?? 0).toDouble(),
-    );
-    agent.isDeleted = PlacedAgentNode._isDeletedFromJson(json);
-    return agent;
-  }
+  factory PlacedViewConeAgent.fromJson(Map<String, dynamic> json) =>
+      _$PlacedViewConeAgentFromJson(json);
 
   @override
   Map<String, dynamic> toJson() => <String, dynamic>{
-        ...PlacedAgentNode.sharedJson(this),
-        'presetType': presetType.name,
-        'rotation': rotation,
-        'length': length,
+        'kind': kind,
+        ..._$PlacedViewConeAgentToJson(this),
       };
 
   void updateGeometryHistory() {
@@ -674,6 +591,7 @@ class PlacedViewConeAgent extends PlacedAgentNode {
   }
 }
 
+@JsonSerializable()
 class PlacedCircleAgent extends PlacedAgentNode {
   double diameterMeters;
   int colorValue;
@@ -683,9 +601,9 @@ class PlacedCircleAgent extends PlacedAgentNode {
     required super.type,
     required super.position,
     required super.id,
-    required this.diameterMeters,
-    required this.colorValue,
-    required this.opacityPercent,
+    this.diameterMeters = 0,
+    this.colorValue = 0xFFFFFFFF,
+    this.opacityPercent = 100,
     super.isAlly = true,
     super.state = AgentState.none,
   });
@@ -693,27 +611,13 @@ class PlacedCircleAgent extends PlacedAgentNode {
   @override
   String get kind => PlacedAgentNode.circleKind;
 
-  factory PlacedCircleAgent.fromJson(Map<String, dynamic> json) {
-    final agent = PlacedCircleAgent(
-      type: PlacedAgentNode._agentTypeFromJson(json),
-      position: PlacedAgentNode._offsetFromJson(json['position']),
-      id: json['id'] as String,
-      isAlly: PlacedAgentNode._isAllyFromJson(json),
-      state: PlacedAgentNode._stateFromJson(json),
-      diameterMeters: (json['diameterMeters'] as num? ?? 0).toDouble(),
-      colorValue: json['colorValue'] as int? ?? Colors.white.toARGB32(),
-      opacityPercent: json['opacityPercent'] as int? ?? 100,
-    );
-    agent.isDeleted = PlacedAgentNode._isDeletedFromJson(json);
-    return agent;
-  }
+  factory PlacedCircleAgent.fromJson(Map<String, dynamic> json) =>
+      _$PlacedCircleAgentFromJson(json);
 
   @override
   Map<String, dynamic> toJson() => <String, dynamic>{
-        ...PlacedAgentNode.sharedJson(this),
-        'diameterMeters': diameterMeters,
-        'colorValue': colorValue,
-        'opacityPercent': opacityPercent,
+        'kind': kind,
+        ..._$PlacedCircleAgentToJson(this),
       };
 
   void updateGeometry({

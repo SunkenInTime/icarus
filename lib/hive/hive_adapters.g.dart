@@ -1522,8 +1522,8 @@ class PlacedViewConeAgentAdapter extends TypeAdapter<PlacedViewConeAgent> {
       position: fields[8] as Offset,
       id: fields[6] as String,
       presetType: fields[0] as UtilityType,
-      rotation: (fields[1] as num).toDouble(),
-      length: (fields[2] as num).toDouble(),
+      rotation: fields[1] == null ? 0 : (fields[1] as num).toDouble(),
+      length: fields[2] == null ? 0 : (fields[2] as num).toDouble(),
       isAlly: fields[4] == null ? true : fields[4] as bool,
       state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
     )..isDeleted = fields[7] as bool;
@@ -1578,9 +1578,9 @@ class PlacedCircleAgentAdapter extends TypeAdapter<PlacedCircleAgent> {
       type: fields[3] as AgentType,
       position: fields[8] as Offset,
       id: fields[6] as String,
-      diameterMeters: (fields[0] as num).toDouble(),
-      colorValue: (fields[1] as num).toInt(),
-      opacityPercent: (fields[2] as num).toInt(),
+      diameterMeters: fields[0] == null ? 0 : (fields[0] as num).toDouble(),
+      colorValue: fields[1] == null ? 0xFFFFFFFF : (fields[1] as num).toInt(),
+      opacityPercent: fields[2] == null ? 100 : (fields[2] as num).toInt(),
       isAlly: fields[4] == null ? true : fields[4] as bool,
       state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
     )..isDeleted = fields[7] as bool;
