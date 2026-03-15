@@ -1281,23 +1281,47 @@ class StrategyProvider extends Notifier<StrategyState> {
     required Archive archive,
     required Directory destination,
   }) async {
+    // Normalize the destination path once for comparisons.
+    final String destinationPath = path.normalize(destination.path);
+
     for (final entry in archive) {
       final normalizedName = normalizeArchivePath(entry.name);
       if (normalizedName.isEmpty) {
         continue;
       }
 
+      // Reject absolute paths in the archive entry name.
+      if (path.isAbsolute(normalizedName)) {
+        continue;
+      }
+
+      // Reject any entry that attempts directory traversal using "..".
+      final segments = path.posix.split(normalizedName);
+      if (segments.any((segment) => segment == '..')) {
+        continue;
+      }
+
+      // Build the target path under the destination directory.
       final targetPath = path.joinAll([
-        destination.path,
-        ...normalizedName.split('/'),
+        destinationPath,
+        ...segments,
       ]);
 
+      // Normalize and verify that the target path stays within destination.
+      final normalizedTargetPath = path.normalize(targetPath);
+      final bool isWithinDestination =
+          path.isWithin(destinationPath, normalizedTargetPath) ||
+              normalizedTargetPath == destinationPath;
+      if (!isWithinDestination) {
+        continue;
+      }
+
       if (entry.isFile) {
-        final targetFile = File(targetPath);
+        final targetFile = File(normalizedTargetPath);
         await targetFile.parent.create(recursive: true);
         await targetFile.writeAsBytes(entry.content as List<int>);
       } else {
-        await Directory(targetPath).create(recursive: true);
+        await Directory(normalizedTargetPath).create(recursive: true);
       }
     }
   }
