@@ -6,7 +6,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/hive/hive_registrar.g.dart';
+import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -145,7 +145,7 @@ void main() {
   test('saveToHive flushes draft text into persisted page data', () async {
     final tempDir = await Directory.systemTemp.createTemp('icarus-text-save-');
     Hive.init(tempDir.path);
-    Hive.registerAdapters();
+    registerIcarusAdapters(Hive);
     final box = await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
     addTearDown(() async {
       await Hive.close();

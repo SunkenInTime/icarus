@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:image/image.dart' as img;
@@ -261,7 +261,14 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
   static Future<Directory> getImageFolder(String strategyID) async {
     // Get the system's application support directory.
-    final Directory appSupportDir = await getApplicationSupportDirectory();
+    Directory appSupportDir;
+    try {
+      appSupportDir = await getApplicationSupportDirectory();
+    } on MissingPluginException {
+      appSupportDir = Directory.systemTemp;
+    } on MissingPlatformDirectoryException {
+      appSupportDir = Directory.systemTemp;
+    }
 
     // Create the custom directory using the strategy ID.
     final Directory customDirectory =

@@ -939,58 +939,6 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
           typeId == other.typeId;
 }
 
-class FolderAdapter extends TypeAdapter<Folder> {
-  @override
-  final typeId = 17;
-
-  @override
-  Folder read(BinaryReader reader) {
-    final numOfFields = reader.readByte();
-    final fields = <int, dynamic>{
-      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
-    };
-    return Folder(
-      name: fields[0] as String,
-      id: fields[1] as String,
-      dateCreated: fields[3] as DateTime,
-      icon: fields[4] as IconData,
-      color: fields[5] == null ? FolderColor.red : fields[5] as FolderColor,
-      parentID: fields[2] as String?,
-      customColor: fields[6] as Color?,
-    );
-  }
-
-  @override
-  void write(BinaryWriter writer, Folder obj) {
-    writer
-      ..writeByte(7)
-      ..writeByte(0)
-      ..write(obj.name)
-      ..writeByte(1)
-      ..write(obj.id)
-      ..writeByte(2)
-      ..write(obj.parentID)
-      ..writeByte(3)
-      ..write(obj.dateCreated)
-      ..writeByte(4)
-      ..write(obj.icon)
-      ..writeByte(5)
-      ..write(obj.color)
-      ..writeByte(6)
-      ..write(obj.customColor);
-  }
-
-  @override
-  int get hashCode => typeId.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is FolderAdapter &&
-          runtimeType == other.runtimeType &&
-          typeId == other.typeId;
-}
-
 class IconDataAdapter extends TypeAdapter<IconData> {
   @override
   final typeId = 18;

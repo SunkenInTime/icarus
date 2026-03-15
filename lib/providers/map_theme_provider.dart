@@ -393,7 +393,12 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     for (final builtIn in immutableBuiltInProfiles) {
       final existing = profileBox.get(builtIn.id);
       if (existing == null) {
-        await profileBox.put(builtIn.id, builtIn);
+        await profileBox.put(
+          builtIn.id,
+          builtIn.copyWith(
+            createdAt: builtIn.createdAt,
+          ),
+        );
         continue;
       }
       if (_shouldRepairBuiltIn(existing: existing, expected: builtIn)) {

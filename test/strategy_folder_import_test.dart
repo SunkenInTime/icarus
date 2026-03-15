@@ -7,11 +7,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/hive/hive_registrar.g.dart';
+import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/archive_manifest.dart';
 import 'package:path/path.dart' as path;
 
 bool _adaptersRegistered = false;
@@ -26,12 +31,16 @@ void main() {
     tempDir = await Directory.systemTemp.createTemp('icarus-folder-import-');
     Hive.init(tempDir.path);
     if (!_adaptersRegistered) {
-      Hive.registerAdapters();
+      registerIcarusAdapters(Hive);
       _adaptersRegistered = true;
     }
     await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
     await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+    await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+    await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
+    await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
     container = ProviderContainer();
+    await MapThemeProfilesProvider.bootstrap();
   });
 
   tearDown(() async {
@@ -177,6 +186,282 @@ void main() {
     expect(nestedFolder.parentID, wrapperFolder.id);
     expect(_strategyByName('root').folderID, wrapperFolder.id);
     expect(_strategyByName('child').folderID, nestedFolder.id);
+  });
+
+  test('manifest zip apply failure does not fall back to legacy import',
+      () async {
+    final currentFolder = await _createCurrentFolder(
+      container,
+      name: 'Current',
+    );
+    final sourceRoot = await Directory(
+      path.join(tempDir.path, 'source', 'Broken Manifest Zip'),
+    ).create(recursive: true);
+    final deepDirectory =
+        await Directory(path.join(sourceRoot.path, 'b', 'c')).create(
+      recursive: true,
+    );
+
+    await _writeStrategyFile(File(path.join(sourceRoot.path, 'root.ica')));
+    await _writeStrategyFile(File(path.join(deepDirectory.path, 'deep.ica')));
+    await _writeArchiveManifestFile(
+      File(path.join(sourceRoot.path, archiveMetadataFileName)),
+      _buildBrokenFolderTreeManifest(),
+    );
+
+    final zipFile = await _zipDirectory(
+      sourceDirectory: sourceRoot,
+      zipPath: path.join(tempDir.path, 'broken-manifest.zip'),
+    );
+
+    final result =
+        await container.read(strategyProvider.notifier).loadFromFileDrop(
+      [XFile(zipFile.path)],
+    );
+
+    expect(result.strategiesImported, 0);
+    expect(result.foldersCreated, 0);
+    expect(result.issues, hasLength(1));
+    expect(result.issues.single.code, ImportIssueCode.ioError);
+    expect(result.issues.single.path, zipFile.path);
+    expect(_folderByName('Manifest Root').parentID, currentFolder.id);
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox).values.map((folder) => folder.name),
+      containsAll(['Current', 'Manifest Root']),
+    );
+    expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, hasLength(2));
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .where((folder) => folder.name == 'broken-manifest'),
+      isEmpty,
+    );
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .where((folder) => folder.name == 'b' || folder.name == 'c'),
+      isEmpty,
+    );
+    expect(Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values, isEmpty);
+  });
+
+  test('manifest directory apply failure does not fall back to legacy import',
+      () async {
+    final currentFolder = await _createCurrentFolder(
+      container,
+      name: 'Current',
+    );
+    final sourceRoot = await Directory(
+      path.join(tempDir.path, 'source', 'broken-manifest-dir'),
+    ).create(recursive: true);
+    final deepDirectory =
+        await Directory(path.join(sourceRoot.path, 'b', 'c')).create(
+      recursive: true,
+    );
+
+    await _writeStrategyFile(File(path.join(sourceRoot.path, 'root.ica')));
+    await _writeStrategyFile(File(path.join(deepDirectory.path, 'deep.ica')));
+    await _writeArchiveManifestFile(
+      File(path.join(sourceRoot.path, archiveMetadataFileName)),
+      _buildBrokenFolderTreeManifest(),
+    );
+
+    final result =
+        await container.read(strategyProvider.notifier).loadFromFileDrop(
+      [XFile(sourceRoot.path)],
+    );
+
+    expect(result.strategiesImported, 0);
+    expect(result.foldersCreated, 0);
+    expect(result.issues, hasLength(1));
+    expect(result.issues.single.code, ImportIssueCode.ioError);
+    expect(result.issues.single.path, sourceRoot.path);
+    expect(_folderByName('Manifest Root').parentID, currentFolder.id);
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox).values.map((folder) => folder.name),
+      containsAll(['Current', 'Manifest Root']),
+    );
+    expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, hasLength(2));
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .where((folder) => folder.name == 'broken-manifest-dir'),
+      isEmpty,
+    );
+    expect(
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .where((folder) => folder.name == 'b' || folder.name == 'c'),
+      isEmpty,
+    );
+    expect(Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values, isEmpty);
+  });
+
+  test('folder export manifest preserves folder visuals on round-trip',
+      () async {
+    final rootFolder = await _createFolder(
+      container,
+      name: 'Utility / Pack',
+      parentID: null,
+      icon: Icons.flag,
+      color: FolderColor.custom,
+      customColor: const Color(0xFF22C55E),
+    );
+    final childFolder = await _createFolder(
+      container,
+      name: 'Retakes',
+      parentID: rootFolder.id,
+      icon: Icons.lightbulb,
+      color: FolderColor.blue,
+    );
+
+    await _storeStrategy(name: 'default', folderID: rootFolder.id);
+    await _storeStrategy(name: 'a-site', folderID: childFolder.id);
+
+    final exportDirectory = await container
+        .read(strategyProvider.notifier)
+        .buildFolderExportDirectoryForTest(rootFolder.id);
+
+    try {
+      final exportedRoot = exportDirectory.listSync().whereType<Directory>().single;
+      final manifestFile =
+          File(path.join(exportedRoot.path, archiveMetadataFileName));
+      expect(await manifestFile.exists(), isTrue);
+
+      final decoded = Map<String, dynamic>.from(
+        jsonDecode(await manifestFile.readAsString()) as Map,
+      );
+      expect(decoded['archiveType'], ArchiveType.folderTree.jsonValue);
+      expect((decoded['folders'] as List).length, 2);
+      expect((decoded['strategies'] as List).length, 2);
+
+      final zipFile = await _zipDirectory(
+        sourceDirectory: exportedRoot,
+        zipPath: path.join(tempDir.path, 'folder-manifest.zip'),
+      );
+
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
+      await Hive.box<Folder>(HiveBoxNames.foldersBox).clear();
+
+      final result =
+          await container.read(strategyProvider.notifier).loadFromFileDrop(
+        [XFile(zipFile.path)],
+      );
+
+      expect(result.strategiesImported, 2);
+      expect(result.foldersCreated, 2);
+      expect(result.issues, isEmpty);
+
+      final importedRoot = _folderByName('Utility / Pack');
+      final importedChild = _folderByName('Retakes');
+      expect(importedRoot.icon.codePoint, Icons.flag.codePoint);
+      expect(importedRoot.color, FolderColor.custom);
+      expect(importedRoot.customColor, const Color(0xFF22C55E));
+      expect(importedChild.icon.codePoint, Icons.lightbulb.codePoint);
+      expect(importedChild.color, FolderColor.blue);
+      expect(importedChild.parentID, importedRoot.id);
+      expect(_strategyByName('default').folderID, importedRoot.id);
+      expect(_strategyByName('a-site').folderID, importedChild.id);
+    } finally {
+      if (await exportDirectory.exists()) {
+        await exportDirectory.delete(recursive: true);
+      }
+    }
+  });
+
+  test('library backup restores global state and theme profile links', () async {
+    final themeProvider = container.read(mapThemeProfilesProvider.notifier);
+    final palette = MapThemePalette(
+      baseColorValue: 0xFF0F172A,
+      detailColorValue: 0xFF38BDF8,
+      highlightColorValue: 0xFFF97316,
+    );
+    expect(
+      await themeProvider.createProfile(name: 'Tournament', palette: palette),
+      isTrue,
+    );
+    final customProfile = Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
+        .values
+        .firstWhere((profile) => profile.name == 'Tournament');
+    await themeProvider.setDefaultProfileForNewStrategies(customProfile.id);
+    await container
+        .read(favoriteAgentsProvider.notifier)
+        .toggleFavorite(AgentType.jett);
+
+    final folder = await _createFolder(
+      container,
+      name: 'Plays',
+      parentID: null,
+    );
+    await _storeStrategy(
+      name: 'Root Backup',
+      folderID: null,
+      themeProfileId: customProfile.id,
+    );
+    await _storeStrategy(
+      name: 'Folder Backup',
+      folderID: folder.id,
+      themeProfileId: customProfile.id,
+    );
+
+    final exportDirectory = await container
+        .read(strategyProvider.notifier)
+        .buildLibraryExportDirectoryForTest();
+
+    try {
+      final rootDirectory = Directory(
+        path.join(exportDirectory.path, libraryBackupRootDirectoryName),
+      );
+      final manifestFile =
+          File(path.join(rootDirectory.path, archiveMetadataFileName));
+      expect(await manifestFile.exists(), isTrue);
+
+      final zipFile = await _zipDirectory(
+        sourceDirectory: rootDirectory,
+        zipPath: path.join(tempDir.path, 'library-backup.zip'),
+      );
+
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
+      await Hive.box<Folder>(HiveBoxNames.foldersBox).clear();
+      await Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox).clear();
+      await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).clear();
+      await Hive.box<bool>(HiveBoxNames.favoriteAgentsBox).clear();
+      await MapThemeProfilesProvider.bootstrap();
+
+      final result =
+          await container.read(strategyProvider.notifier).loadFromFileDrop(
+        [XFile(zipFile.path)],
+      );
+
+      expect(result.strategiesImported, 2);
+      expect(result.foldersCreated, 1);
+      expect(result.themeProfilesImported, 1);
+      expect(result.globalStateRestored, isTrue);
+      expect(result.issues, isEmpty);
+
+      final restoredProfile =
+          Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
+              .values
+              .firstWhere((profile) => profile.name == 'Tournament');
+      final restoredRoot = _strategyByName('Root Backup');
+      final restoredFolderStrategy = _strategyByName('Folder Backup');
+      expect(restoredRoot.themeProfileId, restoredProfile.id);
+      expect(restoredFolderStrategy.themeProfileId, restoredProfile.id);
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
+            ?.defaultThemeProfileIdForNewStrategies,
+        restoredProfile.id,
+      );
+      expect(
+        Hive.box<bool>(HiveBoxNames.favoriteAgentsBox).containsKey('jett'),
+        isTrue,
+      );
+    } finally {
+      if (await exportDirectory.exists()) {
+        await exportDirectory.delete(recursive: true);
+      }
+    }
   });
 
   test('batch import skips newer-version strategies and keeps valid siblings',
@@ -373,6 +658,69 @@ Future<File> _createLooseZip({
   return File(zipPath);
 }
 
+Future<void> _writeArchiveManifestFile(
+  File file,
+  ArchiveManifest manifest,
+) async {
+  await file.parent.create(recursive: true);
+  await file.writeAsString(
+    const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
+  );
+}
+
+ArchiveManifest _buildBrokenFolderTreeManifest() {
+  final defaultIcon = ArchiveIconDescriptor.fromIconData(Icons.folder);
+
+  return ArchiveManifest(
+    schemaVersion: archiveManifestSchemaVersion,
+    archiveType: ArchiveType.folderTree,
+    exportedAt: DateTime.utc(2026, 1, 1),
+    appVersionNumber: Settings.versionNumber,
+    folders: [
+      ArchiveFolderEntry(
+        manifestId: 'root',
+        name: 'Manifest Root',
+        parentManifestId: null,
+        archivePath: '',
+        icon: defaultIcon,
+        color: FolderColor.red,
+        customColorValue: null,
+      ),
+      ArchiveFolderEntry(
+        manifestId: 'broken-child',
+        name: 'Broken Child',
+        parentManifestId: 'deep-parent',
+        archivePath: 'b',
+        icon: defaultIcon,
+        color: FolderColor.red,
+        customColorValue: null,
+      ),
+      ArchiveFolderEntry(
+        manifestId: 'deep-parent',
+        name: 'Deep Parent',
+        parentManifestId: 'root',
+        archivePath: 'b/c',
+        icon: defaultIcon,
+        color: FolderColor.red,
+        customColorValue: null,
+      ),
+    ],
+    strategies: const [
+      ArchiveStrategyEntry(
+        name: 'root',
+        archivePath: 'root.ica',
+        folderManifestId: 'root',
+      ),
+      ArchiveStrategyEntry(
+        name: 'deep',
+        archivePath: 'b/c/deep.ica',
+        folderManifestId: 'deep-parent',
+      ),
+    ],
+    globals: null,
+  );
+}
+
 Future<Folder> _createCurrentFolder(
   ProviderContainer container, {
   required String name,
@@ -389,13 +737,17 @@ Future<Folder> _createFolder(
   ProviderContainer container, {
   required String name,
   required String? parentID,
+  IconData icon = Icons.folder,
+  FolderColor color = FolderColor.red,
+  Color? customColor,
   bool setCurrent = false,
 }) async {
   final notifier = container.read(folderProvider.notifier);
   final folder = await notifier.createFolder(
     name: name,
-    icon: Icons.folder,
-    color: FolderColor.red,
+    icon: icon,
+    color: color,
+    customColor: customColor,
     parentID: parentID,
   );
 
@@ -404,6 +756,25 @@ Future<Folder> _createFolder(
   }
 
   return folder;
+}
+
+Future<void> _storeStrategy({
+  required String name,
+  required String? folderID,
+  String? themeProfileId,
+}) async {
+  final strategy = StrategyData(
+    id: 'strategy-$name-${DateTime.now().microsecondsSinceEpoch}',
+    name: name,
+    mapData: MapValue.ascent,
+    versionNumber: Settings.versionNumber,
+    lastEdited: DateTime.utc(2026, 1, 1),
+    folderID: folderID,
+    pages: const [],
+    themeProfileId: themeProfileId,
+  );
+  await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+      .put(strategy.id, strategy);
 }
 
 Folder _folderByName(String name) {

@@ -36,7 +36,6 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
   AdapterSpec<StrategySettings>(),
   AdapterSpec<PlacedUtility>(),
   AdapterSpec<UtilityType>(),
-  AdapterSpec<Folder>(),
   AdapterSpec<IconData>(),
   AdapterSpec<FolderColor>(),
   AdapterSpec<StrategyPage>(),
@@ -52,3 +51,50 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
   AdapterSpec<PlacedCircleAgent>(),
 ])
 part 'hive_adapters.g.dart';
+
+class FolderAdapter extends TypeAdapter<Folder> {
+  @override
+  final typeId = 17;
+
+  @override
+  Folder read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (var i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return Folder(
+      name: fields[0] as String,
+      id: fields[1] as String,
+      parentID: fields[2] as String?,
+      dateCreated: fields[3] as DateTime,
+      icon: fields[4] as IconData,
+      color: fields[5] as FolderColor? ?? FolderColor.red,
+      customColor: switch (fields[6]) {
+        final int colorValue => Color(colorValue),
+        final Color color => color,
+        null => null,
+        _ => null,
+      },
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, Folder obj) {
+    writer
+      ..writeByte(7)
+      ..writeByte(0)
+      ..write(obj.name)
+      ..writeByte(1)
+      ..write(obj.id)
+      ..writeByte(2)
+      ..write(obj.parentID)
+      ..writeByte(3)
+      ..write(obj.dateCreated)
+      ..writeByte(4)
+      ..write(obj.icon)
+      ..writeByte(5)
+      ..write(obj.color)
+      ..writeByte(6)
+      ..write(obj.customColor?.toARGB32());
+  }
+}

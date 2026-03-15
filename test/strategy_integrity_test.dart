@@ -94,6 +94,7 @@ Map<String, dynamic> _buildExportPayload(StrategyData strategy) {
     'versionNumber': '${Settings.versionNumber}',
     'mapData': Maps.mapNames[strategy.mapData],
     'themePalette': strategy.themeOverridePalette?.toJson(),
+    if (strategy.themeProfileId != null) 'themeProfileId': strategy.themeProfileId,
     'pages': strategy.pages.map((page) => page.toJson(strategy.id)).toList(),
   };
 }

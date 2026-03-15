@@ -26,6 +26,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -38,6 +39,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/services/archive_manifest.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -221,6 +223,7 @@ class NewerVersionImportException implements Exception {
 enum ImportIssueCode {
   newerVersion,
   invalidStrategy,
+  invalidArchiveMetadata,
   unsupportedFile,
   ioError,
 }
@@ -239,24 +242,37 @@ class ImportBatchResult {
   const ImportBatchResult({
     required this.strategiesImported,
     required this.foldersCreated,
+    this.themeProfilesImported = 0,
+    this.globalStateRestored = false,
     required this.issues,
   });
 
   const ImportBatchResult.empty()
       : strategiesImported = 0,
         foldersCreated = 0,
+        themeProfilesImported = 0,
+        globalStateRestored = false,
         issues = const [];
 
   final int strategiesImported;
   final int foldersCreated;
+  final int themeProfilesImported;
+  final bool globalStateRestored;
   final List<ImportIssue> issues;
 
-  bool get hasImports => strategiesImported > 0 || foldersCreated > 0;
+  bool get hasImports =>
+      strategiesImported > 0 ||
+      foldersCreated > 0 ||
+      themeProfilesImported > 0 ||
+      globalStateRestored;
 
   ImportBatchResult merge(ImportBatchResult other) {
     return ImportBatchResult(
       strategiesImported: strategiesImported + other.strategiesImported,
       foldersCreated: foldersCreated + other.foldersCreated,
+      themeProfilesImported:
+          themeProfilesImported + other.themeProfilesImported,
+      globalStateRestored: globalStateRestored || other.globalStateRestored,
       issues: [...issues, ...other.issues],
     );
   }
@@ -270,6 +286,54 @@ class _ImportEntityListing {
 
   final List<FileSystemEntity> entities;
   final List<ImportIssue> issues;
+}
+
+class _ArchiveExportState {
+  _ArchiveExportState({
+    required this.rootDirectory,
+  });
+
+  final Directory rootDirectory;
+  final List<ArchiveFolderEntry> folders = [];
+  final List<ArchiveStrategyEntry> strategies = [];
+}
+
+class _ManifestImportData {
+  const _ManifestImportData({
+    required this.rootDirectory,
+    required this.manifestFile,
+    required this.manifest,
+  });
+
+  final Directory rootDirectory;
+  final File manifestFile;
+  final ArchiveManifest manifest;
+}
+
+class _GlobalImportResult {
+  const _GlobalImportResult({
+    required this.themeProfilesImported,
+    required this.globalStateRestored,
+    required this.profileIdRemap,
+  });
+
+  final int themeProfilesImported;
+  final bool globalStateRestored;
+  final Map<String, String> profileIdRemap;
+}
+
+class _ZipManifestData {
+  const _ZipManifestData({
+    required this.manifest,
+    required this.rootPrefix,
+    required this.filesByPath,
+    required this.manifestArchivePath,
+  });
+
+  final ArchiveManifest manifest;
+  final String rootPrefix;
+  final Map<String, ArchiveFile> filesByPath;
+  final String manifestArchivePath;
 }
 
 class StrategyProvider extends Notifier<StrategyState> {
@@ -1149,6 +1213,32 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
   }
 
+  Future<ImportBatchResult> importBackupFromFilePicker() async {
+    final result = await FilePicker.platform.pickFiles(
+      allowMultiple: false,
+      type: FileType.custom,
+      allowedExtensions: ['zip'],
+    );
+
+    if (result == null || result.files.isEmpty) {
+      return const ImportBatchResult.empty();
+    }
+
+    final PlatformFile pickedFile = result.files.single;
+    final String? filePath = pickedFile.path;
+
+    if (filePath == null || filePath.isEmpty) {
+      // FilePicker can return files without a valid path (e.g. in-memory bytes).
+      // In that case, return an empty result instead of throwing.
+      return const ImportBatchResult.empty();
+    }
+
+    return _importZipArchive(
+      zipFile: File(filePath),
+      parentFolderId: null,
+    );
+  }
+
   Future<ImportBatchResult> loadFromFileDrop(List<XFile> files) async {
     final targetFolderId = ref.read(folderProvider);
     var result = const ImportBatchResult.empty();
@@ -1176,7 +1266,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     Directory tempDir = await Directory(
-            path.join(tempDirectoryPath, "xyz.icarus-strats", strategyID))
+            path.join(tempDirectoryPath, "xyz_icarus_strats", strategyID))
         .create(recursive: true);
     return tempDir;
   }
@@ -1184,6 +1274,65 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> cleanUpTempDirectory(String strategyID) async {
     final tempDirectory = await getTempDirectory(strategyID);
     await tempDirectory.delete(recursive: true);
+  }
+
+  Future<Directory> _getApplicationSupportDirectoryOrSystemTemp() async {
+    try {
+      return await getApplicationSupportDirectory();
+    } on MissingPluginException {
+      return Directory.systemTemp;
+    } on MissingPlatformDirectoryException {
+      return Directory.systemTemp;
+    }
+  }
+
+  Future<void> _extractArchiveEntriesToDisk({
+    required Archive archive,
+    required Directory destination,
+  }) async {
+    // Normalize the destination path once for comparisons.
+    final String destinationPath = path.normalize(destination.path);
+
+    for (final entry in archive) {
+      final normalizedName = normalizeArchivePath(entry.name);
+      if (normalizedName.isEmpty) {
+        continue;
+      }
+
+      // Reject absolute paths in the archive entry name.
+      if (path.isAbsolute(normalizedName)) {
+        continue;
+      }
+
+      // Reject any entry that attempts directory traversal using "..".
+      final segments = path.posix.split(normalizedName);
+      if (segments.any((segment) => segment == '..')) {
+        continue;
+      }
+
+      // Build the target path under the destination directory.
+      final targetPath = path.joinAll([
+        destinationPath,
+        ...segments,
+      ]);
+
+      // Normalize and verify that the target path stays within destination.
+      final normalizedTargetPath = path.normalize(targetPath);
+      final bool isWithinDestination =
+          path.isWithin(destinationPath, normalizedTargetPath) ||
+              normalizedTargetPath == destinationPath;
+      if (!isWithinDestination) {
+        continue;
+      }
+
+      if (entry.isFile) {
+        final targetFile = File(normalizedTargetPath);
+        await targetFile.parent.create(recursive: true);
+        await targetFile.writeAsBytes(entry.content as List<int>);
+      } else {
+        await Directory(normalizedTargetPath).create(recursive: true);
+      }
+    }
   }
 
   /// Returns true if the file is a ZIP (by checking the magic number)
@@ -1209,6 +1358,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return const ImportBatchResult(
         strategiesImported: 0,
         foldersCreated: 0,
+        themeProfilesImported: 0,
+        globalStateRestored: false,
         issues: [
           ImportIssue(path: '', code: ImportIssueCode.ioError),
         ],
@@ -1234,6 +1385,8 @@ class StrategyProvider extends Notifier<StrategyState> {
             return const ImportBatchResult(
               strategiesImported: 1,
               foldersCreated: 0,
+              themeProfilesImported: 0,
+              globalStateRestored: false,
               issues: [],
             );
           }
@@ -1248,6 +1401,8 @@ class StrategyProvider extends Notifier<StrategyState> {
           return ImportBatchResult(
             strategiesImported: 0,
             foldersCreated: 0,
+            themeProfilesImported: 0,
+            globalStateRestored: false,
             issues: [
               ImportIssue(
                 path: file.path,
@@ -1263,6 +1418,8 @@ class StrategyProvider extends Notifier<StrategyState> {
           return ImportBatchResult(
             strategiesImported: 0,
             foldersCreated: 0,
+            themeProfilesImported: 0,
+            globalStateRestored: false,
             issues: [
               ImportIssue(
                 path: file.path,
@@ -1275,6 +1432,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return ImportBatchResult(
         strategiesImported: 0,
         foldersCreated: 0,
+        themeProfilesImported: 0,
+        globalStateRestored: false,
         issues: [
           ImportIssue(
             path: file.path,
@@ -1290,6 +1449,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return ImportBatchResult(
         strategiesImported: 0,
         foldersCreated: 0,
+        themeProfilesImported: 0,
+        globalStateRestored: false,
         issues: [
           ImportIssue(
             path: file.path,
@@ -1327,6 +1488,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     return name.isEmpty ||
         name == '__MACOSX' ||
         name == '.DS_Store' ||
+        name == archiveMetadataFileName ||
         name.startsWith('._');
   }
 
@@ -1336,29 +1498,13 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<_ImportEntityListing> _listImportEntities(Directory directory) async {
-    final entities = <FileSystemEntity>[];
     final issues = <ImportIssue>[];
-
-    final stream = directory.list(followLinks: false).handleError(
-      (Object error, StackTrace stackTrace) {
-        final errorPath = _resolveImportErrorPath(error, directory.path);
-        log(
-          'Failed to list import directory $errorPath: $error',
-          stackTrace: stackTrace,
-        );
-        issues.add(
-          ImportIssue(
-            path: errorPath,
-            code: ImportIssueCode.ioError,
-          ),
-        );
-      },
-    );
-
     try {
-      await for (final entity in stream) {
-        entities.add(entity);
-      }
+      final entities = directory.listSync(followLinks: false);
+      return _ImportEntityListing(
+        entities: _sortedImportEntities(entities),
+        issues: issues,
+      );
     } on FileSystemException catch (error, stackTrace) {
       final errorPath = _resolveImportErrorPath(error, directory.path);
       log(
@@ -1374,7 +1520,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     return _ImportEntityListing(
-      entities: _sortedImportEntities(entities),
+      entities: const [],
       issues: issues,
     );
   }
@@ -1414,6 +1560,8 @@ class StrategyProvider extends Notifier<StrategyState> {
             const ImportBatchResult(
               strategiesImported: 1,
               foldersCreated: 0,
+              themeProfilesImported: 0,
+              globalStateRestored: false,
               issues: [],
             ),
           );
@@ -1422,6 +1570,8 @@ class StrategyProvider extends Notifier<StrategyState> {
             ImportBatchResult(
               strategiesImported: 0,
               foldersCreated: 0,
+              themeProfilesImported: 0,
+              globalStateRestored: false,
               issues: [
                 ImportIssue(
                   path: entity.path,
@@ -1439,6 +1589,8 @@ class StrategyProvider extends Notifier<StrategyState> {
             ImportBatchResult(
               strategiesImported: 0,
               foldersCreated: 0,
+              themeProfilesImported: 0,
+              globalStateRestored: false,
               issues: [
                 ImportIssue(
                   path: entity.path,
@@ -1455,6 +1607,8 @@ class StrategyProvider extends Notifier<StrategyState> {
         ImportBatchResult(
           strategiesImported: 0,
           foldersCreated: 0,
+          themeProfilesImported: 0,
+          globalStateRestored: false,
           issues: [
             ImportIssue(
               path: entity.path,
@@ -1472,6 +1626,56 @@ class StrategyProvider extends Notifier<StrategyState> {
     required Directory sourceDir,
     required String? parentFolderId,
   }) async {
+    final manifestFile = File(path.join(sourceDir.path, archiveMetadataFileName));
+    _ManifestImportData? manifestData;
+    if (await manifestFile.exists()) {
+      try {
+        manifestData = await _loadManifestIfPresent(sourceDir);
+        if (manifestData != null) {
+          _validateArchiveManifest(manifestData);
+        }
+      } catch (error, stackTrace) {
+        log(
+          'Failed to import manifest archive from ${sourceDir.path}: $error',
+          stackTrace: stackTrace,
+        );
+        return ImportBatchResult(
+          strategiesImported: 0,
+          foldersCreated: 0,
+          themeProfilesImported: 0,
+          globalStateRestored: false,
+          issues: [
+            ImportIssue(
+              path: manifestFile.path,
+              code: ImportIssueCode.invalidArchiveMetadata,
+            ),
+          ],
+        ).merge(
+          await _importDirectoryTreeLegacy(
+            sourceDir: sourceDir,
+            parentFolderId: parentFolderId,
+          ),
+        );
+      }
+    }
+
+    if (manifestData != null) {
+      return _importManifestArchive(
+        manifestData: manifestData,
+        parentFolderId: parentFolderId,
+      );
+    }
+
+    return _importDirectoryTreeLegacy(
+      sourceDir: sourceDir,
+      parentFolderId: parentFolderId,
+    );
+  }
+
+  Future<ImportBatchResult> _importDirectoryTreeLegacy({
+    required Directory sourceDir,
+    required String? parentFolderId,
+  }) async {
     final importedFolder = await _createImportedFolder(
       name: path.basename(sourceDir.path),
       parentFolderId: parentFolderId,
@@ -1480,6 +1684,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     var result = const ImportBatchResult(
       strategiesImported: 0,
       foldersCreated: 1,
+      themeProfilesImported: 0,
+      globalStateRestored: false,
       issues: [],
     );
 
@@ -1489,6 +1695,8 @@ class StrategyProvider extends Notifier<StrategyState> {
         ImportBatchResult(
           strategiesImported: 0,
           foldersCreated: 0,
+          themeProfilesImported: 0,
+          globalStateRestored: false,
           issues: listing.issues,
         ),
       );
@@ -1508,73 +1716,1002 @@ class StrategyProvider extends Notifier<StrategyState> {
     required File zipFile,
     required String? parentFolderId,
   }) async {
-    final tempDirectory = await getTempDirectory(const Uuid().v4());
-
+    final archive = ZipDecoder().decodeBytes(await zipFile.readAsBytes());
+    _ZipManifestData? manifestData;
     try {
-      final archive = ZipDecoder().decodeBytes(await zipFile.readAsBytes());
-      await extractArchiveToDisk(archive, tempDirectory.path);
-
-      final listing = await _listImportEntities(tempDirectory);
-      final topLevelEntities = listing.entities;
-      final topLevelDirectories =
-          topLevelEntities.whereType<Directory>().toList();
-      final hasLooseIca = topLevelEntities.any(_isIcaFileEntity);
-
-      if (topLevelDirectories.length == 1 && !hasLooseIca) {
-        final nestedResult = await _importDirectoryTree(
-          sourceDir: topLevelDirectories.single,
-          parentFolderId: parentFolderId,
-        );
-        if (listing.issues.isEmpty) {
-          return nestedResult;
-        }
-        return ImportBatchResult(
-          strategiesImported: 0,
-          foldersCreated: 0,
-          issues: listing.issues,
-        ).merge(nestedResult);
+      manifestData = _loadManifestFromArchive(archive);
+      if (manifestData != null) {
+        _validateArchiveManifestFromZip(manifestData);
       }
+    } catch (error, stackTrace) {
+      log(
+        'Failed to import manifest zip ${zipFile.path}: $error',
+        stackTrace: stackTrace,
+      );
+      return ImportBatchResult(
+        strategiesImported: 0,
+        foldersCreated: 0,
+        themeProfilesImported: 0,
+        globalStateRestored: false,
+        issues: [
+          ImportIssue(
+            path: zipFile.path,
+            code: ImportIssueCode.invalidArchiveMetadata,
+          ),
+        ],
+      ).merge(
+        await _importLegacyZipArchiveFromEntries(
+          archive: archive,
+          parentFolderId: parentFolderId,
+          zipFileName: path.basenameWithoutExtension(zipFile.path),
+        ),
+      );
+    }
 
-      final wrapperFolder = await _createImportedFolder(
-        name: path.basenameWithoutExtension(zipFile.path),
+    if (manifestData != null) {
+      return _importManifestArchiveFromZip(
+        manifestData: manifestData,
         parentFolderId: parentFolderId,
       );
+    }
 
-      var result = const ImportBatchResult(
-        strategiesImported: 0,
-        foldersCreated: 1,
-        issues: [],
+    return _importLegacyZipArchiveFromEntries(
+      archive: archive,
+      parentFolderId: parentFolderId,
+      zipFileName: path.basenameWithoutExtension(zipFile.path),
+    );
+  }
+
+  _ZipManifestData? _loadManifestFromArchive(Archive archive) {
+    final filesByPath = <String, ArchiveFile>{};
+    for (final entry in archive) {
+      if (!entry.isFile) {
+        continue;
+      }
+      filesByPath[normalizeArchivePath(entry.name)] = entry;
+    }
+
+    final manifestPaths = filesByPath.keys
+        .where((pathValue) => path.posix.basename(pathValue) == archiveMetadataFileName)
+        .toList(growable: false);
+    if (manifestPaths.isEmpty) {
+      return null;
+    }
+    if (manifestPaths.length > 1) {
+      throw const FormatException('Archive contains multiple manifest files');
+    }
+
+    final manifestArchivePath = manifestPaths.single;
+    final manifestEntry = filesByPath[manifestArchivePath]!;
+    final decoded = jsonDecode(utf8.decode(_archiveFileBytes(manifestEntry)));
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Archive manifest must decode to an object');
+    }
+
+    final rootPrefix = path.posix.dirname(manifestArchivePath);
+    return _ZipManifestData(
+      manifest: ArchiveManifest.fromJson(decoded),
+      rootPrefix: rootPrefix == '.' ? '' : rootPrefix,
+      filesByPath: filesByPath,
+      manifestArchivePath: manifestArchivePath,
+    );
+  }
+
+  List<int> _archiveFileBytes(ArchiveFile entry) {
+    return entry.content as List<int>;
+  }
+
+  Future<File> _writeArchiveEntryToTempFile({
+    required ArchiveFile archiveFile,
+    required Directory tempDirectory,
+  }) async {
+    final baseName = path.basename(normalizeArchivePath(archiveFile.name));
+    final file = File(path.join(tempDirectory.path, baseName));
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(_archiveFileBytes(archiveFile));
+    return file;
+  }
+
+  Future<ImportBatchResult> _importManifestArchiveFromZip({
+    required _ZipManifestData manifestData,
+    required String? parentFolderId,
+  }) async {
+    _validateArchiveManifestFromZip(manifestData);
+
+    var result = const ImportBatchResult.empty();
+    var profileIdRemap = const <String, String>{};
+
+    if (manifestData.manifest.archiveType == ArchiveType.libraryBackup) {
+      final globals = manifestData.manifest.globals;
+      if (globals == null) {
+        throw const FormatException('Library backup archive is missing globals');
+      }
+      final globalImportResult = await _importArchiveGlobals(globals);
+      profileIdRemap = globalImportResult.profileIdRemap;
+      result = result.merge(
+        ImportBatchResult(
+          strategiesImported: 0,
+          foldersCreated: 0,
+          themeProfilesImported: globalImportResult.themeProfilesImported,
+          globalStateRestored: globalImportResult.globalStateRestored,
+          issues: const [],
+        ),
       );
+    }
 
-      if (listing.issues.isNotEmpty) {
+    final folderEntries = [...manifestData.manifest.folders]
+      ..sort((a, b) {
+        final depthCompare = _archivePathDepth(a.archivePath)
+            .compareTo(_archivePathDepth(b.archivePath));
+        if (depthCompare != 0) {
+          return depthCompare;
+        }
+        return a.archivePath.compareTo(b.archivePath);
+      });
+
+    final localFolderIdsByManifestId = <String, String>{};
+    for (final folderEntry in folderEntries) {
+      final resolvedParentFolderId = folderEntry.parentManifestId == null
+          ? (manifestData.manifest.archiveType == ArchiveType.folderTree
+              ? parentFolderId
+              : null)
+          : localFolderIdsByManifestId[folderEntry.parentManifestId!];
+      if (folderEntry.parentManifestId != null && resolvedParentFolderId == null) {
+        throw FormatException(
+          'Missing parent folder mapping for ${folderEntry.manifestId}',
+        );
+      }
+
+      final createdFolder = await ref.read(folderProvider.notifier).createFolder(
+            name: folderEntry.name,
+            icon: folderEntry.icon.toIconData(),
+            color: folderEntry.color,
+            customColor: folderEntry.customColorValue == null
+                ? null
+                : Color(folderEntry.customColorValue!),
+            parentID: resolvedParentFolderId,
+          );
+      localFolderIdsByManifestId[folderEntry.manifestId] = createdFolder.id;
+      result = result.merge(
+        const ImportBatchResult(
+          strategiesImported: 0,
+          foldersCreated: 1,
+          themeProfilesImported: 0,
+          globalStateRestored: false,
+          issues: [],
+        ),
+      );
+    }
+
+    final materializedDirectory =
+        await Directory.systemTemp.createTemp('icarus-zip-manifest-import');
+    try {
+      for (final strategyEntry in [...manifestData.manifest.strategies]
+        ..sort((a, b) => a.archivePath.compareTo(b.archivePath))) {
+        final targetFolderId = strategyEntry.folderManifestId == null
+            ? null
+            : localFolderIdsByManifestId[strategyEntry.folderManifestId!];
+        final archivePath = _zipArchiveAbsolutePath(
+          rootPrefix: manifestData.rootPrefix,
+          relativePath: strategyEntry.archivePath,
+        );
+        final archiveFile = manifestData.filesByPath[archivePath];
+        if (archiveFile == null) {
+          throw FormatException('Missing strategy file: $archivePath');
+        }
+
+        try {
+          final tempFile = await _writeArchiveEntryToTempFile(
+            archiveFile: archiveFile,
+            tempDirectory: materializedDirectory,
+          );
+          await _importStrategyFile(
+            file: XFile(tempFile.path),
+            targetFolderId: targetFolderId,
+            displayNameOverride: strategyEntry.name,
+            themeProfileIdRemap: profileIdRemap,
+          );
+          result = result.merge(
+            const ImportBatchResult(
+              strategiesImported: 1,
+              foldersCreated: 0,
+              themeProfilesImported: 0,
+              globalStateRestored: false,
+              issues: [],
+            ),
+          );
+        } on NewerVersionImportException {
+          result = result.merge(
+            ImportBatchResult(
+              strategiesImported: 0,
+              foldersCreated: 0,
+              themeProfilesImported: 0,
+              globalStateRestored: false,
+              issues: [
+                ImportIssue(
+                  path: archivePath,
+                  code: ImportIssueCode.newerVersion,
+                ),
+              ],
+            ),
+          );
+        } catch (error, stackTrace) {
+          log(
+            'Failed to import manifest strategy $archivePath: $error',
+            stackTrace: stackTrace,
+          );
+          result = result.merge(
+            ImportBatchResult(
+              strategiesImported: 0,
+              foldersCreated: 0,
+              themeProfilesImported: 0,
+              globalStateRestored: false,
+              issues: [
+                ImportIssue(
+                  path: archivePath,
+                  code: ImportIssueCode.invalidStrategy,
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    } finally {
+      try {
+        await materializedDirectory.delete(recursive: true);
+      } catch (_) {}
+    }
+
+    final undeclaredIssues = _collectUndeclaredZipArchiveIssues(manifestData);
+    if (undeclaredIssues.isNotEmpty) {
+      result = result.merge(
+        ImportBatchResult(
+          strategiesImported: 0,
+          foldersCreated: 0,
+          themeProfilesImported: 0,
+          globalStateRestored: false,
+          issues: undeclaredIssues,
+        ),
+      );
+    }
+
+    return result;
+  }
+
+  void _validateArchiveManifestFromZip(_ZipManifestData manifestData) {
+    final manifest = manifestData.manifest;
+    final folderIds = <String>{};
+    final folderPaths = <String>{};
+    final rootFolders = <ArchiveFolderEntry>[];
+
+    for (final folder in manifest.folders) {
+      if (!folderIds.add(folder.manifestId)) {
+        throw FormatException('Duplicate folder manifest ID: ${folder.manifestId}');
+      }
+      if (!folderPaths.add(folder.archivePath)) {
+        throw FormatException('Duplicate folder archive path: ${folder.archivePath}');
+      }
+      if (folder.parentManifestId == null) {
+        rootFolders.add(folder);
+      } else if (!manifest.folders
+          .any((candidate) => candidate.manifestId == folder.parentManifestId)) {
+        throw FormatException('Missing parent folder for ${folder.manifestId}');
+      }
+    }
+
+    if (manifest.archiveType == ArchiveType.folderTree) {
+      if (rootFolders.length != 1) {
+        throw const FormatException('Folder tree archives must contain one root');
+      }
+      if (rootFolders.single.archivePath.isNotEmpty) {
+        throw const FormatException(
+          'Folder tree root folder must use the manifest root path',
+        );
+      }
+    }
+
+    final knownFolderIds = manifest.folders.map((folder) => folder.manifestId).toSet();
+    final strategyPaths = <String>{};
+    for (final strategy in manifest.strategies) {
+      if (!strategyPaths.add(strategy.archivePath)) {
+        throw FormatException(
+          'Duplicate strategy archive path: ${strategy.archivePath}',
+        );
+      }
+      if (strategy.folderManifestId != null &&
+          !knownFolderIds.contains(strategy.folderManifestId)) {
+        throw FormatException(
+          'Unknown strategy folder reference: ${strategy.folderManifestId}',
+        );
+      }
+      if (manifest.archiveType == ArchiveType.folderTree &&
+          strategy.folderManifestId == null) {
+        throw const FormatException(
+          'Folder tree strategies must reference the exported root folder',
+        );
+      }
+      final archivePath = _zipArchiveAbsolutePath(
+        rootPrefix: manifestData.rootPrefix,
+        relativePath: strategy.archivePath,
+      );
+      if (!manifestData.filesByPath.containsKey(archivePath)) {
+        throw FormatException('Missing strategy file: $archivePath');
+      }
+    }
+  }
+
+  String _zipArchiveAbsolutePath({
+    required String rootPrefix,
+    required String relativePath,
+  }) {
+    return normalizeArchivePath(
+      rootPrefix.isEmpty
+          ? relativePath
+          : path.posix.join(rootPrefix, relativePath),
+    );
+  }
+
+  List<ImportIssue> _collectUndeclaredZipArchiveIssues(
+    _ZipManifestData manifestData,
+  ) {
+    final allowedFiles = <String>{manifestData.manifestArchivePath};
+    for (final strategy in manifestData.manifest.strategies) {
+      allowedFiles.add(
+        _zipArchiveAbsolutePath(
+          rootPrefix: manifestData.rootPrefix,
+          relativePath: strategy.archivePath,
+        ),
+      );
+    }
+
+    final issues = <ImportIssue>[];
+    for (final archivePath in manifestData.filesByPath.keys) {
+      if (!allowedFiles.contains(archivePath) &&
+          !_shouldIgnoreImportedEntityName(path.posix.basename(archivePath))) {
+        issues.add(
+          ImportIssue(
+            path: archivePath,
+            code: ImportIssueCode.unsupportedFile,
+          ),
+        );
+      }
+    }
+    return issues;
+  }
+
+  Future<ImportBatchResult> _importLegacyZipArchiveFromEntries({
+    required Archive archive,
+    required String? parentFolderId,
+    required String zipFileName,
+  }) async {
+    final filesByPath = <String, ArchiveFile>{};
+    for (final entry in archive) {
+      if (!entry.isFile) {
+        continue;
+      }
+      final normalizedPath = normalizeArchivePath(entry.name);
+      if (_shouldIgnoreImportedEntityName(path.posix.basename(normalizedPath))) {
+        continue;
+      }
+      filesByPath[normalizedPath] = entry;
+    }
+
+    final topLevelSegments = <String>{};
+    final looseTopLevelIca = <String>[];
+    for (final archivePath in filesByPath.keys) {
+      final segments = archivePath.split('/');
+      if (segments.isEmpty) {
+        continue;
+      }
+      topLevelSegments.add(segments.first);
+      if (segments.length == 1 && path.extension(archivePath).toLowerCase() == '.ica') {
+        looseTopLevelIca.add(archivePath);
+      }
+    }
+
+    if (topLevelSegments.length == 1 && looseTopLevelIca.isEmpty) {
+      return _importLegacyZipDirectory(
+        directoryPrefix: topLevelSegments.single,
+        filesByPath: filesByPath,
+        parentFolderId: parentFolderId,
+      );
+    }
+
+    final wrapperFolder = await _createImportedFolder(
+      name: zipFileName,
+      parentFolderId: parentFolderId,
+    );
+
+    return const ImportBatchResult(
+      strategiesImported: 0,
+      foldersCreated: 1,
+      themeProfilesImported: 0,
+      globalStateRestored: false,
+      issues: [],
+    ).merge(
+      await _importLegacyZipEntitiesIntoFolder(
+        parentPrefix: '',
+        filesByPath: filesByPath,
+        parentFolderId: wrapperFolder.id,
+      ),
+    );
+  }
+
+  Future<ImportBatchResult> _importLegacyZipDirectory({
+    required String directoryPrefix,
+    required Map<String, ArchiveFile> filesByPath,
+    required String? parentFolderId,
+  }) async {
+    final importedFolder = await _createImportedFolder(
+      name: path.posix.basename(directoryPrefix),
+      parentFolderId: parentFolderId,
+    );
+
+    return const ImportBatchResult(
+      strategiesImported: 0,
+      foldersCreated: 1,
+      themeProfilesImported: 0,
+      globalStateRestored: false,
+      issues: [],
+    ).merge(
+      await _importLegacyZipEntitiesIntoFolder(
+        parentPrefix: directoryPrefix,
+        filesByPath: filesByPath,
+        parentFolderId: importedFolder.id,
+      ),
+    );
+  }
+
+  Future<ImportBatchResult> _importLegacyZipEntitiesIntoFolder({
+    required String parentPrefix,
+    required Map<String, ArchiveFile> filesByPath,
+    required String parentFolderId,
+  }) async {
+    final directDirectories = <String>{};
+    final directFiles = <String>[];
+    final normalizedParentPrefix = normalizeArchivePath(parentPrefix);
+
+    for (final archivePath in filesByPath.keys) {
+      final parentPath = path.posix.dirname(archivePath);
+      if (normalizedParentPrefix.isEmpty) {
+        if (parentPath == '.') {
+          directFiles.add(archivePath);
+        } else if (!parentPath.contains('/')) {
+          directDirectories.add(parentPath);
+        }
+        continue;
+      }
+
+      if (parentPath == normalizedParentPrefix) {
+        directFiles.add(archivePath);
+        continue;
+      }
+
+      if (archivePath.startsWith('$normalizedParentPrefix/')) {
+        final remainder =
+            archivePath.substring(normalizedParentPrefix.length + 1);
+        if (remainder.isEmpty || !remainder.contains('/')) {
+          continue;
+        }
+        final childDirectory =
+            remainder.substring(0, remainder.indexOf('/'));
+        directDirectories.add(
+          normalizeArchivePath(
+            path.posix.join(normalizedParentPrefix, childDirectory),
+          ),
+        );
+      }
+    }
+
+    var result = const ImportBatchResult.empty();
+
+    final tempDirectory =
+        await Directory.systemTemp.createTemp('icarus-zip-legacy-import');
+    try {
+      final sortedDirectories = directDirectories.toList()..sort();
+      for (final directoryPrefix in sortedDirectories) {
         result = result.merge(
-          ImportBatchResult(
-            strategiesImported: 0,
-            foldersCreated: 0,
-            issues: listing.issues,
+          await _importLegacyZipDirectory(
+            directoryPrefix: directoryPrefix,
+            filesByPath: filesByPath,
+            parentFolderId: parentFolderId,
           ),
         );
       }
 
-      result = result.merge(
-        await _importEntitiesIntoFolder(
-          entities: topLevelEntities,
-          parentFolderId: wrapperFolder.id,
-        ),
-      );
+      directFiles.sort();
+      for (final archivePath in directFiles) {
+        if (path.extension(archivePath).toLowerCase() != '.ica') {
+          result = result.merge(
+            ImportBatchResult(
+              strategiesImported: 0,
+              foldersCreated: 0,
+              themeProfilesImported: 0,
+              globalStateRestored: false,
+              issues: [
+                ImportIssue(
+                  path: archivePath,
+                  code: ImportIssueCode.unsupportedFile,
+                ),
+              ],
+            ),
+          );
+          continue;
+        }
 
-      return result;
+        try {
+          final tempFile = await _writeArchiveEntryToTempFile(
+            archiveFile: filesByPath[archivePath]!,
+            tempDirectory: tempDirectory,
+          );
+          await _importStrategyFile(
+            file: XFile(tempFile.path),
+            targetFolderId: parentFolderId,
+          );
+          result = result.merge(
+            const ImportBatchResult(
+              strategiesImported: 1,
+              foldersCreated: 0,
+              themeProfilesImported: 0,
+              globalStateRestored: false,
+              issues: [],
+            ),
+          );
+        } on NewerVersionImportException {
+          result = result.merge(
+            ImportBatchResult(
+              strategiesImported: 0,
+              foldersCreated: 0,
+              themeProfilesImported: 0,
+              globalStateRestored: false,
+              issues: [
+                ImportIssue(
+                  path: archivePath,
+                  code: ImportIssueCode.newerVersion,
+                ),
+              ],
+            ),
+          );
+        } catch (error, stackTrace) {
+          log(
+            'Failed to import zip strategy $archivePath: $error',
+            stackTrace: stackTrace,
+          );
+          result = result.merge(
+            ImportBatchResult(
+              strategiesImported: 0,
+              foldersCreated: 0,
+              themeProfilesImported: 0,
+              globalStateRestored: false,
+              issues: [
+                ImportIssue(
+                  path: archivePath,
+                  code: ImportIssueCode.invalidStrategy,
+                ),
+              ],
+            ),
+          );
+        }
+      }
     } finally {
       try {
         await tempDirectory.delete(recursive: true);
       } catch (_) {}
     }
+
+    return result;
+  }
+
+  Future<_ManifestImportData?> _loadManifestIfPresent(Directory directory) async {
+    final manifestFile = File(path.join(directory.path, archiveMetadataFileName));
+    if (!await manifestFile.exists()) {
+      return null;
+    }
+
+    final raw = await manifestFile.readAsString();
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Archive metadata must decode to an object');
+    }
+
+    return _ManifestImportData(
+      rootDirectory: directory,
+      manifestFile: manifestFile,
+      manifest: ArchiveManifest.fromJson(decoded),
+    );
+  }
+
+  Future<ImportBatchResult> _importManifestArchive({
+    required _ManifestImportData manifestData,
+    required String? parentFolderId,
+  }) async {
+    _validateArchiveManifest(manifestData);
+
+    var result = const ImportBatchResult.empty();
+    var profileIdRemap = const <String, String>{};
+
+    if (manifestData.manifest.archiveType == ArchiveType.libraryBackup) {
+      final globals = manifestData.manifest.globals;
+      if (globals == null) {
+        throw const FormatException('Library backup archive is missing globals');
+      }
+      final globalImportResult = await _importArchiveGlobals(globals);
+      profileIdRemap = globalImportResult.profileIdRemap;
+      result = result.merge(
+        ImportBatchResult(
+          strategiesImported: 0,
+          foldersCreated: 0,
+          themeProfilesImported: globalImportResult.themeProfilesImported,
+          globalStateRestored: globalImportResult.globalStateRestored,
+          issues: const [],
+        ),
+      );
+    }
+
+    final folderEntries = [...manifestData.manifest.folders]
+      ..sort((a, b) {
+        final depthCompare = _archivePathDepth(a.archivePath)
+            .compareTo(_archivePathDepth(b.archivePath));
+        if (depthCompare != 0) {
+          return depthCompare;
+        }
+        return a.archivePath.compareTo(b.archivePath);
+      });
+
+    final localFolderIdsByManifestId = <String, String>{};
+    for (final folderEntry in folderEntries) {
+      final resolvedParentFolderId = folderEntry.parentManifestId == null
+          ? (manifestData.manifest.archiveType == ArchiveType.folderTree
+              ? parentFolderId
+              : null)
+          : localFolderIdsByManifestId[folderEntry.parentManifestId!];
+      if (folderEntry.parentManifestId != null && resolvedParentFolderId == null) {
+        throw FormatException(
+          'Missing parent folder mapping for ${folderEntry.manifestId}',
+        );
+      }
+
+      final createdFolder = await ref.read(folderProvider.notifier).createFolder(
+            name: folderEntry.name,
+            icon: folderEntry.icon.toIconData(),
+            color: folderEntry.color,
+            customColor: folderEntry.customColorValue == null
+                ? null
+                : Color(folderEntry.customColorValue!),
+            parentID: resolvedParentFolderId,
+          );
+      localFolderIdsByManifestId[folderEntry.manifestId] = createdFolder.id;
+      result = result.merge(
+        const ImportBatchResult(
+          strategiesImported: 0,
+          foldersCreated: 1,
+          themeProfilesImported: 0,
+          globalStateRestored: false,
+          issues: [],
+        ),
+      );
+    }
+
+    final strategyEntries = [...manifestData.manifest.strategies]
+      ..sort((a, b) => a.archivePath.compareTo(b.archivePath));
+    for (final strategyEntry in strategyEntries) {
+      final targetFolderId = strategyEntry.folderManifestId == null
+          ? null
+          : localFolderIdsByManifestId[strategyEntry.folderManifestId!];
+      if (strategyEntry.folderManifestId != null && targetFolderId == null) {
+        throw FormatException(
+          'Missing folder mapping for strategy ${strategyEntry.archivePath}',
+        );
+      }
+
+      try {
+        await _importStrategyFile(
+          file: XFile(
+            _archivePathToFile(manifestData.rootDirectory, strategyEntry.archivePath)
+                .path,
+          ),
+          targetFolderId: targetFolderId,
+          displayNameOverride: strategyEntry.name,
+          themeProfileIdRemap: profileIdRemap,
+        );
+        result = result.merge(
+          const ImportBatchResult(
+            strategiesImported: 1,
+            foldersCreated: 0,
+            themeProfilesImported: 0,
+            globalStateRestored: false,
+            issues: [],
+          ),
+        );
+      } on NewerVersionImportException {
+        result = result.merge(
+          ImportBatchResult(
+            strategiesImported: 0,
+            foldersCreated: 0,
+            themeProfilesImported: 0,
+            globalStateRestored: false,
+            issues: [
+              ImportIssue(
+                path: strategyEntry.archivePath,
+                code: ImportIssueCode.newerVersion,
+              ),
+            ],
+          ),
+        );
+      } catch (error, stackTrace) {
+        log(
+          'Failed to import manifest strategy ${strategyEntry.archivePath}: $error',
+          stackTrace: stackTrace,
+        );
+        result = result.merge(
+          ImportBatchResult(
+            strategiesImported: 0,
+            foldersCreated: 0,
+            themeProfilesImported: 0,
+            globalStateRestored: false,
+            issues: [
+              ImportIssue(
+                path: strategyEntry.archivePath,
+                code: ImportIssueCode.invalidStrategy,
+              ),
+            ],
+          ),
+        );
+      }
+    }
+
+    final undeclaredIssues = await _collectUndeclaredArchiveIssues(
+      manifestData: manifestData,
+    );
+    if (undeclaredIssues.isNotEmpty) {
+      result = result.merge(
+        ImportBatchResult(
+          strategiesImported: 0,
+          foldersCreated: 0,
+          themeProfilesImported: 0,
+          globalStateRestored: false,
+          issues: undeclaredIssues,
+        ),
+      );
+    }
+
+    return result;
+  }
+
+  void _validateArchiveManifest(_ManifestImportData manifestData) {
+    final manifest = manifestData.manifest;
+    final folderIds = <String>{};
+    final folderPaths = <String>{};
+    final rootFolders = <ArchiveFolderEntry>[];
+
+    for (final folder in manifest.folders) {
+      if (!folderIds.add(folder.manifestId)) {
+        throw FormatException('Duplicate folder manifest ID: ${folder.manifestId}');
+      }
+      if (!folderPaths.add(folder.archivePath)) {
+        throw FormatException('Duplicate folder archive path: ${folder.archivePath}');
+      }
+      if (folder.parentManifestId == null) {
+        rootFolders.add(folder);
+      } else if (!manifest.folders
+          .any((candidate) => candidate.manifestId == folder.parentManifestId)) {
+        throw FormatException('Missing parent folder for ${folder.manifestId}');
+      }
+    }
+
+    if (manifest.archiveType == ArchiveType.folderTree) {
+      if (rootFolders.length != 1) {
+        throw const FormatException('Folder tree archives must contain one root');
+      }
+      if (rootFolders.single.archivePath.isNotEmpty) {
+        throw const FormatException(
+          'Folder tree root folder must use the manifest root path',
+        );
+      }
+    }
+
+    final knownFolderIds = manifest.folders.map((folder) => folder.manifestId).toSet();
+    final strategyPaths = <String>{};
+    for (final strategy in manifest.strategies) {
+      if (!strategyPaths.add(strategy.archivePath)) {
+        throw FormatException(
+          'Duplicate strategy archive path: ${strategy.archivePath}',
+        );
+      }
+      if (strategy.folderManifestId != null &&
+          !knownFolderIds.contains(strategy.folderManifestId)) {
+        throw FormatException(
+          'Unknown strategy folder reference: ${strategy.folderManifestId}',
+        );
+      }
+      if (manifest.archiveType == ArchiveType.folderTree &&
+          strategy.folderManifestId == null) {
+        throw const FormatException(
+          'Folder tree strategies must reference the exported root folder',
+        );
+      }
+      if (!(_archivePathToFile(manifestData.rootDirectory, strategy.archivePath)
+          .existsSync())) {
+        throw FormatException('Missing strategy file: ${strategy.archivePath}');
+      }
+    }
+  }
+
+  int _archivePathDepth(String archivePath) {
+    if (archivePath.isEmpty) {
+      return 0;
+    }
+    return archivePath.split('/').length;
+  }
+
+  File _archivePathToFile(Directory rootDirectory, String archivePath) {
+    final normalized = normalizeArchivePath(archivePath);
+    final segments = normalized.isEmpty ? const <String>[] : normalized.split('/');
+    return File(path.joinAll([rootDirectory.path, ...segments]));
+  }
+
+  Future<List<ImportIssue>> _collectUndeclaredArchiveIssues({
+    required _ManifestImportData manifestData,
+  }) async {
+    final allowedFiles = <String>{archiveMetadataFileName};
+    final allowedDirectories = <String>{};
+
+    void addAllowedDirectoryAncestors(String archivePath) {
+      var current = normalizeArchivePath(archivePath);
+      if (current.isEmpty) {
+        return;
+      }
+      while (current.isNotEmpty && current != '.') {
+        allowedDirectories.add(current);
+        final parent = path.posix.dirname(current);
+        if (parent == '.' || parent == current) {
+          break;
+        }
+        current = parent;
+      }
+    }
+
+    for (final folder in manifestData.manifest.folders) {
+      addAllowedDirectoryAncestors(folder.archivePath);
+    }
+    for (final strategy in manifestData.manifest.strategies) {
+      final normalizedPath = normalizeArchivePath(strategy.archivePath);
+      allowedFiles.add(normalizedPath);
+      final parentDirectory = path.posix.dirname(normalizedPath);
+      if (parentDirectory != '.') {
+        addAllowedDirectoryAncestors(parentDirectory);
+      }
+    }
+
+    final issues = <ImportIssue>[];
+    await for (final entity
+        in manifestData.rootDirectory.list(recursive: true, followLinks: false)) {
+      final relativePath = normalizeArchivePath(
+        path.relative(entity.path, from: manifestData.rootDirectory.path),
+      );
+      if (relativePath.isEmpty) {
+        continue;
+      }
+
+      if (entity is File) {
+        if (!allowedFiles.contains(relativePath)) {
+          issues.add(
+            ImportIssue(
+              path: entity.path,
+              code: ImportIssueCode.unsupportedFile,
+            ),
+          );
+        }
+        continue;
+      }
+
+      final directoryAllowed = allowedDirectories.contains(relativePath) ||
+          allowedFiles.any((allowed) => allowed.startsWith('$relativePath/'));
+      if (!directoryAllowed) {
+        issues.add(
+          ImportIssue(
+            path: entity.path,
+            code: ImportIssueCode.unsupportedFile,
+          ),
+        );
+      }
+    }
+
+    return issues;
+  }
+
+  Future<_GlobalImportResult> _importArchiveGlobals(ArchiveGlobals globals) async {
+    await MapThemeProfilesProvider.bootstrap();
+
+    final profileBox = Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+    final appPreferencesBox =
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox);
+    final favoriteAgentsBox = Hive.box<bool>(HiveBoxNames.favoriteAgentsBox);
+
+    final profileIdRemap = <String, String>{};
+    var themeProfilesImported = 0;
+
+    final existingProfiles = profileBox.values.toList();
+    for (final importedProfile in globals.themeProfiles) {
+      if (importedProfile.isBuiltIn) {
+        if (profileBox.get(importedProfile.id) != null) {
+          profileIdRemap[importedProfile.id] = importedProfile.id;
+        }
+        continue;
+      }
+
+      final matchingExisting = existingProfiles.firstWhere(
+        (existing) =>
+            !existing.isBuiltIn &&
+            existing.name == importedProfile.name &&
+            existing.palette == importedProfile.palette,
+        orElse: () => MapThemeProfile(
+          id: '',
+          name: '',
+          palette: MapThemeProfilesProvider.immutableDefaultPalette,
+          isBuiltIn: false,
+        ),
+      );
+
+      if (matchingExisting.id.isNotEmpty) {
+        profileIdRemap[importedProfile.id] = matchingExisting.id;
+        continue;
+      }
+
+      var localProfileId = importedProfile.id;
+      if (profileBox.get(localProfileId) != null ||
+          MapThemeProfilesProvider.immutableBuiltInProfiles
+              .any((profile) => profile.id == localProfileId)) {
+        localProfileId = const Uuid().v4();
+      }
+
+      final createdProfile = MapThemeProfile(
+        id: localProfileId,
+        name: importedProfile.name,
+        palette: importedProfile.palette,
+        isBuiltIn: false,
+      );
+      await profileBox.put(createdProfile.id, createdProfile);
+      existingProfiles.add(createdProfile);
+      profileIdRemap[importedProfile.id] = createdProfile.id;
+      themeProfilesImported++;
+    }
+
+    final resolvedDefaultProfileId =
+        globals.defaultThemeProfileIdForNewStrategies == null
+            ? MapThemeProfilesProvider.immutableDefaultProfileId
+            : profileIdRemap[globals.defaultThemeProfileIdForNewStrategies!] ??
+                (profileBox.get(globals.defaultThemeProfileIdForNewStrategies!) != null
+                    ? globals.defaultThemeProfileIdForNewStrategies!
+                    : MapThemeProfilesProvider.immutableDefaultProfileId);
+
+    await appPreferencesBox.put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      AppPreferences(
+        defaultThemeProfileIdForNewStrategies: resolvedDefaultProfileId,
+      ),
+    );
+
+    await favoriteAgentsBox.clear();
+    for (final favorite in globals.favoriteAgentTypes()) {
+      await favoriteAgentsBox.put(favorite.name, true);
+    }
+
+    await ref.read(mapThemeProfilesProvider.notifier).refreshFromHive();
+    ref.invalidate(favoriteAgentsProvider);
+
+    return _GlobalImportResult(
+      themeProfilesImported: themeProfilesImported,
+      globalStateRestored: true,
+      profileIdRemap: profileIdRemap,
+    );
   }
 
   Future<void> _importStrategyFile({
     required XFile file,
     required String? targetFolderId,
     String? displayNameOverride,
+    Map<String, String> themeProfileIdRemap = const {},
   }) async {
     final newID = const Uuid().v4();
     final bool isZip = await isZipFile(File(file.path));
@@ -1591,7 +2728,10 @@ class StrategyProvider extends Notifier<StrategyState> {
         final imageFolder = await PlacedImageProvider.getImageFolder(newID);
         final tempDirectory = await getTempDirectory(newID);
 
-        await extractArchiveToDisk(archive, tempDirectory.path);
+        await _extractArchiveEntriesToDisk(
+          archive: archive,
+          destination: tempDirectory,
+        );
 
         final tempDirectoryList = tempDirectory.listSync();
         log("Temp directory list: ${tempDirectoryList.length}.");
@@ -1680,6 +2820,14 @@ class StrategyProvider extends Notifier<StrategyState> {
                   ? MapThemePalette.fromJson(
                       Map<String, dynamic>.from(json["themePalette"]))
                   : null);
+      final rawImportedThemeProfileId = json['themeProfileId'];
+      final importedThemeProfileId = rawImportedThemeProfileId is String &&
+              rawImportedThemeProfileId.isNotEmpty
+          ? rawImportedThemeProfileId
+          : null;
+      final String? resolvedThemeProfileId = importedThemeProfileId == null
+          ? null
+          : (themeProfileIdRemap[importedThemeProfileId] ?? importedThemeProfileId);
 
       // bool needsMigration = (versionNumber < 15);
       final List<StrategyPage> pages = json["pages"] != null
@@ -1716,7 +2864,9 @@ class StrategyProvider extends Notifier<StrategyState> {
         lastEdited: DateTime.now(),
 
         folderID: targetFolderId,
-        themeOverridePalette: importedThemeOverridePalette,
+        themeProfileId: resolvedThemeProfileId,
+        themeOverridePalette:
+            resolvedThemeProfileId == null ? importedThemeOverridePalette : null,
       );
 
       newStrategy = await migrateLegacyData(newStrategy);
@@ -1807,10 +2957,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     setUnsaved();
   }
 
-  //Get all of the stratgies in the folder
-  // Stop if there's nothing there
-  // Call export and get the individual files
-  // and then we put them all into one massive zip file
+  Future<void> _flushCurrentStrategyIfNeeded() async {
+    if (state.stratName == null || state.id == 'testID') {
+      return;
+    }
+    await forceSaveNow(state.id);
+  }
 
   Future<void> exportFolder(String folderID) async {
     final folder = Hive.box<Folder>(HiveBoxNames.foldersBox).get(folderID);
@@ -1819,70 +2971,311 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    final directoryToZip =
-        await Directory.systemTemp.createTemp('strategy_export');
+    await _flushCurrentStrategyIfNeeded();
+    final stagingDirectory =
+        await buildFolderExportDirectoryForTest(folderID);
 
     try {
-      await zipFolder(directoryToZip, folderID);
-
       final outputFile = await FilePicker.platform.saveFile(
         type: FileType.custom,
         dialogTitle: 'Please select an output file:',
         fileName: "${sanitizeFileName(folder.name)}.zip",
-        allowedExtensions: ['zip'], // no leading dot
+        allowedExtensions: ['zip'],
       );
 
       if (outputFile == null) return;
 
       final encoder = ZipFileEncoder();
       encoder.create(outputFile);
-      await encoder.addDirectory(directoryToZip, includeDirName: false);
+      await encoder.addDirectory(stagingDirectory, includeDirName: false);
       await encoder.close();
     } finally {
-      // Best-effort cleanup
       try {
-        await directoryToZip.delete(recursive: true);
+        await stagingDirectory.delete(recursive: true);
       } catch (_) {}
     }
   }
 
-  Future<void> zipFolder(Directory directoryToZip, String folderID) async {
-    final Folder? currentFolder =
-        ref.read(folderProvider.notifier).findFolderByID(folderID);
-    if (currentFolder == null) return;
-    final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .values
-        .where((strategy) => strategy.folderID == folderID)
-        .toList();
+  Future<void> exportLibrary() async {
+    await _flushCurrentStrategyIfNeeded();
+    final stagingDirectory = await buildLibraryExportDirectoryForTest();
 
-    final subFolders =
-        ref.read(folderProvider.notifier).findFolderChildren(folderID);
-    final sanitizedName = sanitizeFileName(currentFolder.name);
-    Directory folderExportDirectory =
-        Directory(path.join(directoryToZip.path, sanitizedName));
-    int counter = 1;
-    while (await folderExportDirectory.exists()) {
-      folderExportDirectory = Directory(
-          path.join(directoryToZip.path, "${sanitizedName}_$counter"));
+    try {
+      final outputFile = await FilePicker.platform.saveFile(
+        type: FileType.custom,
+        dialogTitle: 'Please select an output file:',
+        fileName: _buildLibraryBackupFileName(DateTime.now()),
+        allowedExtensions: ['zip'],
+      );
+
+      if (outputFile == null) return;
+
+      final encoder = ZipFileEncoder();
+      encoder.create(outputFile);
+      await encoder.addDirectory(stagingDirectory, includeDirName: false);
+      await encoder.close();
+    } finally {
+      try {
+        await stagingDirectory.delete(recursive: true);
+      } catch (_) {}
+    }
+  }
+
+  @visibleForTesting
+  Future<Directory> buildFolderExportDirectoryForTest(String folderID) async {
+    final folder = Hive.box<Folder>(HiveBoxNames.foldersBox).get(folderID);
+    if (folder == null) {
+      throw StateError("Couldn't find folder to export");
+    }
+
+    final stagingDirectory =
+        await Directory.systemTemp.createTemp('icarus-folder-export');
+    final rootDirectory = await _createUniqueChildDirectory(
+      parentDirectory: stagingDirectory,
+      desiredName: folder.name,
+    );
+    final exportState = _ArchiveExportState(rootDirectory: rootDirectory);
+    await _writeFolderArchive(
+      folderID: folderID,
+      exportDirectory: rootDirectory,
+      exportState: exportState,
+      parentManifestId: null,
+      currentArchivePath: '',
+    );
+    await _writeArchiveManifest(
+      exportState: exportState,
+      archiveType: ArchiveType.folderTree,
+    );
+    return stagingDirectory;
+  }
+
+  @visibleForTesting
+  Future<Directory> buildLibraryExportDirectoryForTest() async {
+    final stagingDirectory =
+        await Directory.systemTemp.createTemp('icarus-library-export');
+    final rootDirectory = Directory(
+      path.join(stagingDirectory.path, libraryBackupRootDirectoryName),
+    );
+    await rootDirectory.create(recursive: true);
+    final rootStrategiesDirectory =
+        Directory(path.join(rootDirectory.path, 'root_strategies'))
+          ..createSync(recursive: true);
+    final foldersDirectory = Directory(path.join(rootDirectory.path, 'folders'))
+      ..createSync(recursive: true);
+
+    final exportState = _ArchiveExportState(rootDirectory: rootDirectory);
+
+    for (final strategy in _sortedStrategiesForFolder(null)) {
+      final strategyArchivePath = await zipStrategy(
+        id: strategy.id,
+        saveDir: rootStrategiesDirectory,
+      );
+      exportState.strategies.add(
+        ArchiveStrategyEntry(
+          name: strategy.name,
+          archivePath: normalizeArchivePath(path.posix.join(
+            'root_strategies',
+            path.basename(strategyArchivePath),
+          )),
+          folderManifestId: null,
+        ),
+      );
+    }
+
+    for (final rootFolder in _sortedFoldersForParent(null)) {
+      final rootFolderDirectory = await _createUniqueChildDirectory(
+        parentDirectory: foldersDirectory,
+        desiredName: rootFolder.name,
+      );
+      final rootArchivePath = normalizeArchivePath(path.posix.join(
+        'folders',
+        path.basename(rootFolderDirectory.path),
+      ));
+      await _writeFolderArchive(
+        folderID: rootFolder.id,
+        exportDirectory: rootFolderDirectory,
+        exportState: exportState,
+        parentManifestId: null,
+        currentArchivePath: rootArchivePath,
+      );
+    }
+
+    await _writeArchiveManifest(
+      exportState: exportState,
+      archiveType: ArchiveType.libraryBackup,
+      globals: _buildLibraryGlobals(),
+    );
+    return stagingDirectory;
+  }
+
+  Future<Directory> _createUniqueChildDirectory({
+    required Directory parentDirectory,
+    required String desiredName,
+  }) async {
+    final sanitizedName = sanitizeFileName(desiredName);
+    var candidate = sanitizedName;
+    var counter = 1;
+    var directory = Directory(path.join(parentDirectory.path, candidate));
+    while (await directory.exists()) {
+      candidate = '${sanitizedName}_$counter';
       counter++;
+      directory = Directory(path.join(parentDirectory.path, candidate));
+    }
+    await directory.create(recursive: true);
+    return directory;
+  }
+
+  Future<void> _writeFolderArchive({
+    required String folderID,
+    required Directory exportDirectory,
+    required _ArchiveExportState exportState,
+    required String? parentManifestId,
+    required String currentArchivePath,
+  }) async {
+    final currentFolder =
+        ref.read(folderProvider.notifier).findFolderByID(folderID);
+    if (currentFolder == null) {
+      return;
     }
 
-    // Create the folder
-    await folderExportDirectory.create(recursive: true);
+    final manifestId = const Uuid().v4();
+    exportState.folders.add(
+      ArchiveFolderEntry(
+        manifestId: manifestId,
+        name: currentFolder.name,
+        parentManifestId: parentManifestId,
+        archivePath: normalizeArchivePath(currentArchivePath),
+        icon: ArchiveIconDescriptor.fromIconData(currentFolder.icon),
+        color: currentFolder.color,
+        customColorValue: currentFolder.customColor?.toARGB32(),
+      ),
+    );
 
-    // Export each strategy
-    for (final strategy in strategies) {
-      await zipStrategy(id: strategy.id, saveDir: folderExportDirectory);
+    for (final strategy in _sortedStrategiesForFolder(folderID)) {
+      final strategyArchivePath = await zipStrategy(
+        id: strategy.id,
+        saveDir: exportDirectory,
+      );
+      exportState.strategies.add(
+        ArchiveStrategyEntry(
+          name: strategy.name,
+          archivePath: normalizeArchivePath(path.posix.join(
+            currentArchivePath,
+            path.basename(strategyArchivePath),
+          )),
+          folderManifestId: manifestId,
+        ),
+      );
     }
 
-    for (final subFolder in subFolders) {
-      await zipFolder(folderExportDirectory, subFolder.id);
+    for (final subFolder in _sortedFoldersForParent(folderID)) {
+      final childDirectory = await _createUniqueChildDirectory(
+        parentDirectory: exportDirectory,
+        desiredName: subFolder.name,
+      );
+      final childArchivePath = normalizeArchivePath(path.posix.join(
+        currentArchivePath,
+        path.basename(childDirectory.path),
+      ));
+      await _writeFolderArchive(
+        folderID: subFolder.id,
+        exportDirectory: childDirectory,
+        exportState: exportState,
+        parentManifestId: manifestId,
+        currentArchivePath: childArchivePath,
+      );
     }
   }
 
   static String sanitizeFileName(String input) {
     final sanitized = input.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
     return sanitized.isEmpty ? 'untitled' : sanitized;
+  }
+
+  String _buildLibraryBackupFileName(DateTime timestamp) {
+    String twoDigit(int value) => value.toString().padLeft(2, '0');
+    return 'icarus-library-backup-'
+        '${timestamp.year}-${twoDigit(timestamp.month)}-${twoDigit(timestamp.day)}_'
+        '${twoDigit(timestamp.hour)}-${twoDigit(timestamp.minute)}-${twoDigit(timestamp.second)}.zip';
+  }
+
+  List<StrategyData> _sortedStrategiesForFolder(String? folderID) {
+    final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+        .values
+        .where((strategy) => strategy.folderID == folderID)
+        .toList();
+    strategies.sort((a, b) {
+      final nameCompare = a.name.compareTo(b.name);
+      if (nameCompare != 0) {
+        return nameCompare;
+      }
+      return a.id.compareTo(b.id);
+    });
+    return strategies;
+  }
+
+  List<Folder> _sortedFoldersForParent(String? parentID) {
+    final folders = Hive.box<Folder>(HiveBoxNames.foldersBox)
+        .values
+        .where((folder) => folder.parentID == parentID)
+        .toList();
+    folders.sort((a, b) {
+      final nameCompare = a.name.compareTo(b.name);
+      if (nameCompare != 0) {
+        return nameCompare;
+      }
+      return a.id.compareTo(b.id);
+    });
+    return folders;
+  }
+
+  ArchiveGlobals _buildLibraryGlobals() {
+    final profiles = Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
+        .values
+        .map(
+          (profile) => ArchiveThemeProfileEntry(
+            id: profile.id,
+            name: profile.name,
+            palette: profile.palette,
+            isBuiltIn: profile.isBuiltIn,
+          ),
+        )
+        .toList(growable: false);
+    final appPreferences =
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey);
+    final favoriteAgents =
+        Hive.box<bool>(HiveBoxNames.favoriteAgentsBox).keys.whereType<String>().toList()
+          ..sort();
+
+    return ArchiveGlobals(
+      themeProfiles: profiles,
+      defaultThemeProfileIdForNewStrategies:
+          appPreferences?.defaultThemeProfileIdForNewStrategies,
+      favoriteAgents: favoriteAgents,
+    );
+  }
+
+  Future<void> _writeArchiveManifest({
+    required _ArchiveExportState exportState,
+    required ArchiveType archiveType,
+    ArchiveGlobals? globals,
+  }) async {
+    final manifest = ArchiveManifest(
+      schemaVersion: archiveManifestSchemaVersion,
+      archiveType: archiveType,
+      exportedAt: DateTime.now().toUtc(),
+      appVersionNumber: Settings.versionNumber,
+      folders: exportState.folders,
+      strategies: exportState.strategies,
+      globals: globals,
+    );
+
+    final manifestFile =
+        File(path.join(exportState.rootDirectory.path, archiveMetadataFileName));
+    await manifestFile.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
+    );
   }
 
   MapThemePalette _resolveThemePaletteForExport(StrategyData strategy) {
@@ -1902,34 +3295,29 @@ class StrategyProvider extends Notifier<StrategyState> {
     return MapThemeProfilesProvider.immutableDefaultPalette;
   }
 
-  Future<void> zipStrategy({
+  Future<String> zipStrategy({
     required String id,
-    Directory? saveDir, // used when outputFilePath is not provided
-    String? outputFilePath, // exact .ica path from FilePicker
+    Directory? saveDir,
+    String? outputFilePath,
   }) async {
     final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
     if (strategy == null) {
       log("Couldn't find strategy to export");
-      return;
+      throw StateError("Couldn't find strategy to export");
     }
 
-    final pages = strategy.pages.map((p) => p.toJson(strategy.id)).toList();
-    final pageJson = jsonEncode(pages);
-    final exportPalette = _resolveThemePaletteForExport(strategy);
-    final paletteJson = jsonEncode(exportPalette.toJson());
-
-    final data = '''
-                  {
-                  "versionNumber": "${Settings.versionNumber}",
-                  "mapData": "${Maps.mapNames[strategy.mapData]}",
-                  "themePalette": $paletteJson,
-                  "pages": $pageJson
-                  }
-                ''';
+    final payload = {
+      "versionNumber": "${Settings.versionNumber}",
+      "mapData": "${Maps.mapNames[strategy.mapData]}",
+      "themePalette": _resolveThemePaletteForExport(strategy).toJson(),
+      if (strategy.themeProfileId != null)
+        "themeProfileId": strategy.themeProfileId,
+      "pages": strategy.pages.map((page) => page.toJson(strategy.id)).toList(),
+    };
+    final data = jsonEncode(payload);
 
     final sanitizedStrategyName = sanitizeFileName(strategy.name);
 
-    // Resolve output path and base name
     late final String outPath;
     late final String archiveBase;
     if (outputFilePath != null) {
@@ -1938,10 +3326,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     } else {
       final base = sanitizedStrategyName;
       var candidate = base;
-      var n = 1;
+      var index = 1;
       while (File(path.join(saveDir!.path, "$candidate.ica")).existsSync()) {
-        candidate = "${base}_$n";
-        n++;
+        candidate = "${base}_$index";
+        index++;
       }
       archiveBase = candidate;
       outPath = path.join(saveDir.path, "$archiveBase.ica");
@@ -1952,7 +3340,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final zipEncoder = ZipFileEncoder()..create(outPath);
 
-    final supportDirectory = await getApplicationSupportDirectory();
+    final supportDirectory = await _getApplicationSupportDirectoryOrSystemTemp();
     final customDirectory =
         Directory(path.join(supportDirectory.path, strategy.id));
     final imagesDirectory =
@@ -1967,6 +3355,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     zipEncoder.addArchiveFile(jsonArchiveFile);
     await zipEncoder.close();
+    return outPath;
   }
 
   Future<void> exportFile(String id) async {
@@ -1976,7 +3365,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       type: FileType.custom,
       dialogTitle: 'Please select an output file:',
       fileName: "${sanitizeFileName(state.stratName ?? "new strategy")}.ica",
-      allowedExtensions: [".ica"],
+      allowedExtensions: ["ica"],
     );
 
     if (outputFile == null) return;

@@ -22,6 +22,7 @@ import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
+import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderNavigator extends ConsumerStatefulWidget {
@@ -36,9 +37,13 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   bool _warnedOnce = false;
   bool _hasPromptedUpdateDialog = false;
   DesktopUpdaterController? _desktopUpdaterController;
+  final GlobalKey _importExportButtonKey = GlobalKey();
+  final ShadPopoverController _importExportPopoverController =
+      ShadPopoverController();
 
   @override
   void dispose() {
+    _importExportPopoverController.dispose();
     _desktopUpdaterController?.dispose();
     super.dispose();
   }
@@ -80,6 +85,65 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         return const DemoDialog();
       },
     );
+  }
+
+  void _showDesktopOnlyToast() {
+    Settings.showToast(
+      message: 'This feature is only supported in the Windows version.',
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
+    );
+  }
+
+  void _toggleImportExportPopover() {
+    _importExportPopoverController.toggle();
+  }
+
+  Future<void> handleImportIca() async {
+    if (kIsWeb) {
+      _showDesktopOnlyToast();
+      return;
+    }
+    try {
+      await ref.read(strategyProvider.notifier).loadFromFilePicker();
+    } on NewerVersionImportException {
+      Settings.showToast(
+        message: NewerVersionImportException.userMessage,
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+    }
+  }
+
+  Future<void> handleImportBackup() async {
+    if (kIsWeb) {
+      _showDesktopOnlyToast();
+      return;
+    }
+    try {
+      final result = await ref
+          .read(strategyProvider.notifier)
+          .importBackupFromFilePicker();
+      if (result.hasImports || result.issues.isNotEmpty) {
+        Settings.showToast(
+          message: buildImportSummaryMessage(result),
+          backgroundColor: result.hasImports
+              ? Settings.tacticalVioletTheme.primary
+              : Settings.tacticalVioletTheme.destructive,
+        );
+      }
+    } catch (_) {
+      Settings.showToast(
+        message: 'Failed to import backup archive.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+    }
+  }
+
+  Future<void> handleExportLibrary() async {
+    if (kIsWeb) {
+      _showDesktopOnlyToast();
+      return;
+    }
+    await ref.read(strategyProvider.notifier).exportLibrary();
   }
 
   @override
@@ -202,31 +266,61 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
               Row(
                 spacing: 15,
                 children: [
-                  ShadButton.secondary(
-                    onPressed: () async {
-                      if (kIsWeb) {
-                        Settings.showToast(
-                          message:
-                              'This feature is only supported in the Windows version.',
-                          backgroundColor:
-                              Settings.tacticalVioletTheme.destructive,
-                        );
-                        return;
-                      }
-                      try {
-                        await ref
-                            .read(strategyProvider.notifier)
-                            .loadFromFilePicker();
-                      } on NewerVersionImportException {
-                        Settings.showToast(
-                          message: NewerVersionImportException.userMessage,
-                          backgroundColor:
-                              Settings.tacticalVioletTheme.destructive,
-                        );
-                      }
+                  ShadPopover(
+                    controller: _importExportPopoverController,
+                    padding: const EdgeInsets.all(8),
+                    anchor: const ShadAnchor(
+                      offset: Offset(0, 8),
+                      childAlignment: Alignment.topLeft,
+                      overlayAlignment: Alignment.bottomLeft,
+                    ),
+                    popover: (context) {
+                      return SizedBox(
+                        width: 178,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            ShadButton.ghost(
+                              onPressed: handleImportIca,
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              leading: const Icon(
+                                Icons.file_download,
+                              ),
+                              child: const Text(
+                                'Import .ica',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ),
+                            ShadButton.ghost(
+                              onPressed: handleImportBackup,
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              leading: const Icon(
+                                Icons.archive_outlined,
+                              ),
+                              child: const Text('Import Backup',
+                                  style: TextStyle(color: Colors.white)),
+                            ),
+                            ShadButton.ghost(
+                              onPressed: handleExportLibrary,
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              leading: const Icon(
+                                Icons.backup_outlined,
+                              ),
+                              child: const Text('Export Library',
+                                  style: TextStyle(color: Colors.white)),
+                            ),
+                          ],
+                        ),
+                      );
                     },
-                    leading: const Icon(Icons.file_download),
-                    child: const Text('Import .ica'),
+                    child: ShadButton.secondary(
+                      key: _importExportButtonKey,
+                      onPressed: _toggleImportExportPopover,
+                      leading: const Icon(Icons.import_export),
+                      trailing: const Icon(Icons.keyboard_arrow_down),
+                      child: const Text('Import / Export'),
+                    ),
                   ),
                   ShadButton.secondary(
                     leading: const Icon(LucideIcons.folderPlus),
