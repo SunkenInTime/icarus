@@ -258,20 +258,21 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
 
   UtilityProviderSnapshot takeSnapshot() {
     return UtilityProviderSnapshot(
-      utilities:
-          state.map((utility) => utility.deepCopy<PlacedUtility>()).toList(),
+      utilities: state
+          .map((utility) => utility.snapshotCopy<PlacedUtility>())
+          .toList(),
       poppedUtilities: poppedUtilities
-          .map((utility) => utility.deepCopy<PlacedUtility>())
+          .map((utility) => utility.snapshotCopy<PlacedUtility>())
           .toList(),
     );
   }
 
   void restoreSnapshot(UtilityProviderSnapshot snapshot) {
     poppedUtilities = snapshot.poppedUtilities
-        .map((utility) => utility.deepCopy<PlacedUtility>())
+        .map((utility) => utility.snapshotCopy<PlacedUtility>())
         .toList();
     state = snapshot.utilities
-        .map((utility) => utility.deepCopy<PlacedUtility>())
+        .map((utility) => utility.snapshotCopy<PlacedUtility>())
         .toList();
   }
 }

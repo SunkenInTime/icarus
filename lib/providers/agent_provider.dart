@@ -370,16 +370,21 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
   AgentProviderSnapshot takeSnapshot() {
     return AgentProviderSnapshot(
-      agents: state.map((agent) => agent.deepCopy<PlacedAgentNode>()).toList(),
-      poppedAgents:
-          poppedAgents.map((agent) => agent.deepCopy<PlacedAgentNode>()).toList(),
+      agents:
+          state.map((agent) => agent.snapshotCopy<PlacedAgentNode>()).toList(),
+      poppedAgents: poppedAgents
+          .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
+          .toList(),
     );
   }
 
   void restoreSnapshot(AgentProviderSnapshot snapshot) {
-    poppedAgents =
-        snapshot.poppedAgents.map((agent) => agent.deepCopy<PlacedAgentNode>()).toList();
-    state = snapshot.agents.map((agent) => agent.deepCopy<PlacedAgentNode>()).toList();
+    poppedAgents = snapshot.poppedAgents
+        .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
+        .toList();
+    state = snapshot.agents
+        .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
+        .toList();
   }
 
   PlacedAgentNode _duplicateNode(

@@ -514,9 +514,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return [
         for (final agent in agents)
           switch (agent) {
-            PlacedAgent() =>
-              agent.copyWith(position: shift(agent.position))
-                ..isDeleted = agent.isDeleted,
+            PlacedAgent() => agent.copyWith(position: shift(agent.position))
+              ..isDeleted = agent.isDeleted,
             PlacedViewConeAgent() =>
               agent.copyWith(position: shift(agent.position))
                 ..isDeleted = agent.isDeleted,
@@ -1167,12 +1166,14 @@ class StrategyProvider extends Notifier<StrategyState> {
           Settings.versionNumber;
       _throwIfImportedVersionIsTooNew(versionNumber);
 
+      //Backwards compatibility for pre-pages exported strategies
       final List<DrawingElement> drawingData =
           DrawingProvider.fromJson(jsonEncode(json["drawingData"] ?? []));
-      final List<PlacedAgent> agentData = AgentProvider
-          .fromJson(jsonEncode(json["agentData"] ?? []))
-          .whereType<PlacedAgent>()
-          .toList(growable: false);
+
+      final List<PlacedAgent> agentData =
+          AgentProvider.fromJson(jsonEncode(json["agentData"] ?? []))
+              .whereType<PlacedAgent>()
+              .toList(growable: false);
 
       final List<PlacedAbility> abilityData =
           AbilityProvider.fromJson(jsonEncode(json["abilityData"] ?? []));

@@ -1317,4 +1317,64 @@ extension PlacedWidgetCopy on PlacedWidget {
       return PlacedWidget.fromJson(json) as T;
     }
   }
+
+  /// Agent/utility bulk-delete and transaction snapshots need preserved
+  /// undo/redo stacks. `deepCopy()` intentionally drops that JSON-excluded
+  /// state, while the other providers still rely on shallow list snapshots.
+  T snapshotCopy<T extends PlacedWidget>() {
+    final copied = _snapshotCloneWidget();
+    _copyHistoryTo(copied);
+    return copied as T;
+  }
+
+  PlacedWidget _snapshotCloneWidget() {
+    if (this is PlacedAgent) {
+      return (this as PlacedAgent).copyWith();
+    } else if (this is PlacedViewConeAgent) {
+      return (this as PlacedViewConeAgent).copyWith();
+    } else if (this is PlacedCircleAgent) {
+      return (this as PlacedCircleAgent).copyWith();
+    } else if (this is PlacedUtility) {
+      return (this as PlacedUtility).copyWith();
+    }
+
+    throw UnsupportedError(
+      'Snapshot copy is only supported for agent and utility widgets.',
+    );
+  }
+
+  void _copyHistoryTo(PlacedWidget target) {
+    target._actionHistory.addAll(_actionHistory.map(_cloneWidgetAction));
+    target._poppedAction.addAll(_poppedAction.map(_cloneWidgetAction));
+  }
+
+  WidgetAction _cloneWidgetAction(WidgetAction action) {
+    if (action is PositionAction) {
+      return PositionAction(position: action.position);
+    } else if (action is ViewConeAgentGeometryAction) {
+      return ViewConeAgentGeometryAction(
+        rotation: action.rotation,
+        length: action.length,
+      );
+    } else if (action is CircleAgentGeometryAction) {
+      return CircleAgentGeometryAction(
+        diameterMeters: action.diameterMeters,
+        colorValue: action.colorValue,
+        opacityPercent: action.opacityPercent,
+      );
+    } else if (action is RotationAction) {
+      return RotationAction(rotation: action.rotation, length: action.length);
+    } else if (action is CustomShapeGeometryAction) {
+      return CustomShapeGeometryAction(
+        position: action.position,
+        customDiameter: action.customDiameter,
+        customWidth: action.customWidth,
+        customLength: action.customLength,
+      );
+    }
+
+    throw UnsupportedError(
+      'Unsupported action type ${action.runtimeType} for snapshot copying.',
+    );
+  }
 }
