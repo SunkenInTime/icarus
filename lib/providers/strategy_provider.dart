@@ -1215,8 +1215,17 @@ class StrategyProvider extends Notifier<StrategyState> {
       return const ImportBatchResult.empty();
     }
 
+    final PlatformFile pickedFile = result.files.single;
+    final String? filePath = pickedFile.path;
+
+    if (filePath == null || filePath.isEmpty) {
+      // FilePicker can return files without a valid path (e.g. in-memory bytes).
+      // In that case, return an empty result instead of throwing.
+      return const ImportBatchResult.empty();
+    }
+
     return _importZipArchive(
-      zipFile: File(result.files.single.path!),
+      zipFile: File(filePath),
       parentFolderId: null,
     );
   }
