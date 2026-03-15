@@ -339,6 +339,7 @@ class LineUpProvider extends Notifier<LineUpState> {
       case ActionType.edit:
       //Do nothing
       case ActionType.bulkDeletion:
+      case ActionType.transaction:
         return;
     }
   }
@@ -362,6 +363,7 @@ class LineUpProvider extends Notifier<LineUpState> {
       case ActionType.edit:
       //Do nothing
       case ActionType.bulkDeletion:
+      case ActionType.transaction:
         return;
     }
   }

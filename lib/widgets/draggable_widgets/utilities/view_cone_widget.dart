@@ -10,10 +10,19 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
 class ViewConeWidget extends ConsumerWidget {
+  static const Offset anchorPointVirtual = Offset(
+    ViewConeUtility.maxLength,
+    ViewConeUtility.maxLength + ViewConeUtility.iconTopOffset,
+  );
+  static const double totalWidthVirtual = ViewConeUtility.maxLength * 2;
+  static double get totalHeightVirtual =>
+      anchorPointVirtual.dy + (Settings.utilityIconSize / 2);
+
   final String? id;
   final double angle;
   final double? rotation;
   final double? length;
+  final bool showCenterMarker;
 
   const ViewConeWidget({
     super.key,
@@ -21,6 +30,7 @@ class ViewConeWidget extends ConsumerWidget {
     required this.angle,
     this.rotation,
     this.length,
+    this.showCenterMarker = true,
   });
 
   @override
@@ -46,16 +56,19 @@ class ViewConeWidget extends ConsumerWidget {
 
     // Scale length to screen coordinates
     final scaledLength = currentLength * coord.scaleFactor;
+    final scaledAnchor = anchorPointVirtual.scale(
+      coord.scaleFactor,
+      coord.scaleFactor,
+    );
+    final scaledIconSize = Settings.utilityIconSize * coord.scaleFactor;
 
     // Container size: width = 2*length (cone can extend left/right), height = length (cone extends up)
     // The apex (anchor point) is at the bottom center
     final containerWidth = scaledLength * 2;
     final containerHeight = scaledLength;
 
-    final totalHeight =
-        (ViewConeUtility.maxLength + 7.5 + (Settings.utilityIconSize / 2)) *
-            coord.scaleFactor;
-    final totalWidth = (ViewConeUtility.maxLength * 2) * coord.scaleFactor;
+    final totalHeight = totalHeightVirtual * coord.scaleFactor;
+    final totalWidth = totalWidthVirtual * coord.scaleFactor;
 
     return SizedBox(
       width: totalWidth,
@@ -68,8 +81,8 @@ class ViewConeWidget extends ConsumerWidget {
             ),
           ),
           Positioned(
-            bottom: Settings.utilityIconSize / 2 * coord.scaleFactor,
-            left: (totalWidth - containerWidth) / 2,
+            top: scaledAnchor.dy - containerHeight,
+            left: scaledAnchor.dx - (containerWidth / 2),
             child: IgnorePointer(
               child: SizedBox(
                 width: containerWidth,
@@ -84,39 +97,32 @@ class ViewConeWidget extends ConsumerWidget {
               ),
             ),
           ),
-          Positioned(
-            bottom: 0,
-            left:
-                (totalWidth - Settings.utilityIconSize * coord.scaleFactor) / 2,
-            child: MouseWatch(
-              deleteTarget: (id?.isNotEmpty ?? false)
-                  ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
-                  : null,
-              cursor: SystemMouseCursors.click,
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: Settings.tacticalVioletTheme.border,
+          if (showCenterMarker)
+            Positioned(
+              top: scaledAnchor.dy - (scaledIconSize / 2),
+              left: scaledAnchor.dx - (scaledIconSize / 2),
+              child: MouseWatch(
+                deleteTarget: (id?.isNotEmpty ?? false)
+                    ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
+                    : null,
+                cursor: SystemMouseCursors.click,
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: Settings.tacticalVioletTheme.border,
+                    ),
+                    color: Settings.tacticalVioletTheme.card,
                   ),
-                  color: Settings.tacticalVioletTheme.card,
+                  width: scaledIconSize,
+                  height: scaledIconSize,
+                  child: Image.asset('assets/eye.webp'),
                 ),
-                width: Settings.utilityIconSize * coord.scaleFactor,
-                height: Settings.utilityIconSize * coord.scaleFactor,
-                child: Image.asset('assets/eye.webp'),
               ),
             ),
-          ),
         ],
       ),
     );
-  }
-
-  /// Get the anchor point (bottom center) for this view cone
-  /// This is where the utility position should align
-  static Offset getAnchorPoint(double scaledLength) {
-    // Bottom center of the container
-    return Offset(scaledLength, scaledLength);
   }
 }
 

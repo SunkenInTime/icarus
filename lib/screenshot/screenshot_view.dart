@@ -63,7 +63,7 @@ class ScreenshotView extends ConsumerWidget {
   });
   final StrategyState strategyState;
   final MapValue mapValue;
-  final List<PlacedAgent> agents;
+  final List<PlacedAgentNode> agents;
   final List<PlacedAbility> abilities;
   final List<PlacedText> text;
   final List<PlacedImage> images;

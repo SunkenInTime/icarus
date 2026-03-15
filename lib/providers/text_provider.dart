@@ -119,6 +119,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
 
         state = newState;
       case ActionType.bulkDeletion:
+      case ActionType.transaction:
         return;
     }
   }
@@ -142,6 +143,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
 
           newState[index].redoAction();
         case ActionType.bulkDeletion:
+        case ActionType.transaction:
           return;
       }
     } catch (_) {

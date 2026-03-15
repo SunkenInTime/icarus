@@ -3,6 +3,7 @@ import 'dart:typed_data' as typed;
 
 import 'package:flutter/material.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:json_annotation/json_annotation.dart';
 
 class OffsetConverter implements JsonConverter<Offset, Map<String, dynamic>> {
@@ -10,7 +11,10 @@ class OffsetConverter implements JsonConverter<Offset, Map<String, dynamic>> {
 
   @override
   Offset fromJson(Map<String, dynamic> json) {
-    return Offset(json['dx'] as double, json['dy'] as double);
+    return Offset(
+      (json['dx'] as num).toDouble(),
+      (json['dy'] as num).toDouble(),
+    );
   }
 
   @override
@@ -153,4 +157,68 @@ class OffsetListConverter
   List<dynamic> toJson(List<Offset> offsets) {
     return offsets.map(_offsetConverter.toJson).toList();
   }
+}
+
+class AgentTypeCompatConverter implements JsonConverter<AgentType, Object?> {
+  const AgentTypeCompatConverter();
+
+  @override
+  AgentType fromJson(Object? json) {
+    if (json is AgentType) return json;
+    if (json is String) {
+      return AgentType.values.firstWhere(
+        (value) => value.name == json,
+      );
+    }
+    if (json is int && json >= 0 && json < AgentType.values.length) {
+      return AgentType.values[json];
+    }
+    throw ArgumentError.value(json, 'json', 'Unsupported AgentType value');
+  }
+
+  @override
+  Object toJson(AgentType object) => object.name;
+}
+
+class AgentStateCompatConverter implements JsonConverter<AgentState, Object?> {
+  const AgentStateCompatConverter();
+
+  @override
+  AgentState fromJson(Object? json) {
+    if (json is AgentState) return json;
+    if (json is String) {
+      return AgentState.values.firstWhere(
+        (value) => value.name == json,
+        orElse: () => AgentState.none,
+      );
+    }
+    if (json is int && json >= 0 && json < AgentState.values.length) {
+      return AgentState.values[json];
+    }
+    return AgentState.none;
+  }
+
+  @override
+  Object toJson(AgentState object) => object.name;
+}
+
+class UtilityTypeCompatConverter implements JsonConverter<UtilityType, Object?> {
+  const UtilityTypeCompatConverter();
+
+  @override
+  UtilityType fromJson(Object? json) {
+    if (json is UtilityType) return json;
+    if (json is String) {
+      return UtilityType.values.firstWhere(
+        (value) => value.name == json,
+      );
+    }
+    if (json is int && json >= 0 && json < UtilityType.values.length) {
+      return UtilityType.values[json];
+    }
+    throw ArgumentError.value(json, 'json', 'Unsupported UtilityType value');
+  }
+
+  @override
+  Object toJson(UtilityType object) => object.name;
 }

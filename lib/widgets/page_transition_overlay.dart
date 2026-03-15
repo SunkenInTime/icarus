@@ -13,8 +13,40 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/placed_circle_agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
+
+Offset _overlayScreenPosition({
+  required PlacedWidget widget,
+  required CoordinateSystem coordinateSystem,
+  required double agentSize,
+  required double mapScale,
+  Offset? coordinatePosition,
+}) {
+  final screen = screenPositionForWidget(
+    widget: widget,
+    coordinateSystem: coordinateSystem,
+    coordinatePosition: coordinatePosition,
+  );
+  if (widget is PlacedViewConeAgent) {
+    return screen -
+        viewConeAgentCompositeAgentOffsetScreen(
+          coordinateSystem: coordinateSystem,
+          agentSize: agentSize,
+        );
+  }
+  if (widget is PlacedCircleAgent) {
+    return screen -
+        circleAgentCompositeAgentOffsetScreen(
+          coordinateSystem: coordinateSystem,
+          agentSize: agentSize,
+          mapScale: mapScale,
+        );
+  }
+  return screen;
+}
 
 class PageTransitionOverlay extends ConsumerStatefulWidget {
   const PageTransitionOverlay({super.key});
@@ -88,21 +120,27 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     });
   }
 
-  Offset _startScreenPosition(
-      PageTransitionEntry entry, CoordinateSystem coordinateSystem) {
-    return screenPositionForWidget(
+  Offset _startScreenPosition(PageTransitionEntry entry,
+      CoordinateSystem coordinateSystem, double agentSize) {
+    final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0;
+    return _overlayScreenPosition(
       widget: entry.from ?? entry.to!,
       coordinateSystem: coordinateSystem,
       coordinatePosition: entry.startPos,
+      agentSize: agentSize,
+      mapScale: mapScale,
     );
   }
 
-  Offset _endScreenPosition(
-      PageTransitionEntry entry, CoordinateSystem coordinateSystem) {
-    return screenPositionForWidget(
+  Offset _endScreenPosition(PageTransitionEntry entry,
+      CoordinateSystem coordinateSystem, double agentSize) {
+    final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0;
+    return _overlayScreenPosition(
       widget: entry.to ?? entry.from!,
       coordinateSystem: coordinateSystem,
       coordinatePosition: entry.endPos,
+      agentSize: agentSize,
+      mapScale: mapScale,
     );
   }
 
@@ -121,7 +159,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
         return _overlayItem(
           key: ValueKey('none_${entry.id}'),
           widget: entry.to!,
-          pos: _endScreenPosition(entry, coordinateSystem),
+          pos: _endScreenPosition(entry, coordinateSystem, agentSize),
           opacity: 1,
           length: entry.endLength,
           armLengthsMeters: entry.endArmLengths,
@@ -136,7 +174,11 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           abilitySize: abilitySize,
         );
       case TransitionKind.disappear:
-        final start = _startScreenPosition(entry, coordinateSystem).translate(
+        final start = _startScreenPosition(
+          entry,
+          coordinateSystem,
+          agentSize,
+        ).translate(
           -directionSign * directionalOffset * t,
           0,
         );
@@ -158,8 +200,8 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           abilitySize: abilitySize,
         );
       case TransitionKind.move:
-        final start = _startScreenPosition(entry, coordinateSystem);
-        final end = _endScreenPosition(entry, coordinateSystem);
+        final start = _startScreenPosition(entry, coordinateSystem, agentSize);
+        final end = _endScreenPosition(entry, coordinateSystem, agentSize);
         return _overlayItem(
           key: ValueKey('move_${entry.id}'),
           widget: entry.to!,
@@ -191,7 +233,11 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           abilitySize: abilitySize,
         );
       case TransitionKind.appear:
-        final end = _endScreenPosition(entry, coordinateSystem).translate(
+        final end = _endScreenPosition(
+          entry,
+          coordinateSystem,
+          agentSize,
+        ).translate(
           directionSign * directionalOffset * (1 - t),
           0,
         );
@@ -325,6 +371,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       mapScale,
       length: length,
       armLengthsMeters: armLengthsMeters,
+      rotation: rotation,
       scale: scale,
       textSize: textSize,
       customDiameter: customDiameter,
@@ -389,6 +436,7 @@ class PlacedWidgetPreview {
     double mapScale, {
     double? length,
     List<double>? armLengthsMeters,
+    double? rotation,
     double? scale,
     double? textSize,
     double? customDiameter,
@@ -405,6 +453,20 @@ class PlacedWidgetPreview {
         agent: AgentData.agents[w.type]!,
         state: w.state,
         deadStateProgress: deadStateProgress,
+        forcedAgentSize: agentSize,
+      );
+    }
+    if (w is PlacedViewConeAgent) {
+      return ViewConeAgentComposite(
+        agent: w,
+        rotation: rotation ?? w.rotation,
+        length: length ?? w.length,
+        forcedAgentSize: agentSize,
+      );
+    }
+    if (w is PlacedCircleAgent) {
+      return CircleAgentComposite(
+        agent: w.copyWith(diameterMeters: customDiameter ?? w.diameterMeters),
         forcedAgentSize: agentSize,
       );
     }
@@ -522,9 +584,11 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
       required double abilitySize,
       required double agentSize}) {
     final coord = CoordinateSystem.instance;
-    final scaledPosition = screenPositionForWidget(
+    final scaledPosition = _overlayScreenPosition(
       widget: widget,
       coordinateSystem: coord,
+      agentSize: agentSize,
+      mapScale: mapScale,
     );
 
     if (widget is PlacedUtility && widget.rotation != 0) {

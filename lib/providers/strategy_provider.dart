@@ -565,11 +565,19 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     Offset shift(Offset offset) => offset.translate(padding, 0);
 
-    List<PlacedAgent> shiftAgents(List<PlacedAgent> agents) {
+    List<PlacedAgentNode> shiftAgentNodes(List<PlacedAgentNode> agents) {
       return [
         for (final agent in agents)
-          agent.copyWith(position: shift(agent.position))
-            ..isDeleted = agent.isDeleted
+          switch (agent) {
+            PlacedAgent() => agent.copyWith(position: shift(agent.position))
+              ..isDeleted = agent.isDeleted,
+            PlacedViewConeAgent() =>
+              agent.copyWith(position: shift(agent.position))
+                ..isDeleted = agent.isDeleted,
+            PlacedCircleAgent() =>
+              agent.copyWith(position: shift(agent.position))
+                ..isDeleted = agent.isDeleted,
+          },
       ];
     }
 
@@ -610,7 +618,6 @@ class StrategyProvider extends Notifier<StrategyState> {
             position: shift(utility.position),
             id: utility.id,
             angle: utility.angle,
-            attachedAgentId: utility.attachedAgentId,
             customDiameter: utility.customDiameter,
             customWidth: utility.customWidth,
             customLength: utility.customLength,
@@ -705,7 +712,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               sortIndex: page.sortIndex,
               name: page.name,
               id: page.id,
-              agentData: shiftAgents(page.agentData),
+              agentData: shiftAgentNodes(page.agentData),
               abilityData: shiftAbilities(page.abilityData),
               textData: shiftTexts(page.textData),
               imageData: shiftImages(page.imageData),
@@ -1613,10 +1620,14 @@ class StrategyProvider extends Notifier<StrategyState> {
           Settings.versionNumber;
       _throwIfImportedVersionIsTooNew(versionNumber);
 
+      //Backwards compatibility for pre-pages exported strategies
       final List<DrawingElement> drawingData =
           DrawingProvider.fromJson(jsonEncode(json["drawingData"] ?? []));
-      List<PlacedAgent> agentData =
-          AgentProvider.fromJson(jsonEncode(json["agentData"] ?? []));
+
+      final List<PlacedAgent> agentData =
+          AgentProvider.fromJson(jsonEncode(json["agentData"] ?? []))
+              .whereType<PlacedAgent>()
+              .toList(growable: false);
 
       final List<PlacedAbility> abilityData =
           AbilityProvider.fromJson(jsonEncode(json["abilityData"] ?? []));

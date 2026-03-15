@@ -194,6 +194,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
         log("Current rotation: ${newState[index].rotation} Current length: ${newState[index].length}");
         state = newState;
       case ActionType.bulkDeletion:
+      case ActionType.transaction:
         return;
     }
   }
@@ -215,6 +216,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
           final index = PlacedWidget.getIndexByID(action.id, newState);
           newState[index].redoAction();
         case ActionType.bulkDeletion:
+        case ActionType.transaction:
           return;
       }
     } catch (_) {

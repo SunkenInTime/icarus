@@ -56,6 +56,10 @@ class UtilityData {
         type == UtilityType.customRectangle;
   }
 
+  static bool isAgentAttachable(UtilityType type) {
+    return isViewCone(type) || type == UtilityType.customCircle;
+  }
+
   static ViewConeUtility getViewConePreset(UtilityType type) {
     return utilityWidgets[type]! as ViewConeUtility;
   }
@@ -238,6 +242,7 @@ sealed class Utilities {
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      bool showCenterMarker = true,
       int? colorValue,
       int? opacityPercent});
   Offset getSize(
@@ -262,6 +267,7 @@ class ImageUtility extends Utilities {
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      bool showCenterMarker = true,
       int? colorValue,
       int? opacityPercent}) {
     return ImageUtilityWidget(imagePath: imagePath, size: size, id: id);
@@ -312,6 +318,7 @@ class ViewConeUtility extends Utilities {
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      bool showCenterMarker = true,
       int? colorValue,
       int? opacityPercent}) {
     return ViewConeWidget(
@@ -319,6 +326,7 @@ class ViewConeUtility extends Utilities {
       angle: angle,
       rotation: rotation,
       length: length ?? defaultLength,
+      showCenterMarker: showCenterMarker,
     );
   }
 
@@ -333,12 +341,12 @@ class ViewConeUtility extends Utilities {
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters}) {
-    return const Offset(maxLength, maxLength + iconTopOffset);
+    return ViewConeWidget.anchorPointVirtual;
   }
 
   /// Center point of the eye icon used as canonical placement anchor.
   Offset getCenterPoint() {
-    return const Offset(maxLength, maxLength + iconTopOffset);
+    return getAnchorPoint();
   }
 
   /// Returns the drag anchor point in physical pixels.
@@ -356,7 +364,10 @@ class ViewConeUtility extends Utilities {
       double? widthMeters,
       double? rectLengthMeters,
       double? mapScale}) {
-    return const Offset(maxLength * 2, maxLength + iconTopOffset);
+    return Offset(
+      ViewConeWidget.totalWidthVirtual,
+      ViewConeWidget.totalHeightVirtual,
+    );
   }
   // /// Get anchor point with length - bottom center of the view cone
   // /// Similar to how SquareAbility calculates its anchor
@@ -398,6 +409,7 @@ class CustomCircleUtility extends Utilities {
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      bool showCenterMarker = true,
       int? colorValue,
       int? opacityPercent}) {
     assert(mapScale != null, 'mapScale must be provided');
@@ -410,6 +422,7 @@ class CustomCircleUtility extends Utilities {
       diameterMeters: diameterMeters,
       colorValue: colorValue,
       opacityPercent: opacityPercent,
+      showCenterMarker: showCenterMarker,
     );
   }
 
@@ -449,6 +462,7 @@ class CustomRectangleUtility extends Utilities {
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      bool showCenterMarker = true,
       int? colorValue,
       int? opacityPercent}) {
     assert(mapScale != null, 'mapScale must be provided');

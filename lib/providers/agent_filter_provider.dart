@@ -27,7 +27,7 @@ class AgentFilterProvider extends Notifier<AgentFilterState> {
       _refreshAgentList();
     });
 
-    ref.listen<List<PlacedAgent>>(agentProvider, (_, __) {
+    ref.listen<List<PlacedAgentNode>>(agentProvider, (_, __) {
       if (state.currentFilter == FilterState.onMap) {
         _refreshAgentList();
       }

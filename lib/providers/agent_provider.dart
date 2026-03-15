@@ -7,16 +7,17 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:icarus/const/placed_classes.dart';
 
 final agentProvider =
-    NotifierProvider<AgentProvider, List<PlacedAgent>>(AgentProvider.new);
+    NotifierProvider<AgentProvider, List<PlacedAgentNode>>(AgentProvider.new);
 
 class AgentProviderSnapshot {
-  final List<PlacedAgent> agents;
-  final List<PlacedAgent> poppedAgents;
+  final List<PlacedAgentNode> agents;
+  final List<PlacedAgentNode> poppedAgents;
 
   const AgentProviderSnapshot({
     required this.agents,
@@ -24,16 +25,16 @@ class AgentProviderSnapshot {
   });
 }
 
-class AgentProvider extends Notifier<List<PlacedAgent>> {
-  List<PlacedAgent> poppedAgents = [];
+class AgentProvider extends Notifier<List<PlacedAgentNode>> {
+  List<PlacedAgentNode> poppedAgents = [];
   static const _uuid = Uuid();
 
   @override
-  List<PlacedAgent> build() {
+  List<PlacedAgentNode> build() {
     return [];
   }
 
-  void addAgent(PlacedAgent placedAgent) {
+  void addAgent(PlacedAgentNode placedAgent) {
     final action = UserAction(
       type: ActionType.addition,
       id: placedAgent.id,
@@ -50,8 +51,7 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
     final index = PlacedWidget.getIndexByID(id, newState);
 
     if (index < 0) return;
-    final agent = newState.removeAt(index);
-    poppedAgents.add(agent);
+    poppedAgents.add(newState.removeAt(index));
 
     state = newState;
   }
@@ -75,12 +75,11 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
     final newState = [...state];
 
     final index = PlacedWidget.getIndexByID(id, newState);
-    // ADD a check that if the position is not outt of the screen
 
-    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
+    final agentSize = ref.read(strategySettingsProvider).agentSize;
 
     final centerPosition =
-        Offset(position.dx + abilitySize / 2, position.dy + abilitySize / 2);
+        Offset(position.dx + agentSize / 2, position.dy + agentSize / 2);
     final coordinateSystem = CoordinateSystem.instance;
 
     if (coordinateSystem.isOutOfBounds(centerPosition)) {
@@ -114,9 +113,123 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
 
     final sourceAgent = state[sourceIndex];
     final duplicatedAgent =
-        sourceAgent.copyWith(id: _uuid.v4(), position: position);
+        _duplicateNode(sourceAgent, id: _uuid.v4(), position: position);
     addAgent(duplicatedAgent);
     return duplicatedAgent.id;
+  }
+
+  void updateViewConeHistory(String id) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+    final node = newState[index];
+    if (node is! PlacedViewConeAgent) return;
+    node.updateGeometryHistory();
+    state = newState;
+  }
+
+  void updateViewConeGeometry({
+    required String id,
+    required double rotation,
+    required double length,
+  }) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+    final node = newState[index];
+    if (node is! PlacedViewConeAgent) return;
+    node.updateGeometry(newRotation: rotation, newLength: length);
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
+        );
+    state = newState;
+  }
+
+  void updateCircleGeometry({
+    required String id,
+    required double diameterMeters,
+    required int colorValue,
+    required int opacityPercent,
+  }) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+    final node = newState[index];
+    if (node is! PlacedCircleAgent) return;
+    final hasChange = node.diameterMeters != diameterMeters ||
+        node.colorValue != colorValue ||
+        node.opacityPercent != opacityPercent;
+    if (!hasChange) return;
+    node.updateGeometryHistory();
+    node.updateGeometry(
+      newDiameterMeters: diameterMeters,
+      newColorValue: colorValue,
+      newOpacityPercent: opacityPercent,
+    );
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
+        );
+    state = newState;
+  }
+
+  bool convertPlainAgentToViewCone({
+    required String id,
+    required UtilityType presetType,
+    required double rotation,
+    required double length,
+  }) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return false;
+    final node = newState[index];
+    if (node is! PlacedAgent) return false;
+
+    newState[index] = PlacedViewConeAgent(
+      id: node.id,
+      position: node.position,
+      type: node.type,
+      isAlly: node.isAlly,
+      state: node.state,
+      presetType: presetType,
+      rotation: rotation,
+      length: length,
+    )..isDeleted = node.isDeleted;
+
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
+        );
+    state = newState;
+    return true;
+  }
+
+  bool convertPlainAgentToCircle({
+    required String id,
+    required double diameterMeters,
+    required int colorValue,
+    required int opacityPercent,
+  }) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return false;
+    final node = newState[index];
+    if (node is! PlacedAgent) return false;
+
+    newState[index] = PlacedCircleAgent(
+      id: node.id,
+      position: node.position,
+      type: node.type,
+      isAlly: node.isAlly,
+      state: node.state,
+      diameterMeters: diameterMeters,
+      colorValue: colorValue,
+      opacityPercent: opacityPercent,
+    )..isDeleted = node.isDeleted;
+
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
+        );
+    state = newState;
+    return true;
   }
 
   void undoAction(UserAction action) {
@@ -126,19 +239,25 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
       case ActionType.addition:
         log("We are attmepting to remove");
         removeAgent(action.id);
+        return;
       case ActionType.deletion:
-        if (poppedAgents.isEmpty) {
+        final index = PlacedWidget.getIndexByID(action.id, poppedAgents);
+        if (index < 0) {
           log("Popped agents is empty");
           return;
         }
         log("I tried to remove a deleted item");
         final newState = [...state];
 
-        newState.add(poppedAgents.removeLast());
+        final restoredAgent = poppedAgents.removeAt(index);
+        newState.add(restoredAgent);
         state = newState;
+        return;
       case ActionType.edit:
         undoPosition(action.id);
+        return;
       case ActionType.bulkDeletion:
+      case ActionType.transaction:
         return;
     }
   }
@@ -161,22 +280,32 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
       switch (action.type) {
         case ActionType.addition:
           final index = PlacedWidget.getIndexByID(action.id, poppedAgents);
-          newState.add(poppedAgents.removeAt(index));
+          if (index < 0) return;
+          final restoredAgent = poppedAgents.removeAt(index);
+          newState.add(restoredAgent);
+          state = newState;
+          return;
 
         case ActionType.deletion:
-          final index = PlacedWidget.getIndexByID(action.id, poppedAgents);
-
-          poppedAgents.add(newState.removeAt(index));
+          final index = PlacedWidget.getIndexByID(action.id, newState);
+          if (index < 0) return;
+          final removedAgent = newState.removeAt(index);
+          poppedAgents.add(removedAgent);
+          state = newState;
+          return;
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
+          if (index < 0) return;
           newState[index].redoAction();
+          state = newState;
+          return;
         case ActionType.bulkDeletion:
+        case ActionType.transaction:
           return;
       }
     } catch (_) {
       log("failed to find index");
     }
-    state = newState;
   }
 
   String toJson() {
@@ -185,21 +314,21 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
     return jsonEncode(jsonList);
   }
 
-  static String objectToJson(List<PlacedAgent> agents) {
+  static String objectToJson(List<PlacedAgentNode> agents) {
     final List<Map<String, dynamic>> jsonList =
         agents.map((agent) => agent.toJson()).toList();
     return jsonEncode(jsonList);
   }
 
-  void fromHive(List<PlacedAgent> hiveAgents) {
+  void fromHive(List<PlacedAgentNode> hiveAgents) {
     poppedAgents = [];
     state = hiveAgents;
   }
 
-  static List<PlacedAgent> fromJson(String jsonString) {
+  static List<PlacedAgentNode> fromJson(String jsonString) {
     final List<dynamic> jsonList = jsonDecode(jsonString);
     return jsonList
-        .map((json) => PlacedAgent.fromJson(json as Map<String, dynamic>))
+        .map((json) => PlacedAgentNode.fromJson(json as Map<String, dynamic>))
         .toList();
   }
 
@@ -207,7 +336,7 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
   String toString() {
     String output = "[";
 
-    for (PlacedAgent agent in state) {
+    for (final agent in state) {
       output += "Name: ${agent.type}, Position: ${agent.position}, ";
     }
 
@@ -241,13 +370,32 @@ class AgentProvider extends Notifier<List<PlacedAgent>> {
 
   AgentProviderSnapshot takeSnapshot() {
     return AgentProviderSnapshot(
-      agents: [...state],
-      poppedAgents: [...poppedAgents],
+      agents:
+          state.map((agent) => agent.snapshotCopy<PlacedAgentNode>()).toList(),
+      poppedAgents: poppedAgents
+          .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
+          .toList(),
     );
   }
 
   void restoreSnapshot(AgentProviderSnapshot snapshot) {
-    poppedAgents = [...snapshot.poppedAgents];
-    state = [...snapshot.agents];
+    poppedAgents = snapshot.poppedAgents
+        .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
+        .toList();
+    state = snapshot.agents
+        .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
+        .toList();
+  }
+
+  PlacedAgentNode _duplicateNode(
+    PlacedAgentNode source, {
+    required String id,
+    required Offset position,
+  }) {
+    return switch (source) {
+      PlacedAgent() => source.copyWith(id: id, position: position),
+      PlacedViewConeAgent() => source.copyWith(id: id, position: position),
+      PlacedCircleAgent() => source.copyWith(id: id, position: position),
+    };
   }
 }

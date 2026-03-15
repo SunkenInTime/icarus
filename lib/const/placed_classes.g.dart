@@ -65,14 +65,15 @@ Map<String, dynamic> _$PlacedImageToJson(PlacedImage instance) =>
     };
 
 PlacedAgent _$PlacedAgentFromJson(Map<String, dynamic> json) => PlacedAgent(
-      type: $enumDecode(_$AgentTypeEnumMap, json['type']),
+      type: const AgentTypeCompatConverter().fromJson(json['type']),
       position: const OffsetConverter()
           .fromJson(json['position'] as Map<String, dynamic>),
       id: json['id'] as String,
       isAlly: json['isAlly'] as bool? ?? true,
       lineUpID: json['lineUpID'] as String?,
-      state: $enumDecodeNullable(_$AgentStateEnumMap, json['state']) ??
-          AgentState.none,
+      state: json['state'] == null
+          ? AgentState.none
+          : const AgentStateCompatConverter().fromJson(json['state']),
     )..isDeleted = json['isDeleted'] as bool? ?? false;
 
 Map<String, dynamic> _$PlacedAgentToJson(PlacedAgent instance) =>
@@ -80,47 +81,70 @@ Map<String, dynamic> _$PlacedAgentToJson(PlacedAgent instance) =>
       'id': instance.id,
       'isDeleted': instance.isDeleted,
       'position': const OffsetConverter().toJson(instance.position),
-      'type': _$AgentTypeEnumMap[instance.type]!,
+      'type': const AgentTypeCompatConverter().toJson(instance.type),
       'isAlly': instance.isAlly,
-      'state': _$AgentStateEnumMap[instance.state]!,
+      'state': const AgentStateCompatConverter().toJson(instance.state),
       'lineUpID': instance.lineUpID,
     };
 
-const _$AgentTypeEnumMap = {
-  AgentType.jett: 'jett',
-  AgentType.raze: 'raze',
-  AgentType.pheonix: 'pheonix',
-  AgentType.astra: 'astra',
-  AgentType.clove: 'clove',
-  AgentType.breach: 'breach',
-  AgentType.iso: 'iso',
-  AgentType.viper: 'viper',
-  AgentType.deadlock: 'deadlock',
-  AgentType.yoru: 'yoru',
-  AgentType.sova: 'sova',
-  AgentType.skye: 'skye',
-  AgentType.kayo: 'kayo',
-  AgentType.killjoy: 'killjoy',
-  AgentType.brimstone: 'brimstone',
-  AgentType.cypher: 'cypher',
-  AgentType.chamber: 'chamber',
-  AgentType.fade: 'fade',
-  AgentType.gekko: 'gekko',
-  AgentType.harbor: 'harbor',
-  AgentType.neon: 'neon',
-  AgentType.omen: 'omen',
-  AgentType.reyna: 'reyna',
-  AgentType.sage: 'sage',
-  AgentType.vyse: 'vyse',
-  AgentType.tejo: 'tejo',
-  AgentType.waylay: 'waylay',
-  AgentType.veto: 'veto',
-};
+PlacedViewConeAgent _$PlacedViewConeAgentFromJson(Map<String, dynamic> json) =>
+    PlacedViewConeAgent(
+      type: const AgentTypeCompatConverter().fromJson(json['type']),
+      position: const OffsetConverter()
+          .fromJson(json['position'] as Map<String, dynamic>),
+      id: json['id'] as String,
+      presetType:
+          const UtilityTypeCompatConverter().fromJson(json['presetType']),
+      rotation: (json['rotation'] as num?)?.toDouble() ?? 0,
+      length: (json['length'] as num?)?.toDouble() ?? 0,
+      isAlly: json['isAlly'] as bool? ?? true,
+      state: json['state'] == null
+          ? AgentState.none
+          : const AgentStateCompatConverter().fromJson(json['state']),
+    )..isDeleted = json['isDeleted'] as bool? ?? false;
 
-const _$AgentStateEnumMap = {
-  AgentState.dead: 'dead',
-  AgentState.none: 'none',
-};
+Map<String, dynamic> _$PlacedViewConeAgentToJson(
+        PlacedViewConeAgent instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'isDeleted': instance.isDeleted,
+      'position': const OffsetConverter().toJson(instance.position),
+      'type': const AgentTypeCompatConverter().toJson(instance.type),
+      'isAlly': instance.isAlly,
+      'state': const AgentStateCompatConverter().toJson(instance.state),
+      'presetType':
+          const UtilityTypeCompatConverter().toJson(instance.presetType),
+      'rotation': instance.rotation,
+      'length': instance.length,
+    };
+
+PlacedCircleAgent _$PlacedCircleAgentFromJson(Map<String, dynamic> json) =>
+    PlacedCircleAgent(
+      type: const AgentTypeCompatConverter().fromJson(json['type']),
+      position: const OffsetConverter()
+          .fromJson(json['position'] as Map<String, dynamic>),
+      id: json['id'] as String,
+      diameterMeters: (json['diameterMeters'] as num?)?.toDouble() ?? 0,
+      colorValue: (json['colorValue'] as num?)?.toInt() ?? 0xFFFFFFFF,
+      opacityPercent: (json['opacityPercent'] as num?)?.toInt() ?? 100,
+      isAlly: json['isAlly'] as bool? ?? true,
+      state: json['state'] == null
+          ? AgentState.none
+          : const AgentStateCompatConverter().fromJson(json['state']),
+    )..isDeleted = json['isDeleted'] as bool? ?? false;
+
+Map<String, dynamic> _$PlacedCircleAgentToJson(PlacedCircleAgent instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'isDeleted': instance.isDeleted,
+      'position': const OffsetConverter().toJson(instance.position),
+      'type': const AgentTypeCompatConverter().toJson(instance.type),
+      'isAlly': instance.isAlly,
+      'state': const AgentStateCompatConverter().toJson(instance.state),
+      'diameterMeters': instance.diameterMeters,
+      'colorValue': instance.colorValue,
+      'opacityPercent': instance.opacityPercent,
+    };
 
 PlacedAbility _$PlacedAbilityFromJson(Map<String, dynamic> json) =>
     PlacedAbility(
@@ -159,7 +183,6 @@ PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
           .fromJson(json['position'] as Map<String, dynamic>),
       id: json['id'] as String,
       angle: (json['angle'] as num?)?.toDouble() ?? 0.0,
-      attachedAgentId: json['attachedAgentId'] as String?,
       customDiameter: (json['customDiameter'] as num?)?.toDouble(),
       customWidth: (json['customWidth'] as num?)?.toDouble(),
       customLength: (json['customLength'] as num?)?.toDouble(),
@@ -179,7 +202,6 @@ Map<String, dynamic> _$PlacedUtilityToJson(PlacedUtility instance) =>
       'rotation': instance.rotation,
       'length': instance.length,
       'angle': instance.angle,
-      'attachedAgentId': instance.attachedAgentId,
       'customDiameter': instance.customDiameter,
       'customWidth': instance.customWidth,
       'customLength': instance.customLength,

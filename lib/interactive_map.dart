@@ -158,7 +158,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double height = MediaQuery.sizeOf(context).height - 90;
+        final double height = constraints.maxHeight;
         final double worldWidth = height * (16 / 9);
         final Size playAreaSize = Size(worldWidth, height);
         CoordinateSystem(playAreaSize: playAreaSize);

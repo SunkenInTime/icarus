@@ -834,7 +834,6 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       position: fields[5] as Offset,
       id: fields[3] as String,
       angle: fields[6] == null ? 0.0 : (fields[6] as num).toDouble(),
-      attachedAgentId: fields[7] as String?,
       customDiameter: (fields[8] as num?)?.toDouble(),
       customWidth: (fields[9] as num?)?.toDouble(),
       customLength: (fields[10] as num?)?.toDouble(),
@@ -849,7 +848,7 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
   @override
   void write(BinaryWriter writer, PlacedUtility obj) {
     writer
-      ..writeByte(13)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -864,8 +863,6 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       ..write(obj.position)
       ..writeByte(6)
       ..write(obj.angle)
-      ..writeByte(7)
-      ..write(obj.attachedAgentId)
       ..writeByte(8)
       ..write(obj.customDiameter)
       ..writeByte(9)
@@ -1111,7 +1108,7 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       id: fields[0] as String,
       name: fields[2] as String,
       drawingData: (fields[3] as List).cast<DrawingElement>(),
-      agentData: (fields[4] as List).cast<PlacedAgent>(),
+      agentData: (fields[4] as List).cast<PlacedAgentNode>(),
       abilityData: (fields[5] as List).cast<PlacedAbility>(),
       textData: (fields[6] as List).cast<PlacedText>(),
       imageData: (fields[7] as List).cast<PlacedImage>(),
@@ -1506,6 +1503,120 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is AppPreferencesAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class PlacedViewConeAgentAdapter extends TypeAdapter<PlacedViewConeAgent> {
+  @override
+  final typeId = 29;
+
+  @override
+  PlacedViewConeAgent read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return PlacedViewConeAgent(
+      type: fields[3] as AgentType,
+      position: fields[8] as Offset,
+      id: fields[6] as String,
+      presetType: fields[0] as UtilityType,
+      rotation: fields[1] == null ? 0 : (fields[1] as num).toDouble(),
+      length: fields[2] == null ? 0 : (fields[2] as num).toDouble(),
+      isAlly: fields[4] == null ? true : fields[4] as bool,
+      state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
+    )..isDeleted = fields[7] as bool;
+  }
+
+  @override
+  void write(BinaryWriter writer, PlacedViewConeAgent obj) {
+    writer
+      ..writeByte(9)
+      ..writeByte(0)
+      ..write(obj.presetType)
+      ..writeByte(1)
+      ..write(obj.rotation)
+      ..writeByte(2)
+      ..write(obj.length)
+      ..writeByte(3)
+      ..write(obj.type)
+      ..writeByte(4)
+      ..write(obj.isAlly)
+      ..writeByte(5)
+      ..write(obj.state)
+      ..writeByte(6)
+      ..write(obj.id)
+      ..writeByte(7)
+      ..write(obj.isDeleted)
+      ..writeByte(8)
+      ..write(obj.position);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlacedViewConeAgentAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class PlacedCircleAgentAdapter extends TypeAdapter<PlacedCircleAgent> {
+  @override
+  final typeId = 30;
+
+  @override
+  PlacedCircleAgent read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return PlacedCircleAgent(
+      type: fields[3] as AgentType,
+      position: fields[8] as Offset,
+      id: fields[6] as String,
+      diameterMeters: fields[0] == null ? 0 : (fields[0] as num).toDouble(),
+      colorValue: fields[1] == null ? 0xFFFFFFFF : (fields[1] as num).toInt(),
+      opacityPercent: fields[2] == null ? 100 : (fields[2] as num).toInt(),
+      isAlly: fields[4] == null ? true : fields[4] as bool,
+      state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
+    )..isDeleted = fields[7] as bool;
+  }
+
+  @override
+  void write(BinaryWriter writer, PlacedCircleAgent obj) {
+    writer
+      ..writeByte(9)
+      ..writeByte(0)
+      ..write(obj.diameterMeters)
+      ..writeByte(1)
+      ..write(obj.colorValue)
+      ..writeByte(2)
+      ..write(obj.opacityPercent)
+      ..writeByte(3)
+      ..write(obj.type)
+      ..writeByte(4)
+      ..write(obj.isAlly)
+      ..writeByte(5)
+      ..write(obj.state)
+      ..writeByte(6)
+      ..write(obj.id)
+      ..writeByte(7)
+      ..write(obj.isDeleted)
+      ..writeByte(8)
+      ..write(obj.position);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlacedCircleAgentAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

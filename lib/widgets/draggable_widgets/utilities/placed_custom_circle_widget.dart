@@ -107,6 +107,14 @@ class _PlacedCustomCircleWidgetState
       (arcRegionTop + arcRegionSize) - scaledMaxDiameter,
     );
 
+    final circleChild = CustomCircleUtilityWidget(
+      id: widget.id,
+      diameterMeters: diameterMeters,
+      colorValue: utilityRef.customColorValue,
+      opacityPercent: utilityRef.customOpacityPercent,
+      mapScale: mapScale,
+    );
+
     return SizedBox(
       width: scaledMaxDiameter + rightOverflow,
       height: scaledMaxDiameter + bottomOverflow,
@@ -141,13 +149,7 @@ class _PlacedCustomCircleWidgetState
                 _isDragging = false;
               });
             },
-            child: CustomCircleUtilityWidget(
-              id: widget.id,
-              diameterMeters: diameterMeters,
-              colorValue: utilityRef.customColorValue,
-              opacityPercent: utilityRef.customOpacityPercent,
-              mapScale: mapScale,
-            ),
+            child: circleChild,
           ),
           if (!_isDragging && !isScreenshot)
             _buildCircleHandle(
