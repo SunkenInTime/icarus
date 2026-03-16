@@ -1,4 +1,6 @@
 import 'dart:developer';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:dash_painter/dash_painter.dart';
@@ -20,6 +22,25 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 final visualPositionProvider = StateProvider<Offset?>((ref) {
   return null;
 });
+
+void _agentDebugLog(
+  String hypothesisId,
+  String location,
+  String message,
+  Map<String, dynamic> data,
+) {
+  File('/opt/cursor/logs/debug.log').writeAsStringSync(
+    jsonEncode({
+          'hypothesisId': hypothesisId,
+          'location': location,
+          'message': message,
+          'data': data,
+          'timestamp': DateTime.now().millisecondsSinceEpoch,
+        }) +
+        '\n',
+    mode: FileMode.append,
+  );
+}
 
 class InteractivePainter extends ConsumerStatefulWidget {
   const InteractivePainter({
@@ -117,6 +138,20 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
               log("Pan start detected");
               log(penState.color.toString());
 
+              // #region agent log
+              _agentDebugLog(
+                'A/B/E',
+                'drawing_painter.dart:onPanStart',
+                'pan-start',
+                {
+                  'interactionState': currentInteractionState.name,
+                  'penMode': penState.penMode.name,
+                  'localDx': details.localPosition.dx,
+                  'localDy': details.localPosition.dy,
+                },
+              );
+              // #endregion
+
               switch (currentInteractionState) {
                 case InteractionState.drawing:
                   switch (penState.penMode) {
@@ -178,6 +213,20 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
 
             // },
             onPanUpdate: (details) {
+              // #region agent log
+              _agentDebugLog(
+                'A/B/E',
+                'drawing_painter.dart:onPanUpdate',
+                'pan-update',
+                {
+                  'interactionState': currentInteractionState.name,
+                  'penMode': penState.penMode.name,
+                  'localDx': details.localPosition.dx,
+                  'localDy': details.localPosition.dy,
+                },
+              );
+              // #endregion
+
               switch (currentInteractionState) {
                 case InteractionState.drawing:
                   switch (penState.penMode) {
@@ -216,6 +265,18 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
               }
             },
             onPanEnd: (details) {
+              // #region agent log
+              _agentDebugLog(
+                'A/E',
+                'drawing_painter.dart:onPanEnd',
+                'pan-end',
+                {
+                  'interactionState': currentInteractionState.name,
+                  'penMode': penState.penMode.name,
+                },
+              );
+              // #endregion
+
               switch (currentInteractionState) {
                 case InteractionState.drawing:
                   switch (penState.penMode) {
