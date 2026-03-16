@@ -997,6 +997,7 @@ class TextContentAction extends WidgetAction {
 
 @JsonSerializable()
 class PlacedUtility extends PlacedWidget {
+  @UtilityTypeCompatConverter()
   final UtilityType type;
 
   double rotation = 0;
@@ -1232,10 +1233,14 @@ class PlacedUtility extends PlacedWidget {
   @JsonKey(defaultValue: null)
   int? customOpacityPercent;
 
+  @JsonKey(defaultValue: true)
+  final bool isAlly;
+
   PlacedUtility({
     required this.type,
     required super.position,
     required super.id,
+    this.isAlly = true,
     this.angle = 0.0,
     this.customDiameter,
     this.customWidth,
@@ -1263,12 +1268,14 @@ class PlacedUtility extends PlacedWidget {
     Object? customOpacityPercent = _noChange,
     double? rotation,
     double? length,
+    bool? isAlly,
     bool? isDeleted,
   }) {
     final copied = PlacedUtility(
       type: type ?? this.type,
       position: position ?? this.position,
       id: id ?? this.id,
+      isAlly: isAlly ?? this.isAlly,
       angle: angle ?? this.angle,
       customDiameter: identical(customDiameter, _noChange)
           ? this.customDiameter

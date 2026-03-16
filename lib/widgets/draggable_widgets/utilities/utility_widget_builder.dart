@@ -6,6 +6,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
 class UtilityWidgetBuilder extends ConsumerStatefulWidget {
@@ -33,6 +34,8 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
     final currentMap =
         ref.watch(mapProvider.select((state) => state.currentMap));
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
+    final abilitySize =
+        ref.watch(strategySettingsProvider.select((state) => state.abilitySize));
     return Draggable<PlacedUtility>(
       dragAnchorStrategy:
           ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
@@ -45,9 +48,11 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
         child: ZoomTransform(
           child: UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
             id: null,
+            isAlly: widget.utility.isAlly,
             rotation: widget.rotation,
             length: widget.length,
             mapScale: mapScale,
+            abilitySize: abilitySize,
             diameterMeters: widget.utility.customDiameter,
             widthMeters: widget.utility.customWidth,
             rectLengthMeters: widget.utility.customLength,
@@ -61,7 +66,9 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
       },
       child: UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
         id: widget.id,
+        isAlly: widget.utility.isAlly,
         mapScale: mapScale,
+        abilitySize: abilitySize,
         diameterMeters: widget.utility.customDiameter,
         widthMeters: widget.utility.customWidth,
         rectLengthMeters: widget.utility.customLength,

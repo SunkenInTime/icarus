@@ -527,9 +527,11 @@ class PlacedWidgetPreview {
     if (w is PlacedUtility) {
       return UtilityData.utilityWidgets[w.type]!.createWidget(
           id: w.id,
+          isAlly: w.isAlly,
           rotation: w.rotation,
           length: length ?? w.length,
           mapScale: mapScale,
+          abilitySize: abilitySize,
           diameterMeters: customDiameter ?? w.customDiameter,
           widthMeters: customWidth ?? w.customWidth,
           rectLengthMeters: customLength ?? w.customLength,

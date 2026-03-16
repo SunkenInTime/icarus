@@ -178,10 +178,11 @@ Map<String, dynamic> _$PlacedAbilityToJson(PlacedAbility instance) =>
 
 PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
     PlacedUtility(
-      type: $enumDecode(_$UtilityTypeEnumMap, json['type']),
+      type: const UtilityTypeCompatConverter().fromJson(json['type']),
       position: const OffsetConverter()
           .fromJson(json['position'] as Map<String, dynamic>),
       id: json['id'] as String,
+      isAlly: json['isAlly'] as bool? ?? true,
       angle: (json['angle'] as num?)?.toDouble() ?? 0.0,
       customDiameter: (json['customDiameter'] as num?)?.toDouble(),
       customWidth: (json['customWidth'] as num?)?.toDouble(),
@@ -198,7 +199,7 @@ Map<String, dynamic> _$PlacedUtilityToJson(PlacedUtility instance) =>
       'id': instance.id,
       'isDeleted': instance.isDeleted,
       'position': const OffsetConverter().toJson(instance.position),
-      'type': _$UtilityTypeEnumMap[instance.type]!,
+      'type': const UtilityTypeCompatConverter().toJson(instance.type),
       'rotation': instance.rotation,
       'length': instance.length,
       'angle': instance.angle,
@@ -207,13 +208,5 @@ Map<String, dynamic> _$PlacedUtilityToJson(PlacedUtility instance) =>
       'customLength': instance.customLength,
       'customColorValue': instance.customColorValue,
       'customOpacityPercent': instance.customOpacityPercent,
+      'isAlly': instance.isAlly,
     };
-
-const _$UtilityTypeEnumMap = {
-  UtilityType.spike: 'spike',
-  UtilityType.viewCone180: 'viewCone180',
-  UtilityType.viewCone90: 'viewCone90',
-  UtilityType.viewCone40: 'viewCone40',
-  UtilityType.customCircle: 'customCircle',
-  UtilityType.customRectangle: 'customRectangle',
-};
