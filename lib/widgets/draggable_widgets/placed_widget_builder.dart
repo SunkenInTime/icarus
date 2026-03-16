@@ -383,7 +383,9 @@ class _AbilityList extends ConsumerWidget {
 
               if (coordinateSystem.isOutOfBounds(
                   virtualOffset.translate(safeArea.dx, safeArea.dy))) {
-                ref.read(abilityProvider.notifier).removeAbility(ability.id);
+                ref
+                    .read(abilityProvider.notifier)
+                    .removeAbilityAsAction(ability.id);
                 return;
               }
 
@@ -572,7 +574,9 @@ class _TextList extends ConsumerWidget {
 
                 if (coordinateSystem.isOutOfBounds(
                     virtualOffset.translate(safeArea, safeArea))) {
-                  ref.read(textProvider.notifier).removeText(placedText.id);
+                  ref
+                      .read(textProvider.notifier)
+                      .removeTextAsAction(placedText.id);
                   return;
                 }
 
@@ -622,7 +626,7 @@ class _PlacedImageList extends ConsumerWidget {
                     virtualOffset.translate(safeArea, safeArea))) {
                   ref
                       .read(placedImageProvider.notifier)
-                      .removeImage(placedImage.id);
+                      .removeImageAsAction(placedImage.id);
                   return;
                 }
 
@@ -740,7 +744,7 @@ class _UtilityList extends ConsumerWidget {
                     virtualOffset.translate(safeArea.dx, safeArea.dy))) {
                   ref
                       .read(utilityProvider.notifier)
-                      .removeUtility(placedUtility.id);
+                      .removeUtilityAsAction(placedUtility.id);
                   return;
                 }
 
@@ -808,7 +812,7 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                           virtualOffset.translate(safeArea.dx, safeArea.dy))) {
                         ref
                             .read(utilityProvider.notifier)
-                            .removeUtility(placedUtility.id);
+                            .removeUtilityAsAction(placedUtility.id);
                         return;
                       }
 
@@ -859,7 +863,7 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                           virtualOffset.translate(safeArea.dx, safeArea.dy))) {
                         ref
                             .read(utilityProvider.notifier)
-                            .removeUtility(placedUtility.id);
+                            .removeUtilityAsAction(placedUtility.id);
                         return;
                       }
 

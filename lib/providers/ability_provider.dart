@@ -48,6 +48,19 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     state = [...state, placedAbility];
   }
 
+  void removeAbilityAsAction(String id) {
+    if (!state.any((ability) => ability.id == id)) return;
+
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.deletion,
+            id: id,
+            group: ActionGroup.ability,
+          ),
+        );
+    removeAbility(id);
+  }
+
   void updatePosition(Offset position, String id) {
     final newState = [...state];
 
@@ -70,7 +83,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
         Offset(position.dx + centerOffset.dx, position.dy + centerOffset.dy);
 
     if (coordinateSystem.isOutOfBounds(centerPosition)) {
-      removeAbility(id);
+      removeAbilityAsAction(id);
       return;
     }
 

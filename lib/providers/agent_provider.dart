@@ -55,6 +55,19 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     state = newState;
   }
 
+  void removeAgentAsAction(String id) {
+    if (!state.any((agent) => agent.id == id)) return;
+
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.deletion,
+            id: id,
+            group: ActionGroup.agent,
+          ),
+        );
+    removeAgent(id);
+  }
+
   void toggleAgentState(String id) {
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -82,7 +95,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     final coordinateSystem = CoordinateSystem.instance;
 
     if (coordinateSystem.isOutOfBounds(centerPosition)) {
-      removeAgent(id);
+      removeAgentAsAction(id);
       return;
     }
     if (index < 0) return;

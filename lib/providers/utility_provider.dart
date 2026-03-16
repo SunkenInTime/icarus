@@ -40,6 +40,19 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     state = [...state, utility];
   }
 
+  void removeUtilityAsAction(String id) {
+    if (!state.any((utility) => utility.id == id)) return;
+
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.deletion,
+            id: id,
+            group: ActionGroup.utility,
+          ),
+        );
+    removeUtility(id);
+  }
+
   void updatePosition(Offset position, String id) {
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);

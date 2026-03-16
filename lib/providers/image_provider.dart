@@ -141,6 +141,19 @@ class PlacedImageProvider extends Notifier<ImageState> {
     state = state.copyWith(images: [...state.images, placedImage]);
   }
 
+  void removeImageAsAction(String id) {
+    if (!state.images.any((image) => image.id == id)) return;
+
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.deletion,
+            id: id,
+            group: ActionGroup.image,
+          ),
+        );
+    removeImage(id);
+  }
+
   void removeImage(String id) {
     final newImages = [...state.images];
     final index = PlacedWidget.getIndexByID(id, newImages);
