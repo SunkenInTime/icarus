@@ -150,6 +150,14 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                             penState.thickness,
                             penState.isDotted,
                           );
+                    case PenMode.ellipse:
+                      ref.read(drawingProvider.notifier).startEllipse(
+                            details.localPosition,
+                            coordinateSystem,
+                            penState.color,
+                            penState.thickness,
+                            penState.isDotted,
+                          );
                   }
 
                 case InteractionState.erasing:
@@ -186,6 +194,11 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                             details.localPosition,
                             coordinateSystem,
                           );
+                    case PenMode.ellipse:
+                      ref.read(drawingProvider.notifier).updateEllipse(
+                            details.localPosition,
+                            coordinateSystem,
+                          );
                   }
                 case InteractionState.erasing:
                   final normalizedPosition = CoordinateSystem.instance
@@ -218,6 +231,10 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
                       ref
                           .read(drawingProvider.notifier)
                           .finishRectangle(null, coordinateSystem);
+                    case PenMode.ellipse:
+                      ref
+                          .read(drawingProvider.notifier)
+                          .finishEllipse(null, coordinateSystem);
                   }
                 case InteractionState.erasing:
                   ref.read(visualPositionProvider.notifier).state = null;
@@ -592,6 +609,22 @@ class DrawingPainter extends CustomPainter {
       }
     }
 
+    void paintEllipse(Canvas canvas, Paint paint, EllipseDrawing ellipse) {
+      paint.strokeWidth = coordinateSystem.scale(ellipse.thickness);
+      final screenRect = Rect.fromPoints(
+        coordinateSystem.coordinateToScreen(ellipse.start),
+        coordinateSystem.coordinateToScreen(ellipse.end),
+      );
+
+      if (ellipse.isDotted) {
+        final space = coordinateSystem.scale(10);
+        final ovalPath = Path()..addOval(screenRect);
+        DashPainter(span: space, step: space).paint(canvas, ovalPath, paint);
+      } else {
+        canvas.drawOval(screenRect, paint);
+      }
+    }
+
     for (int i = 0; i < elements.length; i++) {
       paint.color = elements[i].color;
       if (elements[i] is Line) {
@@ -611,6 +644,8 @@ class DrawingPainter extends CustomPainter {
         } else {
           canvas.drawRect(screenRect, paint);
         }
+      } else if (elements[i] is EllipseDrawing) {
+        paintEllipse(canvas, paint, elements[i] as EllipseDrawing);
       } else if (elements[i] is FreeDrawing) {
         FreeDrawing freeDrawing = elements[i] as FreeDrawing;
         paint.strokeWidth = coordinateSystem.scale(freeDrawing.thickness);
@@ -676,6 +711,8 @@ class DrawingPainter extends CustomPainter {
         } else {
           canvas.drawRect(screenRect, paint);
         }
+      } else if (currentLine is EllipseDrawing) {
+        paintEllipse(canvas, paint, currentLine as EllipseDrawing);
       }
     }
   }

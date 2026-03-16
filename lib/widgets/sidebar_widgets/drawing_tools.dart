@@ -119,6 +119,19 @@ class DrawingTools extends ConsumerWidget {
                                 },
                                 tooltip: "Rectangle",
                               ),
+                              SelectableIconButton(
+                                icon: const Icon(
+                                  Icons.circle_outlined,
+                                  size: 20,
+                                ),
+                                isSelected: penMode == PenMode.ellipse,
+                                onPressed: () {
+                                  ref
+                                      .read(penProvider.notifier)
+                                      .updateValue(penMode: PenMode.ellipse);
+                                },
+                                tooltip: "Ellipse",
+                              ),
                             ],
                           ),
                         ),
