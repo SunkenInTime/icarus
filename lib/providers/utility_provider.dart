@@ -6,6 +6,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 
 final utilityProvider =
     NotifierProvider<UtilityProvider, List<PlacedUtility>>(UtilityProvider.new);
@@ -132,11 +133,12 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     final newState = [...state];
     final mapState = ref.read(mapProvider);
     final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
+    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
     for (final utility in newState) {
-      utility.switchSides(mapScale: mapScale);
+      utility.switchSides(mapScale: mapScale, abilitySize: abilitySize);
     }
     for (final utility in poppedUtilities) {
-      utility.switchSides(mapScale: mapScale);
+      utility.switchSides(mapScale: mapScale, abilitySize: abilitySize);
     }
 
     state = newState;

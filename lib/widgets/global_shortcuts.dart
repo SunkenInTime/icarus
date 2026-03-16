@@ -1,7 +1,8 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
@@ -113,6 +114,11 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
                 await ref.read(strategyProvider.notifier).forceSaveNow(
                       strategyId,
                     );
+                if (!mounted) return null;
+                Settings.showToast(
+                  message: 'File saved',
+                  backgroundColor: Colors.green,
+                );
                 return null;
               },
             ),

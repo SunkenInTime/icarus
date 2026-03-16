@@ -1012,7 +1012,10 @@ class PlacedUtility extends PlacedWidget {
     return UtilityData.isViewCone(type);
   }
 
-  Offset _getEffectiveUtilitySize({required double mapScale}) {
+  Offset _getEffectiveUtilitySize({
+    required double mapScale,
+    required double abilitySize,
+  }) {
     final utility = UtilityData.utilityWidgets[type]!;
     if (type == UtilityType.customCircle) {
       assert(customDiameter != null,
@@ -1035,13 +1038,17 @@ class PlacedUtility extends PlacedWidget {
         mapScale: mapScale,
       );
     }
-    return utility.getSize();
+    return utility.getSize(abilitySize: abilitySize);
   }
 
   void switchSides({
     required double mapScale,
+    required double abilitySize,
   }) {
-    final size = _getEffectiveUtilitySize(mapScale: mapScale);
+    final size = _getEffectiveUtilitySize(
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
     final scaledSize = size.scale(CoordinateSystem.instance.scaleFactor,
         CoordinateSystem.instance.scaleFactor);
     final flippedPosition = getFlippedPosition(
