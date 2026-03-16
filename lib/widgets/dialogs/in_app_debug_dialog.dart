@@ -99,13 +99,33 @@ class _DebugLogEntryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            entry.headline,
-            style: theme.textTheme.small.copyWith(
-              color: _headlineColor(theme, entry.level),
-              fontWeight: FontWeight.w600,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  entry.headline,
+                  style: theme.textTheme.small.copyWith(
+                    color: _headlineColor(theme, entry.level),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (entry.repeatCount > 1) ...[
+                const SizedBox(width: 12),
+                _RepeatBadge(entry: entry),
+              ],
+            ],
           ),
+          if (entry.repeatCount > 1) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Latest occurrence: ${formatDebugLogTimestamp(entry.lastOccurredAt)}',
+              style: theme.textTheme.small.copyWith(
+                color: theme.colorScheme.mutedForeground,
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           SelectableText(
             entry.message,
@@ -184,5 +204,29 @@ class _DebugLogEntryCard extends StatelessWidget {
       DebugLogLevel.warning => const Color(0xfffbbf24),
       DebugLogLevel.error => theme.colorScheme.destructiveForeground,
     };
+  }
+}
+
+class _RepeatBadge extends StatelessWidget {
+  const _RepeatBadge({required this.entry});
+
+  final DebugLogEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondary,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: theme.colorScheme.border),
+      ),
+      child: Text(
+        entry.repeatLabel,
+        style: theme.textTheme.small.copyWith(fontWeight: FontWeight.w600),
+      ),
+    );
   }
 }

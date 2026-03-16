@@ -10,9 +10,18 @@ import 'package:icarus/widgets/dialogs/in_app_debug_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class AppErrorReporter {
+  static const Duration _interactiveNotificationCooldown = Duration(
+    seconds: 3,
+  );
+  static const Duration _interactiveNotificationRetention = Duration(
+    minutes: 2,
+  );
+
   static bool _isDebugDialogOpen = false;
   static File? _persistedLogFile;
   static Future<void> _persistedLogWriteQueue = Future.value();
+  static final Map<String, _InteractiveNotificationState>
+      _interactiveNotificationStates = {};
 
   static Future<void> initializePersistedLog(String logFilePath) async {
     final logFile = File(logFilePath);
@@ -57,7 +66,7 @@ class AppErrorReporter {
     StackTrace? stackTrace,
     bool promptUser = false,
   }) {
-    addDebugLog(
+    final entry = addDebugLog(
       message,
       level: DebugLogLevel.warning,
       source: source,
@@ -65,15 +74,8 @@ class AppErrorReporter {
       stackTrace: stackTrace,
     );
 
-    if (promptUser && _canShowInteractiveUi) {
-      Settings.showToast(
-        message: message,
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
-        actionLabel: 'Open Logs',
-        onActionPressed: () {
-          unawaited(openDebugLog());
-        },
-      );
+    if (promptUser) {
+      _showInteractiveNotificationIfNeeded(entry);
     }
   }
 
@@ -84,7 +86,7 @@ class AppErrorReporter {
     String? source,
     bool promptUser = true,
   }) {
-    addDebugLog(
+    final entry = addDebugLog(
       message,
       level: DebugLogLevel.error,
       source: source,
@@ -92,32 +94,33 @@ class AppErrorReporter {
       stackTrace: stackTrace,
     );
 
-    if (promptUser && _canShowInteractiveUi) {
-      Settings.showToast(
-        message: message,
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
-        actionLabel: 'Open Logs',
-        onActionPressed: () {
-          unawaited(openDebugLog());
-        },
-      );
+    if (promptUser) {
+      _showInteractiveNotificationIfNeeded(entry);
     }
   }
 
-  static void addDebugLog(
+  static DebugLogEntry addDebugLog(
     String message, {
     DebugLogLevel level = DebugLogLevel.info,
     String? source,
     Object? error,
     StackTrace? stackTrace,
   }) {
+    final errorText = error?.toString();
     final entry = DebugLogEntry(
       timestamp: DateTime.now(),
       level: level,
       message: message,
       source: source,
-      errorText: error?.toString(),
+      errorText: errorText,
       stackTrace: stackTrace?.toString(),
+      dedupeKey: _buildNotificationFingerprint(
+        level: level,
+        message: message,
+        source: source,
+        errorText: errorText,
+        stackTrace: stackTrace?.toString(),
+      ),
     );
 
     developer.log(
@@ -130,6 +133,7 @@ class AppErrorReporter {
 
     appProviderContainer.read(inAppDebugProvider.notifier).addEntry(entry);
     _queuePersistedLogWrite(entry);
+    return entry;
   }
 
   static Future<void> openDebugLog() async {
@@ -179,6 +183,75 @@ class AppErrorReporter {
       appNavigatorKey.currentContext != null ||
       appNavigatorKey.currentState?.overlay?.context != null;
 
+  static String _buildNotificationFingerprint({
+    required DebugLogLevel level,
+    required String message,
+    String? source,
+    String? errorText,
+    String? stackTrace,
+  }) {
+    return [
+      level.name,
+      _normalizeFingerprintFragment(source),
+      _normalizeFingerprintFragment(message),
+      _normalizeFingerprintFragment(errorText),
+      _normalizeFingerprintFragment(_firstStackTraceLine(stackTrace)),
+    ].join('|');
+  }
+
+  static String _normalizeFingerprintFragment(String? value) {
+    if (value == null) return '';
+
+    return value.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  static String? _firstStackTraceLine(String? stackTrace) {
+    if (stackTrace == null) return null;
+
+    for (final line in stackTrace.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.isNotEmpty) {
+        return trimmed;
+      }
+    }
+
+    return null;
+  }
+
+  static void _showInteractiveNotificationIfNeeded(DebugLogEntry entry) {
+    if (!_canShowInteractiveUi) return;
+
+    final now = DateTime.now();
+    _pruneInteractiveNotificationStates(now);
+
+    final existingState = _interactiveNotificationStates[entry.dedupeKey];
+    if (existingState != null &&
+        now.difference(existingState.lastSeenAt) <=
+            _interactiveNotificationCooldown) {
+      existingState.lastSeenAt = now;
+      return;
+    }
+
+    _interactiveNotificationStates[entry.dedupeKey] =
+        (existingState ?? _InteractiveNotificationState())..lastSeenAt = now;
+
+    Settings.showToast(
+      message: entry.message,
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
+      actionLabel: 'Open Logs',
+      onActionPressed: () {
+        unawaited(openDebugLog());
+      },
+    );
+  }
+
+  static void _pruneInteractiveNotificationStates(DateTime now) {
+    _interactiveNotificationStates.removeWhere(
+      (_, state) =>
+          now.difference(state.lastSeenAt) > _interactiveNotificationRetention,
+    );
+  }
+
   static int _developerLogLevel(DebugLogLevel level) {
     return switch (level) {
       DebugLogLevel.info => 800,
@@ -221,4 +294,8 @@ class AppErrorReporter {
       flush: true,
     );
   }
+}
+
+class _InteractiveNotificationState {
+  DateTime lastSeenAt = DateTime.fromMillisecondsSinceEpoch(0);
 }

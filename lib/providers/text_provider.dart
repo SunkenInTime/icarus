@@ -39,6 +39,19 @@ class TextProvider extends Notifier<List<PlacedText>> {
     state = [...state, text];
   }
 
+  void removeTextAsAction(String id) {
+    if (!state.any((text) => text.id == id)) return;
+
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.deletion,
+            id: id,
+            group: ActionGroup.text,
+          ),
+        );
+    removeText(id);
+  }
+
   void updatePosition(Offset position, String id) {
     final newState = [...state];
 

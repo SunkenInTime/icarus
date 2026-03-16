@@ -6,6 +6,9 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+const double _agentIconSize = 27;
+const double _agentRowSpacing = 5;
+
 class StrategyTileViewData {
   StrategyTileViewData(this.strategy)
       : name = strategy.name,
@@ -125,8 +128,6 @@ class StrategyTileDetails extends StatelessWidget {
 
   final StrategyTileViewData data;
 
-  static const _maxVisibleAgents = 3;
-
   @override
   Widget build(BuildContext context) {
     final agents = data.agentTypes;
@@ -138,57 +139,89 @@ class StrategyTileDetails extends StatelessWidget {
           border: Border.all(color: Settings.tacticalVioletTheme.border),
           boxShadow: const [Settings.cardForegroundBackdrop]),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        // mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 130),
-                  child: Text(
-                    data.name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w500,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(data.mapName),
-                const SizedBox(height: 5),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 123),
-                  child: Row(
-                    spacing: 5,
-                    children: [
-                      ...agents
-                          .take(_maxVisibleAgents)
-                          .map((agent) => _AgentIcon(agentType: agent)),
-                      if (agents.length > _maxVisibleAgents)
-                        const _MoreAgentsIndicator(),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                data.attackLabel,
-                style: TextStyle(color: data.attackColor),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 130),
+                      child: Text(
+                        data.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w500,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(data.mapName),
+                  ],
+                ),
               ),
-              const SizedBox(height: 5),
-              Text(data.lastEditedLabel, overflow: TextOverflow.ellipsis),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    data.attackLabel,
+                    style: TextStyle(color: data.attackColor),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(data.lastEditedLabel, overflow: TextOverflow.ellipsis),
+                ],
+              ),
             ],
           ),
+          const SizedBox(height: 5),
+          _DynamicAgentRow(agents: agents),
         ],
       ),
+    );
+  }
+}
+
+class _DynamicAgentRow extends StatelessWidget {
+  const _DynamicAgentRow({required this.agents});
+
+  final List<AgentType> agents;
+
+  @override
+  Widget build(BuildContext context) {
+    if (agents.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxSlots = ((constraints.maxWidth + _agentRowSpacing) /
+                (_agentIconSize + _agentRowSpacing))
+            .floor();
+
+        if (maxSlots <= 0) {
+          return const SizedBox.shrink();
+        }
+
+        final hasOverflow = agents.length > maxSlots;
+        final visibleCount = hasOverflow ? maxSlots - 1 : maxSlots;
+
+        return Row(
+          spacing: _agentRowSpacing,
+          children: [
+            ...agents
+                .take(visibleCount)
+                .map((agent) => _AgentIcon(agentType: agent)),
+            if (hasOverflow) const _MoreAgentsIndicator(),
+          ],
+        );
+      },
     );
   }
 }
@@ -243,8 +276,8 @@ class _AgentIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 27,
-      width: 27,
+      height: _agentIconSize,
+      width: _agentIconSize,
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(4),
@@ -261,8 +294,8 @@ class _MoreAgentsIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 27,
-      width: 27,
+      height: _agentIconSize,
+      width: _agentIconSize,
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(4),
