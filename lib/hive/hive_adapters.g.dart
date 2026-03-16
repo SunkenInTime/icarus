@@ -1568,3 +1568,60 @@ class PlacedCircleAgentAdapter extends TypeAdapter<PlacedCircleAgent> {
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }
+
+class EllipseDrawingAdapter extends TypeAdapter<EllipseDrawing> {
+  @override
+  final typeId = 31;
+
+  @override
+  EllipseDrawing read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return EllipseDrawing(
+      start: fields[0] as Offset,
+      end: fields[1] as Offset,
+      color: fields[2] as Color,
+      thickness: fields[3] == null
+          ? Settings.defaultStrokeThickness
+          : (fields[3] as num).toDouble(),
+      boundingBox: fields[7] as BoundingBox?,
+      isDotted: fields[4] as bool,
+      hasArrow: fields[5] as bool,
+      id: fields[6] as String,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, EllipseDrawing obj) {
+    writer
+      ..writeByte(8)
+      ..writeByte(0)
+      ..write(obj.start)
+      ..writeByte(1)
+      ..write(obj.end)
+      ..writeByte(2)
+      ..write(obj.color)
+      ..writeByte(3)
+      ..write(obj.thickness)
+      ..writeByte(4)
+      ..write(obj.isDotted)
+      ..writeByte(5)
+      ..write(obj.hasArrow)
+      ..writeByte(6)
+      ..write(obj.id)
+      ..writeByte(7)
+      ..write(obj.boundingBox);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EllipseDrawingAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}

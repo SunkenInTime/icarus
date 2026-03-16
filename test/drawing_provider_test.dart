@@ -85,6 +85,37 @@ void main() {
       expect(decoded.traversalSpeedProfile, TraversalSpeedProfile.walking);
     });
 
+    test('ellipse JSON round-trip preserves metadata', () {
+      final ellipse = EllipseDrawing(
+        id: 'ellipse-1',
+        start: const Offset(10, 20),
+        end: const Offset(40, 70),
+        color: Colors.purple,
+        boundingBox: BoundingBox(
+          min: const Offset(10, 20),
+          max: const Offset(40, 70),
+        ),
+        isDotted: true,
+        hasArrow: false,
+      );
+
+      final encoded = DrawingProvider.objectToJson([ellipse]);
+      final decodedJson = jsonDecode(encoded) as List<dynamic>;
+
+      expect(decodedJson.single, containsPair('type', 'ellipseDrawing'));
+      expect(decodedJson.single, containsPair('isDotted', true));
+      expect(decodedJson.single, containsPair('hasArrow', false));
+
+      final decoded =
+          DrawingProvider.fromJson(encoded).single as EllipseDrawing;
+      expect(decoded.start, const Offset(10, 20));
+      expect(decoded.end, const Offset(40, 70));
+      expect(decoded.boundingBox!.min, const Offset(10, 20));
+      expect(decoded.boundingBox!.max, const Offset(40, 70));
+      expect(decoded.isDotted, isTrue);
+      expect(decoded.hasArrow, isFalse);
+    });
+
     test('typeless line, freehand, and rectangle payloads remain importable',
         () {
       final payload = jsonEncode([
@@ -175,6 +206,56 @@ void main() {
         (restoredLine.lineStart.dy + restoredLine.lineEnd.dy) / 2,
       );
       drawingNotifier.onErase(midpoint);
+
+      expect(container.read(drawingProvider).elements, isEmpty);
+    });
+
+    test('ellipse drawing supports undo, redo, and erase', () {
+      final container = _createContainer();
+      addTearDown(container.dispose);
+
+      final drawingNotifier = container.read(drawingProvider.notifier);
+      final actionNotifier = container.read(actionProvider.notifier);
+      final coordinateSystem = CoordinateSystem.instance;
+
+      drawingNotifier.startEllipse(
+        const Offset(100, 120),
+        coordinateSystem,
+        Colors.white,
+        Settings.defaultStrokeThickness,
+        true,
+      );
+      drawingNotifier.updateEllipse(
+        const Offset(220, 260),
+        coordinateSystem,
+      );
+      drawingNotifier.finishEllipse(
+        const Offset(220, 260),
+        coordinateSystem,
+      );
+
+      final ellipse =
+          container.read(drawingProvider).elements.single as EllipseDrawing;
+      final expectedStart =
+          coordinateSystem.screenToCoordinate(const Offset(100, 120));
+      final expectedEnd =
+          coordinateSystem.screenToCoordinate(const Offset(220, 260));
+      expect(ellipse.isDotted, isTrue);
+      expect(ellipse.hasArrow, isFalse);
+      expect(ellipse.boundingBox!.min, expectedStart);
+      expect(ellipse.boundingBox!.max, expectedEnd);
+
+      actionNotifier.undoAction();
+      expect(container.read(drawingProvider).elements, isEmpty);
+
+      actionNotifier.redoAction();
+      expect(container.read(drawingProvider).elements, hasLength(1));
+
+      final restoredEllipse =
+          container.read(drawingProvider).elements.single as EllipseDrawing;
+      final rect = restoredEllipse.normalizedRect;
+      final edgePoint = Offset(rect.right, rect.center.dy);
+      drawingNotifier.onErase(edgePoint);
 
       expect(container.read(drawingProvider).elements, isEmpty);
     });

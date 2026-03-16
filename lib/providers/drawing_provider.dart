@@ -211,6 +211,22 @@ class DrawingProvider extends Notifier<DrawingState> {
       };
     }
 
+    if (element is EllipseDrawing) {
+      const colorConverter = ColorConverter();
+      const offsetConverter = OffsetConverter();
+      return {
+        'type': 'ellipseDrawing',
+        'color': colorConverter.toJson(element.color),
+        'thickness': element.thickness,
+        'isDotted': element.isDotted,
+        'hasArrow': element.hasArrow,
+        'id': element.id,
+        'boundingBox': element.boundingBox?.toJson(),
+        'start': offsetConverter.toJson(element.start),
+        'end': offsetConverter.toJson(element.end),
+      };
+    }
+
     throw UnsupportedError(
       'Unsupported drawing element for serialization: ${element.runtimeType}',
     );
@@ -306,6 +322,41 @@ class DrawingProvider extends Notifier<DrawingState> {
       );
     }
 
+    if (type == 'ellipseDrawing') {
+      const colorConverter = ColorConverter();
+      const offsetConverter = OffsetConverter();
+
+      final start = offsetConverter
+          .fromJson(Map<String, dynamic>.from(json['start'] as Map));
+      final end = offsetConverter
+          .fromJson(Map<String, dynamic>.from(json['end'] as Map));
+      final normalizedRect = Rect.fromPoints(start, end);
+
+      BoundingBox? boundingBox;
+      if (json['boundingBox'] != null) {
+        boundingBox = BoundingBox.fromJson(
+          Map<String, dynamic>.from(json['boundingBox'] as Map),
+        );
+      } else {
+        boundingBox = BoundingBox(
+          min: normalizedRect.topLeft,
+          max: normalizedRect.bottomRight,
+        );
+      }
+
+      return EllipseDrawing(
+        start: start,
+        end: end,
+        color: colorConverter.fromJson(json['color'] as String),
+        thickness: (json['thickness'] as num?)?.toDouble() ??
+            Settings.defaultStrokeThickness,
+        isDotted: json['isDotted'] as bool? ?? false,
+        hasArrow: json['hasArrow'] as bool? ?? false,
+        id: json['id'] as String,
+        boundingBox: boundingBox,
+      );
+    }
+
     throw UnsupportedError('Unknown drawing element type: $type');
   }
 
@@ -354,6 +405,14 @@ class DrawingProvider extends Notifier<DrawingState> {
             drawing.boundingBox!
                 .isWithinOrNear(mousePos, Settings.erasingSize) &&
             _isPointNearRectangleStroke(
+                mousePos, drawing, Settings.erasingSize)) {
+          indicesToDelete.add(index);
+        }
+      } else if (drawing is EllipseDrawing) {
+        if (drawing.boundingBox != null &&
+            drawing.boundingBox!
+                .isWithinOrNear(mousePos, Settings.erasingSize) &&
+            _isPointNearEllipseStroke(
                 mousePos, drawing, Settings.erasingSize)) {
           indicesToDelete.add(index);
         }
@@ -414,6 +473,46 @@ class DrawingProvider extends Notifier<DrawingState> {
         distanceToLineSegment(point, topRight, bottomRight) <= threshold ||
         distanceToLineSegment(point, bottomRight, bottomLeft) <= threshold ||
         distanceToLineSegment(point, bottomLeft, topLeft) <= threshold;
+  }
+
+  bool _isPointNearEllipseStroke(
+      Offset point, EllipseDrawing ellipse, double threshold) {
+    final rect = ellipse.normalizedRect;
+    if (rect.width == 0 && rect.height == 0) {
+      return (point - rect.center).distance <= threshold;
+    }
+
+    if (rect.width == 0) {
+      return distanceToLineSegment(point, rect.topCenter, rect.bottomCenter) <=
+          threshold;
+    }
+
+    if (rect.height == 0) {
+      return distanceToLineSegment(point, rect.centerLeft, rect.centerRight) <=
+          threshold;
+    }
+
+    final outerRect = rect.inflate(threshold);
+    final isInsideOuter = _isPointInsideEllipse(point, outerRect);
+    if (!isInsideOuter) return false;
+
+    if (rect.width <= threshold * 2 || rect.height <= threshold * 2) {
+      return true;
+    }
+
+    final innerRect = rect.deflate(threshold);
+    return !_isPointInsideEllipse(point, innerRect);
+  }
+
+  bool _isPointInsideEllipse(Offset point, Rect rect) {
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    final radiusX = rect.width / 2;
+    final radiusY = rect.height / 2;
+    final center = rect.center;
+    final normalizedX = (point.dx - center.dx) / radiusX;
+    final normalizedY = (point.dy - center.dy) / radiusY;
+    return (normalizedX * normalizedX) + (normalizedY * normalizedY) <= 1;
   }
 
   // void startSimpleTap(Offset start, CoordinateSystem coordinateSystem) {
@@ -617,6 +716,86 @@ class DrawingProvider extends Notifier<DrawingState> {
     final action = UserAction(
       type: ActionType.addition,
       id: rectangle.id,
+      group: ActionGroup.drawing,
+    );
+    ref.read(actionProvider.notifier).addAction(action);
+
+    _triggerRepaint();
+  }
+
+  void startEllipse(
+    Offset start,
+    CoordinateSystem coordinateSystem,
+    Color activeColor,
+    double thickness,
+    bool isDotted,
+  ) {
+    if (state.currentElement != null) {
+      dev.log(
+          "An error occurred: the gesture detector is attempting to draw while another line is active");
+      return;
+    }
+
+    final normalizedStart = coordinateSystem.screenToCoordinate(start);
+    final id = const Uuid().v4();
+
+    final ellipse = EllipseDrawing(
+      start: normalizedStart,
+      end: normalizedStart,
+      color: activeColor,
+      thickness: thickness,
+      isDotted: isDotted,
+      hasArrow: false,
+      id: id,
+      boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
+    );
+
+    state = state.copyWith(currentElement: ellipse);
+    _triggerRepaint();
+  }
+
+  void updateEllipse(Offset offset, CoordinateSystem coordinateSystem) {
+    if (state.currentElement == null ||
+        state.currentElement is! EllipseDrawing) {
+      return;
+    }
+
+    final ellipse = state.currentElement as EllipseDrawing;
+    final normalizedOffset = coordinateSystem.screenToCoordinate(offset);
+    ellipse.updateEndPoint(normalizedOffset);
+    ellipse.boundingBox = BoundingBox(
+      min: ellipse.normalizedRect.topLeft,
+      max: ellipse.normalizedRect.bottomRight,
+    );
+
+    state = state.copyWith(currentElement: ellipse);
+    _triggerRepaint();
+  }
+
+  void finishEllipse(Offset? offset, CoordinateSystem coordinateSystem) {
+    if (state.currentElement == null ||
+        state.currentElement is! EllipseDrawing) {
+      return;
+    }
+
+    final ellipse = state.currentElement as EllipseDrawing;
+
+    if (offset != null) {
+      ellipse.updateEndPoint(coordinateSystem.screenToCoordinate(offset));
+    }
+
+    ellipse.boundingBox = BoundingBox(
+      min: ellipse.normalizedRect.topLeft,
+      max: ellipse.normalizedRect.bottomRight,
+    );
+
+    state = state.copyWithButEvil(
+      elements: [...state.elements, ellipse],
+    );
+
+    final action = UserAction(
+      type: ActionType.addition,
+      id: ellipse.id,
       group: ActionGroup.drawing,
     );
     ref.read(actionProvider.notifier).addAction(action);
