@@ -30,14 +30,13 @@ void _agentDebugLog(
   Map<String, dynamic> data,
 ) {
   File('/opt/cursor/logs/debug.log').writeAsStringSync(
-    jsonEncode({
+    '${jsonEncode({
           'hypothesisId': hypothesisId,
           'location': location,
           'message': message,
           'data': data,
           'timestamp': DateTime.now().millisecondsSinceEpoch,
-        }) +
-        '\n',
+        })}\n',
     mode: FileMode.append,
   );
 }
