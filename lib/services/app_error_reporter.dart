@@ -114,13 +114,6 @@ class AppErrorReporter {
       source: source,
       errorText: errorText,
       stackTrace: stackTrace?.toString(),
-      dedupeKey: _buildNotificationFingerprint(
-        level: level,
-        message: message,
-        source: source,
-        errorText: errorText,
-        stackTrace: stackTrace?.toString(),
-      ),
     );
 
     developer.log(
@@ -182,41 +175,6 @@ class AppErrorReporter {
   static bool get _canShowInteractiveUi =>
       appNavigatorKey.currentContext != null ||
       appNavigatorKey.currentState?.overlay?.context != null;
-
-  static String _buildNotificationFingerprint({
-    required DebugLogLevel level,
-    required String message,
-    String? source,
-    String? errorText,
-    String? stackTrace,
-  }) {
-    return [
-      level.name,
-      _normalizeFingerprintFragment(source),
-      _normalizeFingerprintFragment(message),
-      _normalizeFingerprintFragment(errorText),
-      _normalizeFingerprintFragment(_firstStackTraceLine(stackTrace)),
-    ].join('|');
-  }
-
-  static String _normalizeFingerprintFragment(String? value) {
-    if (value == null) return '';
-
-    return value.replaceAll(RegExp(r'\s+'), ' ').trim();
-  }
-
-  static String? _firstStackTraceLine(String? stackTrace) {
-    if (stackTrace == null) return null;
-
-    for (final line in stackTrace.split('\n')) {
-      final trimmed = line.trim();
-      if (trimmed.isNotEmpty) {
-        return trimmed;
-      }
-    }
-
-    return null;
-  }
 
   static void _showInteractiveNotificationIfNeeded(DebugLogEntry entry) {
     if (!_canShowInteractiveUi) return;
