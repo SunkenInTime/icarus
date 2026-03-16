@@ -16,6 +16,7 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/dialogs/upload_image_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
+import 'package:icarus/widgets/sidebar_widgets/agent_role_icon_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/custom_shape_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/text_tools.dart';
@@ -23,7 +24,14 @@ import 'package:icarus/widgets/sidebar_widgets/vision_cone_tools.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
-enum _ContextBarMode { drawing, visionCone, customShapes, textTools, none }
+enum _ContextBarMode {
+  drawing,
+  visionCone,
+  customShapes,
+  textTools,
+  roleIcons,
+  none
+}
 
 class BottomContextBar extends ConsumerWidget {
   const BottomContextBar({super.key});
@@ -39,6 +47,7 @@ class BottomContextBar extends ConsumerWidget {
       InteractionState.visionCone => _ContextBarMode.visionCone,
       InteractionState.customShapes => _ContextBarMode.customShapes,
       InteractionState.textTools => _ContextBarMode.textTools,
+      InteractionState.roleIcons => _ContextBarMode.roleIcons,
       _ => _ContextBarMode.none,
     };
 
@@ -71,6 +80,8 @@ class BottomContextBar extends ConsumerWidget {
       _ContextBarMode.customShapes =>
         const CustomShapeTools(key: ValueKey('customShapes')),
       _ContextBarMode.textTools => const TextTools(key: ValueKey('textTools')),
+      _ContextBarMode.roleIcons =>
+        const AgentRoleIconTools(key: ValueKey('roleIcons')),
       _ContextBarMode.none => const SizedBox.shrink(key: ValueKey('none')),
     };
   }
@@ -292,6 +303,25 @@ class ToolGrid extends ConsumerWidget {
                 icon: const Icon(Icons.crop_square, size: 20),
                 isSelected:
                     currentInteractionState == InteractionState.customShapes,
+              ),
+              SelectableIconButton(
+                tooltip: "Agent Roles",
+                onPressed: () {
+                  switch (currentInteractionState) {
+                    case InteractionState.roleIcons:
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.navigation);
+                    default:
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.roleIcons);
+                  }
+                },
+                icon: Image.asset("assets/agents/duelist.webp",
+                    width: 20, height: 20),
+                isSelected:
+                    currentInteractionState == InteractionState.roleIcons,
               ),
               ShadTooltip(
                 builder: (context) => const Text("Spike"),
