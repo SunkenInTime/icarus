@@ -43,6 +43,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
   AdapterSpec<SimpleImageData>(),
   AdapterSpec<AgentState>(),
   AdapterSpec<RectangleDrawing>(),
+  AdapterSpec<EllipseDrawing>(),
   AdapterSpec<TraversalSpeedProfile>(),
   AdapterSpec<MapThemePalette>(),
   AdapterSpec<MapThemeProfile>(),
