@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:developer' as dev;
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -63,24 +62,6 @@ class DrawingState {
 
 final drawingProvider =
     NotifierProvider<DrawingProvider, DrawingState>(DrawingProvider.new);
-
-void _agentDebugLog(
-  String hypothesisId,
-  String location,
-  String message,
-  Map<String, dynamic> data,
-) {
-  File('/opt/cursor/logs/debug.log').writeAsStringSync(
-    '${jsonEncode({
-          'hypothesisId': hypothesisId,
-          'location': location,
-          'message': message,
-          'data': data,
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-        })}\n',
-    mode: FileMode.append,
-  );
-}
 
 class DrawingProviderSnapshot {
   final DrawingState state;
@@ -691,18 +672,6 @@ class DrawingProvider extends Notifier<DrawingState> {
       boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
     );
 
-    // #region agent log
-    _agentDebugLog(
-        'A/C', 'drawing_provider.dart:startRectangle', 'rectangle-started', {
-      'screenStartDx': start.dx,
-      'screenStartDy': start.dy,
-      'normalizedStartDx': normalizedStart.dx,
-      'normalizedStartDy': normalizedStart.dy,
-      'effectiveWidth': coordinateSystem.effectiveSize.width,
-      'effectiveHeight': coordinateSystem.effectiveSize.height,
-    });
-    // #endregion
-
     state = state.copyWith(currentElement: rectangle);
     _triggerRepaint();
   }
@@ -719,18 +688,6 @@ class DrawingProvider extends Notifier<DrawingState> {
     rectangle.boundingBox = BoundingBox(
         min: rectangle.normalizedRect.topLeft,
         max: rectangle.normalizedRect.bottomRight);
-
-    // #region agent log
-    _agentDebugLog(
-        'A/B/C', 'drawing_provider.dart:updateRectangle', 'rectangle-updated', {
-      'screenOffsetDx': offset.dx,
-      'screenOffsetDy': offset.dy,
-      'normalizedEndDx': normalizedOffset.dx,
-      'normalizedEndDy': normalizedOffset.dy,
-      'rectWidth': rectangle.normalizedRect.width,
-      'rectHeight': rectangle.normalizedRect.height,
-    });
-    // #endregion
 
     state = state.copyWith(currentElement: rectangle);
     _triggerRepaint();
@@ -751,19 +708,6 @@ class DrawingProvider extends Notifier<DrawingState> {
     rectangle.boundingBox = BoundingBox(
         min: rectangle.normalizedRect.topLeft,
         max: rectangle.normalizedRect.bottomRight);
-
-    // #region agent log
-    _agentDebugLog(
-        'A/D', 'drawing_provider.dart:finishRectangle', 'rectangle-finished', {
-      'hasOffset': offset != null,
-      'startDx': rectangle.start.dx,
-      'startDy': rectangle.start.dy,
-      'endDx': rectangle.end.dx,
-      'endDy': rectangle.end.dy,
-      'rectWidth': rectangle.normalizedRect.width,
-      'rectHeight': rectangle.normalizedRect.height,
-    });
-    // #endregion
 
     state = state.copyWithButEvil(
       elements: [...state.elements, rectangle],
@@ -806,18 +750,6 @@ class DrawingProvider extends Notifier<DrawingState> {
       boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
     );
 
-    // #region agent log
-    _agentDebugLog(
-        'A/C', 'drawing_provider.dart:startEllipse', 'ellipse-started', {
-      'screenStartDx': start.dx,
-      'screenStartDy': start.dy,
-      'normalizedStartDx': normalizedStart.dx,
-      'normalizedStartDy': normalizedStart.dy,
-      'effectiveWidth': coordinateSystem.effectiveSize.width,
-      'effectiveHeight': coordinateSystem.effectiveSize.height,
-    });
-    // #endregion
-
     state = state.copyWith(currentElement: ellipse);
     _triggerRepaint();
   }
@@ -835,18 +767,6 @@ class DrawingProvider extends Notifier<DrawingState> {
       min: ellipse.normalizedRect.topLeft,
       max: ellipse.normalizedRect.bottomRight,
     );
-
-    // #region agent log
-    _agentDebugLog(
-        'A/B/C', 'drawing_provider.dart:updateEllipse', 'ellipse-updated', {
-      'screenOffsetDx': offset.dx,
-      'screenOffsetDy': offset.dy,
-      'normalizedEndDx': normalizedOffset.dx,
-      'normalizedEndDy': normalizedOffset.dy,
-      'ellipseWidth': ellipse.normalizedRect.width,
-      'ellipseHeight': ellipse.normalizedRect.height,
-    });
-    // #endregion
 
     state = state.copyWith(currentElement: ellipse);
     _triggerRepaint();
@@ -868,19 +788,6 @@ class DrawingProvider extends Notifier<DrawingState> {
       min: ellipse.normalizedRect.topLeft,
       max: ellipse.normalizedRect.bottomRight,
     );
-
-    // #region agent log
-    _agentDebugLog(
-        'A/D', 'drawing_provider.dart:finishEllipse', 'ellipse-finished', {
-      'hasOffset': offset != null,
-      'startDx': ellipse.start.dx,
-      'startDy': ellipse.start.dy,
-      'endDx': ellipse.end.dx,
-      'endDy': ellipse.end.dy,
-      'ellipseWidth': ellipse.normalizedRect.width,
-      'ellipseHeight': ellipse.normalizedRect.height,
-    });
-    // #endregion
 
     state = state.copyWithButEvil(
       elements: [...state.elements, ellipse],

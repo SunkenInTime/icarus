@@ -1,8 +1,5 @@
 // ignore_for_file: prefer_const_constructors
 
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -25,24 +22,6 @@ import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-
-void _agentDebugLog(
-  String hypothesisId,
-  String location,
-  String message,
-  Map<String, dynamic> data,
-) {
-  File('/opt/cursor/logs/debug.log').writeAsStringSync(
-    '${jsonEncode({
-          'hypothesisId': hypothesisId,
-          'location': location,
-          'message': message,
-          'data': data,
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-        })}\n',
-    mode: FileMode.append,
-  );
-}
 
 class _MapSvgColorMapper extends ColorMapper {
   const _MapSvgColorMapper(this.replacements);
@@ -237,22 +216,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                           alignment: Alignment.topLeft,
                           minScale: 1.0,
                           maxScale: 8.0,
-                          onInteractionUpdate: (details) {
-                            if (ref.read(interactionStateProvider) ==
-                                InteractionState.drawing) {
-                              // #region agent log
-                              _agentDebugLog(
-                                'G',
-                                'interactive_map.dart:onInteractionUpdate',
-                                'interactive-viewer-update',
-                                {
-                                  'scale': controller.value.getMaxScaleOnAxis(),
-                                  'focalDx': details.focalPoint.dx,
-                                  'focalDy': details.focalPoint.dy,
-                                },
-                              );
-                              // #endregion
-                            }
+                          onInteractionUpdate: (_) {
                             ref.read(screenZoomProvider.notifier).updateZoom(
                                 controller.value.getMaxScaleOnAxis());
                             _updatePlacementCenter(

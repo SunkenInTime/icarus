@@ -1,6 +1,4 @@
 import 'dart:developer';
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:dash_painter/dash_painter.dart';
@@ -22,24 +20,6 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 final visualPositionProvider = StateProvider<Offset?>((ref) {
   return null;
 });
-
-void _agentDebugLog(
-  String hypothesisId,
-  String location,
-  String message,
-  Map<String, dynamic> data,
-) {
-  File('/opt/cursor/logs/debug.log').writeAsStringSync(
-    '${jsonEncode({
-          'hypothesisId': hypothesisId,
-          'location': location,
-          'message': message,
-          'data': data,
-          'timestamp': DateTime.now().millisecondsSinceEpoch,
-        })}\n',
-    mode: FileMode.append,
-  );
-}
 
 class InteractivePainter extends ConsumerStatefulWidget {
   const InteractivePainter({
@@ -132,252 +112,193 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
             ref.read(visualPositionProvider.notifier).state =
                 event.localPosition;
           },
-          child: Listener(
-            onPointerMove: (event) {
-              if (currentInteractionState != InteractionState.drawing) return;
-              // #region agent log
-              _agentDebugLog(
-                'F',
-                'drawing_painter.dart:onPointerMove',
-                'pointer-move',
-                {
-                  'penMode': penState.penMode.name,
-                  'localDx': event.localPosition.dx,
-                  'localDy': event.localPosition.dy,
-                  'buttons': event.buttons,
-                },
-              );
-              // #endregion
+          child: GestureDetector(
+            onPanStart: (details) {
+              log("Pan start detected");
+              log(penState.color.toString());
+
+              switch (currentInteractionState) {
+                case InteractionState.drawing:
+                  switch (penState.penMode) {
+                    case PenMode.freeDraw:
+                      ref.read(drawingProvider.notifier).startFreeDrawing(
+                            details.localPosition,
+                            coordinateSystem,
+                            penState.color,
+                            penState.thickness,
+                            penState.isDotted,
+                            penState.hasArrow,
+                            penState.traversalTimeEnabled,
+                            penState.activeTraversalSpeedProfile,
+                          );
+                    case PenMode.line:
+                      ref.read(drawingProvider.notifier).startLine(
+                            details.localPosition,
+                            coordinateSystem,
+                            penState.color,
+                            penState.thickness,
+                            penState.isDotted,
+                            penState.hasArrow,
+                            penState.traversalTimeEnabled,
+                            penState.activeTraversalSpeedProfile,
+                          );
+                    case PenMode.square:
+                      ref.read(drawingProvider.notifier).startRectangle(
+                            details.localPosition,
+                            coordinateSystem,
+                            penState.color,
+                            penState.thickness,
+                            penState.isDotted,
+                          );
+                    case PenMode.ellipse:
+                      ref.read(drawingProvider.notifier).startEllipse(
+                            details.localPosition,
+                            coordinateSystem,
+                            penState.color,
+                            penState.thickness,
+                            penState.isDotted,
+                          );
+                  }
+
+                case InteractionState.erasing:
+                  final normalizedPosition = CoordinateSystem.instance
+                      .screenToCoordinate(details.localPosition);
+                  ref
+                      .read(drawingProvider.notifier)
+                      .onErase(normalizedPosition);
+
+                  // setState(() {
+                  //   _visualMousePosition = details.localPosition;
+                  // });
+                  ref.read(visualPositionProvider.notifier).state =
+                      details.localPosition;
+                default:
+              }
             },
-            child: GestureDetector(
-              onPanStart: (details) {
-                log("Pan start detected");
-                log(penState.color.toString());
 
-                // #region agent log
-                _agentDebugLog(
-                  'A/B/E',
-                  'drawing_painter.dart:onPanStart',
-                  'pan-start',
-                  {
-                    'interactionState': currentInteractionState.name,
-                    'penMode': penState.penMode.name,
-                    'localDx': details.localPosition.dx,
-                    'localDy': details.localPosition.dy,
-                  },
-                );
-                // #endregion
+            // },
+            onPanUpdate: (details) {
+              switch (currentInteractionState) {
+                case InteractionState.drawing:
+                  switch (penState.penMode) {
+                    case PenMode.freeDraw:
+                      ref.read(drawingProvider.notifier).updateFreeDrawing(
+                          details.localPosition, coordinateSystem);
+                    case PenMode.line:
+                      ref.read(drawingProvider.notifier).updateCurrentLine(
+                            details.localPosition,
+                            coordinateSystem,
+                          );
+                    case PenMode.square:
+                      ref.read(drawingProvider.notifier).updateRectangle(
+                            details.localPosition,
+                            coordinateSystem,
+                          );
+                    case PenMode.ellipse:
+                      ref.read(drawingProvider.notifier).updateEllipse(
+                            details.localPosition,
+                            coordinateSystem,
+                          );
+                  }
+                case InteractionState.erasing:
+                  final normalizedPosition = CoordinateSystem.instance
+                      .screenToCoordinate(details.localPosition);
+                  ref
+                      .read(drawingProvider.notifier)
+                      .onErase(normalizedPosition);
 
-                switch (currentInteractionState) {
-                  case InteractionState.drawing:
-                    switch (penState.penMode) {
-                      case PenMode.freeDraw:
-                        ref.read(drawingProvider.notifier).startFreeDrawing(
-                              details.localPosition,
-                              coordinateSystem,
-                              penState.color,
-                              penState.thickness,
-                              penState.isDotted,
-                              penState.hasArrow,
-                              penState.traversalTimeEnabled,
-                              penState.activeTraversalSpeedProfile,
-                            );
-                      case PenMode.line:
-                        ref.read(drawingProvider.notifier).startLine(
-                              details.localPosition,
-                              coordinateSystem,
-                              penState.color,
-                              penState.thickness,
-                              penState.isDotted,
-                              penState.hasArrow,
-                              penState.traversalTimeEnabled,
-                              penState.activeTraversalSpeedProfile,
-                            );
-                      case PenMode.square:
-                        ref.read(drawingProvider.notifier).startRectangle(
-                              details.localPosition,
-                              coordinateSystem,
-                              penState.color,
-                              penState.thickness,
-                              penState.isDotted,
-                            );
-                      case PenMode.ellipse:
-                        ref.read(drawingProvider.notifier).startEllipse(
-                              details.localPosition,
-                              coordinateSystem,
-                              penState.color,
-                              penState.thickness,
-                              penState.isDotted,
-                            );
-                    }
-
-                  case InteractionState.erasing:
-                    final normalizedPosition = CoordinateSystem.instance
-                        .screenToCoordinate(details.localPosition);
-                    ref
-                        .read(drawingProvider.notifier)
-                        .onErase(normalizedPosition);
-
-                    // setState(() {
-                    //   _visualMousePosition = details.localPosition;
-                    // });
-                    ref.read(visualPositionProvider.notifier).state =
-                        details.localPosition;
-                  default:
-                }
-              },
-
-              // },
-              onPanUpdate: (details) {
-                // #region agent log
-                _agentDebugLog(
-                  'A/B/E',
-                  'drawing_painter.dart:onPanUpdate',
-                  'pan-update',
-                  {
-                    'interactionState': currentInteractionState.name,
-                    'penMode': penState.penMode.name,
-                    'localDx': details.localPosition.dx,
-                    'localDy': details.localPosition.dy,
-                  },
-                );
-                // #endregion
-
-                switch (currentInteractionState) {
-                  case InteractionState.drawing:
-                    switch (penState.penMode) {
-                      case PenMode.freeDraw:
-                        ref.read(drawingProvider.notifier).updateFreeDrawing(
-                            details.localPosition, coordinateSystem);
-                      case PenMode.line:
-                        ref.read(drawingProvider.notifier).updateCurrentLine(
-                              details.localPosition,
-                              coordinateSystem,
-                            );
-                      case PenMode.square:
-                        ref.read(drawingProvider.notifier).updateRectangle(
-                              details.localPosition,
-                              coordinateSystem,
-                            );
-                      case PenMode.ellipse:
-                        ref.read(drawingProvider.notifier).updateEllipse(
-                              details.localPosition,
-                              coordinateSystem,
-                            );
-                    }
-                  case InteractionState.erasing:
-                    final normalizedPosition = CoordinateSystem.instance
-                        .screenToCoordinate(details.localPosition);
-                    ref
-                        .read(drawingProvider.notifier)
-                        .onErase(normalizedPosition);
-
-                    // setState(() {
-                    //   _visualMousePosition = details.localPosition;
-                    // });
-                    ref.read(visualPositionProvider.notifier).state =
-                        details.localPosition;
-                  default:
-                }
-              },
-              onPanEnd: (details) {
-                // #region agent log
-                _agentDebugLog(
-                  'A/E',
-                  'drawing_painter.dart:onPanEnd',
-                  'pan-end',
-                  {
-                    'interactionState': currentInteractionState.name,
-                    'penMode': penState.penMode.name,
-                  },
-                );
-                // #endregion
-
-                switch (currentInteractionState) {
-                  case InteractionState.drawing:
-                    switch (penState.penMode) {
-                      case PenMode.freeDraw:
-                        ref
-                            .read(drawingProvider.notifier)
-                            .finishFreeDrawing(null, coordinateSystem);
-                      case PenMode.line:
-                        ref
-                            .read(drawingProvider.notifier)
-                            .finishCurrentLine(null, coordinateSystem);
-                      case PenMode.square:
-                        ref
-                            .read(drawingProvider.notifier)
-                            .finishRectangle(null, coordinateSystem);
-                      case PenMode.ellipse:
-                        ref
-                            .read(drawingProvider.notifier)
-                            .finishEllipse(null, coordinateSystem);
-                    }
-                  case InteractionState.erasing:
-                    ref.read(visualPositionProvider.notifier).state = null;
-                  default:
-                }
-              },
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: CustomPaint(
-                      painter: drawingPainter,
-                    ),
+                  // setState(() {
+                  //   _visualMousePosition = details.localPosition;
+                  // });
+                  ref.read(visualPositionProvider.notifier).state =
+                      details.localPosition;
+                default:
+              }
+            },
+            onPanEnd: (details) {
+              switch (currentInteractionState) {
+                case InteractionState.drawing:
+                  switch (penState.penMode) {
+                    case PenMode.freeDraw:
+                      ref
+                          .read(drawingProvider.notifier)
+                          .finishFreeDrawing(null, coordinateSystem);
+                    case PenMode.line:
+                      ref
+                          .read(drawingProvider.notifier)
+                          .finishCurrentLine(null, coordinateSystem);
+                    case PenMode.square:
+                      ref
+                          .read(drawingProvider.notifier)
+                          .finishRectangle(null, coordinateSystem);
+                    case PenMode.ellipse:
+                      ref
+                          .read(drawingProvider.notifier)
+                          .finishEllipse(null, coordinateSystem);
+                  }
+                case InteractionState.erasing:
+                  ref.read(visualPositionProvider.notifier).state = null;
+                default:
+              }
+            },
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: drawingPainter,
                   ),
-                  Consumer(
-                    builder: (context, ref, child) {
-                      if (currentInteractionState != InteractionState.erasing)
-                        return const SizedBox.shrink();
+                ),
+                Consumer(
+                  builder: (context, ref, child) {
+                    if (currentInteractionState != InteractionState.erasing)
+                      return const SizedBox.shrink();
 
-                      final visualPosition = ref.watch(visualPositionProvider);
+                    final visualPosition = ref.watch(visualPositionProvider);
 
-                      if (visualPosition == null)
-                        return const SizedBox.shrink();
+                    if (visualPosition == null) return const SizedBox.shrink();
 
-                      return Stack(
-                        children: [
-                          Positioned(
-                            left: visualPosition.dx -
-                                (coordinateSystem
-                                        .scale(Settings.erasingSize * 2) /
-                                    2),
-                            top: visualPosition.dy -
-                                (coordinateSystem
-                                        .scale(Settings.erasingSize * 2) /
-                                    2),
-                            child: IgnorePointer(
-                              ignoring: true,
-                              child: CursorCircle(
-                                size: coordinateSystem
-                                    .scale(Settings.erasingSize * 2),
-                                ringThickness: 1,
-                                gap: 1,
-                                ringColor:
-                                    Settings.tacticalVioletTheme.destructive,
-                                fillColor: Settings
-                                    .tacticalVioletTheme.destructive
-                                    .withValues(alpha: 0.5),
-                              ),
+                    return Stack(
+                      children: [
+                        Positioned(
+                          left: visualPosition.dx -
+                              (coordinateSystem
+                                      .scale(Settings.erasingSize * 2) /
+                                  2),
+                          top: visualPosition.dy -
+                              (coordinateSystem
+                                      .scale(Settings.erasingSize * 2) /
+                                  2),
+                          child: IgnorePointer(
+                            ignoring: true,
+                            child: CursorCircle(
+                              size: coordinateSystem
+                                  .scale(Settings.erasingSize * 2),
+                              ringThickness: 1,
+                              gap: 1,
+                              ringColor:
+                                  Settings.tacticalVioletTheme.destructive,
+                              fillColor: Settings
+                                  .tacticalVioletTheme.destructive
+                                  .withValues(alpha: 0.5),
                             ),
-                          )
-                        ],
-                      );
-                    },
-                  ),
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: _TraversalTimeOverlay(
-                        coordinateSystem: coordinateSystem,
-                        mapScale: mapScale,
-                        isAttack: isAttack,
-                        elements: drawingState.elements,
-                        currentLine: drawingState.currentElement,
-                      ),
+                          ),
+                        )
+                      ],
+                    );
+                  },
+                ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: _TraversalTimeOverlay(
+                      coordinateSystem: coordinateSystem,
+                      mapScale: mapScale,
+                      isAttack: isAttack,
+                      elements: drawingState.elements,
+                      currentLine: drawingState.currentElement,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
