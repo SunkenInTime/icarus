@@ -111,11 +111,22 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
               onInvoke: (intent) async {
                 _dismissDeleteMenu();
                 final strategyId = ref.read(strategyProvider).id;
-                await ref.read(strategyProvider.notifier).forceSaveNow(
-                      strategyId,
-                    );
-                if (!mounted) return null;
-                Settings.showToast(
+                try {
+                  await ref.read(strategyProvider.notifier).forceSaveNow(
+                        strategyId,
+                      );
+                  if (!mounted) return null;
+                  Settings.showToast(
+                    message: 'File saved',
+                    backgroundColor: Colors.green,
+                  );
+                } catch (_) {
+                  if (!mounted) return null;
+                  Settings.showToast(
+                    message: 'Save failed',
+                    backgroundColor: Colors.red,
+                  );
+                }
                   message: 'File saved',
                   backgroundColor: Colors.green,
                 );
