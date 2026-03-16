@@ -236,10 +236,14 @@ void main() {
 
       final ellipse =
           container.read(drawingProvider).elements.single as EllipseDrawing;
+      final expectedStart =
+          coordinateSystem.screenToCoordinate(const Offset(100, 120));
+      final expectedEnd =
+          coordinateSystem.screenToCoordinate(const Offset(220, 260));
       expect(ellipse.isDotted, isTrue);
       expect(ellipse.hasArrow, isFalse);
-      expect(ellipse.boundingBox!.min, const Offset(100, 120));
-      expect(ellipse.boundingBox!.max, const Offset(220, 260));
+      expect(ellipse.boundingBox!.min, expectedStart);
+      expect(ellipse.boundingBox!.max, expectedEnd);
 
       actionNotifier.undoAction();
       expect(container.read(drawingProvider).elements, isEmpty);
