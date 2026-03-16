@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -47,7 +45,6 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
           if (_previousSize == currentSize) return;
           _previousSize = currentSize;
           ref.read(lineUpCanvasResizeProvider.notifier).increment();
-          log("LineUp Canvas resized to $currentSize");
         });
 
         final resizeCounter = ref.watch(lineUpCanvasResizeProvider);

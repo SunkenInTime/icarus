@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -45,10 +44,6 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
       'CustomCircleUtilityWidget requires explicit diameter/color/opacity values.',
     );
     if (!hasAllRequiredValues) {
-      if (kDebugMode) {
-        debugPrint(
-            'Skipping custom circle render due to missing explicit values (id: $id).');
-      }
       return const SizedBox.shrink();
     }
 

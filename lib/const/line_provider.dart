@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:developer';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/maps.dart';
@@ -265,7 +263,6 @@ class LineUpProvider extends Notifier<LineUpState> {
         armLengthsMeters: armLengthsMeters,
       );
 
-      log("Updated ability: ${updatedAbility.rotation} ${updatedAbility.length}");
       state = state.copyWith(currentAbility: updatedAbility);
     }
   }
@@ -369,7 +366,6 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void clearAll() {
-    log("Clearing all line ups");
     _poppedLineUps.clear();
     state = state.copyWith(lineUps: []);
   }

@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
@@ -47,7 +45,6 @@ class LineUpAbilityWidget extends ConsumerWidget {
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final abilityScreen =
         coordinateSystem.coordinateToScreen(lineUp.ability.position);
-    log(lineUp.notes);
     final isRotatable = lineUp.ability.rotation != 0;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
     return Positioned(

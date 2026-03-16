@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:developer' show log;
 import 'dart:ui' show Offset;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,7 +74,6 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
       return;
     }
 
-    log("Updating position of ability $id to $position, center at $centerPosition");
     newState[index].updatePosition(position);
 
     final temp = newState.removeAt(index);
@@ -171,11 +169,9 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   void undoAction(UserAction action) {
     switch (action.type) {
       case ActionType.addition:
-        log("We are attmepting to remove");
         removeAbility(action.id);
       case ActionType.deletion:
         if (poppedAbility.isEmpty) {
-          log("Popped agents is empty");
           return;
         }
 
@@ -188,10 +184,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
         final index = PlacedWidget.getIndexByID(action.id, newState);
 
-        log("Previous rotation: ${newState[index].rotation} Previous length: ${newState[index].length}");
         newState[index].undoAction();
-
-        log("Current rotation: ${newState[index].rotation} Current length: ${newState[index].length}");
         state = newState;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -219,9 +212,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
         case ActionType.transaction:
           return;
       }
-    } catch (_) {
-      log("failed to find index");
-    }
+    } catch (_) {}
     state = newState;
   }
 

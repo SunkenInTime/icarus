@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 
 String buildImportSummaryMessage(ImportBatchResult result) {
   final skippedCount = result.issues.length;
@@ -99,17 +100,31 @@ class _CustomDropTargetState extends ConsumerState<IcaDropTarget> {
               .loadFromFileDrop(details.files);
 
           if (result.hasImports || result.issues.isNotEmpty) {
-            Settings.showToast(
-              message: buildImportSummaryMessage(result),
-              backgroundColor: result.hasImports
-                  ? Settings.tacticalVioletTheme.primary
-                  : Settings.tacticalVioletTheme.destructive,
-            );
+            final message = buildImportSummaryMessage(result);
+            if (result.hasImports) {
+              Settings.showToast(
+                message: message,
+                backgroundColor: Settings.tacticalVioletTheme.primary,
+              );
+              if (result.issues.isNotEmpty) {
+                AppErrorReporter.reportWarning(
+                  message,
+                  source: 'IcaDropTarget.onDragDone',
+                );
+              }
+            } else {
+              AppErrorReporter.reportError(
+                message,
+                source: 'IcaDropTarget.onDragDone',
+              );
+            }
           }
-        } catch (_) {
-          Settings.showToast(
-            message: 'Failed to import dropped items.',
-            backgroundColor: Settings.tacticalVioletTheme.destructive,
+        } catch (error, stackTrace) {
+          AppErrorReporter.reportError(
+            'Failed to import dropped items.',
+            error: error,
+            stackTrace: stackTrace,
+            source: 'IcaDropTarget.onDragDone',
           );
         }
       },

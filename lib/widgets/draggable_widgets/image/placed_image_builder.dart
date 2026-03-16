@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/image_scale_policy.dart';
@@ -66,7 +64,6 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
       return ImageScaleController(
         isDragging: isDragging,
         onPanUpdate: (details) {
-          log("I'm being panned");
           setState(() {
             isPanning = true;
             localScale = ImageScalePolicy.clamp(details.delta.dx + localScale!);

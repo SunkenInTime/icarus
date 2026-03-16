@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:developer';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -204,9 +203,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
         case ActionType.transaction:
           return;
       }
-    } catch (_) {
-      log("failed to find index");
-    }
+    } catch (_) {}
   }
 
   void removeUtility(String id) {

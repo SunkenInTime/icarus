@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'dart:typed_data' show Uint8List;
 
 import 'package:file_picker/file_picker.dart';
@@ -91,8 +90,6 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                 ref.read(lineUpProvider.notifier).updateLineUp(lineUp);
               } else {
                 final id = const Uuid().v4();
-
-                log("notes : ${_notesController.text}");
 
                 final LineUp currentLineUp = LineUp(
                   id: id,

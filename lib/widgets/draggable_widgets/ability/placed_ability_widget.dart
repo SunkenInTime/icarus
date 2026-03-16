@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
@@ -199,7 +197,6 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           origin: widget.ability.data.abilityData!
               .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize),
           onPanStart: (details) {
-            log("Rotation Start");
             // ref.read(abilityProvider.notifier).updateRotationHistory(index);
             // ref.read(abilityProvider.notifier).updateLengthHistory(index);
 

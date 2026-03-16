@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
@@ -198,7 +196,6 @@ class AgentWidget extends ConsumerWidget {
             splashColor: Colors.white.withValues(alpha: 0.3),
             onLongPress: () {
               if (id == null) return;
-              log("Sigma pressed");
               ref.read(agentProvider.notifier).toggleAgentState(id!);
             },
             child: agentDisplay,

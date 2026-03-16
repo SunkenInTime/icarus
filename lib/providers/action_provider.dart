@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -140,14 +139,12 @@ class ActionProvider extends Notifier<List<UserAction>> {
   }
 
   void redoAction() {
-    log(poppedItems.length.toString());
     if (poppedItems.isEmpty) {
       // log("Popped list is empty");
       return;
     }
 
     final poppedAction = poppedItems.last;
-    log(poppedItems.length.toString());
     if (poppedAction.type == ActionType.bulkDeletion) {
       _redoBulkAction(poppedAction);
       return;

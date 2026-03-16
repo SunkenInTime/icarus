@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
@@ -99,8 +97,6 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                       return;
                     }
 
-                    log(renderBox.size.toString());
-
                     ref.read(lineUpProvider.notifier).updateAbilityPosition(
                         coordinateSystem.screenToCoordinate(localOffset));
                   },
@@ -185,9 +181,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
             ref.read(lineUpProvider.notifier).setAbility(placedAbility);
           }
         },
-        onLeave: (data) {
-          log("I have left");
-        },
+        onLeave: (data) {},
       );
     });
   }

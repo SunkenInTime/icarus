@@ -173,12 +173,20 @@ class Settings {
     offset: Offset(0, 4), // Slight downward shift
   );
 
-  static void showToast(
-      {required String message, required Color backgroundColor}) {
+  static void showToast({
+    required String message,
+    required Color backgroundColor,
+    String? actionLabel,
+    VoidCallback? onActionPressed,
+  }) {
     toastification.showCustom(
       autoCloseDuration: const Duration(seconds: 3),
       alignment: Alignment.bottomCenter,
       builder: (context, holder) {
+        final actionIsVisible = actionLabel != null &&
+            actionLabel.isNotEmpty &&
+            onActionPressed != null;
+
         return Container(
           margin: const EdgeInsets.all(16),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -189,12 +197,40 @@ class Settings {
               color: Settings.tacticalVioletTheme.border,
             ),
           ),
-          child: Text(
-            message,
-            style: ShadTheme.of(context)
-                .textTheme
-                .small
-                .copyWith(color: Colors.white),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  message,
+                  style: ShadTheme.of(context)
+                      .textTheme
+                      .small
+                      .copyWith(color: Colors.white),
+                ),
+              ),
+              if (actionIsVisible) const SizedBox(width: 12),
+              if (actionIsVisible)
+                TextButton(
+                  onPressed: onActionPressed,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.35),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  child: Text(actionLabel),
+                ),
+            ],
           ),
         );
       },

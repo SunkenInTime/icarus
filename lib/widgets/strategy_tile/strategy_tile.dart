@@ -141,9 +141,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   }
 
   Future<void> _openStrategy(BuildContext context) async {
-    log('StrategyTile: opening strategy');
     if (_isLoading) {
-      log('StrategyTile: already loading');
       return;
     }
 

@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'dart:math' as math;
 
 import 'package:dash_painter/dash_painter.dart';
@@ -114,9 +113,6 @@ class _InteractivePainterState extends ConsumerState<InteractivePainter> {
           },
           child: GestureDetector(
             onPanStart: (details) {
-              log("Pan start detected");
-              log(penState.color.toString());
-
               switch (currentInteractionState) {
                 case InteractionState.drawing:
                   switch (penState.penMode) {

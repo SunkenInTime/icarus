@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'dart:io';
 
 import 'package:desktop_updater/desktop_updater.dart';
@@ -13,6 +12,7 @@ import 'package:icarus/main.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/current_path_bar.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
@@ -57,7 +57,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       if (!_warnedOnce) {
         _warnedOnce = true;
 
-        log("Warning webview");
         _warnWebView();
 
         _warnDemo();
@@ -105,10 +104,19 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     }
     try {
       await ref.read(strategyProvider.notifier).loadFromFilePicker();
-    } on NewerVersionImportException {
-      Settings.showToast(
-        message: NewerVersionImportException.userMessage,
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
+    } on NewerVersionImportException catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        NewerVersionImportException.userMessage,
+        error: error,
+        stackTrace: stackTrace,
+        source: 'FolderNavigator.handleImportIca',
+      );
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to import strategy file.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'FolderNavigator.handleImportIca',
       );
     }
   }
@@ -123,17 +131,31 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           .read(strategyProvider.notifier)
           .importBackupFromFilePicker();
       if (result.hasImports || result.issues.isNotEmpty) {
-        Settings.showToast(
-          message: buildImportSummaryMessage(result),
-          backgroundColor: result.hasImports
-              ? Settings.tacticalVioletTheme.primary
-              : Settings.tacticalVioletTheme.destructive,
-        );
+        final message = buildImportSummaryMessage(result);
+        if (result.hasImports) {
+          Settings.showToast(
+            message: message,
+            backgroundColor: Settings.tacticalVioletTheme.primary,
+          );
+          if (result.issues.isNotEmpty) {
+            AppErrorReporter.reportWarning(
+              message,
+              source: 'FolderNavigator.handleImportBackup',
+            );
+          }
+        } else {
+          AppErrorReporter.reportError(
+            message,
+            source: 'FolderNavigator.handleImportBackup',
+          );
+        }
       }
-    } catch (_) {
-      Settings.showToast(
-        message: 'Failed to import backup archive.',
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to import backup archive.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'FolderNavigator.handleImportBackup',
       );
     }
   }
@@ -143,7 +165,16 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       _showDesktopOnlyToast();
       return;
     }
-    await ref.read(strategyProvider.notifier).exportLibrary();
+    try {
+      await ref.read(strategyProvider.notifier).exportLibrary();
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to export library.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'FolderNavigator.handleExportLibrary',
+      );
+    }
   }
 
   @override

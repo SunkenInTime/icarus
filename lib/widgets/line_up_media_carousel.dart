@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'dart:io';
 import 'dart:ui';
 
@@ -243,8 +242,6 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                     onPressed: () {
                       String lineUpId = widget.lineUpId;
                       Navigator.of(context).pop();
-
-                      log("Editing line up");
                       showDialog(
                         context: context,
                         builder: (context) => CreateLineupDialog(

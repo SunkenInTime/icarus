@@ -106,7 +106,9 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         dragAnchorStrategy:
             ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
         onDragStarted: () {
-          ref.read(textDraftProvider.notifier).commitDraft(widget.placedText.id);
+          ref
+              .read(textDraftProvider.notifier)
+              .commitDraft(widget.placedText.id);
           setState(() {
             isDragging = true;
           });
@@ -143,7 +145,9 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
       ShadContextMenuItem(
         child: const Text('Reset tag to gray'),
         onPressed: () {
-          ref.read(textProvider.notifier).updateTagColor(widget.placedText.id, null);
+          ref
+              .read(textProvider.notifier)
+              .updateTagColor(widget.placedText.id, null);
         },
       ),
       ..._tagPalette.map(

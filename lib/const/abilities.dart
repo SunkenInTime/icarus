@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'package:flutter/widgets.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/settings.dart';
@@ -229,7 +228,6 @@ class SquareAbility extends Ability {
   }) {
     assert(mapScale != null, 'mapScale must be provided');
     if (abilitySize == null) {
-      log("Warning: abilitySize is null in SquareAbility.getAnchorPoint");
       abilitySize = Settings.abilitySize;
     }
 

@@ -33,6 +33,7 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/maps.dart';
@@ -355,14 +356,27 @@ class StrategyProvider extends Notifier<StrategyState> {
   bool _saveInProgress = false;
   bool _pendingSave = false;
 
+  void _reportImportFailure(
+    String message, {
+    Object? error,
+    StackTrace? stackTrace,
+    required String source,
+  }) {
+    AppErrorReporter.reportError(
+      message,
+      error: error,
+      stackTrace: stackTrace,
+      source: source,
+      promptUser: false,
+    );
+  }
+
   //Used For Images
   void setFromState(StrategyState newState) {
     state = newState;
   }
 
   void setUnsaved() async {
-    log("Setting unsaved is being called");
-
     state = state.copyWith(isSaved: false);
     _saveTimer?.cancel();
     _saveTimer = Timer(Settings.autoSaveOffset, () async {
@@ -416,7 +430,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       await customDirectory.create(recursive: true);
     }
 
-    log(customDirectory.path);
     return customDirectory;
   }
 
@@ -557,7 +570,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       return migrateToCurrentVersion(strat);
     }
     final originalVersion = strat.versionNumber;
-    log("Migrating legacy strategy to single page");
     // ignore: deprecated_member_use, deprecated_member_use_from_same_package
     final abilityData = [...strat.abilityData];
     if (strat.versionNumber < 7) {
@@ -1115,7 +1127,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     }).firstOrNull;
 
     if (newStrat == null) {
-      log("Couldn't find save");
       return;
     }
     ref.read(actionProvider.notifier).resetActionState();
@@ -1140,7 +1151,6 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     // We clear previous data to avoid artifacts when loading a new strategy
-    log(newStrat.pages.first.toString());
     final migratedStrategy = migrateToCurrentVersion(newStrat);
     final page = migratedStrategy.pages.first;
 
@@ -1442,9 +1452,11 @@ class StrategyProvider extends Notifier<StrategyState> {
         ],
       );
     } catch (error, stackTrace) {
-      log(
-        'Failed to import dropped item ${file.path}: $error',
+      _reportImportFailure(
+        'Failed to import dropped item ${file.path}.',
+        error: error,
         stackTrace: stackTrace,
+        source: 'StrategyProvider._importDroppedItem',
       );
       return ImportBatchResult(
         strategiesImported: 0,
@@ -1507,9 +1519,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       );
     } on FileSystemException catch (error, stackTrace) {
       final errorPath = _resolveImportErrorPath(error, directory.path);
-      log(
-        'Failed to list import directory $errorPath: $error',
+      _reportImportFailure(
+        'Failed to list import directory $errorPath.',
+        error: error,
         stackTrace: stackTrace,
+        source: 'StrategyProvider._listImportEntities',
       );
       issues.add(
         ImportIssue(
@@ -1581,9 +1595,11 @@ class StrategyProvider extends Notifier<StrategyState> {
             ),
           );
         } catch (error, stackTrace) {
-          log(
-            'Failed to import strategy file ${entity.path}: $error',
+          _reportImportFailure(
+            'Failed to import strategy file ${entity.path}.',
+            error: error,
             stackTrace: stackTrace,
+            source: 'StrategyProvider._importEntitiesIntoFolder',
           );
           result = result.merge(
             ImportBatchResult(
@@ -1626,7 +1642,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     required Directory sourceDir,
     required String? parentFolderId,
   }) async {
-    final manifestFile = File(path.join(sourceDir.path, archiveMetadataFileName));
+    final manifestFile =
+        File(path.join(sourceDir.path, archiveMetadataFileName));
     _ManifestImportData? manifestData;
     if (await manifestFile.exists()) {
       try {
@@ -1635,9 +1652,11 @@ class StrategyProvider extends Notifier<StrategyState> {
           _validateArchiveManifest(manifestData);
         }
       } catch (error, stackTrace) {
-        log(
-          'Failed to import manifest archive from ${sourceDir.path}: $error',
+        _reportImportFailure(
+          'Failed to import manifest archive from ${sourceDir.path}.',
+          error: error,
           stackTrace: stackTrace,
+          source: 'StrategyProvider._importDirectoryTree',
         );
         return ImportBatchResult(
           strategiesImported: 0,
@@ -1724,9 +1743,11 @@ class StrategyProvider extends Notifier<StrategyState> {
         _validateArchiveManifestFromZip(manifestData);
       }
     } catch (error, stackTrace) {
-      log(
-        'Failed to import manifest zip ${zipFile.path}: $error',
+      _reportImportFailure(
+        'Failed to import manifest zip ${zipFile.path}.',
+        error: error,
         stackTrace: stackTrace,
+        source: 'StrategyProvider._importZipArchive',
       );
       return ImportBatchResult(
         strategiesImported: 0,
@@ -1772,7 +1793,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     final manifestPaths = filesByPath.keys
-        .where((pathValue) => path.posix.basename(pathValue) == archiveMetadataFileName)
+        .where((pathValue) =>
+            path.posix.basename(pathValue) == archiveMetadataFileName)
         .toList(growable: false);
     if (manifestPaths.isEmpty) {
       return null;
@@ -1816,15 +1838,14 @@ class StrategyProvider extends Notifier<StrategyState> {
     required _ZipManifestData manifestData,
     required String? parentFolderId,
   }) async {
-    _validateArchiveManifestFromZip(manifestData);
-
     var result = const ImportBatchResult.empty();
     var profileIdRemap = const <String, String>{};
 
     if (manifestData.manifest.archiveType == ArchiveType.libraryBackup) {
       final globals = manifestData.manifest.globals;
       if (globals == null) {
-        throw const FormatException('Library backup archive is missing globals');
+        throw const FormatException(
+            'Library backup archive is missing globals');
       }
       final globalImportResult = await _importArchiveGlobals(globals);
       profileIdRemap = globalImportResult.profileIdRemap;
@@ -1839,8 +1860,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       );
     }
 
-    final folderEntries = [...manifestData.manifest.folders]
-      ..sort((a, b) {
+    final folderEntries = [...manifestData.manifest.folders]..sort((a, b) {
         final depthCompare = _archivePathDepth(a.archivePath)
             .compareTo(_archivePathDepth(b.archivePath));
         if (depthCompare != 0) {
@@ -1856,21 +1876,23 @@ class StrategyProvider extends Notifier<StrategyState> {
               ? parentFolderId
               : null)
           : localFolderIdsByManifestId[folderEntry.parentManifestId!];
-      if (folderEntry.parentManifestId != null && resolvedParentFolderId == null) {
+      if (folderEntry.parentManifestId != null &&
+          resolvedParentFolderId == null) {
         throw FormatException(
           'Missing parent folder mapping for ${folderEntry.manifestId}',
         );
       }
 
-      final createdFolder = await ref.read(folderProvider.notifier).createFolder(
-            name: folderEntry.name,
-            icon: folderEntry.icon.toIconData(),
-            color: folderEntry.color,
-            customColor: folderEntry.customColorValue == null
-                ? null
-                : Color(folderEntry.customColorValue!),
-            parentID: resolvedParentFolderId,
-          );
+      final createdFolder =
+          await ref.read(folderProvider.notifier).createFolder(
+                name: folderEntry.name,
+                icon: folderEntry.icon.toIconData(),
+                color: folderEntry.color,
+                customColor: folderEntry.customColorValue == null
+                    ? null
+                    : Color(folderEntry.customColorValue!),
+                parentID: resolvedParentFolderId,
+              );
       localFolderIdsByManifestId[folderEntry.manifestId] = createdFolder.id;
       result = result.merge(
         const ImportBatchResult(
@@ -1936,9 +1958,11 @@ class StrategyProvider extends Notifier<StrategyState> {
             ),
           );
         } catch (error, stackTrace) {
-          log(
-            'Failed to import manifest strategy $archivePath: $error',
+          _reportImportFailure(
+            'Failed to import manifest strategy $archivePath.',
+            error: error,
             stackTrace: stackTrace,
+            source: 'StrategyProvider._importManifestArchiveFromZip',
           );
           result = result.merge(
             ImportBatchResult(
@@ -1986,22 +2010,25 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     for (final folder in manifest.folders) {
       if (!folderIds.add(folder.manifestId)) {
-        throw FormatException('Duplicate folder manifest ID: ${folder.manifestId}');
+        throw FormatException(
+            'Duplicate folder manifest ID: ${folder.manifestId}');
       }
       if (!folderPaths.add(folder.archivePath)) {
-        throw FormatException('Duplicate folder archive path: ${folder.archivePath}');
+        throw FormatException(
+            'Duplicate folder archive path: ${folder.archivePath}');
       }
       if (folder.parentManifestId == null) {
         rootFolders.add(folder);
-      } else if (!manifest.folders
-          .any((candidate) => candidate.manifestId == folder.parentManifestId)) {
+      } else if (!manifest.folders.any(
+          (candidate) => candidate.manifestId == folder.parentManifestId)) {
         throw FormatException('Missing parent folder for ${folder.manifestId}');
       }
     }
 
     if (manifest.archiveType == ArchiveType.folderTree) {
       if (rootFolders.length != 1) {
-        throw const FormatException('Folder tree archives must contain one root');
+        throw const FormatException(
+            'Folder tree archives must contain one root');
       }
       if (rootFolders.single.archivePath.isNotEmpty) {
         throw const FormatException(
@@ -2010,7 +2037,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
     }
 
-    final knownFolderIds = manifest.folders.map((folder) => folder.manifestId).toSet();
+    final knownFolderIds =
+        manifest.folders.map((folder) => folder.manifestId).toSet();
     final strategyPaths = <String>{};
     for (final strategy in manifest.strategies) {
       if (!strategyPaths.add(strategy.archivePath)) {
@@ -2090,7 +2118,8 @@ class StrategyProvider extends Notifier<StrategyState> {
         continue;
       }
       final normalizedPath = normalizeArchivePath(entry.name);
-      if (_shouldIgnoreImportedEntityName(path.posix.basename(normalizedPath))) {
+      if (_shouldIgnoreImportedEntityName(
+          path.posix.basename(normalizedPath))) {
         continue;
       }
       filesByPath[normalizedPath] = entry;
@@ -2104,7 +2133,8 @@ class StrategyProvider extends Notifier<StrategyState> {
         continue;
       }
       topLevelSegments.add(segments.first);
-      if (segments.length == 1 && path.extension(archivePath).toLowerCase() == '.ica') {
+      if (segments.length == 1 &&
+          path.extension(archivePath).toLowerCase() == '.ica') {
         looseTopLevelIca.add(archivePath);
       }
     }
@@ -2193,8 +2223,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         if (remainder.isEmpty || !remainder.contains('/')) {
           continue;
         }
-        final childDirectory =
-            remainder.substring(0, remainder.indexOf('/'));
+        final childDirectory = remainder.substring(0, remainder.indexOf('/'));
         directDirectories.add(
           normalizeArchivePath(
             path.posix.join(normalizedParentPrefix, childDirectory),
@@ -2273,9 +2302,11 @@ class StrategyProvider extends Notifier<StrategyState> {
             ),
           );
         } catch (error, stackTrace) {
-          log(
-            'Failed to import zip strategy $archivePath: $error',
+          _reportImportFailure(
+            'Failed to import zip strategy $archivePath.',
+            error: error,
             stackTrace: stackTrace,
+            source: 'StrategyProvider._importLegacyZipEntitiesIntoFolder',
           );
           result = result.merge(
             ImportBatchResult(
@@ -2302,8 +2333,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     return result;
   }
 
-  Future<_ManifestImportData?> _loadManifestIfPresent(Directory directory) async {
-    final manifestFile = File(path.join(directory.path, archiveMetadataFileName));
+  Future<_ManifestImportData?> _loadManifestIfPresent(
+      Directory directory) async {
+    final manifestFile =
+        File(path.join(directory.path, archiveMetadataFileName));
     if (!await manifestFile.exists()) {
       return null;
     }
@@ -2333,7 +2366,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (manifestData.manifest.archiveType == ArchiveType.libraryBackup) {
       final globals = manifestData.manifest.globals;
       if (globals == null) {
-        throw const FormatException('Library backup archive is missing globals');
+        throw const FormatException(
+            'Library backup archive is missing globals');
       }
       final globalImportResult = await _importArchiveGlobals(globals);
       profileIdRemap = globalImportResult.profileIdRemap;
@@ -2348,8 +2382,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       );
     }
 
-    final folderEntries = [...manifestData.manifest.folders]
-      ..sort((a, b) {
+    final folderEntries = [...manifestData.manifest.folders]..sort((a, b) {
         final depthCompare = _archivePathDepth(a.archivePath)
             .compareTo(_archivePathDepth(b.archivePath));
         if (depthCompare != 0) {
@@ -2365,21 +2398,23 @@ class StrategyProvider extends Notifier<StrategyState> {
               ? parentFolderId
               : null)
           : localFolderIdsByManifestId[folderEntry.parentManifestId!];
-      if (folderEntry.parentManifestId != null && resolvedParentFolderId == null) {
+      if (folderEntry.parentManifestId != null &&
+          resolvedParentFolderId == null) {
         throw FormatException(
           'Missing parent folder mapping for ${folderEntry.manifestId}',
         );
       }
 
-      final createdFolder = await ref.read(folderProvider.notifier).createFolder(
-            name: folderEntry.name,
-            icon: folderEntry.icon.toIconData(),
-            color: folderEntry.color,
-            customColor: folderEntry.customColorValue == null
-                ? null
-                : Color(folderEntry.customColorValue!),
-            parentID: resolvedParentFolderId,
-          );
+      final createdFolder =
+          await ref.read(folderProvider.notifier).createFolder(
+                name: folderEntry.name,
+                icon: folderEntry.icon.toIconData(),
+                color: folderEntry.color,
+                customColor: folderEntry.customColorValue == null
+                    ? null
+                    : Color(folderEntry.customColorValue!),
+                parentID: resolvedParentFolderId,
+              );
       localFolderIdsByManifestId[folderEntry.manifestId] = createdFolder.id;
       result = result.merge(
         const ImportBatchResult(
@@ -2407,7 +2442,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       try {
         await _importStrategyFile(
           file: XFile(
-            _archivePathToFile(manifestData.rootDirectory, strategyEntry.archivePath)
+            _archivePathToFile(
+                    manifestData.rootDirectory, strategyEntry.archivePath)
                 .path,
           ),
           targetFolderId: targetFolderId,
@@ -2439,9 +2475,11 @@ class StrategyProvider extends Notifier<StrategyState> {
           ),
         );
       } catch (error, stackTrace) {
-        log(
-          'Failed to import manifest strategy ${strategyEntry.archivePath}: $error',
+        _reportImportFailure(
+          'Failed to import manifest strategy ${strategyEntry.archivePath}.',
+          error: error,
           stackTrace: stackTrace,
+          source: 'StrategyProvider._importManifestArchive',
         );
         result = result.merge(
           ImportBatchResult(
@@ -2486,22 +2524,25 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     for (final folder in manifest.folders) {
       if (!folderIds.add(folder.manifestId)) {
-        throw FormatException('Duplicate folder manifest ID: ${folder.manifestId}');
+        throw FormatException(
+            'Duplicate folder manifest ID: ${folder.manifestId}');
       }
       if (!folderPaths.add(folder.archivePath)) {
-        throw FormatException('Duplicate folder archive path: ${folder.archivePath}');
+        throw FormatException(
+            'Duplicate folder archive path: ${folder.archivePath}');
       }
       if (folder.parentManifestId == null) {
         rootFolders.add(folder);
-      } else if (!manifest.folders
-          .any((candidate) => candidate.manifestId == folder.parentManifestId)) {
+      } else if (!manifest.folders.any(
+          (candidate) => candidate.manifestId == folder.parentManifestId)) {
         throw FormatException('Missing parent folder for ${folder.manifestId}');
       }
     }
 
     if (manifest.archiveType == ArchiveType.folderTree) {
       if (rootFolders.length != 1) {
-        throw const FormatException('Folder tree archives must contain one root');
+        throw const FormatException(
+            'Folder tree archives must contain one root');
       }
       if (rootFolders.single.archivePath.isNotEmpty) {
         throw const FormatException(
@@ -2510,7 +2551,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
     }
 
-    final knownFolderIds = manifest.folders.map((folder) => folder.manifestId).toSet();
+    final knownFolderIds =
+        manifest.folders.map((folder) => folder.manifestId).toSet();
     final strategyPaths = <String>{};
     for (final strategy in manifest.strategies) {
       if (!strategyPaths.add(strategy.archivePath)) {
@@ -2546,7 +2588,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   File _archivePathToFile(Directory rootDirectory, String archivePath) {
     final normalized = normalizeArchivePath(archivePath);
-    final segments = normalized.isEmpty ? const <String>[] : normalized.split('/');
+    final segments =
+        normalized.isEmpty ? const <String>[] : normalized.split('/');
     return File(path.joinAll([rootDirectory.path, ...segments]));
   }
 
@@ -2584,8 +2627,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     final issues = <ImportIssue>[];
-    await for (final entity
-        in manifestData.rootDirectory.list(recursive: true, followLinks: false)) {
+    await for (final entity in manifestData.rootDirectory
+        .list(recursive: true, followLinks: false)) {
       final relativePath = normalizeArchivePath(
         path.relative(entity.path, from: manifestData.rootDirectory.path),
       );
@@ -2620,10 +2663,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     return issues;
   }
 
-  Future<_GlobalImportResult> _importArchiveGlobals(ArchiveGlobals globals) async {
+  Future<_GlobalImportResult> _importArchiveGlobals(
+      ArchiveGlobals globals) async {
     await MapThemeProfilesProvider.bootstrap();
 
-    final profileBox = Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+    final profileBox =
+        Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
     final appPreferencesBox =
         Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox);
     final favoriteAgentsBox = Hive.box<bool>(HiveBoxNames.favoriteAgentsBox);
@@ -2677,13 +2722,15 @@ class StrategyProvider extends Notifier<StrategyState> {
       themeProfilesImported++;
     }
 
-    final resolvedDefaultProfileId =
-        globals.defaultThemeProfileIdForNewStrategies == null
-            ? MapThemeProfilesProvider.immutableDefaultProfileId
-            : profileIdRemap[globals.defaultThemeProfileIdForNewStrategies!] ??
-                (profileBox.get(globals.defaultThemeProfileIdForNewStrategies!) != null
-                    ? globals.defaultThemeProfileIdForNewStrategies!
-                    : MapThemeProfilesProvider.immutableDefaultProfileId);
+    final resolvedDefaultProfileId = globals
+                .defaultThemeProfileIdForNewStrategies ==
+            null
+        ? MapThemeProfilesProvider.immutableDefaultProfileId
+        : profileIdRemap[globals.defaultThemeProfileIdForNewStrategies!] ??
+            (profileBox.get(globals.defaultThemeProfileIdForNewStrategies!) !=
+                    null
+                ? globals.defaultThemeProfileIdForNewStrategies!
+                : MapThemeProfilesProvider.immutableDefaultProfileId);
 
     await appPreferencesBox.put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,
@@ -2827,7 +2874,8 @@ class StrategyProvider extends Notifier<StrategyState> {
           : null;
       final String? resolvedThemeProfileId = importedThemeProfileId == null
           ? null
-          : (themeProfileIdRemap[importedThemeProfileId] ?? importedThemeProfileId);
+          : (themeProfileIdRemap[importedThemeProfileId] ??
+              importedThemeProfileId);
 
       // bool needsMigration = (versionNumber < 15);
       final List<StrategyPage> pages = json["pages"] != null
@@ -2865,8 +2913,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
         folderID: targetFolderId,
         themeProfileId: resolvedThemeProfileId,
-        themeOverridePalette:
-            resolvedThemeProfileId == null ? importedThemeOverridePalette : null,
+        themeOverridePalette: resolvedThemeProfileId == null
+            ? importedThemeOverridePalette
+            : null,
       );
 
       newStrategy = await migrateLegacyData(newStrategy);
@@ -2972,8 +3021,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     await _flushCurrentStrategyIfNeeded();
-    final stagingDirectory =
-        await buildFolderExportDirectoryForTest(folderID);
+    final stagingDirectory = await buildFolderExportDirectoryForTest(folderID);
 
     try {
       final outputFile = await FilePicker.platform.saveFile(
@@ -3244,9 +3292,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     final appPreferences =
         Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
             .get(MapThemeProfilesProvider.appPreferencesSingletonKey);
-    final favoriteAgents =
-        Hive.box<bool>(HiveBoxNames.favoriteAgentsBox).keys.whereType<String>().toList()
-          ..sort();
+    final favoriteAgents = Hive.box<bool>(HiveBoxNames.favoriteAgentsBox)
+        .keys
+        .whereType<String>()
+        .toList()
+      ..sort();
 
     return ArchiveGlobals(
       themeProfiles: profiles,
@@ -3271,8 +3321,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       globals: globals,
     );
 
-    final manifestFile =
-        File(path.join(exportState.rootDirectory.path, archiveMetadataFileName));
+    final manifestFile = File(
+        path.join(exportState.rootDirectory.path, archiveMetadataFileName));
     await manifestFile.writeAsString(
       const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
     );
@@ -3340,7 +3390,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final zipEncoder = ZipFileEncoder()..create(outPath);
 
-    final supportDirectory = await _getApplicationSupportDirectoryOrSystemTemp();
+    final supportDirectory =
+        await _getApplicationSupportDirectoryOrSystemTemp();
     final customDirectory =
         Directory(path.join(supportDirectory.path, strategy.id));
     final imagesDirectory =

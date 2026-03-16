@@ -1,5 +1,3 @@
-import 'dart:developer' show log;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:icarus/const/youtube_handler.dart';
@@ -71,12 +69,6 @@ class _YoutubeViewState extends State<YoutubeView>
         ),
         Positioned.fill(
           child: InAppWebView(
-            onLoadStart: (controller, url) {
-              log("Youtube view loading");
-            },
-            onLoadStop: (controller, url) {
-              log("Youtube view loaded");
-            },
             webViewEnvironment: webViewEnvironment,
             initialSettings:
                 InAppWebViewSettings(allowBackgroundAudioPlaying: false),

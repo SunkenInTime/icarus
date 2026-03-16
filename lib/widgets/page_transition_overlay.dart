@@ -1,5 +1,3 @@
-import 'dart:developer' show log;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
@@ -75,18 +73,10 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           setState(() {});
         })
         ..addStatusListener((status) {
-          log("Status is${status.toString()}");
           if (status == AnimationStatus.completed) {
-            // Defer provider write until after the frame.
-            // log("Completed");
             final notifier = ref.read(transitionProvider.notifier);
-            log("Calling complete");
             Future.microtask(() {
-              try {
-                notifier.complete();
-              } catch (e, st) {
-                log('Error calling complete: $e\n$st');
-              }
+              notifier.complete();
             });
           }
         });

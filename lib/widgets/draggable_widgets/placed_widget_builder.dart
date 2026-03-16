@@ -1,6 +1,5 @@
 // ignore_for_file: prefer_const_constructors, prefer_const_literals_to_create_immutables
 
-import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -110,7 +109,6 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final interactionState = ref.watch(interactionStateProvider);
-        log(ref.watch(mapProvider).isAttack.toString());
         return DragTarget<DraggableData>(
           builder: (context, candidateData, rejectedData) {
             return RepaintBoundary(
@@ -274,9 +272,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
               ref.read(textProvider.notifier).addText(placedText);
             }
           },
-          onLeave: (data) {
-            log("I have left");
-          },
+          onLeave: (data) {},
         );
       },
     );
@@ -379,8 +375,6 @@ class _AbilityList extends ConsumerWidget {
                 ref.read(abilityProvider.notifier).removeAbility(ability.id);
                 return;
               }
-
-              log(renderBox.size.toString());
 
               ref
                   .read(abilityProvider.notifier)
@@ -784,7 +778,6 @@ class _CustomShapeUtilityList extends ConsumerWidget {
 
                       final diameterMeters = placedUtility.customDiameter;
                       if (diameterMeters == null) {
-                        log('Missing customDiameter for custom circle ${placedUtility.id}, removing malformed utility.');
                         ref
                             .read(utilityProvider.notifier)
                             .removeUtility(placedUtility.id);
@@ -835,7 +828,6 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                       final widthMeters = placedUtility.customWidth;
                       final lengthMeters = placedUtility.customLength;
                       if (widthMeters == null || lengthMeters == null) {
-                        log('Missing custom rectangle dimensions for ${placedUtility.id}, removing malformed utility.');
                         ref
                             .read(utilityProvider.notifier)
                             .removeUtility(placedUtility.id);

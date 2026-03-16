@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -177,7 +175,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     await ref
         .read(strategyProvider.notifier)
         .forceSaveNow(ref.read(strategyProvider).id);
-    log("Window close");
     await windowManager.close(); // Close the window/app
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:developer';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -233,20 +232,15 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   void undoAction(UserAction action) {
-    log("I tried to remove a deleted item");
-
     switch (action.type) {
       case ActionType.addition:
-        log("We are attmepting to remove");
         removeAgent(action.id);
         return;
       case ActionType.deletion:
         final index = PlacedWidget.getIndexByID(action.id, poppedAgents);
         if (index < 0) {
-          log("Popped agents is empty");
           return;
         }
-        log("I tried to remove a deleted item");
         final newState = [...state];
 
         final restoredAgent = poppedAgents.removeAt(index);
@@ -303,9 +297,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
         case ActionType.transaction:
           return;
       }
-    } catch (_) {
-      log("failed to find index");
-    }
+    } catch (_) {}
   }
 
   String toJson() {

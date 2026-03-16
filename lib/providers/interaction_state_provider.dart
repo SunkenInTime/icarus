@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -31,7 +29,6 @@ class InteractionStateProvider extends Notifier<InteractionState> {
 
     if (state == InteractionState.drawing) {
       final coordinateSystem = CoordinateSystem.instance;
-      log("Finishing free drawing");
       ref
           .read(drawingProvider.notifier)
           .finishFreeDrawing(null, coordinateSystem);

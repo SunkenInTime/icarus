@@ -1,8 +1,5 @@
-import 'dart:developer';
-
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/shortcut_info.dart';
@@ -15,9 +12,8 @@ import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/widgets/delete_helpers.dart';
-import 'package:icarus/widgets/dialogs/in_app_debug_dialog.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
 class GlobalShortcuts extends ConsumerStatefulWidget {
@@ -29,8 +25,6 @@ class GlobalShortcuts extends ConsumerStatefulWidget {
 }
 
 class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
-  bool _isDebugDialogOpen = false;
-
   void _dismissDeleteMenu() {
     ref.read(deleteMenuProvider.notifier).requestClose();
   }
@@ -108,8 +102,6 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             RedoActionIntent: CallbackAction<RedoActionIntent>(
               onInvoke: (intent) {
                 _dismissDeleteMenu();
-                log("I triggered");
-
                 ref.read(actionProvider.notifier).redoAction();
                 return null;
               },
@@ -127,8 +119,6 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             NavigationActionIntent: CallbackAction<NavigationActionIntent>(
               onInvoke: (intent) {
                 _dismissDeleteMenu();
-                log("I triggered");
-
                 ref
                     .read(interactionStateProvider.notifier)
                     .update(InteractionState.navigation);
@@ -145,8 +135,6 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ForwardPageIntent: CallbackAction<ForwardPageIntent>(
               onInvoke: (intent) async {
                 _dismissDeleteMenu();
-                log("I triggered");
-
                 await ref.read(strategyProvider.notifier).forwardPage();
                 return null;
               },
@@ -154,8 +142,6 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             BackwardPageIntent: CallbackAction<BackwardPageIntent>(
               onInvoke: (intent) async {
                 _dismissDeleteMenu();
-                log("I triggered");
-
                 await ref.read(strategyProvider.notifier).backwardPage();
                 return null;
               },
@@ -186,20 +172,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             OpenInAppDebugIntent: CallbackAction<OpenInAppDebugIntent>(
               onInvoke: (intent) async {
                 _dismissDeleteMenu();
-                if (_isDebugDialogOpen) return null;
-
-                final navCtx = appNavigatorKey.currentContext ??
-                    appNavigatorKey.currentState?.overlay?.context;
-                if (navCtx == null) return null;
-
-                _isDebugDialogOpen = true;
-
-                await showShadDialog<void>(
-                  context: navCtx,
-                  builder: (context) => const InAppDebugDialog(),
-                );
-
-                _isDebugDialogOpen = false;
+                await AppErrorReporter.openDebugLog();
                 return null;
               },
             ),
@@ -220,8 +193,8 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
                 }
 
                 ref.read(deleteMenuProvider.notifier).requestOpen(
-                  reason: DeleteMenuOpenReason.keyboard,
-                );
+                      reason: DeleteMenuOpenReason.keyboard,
+                    );
                 return null;
               },
             ),

@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'dart:io';
 import 'dart:ui' show ImageFilter;
 
@@ -77,8 +76,6 @@ class _ImageFullScreenOverlay extends StatelessWidget {
                 final width =
                     constraints.maxWidth - 100; // typically the screen width
                 final height = width / aspectRatio;
-
-                log("Max width $width");
 
                 return Stack(
                   children: [
@@ -177,7 +174,6 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
     final cardWidth =
         (clampedScale - leftChromeWidth).clamp(1.0, double.infinity);
     final cardHeight = (cardWidth - 10) / safeAspectRatio + 10;
-    log(clampedScale.toString());
     final file = File(path.join(
       ref.watch(strategyProvider).storageDirectory!,
       'images',

@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:developer';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher;
 
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -13,14 +13,15 @@ import 'package:windows_single_instance/windows_single_instance.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/app_navigator.dart';
+import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/second_instance_args.dart';
 import 'package:icarus/const/settings.dart' show Settings;
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
@@ -35,78 +36,120 @@ late CustomMouseCursor staticDrawingCursor;
 WebViewEnvironment? webViewEnvironment;
 bool isWebViewInitialized = false;
 Future<void> main(List<String> args) async {
-  if (args.isNotEmpty) {
-    log("Path: ${args.first}");
-  }
+  await runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      appProviderContainer = ProviderContainer();
+      _installGlobalErrorHandlers();
 
-  WidgetsFlutterBinding.ensureInitialized();
+      if (!kIsWeb && Platform.isWindows) {
+        await WindowsSingleInstance.ensureSingleInstance(
+          args,
+          'icarus_single_instance',
+          onSecondWindow: (args) {
+            publishSecondInstanceArgs(args);
+          },
+        );
+      }
 
-  if (!kIsWeb && Platform.isWindows) {
-    await WindowsSingleInstance.ensureSingleInstance(
-      args,
-      'icarus_single_instance',
-      onSecondWindow: (args) {
-        publishSecondInstanceArgs(args);
-      },
-    );
-  }
+      if (kIsWeb) {
+        // On web, Hive uses IndexedDB; no path needed.
+        await Hive.initFlutter();
+      } else {
+        // On mobile/desktop, you can still choose an explicit directory.
+        final dir = await getApplicationSupportDirectory();
+        await getTemporaryDirectory();
+        await Hive.initFlutter(dir.path);
+      }
 
-  if (kIsWeb) {
-    // On web, Hive uses IndexedDB; no path needed.
-    await Hive.initFlutter();
-  } else {
-    // On mobile/desktop, you can still choose an explicit directory.
-    final dir = await getApplicationSupportDirectory();
-    final tempDir = await getTemporaryDirectory();
-    log("App Support Directory: ${dir.path}");
-    log("Temporary Directory: ${tempDir.path}");
-    await Hive.initFlutter(dir.path);
-  }
+      staticDrawingCursor = await CustomMouseCursor.icon(
+        CustomIcons.drawcursor,
+        size: 12,
+        hotX: 6,
+        hotY: 6,
+        color: Colors.white,
+      );
 
-  staticDrawingCursor = await CustomMouseCursor.icon(
-    CustomIcons.drawcursor,
-    size: 12,
-    hotX: 6,
-    hotY: 6,
-    color: Colors.white,
+      registerIcarusAdapters(Hive);
+
+      await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
+      await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+      await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+      await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
+      await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
+
+      await MapThemeProfilesProvider.bootstrap();
+
+      await StrategyProvider.migrateAllStrategies();
+
+      // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
+
+      await _initWebViewEnvironment();
+
+      if (!kIsWeb) {
+        await windowManager.ensureInitialized();
+        WindowOptions windowOptions = const WindowOptions(
+          title:
+              "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
+        );
+        windowManager.waitUntilReadyToShow(windowOptions, () async {
+          await windowManager.show();
+          await windowManager.focus();
+        });
+      }
+
+      // Ensure WebView2 environment is initialized on Windows before any InAppWebView
+      // widgets are created. This is especially important in testing/dev where the
+      // WebView user-data folder and runtime selection can affect behavior.
+      // if (!kIsWeb && Platform.isWindows) {
+      //   await _initWebViewEnvironment();
+      // }
+
+      runApp(
+        UncontrolledProviderScope(
+          container: appProviderContainer,
+          child: MyApp(data: args),
+        ),
+      );
+    },
+    (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'An unexpected application error occurred.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'main.runZonedGuarded',
+      );
+    },
   );
+}
 
-  registerIcarusAdapters(Hive);
+void _installGlobalErrorHandlers() {
+  final originalFlutterOnError = FlutterError.onError;
 
-  await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
-  await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
-  await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
-  await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
-  await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    if (originalFlutterOnError != null &&
+        !identical(originalFlutterOnError, FlutterError.presentError)) {
+      originalFlutterOnError(details);
+    }
 
-  await MapThemeProfilesProvider.bootstrap();
-
-  await StrategyProvider.migrateAllStrategies();
-
-  // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
-
-  await _initWebViewEnvironment();
-
-  if (!kIsWeb) {
-    await windowManager.ensureInitialized();
-    WindowOptions windowOptions = const WindowOptions(
-      title: "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
+    AppErrorReporter.reportError(
+      'A UI error occurred.',
+      error: details.exception,
+      stackTrace: details.stack,
+      source: 'FlutterError.onError',
     );
-    windowManager.waitUntilReadyToShow(windowOptions, () async {
-      await windowManager.show();
-      await windowManager.focus();
-    });
-  }
+  };
 
-  log("Web");
-  // Ensure WebView2 environment is initialized on Windows before any InAppWebView
-  // widgets are created. This is especially important in testing/dev where the
-  // WebView user-data folder and runtime selection can affect behavior.
-  // if (!kIsWeb && Platform.isWindows) {
-  //   await _initWebViewEnvironment();
-  // }
-
-  runApp(ProviderScope(child: MyApp(data: args)));
+  PlatformDispatcher.instance.onError = (error, stackTrace) {
+    AppErrorReporter.reportError(
+      'An unexpected asynchronous error occurred.',
+      error: error,
+      stackTrace: stackTrace,
+      source: 'PlatformDispatcher.onError',
+    );
+    return true;
+  };
 }
 
 Future<void> _initWebViewEnvironment() async {
@@ -144,11 +187,12 @@ class _MyAppState extends ConsumerState<MyApp> {
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
     try {
       await ref.read(strategyProvider.notifier).loadFromFilePath(filePath);
-    } on NewerVersionImportException {
-      if (!mounted) return;
-      Settings.showToast(
-        message: NewerVersionImportException.userMessage,
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
+    } on NewerVersionImportException catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        NewerVersionImportException.userMessage,
+        error: error,
+        stackTrace: stackTrace,
+        source: 'MyApp._loadFromFilePathWithWarning',
       );
     }
   }
@@ -159,20 +203,26 @@ class _MyAppState extends ConsumerState<MyApp> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.data.isEmpty) return;
-      log("Data: ${widget.data}");
 
-      ref.read(inAppDebugProvider.notifier).bulkAddLogs(widget.data);
+      for (final argument in widget.data) {
+        AppErrorReporter.reportInfo(
+          'Startup argument: $argument',
+          source: 'main.startupArgs',
+        );
+      }
       _loadFromFilePathWithWarning(widget.data.first);
     });
 
     _secondInstanceSub = secondInstanceArgsController.stream.listen((args) {
       if (args.isEmpty) return;
 
-      log("Second instance args: $args");
-      log("Data: ${widget.data}");
-
       _loadFromFilePathWithWarning(args.first);
-      ref.read(inAppDebugProvider.notifier).bulkAddLogs(args);
+      for (final argument in args) {
+        AppErrorReporter.reportInfo(
+          'Second-instance argument: $argument',
+          source: 'main.secondInstanceArgs',
+        );
+      }
     });
   }
 

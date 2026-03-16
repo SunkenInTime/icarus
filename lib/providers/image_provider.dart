@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:developer';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -50,7 +49,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
   @override
   ImageState build() {
-    log('ImageState provider build() called');
     return ImageState(
       images: [],
     );
@@ -90,11 +88,8 @@ class PlacedImageProvider extends Notifier<ImageState> {
         String fileName = path.basenameWithoutExtension(entity.path);
         if (!fileIDs.contains(fileName)) {
           try {
-            log('Deleting unused image file: ${entity.path}');
             await entity.delete();
-          } catch (e) {
-            log(e.toString());
-          }
+          } catch (e) {}
         }
       }
     }
@@ -144,9 +139,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = state.copyWith(images: [...state.images, placedImage]);
-
-    log(state.images.length.toString());
-    log(poppedImages.length.toString());
   }
 
   void removeImage(String id) {
@@ -202,14 +194,11 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   void undoAction(UserAction action) {
-    log("Attempting to undo image action");
-
     switch (action.type) {
       case ActionType.addition:
         removeImage(action.id);
       case ActionType.deletion:
         if (poppedImages.isEmpty) {
-          log("Popped images is empty");
           return;
         }
         final newImages = [...state.images];
@@ -253,9 +242,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
         case ActionType.transaction:
           return;
       }
-    } catch (_) {
-      log("Failed to find index");
-    }
+    } catch (_) {}
     state = state.copyWith(images: newImages);
   }
 
@@ -369,7 +356,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
       '$imageID$fileExtenstion',
     );
 
-    log(filePath);
     // Ensure the images subdirectory exists.
     final imagesDir = Directory(path.join(customDirectory.path, 'images'));
     if (!await imagesDir.exists()) {

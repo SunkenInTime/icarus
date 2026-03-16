@@ -1,6 +1,4 @@
 import 'dart:convert';
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -146,9 +144,7 @@ class TextProvider extends Notifier<List<PlacedText>> {
         case ActionType.transaction:
           return;
       }
-    } catch (_) {
-      log("oops");
-    }
+    } catch (_) {}
     state = newState;
   }
 

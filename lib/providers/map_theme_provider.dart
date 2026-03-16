@@ -251,7 +251,8 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     final builtInProfiles = immutableBuiltInProfiles
         .map((builtIn) => profilesById[builtIn.id] ?? builtIn)
         .toList(growable: false);
-    final builtInProfileIds = builtInProfiles.map((profile) => profile.id).toSet();
+    final builtInProfileIds =
+        builtInProfiles.map((profile) => profile.id).toSet();
     final customProfiles = allProfiles
         .where((profile) => !builtInProfileIds.contains(profile.id))
         .toList(growable: false);
@@ -396,7 +397,7 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
         await profileBox.put(
           builtIn.id,
           builtIn.copyWith(
-            createdAt: builtIn.createdAt,
+            createdAt: DateTime.now(),
           ),
         );
         continue;
@@ -405,7 +406,7 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
         await profileBox.put(
           builtIn.id,
           builtIn.copyWith(
-            createdAt: existing.createdAt,
+            createdAt: DateTime.now(),
           ),
         );
       }

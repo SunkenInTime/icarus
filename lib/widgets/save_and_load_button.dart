@@ -1,4 +1,3 @@
-import 'dart:developer';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -102,7 +101,6 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 }).firstOrNull;
 
                 if (newStrat == null) {
-                  log("Couldn't find save");
                   return;
                 }
                 final newController = ScreenshotController();
@@ -175,8 +173,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                     final file = File(outputFile);
                     await file.writeAsBytes(image);
                   }
-                } catch (e, st) {
-                  log('$e\n$st');
+                } catch (_) {
                 } finally {
                   ref.read(screenshotProvider.notifier).setIsScreenShot(false);
                   CoordinateSystem.instance.setIsScreenshot(false);

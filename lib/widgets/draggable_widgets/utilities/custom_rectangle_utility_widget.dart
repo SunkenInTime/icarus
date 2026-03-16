@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -47,10 +46,6 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
       'CustomRectangleUtilityWidget requires explicit width/length/color/opacity values.',
     );
     if (!hasAllRequiredValues) {
-      if (kDebugMode) {
-        debugPrint(
-            'Skipping custom rectangle render due to missing explicit values (id: $id).');
-      }
       return const SizedBox.shrink();
     }
 

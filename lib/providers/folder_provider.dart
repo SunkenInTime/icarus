@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
@@ -180,7 +178,6 @@ class FolderProvider extends Notifier<String?> {
 
     final strategyList =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values.toList();
-    log(strategyList.length);
     List<String> idsToDelete = [];
 
     for (final strategy in strategyList) {
@@ -192,10 +189,6 @@ class FolderProvider extends Notifier<String?> {
     for (final id in idsToDelete) {
       await ref.read(strategyProvider.notifier).deleteStrategy(id);
     }
-
-    List<StrategyData> strategyListNew =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values.toList();
-    log(strategyListNew.length);
 
     await Hive.box<Folder>(HiveBoxNames.foldersBox).delete(folderID);
   }

@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -120,9 +118,7 @@ class _RotatableWidgetState extends ConsumerState<RotatableWidget>
                         _animationController.reverse();
                       }
                     },
-                    onTap: () {
-                      log("I'm being hit");
-                    },
+                    onTap: () {},
                     child: Center(
                       child: AnimatedBuilder(
                         animation: _scaleAnimation,
