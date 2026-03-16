@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:ui' show PlatformDispatcher;
 
@@ -40,6 +41,7 @@ Future<void> main(List<String> args) async {
     () async {
       WidgetsFlutterBinding.ensureInitialized();
       appProviderContainer = ProviderContainer();
+      await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
 
       if (!kIsWeb && Platform.isWindows) {
@@ -150,6 +152,25 @@ void _installGlobalErrorHandlers() {
     );
     return true;
   };
+}
+
+Future<void> _initializePersistedDebugLog() async {
+  if (kIsWeb) return;
+
+  try {
+    final dir = await getApplicationSupportDirectory();
+    await AppErrorReporter.initializePersistedLog(
+      path.join(dir.path, 'icarus_debug.log'),
+    );
+  } catch (error, stackTrace) {
+    developer.log(
+      'Failed to configure persisted debug logging.',
+      name: 'main._initializePersistedDebugLog',
+      error: error,
+      stackTrace: stackTrace,
+      level: 900,
+    );
+  }
 }
 
 Future<void> _initWebViewEnvironment() async {

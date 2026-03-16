@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'dart:io';
 
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/app_provider_container.dart';
@@ -10,6 +11,29 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 class AppErrorReporter {
   static bool _isDebugDialogOpen = false;
+  static File? _persistedLogFile;
+  static Future<void> _persistedLogWriteQueue = Future.value();
+
+  static Future<void> initializePersistedLog(String logFilePath) async {
+    final logFile = File(logFilePath);
+
+    try {
+      await logFile.parent.create(recursive: true);
+      if (!await logFile.exists()) {
+        await logFile.create(recursive: true);
+      }
+      _persistedLogFile = logFile;
+    } catch (error, stackTrace) {
+      _persistedLogFile = null;
+      developer.log(
+        'Failed to initialize persisted debug log.',
+        name: 'AppErrorReporter.initializePersistedLog',
+        error: error,
+        stackTrace: stackTrace,
+        level: 900,
+      );
+    }
+  }
 
   static void reportInfo(
     String message, {
@@ -87,6 +111,15 @@ class AppErrorReporter {
     Object? error,
     StackTrace? stackTrace,
   }) {
+    final entry = DebugLogEntry(
+      timestamp: DateTime.now(),
+      level: level,
+      message: message,
+      source: source,
+      errorText: error?.toString(),
+      stackTrace: stackTrace?.toString(),
+    );
+
     developer.log(
       message,
       name: source ?? 'Icarus',
@@ -95,13 +128,8 @@ class AppErrorReporter {
       level: _developerLogLevel(level),
     );
 
-    appProviderContainer.read(inAppDebugProvider.notifier).addLog(
-          message: message,
-          level: level,
-          source: source,
-          errorText: error?.toString(),
-          stackTrace: stackTrace?.toString(),
-        );
+    appProviderContainer.read(inAppDebugProvider.notifier).addEntry(entry);
+    _queuePersistedLogWrite(entry);
   }
 
   static Future<void> openDebugLog() async {
@@ -157,5 +185,40 @@ class AppErrorReporter {
       DebugLogLevel.warning => 900,
       DebugLogLevel.error => 1000,
     };
+  }
+
+  static void _queuePersistedLogWrite(DebugLogEntry entry) {
+    final logFile = _persistedLogFile;
+    if (logFile == null) return;
+
+    _persistedLogWriteQueue = _persistedLogWriteQueue
+        .catchError((Object _, StackTrace __) {})
+        .then((_) => _appendPersistedLogEntry(logFile, entry))
+        .catchError((Object error, StackTrace stackTrace) {
+      developer.log(
+        'Failed to append to persisted debug log.',
+        name: 'AppErrorReporter._queuePersistedLogWrite',
+        error: error,
+        stackTrace: stackTrace,
+        level: 900,
+      );
+    });
+  }
+
+  static Future<void> _appendPersistedLogEntry(
+    File logFile,
+    DebugLogEntry entry,
+  ) async {
+    final buffer = StringBuffer()
+      ..writeln(entry.toClipboardText())
+      ..writeln()
+      ..writeln('-----')
+      ..writeln();
+
+    await logFile.writeAsString(
+      buffer.toString(),
+      mode: FileMode.append,
+      flush: true,
+    );
   }
 }
