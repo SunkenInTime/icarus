@@ -732,7 +732,7 @@ class DrawingProvider extends Notifier<DrawingState> {
   ) {
     if (state.currentElement != null) {
       dev.log(
-          "An error occured the gesture detecture is attempting to draw while another line is active");
+          "An error occurred: the gesture detector is attempting to draw while another line is active");
       return;
     }
 
