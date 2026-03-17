@@ -90,11 +90,11 @@ class PlacedImageProvider extends Notifier<ImageState> {
         if (!fileIDs.contains(fileName)) {
           try {
             await entity.delete();
-          } catch (e) {
+          } catch (e, stackTrace) {
             AppErrorReporter.reportError(
               'Failed to delete unused image: $e',
               error: e,
-              stackTrace: StackTrace.current,
+              stackTrace: stackTrace,
             );
           }
         }
