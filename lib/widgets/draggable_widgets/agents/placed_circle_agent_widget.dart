@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -10,6 +9,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
@@ -230,8 +230,7 @@ class _PlacedCircleAgentWidgetState
               childWhenDragging: const SizedBox.shrink(),
               onDragStarted: () {
                 final shouldDuplicate =
-                    HardwareKeyboard.instance.isControlPressed ||
-                        HardwareKeyboard.instance.isMetaPressed;
+                    ref.read(duplicateDragModifierProvider);
                 final duplicateId = shouldDuplicate
                     ? ref.read(agentProvider.notifier).duplicateAgentAt(
                           sourceId: current.id,

@@ -27,7 +27,7 @@ class PlacedTextBuilder extends ConsumerStatefulWidget {
 }
 
 class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
-  static const double minSize = 100;
+  static const double minSize = 50;
   static const List<Color> _tagPalette = [
     Color(0xFF22C55E),
     Color(0xFF3B82F6),

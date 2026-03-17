@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -6,6 +7,7 @@ import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
+import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
@@ -24,7 +26,34 @@ class GlobalShortcuts extends ConsumerStatefulWidget {
   ConsumerState<GlobalShortcuts> createState() => _GlobalShortcutsState();
 }
 
-class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
+class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
+    with WidgetsBindingObserver {
+  bool _handleModifierKeyEvent(KeyEvent event) {
+    ref.read(duplicateDragModifierProvider.notifier).handleKeyEvent(event);
+    return false;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    HardwareKeyboard.instance.addHandler(_handleModifierKeyEvent);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleModifierKeyEvent);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      ref.read(duplicateDragModifierProvider.notifier).clear();
+    }
+  }
+
   void _dismissDeleteMenu() {
     ref.read(deleteMenuProvider.notifier).requestClose();
   }

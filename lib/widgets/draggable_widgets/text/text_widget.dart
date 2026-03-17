@@ -59,7 +59,8 @@ class _EditableTextWidget extends ConsumerStatefulWidget {
   final int? tagColorValue;
 
   @override
-  ConsumerState<_EditableTextWidget> createState() => _EditableTextWidgetState();
+  ConsumerState<_EditableTextWidget> createState() =>
+      _EditableTextWidgetState();
 }
 
 class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
@@ -165,6 +166,7 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
             child: TextField(
               focusNode: _focusNode,
               controller: _controller,
+              style: const TextStyle(fontSize: 12),
               decoration: _textFieldDecoration,
               maxLines: null,
               minLines: null,
@@ -263,9 +265,9 @@ class _TextBoxFrame extends StatelessWidget {
         child: Row(
           children: [
             ClipRRect(
-              borderRadius: const BorderRadius.all(Radius.circular(3)),
+              borderRadius: const BorderRadius.all(Radius.circular(2)),
               child: Container(
-                width: 10,
+                width: 6,
                 color: Color(tagColorValue ?? 0xFFC5C5C5),
               ),
             ),
@@ -278,7 +280,9 @@ class _TextBoxFrame extends StatelessWidget {
                 margin: const EdgeInsets.all(0),
                 color: Colors.black,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 5,
+                  ),
                   child: child,
                 ),
               ),
