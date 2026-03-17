@@ -157,6 +157,10 @@ PlacedAbility _$PlacedAbilityFromJson(Map<String, dynamic> json) =>
       length: (json['length'] as num?)?.toDouble() ?? 0,
       lineUpID: json['lineUpID'] as String?,
       rotation: (json['rotation'] as num?)?.toDouble() ?? 0,
+      visualState: json['visualState'] == null
+          ? const AbilityVisualState()
+          : _abilityVisualStateFromJson(
+              json['visualState'] as Map<String, dynamic>?),
       armLengthsMeters: (json['armLengthsMeters'] as List<dynamic>?)
               ?.map((e) => (e as num).toDouble())
               .toList() ??
@@ -173,7 +177,20 @@ Map<String, dynamic> _$PlacedAbilityToJson(PlacedAbility instance) =>
       'rotation': instance.rotation,
       'length': instance.length,
       'lineUpID': instance.lineUpID,
+      'visualState': _abilityVisualStateToJson(instance.visualState),
       'armLengthsMeters': instance.armLengthsMeters,
+    };
+
+AbilityVisualState _$AbilityVisualStateFromJson(Map<String, dynamic> json) =>
+    AbilityVisualState(
+      showRangeBody: json['showRangeBody'] as bool? ?? true,
+      showPerimeter: json['showPerimeter'] as bool? ?? true,
+    );
+
+Map<String, dynamic> _$AbilityVisualStateToJson(AbilityVisualState instance) =>
+    <String, dynamic>{
+      'showRangeBody': instance.showRangeBody,
+      'showPerimeter': instance.showPerimeter,
     };
 
 PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>

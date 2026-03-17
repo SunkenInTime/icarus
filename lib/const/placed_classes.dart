@@ -40,6 +40,17 @@ Offset getFlippedPosition({
   return Offset(flippedX, flippedY);
 }
 
+AbilityVisualState _abilityVisualStateFromJson(Map<String, dynamic>? json) {
+  if (json == null) {
+    return const AbilityVisualState();
+  }
+  return AbilityVisualState.fromJson(json);
+}
+
+Map<String, dynamic> _abilityVisualStateToJson(AbilityVisualState visualState) {
+  return visualState.toJson();
+}
+
 @JsonSerializable()
 class PlacedWidget extends HiveObject {
   PlacedWidget({
@@ -725,6 +736,7 @@ class PlacedAbility extends PlacedWidget {
     this.length = 0,
     this.lineUpID,
     this.rotation = 0,
+    this.visualState = const AbilityVisualState(),
     List<double>? armLengthsMeters,
   }) : armLengthsMeters = DeadlockBarrierMeshAbility.normalizeArmLengths(
           armLengthsMeters,
@@ -741,6 +753,12 @@ class PlacedAbility extends PlacedWidget {
   double length;
 
   final String? lineUpID;
+
+  @JsonKey(
+    fromJson: _abilityVisualStateFromJson,
+    toJson: _abilityVisualStateToJson,
+  )
+  AbilityVisualState visualState;
 
   @JsonKey(defaultValue: <double>[10.0, 10.0, 10.0, 10.0])
   List<double> armLengthsMeters;
@@ -765,6 +783,10 @@ class PlacedAbility extends PlacedWidget {
     updateGeometry(newArmLengthsMeters: newArmLengthsMeters);
   }
 
+  void updateVisualState(AbilityVisualState newVisualState) {
+    visualState = newVisualState;
+  }
+
   void updateRotationHistory() {
     updateGeometryHistory();
   }
@@ -773,6 +795,7 @@ class PlacedAbility extends PlacedWidget {
     final action = AbilityGeometryAction(
       rotation: rotation,
       length: length,
+      visualState: visualState,
       armLengthsMeters: armLengthsMeters,
     );
     _actionHistory.add(action);
@@ -782,6 +805,7 @@ class PlacedAbility extends PlacedWidget {
     final action = AbilityGeometryAction(
       rotation: rotation,
       length: length,
+      visualState: visualState,
       armLengthsMeters: armLengthsMeters,
     );
 
@@ -789,6 +813,7 @@ class PlacedAbility extends PlacedWidget {
     final previous = _actionHistory.last as AbilityGeometryAction;
     rotation = previous.rotation;
     length = previous.length;
+    visualState = previous.visualState;
     armLengthsMeters = List<double>.from(previous.armLengthsMeters);
     _actionHistory.removeLast();
   }
@@ -799,6 +824,7 @@ class PlacedAbility extends PlacedWidget {
     final action = AbilityGeometryAction(
       rotation: rotation,
       length: length,
+      visualState: visualState,
       armLengthsMeters: armLengthsMeters,
     );
 
@@ -806,6 +832,7 @@ class PlacedAbility extends PlacedWidget {
     final next = _poppedAction.last as AbilityGeometryAction;
     rotation = next.rotation;
     length = next.length;
+    visualState = next.visualState;
     armLengthsMeters = List<double>.from(next.armLengthsMeters);
     _poppedAction.removeLast();
   }
@@ -889,6 +916,7 @@ class PlacedAbility extends PlacedWidget {
     double? rotation,
     double? length,
     List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? id,
     bool? isAlly,
     String? lineUpID,
@@ -901,6 +929,7 @@ class PlacedAbility extends PlacedWidget {
       lineUpID: lineUpID ?? this.lineUpID,
       length: length ?? this.length,
       rotation: rotation ?? this.rotation,
+      visualState: visualState ?? this.visualState,
       armLengthsMeters: List<double>.from(
         armLengthsMeters ?? this.armLengthsMeters,
       ),
@@ -915,25 +944,58 @@ class PlacedAbility extends PlacedWidget {
 
 abstract class WidgetAction {}
 
+@JsonSerializable()
+class AbilityVisualState {
+  const AbilityVisualState({
+    this.showRangeBody = true,
+    this.showPerimeter = true,
+  });
+
+  @JsonKey(defaultValue: true)
+  final bool showRangeBody;
+
+  @JsonKey(defaultValue: true)
+  final bool showPerimeter;
+
+  AbilityVisualState copyWith({
+    bool? showRangeBody,
+    bool? showPerimeter,
+  }) {
+    return AbilityVisualState(
+      showRangeBody: showRangeBody ?? this.showRangeBody,
+      showPerimeter: showPerimeter ?? this.showPerimeter,
+    );
+  }
+
+  factory AbilityVisualState.fromJson(Map<String, dynamic> json) =>
+      _$AbilityVisualStateFromJson(json);
+
+  Map<String, dynamic> toJson() => _$AbilityVisualStateToJson(this);
+}
+
 class AbilityGeometryAction extends WidgetAction {
   final double rotation;
   final double length;
+  final AbilityVisualState visualState;
   final List<double> armLengthsMeters;
 
   AbilityGeometryAction({
     required this.rotation,
     required this.length,
+    required this.visualState,
     required List<double> armLengthsMeters,
   }) : armLengthsMeters = List<double>.from(armLengthsMeters);
 
   AbilityGeometryAction copyWith({
     double? rotation,
     double? length,
+    AbilityVisualState? visualState,
     List<double>? armLengthsMeters,
   }) {
     return AbilityGeometryAction(
       rotation: rotation ?? this.rotation,
       length: length ?? this.length,
+      visualState: visualState ?? this.visualState,
       armLengthsMeters: armLengthsMeters ?? this.armLengthsMeters,
     );
   }

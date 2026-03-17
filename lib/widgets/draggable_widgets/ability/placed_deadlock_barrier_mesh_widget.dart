@@ -19,6 +19,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/deadlock_barrier_mesh_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class PlacedDeadlockBarrierMeshWidget extends ConsumerStatefulWidget {
   const PlacedDeadlockBarrierMeshWidget({
@@ -28,6 +29,7 @@ class PlacedDeadlockBarrierMeshWidget extends ConsumerStatefulWidget {
     required this.id,
     required this.data,
     this.isLineUp = false,
+    this.contextMenuItems,
   });
 
   final PlacedAbility ability;
@@ -35,6 +37,7 @@ class PlacedDeadlockBarrierMeshWidget extends ConsumerStatefulWidget {
   final String id;
   final PlacedWidget data;
   final bool isLineUp;
+  final List<ShadContextMenuItem>? contextMenuItems;
 
   @override
   ConsumerState<PlacedDeadlockBarrierMeshWidget> createState() =>
@@ -137,108 +140,115 @@ class _PlacedDeadlockBarrierMeshWidgetState
       ref.watch(screenZoomProvider),
       ref.watch(screenZoomProvider),
     );
+    final showMesh = abilityRef.visualState.showRangeBody;
 
-    return Positioned(
-      left: screenPosition.dx,
-      top: screenPosition.dy,
-      child: Transform.rotate(
-        angle: localRotation,
-        alignment: Alignment.topLeft,
-        origin: center,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Opacity(
-              opacity: _isDragging ? 0 : 1,
-              child: DeadlockBarrierMeshWidget(
+    final content = Transform.rotate(
+      angle: localRotation,
+      alignment: Alignment.topLeft,
+      origin: center,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Opacity(
+            opacity: _isDragging ? 0 : 1,
+            child: DeadlockBarrierMeshWidget(
+              lineUpId: abilityRef.lineUpID,
+              iconPath: abilityRef.data.iconPath,
+              id: widget.id,
+              isAlly: abilityRef.isAlly,
+              color: barrierAbility.color,
+              mapScale: mapScale,
+              armLengthsMeters: armLengths,
+              showCenterAbility: false,
+              visualState: abilityRef.visualState,
+              watchMouse: false,
+            ),
+          ),
+          Positioned(
+            left: iconInset,
+            top: iconInset,
+            child: Draggable<PlacedWidget>(
+              data: widget.data,
+              dragAnchorStrategy: (draggable, context, position) {
+                final renderObject = context.findRenderObject()! as RenderBox;
+                final localIconOffset = renderObject.globalToLocal(position);
+                final anchorWithinSquare =
+                    localIconOffset + Offset(iconInset, iconInset);
+                final rotatedAnchor = _rotateOffset(
+                  anchorWithinSquare,
+                  center,
+                  localRotation,
+                );
+                return ref
+                    .read(screenZoomProvider.notifier)
+                    .zoomOffset(rotatedAnchor);
+              },
+              feedback: Opacity(
+                opacity: Settings.feedbackOpacity,
+                child: Transform.rotate(
+                  angle: localRotation,
+                  alignment: Alignment.topLeft,
+                  origin: feedbackRotationOrigin,
+                  child: ZoomTransform(
+                    child: DeadlockBarrierMeshWidget(
+                      lineUpId: abilityRef.lineUpID,
+                      iconPath: abilityRef.data.iconPath,
+                      id: widget.id,
+                      isAlly: abilityRef.isAlly,
+                      color: barrierAbility.color,
+                      mapScale: mapScale,
+                      armLengthsMeters: armLengths,
+                      visualState: abilityRef.visualState,
+                      watchMouse: false,
+                    ),
+                  ),
+                ),
+              ),
+              childWhenDragging: const SizedBox.shrink(),
+              onDragStarted: () {
+                setState(() {
+                  _isDragging = true;
+                });
+              },
+              onDragEnd: (details) {
+                widget.onDragEnd(details);
+                setState(() {
+                  _isDragging = false;
+                });
+              },
+              child: AbilityWidget(
                 lineUpId: abilityRef.lineUpID,
                 iconPath: abilityRef.data.iconPath,
                 id: widget.id,
                 isAlly: abilityRef.isAlly,
-                color: barrierAbility.color,
-                mapScale: mapScale,
-                armLengthsMeters: armLengths,
-                showCenterAbility: false,
+                watchMouse: true,
+                contextMenuItems: widget.contextMenuItems,
               ),
             ),
-            Positioned(
-              left: iconInset,
-              top: iconInset,
-              child: Draggable<PlacedWidget>(
-                data: widget.data,
-                dragAnchorStrategy: (draggable, context, position) {
-                  final renderObject =
-                      context.findRenderObject()! as RenderBox;
-                  final localIconOffset =
-                      renderObject.globalToLocal(position);
-                  final anchorWithinSquare =
-                      localIconOffset + Offset(iconInset, iconInset);
-                  final rotatedAnchor = _rotateOffset(
-                    anchorWithinSquare,
-                    center,
-                    localRotation,
-                  );
-                  return ref
-                      .read(screenZoomProvider.notifier)
-                      .zoomOffset(rotatedAnchor);
-                },
-                feedback: Opacity(
-                  opacity: Settings.feedbackOpacity,
-                  child: Transform.rotate(
-                    angle: localRotation,
-                    alignment: Alignment.topLeft,
-                    origin: feedbackRotationOrigin,
-                    child: ZoomTransform(
-                      child: DeadlockBarrierMeshWidget(
-                        lineUpId: abilityRef.lineUpID,
-                        iconPath: abilityRef.data.iconPath,
-                        id: widget.id,
-                        isAlly: abilityRef.isAlly,
-                        color: barrierAbility.color,
-                        mapScale: mapScale,
-                        armLengthsMeters: armLengths,
-                      ),
-                    ),
-                  ),
-                ),
-                childWhenDragging: const SizedBox.shrink(),
-                onDragStarted: () {
-                  setState(() {
-                    _isDragging = true;
-                  });
-                },
-                onDragEnd: (details) {
-                  widget.onDragEnd(details);
-                  setState(() {
-                    _isDragging = false;
-                  });
-                },
-                child: AbilityWidget(
-                  lineUpId: abilityRef.lineUpID,
-                  iconPath: abilityRef.data.iconPath,
-                  id: widget.id,
-                  isAlly: abilityRef.isAlly,
-                ),
-              ),
+          ),
+          if (showMesh && !_isDragging && !isScreenshot)
+            _buildRotationHandle(
+              coordinateSystem: coordinateSystem,
+              mapScale: mapScale,
+              abilitySize: abilitySize,
             ),
-            if (!_isDragging && !isScreenshot)
-              _buildRotationHandle(
+          if (showMesh && !_isDragging && !isScreenshot)
+            for (final arm in DeadlockBarrierMeshArm.values)
+              _buildArmHandle(
                 coordinateSystem: coordinateSystem,
+                arm: arm,
+                armLengthMeters: armLengths[arm.index],
                 mapScale: mapScale,
                 abilitySize: abilitySize,
               ),
-            if (!_isDragging && !isScreenshot)
-              for (final arm in DeadlockBarrierMeshArm.values)
-                _buildArmHandle(
-                  coordinateSystem: coordinateSystem,
-                  arm: arm,
-                  armLengthMeters: armLengths[arm.index],
-                  mapScale: mapScale,
-                  abilitySize: abilitySize,
-                ),
-          ],
-        ),
+        ],
       ),
+    );
+
+    return Positioned(
+      left: screenPosition.dx,
+      top: screenPosition.dy,
+      child: content,
     );
   }
 
@@ -283,6 +293,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
     final isHighlighted = _isRotating || _isRotationHandleHovered;
 
     return Positioned(
+      key: const ValueKey('deadlock-rotation-handle'),
       left: handleCenter.dx - (handleSize / 2),
       top: handleCenter.dy - (handleSize / 2),
       child: MouseRegion(
@@ -339,6 +350,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
     final isHighlighted = _activeArm == arm || _hoveredArm == arm;
 
     return Positioned(
+      key: ValueKey('deadlock-arm-handle-${arm.name}'),
       left: handleCenter.dx - (handleSize / 2),
       top: handleCenter.dy - (handleSize / 2),
       child: MouseRegion(

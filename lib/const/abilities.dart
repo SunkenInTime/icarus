@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/center_square_widget.dart';
@@ -9,6 +10,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/deadlock_barrier_mesh_w
 import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_icon_widget.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 bool isRotatable(Ability ability) {
   switch (ability) {
@@ -53,7 +55,10 @@ sealed class Ability {
     double? rotation,
     double? length,
     List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   });
 }
 
@@ -70,13 +75,18 @@ class BaseAbility extends Ability {
     double? rotation,
     double? length,
     List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return AbilityWidget(
       isAlly: isAlly,
       iconPath: iconPath,
       id: id,
       lineUpId: lineUpId,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 
@@ -108,7 +118,10 @@ class ImageAbility extends Ability {
     double? rotation,
     double? length,
     List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return AgentIconWidget(
       lineUpId: lineUpId,
@@ -178,7 +191,10 @@ class CircleAbility extends Ability {
     double? rotation,
     double? length,
     List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return CustomCircleWidget(
       iconPath: iconPath,
@@ -192,6 +208,9 @@ class CircleAbility extends Ability {
       id: id,
       isAlly: isAlly,
       lineUpId: lineUpId,
+      visualState: visualState,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 }
@@ -227,9 +246,7 @@ class SquareAbility extends Ability {
     double? abilitySize,
   }) {
     assert(mapScale != null, 'mapScale must be provided');
-    if (abilitySize == null) {
-      abilitySize = Settings.abilitySize;
-    }
+    abilitySize ??= Settings.abilitySize;
 
     return Offset(
       _squareRenderedWidth(
@@ -275,7 +292,10 @@ class SquareAbility extends Ability {
     double? rotation,
     double? length,
     List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return CustomSquareWidget(
       lineUpId: lineUpId,
@@ -291,6 +311,9 @@ class SquareAbility extends Ability {
       hasSideBorders: hasSideBorders,
       isWall: isWall,
       isTransparent: isTransparent,
+      visualState: visualState,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 }
@@ -332,7 +355,10 @@ class CenterSquareAbility extends Ability {
     double? rotation,
     double? length,
     List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return CenterSquareWidget(
       color: color,
@@ -343,6 +369,9 @@ class CenterSquareAbility extends Ability {
       id: id,
       isAlly: isAlly,
       lineUpId: lineUpId,
+      visualState: visualState,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 }
@@ -378,7 +407,10 @@ class RotatableImageAbility extends Ability {
     double? rotation,
     double? length,
     List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return RotatableImageWidget(
       imagePath: imagePath,
@@ -425,7 +457,10 @@ class ResizableSquareAbility extends SquareAbility {
     double? rotation,
     double? length,
     List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return ResizableSquareWidget(
       isWall: isWall,
@@ -443,6 +478,9 @@ class ResizableSquareAbility extends SquareAbility {
       isTransparent: isTransparent,
       lineUpId: lineUpId,
       rotation: rotation,
+      visualState: visualState,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 
@@ -548,7 +586,10 @@ class DeadlockBarrierMeshAbility extends Ability {
     double? rotation,
     double? length,
     List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return DeadlockBarrierMeshWidget(
       lineUpId: lineUpId,
@@ -558,6 +599,9 @@ class DeadlockBarrierMeshAbility extends Ability {
       color: color,
       mapScale: mapScale,
       armLengthsMeters: normalizeArmLengths(armLengthsMeters),
+      visualState: visualState,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 }

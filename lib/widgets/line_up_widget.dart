@@ -6,6 +6,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 
 class LineUpAgentWidget extends ConsumerWidget {
@@ -41,35 +42,28 @@ class LineUpAbilityWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final currentMap = ref.watch(mapProvider.select((state) => state.currentMap));
+    final currentMap =
+        ref.watch(mapProvider.select((state) => state.currentMap));
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final abilityScreen =
         coordinateSystem.coordinateToScreen(lineUp.ability.position);
     final isRotatable = lineUp.ability.rotation != 0;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
-    return Positioned(
-      key: ValueKey('lineup-ability-${lineUp.id}'),
-      left: abilityScreen.dx,
-      top: abilityScreen.dy,
-      child: isRotatable
-          ? Transform.rotate(
-              angle: lineUp.ability.rotation,
-              alignment: Alignment.topLeft,
-              origin: lineUp.ability.data.abilityData!
-                  .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
-                  .scale(coordinateSystem.scaleFactor,
-                      coordinateSystem.scaleFactor),
-              child: lineUp.ability.data.abilityData!.createWidget(
-                id: null,
-                isAlly: true,
-                mapScale: mapScale,
-                lineUpId: lineUp.id,
-                rotation: lineUp.ability.rotation,
-                length: lineUp.ability.length,
-                armLengthsMeters: lineUp.ability.armLengthsMeters,
-              ),
-            )
-          : lineUp.ability.data.abilityData!.createWidget(
+    final contextMenuItems = buildAbilityContextMenuItems(
+      ref,
+      lineUp.ability,
+      lineUpId: lineUp.id,
+      includeDelete: true,
+    );
+    final abilityChild = isRotatable
+        ? Transform.rotate(
+            angle: lineUp.ability.rotation,
+            alignment: Alignment.topLeft,
+            origin: lineUp.ability.data.abilityData!
+                .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
+                .scale(
+                    coordinateSystem.scaleFactor, coordinateSystem.scaleFactor),
+            child: lineUp.ability.data.abilityData!.createWidget(
               id: null,
               isAlly: true,
               mapScale: mapScale,
@@ -77,7 +71,28 @@ class LineUpAbilityWidget extends ConsumerWidget {
               rotation: lineUp.ability.rotation,
               length: lineUp.ability.length,
               armLengthsMeters: lineUp.ability.armLengthsMeters,
+              visualState: lineUp.ability.visualState,
+              watchMouse: true,
+              contextMenuItems: contextMenuItems,
             ),
+          )
+        : lineUp.ability.data.abilityData!.createWidget(
+            id: null,
+            isAlly: true,
+            mapScale: mapScale,
+            lineUpId: lineUp.id,
+            rotation: lineUp.ability.rotation,
+            length: lineUp.ability.length,
+            armLengthsMeters: lineUp.ability.armLengthsMeters,
+            visualState: lineUp.ability.visualState,
+            watchMouse: true,
+            contextMenuItems: contextMenuItems,
+          );
+    return Positioned(
+      key: ValueKey('lineup-ability-${lineUp.id}'),
+      left: abilityScreen.dx,
+      top: abilityScreen.dy,
+      child: abilityChild,
     );
   }
 }

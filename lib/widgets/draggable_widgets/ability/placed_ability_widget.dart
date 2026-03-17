@@ -11,6 +11,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_deadlock_barrier_mesh_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'dart:math' as math;
@@ -103,6 +104,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             ? ref.watch(abilityProvider)[index]
             : widget.ability;
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1;
+    final contextMenuItems =
+        widget.isLineUp ? null : buildAbilityContextMenuItems(ref, abilityRef);
 
     if (widget.ability.data.abilityData is DeadlockBarrierMeshAbility) {
       return PlacedDeadlockBarrierMeshWidget(
@@ -111,6 +114,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
         id: widget.id,
         data: widget.data,
         isLineUp: widget.isLineUp,
+        contextMenuItems: contextMenuItems,
       );
     }
     //Linking the local rotation with global rotation for things like undo redo
@@ -140,6 +144,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                 isAlly: isAlly,
                 mapScale: mapScale,
                 armLengthsMeters: widget.ability.armLengthsMeters,
+                visualState: widget.ability.visualState,
+                watchMouse: false,
               ),
             ),
           ),
@@ -150,6 +156,9 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             isAlly: isAlly,
             mapScale: mapScale,
             armLengthsMeters: widget.ability.armLengthsMeters,
+            visualState: widget.ability.visualState,
+            watchMouse: true,
+            contextMenuItems: contextMenuItems,
           ),
         );
       }
@@ -194,6 +203,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           buttonTop: buttonTop,
           rotation: localRotation!,
           isDragging: isDragging,
+          showHandle: abilityRef.visualState.showRangeBody,
           origin: widget.ability.data.abilityData!
               .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize),
           onPanStart: (details) {
@@ -296,12 +306,15 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                             ref.watch(screenZoomProvider)),
                 child: ZoomTransform(
                   child: abilityRef.data.abilityData!.createWidget(
-                      id: widget.id,
-                      isAlly: isAlly,
-                      mapScale: mapScale,
-                      rotation: localRotation!,
-                      length: localLength!,
-                      armLengthsMeters: abilityRef.armLengthsMeters),
+                    id: widget.id,
+                    isAlly: isAlly,
+                    mapScale: mapScale,
+                    rotation: localRotation!,
+                    length: localLength!,
+                    armLengthsMeters: abilityRef.armLengthsMeters,
+                    visualState: abilityRef.visualState,
+                    watchMouse: false,
+                  ),
                 ),
               ),
             ),
@@ -319,12 +332,16 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             },
             // dragAnchorStrategy: pointDragAnchorStrategy,
             child: abilityRef.data.abilityData!.createWidget(
-                id: widget.id,
-                isAlly: isAlly,
-                mapScale: mapScale,
-                rotation: localRotation!,
-                length: localLength!,
-                armLengthsMeters: abilityRef.armLengthsMeters),
+              id: widget.id,
+              isAlly: isAlly,
+              mapScale: mapScale,
+              rotation: localRotation!,
+              length: localLength!,
+              armLengthsMeters: abilityRef.armLengthsMeters,
+              visualState: abilityRef.visualState,
+              watchMouse: true,
+              contextMenuItems: contextMenuItems,
+            ),
           ),
         ),
       );
@@ -348,6 +365,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             isAlly: isAlly,
             mapScale: mapScale,
             armLengthsMeters: widget.ability.armLengthsMeters,
+            visualState: widget.ability.visualState,
+            watchMouse: false,
           )),
         ),
         childWhenDragging: const SizedBox.shrink(),
@@ -357,6 +376,9 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           isAlly: isAlly,
           mapScale: mapScale,
           armLengthsMeters: widget.ability.armLengthsMeters,
+          visualState: abilityRef.visualState,
+          watchMouse: true,
+          contextMenuItems: contextMenuItems,
         ),
       ),
     );

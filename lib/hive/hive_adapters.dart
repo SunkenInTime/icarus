@@ -25,6 +25,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
   AdapterSpec<PlacedWidget>(),
   AdapterSpec<PlacedAgent>(),
   AdapterSpec<PlacedAbility>(),
+  AdapterSpec<AbilityVisualState>(),
   AdapterSpec<PlacedText>(),
   AdapterSpec<PlacedImage>(),
   AdapterSpec<MapValue>(),

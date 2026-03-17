@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double deadlockBarrierMeshMinArmLengthMeters = 1.0;
 const double deadlockBarrierMeshMaxArmLengthMeters = 10.0;
@@ -105,6 +107,9 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
     required this.armLengthsMeters,
     this.lineUpId,
     this.showCenterAbility = true,
+    this.visualState,
+    this.watchMouse = true,
+    this.contextMenuItems,
   });
 
   final String iconPath;
@@ -115,6 +120,9 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
   final List<double> armLengthsMeters;
   final String? lineUpId;
   final bool showCenterAbility;
+  final AbilityVisualState? visualState;
+  final bool watchMouse;
+  final List<ShadContextMenuItem>? contextMenuItems;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -130,25 +138,35 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
     final center = maxExtent / 2;
     final armThickness =
         coordinateSystem.scale(deadlockBarrierMeshArmThicknessVirtual);
+    final showMesh = visualState?.showRangeBody ?? true;
 
     return SizedBox.square(
       dimension: maxExtent,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          for (final arm in DeadlockBarrierMeshArm.values)
-            _BarrierArm(
-              center: center,
-              arm: arm,
-              length: coordinateSystem.scale(
-                deadlockBarrierMeshArmLengthVirtual(
-                  normalizedArmLengths[arm.index],
-                  mapScale,
-                ),
-              ),
-              thickness: armThickness,
-              color: color,
+          Opacity(
+            key: const ValueKey('deadlock-mesh-layer'),
+            opacity: showMesh ? 1 : 0,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                for (final arm in DeadlockBarrierMeshArm.values)
+                  _BarrierArm(
+                    center: center,
+                    arm: arm,
+                    length: coordinateSystem.scale(
+                      deadlockBarrierMeshArmLengthVirtual(
+                        normalizedArmLengths[arm.index],
+                        mapScale,
+                      ),
+                    ),
+                    thickness: armThickness,
+                    color: color,
+                  ),
+              ],
             ),
+          ),
           if (showCenterAbility)
             Positioned.fill(
               child: Align(
@@ -158,6 +176,8 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
                   iconPath: iconPath,
                   id: id,
                   isAlly: isAlly,
+                  watchMouse: watchMouse,
+                  contextMenuItems: contextMenuItems,
                 ),
               ),
             ),
