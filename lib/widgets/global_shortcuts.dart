@@ -66,6 +66,8 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
       // canRequestFocus: true,
       child: Shortcuts(
         shortcuts: ShortcutInfo.globalShortcuts,
+        child: Actions(
+          actions: {
             NavigationActionIntent: CallbackAction<NavigationActionIntent>(
               onInvoke: (intent) {
                 _dismissDeleteMenu();
@@ -148,9 +150,6 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
                 return null;
               },
             ),
-          ,
-        child: Actions(
-          actions: {
             UndoActionIntent: CallbackAction<UndoActionIntent>(
               onInvoke: (intent) {
                 _dismissDeleteMenu();
@@ -239,15 +238,13 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
                     backgroundColor: Colors.red,
                   );
                 }
-                  message: 'File saved',
-                  backgroundColor: Colors.green,
-                )
                 return null;
               },
-            )},
+            ),
+          },
           child: widget.child,
         ),
       ),
-    )
+    );
   }
 }

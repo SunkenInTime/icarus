@@ -27,7 +27,7 @@ void deleteHoveredTarget(WidgetRef ref, HoveredDeleteTarget target) {
       return;
     case DeleteTargetType.lineup:
       final lineUps = ref.read(lineUpProvider);
-      final exists = lineUps.any((lineUp) => lineUp.id == target.id);
+      final exists = lineUps.lineUps.any((lineUp) => lineUp.id == target.id);
       if (exists) {
         ref.read(lineUpProvider.notifier).deleteLineUpById(target.id);
       }
