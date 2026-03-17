@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
@@ -65,7 +64,8 @@ void main() {
       expect(restoredCircle.opacityPercent, 35);
     });
 
-    test('missing kind defaults to plain agent and accepts legacy enum ints', () {
+    test('missing kind defaults to plain agent and accepts legacy enum ints',
+        () {
       final restored = PlacedAgentNode.fromJson({
         'id': 'legacy-agent',
         'type': AgentType.fade.index,

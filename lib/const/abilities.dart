@@ -442,6 +442,7 @@ class ResizableSquareAbility extends SquareAbility {
       hasSideBorders: hasSideBorders,
       isTransparent: isTransparent,
       lineUpId: lineUpId,
+      rotation: rotation,
     );
   }
 

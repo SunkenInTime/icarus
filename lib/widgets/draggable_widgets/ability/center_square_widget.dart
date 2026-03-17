@@ -54,11 +54,15 @@ class CenterSquareWidget extends ConsumerWidget {
           Positioned(
             child: Align(
               alignment: Alignment.center,
-              child: AbilityWidget(
-                lineUpId: lineUpId,
-                iconPath: iconPath,
-                id: id,
-                isAlly: isAlly,
+              child: Transform.rotate(
+                angle: -(rotation ?? 0),
+                alignment: Alignment.center,
+                child: AbilityWidget(
+                  lineUpId: lineUpId,
+                  iconPath: iconPath,
+                  id: id,
+                  isAlly: isAlly,
+                ),
               ),
             ),
           ),

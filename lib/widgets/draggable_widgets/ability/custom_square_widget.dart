@@ -108,11 +108,15 @@ class CustomSquareWidget extends ConsumerWidget {
           Positioned(
             bottom: 0,
             left: (scaledWidth / 2) - (scaledAbilitySize / 2),
-            child: AbilityWidget(
-              lineUpId: lineUpId,
-              iconPath: iconPath,
-              id: id,
-              isAlly: isAlly,
+            child: Transform.rotate(
+              angle: -(rotation ?? 0),
+              alignment: Alignment.center,
+              child: AbilityWidget(
+                lineUpId: lineUpId,
+                iconPath: iconPath,
+                id: id,
+                isAlly: isAlly,
+              ),
             ),
           ),
           // Debug point to visualize rotation origin
