@@ -997,6 +997,7 @@ class TextContentAction extends WidgetAction {
 
 @JsonSerializable()
 class PlacedUtility extends PlacedWidget {
+  @UtilityTypeCompatConverter()
   final UtilityType type;
 
   double rotation = 0;
@@ -1011,7 +1012,10 @@ class PlacedUtility extends PlacedWidget {
     return UtilityData.isViewCone(type);
   }
 
-  Offset _getEffectiveUtilitySize({required double mapScale}) {
+  Offset _getEffectiveUtilitySize({
+    required double mapScale,
+    required double abilitySize,
+  }) {
     final utility = UtilityData.utilityWidgets[type]!;
     if (type == UtilityType.customCircle) {
       assert(customDiameter != null,
@@ -1034,13 +1038,17 @@ class PlacedUtility extends PlacedWidget {
         mapScale: mapScale,
       );
     }
-    return utility.getSize();
+    return utility.getSize(abilitySize: abilitySize);
   }
 
   void switchSides({
     required double mapScale,
+    required double abilitySize,
   }) {
-    final size = _getEffectiveUtilitySize(mapScale: mapScale);
+    final size = _getEffectiveUtilitySize(
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
     final scaledSize = size.scale(CoordinateSystem.instance.scaleFactor,
         CoordinateSystem.instance.scaleFactor);
     final flippedPosition = getFlippedPosition(
@@ -1232,10 +1240,14 @@ class PlacedUtility extends PlacedWidget {
   @JsonKey(defaultValue: null)
   int? customOpacityPercent;
 
+  @JsonKey(defaultValue: true)
+  final bool isAlly;
+
   PlacedUtility({
     required this.type,
     required super.position,
     required super.id,
+    this.isAlly = true,
     this.angle = 0.0,
     this.customDiameter,
     this.customWidth,
@@ -1263,12 +1275,14 @@ class PlacedUtility extends PlacedWidget {
     Object? customOpacityPercent = _noChange,
     double? rotation,
     double? length,
+    bool? isAlly,
     bool? isDeleted,
   }) {
     final copied = PlacedUtility(
       type: type ?? this.type,
       position: position ?? this.position,
       id: id ?? this.id,
+      isAlly: isAlly ?? this.isAlly,
       angle: angle ?? this.angle,
       customDiameter: identical(customDiameter, _noChange)
           ? this.customDiameter

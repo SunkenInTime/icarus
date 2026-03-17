@@ -291,7 +291,7 @@ types:
         index: 1
   PlacedUtility:
     typeId: 15
-    nextIndex: 14
+    nextIndex: 15
     fields:
       type:
         index: 0
@@ -317,9 +317,11 @@ types:
         index: 11
       customOpacityPercent:
         index: 12
+      isAlly:
+        index: 14
   UtilityType:
     typeId: 16
-    nextIndex: 6
+    nextIndex: 10
     fields:
       spike:
         index: 0
@@ -333,6 +335,14 @@ types:
         index: 4
       customRectangle:
         index: 5
+      controller:
+        index: 6
+      duelist:
+        index: 7
+      initiator:
+        index: 8
+      sentinel:
+        index: 9
   IconData:
     typeId: 18
     nextIndex: 5

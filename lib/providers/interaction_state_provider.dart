@@ -10,6 +10,7 @@ enum InteractionState {
   visionCone,
   customShapes,
   textTools,
+  roleIcons,
   lineUpPlacing,
 }
 

@@ -833,6 +833,7 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       type: fields[0] as UtilityType,
       position: fields[5] as Offset,
       id: fields[3] as String,
+      isAlly: fields[14] == null ? true : fields[14] as bool,
       angle: fields[6] == null ? 0.0 : (fields[6] as num).toDouble(),
       customDiameter: (fields[8] as num?)?.toDouble(),
       customWidth: (fields[9] as num?)?.toDouble(),
@@ -848,7 +849,7 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
   @override
   void write(BinaryWriter writer, PlacedUtility obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -872,7 +873,9 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       ..writeByte(11)
       ..write(obj.customColorValue)
       ..writeByte(12)
-      ..write(obj.customOpacityPercent);
+      ..write(obj.customOpacityPercent)
+      ..writeByte(14)
+      ..write(obj.isAlly);
   }
 
   @override
@@ -905,6 +908,14 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
         return UtilityType.customCircle;
       case 5:
         return UtilityType.customRectangle;
+      case 6:
+        return UtilityType.controller;
+      case 7:
+        return UtilityType.duelist;
+      case 8:
+        return UtilityType.initiator;
+      case 9:
+        return UtilityType.sentinel;
       default:
         return UtilityType.spike;
     }
@@ -925,6 +936,14 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
         writer.writeByte(4);
       case UtilityType.customRectangle:
         writer.writeByte(5);
+      case UtilityType.controller:
+        writer.writeByte(6);
+      case UtilityType.duelist:
+        writer.writeByte(7);
+      case UtilityType.initiator:
+        writer.writeByte(8);
+      case UtilityType.sentinel:
+        writer.writeByte(9);
     }
   }
 

@@ -7,14 +7,25 @@ final inAppDebugProvider =
 enum DebugLogLevel { info, warning, error }
 
 class DebugLogEntry {
-  const DebugLogEntry({
+  DebugLogEntry({
     required this.timestamp,
     required this.level,
     required this.message,
     this.source,
     this.errorText,
     this.stackTrace,
-  });
+    String? dedupeKey,
+    this.repeatCount = 1,
+    DateTime? lastOccurredAt,
+  })  : dedupeKey = dedupeKey ??
+            _buildDebugLogDedupeKey(
+              level: level,
+              message: message,
+              source: source,
+              errorText: errorText,
+              stackTrace: stackTrace,
+            ),
+        lastOccurredAt = lastOccurredAt ?? timestamp;
 
   final DateTime timestamp;
   final DebugLogLevel level;
@@ -22,6 +33,9 @@ class DebugLogEntry {
   final String? source;
   final String? errorText;
   final String? stackTrace;
+  final String dedupeKey;
+  final int repeatCount;
+  final DateTime lastOccurredAt;
 
   String get levelLabel => switch (level) {
         DebugLogLevel.info => 'INFO',
@@ -35,10 +49,41 @@ class DebugLogEntry {
     return '[${formatDebugLogTimestamp(timestamp)}] $levelLabel$sourceLabel';
   }
 
+  bool canMergeWith(DebugLogEntry other) => dedupeKey == other.dedupeKey;
+
+  String get repeatLabel => 'Repeated ${repeatCount}x';
+
+  DebugLogEntry mergeRepeat(DebugLogEntry other) {
+    final currentErrorText = errorText?.trim();
+    final currentStackTrace = stackTrace?.trim();
+
+    return DebugLogEntry(
+      timestamp: timestamp,
+      level: level,
+      message: message,
+      source: source,
+      errorText: currentErrorText != null && currentErrorText.isNotEmpty
+          ? errorText
+          : other.errorText,
+      stackTrace: currentStackTrace != null && currentStackTrace.isNotEmpty
+          ? stackTrace
+          : other.stackTrace,
+      dedupeKey: dedupeKey,
+      repeatCount: repeatCount + other.repeatCount,
+      lastOccurredAt: other.lastOccurredAt,
+    );
+  }
+
   String toClipboardText() {
-    final buffer = StringBuffer()
-      ..writeln(headline)
-      ..writeln(message);
+    final buffer = StringBuffer()..writeln(headline);
+
+    if (repeatCount > 1) {
+      buffer.writeln(
+        '$repeatLabel (latest: ${formatDebugLogTimestamp(lastOccurredAt)})',
+      );
+    }
+
+    buffer.writeln(message);
 
     if (errorText != null && errorText!.trim().isNotEmpty) {
       buffer
@@ -68,6 +113,41 @@ String formatDebugLogTimestamp(DateTime timestamp) {
       '${twoDigits(timestamp.second)}';
 }
 
+String _buildDebugLogDedupeKey({
+  required DebugLogLevel level,
+  required String message,
+  String? source,
+  String? errorText,
+  String? stackTrace,
+}) {
+  return [
+    level.name,
+    _normalizeDebugLogFragment(source),
+    _normalizeDebugLogFragment(message),
+    _normalizeDebugLogFragment(errorText),
+    _normalizeDebugLogFragment(_firstStackTraceLine(stackTrace)),
+  ].join('|');
+}
+
+String _normalizeDebugLogFragment(String? value) {
+  if (value == null) return '';
+
+  return value.replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
+String? _firstStackTraceLine(String? stackTrace) {
+  if (stackTrace == null) return null;
+
+  for (final line in stackTrace.split('\n')) {
+    final trimmed = line.trim();
+    if (trimmed.isNotEmpty) {
+      return trimmed;
+    }
+  }
+
+  return null;
+}
+
 class InAppDebugProvider extends Notifier<List<DebugLogEntry>> {
   static const int _maxEntries = 500;
 
@@ -77,6 +157,12 @@ class InAppDebugProvider extends Notifier<List<DebugLogEntry>> {
   }
 
   void addEntry(DebugLogEntry entry) {
+    if (state.isNotEmpty && state.last.canMergeWith(entry)) {
+      final mergedEntry = state.last.mergeRepeat(entry);
+      state = [...state.sublist(0, state.length - 1), mergedEntry];
+      return;
+    }
+
     final nextState = [...state, entry];
     if (nextState.length <= _maxEntries) {
       state = nextState;

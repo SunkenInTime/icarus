@@ -1,8 +1,9 @@
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
@@ -65,86 +66,6 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
       // canRequestFocus: true,
       child: Shortcuts(
         shortcuts: ShortcutInfo.globalShortcuts,
-        child: Actions(
-          actions: {
-            UndoActionIntent: CallbackAction<UndoActionIntent>(
-              onInvoke: (intent) {
-                _dismissDeleteMenu();
-                ref.read(actionProvider.notifier).undoAction();
-                return null;
-              },
-            ),
-            AddedTextIntent: CallbackAction<AddedTextIntent>(
-              onInvoke: (intent) {
-                _dismissDeleteMenu();
-                const uuid = Uuid();
-                final coordinateSystem = CoordinateSystem.instance;
-                const screenPoint = Offset(200, 42);
-                final virtualPoint =
-                    coordinateSystem.screenToCoordinate(screenPoint);
-                final placementCenter = ref.read(placementCenterProvider);
-                final centeredTopLeft = placementCenter -
-                    Offset(virtualPoint.dx / 2, virtualPoint.dy / 2);
-
-                ref.read(textProvider.notifier).addText(
-                      PlacedText(
-                        position: centeredTopLeft,
-                        id: uuid.v4(),
-                      ),
-                    );
-                return null;
-              },
-            ),
-            ToggleDrawingIntent: CallbackAction<ToggleDrawingIntent>(
-              onInvoke: (intent) {
-                _dismissDeleteMenu();
-                if (ref.read(interactionStateProvider) ==
-                    InteractionState.drawing) {
-                  ref
-                      .read(interactionStateProvider.notifier)
-                      .update(InteractionState.navigation);
-                } else {
-                  ref
-                      .read(interactionStateProvider.notifier)
-                      .update(InteractionState.drawing);
-                }
-                return null;
-              },
-            ),
-            ToggleErasingIntent: CallbackAction<ToggleErasingIntent>(
-              onInvoke: (intent) async {
-                _dismissDeleteMenu();
-                if (ref.read(interactionStateProvider) ==
-                    InteractionState.erasing) {
-                  ref
-                      .read(interactionStateProvider.notifier)
-                      .update(InteractionState.navigation);
-                } else {
-                  ref
-                      .read(interactionStateProvider.notifier)
-                      .update(InteractionState.erasing);
-                  await ref.read(penProvider.notifier).buildCursors();
-                }
-                return null;
-              },
-            ),
-            RedoActionIntent: CallbackAction<RedoActionIntent>(
-              onInvoke: (intent) {
-                _dismissDeleteMenu();
-                ref.read(actionProvider.notifier).redoAction();
-                return null;
-              },
-            ),
-            SaveStrategyIntent: CallbackAction<SaveStrategyIntent>(
-              onInvoke: (intent) async {
-                _dismissDeleteMenu();
-                final strategyId = ref.read(strategyProvider).id;
-                await ref.read(strategyProvider.notifier).forceSaveNow(
-                      strategyId,
-                    );
-                return null;
-              },
-            ),
             NavigationActionIntent: CallbackAction<NavigationActionIntent>(
               onInvoke: (intent) {
                 _dismissDeleteMenu();
@@ -227,10 +148,106 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
                 return null;
               },
             ),
-          },
+          ,
+        child: Actions(
+          actions: {
+            UndoActionIntent: CallbackAction<UndoActionIntent>(
+              onInvoke: (intent) {
+                _dismissDeleteMenu();
+                ref.read(actionProvider.notifier).undoAction();
+                return null;
+              },
+            ),
+            AddedTextIntent: CallbackAction<AddedTextIntent>(
+              onInvoke: (intent) {
+                _dismissDeleteMenu();
+                const uuid = Uuid();
+                final coordinateSystem = CoordinateSystem.instance;
+                const screenPoint = Offset(200, 42);
+                final virtualPoint =
+                    coordinateSystem.screenToCoordinate(screenPoint);
+                final placementCenter = ref.read(placementCenterProvider);
+                final centeredTopLeft = placementCenter -
+                    Offset(virtualPoint.dx / 2, virtualPoint.dy / 2);
+
+                ref.read(textProvider.notifier).addText(
+                      PlacedText(
+                        position: centeredTopLeft,
+                        id: uuid.v4(),
+                      ),
+                    );
+                return null;
+              },
+            ),
+            ToggleDrawingIntent: CallbackAction<ToggleDrawingIntent>(
+              onInvoke: (intent) {
+                _dismissDeleteMenu();
+                if (ref.read(interactionStateProvider) ==
+                    InteractionState.drawing) {
+                  ref
+                      .read(interactionStateProvider.notifier)
+                      .update(InteractionState.navigation);
+                } else {
+                  ref
+                      .read(interactionStateProvider.notifier)
+                      .update(InteractionState.drawing);
+                }
+                return null;
+              },
+            ),
+            ToggleErasingIntent: CallbackAction<ToggleErasingIntent>(
+              onInvoke: (intent) async {
+                _dismissDeleteMenu();
+                if (ref.read(interactionStateProvider) ==
+                    InteractionState.erasing) {
+                  ref
+                      .read(interactionStateProvider.notifier)
+                      .update(InteractionState.navigation);
+                } else {
+                  ref
+                      .read(interactionStateProvider.notifier)
+                      .update(InteractionState.erasing);
+                  await ref.read(penProvider.notifier).buildCursors();
+                }
+                return null;
+              },
+            ),
+            RedoActionIntent: CallbackAction<RedoActionIntent>(
+              onInvoke: (intent) {
+                _dismissDeleteMenu();
+                ref.read(actionProvider.notifier).redoAction();
+                return null;
+              },
+            ),
+            SaveStrategyIntent: CallbackAction<SaveStrategyIntent>(
+              onInvoke: (intent) async {
+                _dismissDeleteMenu();
+                final strategyId = ref.read(strategyProvider).id;
+                try {
+                  await ref.read(strategyProvider.notifier).forceSaveNow(
+                        strategyId,
+                      );
+                  if (!mounted) return null;
+                  Settings.showToast(
+                    message: 'File saved',
+                    backgroundColor: Colors.green,
+                  );
+                } catch (_) {
+                  if (!mounted) return null;
+                  Settings.showToast(
+                    message: 'Save failed',
+                    backgroundColor: Colors.red,
+                  );
+                }
+                  message: 'File saved',
+                  backgroundColor: Colors.green,
+                )
+                return null;
+              },
+            )},
           child: widget.child,
         ),
       ),
-    );
+    )
   }
 }
