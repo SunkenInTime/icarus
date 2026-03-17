@@ -22,6 +22,7 @@ class ResizableSquareWidget extends ConsumerWidget {
     required this.hasTopborder,
     required this.hasSideBorders,
     this.lineUpId,
+    this.rotation,
   });
 
   final Color color;
@@ -38,6 +39,7 @@ class ResizableSquareWidget extends ConsumerWidget {
   final bool hasTopborder;
   final bool hasSideBorders;
   final String? lineUpId;
+  final double? rotation;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -100,11 +102,15 @@ class ResizableSquareWidget extends ConsumerWidget {
           Positioned(
             bottom: 0,
             left: (scaledWidth - scaledAbilitySize) / 2,
-            child: AbilityWidget(
-              lineUpId: lineUpId,
-              iconPath: iconPath,
-              id: id,
-              isAlly: isAlly,
+            child: Transform.rotate(
+              angle: -(rotation ?? 0),
+              alignment: Alignment.center,
+              child: AbilityWidget(
+                lineUpId: lineUpId,
+                iconPath: iconPath,
+                id: id,
+                isAlly: isAlly,
+              ),
             ),
           ),
         ],

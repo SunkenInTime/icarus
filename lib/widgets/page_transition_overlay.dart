@@ -488,13 +488,14 @@ class PlacedWidgetPreview {
               id: w.id,
               isAlly: w.isAlly,
               mapScale: mapScale,
-              rotation: w.rotation,
+              rotation: rotation ?? w.rotation,
               length: length ?? w.length);
         case CenterSquareAbility():
           return ability.createWidget(
               id: w.id,
               isAlly: w.isAlly,
               mapScale: mapScale,
+              rotation: rotation ?? w.rotation,
               length: length ?? w.length);
         case RotatableImageAbility():
           return ability.createWidget(

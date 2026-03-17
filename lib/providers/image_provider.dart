@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/providers/image_widget_size_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:image/image.dart' as img;
 import 'dart:ui' as ui;
 import 'dart:async' show Completer;
@@ -89,7 +90,13 @@ class PlacedImageProvider extends Notifier<ImageState> {
         if (!fileIDs.contains(fileName)) {
           try {
             await entity.delete();
-          } catch (e) {}
+          } catch (e, stackTrace) {
+            AppErrorReporter.reportError(
+              'Failed to delete unused image: $e',
+              error: e,
+              stackTrace: stackTrace,
+            );
+          }
         }
       }
     }

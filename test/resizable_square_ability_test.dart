@@ -308,7 +308,7 @@ void main() {
       CoordinateSystem(playAreaSize: const Size(1920, 1080));
 
       final abilityInfo = AgentData.agents[AgentType.viper]!.abilities[2];
-      final initialPosition = const Offset(123.4, 234.5);
+      const initialPosition = Offset(123.4, 234.5);
       const initialRotation = 0.5;
 
       final placedAbility = PlacedAbility(
@@ -341,7 +341,7 @@ void main() {
       CoordinateSystem(playAreaSize: const Size(1920, 1080));
 
       final abilityInfo = AgentData.agents[AgentType.neon]!.abilities.first;
-      final initialPosition = const Offset(210.0, 310.0);
+      const initialPosition = Offset(210.0, 310.0);
       const initialRotation = 0.75;
 
       final placedAbility = PlacedAbility(
