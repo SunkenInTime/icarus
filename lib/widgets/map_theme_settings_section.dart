@@ -16,9 +16,9 @@ class MapThemeSettingsSection extends StatelessWidget {
       children: [
         Text("Map Theme", style: ShadTheme.of(context).textTheme.lead),
         const SizedBox(height: 10),
-        const _ActiveThemeCard(),
+        const ActiveThemeCard(),
         const SizedBox(height: 16),
-        const _ProfileLibrarySection(),
+        const ProfileLibrarySection(),
       ],
     );
   }
@@ -26,14 +26,14 @@ class MapThemeSettingsSection extends StatelessWidget {
 
 // ─── Zone 1: Active Theme (Document State) ────────────────────
 
-class _ActiveThemeCard extends ConsumerStatefulWidget {
-  const _ActiveThemeCard();
+class ActiveThemeCard extends ConsumerStatefulWidget {
+  const ActiveThemeCard({super.key});
 
   @override
-  ConsumerState<_ActiveThemeCard> createState() => _ActiveThemeCardState();
+  ConsumerState<ActiveThemeCard> createState() => _ActiveThemeCardState();
 }
 
-class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
+class _ActiveThemeCardState extends ConsumerState<ActiveThemeCard> {
   String? _profileIdBeforeCustomize;
   bool _showSaveForm = false;
   late final TextEditingController _saveNameController;
@@ -321,16 +321,16 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
 
 // ─── Zone 2: Profile Library (Global Preferences) ─────────────
 
-class _ProfileLibrarySection extends ConsumerStatefulWidget {
-  const _ProfileLibrarySection();
+class ProfileLibrarySection extends ConsumerStatefulWidget {
+  const ProfileLibrarySection({super.key});
 
   @override
-  ConsumerState<_ProfileLibrarySection> createState() =>
+  ConsumerState<ProfileLibrarySection> createState() =>
       _ProfileLibrarySectionState();
 }
 
 class _ProfileLibrarySectionState
-    extends ConsumerState<_ProfileLibrarySection> {
+    extends ConsumerState<ProfileLibrarySection> {
   @override
   Widget build(BuildContext context) {
     final profilesState = ref.watch(mapThemeProfilesProvider);
