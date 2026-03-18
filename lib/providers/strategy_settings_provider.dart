@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:json_annotation/json_annotation.dart';
 part "strategy_settings_provider.g.dart";
 
@@ -71,9 +72,11 @@ class StrategySettingsProvider extends Notifier<StrategySettings> {
 
   void updateAgentSize(double size) {
     state = state.copyWith(agentSize: size);
+    ref.read(strategyProvider.notifier).setUnsaved();
   }
 
   void updateAbilitySize(double size) {
     state = state.copyWith(abilitySize: size);
+    ref.read(strategyProvider.notifier).setUnsaved();
   }
 }

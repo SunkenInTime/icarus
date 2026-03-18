@@ -1451,16 +1451,37 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return AppPreferences(
-      defaultThemeProfileIdForNewStrategies: fields[0] as String,
+      defaultThemeProfileIdForNewStrategies: fields[0] == null
+          ? defaultThemeProfileIdFallback
+          : fields[0] as String,
+      showSpawnBarrier: fields[1] == null ? false : fields[1] as bool,
+      showUltOrbs: fields[2] == null ? false : fields[2] as bool,
+      showRegionNames: fields[3] == null ? false : fields[3] as bool,
+      defaultAgentSizeForNewStrategies: fields[4] == null
+          ? Settings.agentSize
+          : (fields[4] as num).toDouble(),
+      defaultAbilitySizeForNewStrategies: fields[5] == null
+          ? Settings.abilitySize
+          : (fields[5] as num).toDouble(),
     );
   }
 
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(1)
+      ..writeByte(6)
       ..writeByte(0)
-      ..write(obj.defaultThemeProfileIdForNewStrategies);
+      ..write(obj.defaultThemeProfileIdForNewStrategies)
+      ..writeByte(1)
+      ..write(obj.showSpawnBarrier)
+      ..writeByte(2)
+      ..write(obj.showUltOrbs)
+      ..writeByte(3)
+      ..write(obj.showRegionNames)
+      ..writeByte(4)
+      ..write(obj.defaultAgentSizeForNewStrategies)
+      ..writeByte(5)
+      ..write(obj.defaultAbilitySizeForNewStrategies);
   }
 
   @override

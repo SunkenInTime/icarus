@@ -9,6 +9,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/app_preferences_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -155,6 +156,11 @@ class _NoopLineUpProvider extends LineUpProvider {
   void fromHive(List<LineUp> lineUps) {}
 }
 
+class _NoopAppPreferencesProvider extends AppPreferencesProvider {
+  @override
+  AppPreferences build() => AppPreferences();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -191,6 +197,7 @@ void main() {
         penProvider.overrideWith(_NoopPenProvider.new),
         utilityProvider.overrideWith(_NoopUtilityProvider.new),
         lineUpProvider.overrideWith(_NoopLineUpProvider.new),
+        appPreferencesProvider.overrideWith(_NoopAppPreferencesProvider.new),
         effectiveMapThemePaletteProvider.overrideWith(
           (ref) => MapThemeProfilesProvider.immutableDefaultPalette,
         ),

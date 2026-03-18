@@ -7,6 +7,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/app_preferences_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -102,6 +103,13 @@ class ScreenshotView extends ConsumerWidget {
         .rebuildAllPaths(CoordinateSystem.instance);
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
+    String barrierAssetName =
+        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_spawn_walls.svg';
+    String calloutsAssetName =
+        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_call_outs${isAttack ? "" : "_defense"}.svg';
+    String ultOrbsAssetName =
+        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_ult_orbs.svg';
+    final appPreferences = ref.watch(appPreferencesProvider);
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
     final mapColorMapper = _MapSvgColorMapper({
       0xFF271406: effectivePalette.baseColor,
@@ -144,6 +152,50 @@ class ScreenshotView extends ConsumerWidget {
               fit: BoxFit.contain,
             ),
           ),
+          if (appPreferences.showSpawnBarrier)
+            Positioned(
+              left: mapLeft,
+              top: 0,
+              width: mapWidth,
+              height: CoordinateSystem.screenShotSize.height,
+              child: Transform.flip(
+                flipX: !isAttack,
+                flipY: !isAttack,
+                child: SvgPicture.asset(
+                  barrierAssetName,
+                  semanticsLabel: 'Barrier',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          if (appPreferences.showRegionNames)
+            Positioned(
+              left: mapLeft,
+              top: 0,
+              width: mapWidth,
+              height: CoordinateSystem.screenShotSize.height,
+              child: SvgPicture.asset(
+                calloutsAssetName,
+                semanticsLabel: 'Callouts',
+                fit: BoxFit.contain,
+              ),
+            ),
+          if (appPreferences.showUltOrbs)
+            Positioned(
+              left: mapLeft,
+              top: 0,
+              width: mapWidth,
+              height: CoordinateSystem.screenShotSize.height,
+              child: Transform.flip(
+                flipX: !isAttack,
+                flipY: !isAttack,
+                child: SvgPicture.asset(
+                  ultOrbsAssetName,
+                  semanticsLabel: 'Ult Orbs',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
           const Positioned.fill(
             child: PlacedWidgetBuilder(),
           ),

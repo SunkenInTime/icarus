@@ -493,10 +493,20 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 1
+    nextIndex: 6
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0
+      showSpawnBarrier:
+        index: 1
+      showUltOrbs:
+        index: 2
+      showRegionNames:
+        index: 3
+      defaultAgentSizeForNewStrategies:
+        index: 4
+      defaultAbilitySizeForNewStrategies:
+        index: 5
   PlacedViewConeAgent:
     typeId: 29
     nextIndex: 9

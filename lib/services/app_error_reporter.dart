@@ -124,9 +124,20 @@ class AppErrorReporter {
       level: _developerLogLevel(level),
     );
 
-    appProviderContainer.read(inAppDebugProvider.notifier).addEntry(entry);
+    if (_hasAppProviderContainer) {
+      appProviderContainer.read(inAppDebugProvider.notifier).addEntry(entry);
+    }
     _queuePersistedLogWrite(entry);
     return entry;
+  }
+
+  static bool get _hasAppProviderContainer {
+    try {
+      appProviderContainer;
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<void> openDebugLog() async {

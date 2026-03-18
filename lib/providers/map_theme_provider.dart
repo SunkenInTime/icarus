@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/providers/app_preferences_provider.dart';
 import 'package:uuid/uuid.dart';
 
 class MapThemePalette extends HiveObject {
@@ -108,24 +109,6 @@ class MapThemeProfile extends HiveObject {
   }
 }
 
-class AppPreferences extends HiveObject {
-  final String defaultThemeProfileIdForNewStrategies;
-
-  AppPreferences({
-    required this.defaultThemeProfileIdForNewStrategies,
-  });
-
-  AppPreferences copyWith({
-    String? defaultThemeProfileIdForNewStrategies,
-  }) {
-    return AppPreferences(
-      defaultThemeProfileIdForNewStrategies:
-          defaultThemeProfileIdForNewStrategies ??
-              this.defaultThemeProfileIdForNewStrategies,
-    );
-  }
-}
-
 class StrategyThemeState {
   final String? profileId;
   final MapThemePalette? overridePalette;
@@ -203,7 +186,6 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
   static const String immutableDefaultProfileId = 'immutable-default-map-theme';
   static const String immutableValorantProfileId =
       'immutable-valorant-map-theme';
-  static const String appPreferencesSingletonKey = 'app_preferences';
   static const int customProfilesSoftCap = 10;
 
   static final MapThemePalette immutableDefaultPalette = MapThemePalette(
@@ -239,10 +221,12 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
 
   @override
   MapThemeProfilesState build() {
+    return _buildState(appPrefs: ref.watch(appPreferencesProvider));
+  }
+
+  MapThemeProfilesState _buildState({required AppPreferences appPrefs}) {
     final profileBox =
         Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
-    final appPrefsBox =
-        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox);
 
     final allProfiles = profileBox.values.toList(growable: false);
     final profilesById = {
@@ -261,9 +245,7 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
       ...customProfiles,
     ];
 
-    final appPrefs = appPrefsBox.get(appPreferencesSingletonKey);
-    final defaultProfileId = appPrefs?.defaultThemeProfileIdForNewStrategies ??
-        immutableDefaultProfileId;
+    final defaultProfileId = appPrefs.defaultThemeProfileIdForNewStrategies;
 
     final resolvedDefault =
         sortedProfiles.any((profile) => profile.id == defaultProfileId)
@@ -281,7 +263,7 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
       customProfilesSoftCap;
 
   Future<void> refreshFromHive() async {
-    state = build();
+    state = _buildState(appPrefs: ref.read(appPreferencesProvider));
   }
 
   Future<bool> createProfile({
@@ -359,13 +341,9 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     final resolvedProfileId =
         profileExists ? profileId : immutableDefaultProfileId;
 
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      appPreferencesSingletonKey,
-      AppPreferences(
-        defaultThemeProfileIdForNewStrategies: resolvedProfileId,
-      ),
-    );
-    await refreshFromHive();
+    await ref
+        .read(appPreferencesProvider.notifier)
+        .setDefaultThemeProfileIdForNewStrategies(resolvedProfileId);
   }
 
   MapThemeProfile? _findProfile(String profileId) {

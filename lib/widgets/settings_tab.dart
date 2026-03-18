@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/app_preferences_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -13,7 +13,9 @@ class SettingsTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return ShadSheet(
       title: Text("Settings", style: ShadTheme.of(context).textTheme.h3),
-      description: const Text("Adjust your application settings here."),
+      description: const Text(
+        "Page sizes affect the active page. Map overlays and defaults are app-wide.",
+      ),
       child: Padding(
         padding: const EdgeInsets.all(8.0),
         child: SizedBox(
@@ -77,11 +79,13 @@ class SettingsTab extends ConsumerWidget {
                         ),
                         const SizedBox(height: 10),
                         ShadCheckbox(
-                          value: ref.watch(mapProvider).showSpawnBarrier,
-                          onChanged: (value) {
-                            ref
-                                .read(mapProvider.notifier)
-                                .updateSpawnBarrier(value);
+                          value: ref
+                              .watch(appPreferencesProvider)
+                              .showSpawnBarrier,
+                          onChanged: (value) async {
+                            await ref
+                                .read(appPreferencesProvider.notifier)
+                                .setShowSpawnBarrier(value);
                           },
                         )
                       ],
@@ -96,11 +100,12 @@ class SettingsTab extends ConsumerWidget {
                         ),
                         const SizedBox(height: 10),
                         ShadCheckbox(
-                          value: ref.watch(mapProvider).showRegionNames,
-                          onChanged: (value) {
-                            ref
-                                .read(mapProvider.notifier)
-                                .updateRegionNames(value);
+                          value:
+                              ref.watch(appPreferencesProvider).showRegionNames,
+                          onChanged: (value) async {
+                            await ref
+                                .read(appPreferencesProvider.notifier)
+                                .setShowRegionNames(value);
                           },
                         )
                       ],
@@ -115,12 +120,57 @@ class SettingsTab extends ConsumerWidget {
                         ),
                         const SizedBox(height: 10),
                         ShadCheckbox(
-                          value: ref.watch(mapProvider).showUltOrbs,
-                          onChanged: (value) {
-                            ref.read(mapProvider.notifier).updateUltOrbs(value);
+                          value: ref.watch(appPreferencesProvider).showUltOrbs,
+                          onChanged: (value) async {
+                            await ref
+                                .read(appPreferencesProvider.notifier)
+                                .setShowUltOrbs(value);
                           },
                         )
                       ],
+                    ),
+                  ],
+                ),
+                SettingsSection(
+                  title: "Defaults for New Strategies",
+                  children: [
+                    const Text(
+                      "Agent Scale",
+                      style: TextStyle(fontSize: 15),
+                    ),
+                    const SizedBox(height: 10),
+                    Slider(
+                      min: Settings.agentSizeMin,
+                      max: Settings.agentSizeMax,
+                      inactiveColor: Settings.tacticalVioletTheme.secondary,
+                      divisions: 15,
+                      value: ref
+                          .watch(appPreferencesProvider)
+                          .defaultAgentSizeForNewStrategies,
+                      onChanged: (value) {
+                        ref
+                            .read(appPreferencesProvider.notifier)
+                            .setDefaultAgentSizeForNewStrategies(value);
+                      },
+                    ),
+                    const Text(
+                      "Ability Scale",
+                      style: TextStyle(fontSize: 15),
+                    ),
+                    const SizedBox(height: 10),
+                    Slider(
+                      min: Settings.abilitySizeMin,
+                      max: Settings.abilitySizeMax,
+                      inactiveColor: Settings.tacticalVioletTheme.secondary,
+                      divisions: 15,
+                      value: ref
+                          .watch(appPreferencesProvider)
+                          .defaultAbilitySizeForNewStrategies,
+                      onChanged: (value) {
+                        ref
+                            .read(appPreferencesProvider.notifier)
+                            .setDefaultAbilitySizeForNewStrategies(value);
+                      },
                     ),
                   ],
                 ),

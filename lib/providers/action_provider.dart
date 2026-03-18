@@ -239,7 +239,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
 
     ref.read(imageWidgetSizeProvider.notifier).clearAll();
     ref.read(textWidgetHeightProvider.notifier).clearAll();
-    ref.read(strategyProvider.notifier).setUnsaved();
     state = [];
   }
 

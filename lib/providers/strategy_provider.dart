@@ -23,6 +23,7 @@ import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/app_preferences_provider.dart';
 import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -2732,10 +2733,19 @@ class StrategyProvider extends Notifier<StrategyState> {
                 ? globals.defaultThemeProfileIdForNewStrategies!
                 : MapThemeProfilesProvider.immutableDefaultProfileId);
 
+    final existingAppPreferences =
+        appPreferencesBox.get(appPreferencesSingletonKey) ?? AppPreferences();
     await appPreferencesBox.put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      AppPreferences(
+      appPreferencesSingletonKey,
+      existingAppPreferences.copyWith(
         defaultThemeProfileIdForNewStrategies: resolvedDefaultProfileId,
+        showSpawnBarrier: globals.showSpawnBarrier,
+        showRegionNames: globals.showRegionNames,
+        showUltOrbs: globals.showUltOrbs,
+        defaultAgentSizeForNewStrategies:
+            globals.defaultAgentSizeForNewStrategies,
+        defaultAbilitySizeForNewStrategies:
+            globals.defaultAbilitySizeForNewStrategies,
       ),
     );
 
@@ -2744,6 +2754,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       await favoriteAgentsBox.put(favorite.name, true);
     }
 
+    await ref.read(appPreferencesProvider.notifier).refreshFromHive();
     await ref.read(mapThemeProfilesProvider.notifier).refreshFromHive();
     ref.invalidate(favoriteAgentsProvider);
 
@@ -2956,6 +2967,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     final pageID = const Uuid().v4();
     final defaultThemeProfileId =
         ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies;
+    final appPreferences = ref.read(appPreferencesProvider);
+    final defaultStrategySettings = StrategySettings(
+      agentSize: appPreferences.defaultAgentSizeForNewStrategies,
+      abilitySize: appPreferences.defaultAbilitySizeForNewStrategies,
+    );
     final newStrategy = StrategyData(
       mapData: MapValue.ascent,
       versionNumber: Settings.versionNumber,
@@ -2974,13 +2990,13 @@ class StrategyProvider extends Notifier<StrategyState> {
           lineUps: [],
           sortIndex: 0,
           isAttack: true,
-          settings: StrategySettings(),
+          settings: defaultStrategySettings,
         )
       ],
       lastEdited: DateTime.now(),
 
       // ignore: deprecated_member_use_from_same_package
-      strategySettings: StrategySettings(),
+      strategySettings: defaultStrategySettings,
       folderID: ref.read(folderProvider),
       themeProfileId: defaultThemeProfileId,
     );
@@ -3291,7 +3307,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         .toList(growable: false);
     final appPreferences =
         Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
-            .get(MapThemeProfilesProvider.appPreferencesSingletonKey);
+            .get(appPreferencesSingletonKey);
     final favoriteAgents = Hive.box<bool>(HiveBoxNames.favoriteAgentsBox)
         .keys
         .whereType<String>()
@@ -3302,6 +3318,15 @@ class StrategyProvider extends Notifier<StrategyState> {
       themeProfiles: profiles,
       defaultThemeProfileIdForNewStrategies:
           appPreferences?.defaultThemeProfileIdForNewStrategies,
+      showSpawnBarrier: appPreferences?.showSpawnBarrier ?? false,
+      showRegionNames: appPreferences?.showRegionNames ?? false,
+      showUltOrbs: appPreferences?.showUltOrbs ?? false,
+      defaultAgentSizeForNewStrategies:
+          appPreferences?.defaultAgentSizeForNewStrategies ??
+              Settings.agentSize,
+      defaultAbilitySizeForNewStrategies:
+          appPreferences?.defaultAbilitySizeForNewStrategies ??
+              Settings.abilitySize,
       favoriteAgents: favoriteAgents,
     );
   }

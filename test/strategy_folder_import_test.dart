@@ -12,6 +12,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/app_preferences_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
@@ -226,7 +227,9 @@ void main() {
     expect(result.issues.single.path, zipFile.path);
     expect(_folderByName('Manifest Root').parentID, currentFolder.id);
     expect(
-      Hive.box<Folder>(HiveBoxNames.foldersBox).values.map((folder) => folder.name),
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .map((folder) => folder.name),
       containsAll(['Current', 'Manifest Root']),
     );
     expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, hasLength(2));
@@ -278,7 +281,9 @@ void main() {
     expect(result.issues.single.path, sourceRoot.path);
     expect(_folderByName('Manifest Root').parentID, currentFolder.id);
     expect(
-      Hive.box<Folder>(HiveBoxNames.foldersBox).values.map((folder) => folder.name),
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .map((folder) => folder.name),
       containsAll(['Current', 'Manifest Root']),
     );
     expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, hasLength(2));
@@ -323,7 +328,8 @@ void main() {
         .buildFolderExportDirectoryForTest(rootFolder.id);
 
     try {
-      final exportedRoot = exportDirectory.listSync().whereType<Directory>().single;
+      final exportedRoot =
+          exportDirectory.listSync().whereType<Directory>().single;
       final manifestFile =
           File(path.join(exportedRoot.path, archiveMetadataFileName));
       expect(await manifestFile.exists(), isTrue);
@@ -369,7 +375,8 @@ void main() {
     }
   });
 
-  test('library backup restores global state and theme profile links', () async {
+  test('library backup restores global state and theme profile links',
+      () async {
     final themeProvider = container.read(mapThemeProfilesProvider.notifier);
     final palette = MapThemePalette(
       baseColorValue: 0xFF0F172A,
@@ -380,10 +387,24 @@ void main() {
       await themeProvider.createProfile(name: 'Tournament', palette: palette),
       isTrue,
     );
-    final customProfile = Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
-        .values
-        .firstWhere((profile) => profile.name == 'Tournament');
+    final customProfile =
+        Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
+            .values
+            .firstWhere((profile) => profile.name == 'Tournament');
     await themeProvider.setDefaultProfileForNewStrategies(customProfile.id);
+    await container
+        .read(appPreferencesProvider.notifier)
+        .setShowSpawnBarrier(true);
+    await container
+        .read(appPreferencesProvider.notifier)
+        .setShowRegionNames(true);
+    await container.read(appPreferencesProvider.notifier).setShowUltOrbs(true);
+    await container
+        .read(appPreferencesProvider.notifier)
+        .setDefaultAgentSizeForNewStrategies(Settings.agentSizeMax);
+    await container
+        .read(appPreferencesProvider.notifier)
+        .setDefaultAbilitySizeForNewStrategies(Settings.abilitySizeMin);
     await container
         .read(favoriteAgentsProvider.notifier)
         .toggleFavorite(AgentType.jett);
@@ -449,9 +470,39 @@ void main() {
       expect(restoredFolderStrategy.themeProfileId, restoredProfile.id);
       expect(
         Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
-            .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
+            .get(appPreferencesSingletonKey)
             ?.defaultThemeProfileIdForNewStrategies,
         restoredProfile.id,
+      );
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(appPreferencesSingletonKey)
+            ?.showSpawnBarrier,
+        isTrue,
+      );
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(appPreferencesSingletonKey)
+            ?.showRegionNames,
+        isTrue,
+      );
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(appPreferencesSingletonKey)
+            ?.showUltOrbs,
+        isTrue,
+      );
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(appPreferencesSingletonKey)
+            ?.defaultAgentSizeForNewStrategies,
+        Settings.agentSizeMax,
+      );
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(appPreferencesSingletonKey)
+            ?.defaultAbilitySizeForNewStrategies,
+        Settings.abilitySizeMin,
       );
       expect(
         Hive.box<bool>(HiveBoxNames.favoriteAgentsBox).containsKey('jett'),

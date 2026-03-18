@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/app_preferences_provider.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -140,6 +141,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   @override
   Widget build(BuildContext context) {
     bool isAttack = ref.watch(mapProvider).isAttack;
+    final appPreferences = ref.watch(appPreferencesProvider);
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
     final mapColorMapper = _MapSvgColorMapper({
       _mapBaseSourceColor.toARGB32(): effectivePalette.baseColor,
@@ -276,7 +278,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                     ),
                                   ),
                                 ),
-                                if (ref.watch(mapProvider).showSpawnBarrier)
+                                if (appPreferences.showSpawnBarrier)
                                   Positioned(
                                     left: mapLeft,
                                     top: 0,
@@ -292,7 +294,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                       ),
                                     ),
                                   ),
-                                if (ref.watch(mapProvider).showRegionNames)
+                                if (appPreferences.showRegionNames)
                                   Positioned(
                                     left: mapLeft,
                                     top: 0,
@@ -304,7 +306,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                       fit: BoxFit.contain,
                                     ),
                                   ),
-                                if (ref.watch(mapProvider).showUltOrbs)
+                                if (appPreferences.showUltOrbs)
                                   Positioned(
                                     left: mapLeft,
                                     top: 0,
