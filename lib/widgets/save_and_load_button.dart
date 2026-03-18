@@ -45,7 +45,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                   builder: (context) => const SettingsTab(),
                 );
               },
-              icon: const Icon(Icons.settings),
+              icon: const Icon(LucideIcons.settings),
             ),
           ),
           const AutoSaveButton(),

@@ -6,19 +6,37 @@ import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+/// Variant for which part(s) of map theme settings to show.
+enum MapThemeSectionVariant {
+  activeOnly,
+  libraryOnly,
+  both,
+}
+
 class MapThemeSettingsSection extends StatelessWidget {
-  const MapThemeSettingsSection({super.key});
+  const MapThemeSettingsSection({
+    super.key,
+    this.variant = MapThemeSectionVariant.both,
+  });
+
+  final MapThemeSectionVariant variant;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("Map Theme", style: ShadTheme.of(context).textTheme.lead),
-        const SizedBox(height: 10),
-        const _ActiveThemeCard(),
-        const SizedBox(height: 16),
-        const _ProfileLibrarySection(),
+        if (variant == MapThemeSectionVariant.both) ...[
+          Text("Map Theme", style: ShadTheme.of(context).textTheme.lead),
+          const SizedBox(height: 10),
+        ],
+        if (variant == MapThemeSectionVariant.activeOnly ||
+            variant == MapThemeSectionVariant.both)
+          const MapThemeActiveThemeCard(),
+        if (variant == MapThemeSectionVariant.both) const SizedBox(height: 16),
+        if (variant == MapThemeSectionVariant.libraryOnly ||
+            variant == MapThemeSectionVariant.both)
+          const MapThemeProfileLibrary(),
       ],
     );
   }
@@ -26,14 +44,19 @@ class MapThemeSettingsSection extends StatelessWidget {
 
 // ─── Zone 1: Active Theme (Document State) ────────────────────
 
-class _ActiveThemeCard extends ConsumerStatefulWidget {
-  const _ActiveThemeCard();
+/// Per-strategy active map theme. Use in "This Strategy" settings section.
+class MapThemeActiveThemeCard extends ConsumerStatefulWidget {
+  const MapThemeActiveThemeCard({super.key, this.embedded = false});
+
+  /// When true, renders in a compact style for embedding inside another card.
+  final bool embedded;
 
   @override
-  ConsumerState<_ActiveThemeCard> createState() => _ActiveThemeCardState();
+  ConsumerState<MapThemeActiveThemeCard> createState() =>
+      _MapThemeActiveThemeCardState();
 }
 
-class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
+class _MapThemeActiveThemeCardState extends ConsumerState<MapThemeActiveThemeCard> {
   String? _profileIdBeforeCustomize;
   bool _showSaveForm = false;
   late final TextEditingController _saveNameController;
@@ -66,19 +89,7 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
       orElse: () => MapThemeProfilesProvider.immutableDefaultProfile,
     );
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.card,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: const [Settings.cardForegroundBackdrop],
-        border: Border.all(
-          color: isOverride
-              ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.4)
-              : Settings.tacticalVioletTheme.border,
-        ),
-      ),
-      child: AnimatedSize(
+    final content = AnimatedSize(
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeInOut,
         alignment: Alignment.topCenter,
@@ -120,7 +131,37 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
               ),
           ],
         ),
+      );
+
+    if (widget.embedded) {
+      return Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Settings.tacticalVioletTheme.background,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isOverride
+                ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.35)
+                : Settings.tacticalVioletTheme.border,
+          ),
+        ),
+        child: content,
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Settings.tacticalVioletTheme.card,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [Settings.cardForegroundBackdrop],
+        border: Border.all(
+          color: isOverride
+              ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.4)
+              : Settings.tacticalVioletTheme.border,
+        ),
       ),
+      child: content,
     );
   }
 
@@ -321,16 +362,16 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
 
 // ─── Zone 2: Profile Library (Global Preferences) ─────────────
 
-class _ProfileLibrarySection extends ConsumerStatefulWidget {
-  const _ProfileLibrarySection();
+/// Global profile library. Use in "Theme Library" settings section.
+class MapThemeProfileLibrary extends ConsumerStatefulWidget {
+  const MapThemeProfileLibrary({super.key});
 
   @override
-  ConsumerState<_ProfileLibrarySection> createState() =>
-      _ProfileLibrarySectionState();
+  ConsumerState<MapThemeProfileLibrary> createState() =>
+      _MapThemeProfileLibraryState();
 }
 
-class _ProfileLibrarySectionState
-    extends ConsumerState<_ProfileLibrarySection> {
+class _MapThemeProfileLibraryState extends ConsumerState<MapThemeProfileLibrary> {
   @override
   Widget build(BuildContext context) {
     final profilesState = ref.watch(mapThemeProfilesProvider);
