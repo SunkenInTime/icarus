@@ -15,17 +15,9 @@ class MapThemeSettingsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          "Map themes",
-          style: ShadTheme.of(context)
-              .textTheme
-              .lead
-              .copyWith(fontWeight: FontWeight.w700),
-        ),
-        const SizedBox(height: 8),
         const SettingsScopeCard(
           scope: SettingsScope.strategy,
-          title: "Theme profiles",
+          title: "Map theme profiles",
           description:
               "Choose the active theme here. You can also set the default profile for new strategies.",
           child: _ThemeProfilesSection(),
