@@ -261,7 +261,10 @@ class _SettingsToggleTile extends StatelessWidget {
         children: [
           _SettingLeadingIcon(
             icon: icon,
-            accentColor: const Color(0xff4b8f86),
+          _SettingLeadingIcon(
+            icon: icon,
+            accentColor: Settings.tacticalVioletTheme.secondary,
+          ),
           ),
           const SizedBox(width: 10),
           Expanded(
