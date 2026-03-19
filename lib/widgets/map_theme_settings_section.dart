@@ -25,17 +25,27 @@ class MapThemeSettingsSection extends StatelessWidget {
         const SizedBox(height: 8),
         const SettingsScopeCard(
           scope: SettingsScope.strategy,
-          title: "Strategy theme assignment",
-          description: "Choose or customize the active theme.",
-          child: _ActiveThemeCard(),
+          title: "Theme profiles",
+          description:
+              "Choose the active theme here. You can also set the default profile for new strategies.",
+          child: _ThemeProfilesSection(),
         ),
-        const SizedBox(height: 10),
-        const SettingsScopeCard(
-          scope: SettingsScope.workspace,
-          title: "Theme profile library",
-          description: "Reusable profiles for new strategies.",
-          child: _ProfileLibrarySection(),
-        ),
+      ],
+    );
+  }
+}
+
+class _ThemeProfilesSection extends StatelessWidget {
+  const _ThemeProfilesSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ActiveThemeCard(),
+        SizedBox(height: 12),
+        _ProfileLibrarySection(),
       ],
     );
   }
@@ -356,7 +366,7 @@ class _ProfileLibrarySectionState
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              "Profile Library",
+              "Profiles",
               style: ShadTheme.of(context).textTheme.small.copyWith(
                     color: Settings.tacticalVioletTheme.mutedForeground,
                     letterSpacing: 0.3,
@@ -369,16 +379,6 @@ class _ProfileLibrarySectionState
                   ),
             ),
           ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          hasActiveStrategy
-              ? "Click any profile to apply it to the active strategy. Use the menu to rename, delete, or set the default for new strategies."
-              : "You can organize profiles here any time. Open a strategy when you want to assign one.",
-          style: ShadTheme.of(context).textTheme.small.copyWith(
-                color: Settings.tacticalVioletTheme.mutedForeground,
-                height: 1.35,
-              ),
         ),
         const SizedBox(height: 8),
         for (final profile in profilesState.profiles) ...[
