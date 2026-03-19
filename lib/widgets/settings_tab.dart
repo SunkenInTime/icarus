@@ -45,7 +45,7 @@ class SettingsTab extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _ScopeLegendBanner(activeStrategyName: activeStrategyName),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   SettingsScopeCard(
                     scope: SettingsScope.strategy,
                     title: "Page object sizing",
@@ -89,7 +89,9 @@ class SettingsTab extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
+                  const _SectionDivider(),
+                  const SizedBox(height: 14),
                   SettingsScopeCard(
                     scope: SettingsScope.workspace,
                     title: "Map visibility helpers",
@@ -136,7 +138,9 @@ class SettingsTab extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
+                  const _SectionDivider(),
+                  const SizedBox(height: 14),
                   const MapThemeSettingsSection(),
                   const SizedBox(height: 4),
                 ],
@@ -156,45 +160,59 @@ class _ScopeLegendBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Settings.tacticalVioletTheme.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Know what gets saved",
-            style: ShadTheme.of(context)
-                .textTheme
-                .lead
-                .copyWith(fontWeight: FontWeight.w700),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color:
+                Settings.tacticalVioletTheme.secondary.withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
-          const SizedBox(height: 4),
-          Text(
-            activeStrategyName == null
-                ? "Strategy-marked controls travel with the active plan. Workspace-marked controls only change your local view."
-                : "\"$activeStrategyName\" keeps its own Strategy settings. Workspace settings only change your local view.",
-            style: ShadTheme.of(context).textTheme.small.copyWith(
-                  color: Settings.tacticalVioletTheme.mutedForeground,
-                  height: 1.4,
-                ),
+          child: Icon(
+            LucideIcons.info,
+            size: 16,
+            color: Settings.tacticalVioletTheme.mutedForeground,
           ),
-          const SizedBox(height: 10),
-          const Wrap(
-            spacing: 8,
-            runSpacing: 8,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SettingsScopeBadge(scope: SettingsScope.strategy),
-              SettingsScopeBadge(scope: SettingsScope.workspace),
+              Text(
+                "Know what gets saved",
+                style: ShadTheme.of(context)
+                    .textTheme
+                    .lead
+                    .copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                activeStrategyName == null
+                    ? "Strategy-marked controls travel with the active plan. Workspace-marked controls only change your local view."
+                    : "\"$activeStrategyName\" keeps its own Strategy settings. Workspace settings only change your local view.",
+                style: ShadTheme.of(context).textTheme.small.copyWith(
+                      color: Settings.tacticalVioletTheme.mutedForeground,
+                      height: 1.4,
+                    ),
+              ),
+              const SizedBox(height: 10),
+              const Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  SettingsScopeBadge(scope: SettingsScope.strategy),
+                  SettingsScopeBadge(scope: SettingsScope.workspace),
+                ],
+              ),
             ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -409,6 +427,18 @@ class _SettingsItemDivider extends StatelessWidget {
     return Container(
       height: 1,
       color: Settings.tacticalVioletTheme.border.withValues(alpha: 0.8),
+    );
+  }
+}
+
+class _SectionDivider extends StatelessWidget {
+  const _SectionDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 1,
+      color: Settings.tacticalVioletTheme.border.withValues(alpha: 0.9),
     );
   }
 }

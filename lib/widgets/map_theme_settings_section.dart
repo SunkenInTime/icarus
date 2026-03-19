@@ -38,7 +38,9 @@ class MapThemeSettingsSection extends StatelessWidget {
               "Choose which theme profile this strategy uses, or customize it without changing the shared library.",
           child: _ActiveThemeCard(),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 14),
+        const _MapThemeSectionDivider(),
+        const SizedBox(height: 14),
         const SettingsScopeCard(
           scope: SettingsScope.workspace,
           title: "Theme profile library",
@@ -416,6 +418,18 @@ class _ProfileLibrarySectionState
           const SizedBox(height: 6),
         ],
       ],
+    );
+  }
+}
+
+class _MapThemeSectionDivider extends StatelessWidget {
+  const _MapThemeSectionDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 1,
+      color: Settings.tacticalVioletTheme.border.withValues(alpha: 0.9),
     );
   }
 }
