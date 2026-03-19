@@ -1,0 +1,21 @@
+{
+    "version":  "4.0.1+55",
+    "shortVersion":  55,
+    "title":  "4.0.1 Release",
+    "description":  "Desktop release metadata for Icarus.",
+    "date":  "2026-03-19",
+    "mandatory":  false,
+    "channels":  [
+                     "desktop",
+                     "stable"
+                 ],
+    "platforms":  [
+                      "windows"
+                  ],
+    "changes":  [
+                    {
+                        "message":  "Map theme profile name fields use CustomTextField / text-editing shortcut overrides.",
+                        "type":  "other"
+                    }
+                ]
+}
