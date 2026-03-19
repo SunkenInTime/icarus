@@ -34,8 +34,10 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
     final currentMap =
         ref.watch(mapProvider.select((state) => state.currentMap));
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
-    final abilitySize =
-        ref.watch(strategySettingsProvider.select((state) => state.abilitySize));
+    final agentSize =
+        ref.watch(strategySettingsProvider.select((state) => state.agentSize));
+    final abilitySize = ref
+        .watch(strategySettingsProvider.select((state) => state.abilitySize));
     return Draggable<PlacedUtility>(
       dragAnchorStrategy:
           ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
@@ -52,6 +54,7 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
             rotation: widget.rotation,
             length: widget.length,
             mapScale: mapScale,
+            agentSize: agentSize,
             abilitySize: abilitySize,
             diameterMeters: widget.utility.customDiameter,
             widthMeters: widget.utility.customWidth,
@@ -68,6 +71,7 @@ class _UtilityWidgetBuilderState extends ConsumerState<UtilityWidgetBuilder> {
         id: widget.id,
         isAlly: widget.utility.isAlly,
         mapScale: mapScale,
+        agentSize: agentSize,
         abilitySize: abilitySize,
         diameterMeters: widget.utility.customDiameter,
         widthMeters: widget.utility.customWidth,

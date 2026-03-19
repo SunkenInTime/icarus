@@ -52,6 +52,7 @@ const _agentTypeEnumMap = {
   AgentType.tejo: 'tejo',
   AgentType.waylay: 'waylay',
   AgentType.veto: 'veto',
+  AgentType.miks: 'miks',
 };
 
 class AbilityInfoConverter
@@ -202,7 +203,8 @@ class AgentStateCompatConverter implements JsonConverter<AgentState, Object?> {
   Object toJson(AgentState object) => object.name;
 }
 
-class UtilityTypeCompatConverter implements JsonConverter<UtilityType, Object?> {
+class UtilityTypeCompatConverter
+    implements JsonConverter<UtilityType, Object?> {
   const UtilityTypeCompatConverter();
 
   @override

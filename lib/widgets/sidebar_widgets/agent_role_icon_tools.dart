@@ -93,11 +93,11 @@ class _RoleIconTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final abilitySize =
-        ref.watch(strategySettingsProvider.select((state) => state.abilitySize));
+    final agentSize =
+        ref.watch(strategySettingsProvider.select((state) => state.agentSize));
     final toolData = RoleIconToolData.fromType(
       type: type,
-      abilitySize: abilitySize,
+      agentSize: agentSize,
     );
     final isAlly = ref.watch(teamProvider);
     final utility = UtilityData.utilityWidgets[type]!;
@@ -126,7 +126,7 @@ class _RoleIconTile extends ConsumerWidget {
           child: utility.createWidget(
             id: null,
             isAlly: isAlly,
-            abilitySize: abilitySize,
+            agentSize: agentSize,
           ),
         ),
       ),
@@ -137,7 +137,7 @@ class _RoleIconTile extends ConsumerWidget {
           child: utility.createWidget(
             id: null,
             isAlly: isAlly,
-            abilitySize: abilitySize,
+            agentSize: agentSize,
           ),
         ),
       ),

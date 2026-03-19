@@ -500,7 +500,8 @@ class _AgentListState extends ConsumerState<_AgentList> {
                     agentSize: agentSize,
                   );
                   final localOffset = renderBox.globalToLocal(
-                    details.offset + compositeOffset.scale(screenZoom, screenZoom),
+                    details.offset +
+                        compositeOffset.scale(screenZoom, screenZoom),
                   );
                   final virtualOffset =
                       widget.coordinateSystem.screenToCoordinate(localOffset);
@@ -525,7 +526,8 @@ class _AgentListState extends ConsumerState<_AgentList> {
                     mapScale: mapScale,
                   );
                   final localOffset = renderBox.globalToLocal(
-                    details.offset + compositeOffset.scale(screenZoom, screenZoom),
+                    details.offset +
+                        compositeOffset.scale(screenZoom, screenZoom),
                   );
                   final virtualOffset =
                       widget.coordinateSystem.screenToCoordinate(localOffset);
@@ -736,7 +738,11 @@ class _UtilityList extends ConsumerWidget {
                     coordinateSystem.screenToCoordinate(localOffset);
 
                 final safeArea = UtilityData.utilityWidgets[placedUtility.type]!
-                        .getAnchorPoint(abilitySize: abilitySize) /
+                        .getAnchorPoint(
+                      mapScale: mapScale,
+                      agentSize: agentSize,
+                      abilitySize: abilitySize,
+                    ) /
                     2;
 
                 if (coordinateSystem.isOutOfBounds(

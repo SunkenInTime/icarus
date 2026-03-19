@@ -12,6 +12,7 @@ bool supportsAbilityVisibilityMenu(Ability? ability) {
   return ability is SquareAbility ||
       ability is CenterSquareAbility ||
       ability is CircleAbility ||
+      ability is SectorCircleAbility ||
       ability is DeadlockBarrierMeshAbility;
 }
 
@@ -45,7 +46,7 @@ List<ShadContextMenuItem> _buildVisibilityItems(
   Ability? abilityData, {
   String? lineUpId,
 }) {
-  if (abilityData is CircleAbility) {
+  if (abilityData is CircleAbility || abilityData is SectorCircleAbility) {
     return [
       _buildToggleItem(
         label: 'Toggle Perimeter',

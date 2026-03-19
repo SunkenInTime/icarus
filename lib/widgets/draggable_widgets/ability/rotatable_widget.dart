@@ -101,44 +101,47 @@ class _RotatableWidgetState extends ConsumerState<RotatableWidget>
                 child: SizedBox(
                   width: buttonSize,
                   height: buttonSize,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onPanStart: (details) {
-                      setState(() {
-                        _isHandleDragging = true;
-                      });
-                      _animationController.forward();
-                      widget.onPanStart(details);
-                    },
-                    onPanUpdate: widget.onPanUpdate,
-                    onPanEnd: (details) {
-                      widget.onPanEnd(details);
-                      setState(() {
-                        _isHandleDragging = false;
-                      });
-                      if (!_isHovered) {
-                        _animationController.reverse();
-                      }
-                    },
-                    onTap: () {},
-                    child: Center(
-                      child: AnimatedBuilder(
-                        animation: _scaleAnimation,
-                        builder: (context, child) {
-                          return Transform.scale(
-                            scale: _scaleAnimation.value,
-                            child: child,
-                          );
-                        },
-                        child: SizedBox(
-                          width: buttonSize,
-                          height: buttonSize,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: _isHovered
-                                  ? Colors.white
-                                  : Colors.white.withAlpha(200),
-                              shape: BoxShape.circle,
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onPanStart: (details) {
+                        setState(() {
+                          _isHandleDragging = true;
+                        });
+                        _animationController.forward();
+                        widget.onPanStart(details);
+                      },
+                      onPanUpdate: widget.onPanUpdate,
+                      onPanEnd: (details) {
+                        widget.onPanEnd(details);
+                        setState(() {
+                          _isHandleDragging = false;
+                        });
+                        if (!_isHovered) {
+                          _animationController.reverse();
+                        }
+                      },
+                      onTap: () {},
+                      child: Center(
+                        child: AnimatedBuilder(
+                          animation: _scaleAnimation,
+                          builder: (context, child) {
+                            return Transform.scale(
+                              scale: _scaleAnimation.value,
+                              child: child,
+                            );
+                          },
+                          child: SizedBox(
+                            width: buttonSize,
+                            height: buttonSize,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: _isHovered
+                                    ? Colors.white
+                                    : Colors.white.withAlpha(200),
+                                shape: BoxShape.circle,
+                              ),
                             ),
                           ),
                         ),

@@ -105,5 +105,6 @@ flutter:
     - assets/agents/Harbor/
     - assets/agents/Waylay/
     - assets/agents/Veto/
+    - assets/agents/Miks/
 
   uses-material-design: true

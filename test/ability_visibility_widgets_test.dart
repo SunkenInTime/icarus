@@ -18,6 +18,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/custom_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/sector_circle_widget.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -253,6 +254,64 @@ void main() {
           findsNothing);
       expect(find.byType(AbilityWidget), findsOneWidget);
     });
+
+    testWidgets('sector hidden range body keeps icon but hides fill and handle',
+        (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_TestActionProvider.new),
+          mapProvider.overrideWith(_FixedMapProvider.new),
+        ],
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+
+      final ability = PlacedAbility(
+        id: 'sector-hidden',
+        data: _sectorAbilityInfo(),
+        position: const Offset(100, 120),
+        visualState: const AbilityVisualState(
+          showRangeBody: false,
+          showPerimeter: true,
+        ),
+      );
+      container.read(abilityProvider.notifier).fromHive([ability]);
+
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Stack(
+            children: [
+              PlacedAbilityWidget(
+                ability: ability,
+                onDragEnd: (_) {},
+                id: ability.id,
+                data: ability,
+                rotation: ability.rotation,
+                length: ability.length,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final painter = tester.widget<CustomPaint>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is CustomPaint && widget.painter is SectorCirclePainter,
+        ),
+      );
+      final rotatable = tester.widget<RotatableWidget>(
+        find.byType(RotatableWidget),
+      );
+
+      expect((painter.painter! as SectorCirclePainter).fillColor, isNull);
+      expect(rotatable.showHandle, isFalse);
+      expect(find.byType(AbilityWidget), findsOneWidget);
+    });
   });
 
   group('Ability visibility context menus', () {
@@ -325,6 +384,60 @@ void main() {
 
       expect(find.text('Toggle Mesh'), findsOneWidget);
       expect(find.text('Toggle Range'), findsNothing);
+    });
+
+    testWidgets(
+        'placed sector ability shows and applies size/perimeter toggles',
+        (tester) async {
+      final sectorAbility = PlacedAbility(
+        id: 'sector-menu',
+        data: _sectorAbilityInfo(),
+        position: Offset.zero,
+      );
+
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_TestActionProvider.new),
+          mapProvider.overrideWith(_FixedMapProvider.new),
+        ],
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+      container.read(abilityProvider.notifier).fromHive([sectorAbility]);
+
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Stack(
+            children: [
+              PlacedAbilityWidget(
+                ability: sectorAbility,
+                onDragEnd: (_) {},
+                id: sectorAbility.id,
+                data: sectorAbility,
+                rotation: sectorAbility.rotation,
+                length: sectorAbility.length,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _openContextMenu(tester, find.byType(AbilityWidget));
+
+      expect(find.text('Toggle Perimeter'), findsOneWidget);
+      expect(find.text('Toggle Size'), findsOneWidget);
+
+      await tester.tap(find.text('Toggle Size'));
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(abilityProvider).single.visualState.showRangeBody,
+        isFalse,
+      );
     });
 
     testWidgets('placed square body right-click does not show menu',
@@ -444,6 +557,70 @@ void main() {
         isFalse,
       );
     });
+
+    testWidgets('lineup sector menu merges visibility and delete actions',
+        (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_TestActionProvider.new),
+          mapProvider.overrideWith(_FixedMapProvider.new),
+        ],
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+
+      final lineUp = LineUp(
+        id: 'lineup-sector-menu',
+        agent: PlacedAgent(
+          id: 'lineup-sector-agent',
+          type: AgentType.breach,
+          position: const Offset(20, 20),
+        ),
+        ability: PlacedAbility(
+          id: 'lineup-sector-ability',
+          data: _sectorAbilityInfo(),
+          position: const Offset(50, 50),
+        ),
+        youtubeLink: '',
+        images: const [],
+        notes: 'preview',
+      );
+      container.read(lineUpProvider.notifier).fromHive([lineUp]);
+
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Stack(
+            children: [
+              LineUpAbilityWidget(lineUp: lineUp),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _openContextMenu(tester, find.byType(AbilityWidget));
+
+      expect(find.text('Toggle Perimeter'), findsOneWidget);
+      expect(find.text('Toggle Size'), findsOneWidget);
+      expect(find.text('Delete'), findsOneWidget);
+
+      await tester.tap(find.text('Toggle Perimeter'));
+      await tester.pumpAndSettle();
+
+      expect(
+        container
+            .read(lineUpProvider)
+            .lineUps
+            .single
+            .ability
+            .visualState
+            .showPerimeter,
+        isFalse,
+      );
+    });
   });
 }
 
@@ -504,4 +681,19 @@ Future<void> _openContextMenu(WidgetTester tester, Finder finder) async {
     kind: PointerDeviceKind.mouse,
   );
   await tester.pumpAndSettle();
+}
+
+AbilityInfo _sectorAbilityInfo() {
+  return AbilityInfo(
+    name: 'Sector',
+    iconPath: 'assets/agents/Cypher/1.webp',
+    type: AgentType.cypher,
+    index: 95,
+    abilityData: SectorCircleAbility(
+      iconPath: 'assets/agents/Cypher/1.webp',
+      size: 6.5,
+      outlineColor: Colors.cyan,
+      sweepAngleDegrees: 75,
+    ),
+  );
 }

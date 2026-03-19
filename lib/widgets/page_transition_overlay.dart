@@ -488,6 +488,14 @@ class PlacedWidgetPreview {
               mapScale: mapScale,
               visualState: w.visualState,
               watchMouse: false);
+        case SectorCircleAbility():
+          return ability.createWidget(
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              rotation: rotation ?? w.rotation,
+              visualState: w.visualState,
+              watchMouse: false);
         case DeadlockBarrierMeshAbility():
           return ability.createWidget(
             id: w.id,
@@ -552,6 +560,7 @@ class PlacedWidgetPreview {
           rotation: w.rotation,
           length: length ?? w.length,
           mapScale: mapScale,
+          agentSize: agentSize,
           abilitySize: abilitySize,
           diameterMeters: customDiameter ?? w.customDiameter,
           widthMeters: customWidth ?? w.customWidth,

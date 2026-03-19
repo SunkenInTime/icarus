@@ -89,8 +89,9 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     final coordinateSystem = CoordinateSystem.instance;
 
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    final abilityData = widget.ability.data.abilityData;
 
-    if (localRotation == null) {
+    if (localRotation == null || abilityData == null) {
       return const SizedBox.shrink();
     }
 
@@ -107,7 +108,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     final contextMenuItems =
         widget.isLineUp ? null : buildAbilityContextMenuItems(ref, abilityRef);
 
-    if (widget.ability.data.abilityData is DeadlockBarrierMeshAbility) {
+    if (abilityData is DeadlockBarrierMeshAbility) {
       return PlacedDeadlockBarrierMeshWidget(
         ability: abilityRef,
         onDragEnd: widget.onDragEnd,
@@ -164,26 +165,22 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       }
     }
 
-    if (widget.ability.data.abilityData is SquareAbility ||
-        widget.ability.data.abilityData is CenterSquareAbility ||
-        widget.ability.data.abilityData is RotatableImageAbility ||
-        widget.ability.data.abilityData is ResizableSquareAbility) {
+    if (isRotatable(abilityData)) {
       final screenPosition = screenPositionForWidget(
         widget: widget.ability,
         coordinateSystem: coordinateSystem,
       );
-      final isCenterSquare =
-          widget.ability.data.abilityData is CenterSquareAbility;
+      final isCenterSquare = abilityData is CenterSquareAbility;
+      final isResizableSquare = abilityData is ResizableSquareAbility;
       final double? buttonTop;
       if (isCenterSquare) {
-        buttonTop = widget.ability.data.abilityData!
+        buttonTop = abilityData
                 .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
                 .dy -
             abilitySize -
             30;
-      } else if (widget.ability.data.abilityData is ResizableSquareAbility) {
-        final resizeWidget =
-            (widget.ability.data.abilityData! as ResizableSquareAbility);
+      } else if (isResizableSquare) {
+        final resizeWidget = abilityData;
         final resolvedLength = resizeWidget.resolveLength(localLength ?? 0);
 
         final double clampedLength = resizeWidget.height -
@@ -204,22 +201,21 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           rotation: localRotation!,
           isDragging: isDragging,
           showHandle: abilityRef.visualState.showRangeBody,
-          origin: widget.ability.data.abilityData!
-              .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize),
+          origin: abilityData.getAnchorPoint(
+              mapScale: mapScale, abilitySize: abilitySize),
           onPanStart: (details) {
             // ref.read(abilityProvider.notifier).updateRotationHistory(index);
             // ref.read(abilityProvider.notifier).updateLengthHistory(index);
 
             final box = context.findRenderObject() as RenderBox;
-            final bottomCenter = widget.ability.data.abilityData!
+            final bottomCenter = abilityData
                 .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
                 .scale(
                     coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
 
             rotationOrigin = box.localToGlobal(bottomCenter);
-            if (widget.ability.data.abilityData is ResizableSquareAbility) {
-              final resizeAbility =
-                  (widget.ability.data.abilityData! as ResizableSquareAbility);
+            if (isResizableSquare) {
+              final resizeAbility = abilityData;
               lengthOrigin = box.localToGlobal(
                 resizeAbility.getLengthAnchor(mapScale, abilitySize).scale(
                     coordinateSystem.scaleFactor, coordinateSystem.scaleFactor),
@@ -244,7 +240,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             setState(() {
               localRotation = newRotation;
             });
-            if (widget.ability.data.abilityData is ResizableSquareAbility) {
+            if (isResizableSquare) {
               final Offset currentPosLength = (currentPosition -
                   rotateOffset(lengthOrigin, rotationOrigin, localRotation!));
               double currentLength =
@@ -278,7 +274,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             dragAnchorStrategy: (draggable, context, position) {
               final RenderBox renderObject =
                   context.findRenderObject()! as RenderBox;
-              final anchorPoint = widget.ability.data.abilityData!
+              final anchorPoint = abilityData
                   .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
                   .scale(coordinateSystem.scaleFactor,
                       coordinateSystem.scaleFactor);
@@ -296,7 +292,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               child: Transform.rotate(
                 angle: localRotation!,
                 alignment: Alignment.topLeft,
-                origin: widget.ability.data.abilityData!
+                origin: abilityData
                     .getAnchorPoint(
                         mapScale: mapScale, abilitySize: abilitySize)
                     .scale(
@@ -305,7 +301,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                         coordinateSystem.scaleFactor *
                             ref.watch(screenZoomProvider)),
                 child: ZoomTransform(
-                  child: abilityRef.data.abilityData!.createWidget(
+                  child: abilityData.createWidget(
                     id: widget.id,
                     isAlly: isAlly,
                     mapScale: mapScale,
@@ -331,7 +327,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               widget.onDragEnd(details);
             },
             // dragAnchorStrategy: pointDragAnchorStrategy,
-            child: abilityRef.data.abilityData!.createWidget(
+            child: abilityData.createWidget(
               id: widget.id,
               isAlly: isAlly,
               mapScale: mapScale,

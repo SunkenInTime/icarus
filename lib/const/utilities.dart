@@ -226,12 +226,12 @@ class RoleIconToolData implements DraggableData {
 
   factory RoleIconToolData.fromType({
     required UtilityType type,
-    required double abilitySize,
+    required double agentSize,
   }) {
     return RoleIconToolData(
       type: type,
       centerPoint: UtilityData.utilityWidgets[type]!.getAnchorPoint(
-        abilitySize: abilitySize,
+        agentSize: agentSize,
       ),
     );
   }
@@ -286,6 +286,7 @@ sealed class Utilities {
       double? length,
       double? rotation,
       double? mapScale,
+      double? agentSize,
       double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
@@ -297,6 +298,7 @@ sealed class Utilities {
       double? rotation,
       double? length,
       double? mapScale,
+      double? agentSize,
       double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
@@ -308,6 +310,7 @@ sealed class Utilities {
       {double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      double? agentSize,
       double? abilitySize,
       double? mapScale});
 }
@@ -325,6 +328,7 @@ class ImageUtility extends Utilities {
       double? rotation,
       double? length,
       double? mapScale,
+      double? agentSize,
       double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
@@ -341,6 +345,7 @@ class ImageUtility extends Utilities {
       double? length,
       double? rotation,
       double? mapScale,
+      double? agentSize,
       double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
@@ -353,6 +358,7 @@ class ImageUtility extends Utilities {
       {double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      double? agentSize,
       double? abilitySize,
       double? mapScale}) {
     return Offset(size, size);
@@ -380,6 +386,7 @@ class ViewConeUtility extends Utilities {
       double? rotation,
       double? length,
       double? mapScale,
+      double? agentSize,
       double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
@@ -404,6 +411,7 @@ class ViewConeUtility extends Utilities {
       double? length,
       double? rotation,
       double? mapScale,
+      double? agentSize,
       double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
@@ -430,6 +438,7 @@ class ViewConeUtility extends Utilities {
       {double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      double? agentSize,
       double? abilitySize,
       double? mapScale}) {
     return Offset(
@@ -475,6 +484,7 @@ class CustomCircleUtility extends Utilities {
       double? rotation,
       double? length,
       double? mapScale,
+      double? agentSize,
       double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
@@ -502,6 +512,7 @@ class CustomCircleUtility extends Utilities {
       double? length,
       double? rotation,
       double? mapScale,
+      double? agentSize,
       double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
@@ -516,6 +527,7 @@ class CustomCircleUtility extends Utilities {
       {double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      double? agentSize,
       double? abilitySize,
       double? mapScale}) {
     assert(mapScale != null, 'mapScale must be provided');
@@ -532,6 +544,7 @@ class CustomRectangleUtility extends Utilities {
       double? rotation,
       double? length,
       double? mapScale,
+      double? agentSize,
       double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
@@ -560,6 +573,7 @@ class CustomRectangleUtility extends Utilities {
       double? length,
       double? rotation,
       double? mapScale,
+      double? agentSize,
       double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
@@ -578,6 +592,7 @@ class CustomRectangleUtility extends Utilities {
       {double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      double? agentSize,
       double? abilitySize,
       double? mapScale}) {
     assert(widthMeters != null, 'widthMeters must be provided');
@@ -602,6 +617,7 @@ class RoleIconUtility extends Utilities {
     double? rotation,
     double? length,
     double? mapScale,
+    double? agentSize,
     double? abilitySize,
     double? diameterMeters,
     double? widthMeters,
@@ -610,11 +626,11 @@ class RoleIconUtility extends Utilities {
     int? colorValue,
     int? opacityPercent,
   }) {
-    assert(abilitySize != null, 'abilitySize must be provided');
+    assert(agentSize != null, 'agentSize must be provided');
     return RoleIconUtilityWidget(
       imagePath: imagePath,
       isAlly: isAlly,
-      size: abilitySize!,
+      size: agentSize!,
       id: id,
     );
   }
@@ -625,13 +641,14 @@ class RoleIconUtility extends Utilities {
     double? length,
     double? rotation,
     double? mapScale,
+    double? agentSize,
     double? abilitySize,
     double? diameterMeters,
     double? widthMeters,
     double? rectLengthMeters,
   }) {
-    assert(abilitySize != null, 'abilitySize must be provided');
-    return Offset(abilitySize! / 2, abilitySize / 2);
+    assert(agentSize != null, 'agentSize must be provided');
+    return Offset(agentSize! / 2, agentSize / 2);
   }
 
   @override
@@ -639,10 +656,11 @@ class RoleIconUtility extends Utilities {
     double? diameterMeters,
     double? widthMeters,
     double? rectLengthMeters,
+    double? agentSize,
     double? abilitySize,
     double? mapScale,
   }) {
-    assert(abilitySize != null, 'abilitySize must be provided');
-    return Offset(abilitySize!, abilitySize);
+    assert(agentSize != null, 'agentSize must be provided');
+    return Offset(agentSize!, agentSize);
   }
 }

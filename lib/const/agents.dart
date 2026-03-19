@@ -31,6 +31,7 @@ enum AgentType {
   tejo,
   waylay,
   veto,
+  miks,
 }
 
 enum AgentState {
@@ -682,7 +683,7 @@ class AgentData implements DraggableData {
 
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
-        size: 6,
+        size: 4,
         outlineColor: const Color.fromARGB(255, 251, 106, 154),
         hasCenterDot: true,
       );
@@ -921,6 +922,66 @@ class AgentData implements DraggableData {
         outlineColor: Colors.lightBlueAccent,
         hasCenterDot: true,
       );
+
+      return agent;
+    })(),
+    AgentType.miks: (() {
+      final agent = AgentData(
+        type: AgentType.miks,
+        role: AgentRole.controller,
+        name: "Miks",
+      );
+      // agent.abilities.
+      final miksConcuss = AbilityInfo(
+        type: AgentType.miks,
+        index: 0,
+        name: "Concussive Blast",
+        iconPath: 'assets/agents/Miks/1.webp',
+        abilityData: CircleAbility(
+          iconPath: agent.abilities[0].iconPath,
+          size: 5.5,
+          outlineColor: Colors.yellowAccent,
+          hasCenterDot: true,
+        ),
+      );
+      final miksHeal = AbilityInfo(
+        type: AgentType.miks,
+        index: 1,
+        name: "Healing Blast",
+        iconPath: 'assets/agents/Miks/2.webp',
+        abilityData: CircleAbility(
+          iconPath: agent.abilities[1].iconPath,
+          size: 5.5,
+          outlineColor: Colors.greenAccent,
+          hasCenterDot: true,
+        ),
+      );
+      final miksSmoke = AbilityInfo(
+        type: AgentType.miks,
+        index: 2,
+        name: "Miks Smoke",
+        iconPath: 'assets/agents/Miks/3.webp',
+        abilityData: ImageAbility(
+            imagePath: 'assets/agents/Miks/Smoke.webp',
+            size: 4.1 * inGameMetersDiameter),
+      );
+
+      final miksUlt = AbilityInfo(
+        type: AgentType.miks,
+        index: 4,
+        name: "Miks Ult",
+        iconPath: 'assets/agents/Miks/5.webp',
+        abilityData: SectorCircleAbility(
+          iconPath: "assets/agents/Miks/5.webp",
+          size: 40,
+          outlineColor: Colors.lightGreenAccent,
+          sweepAngleDegrees: 60,
+        ),
+      );
+      agent.abilities[0] = miksConcuss;
+      agent.abilities[1] = miksHeal;
+      agent.abilities[2] = miksSmoke;
+      agent.abilities.add(miksUlt);
 
       return agent;
     })(),

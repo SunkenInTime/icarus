@@ -19,6 +19,7 @@ class AppErrorReporter {
 
   static bool _isDebugDialogOpen = false;
   static File? _persistedLogFile;
+  static String? _applicationSupportDirectoryPath;
   static Future<void> _persistedLogWriteQueue = Future.value();
   static final Map<String, _InteractiveNotificationState>
       _interactiveNotificationStates = {};
@@ -43,6 +44,25 @@ class AppErrorReporter {
       );
     }
   }
+
+  static void setApplicationSupportDirectoryPath(String directoryPath) {
+    final normalizedPath = directoryPath.trim();
+    if (normalizedPath.isEmpty ||
+        normalizedPath == _applicationSupportDirectoryPath) {
+      return;
+    }
+
+    _applicationSupportDirectoryPath = normalizedPath;
+    reportInfo(
+      'Application support directory: $normalizedPath',
+      source: 'AppErrorReporter.environment',
+    );
+  }
+
+  static String? get applicationSupportDirectoryPath =>
+      _applicationSupportDirectoryPath;
+
+  static String? get persistedLogPath => _persistedLogFile?.path;
 
   static void reportInfo(
     String message, {
@@ -152,7 +172,14 @@ class AppErrorReporter {
     final buffer = StringBuffer()
       ..writeln('Icarus Debug Report')
       ..writeln('Generated: ${formatDebugLogTimestamp(DateTime.now())}')
-      ..writeln();
+      ..writeln(
+        'Application support directory: '
+        '${_applicationSupportDirectoryPath ?? 'Unavailable'}',
+      );
+    if (_persistedLogFile != null) {
+      buffer.writeln('Persisted debug log: ${_persistedLogFile!.path}');
+    }
+    buffer.writeln();
 
     if (entryList.isEmpty) {
       buffer.writeln('No logs recorded.');
