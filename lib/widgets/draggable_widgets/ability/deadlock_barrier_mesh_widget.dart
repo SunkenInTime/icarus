@@ -138,7 +138,7 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
     final center = maxExtent / 2;
     final armThickness =
         coordinateSystem.scale(deadlockBarrierMeshArmThicknessVirtual);
-    final showMesh = visualState?.showRangeBody ?? true;
+    final showMesh = visualState?.showRangeFill ?? true;
 
     return SizedBox.square(
       dimension: maxExtent,

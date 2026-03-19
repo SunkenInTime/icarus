@@ -1665,19 +1665,25 @@ class AbilityVisualStateAdapter extends TypeAdapter<AbilityVisualState> {
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
     return AbilityVisualState(
-      showRangeBody: fields[0] == null ? true : fields[0] as bool,
-      showPerimeter: fields[1] == null ? true : fields[1] as bool,
+      showRangeOutline: fields[2] == null ? true : fields[2] as bool,
+      showRangeFill: fields[3] == null ? true : fields[3] as bool,
+      showInnerOutline: fields[4] == null ? true : fields[4] as bool,
+      showInnerFill: fields[5] == null ? true : fields[5] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, AbilityVisualState obj) {
     writer
+      ..writeByte(4)
       ..writeByte(2)
-      ..writeByte(0)
-      ..write(obj.showRangeBody)
-      ..writeByte(1)
-      ..write(obj.showPerimeter);
+      ..write(obj.showRangeOutline)
+      ..writeByte(3)
+      ..write(obj.showRangeFill)
+      ..writeByte(4)
+      ..write(obj.showInnerOutline)
+      ..writeByte(5)
+      ..write(obj.showInnerFill);
   }
 
   @override

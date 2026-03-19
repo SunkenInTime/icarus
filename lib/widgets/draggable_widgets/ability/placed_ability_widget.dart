@@ -18,6 +18,29 @@ import 'dart:math' as math;
 
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
+bool _shouldShowRotatableHandle(
+  Ability ability,
+  AbilityVisualState visualState,
+) {
+  return switch (ability) {
+    CircleAbility() => ability.hasInnerRange
+        ? visualState.showRangeOutline ||
+            visualState.showInnerOutline ||
+            visualState.showInnerFill
+        : visualState.showRangeOutline || visualState.showRangeFill,
+    SectorCircleAbility() => ability.hasInnerRange
+        ? visualState.showRangeOutline ||
+            visualState.showInnerOutline ||
+            visualState.showInnerFill
+        : visualState.showRangeOutline || visualState.showRangeFill,
+    ResizableSquareAbility() => visualState.showRangeFill,
+    SquareAbility() => visualState.showRangeFill,
+    CenterSquareAbility() => visualState.showRangeFill,
+    RotatableImageAbility() => true,
+    _ => visualState.showRangeFill,
+  };
+}
+
 class PlacedAbilityWidget extends ConsumerStatefulWidget {
   final PlacedAbility ability;
   final Function(DraggableDetails details) onDragEnd;
@@ -200,7 +223,10 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           buttonTop: buttonTop,
           rotation: localRotation!,
           isDragging: isDragging,
-          showHandle: abilityRef.visualState.showRangeBody,
+          showHandle: _shouldShowRotatableHandle(
+            abilityData,
+            abilityRef.visualState,
+          ),
           origin: abilityData.getAnchorPoint(
               mapScale: mapScale, abilitySize: abilitySize),
           onPanStart: (details) {

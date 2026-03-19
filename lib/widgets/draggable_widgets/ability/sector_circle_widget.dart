@@ -14,13 +14,13 @@ class SectorCircleWidget extends ConsumerWidget {
     super.key,
     required this.iconPath,
     required this.size,
-    required this.outlineColor,
+    required this.rangeOutlineColor,
     required this.sweepAngleDegrees,
     required this.hasCenterDot,
-    required this.hasPerimeter,
     this.opacity = 70,
-    this.innerSize = 2,
-    this.fillColor,
+    this.rangeFillColor,
+    this.innerRangeColor,
+    this.innerRangeSize,
     required this.id,
     required this.isAlly,
     this.lineUpId,
@@ -35,33 +35,36 @@ class SectorCircleWidget extends ConsumerWidget {
   final String? id;
   final String iconPath;
   final double size;
-  final Color outlineColor;
+  final Color rangeOutlineColor;
   final double sweepAngleDegrees;
   final bool hasCenterDot;
-  final bool hasPerimeter;
   final int? opacity;
-  final double? innerSize;
-  final Color? fillColor;
+  final Color? rangeFillColor;
+  final Color? innerRangeColor;
+  final double? innerRangeSize;
   final double? rotation;
   final AbilityVisualState? visualState;
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
 
+  bool get hasInnerRange => innerRangeSize != null;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
     final scaleSize = coordinateSystem.scale(size);
-    final secondaryScaleSize = coordinateSystem.scale(innerSize ?? 0);
+    final scaledInnerRangeSize = coordinateSystem.scale(innerRangeSize ?? 0);
     final scaledTopInset = coordinateSystem.scale(handleTopInsetVirtual);
     final resolvedVisualState = visualState ?? const AbilityVisualState();
     final style = _SectorCircleStyle.fromValues(
       coordinateSystem: coordinateSystem,
-      outlineColor: outlineColor,
+      rangeOutlineColor: rangeOutlineColor,
+      rangeFillColor: rangeFillColor,
       opacity: opacity,
       hasCenterDot: hasCenterDot,
-      hasPerimeter: hasPerimeter,
-      showRangeBody: resolvedVisualState.showRangeBody,
-      showPerimeter: resolvedVisualState.showPerimeter,
+      hasInnerRange: hasInnerRange,
+      showRangeOutline: resolvedVisualState.showRangeOutline,
+      showRangeFill: resolvedVisualState.showRangeFill,
     );
 
     return SizedBox(
@@ -80,6 +83,7 @@ class SectorCircleWidget extends ConsumerWidget {
                   Positioned.fill(
                     child: IgnorePointer(
                       child: CustomPaint(
+                        key: const ValueKey('sector-range-layer'),
                         painter: SectorCirclePainter(
                           sweepAngleDegrees: sweepAngleDegrees,
                           fillColor: style.fillColor,
@@ -89,12 +93,17 @@ class SectorCircleWidget extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  if (hasPerimeter)
-                    _buildInnerCircle(
-                      coordinateSystem,
-                      secondaryScaleSize,
-                      resolvedVisualState.showRangeBody,
+                  if (hasInnerRange) ...[
+                    _buildInnerRangeFill(
+                      scaledInnerRangeSize,
+                      resolvedVisualState.showInnerFill,
                     ),
+                    _buildInnerRangeOutline(
+                      coordinateSystem,
+                      scaledInnerRangeSize,
+                      resolvedVisualState.showInnerOutline,
+                    ),
+                  ],
                   if (hasCenterDot) _buildCenterIcon(),
                 ],
               ),
@@ -105,29 +114,60 @@ class SectorCircleWidget extends ConsumerWidget {
     );
   }
 
-  Widget _buildInnerCircle(
-    CoordinateSystem coordinateSystem,
-    double secondaryScaleSize,
-    bool showRangeBody,
+  Widget _buildInnerRangeFill(
+    double scaledInnerRangeSize,
+    bool showInnerFill,
   ) {
     assert(
-        fillColor != null, 'fillColor is required when hasPerimeter is true');
+      innerRangeColor != null,
+      'innerRangeColor is required when innerRangeSize is set',
+    );
 
     return Positioned.fill(
       child: Opacity(
-        key: const ValueKey('sector-size-layer'),
-        opacity: showRangeBody ? 1 : 0,
+        key: const ValueKey('sector-inner-fill-layer'),
+        opacity: showInnerFill ? 1 : 0,
         child: IgnorePointer(
           child: Align(
             alignment: Alignment.center,
             child: Container(
-              width: secondaryScaleSize,
-              height: secondaryScaleSize,
+              width: scaledInnerRangeSize,
+              height: scaledInnerRangeSize,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: fillColor!.withAlpha(opacity ?? 70),
+                color: innerRangeColor!.withAlpha(opacity ?? 70),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInnerRangeOutline(
+    CoordinateSystem coordinateSystem,
+    double scaledInnerRangeSize,
+    bool showInnerOutline,
+  ) {
+    assert(
+      innerRangeColor != null,
+      'innerRangeColor is required when innerRangeSize is set',
+    );
+
+    return Positioned.fill(
+      child: Opacity(
+        key: const ValueKey('sector-inner-outline-layer'),
+        opacity: showInnerOutline ? 1 : 0,
+        child: IgnorePointer(
+          child: Align(
+            alignment: Alignment.center,
+            child: Container(
+              width: scaledInnerRangeSize,
+              height: scaledInnerRangeSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
                 border: Border.all(
-                  color: fillColor!,
+                  color: innerRangeColor!,
                   width: coordinateSystem.scale(2),
                 ),
               ),
@@ -253,55 +293,51 @@ class _SectorCircleStyle {
 
   factory _SectorCircleStyle.fromValues({
     required CoordinateSystem coordinateSystem,
-    required Color outlineColor,
+    required Color rangeOutlineColor,
+    required Color? rangeFillColor,
     required int? opacity,
     required bool hasCenterDot,
-    required bool hasPerimeter,
-    required bool showRangeBody,
-    required bool showPerimeter,
+    required bool hasInnerRange,
+    required bool showRangeOutline,
+    required bool showRangeFill,
   }) {
     final baseStyle = _baseStyle(
       coordinateSystem: coordinateSystem,
-      outlineColor: outlineColor,
+      rangeOutlineColor: rangeOutlineColor,
+      rangeFillColor: rangeFillColor,
       opacity: opacity,
       hasCenterDot: hasCenterDot,
-      hasPerimeter: hasPerimeter,
+      hasInnerRange: hasInnerRange,
     );
 
     return _SectorCircleStyle(
-      fillColor: showRangeBody ? baseStyle.fillColor : null,
-      strokeColor: showPerimeter ? baseStyle.strokeColor : Colors.transparent,
-      strokeWidth: showPerimeter ? baseStyle.strokeWidth : 0,
+      fillColor: showRangeFill ? baseStyle.fillColor : null,
+      strokeColor: showRangeOutline ? baseStyle.strokeColor : Colors.transparent,
+      strokeWidth: showRangeOutline ? baseStyle.strokeWidth : 0,
     );
   }
 
   static _SectorCircleStyle _baseStyle({
     required CoordinateSystem coordinateSystem,
-    required Color outlineColor,
+    required Color rangeOutlineColor,
+    required Color? rangeFillColor,
     required int? opacity,
     required bool hasCenterDot,
-    required bool hasPerimeter,
+    required bool hasInnerRange,
   }) {
-    if (!hasCenterDot) {
-      return _SectorCircleStyle(
-        fillColor: outlineColor.withAlpha(opacity ?? 70),
-        strokeColor: outlineColor,
-        strokeWidth: coordinateSystem.scale(5),
-      );
-    }
-
-    if (hasPerimeter) {
+    if (hasInnerRange) {
       return _SectorCircleStyle(
         fillColor: null,
-        strokeColor: outlineColor.withAlpha(100),
+        strokeColor: rangeOutlineColor.withAlpha(100),
         strokeWidth: coordinateSystem.scale(2),
       );
     }
 
     return _SectorCircleStyle(
-      fillColor: outlineColor.withAlpha(opacity ?? 70),
-      strokeColor: outlineColor,
-      strokeWidth: coordinateSystem.scale(2),
+      fillColor:
+          rangeFillColor ?? rangeOutlineColor.withAlpha(opacity ?? 70),
+      strokeColor: rangeOutlineColor,
+      strokeWidth: coordinateSystem.scale(hasCenterDot ? 2 : 5),
     );
   }
 }

@@ -10,12 +10,12 @@ class CustomCircleWidget extends ConsumerWidget {
     super.key,
     required this.iconPath,
     required this.size,
-    required this.outlineColor,
+    required this.rangeOutlineColor,
     required this.hasCenterDot,
-    required this.hasPerimeter,
     this.opacity = 70,
-    this.innerSize = 2,
-    this.fillColor,
+    this.rangeFillColor,
+    this.innerRangeColor,
+    this.innerRangeSize,
     required this.id,
     required this.isAlly,
     this.lineUpId,
@@ -29,163 +29,92 @@ class CustomCircleWidget extends ConsumerWidget {
   final String? id;
   final String iconPath;
   final double size;
-  final Color outlineColor;
+  final Color rangeOutlineColor;
   final bool hasCenterDot;
-  final bool hasPerimeter;
   final int? opacity;
-  final double? innerSize;
-  final Color? fillColor;
+  final Color? rangeFillColor;
+  final Color? innerRangeColor;
+  final double? innerRangeSize;
   final AbilityVisualState? visualState;
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
 
+  bool get hasInnerRange => innerRangeSize != null;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final scaleSize = coordinateSystem.scale(size);
-    final secondaryScaleSize = coordinateSystem.scale(innerSize ?? 0);
+    final scaledSize = coordinateSystem.scale(size);
+    final scaledInnerRangeSize = coordinateSystem.scale(innerRangeSize ?? 0);
     final resolvedVisualState = visualState ?? const AbilityVisualState();
-    final showPerimeter = resolvedVisualState.showPerimeter;
-    final showRangeBody = resolvedVisualState.showRangeBody;
 
-    // If no center dot is needed, return a simple circle
-    if (!hasCenterDot) {
-      return _buildSimpleCircle(
-        coordinateSystem,
-        scaleSize,
-        showPerimeter: showPerimeter,
-        showRangeBody: showRangeBody,
-      );
-    }
-
-    // With center dot, build appropriate stack based on perimeter setting
     return Stack(
       children: [
-        // Outer circle/perimeter
-        _buildOuterCircle(
+        _buildRangeFill(
+          scaledSize,
+          showRangeFill: resolvedVisualState.showRangeFill && !hasInnerRange,
+        ),
+        _buildRangeOutline(
           coordinateSystem,
-          scaleSize,
-          hasPerimeter,
-          showPerimeter: showPerimeter,
-          showRangeBody: showRangeBody,
+          scaledSize,
+          showRangeOutline: resolvedVisualState.showRangeOutline,
         ),
-
-        // Inner circle (only when has perimeter)
-        if (hasPerimeter)
-          _buildInnerCircle(
+        if (hasInnerRange) ...[
+          _buildInnerRangeFill(
+            scaledInnerRangeSize,
+            showInnerFill: resolvedVisualState.showInnerFill,
+          ),
+          _buildInnerRangeOutline(
             coordinateSystem,
-            secondaryScaleSize,
-            showRangeBody: showRangeBody,
-          ),
-
-        // Icon in center
-        _buildCenterIcon(coordinateSystem, ref),
-
-        // Container(
-        //   width: 4,
-        //   height: 4,
-        //   color: Colors.red,
-        // ),
-      ],
-    );
-  }
-
-  Widget _buildSimpleCircle(
-    CoordinateSystem coordinateSystem,
-    double scaleSize, {
-    required bool showPerimeter,
-    required bool showRangeBody,
-  }) {
-    return Stack(
-      children: [
-        Opacity(
-          key: const ValueKey('circle-size-layer'),
-          opacity: showRangeBody ? 1 : 0,
-          child: IgnorePointer(
-            child: Container(
-              width: scaleSize,
-              height: scaleSize,
-              decoration: BoxDecoration(
-                color: outlineColor.withAlpha(opacity ?? 70),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-        ),
-        Opacity(
-          key: const ValueKey('circle-perimeter-layer'),
-          opacity: showPerimeter ? 1 : 0,
-          child: IgnorePointer(
-            child: Container(
-              width: scaleSize,
-              height: scaleSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: outlineColor,
-                  width: coordinateSystem.scale(5),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildOuterCircle(
-      CoordinateSystem coordinateSystem, double scaleSize, bool hasPerimeter,
-      {required bool showPerimeter, required bool showRangeBody}) {
-    if (!hasPerimeter) {
-      return Stack(
-        children: [
-          Opacity(
-            key: const ValueKey('circle-size-layer'),
-            opacity: showRangeBody ? 1 : 0,
-            child: IgnorePointer(
-              child: Container(
-                width: scaleSize,
-                height: scaleSize,
-                decoration: BoxDecoration(
-                  color: outlineColor.withAlpha(opacity ?? 70),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-          ),
-          Opacity(
-            key: const ValueKey('circle-perimeter-layer'),
-            opacity: showPerimeter ? 1 : 0,
-            child: IgnorePointer(
-              child: Container(
-                width: scaleSize,
-                height: scaleSize,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: outlineColor,
-                    width: coordinateSystem.scale(2),
-                  ),
-                ),
-              ),
-            ),
+            scaledInnerRangeSize,
+            showInnerOutline: resolvedVisualState.showInnerOutline,
           ),
         ],
-      );
-    }
+        if (hasCenterDot) _buildCenterIcon(),
+      ],
+    );
+  }
 
+  Widget _buildRangeFill(
+    double scaledSize, {
+    required bool showRangeFill,
+  }) {
+    final fillColor = rangeFillColor ?? rangeOutlineColor.withAlpha(opacity ?? 70);
     return Opacity(
-      key: const ValueKey('circle-perimeter-layer'),
-      opacity: showPerimeter ? 1 : 0,
+      key: const ValueKey('circle-range-fill-layer'),
+      opacity: showRangeFill ? 1 : 0,
       child: IgnorePointer(
         child: Container(
-          width: scaleSize,
-          height: scaleSize,
+          width: scaledSize,
+          height: scaledSize,
+          decoration: BoxDecoration(
+            color: fillColor,
+            shape: BoxShape.circle,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRangeOutline(
+    CoordinateSystem coordinateSystem,
+    double scaledSize, {
+    required bool showRangeOutline,
+  }) {
+    return Opacity(
+      key: const ValueKey('circle-range-outline-layer'),
+      opacity: showRangeOutline ? 1 : 0,
+      child: IgnorePointer(
+        child: Container(
+          width: scaledSize,
+          height: scaledSize,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(
-              color: outlineColor.withAlpha(100),
-              width: coordinateSystem.scale(2),
+              color: hasInnerRange
+                  ? rangeOutlineColor.withAlpha(100)
+                  : rangeOutlineColor,
+              width: coordinateSystem.scale(hasInnerRange || hasCenterDot ? 2 : 5),
             ),
           ),
         ),
@@ -193,24 +122,50 @@ class CustomCircleWidget extends ConsumerWidget {
     );
   }
 
-  Widget _buildInnerCircle(
-      CoordinateSystem coordinateSystem, double secondaryScaleSize,
-      {required bool showRangeBody}) {
+  Widget _buildInnerRangeFill(
+    double scaledInnerRangeSize, {
+    required bool showInnerFill,
+  }) {
     return Positioned.fill(
       child: Opacity(
-        key: const ValueKey('circle-size-layer'),
-        opacity: showRangeBody ? 1 : 0,
+        key: const ValueKey('circle-inner-fill-layer'),
+        opacity: showInnerFill ? 1 : 0,
         child: IgnorePointer(
           child: Align(
             alignment: Alignment.center,
             child: Container(
-              width: secondaryScaleSize,
-              height: secondaryScaleSize,
+              width: scaledInnerRangeSize,
+              height: scaledInnerRangeSize,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: fillColor!.withAlpha(opacity ?? 70),
+                color: innerRangeColor!.withAlpha(opacity ?? 70),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInnerRangeOutline(
+    CoordinateSystem coordinateSystem,
+    double scaledInnerRangeSize, {
+    required bool showInnerOutline,
+  }) {
+    return Positioned.fill(
+      child: Opacity(
+        key: const ValueKey('circle-inner-outline-layer'),
+        opacity: showInnerOutline ? 1 : 0,
+        child: IgnorePointer(
+          child: Align(
+            alignment: Alignment.center,
+            child: Container(
+              width: scaledInnerRangeSize,
+              height: scaledInnerRangeSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
                 border: Border.all(
-                  color: fillColor!,
+                  color: innerRangeColor!,
                   width: coordinateSystem.scale(2),
                 ),
               ),
@@ -221,7 +176,7 @@ class CustomCircleWidget extends ConsumerWidget {
     );
   }
 
-  Widget _buildCenterIcon(CoordinateSystem coordinateSystem, WidgetRef ref) {
+  Widget _buildCenterIcon() {
     return Positioned.fill(
       child: Align(
         alignment: Alignment.center,

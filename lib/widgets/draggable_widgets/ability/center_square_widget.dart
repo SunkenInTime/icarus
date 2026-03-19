@@ -40,7 +40,7 @@ class CenterSquareWidget extends ConsumerWidget {
     final totalWidth = coordinateSystem.scale(abilitySize);
     final scaledWidth = coordinateSystem.scale(width);
     final scaledHeight = coordinateSystem.scale(height);
-    final showRangeBody = visualState?.showRangeBody ?? true;
+    final showRangeFill = visualState?.showRangeFill ?? true;
     return SizedBox(
       width: totalWidth,
       height: scaledHeight,
@@ -49,7 +49,7 @@ class CenterSquareWidget extends ConsumerWidget {
           Positioned(
             child: Opacity(
               key: const ValueKey('square-range-body'),
-              opacity: showRangeBody ? 1 : 0,
+              opacity: showRangeFill ? 1 : 0,
               child: Align(
                 alignment: Alignment.center,
                 child: IgnorePointer(

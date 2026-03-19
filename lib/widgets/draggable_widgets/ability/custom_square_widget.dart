@@ -64,7 +64,7 @@ class CustomSquareWidget extends ConsumerWidget {
         scaledDistance +
         (scaledAbilitySize / 2) +
         resizeButtonOffset;
-    final showRangeBody = visualState?.showRangeBody ?? true;
+    final showRangeFill = visualState?.showRangeFill ?? true;
 
     return SizedBox(
       width: scaledWidth,
@@ -91,7 +91,7 @@ class CustomSquareWidget extends ConsumerWidget {
                   left: 0,
                   child: Opacity(
                     key: const ValueKey('square-range-body'),
-                    opacity: showRangeBody ? 1 : 0,
+                    opacity: showRangeFill ? 1 : 0,
                     child: IgnorePointer(
                       child: CustomBorderContainer(
                         color: color,
@@ -111,7 +111,7 @@ class CustomSquareWidget extends ConsumerWidget {
               left: (scaledWidth / 2) - width / 2,
               child: Opacity(
                 key: const ValueKey('square-range-body'),
-                opacity: showRangeBody ? 1 : 0,
+                opacity: showRangeFill ? 1 : 0,
                 child: IgnorePointer(
                   child: Container(
                     width: width,

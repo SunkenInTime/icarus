@@ -152,23 +152,29 @@ class CircleAbility extends Ability {
   CircleAbility({
     required this.iconPath,
     required size,
-    required this.outlineColor,
+    required this.rangeOutlineColor,
     this.hasCenterDot,
-    this.hasPerimeter,
-    this.fillColor,
+    this.rangeFillColor,
+    this.innerRangeColor,
     this.opacity,
-    this.perimeterSize,
-  }) : size = size * AgentData.inGameMetersDiameter;
+    this.innerRangeSize,
+  })  : assert(
+          innerRangeSize == null || innerRangeColor != null,
+          'innerRangeColor is required when innerRangeSize is set',
+        ),
+        size = size * AgentData.inGameMetersDiameter;
 
   final double size;
-  final Color outlineColor;
+  final Color rangeOutlineColor;
   final String iconPath;
 
-  final bool? hasPerimeter;
   final bool? hasCenterDot;
-  final Color? fillColor;
+  final Color? rangeFillColor;
+  final Color? innerRangeColor;
   final int? opacity;
-  final double? perimeterSize;
+  final double? innerRangeSize;
+
+  bool get hasInnerRange => innerRangeSize != null;
 
   @override
   Offset getAnchorPoint({
@@ -202,12 +208,13 @@ class CircleAbility extends Ability {
     return CustomCircleWidget(
       iconPath: iconPath,
       size: size * mapScale,
-      outlineColor: outlineColor,
+      rangeOutlineColor: rangeOutlineColor,
       hasCenterDot: hasCenterDot ?? true,
-      hasPerimeter: hasPerimeter ?? false,
       opacity: opacity,
-      fillColor: fillColor,
-      innerSize: perimeterSize != null ? perimeterSize! * mapScale : null,
+      rangeFillColor: rangeFillColor,
+      innerRangeColor: innerRangeColor,
+      innerRangeSize:
+          innerRangeSize != null ? innerRangeSize! * mapScale : null,
       id: id,
       isAlly: isAlly,
       lineUpId: lineUpId,
@@ -222,25 +229,31 @@ class SectorCircleAbility extends Ability {
   SectorCircleAbility({
     required this.iconPath,
     required size,
-    required this.outlineColor,
+    required this.rangeOutlineColor,
     required this.sweepAngleDegrees,
     this.hasCenterDot = true,
-    this.hasPerimeter = false,
-    this.fillColor,
+    this.rangeFillColor,
+    this.innerRangeColor,
     this.opacity = 70,
-    this.perimeterSize,
-  }) : size = size * AgentData.inGameMetersDiameter;
+    this.innerRangeSize,
+  })  : assert(
+          innerRangeSize == null || innerRangeColor != null,
+          'innerRangeColor is required when innerRangeSize is set',
+        ),
+        size = size * AgentData.inGameMetersDiameter;
 
   final double size;
-  final Color outlineColor;
+  final Color rangeOutlineColor;
   final String iconPath;
   final double sweepAngleDegrees;
 
-  final bool hasPerimeter;
   final bool hasCenterDot;
-  final Color? fillColor;
+  final Color? rangeFillColor;
+  final Color? innerRangeColor;
   final int? opacity;
-  final double? perimeterSize;
+  final double? innerRangeSize;
+
+  bool get hasInnerRange => innerRangeSize != null;
 
   @override
   Offset getAnchorPoint({
@@ -280,13 +293,14 @@ class SectorCircleAbility extends Ability {
     return SectorCircleWidget(
       iconPath: iconPath,
       size: size * mapScale,
-      outlineColor: outlineColor,
+      rangeOutlineColor: rangeOutlineColor,
       sweepAngleDegrees: sweepAngleDegrees,
       hasCenterDot: hasCenterDot,
-      hasPerimeter: hasPerimeter,
       opacity: opacity,
-      fillColor: fillColor,
-      innerSize: perimeterSize != null ? perimeterSize! * mapScale : null,
+      rangeFillColor: rangeFillColor,
+      innerRangeColor: innerRangeColor,
+      innerRangeSize:
+          innerRangeSize != null ? innerRangeSize! * mapScale : null,
       id: id,
       isAlly: isAlly,
       lineUpId: lineUpId,

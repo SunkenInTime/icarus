@@ -82,7 +82,7 @@ class ResizableSquareWidget extends ConsumerWidget {
     } else {
       scaledLength = coordinateSystem.scale(length);
     }
-    final showRangeBody = visualState?.showRangeBody ?? true;
+    final showRangeFill = visualState?.showRangeFill ?? true;
 
     return SizedBox(
       height: totalHeight,
@@ -99,7 +99,7 @@ class ResizableSquareWidget extends ConsumerWidget {
             left: isWall ? ((scaledWidth - width) / 2) : 0,
             child: Opacity(
               key: const ValueKey('square-range-body'),
-              opacity: showRangeBody ? 1 : 0,
+              opacity: showRangeFill ? 1 : 0,
               child: IgnorePointer(
                 child: CustomBorderContainer(
                   height: scaledLength,

@@ -140,7 +140,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
       ref.watch(screenZoomProvider),
       ref.watch(screenZoomProvider),
     );
-    final showMesh = abilityRef.visualState.showRangeBody;
+    final showMesh = abilityRef.visualState.showRangeFill;
 
     final content = Transform.rotate(
       angle: localRotation,

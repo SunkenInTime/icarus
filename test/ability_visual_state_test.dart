@@ -40,8 +40,10 @@ void main() {
 
       final decoded = PlacedAbility.fromJson(legacyJson);
 
-      expect(decoded.visualState.showRangeBody, isTrue);
-      expect(decoded.visualState.showPerimeter, isTrue);
+      expect(decoded.visualState.showRangeOutline, isTrue);
+      expect(decoded.visualState.showRangeFill, isTrue);
+      expect(decoded.visualState.showInnerOutline, isTrue);
+      expect(decoded.visualState.showInnerFill, isTrue);
     });
 
     test('visual state round-trips through json', () {
@@ -50,15 +52,19 @@ void main() {
         data: AgentData.agents[AgentType.brimstone]!.abilities[1],
         position: const Offset(50, 60),
         visualState: const AbilityVisualState(
-          showRangeBody: false,
-          showPerimeter: false,
+          showRangeOutline: false,
+          showRangeFill: false,
+          showInnerOutline: false,
+          showInnerFill: false,
         ),
       );
 
       final decoded = PlacedAbility.fromJson(ability.toJson());
 
-      expect(decoded.visualState.showRangeBody, isFalse);
-      expect(decoded.visualState.showPerimeter, isFalse);
+      expect(decoded.visualState.showRangeOutline, isFalse);
+      expect(decoded.visualState.showRangeFill, isFalse);
+      expect(decoded.visualState.showInnerOutline, isFalse);
+      expect(decoded.visualState.showInnerFill, isFalse);
     });
   });
 
@@ -82,25 +88,24 @@ void main() {
       notifier.updateVisualState(
         0,
         const AbilityVisualState(
-          showRangeBody: false,
-          showPerimeter: true,
+          showRangeFill: false,
         ),
       );
 
       expect(
-        container.read(abilityProvider).single.visualState.showRangeBody,
+        container.read(abilityProvider).single.visualState.showRangeFill,
         isFalse,
       );
 
       container.read(actionProvider.notifier).undoAction();
       expect(
-        container.read(abilityProvider).single.visualState.showRangeBody,
+        container.read(abilityProvider).single.visualState.showRangeFill,
         isTrue,
       );
 
       container.read(actionProvider.notifier).redoAction();
       expect(
-        container.read(abilityProvider).single.visualState.showRangeBody,
+        container.read(abilityProvider).single.visualState.showRangeFill,
         isFalse,
       );
     });
@@ -134,11 +139,10 @@ void main() {
       container.read(actionProvider.notifier).performTransaction(
         groups: const [ActionGroup.lineUp],
         mutation: () {
-          container.read(lineUpProvider.notifier).updateAbilityVisualState(
+              container.read(lineUpProvider.notifier).updateAbilityVisualState(
                 lineUp.id,
                 const AbilityVisualState(
-                  showRangeBody: false,
-                  showPerimeter: true,
+                  showRangeFill: false,
                 ),
               );
         },
@@ -151,7 +155,7 @@ void main() {
             .single
             .ability
             .visualState
-            .showRangeBody,
+            .showRangeFill,
         isFalse,
       );
 
@@ -163,7 +167,7 @@ void main() {
             .single
             .ability
             .visualState
-            .showRangeBody,
+            .showRangeFill,
         isTrue,
       );
 
@@ -175,7 +179,7 @@ void main() {
             .single
             .ability
             .visualState
-            .showRangeBody,
+            .showRangeFill,
         isFalse,
       );
     });

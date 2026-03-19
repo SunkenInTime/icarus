@@ -68,8 +68,7 @@ void main() {
         position: const Offset(100, 120),
         rotation: math.pi / 4,
         visualState: const AbilityVisualState(
-          showRangeBody: false,
-          showPerimeter: true,
+          showRangeFill: false,
         ),
       );
       container.read(abilityProvider.notifier).fromHive([ability]);
@@ -116,11 +115,10 @@ void main() {
       final perimeterCircle = CircleAbility(
         iconPath: 'assets/agents/Cypher/1.webp',
         size: 10,
-        outlineColor: Colors.white,
+        rangeOutlineColor: Colors.white,
         hasCenterDot: true,
-        hasPerimeter: true,
-        perimeterSize: 5,
-        fillColor: Colors.red,
+        innerRangeSize: 5,
+        innerRangeColor: Colors.red,
       );
 
       await tester.pumpWidget(
@@ -132,8 +130,8 @@ void main() {
               isAlly: true,
               mapScale: 1,
               visualState: const AbilityVisualState(
-                showRangeBody: false,
-                showPerimeter: true,
+                showInnerFill: false,
+                showInnerOutline: false,
               ),
               watchMouse: false,
             ),
@@ -145,13 +143,21 @@ void main() {
       expect(
         tester
             .widget<Opacity>(
-                find.byKey(const ValueKey('circle-perimeter-layer')))
+                find.byKey(const ValueKey('circle-range-outline-layer')))
             .opacity,
         1,
       );
       expect(
         tester
-            .widget<Opacity>(find.byKey(const ValueKey('circle-size-layer')))
+            .widget<Opacity>(find.byKey(const ValueKey('circle-inner-fill-layer')))
+            .opacity,
+        0,
+      );
+      expect(
+        tester
+            .widget<Opacity>(
+              find.byKey(const ValueKey('circle-inner-outline-layer')),
+            )
             .opacity,
         0,
       );
@@ -160,9 +166,8 @@ void main() {
       final fillOnlyCircle = CircleAbility(
         iconPath: 'assets/agents/Cypher/1.webp',
         size: 10,
-        outlineColor: Colors.blue,
+        rangeOutlineColor: Colors.blue,
         hasCenterDot: true,
-        hasPerimeter: false,
       );
 
       await tester.pumpWidget(
@@ -174,8 +179,8 @@ void main() {
               isAlly: true,
               mapScale: 1,
               visualState: const AbilityVisualState(
-                showRangeBody: false,
-                showPerimeter: false,
+                showRangeFill: false,
+                showRangeOutline: false,
               ),
               watchMouse: false,
             ),
@@ -187,13 +192,13 @@ void main() {
       expect(
         tester
             .widget<Opacity>(
-                find.byKey(const ValueKey('circle-perimeter-layer')))
+                find.byKey(const ValueKey('circle-range-outline-layer')))
             .opacity,
         0,
       );
       expect(
         tester
-            .widget<Opacity>(find.byKey(const ValueKey('circle-size-layer')))
+            .widget<Opacity>(find.byKey(const ValueKey('circle-range-fill-layer')))
             .opacity,
         0,
       );
@@ -218,8 +223,7 @@ void main() {
         data: AgentData.agents[AgentType.deadlock]!.abilities[2],
         position: const Offset(100, 120),
         visualState: const AbilityVisualState(
-          showRangeBody: false,
-          showPerimeter: true,
+          showRangeFill: false,
         ),
       );
       container.read(abilityProvider.notifier).fromHive([ability]);
@@ -255,7 +259,7 @@ void main() {
       expect(find.byType(AbilityWidget), findsOneWidget);
     });
 
-    testWidgets('sector hidden range body keeps icon but hides fill and handle',
+    testWidgets('sector icon-only mode keeps icon but hides range and handle',
         (tester) async {
       final container = ProviderContainer(
         overrides: [
@@ -273,8 +277,8 @@ void main() {
         data: _sectorAbilityInfo(),
         position: const Offset(100, 120),
         visualState: const AbilityVisualState(
-          showRangeBody: false,
-          showPerimeter: true,
+          showRangeFill: false,
+          showRangeOutline: false,
         ),
       );
       container.read(abilityProvider.notifier).fromHive([ability]);
@@ -315,7 +319,7 @@ void main() {
   });
 
   group('Ability visibility context menus', () {
-    testWidgets('placed square ability shows Toggle Range', (tester) async {
+    testWidgets('placed square ability shows Range', (tester) async {
       final squareAbility = PlacedAbility(
         id: 'square-menu',
         data: AgentData.agents[AgentType.breach]!.abilities.first,
@@ -329,12 +333,12 @@ void main() {
 
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
-      expect(find.text('Toggle Range'), findsOneWidget);
-      expect(find.text('Toggle Perimeter'), findsNothing);
-      expect(find.text('Toggle Mesh'), findsNothing);
+      expect(find.text('Range'), findsOneWidget);
+      expect(find.text('Range Outline'), findsNothing);
+      expect(find.text('Mesh'), findsNothing);
     });
 
-    testWidgets('placed circle ability shows perimeter and size toggles',
+    testWidgets('placed circle ability shows range and inner layer toggles',
         (tester) async {
       final circleAbility = PlacedAbility(
         id: 'circle-menu',
@@ -346,11 +350,10 @@ void main() {
           abilityData: CircleAbility(
             iconPath: 'assets/agents/Cypher/1.webp',
             size: 8,
-            outlineColor: Colors.white,
+            rangeOutlineColor: Colors.white,
             hasCenterDot: true,
-            hasPerimeter: true,
-            perimeterSize: 4,
-            fillColor: Colors.purple,
+            innerRangeSize: 4,
+            innerRangeColor: Colors.purple,
           ),
         ),
         position: Offset.zero,
@@ -363,12 +366,13 @@ void main() {
 
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
-      expect(find.text('Toggle Perimeter'), findsOneWidget);
-      expect(find.text('Toggle Size'), findsOneWidget);
-      expect(find.text('Toggle Range'), findsNothing);
+      expect(find.text('Range Outline'), findsOneWidget);
+      expect(find.text('Inner Outline'), findsOneWidget);
+      expect(find.text('Inner Fill'), findsOneWidget);
+      expect(find.text('Range'), findsNothing);
     });
 
-    testWidgets('placed deadlock ability shows Toggle Mesh', (tester) async {
+    testWidgets('placed deadlock ability shows Mesh', (tester) async {
       final deadlockAbility = PlacedAbility(
         id: 'deadlock-menu',
         data: AgentData.agents[AgentType.deadlock]!.abilities[2],
@@ -382,12 +386,12 @@ void main() {
 
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
-      expect(find.text('Toggle Mesh'), findsOneWidget);
-      expect(find.text('Toggle Range'), findsNothing);
+      expect(find.text('Mesh'), findsOneWidget);
+      expect(find.text('Range'), findsNothing);
     });
 
     testWidgets(
-        'placed sector ability shows and applies size/perimeter toggles',
+        'placed sector ability shows and applies range outline/fill toggles',
         (tester) async {
       final sectorAbility = PlacedAbility(
         id: 'sector-menu',
@@ -428,14 +432,14 @@ void main() {
 
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
-      expect(find.text('Toggle Perimeter'), findsOneWidget);
-      expect(find.text('Toggle Size'), findsOneWidget);
+      expect(find.text('Range Outline'), findsOneWidget);
+      expect(find.text('Range Fill'), findsOneWidget);
 
-      await tester.tap(find.text('Toggle Size'));
+      await tester.tap(find.text('Range Fill'));
       await tester.pumpAndSettle();
 
       expect(
-        container.read(abilityProvider).single.visualState.showRangeBody,
+        container.read(abilityProvider).single.visualState.showRangeFill,
         isFalse,
       );
     });
@@ -461,7 +465,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Toggle Range'), findsNothing);
+      expect(find.text('Range'), findsNothing);
     });
 
     testWidgets('sidebar preview does not expose placed-ability menu',
@@ -490,9 +494,9 @@ void main() {
 
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
-      expect(find.text('Toggle Range'), findsNothing);
-      expect(find.text('Toggle Perimeter'), findsNothing);
-      expect(find.text('Toggle Mesh'), findsNothing);
+      expect(find.text('Range'), findsNothing);
+      expect(find.text('Range Outline'), findsNothing);
+      expect(find.text('Mesh'), findsNothing);
     });
 
     testWidgets('lineup preview menu merges visibility and delete actions',
@@ -540,10 +544,10 @@ void main() {
 
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
-      expect(find.text('Toggle Range'), findsOneWidget);
+      expect(find.text('Range'), findsOneWidget);
       expect(find.text('Delete'), findsOneWidget);
 
-      await tester.tap(find.text('Toggle Range'));
+      await tester.tap(find.text('Range'));
       await tester.pumpAndSettle();
 
       expect(
@@ -553,7 +557,7 @@ void main() {
             .single
             .ability
             .visualState
-            .showRangeBody,
+            .showRangeFill,
         isFalse,
       );
     });
@@ -603,11 +607,11 @@ void main() {
 
       await _openContextMenu(tester, find.byType(AbilityWidget));
 
-      expect(find.text('Toggle Perimeter'), findsOneWidget);
-      expect(find.text('Toggle Size'), findsOneWidget);
+      expect(find.text('Range Outline'), findsOneWidget);
+      expect(find.text('Range Fill'), findsOneWidget);
       expect(find.text('Delete'), findsOneWidget);
 
-      await tester.tap(find.text('Toggle Perimeter'));
+      await tester.tap(find.text('Range Outline'));
       await tester.pumpAndSettle();
 
       expect(
@@ -617,7 +621,7 @@ void main() {
             .single
             .ability
             .visualState
-            .showPerimeter,
+            .showRangeOutline,
         isFalse,
       );
     });
@@ -692,8 +696,10 @@ AbilityInfo _sectorAbilityInfo() {
     abilityData: SectorCircleAbility(
       iconPath: 'assets/agents/Cypher/1.webp',
       size: 6.5,
-      outlineColor: Colors.cyan,
+      rangeOutlineColor: Colors.cyan,
       sweepAngleDegrees: 75,
     ),
   );
 }
+
+

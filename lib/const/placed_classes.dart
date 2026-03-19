@@ -947,23 +947,35 @@ abstract class WidgetAction {}
 @JsonSerializable()
 class AbilityVisualState {
   const AbilityVisualState({
-    this.showRangeBody = true,
-    this.showPerimeter = true,
+    this.showRangeOutline = true,
+    this.showRangeFill = true,
+    this.showInnerOutline = true,
+    this.showInnerFill = true,
   });
 
   @JsonKey(defaultValue: true)
-  final bool showRangeBody;
+  final bool showRangeOutline;
 
   @JsonKey(defaultValue: true)
-  final bool showPerimeter;
+  final bool showRangeFill;
+
+  @JsonKey(defaultValue: true)
+  final bool showInnerOutline;
+
+  @JsonKey(defaultValue: true)
+  final bool showInnerFill;
 
   AbilityVisualState copyWith({
-    bool? showRangeBody,
-    bool? showPerimeter,
+    bool? showRangeOutline,
+    bool? showRangeFill,
+    bool? showInnerOutline,
+    bool? showInnerFill,
   }) {
     return AbilityVisualState(
-      showRangeBody: showRangeBody ?? this.showRangeBody,
-      showPerimeter: showPerimeter ?? this.showPerimeter,
+      showRangeOutline: showRangeOutline ?? this.showRangeOutline,
+      showRangeFill: showRangeFill ?? this.showRangeFill,
+      showInnerOutline: showInnerOutline ?? this.showInnerOutline,
+      showInnerFill: showInnerFill ?? this.showInnerFill,
     );
   }
 

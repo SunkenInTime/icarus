@@ -567,9 +567,13 @@ types:
         index: 7
   AbilityVisualState:
     typeId: 32
-    nextIndex: 2
+    nextIndex: 6
     fields:
-      showRangeBody:
-        index: 0
-      showPerimeter:
-        index: 1
+      showRangeOutline:
+        index: 2
+      showRangeFill:
+        index: 3
+      showInnerOutline:
+        index: 4
+      showInnerFill:
+        index: 5

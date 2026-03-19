@@ -46,30 +46,67 @@ List<ShadContextMenuItem> _buildVisibilityItems(
   Ability? abilityData, {
   String? lineUpId,
 }) {
-  if (abilityData is CircleAbility || abilityData is SectorCircleAbility) {
-    return [
-      _buildToggleItem(
-        label: 'Toggle Perimeter',
-        isEnabled: ability.visualState.showPerimeter,
-        onPressed: () => _updateVisualState(
-          ref,
-          ability,
-          ability.visualState.copyWith(
-            showPerimeter: !ability.visualState.showPerimeter,
+  final controls = _buildVisibilityControls(abilityData, ability.visualState);
+  return controls
+      .map(
+        (control) => _buildToggleItem(
+          label: control.label,
+          isEnabled: control.isEnabled,
+          onPressed: () => _updateVisualState(
+            ref,
+            ability,
+            control.toggle(ability.visualState),
+            lineUpId: lineUpId,
           ),
-          lineUpId: lineUpId,
+        ),
+      )
+      .toList();
+}
+
+List<_AbilityVisibilityControl> _buildVisibilityControls(
+  Ability? abilityData,
+  AbilityVisualState visualState,
+) {
+  if (abilityData is CircleAbility || abilityData is SectorCircleAbility) {
+    if (_hasInnerRange(abilityData)) {
+      return [
+        _AbilityVisibilityControl(
+          label: 'Range Outline',
+          isEnabled: visualState.showRangeOutline,
+          toggle: (state) => state.copyWith(
+            showRangeOutline: !state.showRangeOutline,
+          ),
+        ),
+        _AbilityVisibilityControl(
+          label: 'Inner Outline',
+          isEnabled: visualState.showInnerOutline,
+          toggle: (state) => state.copyWith(
+            showInnerOutline: !state.showInnerOutline,
+          ),
+        ),
+        _AbilityVisibilityControl(
+          label: 'Inner Fill',
+          isEnabled: visualState.showInnerFill,
+          toggle: (state) => state.copyWith(
+            showInnerFill: !state.showInnerFill,
+          ),
+        ),
+      ];
+    }
+
+    return [
+      _AbilityVisibilityControl(
+        label: 'Range Outline',
+        isEnabled: visualState.showRangeOutline,
+        toggle: (state) => state.copyWith(
+          showRangeOutline: !state.showRangeOutline,
         ),
       ),
-      _buildToggleItem(
-        label: 'Toggle Size',
-        isEnabled: ability.visualState.showRangeBody,
-        onPressed: () => _updateVisualState(
-          ref,
-          ability,
-          ability.visualState.copyWith(
-            showRangeBody: !ability.visualState.showRangeBody,
-          ),
-          lineUpId: lineUpId,
+      _AbilityVisibilityControl(
+        label: 'Range Fill',
+        isEnabled: visualState.showRangeFill,
+        toggle: (state) => state.copyWith(
+          showRangeFill: !state.showRangeFill,
         ),
       ),
     ];
@@ -77,16 +114,11 @@ List<ShadContextMenuItem> _buildVisibilityItems(
 
   if (abilityData is DeadlockBarrierMeshAbility) {
     return [
-      _buildToggleItem(
-        label: 'Toggle Mesh',
-        isEnabled: ability.visualState.showRangeBody,
-        onPressed: () => _updateVisualState(
-          ref,
-          ability,
-          ability.visualState.copyWith(
-            showRangeBody: !ability.visualState.showRangeBody,
-          ),
-          lineUpId: lineUpId,
+      _AbilityVisibilityControl(
+        label: 'Mesh',
+        isEnabled: visualState.showRangeFill,
+        toggle: (state) => state.copyWith(
+          showRangeFill: !state.showRangeFill,
         ),
       ),
     ];
@@ -94,22 +126,25 @@ List<ShadContextMenuItem> _buildVisibilityItems(
 
   if (abilityData is SquareAbility || abilityData is CenterSquareAbility) {
     return [
-      _buildToggleItem(
-        label: 'Toggle Range',
-        isEnabled: ability.visualState.showRangeBody,
-        onPressed: () => _updateVisualState(
-          ref,
-          ability,
-          ability.visualState.copyWith(
-            showRangeBody: !ability.visualState.showRangeBody,
-          ),
-          lineUpId: lineUpId,
+      _AbilityVisibilityControl(
+        label: 'Range',
+        isEnabled: visualState.showRangeFill,
+        toggle: (state) => state.copyWith(
+          showRangeFill: !state.showRangeFill,
         ),
       ),
     ];
   }
 
   return const [];
+}
+
+bool _hasInnerRange(Ability? ability) {
+  return switch (ability) {
+    CircleAbility() => ability.hasInnerRange,
+    SectorCircleAbility() => ability.hasInnerRange,
+    _ => false,
+  };
 }
 
 ShadContextMenuItem _buildToggleItem({
@@ -164,4 +199,16 @@ void _updateVisualState(
   }
 
   ref.read(abilityProvider.notifier).updateVisualState(index, visualState);
+}
+
+class _AbilityVisibilityControl {
+  const _AbilityVisibilityControl({
+    required this.label,
+    required this.isEnabled,
+    required this.toggle,
+  });
+
+  final String label;
+  final bool isEnabled;
+  final AbilityVisualState Function(AbilityVisualState state) toggle;
 }

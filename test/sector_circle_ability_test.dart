@@ -30,12 +30,12 @@ void main() {
       final circle = CircleAbility(
         iconPath: 'assets/agents/Cypher/1.webp',
         size: 6.5,
-        outlineColor: Colors.cyan,
+        rangeOutlineColor: Colors.cyan,
       );
       final sector = SectorCircleAbility(
         iconPath: 'assets/agents/Cypher/1.webp',
         size: 6.5,
-        outlineColor: Colors.cyan,
+        rangeOutlineColor: Colors.cyan,
         sweepAngleDegrees: 75,
       );
 
@@ -64,7 +64,7 @@ void main() {
       final sector = SectorCircleAbility(
         iconPath: 'assets/agents/Cypher/1.webp',
         size: 6.5,
-        outlineColor: Colors.cyan,
+        rangeOutlineColor: Colors.cyan,
         sweepAngleDegrees: 75,
       );
 
@@ -82,7 +82,7 @@ void main() {
         abilityData: SectorCircleAbility(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 6.5,
-          outlineColor: Colors.cyan,
+          rangeOutlineColor: Colors.cyan,
           sweepAngleDegrees: 75,
         ),
       );
@@ -131,10 +131,9 @@ void main() {
         const SectorCircleWidget(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 120,
-          outlineColor: outlineColor,
+          rangeOutlineColor: outlineColor,
           sweepAngleDegrees: 80,
           hasCenterDot: false,
-          hasPerimeter: false,
           opacity: 70,
           id: 'sector-style',
           isAlly: true,
@@ -158,13 +157,12 @@ void main() {
         const SectorCircleWidget(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 120,
-          outlineColor: outlineColor,
+          rangeOutlineColor: outlineColor,
           sweepAngleDegrees: 80,
           hasCenterDot: true,
-          hasPerimeter: true,
           opacity: 45,
-          innerSize: 36,
-          fillColor: fillColor,
+          innerRangeSize: 36,
+          innerRangeColor: fillColor,
           id: 'sector-perimeter',
           isAlly: true,
         ),
@@ -197,10 +195,9 @@ void main() {
         const SectorCircleWidget(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 120,
-          outlineColor: Colors.orange,
+          rangeOutlineColor: Colors.orange,
           sweepAngleDegrees: 80,
           hasCenterDot: true,
-          hasPerimeter: false,
           id: 'sector-rotated',
           isAlly: true,
           rotation: rotation,
@@ -220,10 +217,9 @@ void main() {
         const SectorCircleWidget(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 120,
-          outlineColor: Colors.orange,
+          rangeOutlineColor: Colors.orange,
           sweepAngleDegrees: 80,
           hasCenterDot: true,
-          hasPerimeter: false,
           id: 'sector-zero-rotation',
           isAlly: true,
           rotation: 0,
@@ -242,10 +238,9 @@ void main() {
         const SectorCircleWidget(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 120,
-          outlineColor: Colors.orange,
+          rangeOutlineColor: Colors.orange,
           sweepAngleDegrees: 80,
           hasCenterDot: false,
-          hasPerimeter: false,
           id: 'sector-no-center-dot',
           isAlly: true,
           rotation: math.pi / 4,
@@ -265,15 +260,13 @@ void main() {
         const SectorCircleWidget(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 120,
-          outlineColor: outlineColor,
+          rangeOutlineColor: outlineColor,
           sweepAngleDegrees: 80,
           hasCenterDot: true,
-          hasPerimeter: false,
           id: 'sector-hide-fill',
           isAlly: true,
           visualState: AbilityVisualState(
-            showRangeBody: false,
-            showPerimeter: true,
+            showRangeFill: false,
           ),
         ),
       );
@@ -295,16 +288,14 @@ void main() {
         const SectorCircleWidget(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 120,
-          outlineColor: outlineColor,
+          rangeOutlineColor: outlineColor,
           sweepAngleDegrees: 80,
           hasCenterDot: true,
-          hasPerimeter: false,
           opacity: 55,
           id: 'sector-hide-stroke',
           isAlly: true,
           visualState: AbilityVisualState(
-            showRangeBody: true,
-            showPerimeter: false,
+            showRangeOutline: false,
           ),
         ),
       );
@@ -324,15 +315,14 @@ void main() {
         const SectorCircleWidget(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 120,
-          outlineColor: Colors.orange,
+          rangeOutlineColor: Colors.orange,
           sweepAngleDegrees: 80,
           hasCenterDot: true,
-          hasPerimeter: false,
           id: 'sector-icon-only',
           isAlly: true,
           visualState: AbilityVisualState(
-            showRangeBody: false,
-            showPerimeter: false,
+            showRangeFill: false,
+            showRangeOutline: false,
           ),
         ),
       );
@@ -352,23 +342,21 @@ void main() {
         const SectorCircleWidget(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 120,
-          outlineColor: Colors.white,
+          rangeOutlineColor: Colors.white,
           sweepAngleDegrees: 80,
           hasCenterDot: true,
-          hasPerimeter: true,
-          innerSize: 36,
-          fillColor: Colors.deepPurple,
+          innerRangeSize: 36,
+          innerRangeColor: Colors.deepPurple,
           id: 'sector-perimeter-hidden-fill',
           isAlly: true,
           visualState: AbilityVisualState(
-            showRangeBody: false,
-            showPerimeter: true,
+            showInnerFill: false,
           ),
         ),
       );
 
       final sizeLayer = tester.widget<Opacity>(
-        find.byKey(const ValueKey('sector-size-layer')),
+        find.byKey(const ValueKey('sector-inner-fill-layer')),
       );
       final painter = _sectorPainter(tester);
 
@@ -389,7 +377,7 @@ void main() {
         abilityData: SectorCircleAbility(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 6.5,
-          outlineColor: Colors.cyan,
+          rangeOutlineColor: Colors.cyan,
           sweepAngleDegrees: 75,
         ),
       );
@@ -432,7 +420,7 @@ void main() {
       expect(rotatable.buttonTop, isNull);
     });
 
-    testWidgets('hidden sector range body hides the rotation handle',
+    testWidgets('icon-only sector hides the rotation handle',
         (tester) async {
       final abilityInfo = AbilityInfo(
         name: 'Sector',
@@ -442,7 +430,7 @@ void main() {
         abilityData: SectorCircleAbility(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 6.5,
-          outlineColor: Colors.cyan,
+          rangeOutlineColor: Colors.cyan,
           sweepAngleDegrees: 75,
         ),
       );
@@ -451,8 +439,8 @@ void main() {
         data: abilityInfo,
         position: const Offset(100, 100),
         visualState: const AbilityVisualState(
-          showRangeBody: false,
-          showPerimeter: true,
+          showRangeFill: false,
+          showRangeOutline: false,
         ),
       );
 
@@ -492,7 +480,7 @@ void main() {
         abilityData: SectorCircleAbility(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 6.5,
-          outlineColor: Colors.cyan,
+          rangeOutlineColor: Colors.cyan,
           sweepAngleDegrees: 75,
         ),
       );
@@ -527,7 +515,7 @@ void main() {
         abilityData: SectorCircleAbility(
           iconPath: 'assets/agents/Cypher/1.webp',
           size: 6.5,
-          outlineColor: Colors.cyan,
+          rangeOutlineColor: Colors.cyan,
           sweepAngleDegrees: 75,
         ),
       );
@@ -638,3 +626,5 @@ SectorCirclePainter _sectorPainter(WidgetTester tester) {
 
   return customPaint.painter! as SectorCirclePainter;
 }
+
+
