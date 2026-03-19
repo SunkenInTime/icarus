@@ -29,10 +29,8 @@ class SettingsTab extends ConsumerWidget {
           Text("Settings", style: ShadTheme.of(context).textTheme.h3),
         ],
       ),
-      description: Text(
-        activeStrategyName == null
-            ? "Settings marked Strategy save with the active plan. Settings marked Workspace stay with your app."
-            : "Settings marked Strategy save to \"$activeStrategyName\". Settings marked Workspace stay with your app.",
+      description: const Text(
+        "Adjust strategy sizing and workspace visibility from one place.",
       ),
       child: Padding(
         padding: const EdgeInsets.all(8),
@@ -44,13 +42,12 @@ class SettingsTab extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _ScopeLegendBanner(activeStrategyName: activeStrategyName),
-                  const SizedBox(height: 16),
                   SettingsScopeCard(
                     scope: SettingsScope.strategy,
                     title: "Page object sizing",
-                    description:
-                        "These controls are saved with the current strategy page, so each setup can have its own scale.",
+                    description: activeStrategyName == null
+                        ? "Resize placed objects for the current strategy page."
+                        : "Resize placed objects for \"$activeStrategyName\".",
                     child: Column(
                       children: [
                         _SettingsSliderTile(
@@ -89,14 +86,14 @@ class SettingsTab extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
                   const _SectionDivider(),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
                   SettingsScopeCard(
                     scope: SettingsScope.workspace,
                     title: "Map visibility helpers",
                     description:
-                        "These toggles change your workspace view and stay available as you move between strategies.",
+                        "Show or hide map reference layers while you work.",
                     child: Column(
                       children: [
                         _SettingsToggleTile(
@@ -138,9 +135,9 @@ class SettingsTab extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
                   const _SectionDivider(),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
                   const MapThemeSettingsSection(),
                   const SizedBox(height: 4),
                 ],
@@ -149,60 +146,6 @@ class SettingsTab extends ConsumerWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _ScopeLegendBanner extends StatelessWidget {
-  const _ScopeLegendBanner({required this.activeStrategyName});
-
-  final String? activeStrategyName;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          LucideIcons.info,
-          size: 16,
-          color: Settings.tacticalVioletTheme.mutedForeground,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Know what gets saved",
-                style: ShadTheme.of(context)
-                    .textTheme
-                    .lead
-                    .copyWith(fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                activeStrategyName == null
-                    ? "Strategy-marked controls travel with the active plan. Workspace-marked controls only change your local view."
-                    : "\"$activeStrategyName\" keeps its own Strategy settings. Workspace settings only change your local view.",
-                style: ShadTheme.of(context).textTheme.small.copyWith(
-                      color: Settings.tacticalVioletTheme.mutedForeground,
-                      height: 1.4,
-                    ),
-              ),
-              const SizedBox(height: 10),
-              const Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  SettingsScopeBadge(scope: SettingsScope.strategy),
-                  SettingsScopeBadge(scope: SettingsScope.workspace),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }
