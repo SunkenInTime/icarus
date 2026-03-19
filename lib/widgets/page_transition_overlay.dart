@@ -476,6 +476,9 @@ class PlacedWidgetPreview {
         case CircleAbility():
           return ability.createWidget(
               id: w.id, isAlly: w.isAlly, mapScale: mapScale);
+        case SectorCircleAbility():
+          return ability.createWidget(
+              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
         case DeadlockBarrierMeshAbility():
           return ability.createWidget(
             id: w.id,

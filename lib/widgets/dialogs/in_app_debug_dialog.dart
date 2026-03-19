@@ -12,6 +12,9 @@ class InAppDebugDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final logs = ref.watch(inAppDebugProvider);
+    final supportDirectory =
+        AppErrorReporter.applicationSupportDirectoryPath ?? 'Unavailable';
+    final persistedLogPath = AppErrorReporter.persistedLogPath;
 
     return ShadDialog(
       title: const Text('In-App Debug Logs'),
@@ -49,30 +52,98 @@ class InAppDebugDialog extends ConsumerWidget {
       child: SizedBox(
         width: 680,
         height: 440,
-        child: logs.isEmpty
-            ? Center(
-                child: Text(
-                  'No logs yet.',
-                  style: ShadTheme.of(context).textTheme.muted,
-                ),
-              )
-            : Container(
-                decoration: BoxDecoration(
-                  color: ShadTheme.of(context)
-                      .colorScheme
-                      .muted
-                      .withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: ListView.separated(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: logs.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    return _DebugLogEntryCard(entry: logs[index]);
-                  },
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _RuntimeInfoCard(
+              supportDirectory: supportDirectory,
+              persistedLogPath: persistedLogPath,
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: logs.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No logs yet.',
+                        style: ShadTheme.of(context).textTheme.muted,
+                      ),
+                    )
+                  : Container(
+                      decoration: BoxDecoration(
+                        color: ShadTheme.of(context)
+                            .colorScheme
+                            .muted
+                            .withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ListView.separated(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: logs.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (context, index) {
+                          return _DebugLogEntryCard(entry: logs[index]);
+                        },
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RuntimeInfoCard extends StatelessWidget {
+  const _RuntimeInfoCard({
+    required this.supportDirectory,
+    required this.persistedLogPath,
+  });
+
+  final String supportDirectory;
+  final String? persistedLogPath;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondary.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.colorScheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Runtime Paths',
+            style: theme.textTheme.small.copyWith(
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.mutedForeground,
+            ),
+          ),
+          const SizedBox(height: 6),
+          SelectableText(
+            'Support directory: $supportDirectory',
+            style: const TextStyle(
+              fontFamily: 'Consolas',
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+          if (persistedLogPath != null) ...[
+            const SizedBox(height: 4),
+            SelectableText(
+              'Persisted debug log: $persistedLogPath',
+              style: const TextStyle(
+                fontFamily: 'Consolas',
+                fontSize: 12,
+                height: 1.4,
               ),
+            ),
+          ],
+        ],
       ),
     );
   }

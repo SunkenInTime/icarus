@@ -159,8 +159,13 @@ Future<void> _initializePersistedDebugLog() async {
 
   try {
     final dir = await getApplicationSupportDirectory();
+    AppErrorReporter.setApplicationSupportDirectoryPath(dir.path);
     await AppErrorReporter.initializePersistedLog(
       path.join(dir.path, 'icarus_debug.log'),
+    );
+    AppErrorReporter.reportInfo(
+      'Persisted debug log file: ${path.join(dir.path, 'icarus_debug.log')}',
+      source: 'main._initializePersistedDebugLog',
     );
   } catch (error, stackTrace) {
     developer.log(

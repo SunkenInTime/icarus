@@ -8,6 +8,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/custom_square_widget.da
 import 'package:icarus/widgets/draggable_widgets/ability/deadlock_barrier_mesh_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_image_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/sector_circle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_icon_widget.dart';
 
 bool isRotatable(Ability ability) {
@@ -17,6 +18,8 @@ bool isRotatable(Ability ability) {
     case CenterSquareAbility():
       return true;
     case RotatableImageAbility():
+      return true;
+    case SectorCircleAbility():
       return true;
     case DeadlockBarrierMeshAbility():
       return true;
@@ -186,6 +189,79 @@ class CircleAbility extends Ability {
       outlineColor: outlineColor,
       hasCenterDot: hasCenterDot ?? true,
       hasPerimeter: hasPerimeter ?? false,
+      opacity: opacity,
+      fillColor: fillColor,
+      innerSize: perimeterSize != null ? perimeterSize! * mapScale : null,
+      id: id,
+      isAlly: isAlly,
+      lineUpId: lineUpId,
+    );
+  }
+}
+
+class SectorCircleAbility extends Ability {
+  SectorCircleAbility({
+    required this.iconPath,
+    required size,
+    required this.outlineColor,
+    required this.sweepAngleDegrees,
+    this.hasCenterDot = true,
+    this.hasPerimeter = false,
+    this.fillColor,
+    this.opacity = 70,
+    this.perimeterSize,
+  }) : size = size * AgentData.inGameMetersDiameter;
+
+  final double size;
+  final Color outlineColor;
+  final String iconPath;
+  final double sweepAngleDegrees;
+
+  final bool hasPerimeter;
+  final bool hasCenterDot;
+  final Color? fillColor;
+  final int? opacity;
+  final double? perimeterSize;
+
+  @override
+  Offset getAnchorPoint({
+    double? mapScale,
+    double? abilitySize,
+  }) {
+    assert(mapScale != null, 'mapScale must be provided');
+    return Offset(
+      (size * mapScale!) / 2,
+      (size * mapScale) / 2 + SectorCircleWidget.handleTopInsetVirtual,
+    );
+  }
+
+  @override
+  Offset getSize({double? mapScale, double? abilitySize}) {
+    assert(abilitySize != null, 'abilitySize must be provided');
+    assert(mapScale != null, 'mapScale must be provided');
+    return Offset(
+      size * mapScale!,
+      size * mapScale + SectorCircleWidget.handleTopInsetVirtual,
+    );
+  }
+
+  @override
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    List<double>? armLengthsMeters,
+    String? lineUpId,
+  }) {
+    return SectorCircleWidget(
+      iconPath: iconPath,
+      size: size * mapScale,
+      outlineColor: outlineColor,
+      sweepAngleDegrees: sweepAngleDegrees,
+      hasCenterDot: hasCenterDot,
+      hasPerimeter: hasPerimeter,
       opacity: opacity,
       fillColor: fillColor,
       innerSize: perimeterSize != null ? perimeterSize! * mapScale : null,

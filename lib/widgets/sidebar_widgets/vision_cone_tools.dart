@@ -45,19 +45,19 @@ class VisionConeTools extends ConsumerWidget {
                     children: [
                       _VisionConePresetTile(
                         type: UtilityType.viewCone180,
-                        label: '180',
+                        label: '103',
                         icon: LucideIcons.eye,
                       ),
                       SizedBox(width: 2),
                       _VisionConePresetTile(
                         type: UtilityType.viewCone90,
-                        label: '90',
+                        label: '60',
                         icon: LucideIcons.scanEye,
                       ),
                       SizedBox(width: 2),
                       _VisionConePresetTile(
                         type: UtilityType.viewCone40,
-                        label: '40',
+                        label: '20',
                         icon: LucideIcons.focus,
                       ),
                     ],
