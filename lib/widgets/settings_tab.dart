@@ -89,9 +89,9 @@ class SettingsTab extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 18),
                   const _SectionDivider(),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 18),
                   SettingsScopeCard(
                     scope: SettingsScope.workspace,
                     title: "Map visibility helpers",
@@ -138,9 +138,9 @@ class SettingsTab extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 18),
                   const _SectionDivider(),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 18),
                   const MapThemeSettingsSection(),
                   const SizedBox(height: 4),
                 ],
@@ -163,20 +163,10 @@ class _ScopeLegendBanner extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color:
-                Settings.tacticalVioletTheme.secondary.withValues(alpha: 0.45),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Settings.tacticalVioletTheme.border),
-          ),
-          child: Icon(
-            LucideIcons.info,
-            size: 16,
-            color: Settings.tacticalVioletTheme.mutedForeground,
-          ),
+        Icon(
+          LucideIcons.info,
+          size: 16,
+          color: Settings.tacticalVioletTheme.mutedForeground,
         ),
         const SizedBox(width: 10),
         Expanded(
