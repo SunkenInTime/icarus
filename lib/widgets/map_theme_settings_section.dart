@@ -143,65 +143,53 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
     return SizedBox(
       width: double.infinity,
       key: const ValueKey('profile-assigned'),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color:
-              Settings.tacticalVioletTheme.background.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Settings.tacticalVioletTheme.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(profile.name),
-                      const SizedBox(height: 2),
-                      Text(
-                        profile.isBuiltIn
-                            ? "Built-in profile"
-                            : "Custom profile",
-                        style: ShadTheme.of(context).textTheme.small.copyWith(
-                              color:
-                                  Settings.tacticalVioletTheme.mutedForeground,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-                _PaletteSwatches(palette: profile.palette),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: ShadButton(
-                onPressed: () {
-                  _profileIdBeforeCustomize =
-                      ref.read(strategyThemeProvider).profileId ??
-                          MapThemeProfilesProvider.immutableDefaultProfileId;
-                  ref
-                      .read(strategyProvider.notifier)
-                      .setThemeOverrideForCurrentStrategy(
-                          ref.read(effectiveMapThemePaletteProvider));
-                },
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.edit_outlined, size: 14),
-                    SizedBox(width: 6),
-                    Text("Customize"),
+                    Text(profile.name),
+                    const SizedBox(height: 2),
+                    Text(
+                      profile.isBuiltIn ? "Built-in profile" : "Custom profile",
+                      style: ShadTheme.of(context).textTheme.small.copyWith(
+                            color: Settings.tacticalVioletTheme.mutedForeground,
+                          ),
+                    ),
                   ],
                 ),
               ),
+              _PaletteSwatches(palette: profile.palette),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: ShadButton(
+              onPressed: () {
+                _profileIdBeforeCustomize =
+                    ref.read(strategyThemeProvider).profileId ??
+                        MapThemeProfilesProvider.immutableDefaultProfileId;
+                ref
+                    .read(strategyProvider.notifier)
+                    .setThemeOverrideForCurrentStrategy(
+                        ref.read(effectiveMapThemePaletteProvider));
+              },
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.edit_outlined, size: 14),
+                  SizedBox(width: 6),
+                  Text("Customize"),
+                ],
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -210,92 +198,81 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
     return SizedBox(
       width: double.infinity,
       key: const ValueKey('override-active'),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color:
-              Settings.tacticalVioletTheme.background.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: Settings.tacticalVioletTheme.primary.withValues(alpha: 0.34),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color:
+                  Settings.tacticalVioletTheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              "CUSTOM OVERRIDE",
+              style: ShadTheme.of(context).textTheme.small.copyWith(
+                    color: Settings.tacticalVioletTheme.primary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.8,
+                  ),
+            ),
           ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Settings.tacticalVioletTheme.primary
-                    .withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(4),
+          const SizedBox(height: 10),
+          _PaletteEditor(
+            label: "",
+            palette: palette,
+            onChanged: (nextPalette) {
+              ref
+                  .read(strategyProvider.notifier)
+                  .setThemeOverrideForCurrentStrategy(nextPalette);
+            },
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              ShadButton.secondary(
+                leading: const Icon(LucideIcons.undo),
+                onPressed: () {
+                  final restoreId = _profileIdBeforeCustomize ??
+                      MapThemeProfilesProvider.immutableDefaultProfileId;
+                  ref
+                      .read(strategyProvider.notifier)
+                      .setThemeProfileForCurrentStrategy(restoreId);
+                  setState(() {
+                    _profileIdBeforeCustomize = null;
+                    _showSaveForm = false;
+                  });
+                },
+                child: const Text("Reset"),
               ),
-              child: Text(
-                "CUSTOM OVERRIDE",
-                style: ShadTheme.of(context).textTheme.small.copyWith(
-                      color: Settings.tacticalVioletTheme.primary,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.8,
-                    ),
+              const SizedBox(width: 4),
+              ShadButton(
+                leading: _showSaveForm
+                    ? const Icon(LucideIcons.x)
+                    : const Icon(LucideIcons.save),
+                onPressed: () {
+                  setState(() {
+                    _showSaveForm = !_showSaveForm;
+                    if (_showSaveForm) {
+                      final profiles = ref.read(mapThemeProfilesProvider);
+                      _saveNameController.text =
+                          "Profile ${MapThemeProfilesProvider.nextGeneratedProfileNumber(
+                        profiles.profiles.where((p) => !p.isBuiltIn).toList(),
+                      )}";
+                    }
+                  });
+                },
+                child: Text(_showSaveForm ? "Cancel" : "Save as Profile"),
               ),
-            ),
-            const SizedBox(height: 10),
-            _PaletteEditor(
-              label: "",
-              palette: palette,
-              onChanged: (nextPalette) {
-                ref
-                    .read(strategyProvider.notifier)
-                    .setThemeOverrideForCurrentStrategy(nextPalette);
-              },
-            ),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                ShadButton.secondary(
-                  leading: const Icon(LucideIcons.undo),
-                  onPressed: () {
-                    final restoreId = _profileIdBeforeCustomize ??
-                        MapThemeProfilesProvider.immutableDefaultProfileId;
-                    ref
-                        .read(strategyProvider.notifier)
-                        .setThemeProfileForCurrentStrategy(restoreId);
-                    setState(() {
-                      _profileIdBeforeCustomize = null;
-                      _showSaveForm = false;
-                    });
-                  },
-                  child: const Text("Reset"),
-                ),
-                const SizedBox(width: 4),
-                ShadButton(
-                  leading: _showSaveForm
-                      ? const Icon(LucideIcons.x)
-                      : const Icon(LucideIcons.save),
-                  onPressed: () {
-                    setState(() {
-                      _showSaveForm = !_showSaveForm;
-                      if (_showSaveForm) {
-                        final profiles = ref.read(mapThemeProfilesProvider);
-                        _saveNameController.text =
-                            "Profile ${MapThemeProfilesProvider.nextGeneratedProfileNumber(
-                          profiles.profiles.where((p) => !p.isBuiltIn).toList(),
-                        )}";
-                      }
-                    });
-                  },
-                  child: Text(_showSaveForm ? "Cancel" : "Save as Profile"),
-                ),
-              ],
-            ),
-            if (_showSaveForm) ...[
-              const SizedBox(height: 10),
-              _buildSaveForm(context, palette),
             ],
+          ),
+          if (_showSaveForm) ...[
+            const SizedBox(height: 10),
+            _buildSaveForm(context, palette),
           ],
-        ),
+        ],
       ),
     );
   }
@@ -583,16 +560,15 @@ class _ProfileListRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
-          boxShadow: const [Settings.cardForegroundBackdrop],
           border: Border.all(
             color: isSelected
-                ? Settings.tacticalVioletTheme.primary
+                ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.5)
                 : Settings.tacticalVioletTheme.border,
-            width: isSelected ? 1.5 : 1,
+            width: 1,
           ),
           color: isSelected
-              ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.1)
-              : Settings.tacticalVioletTheme.card,
+              ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.08)
+              : Settings.tacticalVioletTheme.secondary.withValues(alpha: 0.28),
         ),
         child: Row(
           children: [
@@ -757,7 +733,9 @@ class _EditableSwatch extends StatelessWidget {
               height: 42,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Settings.tacticalVioletTheme.border),
+                border: Border.all(
+                  color: Settings.tacticalVioletTheme.border,
+                ),
                 color: color,
               ),
             ),

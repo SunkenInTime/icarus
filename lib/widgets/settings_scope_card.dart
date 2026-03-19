@@ -28,23 +28,31 @@ class SettingsScopeCard extends StatelessWidget {
     final style = SettingsScopeVisualStyle.fromScope(scope);
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: style.borderColor),
-        boxShadow: const [Settings.cardForegroundBackdrop],
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            style.tintedBackground,
-            Settings.tacticalVioletTheme.card,
-          ],
-        ),
+        color: Settings.tacticalVioletTheme.card,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: style.containerBorderColor),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Container(
+            width: 34,
+            height: 3,
+            decoration: BoxDecoration(
+              color: style.accentColor.withValues(alpha: 0.65),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -54,7 +62,9 @@ class SettingsScopeCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: style.iconBackground,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: style.borderColor),
+                  border: Border.all(
+                    color: style.accentColor.withValues(alpha: 0.18),
+                  ),
                 ),
                 child: Icon(
                   style.icon,
@@ -124,7 +134,7 @@ class SettingsScopeBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: style.iconBackground,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: style.borderColor),
+        border: Border.all(color: style.accentColor.withValues(alpha: 0.16)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -151,17 +161,15 @@ class SettingsScopeVisualStyle {
     required this.icon,
     required this.badgeLabel,
     required this.accentColor,
-    required this.tintedBackground,
     required this.iconBackground,
-    required this.borderColor,
+    required this.containerBorderColor,
   });
 
   final IconData icon;
   final String badgeLabel;
   final Color accentColor;
-  final Color tintedBackground;
   final Color iconBackground;
-  final Color borderColor;
+  final Color containerBorderColor;
 
   factory SettingsScopeVisualStyle.fromScope(SettingsScope scope) {
     switch (scope) {
@@ -171,19 +179,19 @@ class SettingsScopeVisualStyle {
           icon: LucideIcons.pencil,
           badgeLabel: 'STRATEGY',
           accentColor: accent,
-          tintedBackground: accent.withValues(alpha: 0.12),
-          iconBackground: accent.withValues(alpha: 0.16),
-          borderColor: accent.withValues(alpha: 0.34),
+          iconBackground: accent.withValues(alpha: 0.12),
+          containerBorderColor:
+              Settings.tacticalVioletTheme.border.withValues(alpha: 0.95),
         );
       case SettingsScope.workspace:
-        const accent = Color(0xff14b8a6);
+        const accent = Color(0xff4b8f86);
         return SettingsScopeVisualStyle(
           icon: LucideIcons.eye,
           badgeLabel: 'WORKSPACE',
           accentColor: accent,
-          tintedBackground: accent.withValues(alpha: 0.12),
-          iconBackground: accent.withValues(alpha: 0.15),
-          borderColor: accent.withValues(alpha: 0.34),
+          iconBackground: accent.withValues(alpha: 0.12),
+          containerBorderColor:
+              Settings.tacticalVioletTheme.border.withValues(alpha: 0.95),
         );
     }
   }

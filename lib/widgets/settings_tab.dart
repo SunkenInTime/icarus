@@ -31,8 +31,8 @@ class SettingsTab extends ConsumerWidget {
       ),
       description: Text(
         activeStrategyName == null
-            ? "Purple cards change the active strategy. Teal cards stay with your workspace."
-            : "Purple cards save to \"$activeStrategyName\". Teal cards stay with your workspace.",
+            ? "Settings marked Strategy save with the active plan. Settings marked Workspace stay with your app."
+            : "Settings marked Strategy save to \"$activeStrategyName\". Settings marked Workspace stay with your app.",
       ),
       child: Padding(
         padding: const EdgeInsets.all(8),
@@ -69,7 +69,7 @@ class SettingsTab extends ConsumerWidget {
                                 .updateAgentSize(value);
                           },
                         ),
-                        const SizedBox(height: 10),
+                        const _SettingsItemDivider(),
                         _SettingsSliderTile(
                           icon: Icons.auto_awesome_outlined,
                           title: "Ability markers",
@@ -109,7 +109,7 @@ class SettingsTab extends ConsumerWidget {
                                 .updateSpawnBarrier(value);
                           },
                         ),
-                        const SizedBox(height: 10),
+                        const _SettingsItemDivider(),
                         _SettingsToggleTile(
                           icon: Icons.location_on_outlined,
                           title: "Region names",
@@ -122,7 +122,7 @@ class SettingsTab extends ConsumerWidget {
                                 .updateRegionNames(value);
                           },
                         ),
-                        const SizedBox(height: 10),
+                        const _SettingsItemDivider(),
                         _SettingsToggleTile(
                           icon: Icons.radio_button_checked_outlined,
                           title: "Ultimate orbs",
@@ -160,7 +160,7 @@ class _ScopeLegendBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.secondary.withValues(alpha: 0.55),
+        color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Settings.tacticalVioletTheme.border),
       ),
@@ -177,8 +177,8 @@ class _ScopeLegendBanner extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             activeStrategyName == null
-                ? "Strategy settings travel with the active plan. Workspace settings only change how your app looks right now."
-                : "\"$activeStrategyName\" keeps its own purple settings. Teal settings stay with your app workspace.",
+                ? "Strategy-marked controls travel with the active plan. Workspace-marked controls only change your local view."
+                : "\"$activeStrategyName\" keeps its own Strategy settings. Workspace settings only change your local view.",
             style: ShadTheme.of(context).textTheme.small.copyWith(
                   color: Settings.tacticalVioletTheme.mutedForeground,
                   height: 1.4,
@@ -224,13 +224,8 @@ class _SettingsSliderTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.background.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Settings.tacticalVioletTheme.border),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -268,13 +263,14 @@ class _SettingsSliderTile extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
               activeTrackColor: accentColor,
               thumbColor: accentColor,
               overlayColor: accentColor.withValues(alpha: 0.12),
               inactiveTrackColor: Settings.tacticalVioletTheme.secondary,
+              trackHeight: 2.8,
             ),
             child: Slider(
               min: min,
@@ -307,19 +303,14 @@ class _SettingsToggleTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.background.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Settings.tacticalVioletTheme.border),
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _SettingLeadingIcon(
             icon: icon,
-            accentColor: const Color(0xff14b8a6),
+            accentColor: const Color(0xff4b8f86),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -370,8 +361,11 @@ class _SettingLeadingIcon extends StatelessWidget {
       width: 34,
       height: 34,
       decoration: BoxDecoration(
-        color: accentColor.withValues(alpha: 0.14),
+        color: accentColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: accentColor.withValues(alpha: 0.15),
+        ),
       ),
       child: Icon(icon, size: 18, color: accentColor),
     );
@@ -392,9 +386,9 @@ class _SettingValuePill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: accentColor.withValues(alpha: 0.14),
+        color: accentColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: accentColor.withValues(alpha: 0.26)),
+        border: Border.all(color: accentColor.withValues(alpha: 0.16)),
       ),
       child: Text(
         value,
@@ -403,6 +397,18 @@ class _SettingValuePill extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
       ),
+    );
+  }
+}
+
+class _SettingsItemDivider extends StatelessWidget {
+  const _SettingsItemDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 1,
+      color: Settings.tacticalVioletTheme.border.withValues(alpha: 0.8),
     );
   }
 }
