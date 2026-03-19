@@ -3557,6 +3557,42 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
   }
 
+  /// Copies current [strategySettingsProvider] marker sizes to every page in
+  /// the open strategy (after flushing the active page to Hive).
+  Future<void> applyMarkerSizesToAllPages() async {
+    if (state.stratName == null) return;
+
+    await _syncCurrentPageToHive();
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(state.id);
+    if (strat == null || strat.pages.isEmpty) return;
+
+    final target = ref.read(strategySettingsProvider);
+    final newPages = [
+      for (final page in strat.pages)
+        page.copyWith(
+          settings: page.settings.copyWith(
+            agentSize: target.agentSize,
+            abilitySize: target.abilitySize,
+          ),
+        ),
+    ];
+
+    final strategyTheme = ref.read(strategyThemeProvider);
+    final updated = strat.copyWith(
+      pages: newPages,
+      mapData: ref.read(mapProvider).currentMap,
+      themeProfileId: strategyTheme.profileId,
+      clearThemeProfileId: strategyTheme.profileId == null,
+      themeOverridePalette: strategyTheme.overridePalette,
+      clearThemeOverridePalette: strategyTheme.overridePalette == null,
+      lastEdited: DateTime.now(),
+    );
+    await box.put(updated.id, updated);
+    setUnsaved();
+  }
+
   void moveToFolder({required String strategyID, required String? parentID}) {
     final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strategy = strategyBox.get(strategyID);

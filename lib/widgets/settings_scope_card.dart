@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 enum SettingsScope {
@@ -47,10 +48,10 @@ class SettingsScopeCard extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           '$description ${_scopeDescription(scope)}',
-        style: ShadTheme.of(context).textTheme.small.copyWith(
-              color: Settings.tacticalVioletTheme.mutedForeground,
-              height: 1.35,
-            ),
+          style: ShadTheme.of(context).textTheme.small.copyWith(
+                color: Settings.tacticalVioletTheme.mutedForeground,
+                height: 1.35,
+              ),
         ),
         const SizedBox(height: 8),
         child,
