@@ -47,10 +47,10 @@ class SettingsScopeCard extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           '$description ${_scopeDescription(scope)}',
-          style: ShadTheme.of(context).textTheme.small.copyWith(
-                color: Colors.white.withValues(alpha: 0.7),
-                height: 1.35,
-              ),
+        style: ShadTheme.of(context).textTheme.small.copyWith(
+              color: Settings.tacticalVioletTheme.mutedForeground,
+              height: 1.35,
+            ),
         ),
         const SizedBox(height: 8),
         child,
