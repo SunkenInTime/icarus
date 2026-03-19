@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/custom_border_container.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class CustomSquareWidget extends ConsumerWidget {
   const CustomSquareWidget({
@@ -21,6 +23,9 @@ class CustomSquareWidget extends ConsumerWidget {
     required this.hasSideBorders,
     required this.isWall,
     required this.isTransparent,
+    this.visualState,
+    this.watchMouse = true,
+    this.contextMenuItems,
   });
 
   final String? lineUpId;
@@ -36,6 +41,9 @@ class CustomSquareWidget extends ConsumerWidget {
   final bool hasSideBorders;
   final bool isWall;
   final bool isTransparent;
+  final AbilityVisualState? visualState;
+  final bool watchMouse;
+  final List<ShadContextMenuItem>? contextMenuItems;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
@@ -56,6 +64,7 @@ class CustomSquareWidget extends ConsumerWidget {
         scaledDistance +
         (scaledAbilitySize / 2) +
         resizeButtonOffset;
+    final showRangeFill = visualState?.showRangeFill ?? true;
 
     return SizedBox(
       width: scaledWidth,
@@ -80,14 +89,18 @@ class CustomSquareWidget extends ConsumerWidget {
               : Positioned(
                   top: resizeButtonOffset,
                   left: 0,
-                  child: IgnorePointer(
-                    child: CustomBorderContainer(
-                      color: color,
-                      width: scaledWidth,
-                      height: scaledHeight,
-                      hasTop: hasTopborder,
-                      hasSide: hasSideBorders,
-                      isTransparent: isTransparent,
+                  child: Opacity(
+                    key: const ValueKey('square-range-body'),
+                    opacity: showRangeFill ? 1 : 0,
+                    child: IgnorePointer(
+                      child: CustomBorderContainer(
+                        color: color,
+                        width: scaledWidth,
+                        height: scaledHeight,
+                        hasTop: hasTopborder,
+                        hasSide: hasSideBorders,
+                        isTransparent: isTransparent,
+                      ),
                     ),
                   ),
                 ),
@@ -96,11 +109,15 @@ class CustomSquareWidget extends ConsumerWidget {
             Positioned(
               top: resizeButtonOffset,
               left: (scaledWidth / 2) - width / 2,
-              child: IgnorePointer(
-                child: Container(
-                  width: width,
-                  height: scaledHeight,
-                  color: color.withAlpha(100),
+              child: Opacity(
+                key: const ValueKey('square-range-body'),
+                opacity: showRangeFill ? 1 : 0,
+                child: IgnorePointer(
+                  child: Container(
+                    width: width,
+                    height: scaledHeight,
+                    color: color.withAlpha(100),
+                  ),
                 ),
               ),
             ),
@@ -116,6 +133,8 @@ class CustomSquareWidget extends ConsumerWidget {
                 iconPath: iconPath,
                 id: id,
                 isAlly: isAlly,
+                watchMouse: watchMouse,
+                contextMenuItems: contextMenuItems,
               ),
             ),
           ),

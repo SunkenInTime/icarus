@@ -9,6 +9,7 @@ import 'package:icarus/hive/hive_adapters.dart';
 extension HiveRegistrar on HiveInterface {
   void registerAdapters() {
     registerAdapter(AbilityInfoAdapter());
+    registerAdapter(AbilityVisualStateAdapter());
     registerAdapter(AgentStateAdapter());
     registerAdapter(AgentTypeAdapter());
     registerAdapter(AppPreferencesAdapter());
@@ -44,6 +45,7 @@ extension HiveRegistrar on HiveInterface {
 extension IsolatedHiveRegistrar on IsolatedHiveInterface {
   void registerAdapters() {
     registerAdapter(AbilityInfoAdapter());
+    registerAdapter(AbilityVisualStateAdapter());
     registerAdapter(AgentStateAdapter());
     registerAdapter(AgentTypeAdapter());
     registerAdapter(AppPreferencesAdapter());

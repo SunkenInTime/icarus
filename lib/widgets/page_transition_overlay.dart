@@ -469,25 +469,41 @@ class PlacedWidgetPreview {
       switch (ability) {
         case BaseAbility():
           return ability.createWidget(
-              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              visualState: w.visualState,
+              watchMouse: false);
         case ImageAbility():
           return ability.createWidget(
-              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              visualState: w.visualState,
+              watchMouse: false);
         case CircleAbility():
           return ability.createWidget(
-              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              visualState: w.visualState,
+              watchMouse: false);
         case SectorCircleAbility():
           return ability.createWidget(
               id: w.id,
               isAlly: w.isAlly,
               mapScale: mapScale,
-              rotation: rotation ?? w.rotation);
+              rotation: rotation ?? w.rotation,
+              visualState: w.visualState,
+              watchMouse: false);
         case DeadlockBarrierMeshAbility():
           return ability.createWidget(
             id: w.id,
             isAlly: w.isAlly,
             mapScale: mapScale,
             armLengthsMeters: armLengthsMeters ?? w.armLengthsMeters,
+            visualState: w.visualState,
+            watchMouse: false,
           );
         case SquareAbility():
           return ability.createWidget(
@@ -495,20 +511,26 @@ class PlacedWidgetPreview {
               isAlly: w.isAlly,
               mapScale: mapScale,
               rotation: rotation ?? w.rotation,
-              length: length ?? w.length);
+              length: length ?? w.length,
+              visualState: w.visualState,
+              watchMouse: false);
         case CenterSquareAbility():
           return ability.createWidget(
               id: w.id,
               isAlly: w.isAlly,
               mapScale: mapScale,
               rotation: rotation ?? w.rotation,
-              length: length ?? w.length);
+              length: length ?? w.length,
+              visualState: w.visualState,
+              watchMouse: false);
         case RotatableImageAbility():
           return ability.createWidget(
               id: w.id,
               isAlly: w.isAlly,
               mapScale: mapScale,
-              length: length ?? w.length);
+              length: length ?? w.length,
+              visualState: w.visualState,
+              watchMouse: false);
       }
     }
 

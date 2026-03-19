@@ -298,6 +298,22 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
+  void updateAbilityVisualState(
+    String lineUpId,
+    AbilityVisualState visualState,
+  ) {
+    final lineUp = getLineUpById(lineUpId);
+    if (lineUp == null) {
+      return;
+    }
+
+    updateLineUp(
+      lineUp.copyWith(
+        ability: lineUp.ability.copyWith(visualState: visualState),
+      ),
+    );
+  }
+
   int getIndexById(String id) {
     return state.lineUps.indexWhere((lineUp) => lineUp.id == id);
   }

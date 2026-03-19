@@ -213,6 +213,9 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       length: fields[6] == null ? 0 : (fields[6] as num).toDouble(),
       lineUpID: fields[7] as String?,
       rotation: fields[2] == null ? 0 : (fields[2] as num).toDouble(),
+      visualState: fields[9] == null
+          ? const AbilityVisualState()
+          : fields[9] as AbilityVisualState,
       armLengthsMeters: (fields[8] as List?)?.cast<double>(),
     )..isDeleted = fields[4] as bool;
   }
@@ -220,7 +223,7 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
   @override
   void write(BinaryWriter writer, PlacedAbility obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.data)
       ..writeByte(1)
@@ -238,7 +241,9 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       ..writeByte(7)
       ..write(obj.lineUpID)
       ..writeByte(8)
-      ..write(obj.armLengthsMeters);
+      ..write(obj.armLengthsMeters)
+      ..writeByte(9)
+      ..write(obj.visualState);
   }
 
   @override
@@ -1645,6 +1650,49 @@ class EllipseDrawingAdapter extends TypeAdapter<EllipseDrawing> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is EllipseDrawingAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class AbilityVisualStateAdapter extends TypeAdapter<AbilityVisualState> {
+  @override
+  final typeId = 32;
+
+  @override
+  AbilityVisualState read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return AbilityVisualState(
+      showRangeOutline: fields[2] == null ? true : fields[2] as bool,
+      showRangeFill: fields[3] == null ? true : fields[3] as bool,
+      showInnerOutline: fields[4] == null ? true : fields[4] as bool,
+      showInnerFill: fields[5] == null ? true : fields[5] as bool,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, AbilityVisualState obj) {
+    writer
+      ..writeByte(4)
+      ..writeByte(2)
+      ..write(obj.showRangeOutline)
+      ..writeByte(3)
+      ..write(obj.showRangeFill)
+      ..writeByte(4)
+      ..write(obj.showInnerOutline)
+      ..writeByte(5)
+      ..write(obj.showInnerFill);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AbilityVisualStateAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

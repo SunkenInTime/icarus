@@ -14,6 +14,7 @@ class RotatableWidget extends ConsumerStatefulWidget {
   final bool isDragging;
   final double? buttonLeft;
   final double? buttonTop;
+  final bool showHandle;
   const RotatableWidget({
     super.key,
     required this.child,
@@ -25,6 +26,7 @@ class RotatableWidget extends ConsumerStatefulWidget {
     required this.isDragging,
     this.buttonLeft,
     this.buttonTop,
+    this.showHandle = true,
   });
 
   @override
@@ -76,7 +78,7 @@ class _RotatableWidgetState extends ConsumerState<RotatableWidget>
         clipBehavior: Clip.none,
         children: [
           widget.child,
-          if (!widget.isDragging && !isScreenshot)
+          if (widget.showHandle && !widget.isDragging && !isScreenshot)
             Positioned(
               left: coordinateSystem
                   .scale((widget.buttonLeft ?? widget.origin.dx - 7.5)),

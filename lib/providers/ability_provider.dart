@@ -146,6 +146,24 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     updateGeometry(index, armLengthsMeters: armLengthsMeters);
   }
 
+  void updateVisualState(int index, AbilityVisualState visualState) {
+    final newState = [...state];
+    if (index < 0 || index >= newState.length) {
+      return;
+    }
+
+    updateGeometryHistory(index);
+    newState[index].updateVisualState(visualState);
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.edit,
+            id: newState[index].id,
+            group: ActionGroup.ability,
+          ),
+        );
+    state = newState;
+  }
+
   // void updateLength(int index, double length) {
   //   final newState = [...state];
   //   updateLengthHistory(index);

@@ -14,12 +14,16 @@ class MouseWatch extends ConsumerStatefulWidget {
     this.cursor = SystemMouseCursors.basic,
     this.deleteTarget,
     this.lineUpId,
+    this.contextMenuItems,
+    this.onTap,
   });
 
   final String? lineUpId;
   final Widget child;
   final HoveredDeleteTarget? deleteTarget;
   final SystemMouseCursor cursor;
+  final List<ShadContextMenuItem>? contextMenuItems;
+  final VoidCallback? onTap;
   @override
   ConsumerState<MouseWatch> createState() => _MouseWatchState();
 }
@@ -99,6 +103,23 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
           );
     final lineUpNotes = lineUp?.notes;
     final hasLineUpNote = (lineUpNotes?.trim().isNotEmpty ?? false);
+    final menuItems = widget.contextMenuItems ??
+        (widget.lineUpId == null
+            ? null
+            : [
+                ShadContextMenuItem(
+                  leading: Icon(
+                    Icons.delete,
+                    color: Settings.tacticalVioletTheme.destructive,
+                  ),
+                  child: const Text('Delete'),
+                  onPressed: () {
+                    ref
+                        .read(lineUpProvider.notifier)
+                        .deleteLineUpById(widget.lineUpId!);
+                  },
+                ),
+              ]);
 
     final content = MouseRegion(
       cursor: widget.cursor,
@@ -122,9 +143,37 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
       child: widget.child,
     );
 
+    final effectiveOnTap = widget.onTap ??
+        (widget.lineUpId == null
+            ? null
+            : () {
+                showDialog(
+                  context: context,
+                  builder: (context) => LineUpMediaCarousel(
+                    lineUpId: widget.lineUpId!,
+                    images: lineUp!.images,
+                    youtubeLink: lineUp.youtubeLink,
+                  ),
+                );
+              });
+
+    Widget interactiveChild = content;
+    if (effectiveOnTap != null) {
+      interactiveChild = GestureDetector(
+        onTap: effectiveOnTap,
+        child: interactiveChild,
+      );
+    }
+    if (menuItems != null && menuItems.isNotEmpty) {
+      interactiveChild = ShadContextMenuRegion(
+        items: menuItems,
+        child: interactiveChild,
+      );
+    }
+
     return RepaintBoundary(
       child: widget.lineUpId == null
-          ? content
+          ? interactiveChild
           : ShadPortal(
               visible: isMouseInRegion && hasLineUpNote,
               portalBuilder: (context) => Padding(
@@ -155,35 +204,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
               //   follower: Alignment.bottomCenter,
               //   target: Alignment.topCenter,
               // ),
-              child: ShadContextMenuRegion(
-                items: [
-                  ShadContextMenuItem(
-                    leading: Icon(
-                      Icons.delete,
-                      color: Settings.tacticalVioletTheme.destructive,
-                    ),
-                    child: const Text('Delete'),
-                    onPressed: () {
-                      ref
-                          .read(lineUpProvider.notifier)
-                          .deleteLineUpById(widget.lineUpId!);
-                    },
-                  ),
-                ],
-                child: GestureDetector(
-                  child: content,
-                  onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (context) => LineUpMediaCarousel(
-                        lineUpId: widget.lineUpId!,
-                        images: lineUp!.images,
-                        youtubeLink: lineUp.youtubeLink,
-                      ),
-                    );
-                  },
-                ),
-              ),
+              child: interactiveChild,
             ),
     );
   }
