@@ -22,30 +22,18 @@ class MapThemeSettingsSection extends StatelessWidget {
               .lead
               .copyWith(fontWeight: FontWeight.w700),
         ),
-        const SizedBox(height: 4),
-        Text(
-          "Theme assignment stays with a strategy. Theme profiles live in your shared workspace library.",
-          style: ShadTheme.of(context).textTheme.small.copyWith(
-                color: Settings.tacticalVioletTheme.mutedForeground,
-                height: 1.35,
-              ),
-        ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         const SettingsScopeCard(
           scope: SettingsScope.strategy,
           title: "Strategy theme assignment",
-          description:
-              "Choose which theme profile this strategy uses, or customize it without changing the shared library.",
+          description: "Choose or customize the active theme.",
           child: _ActiveThemeCard(),
         ),
-        const SizedBox(height: 14),
-        const _MapThemeSectionDivider(),
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
         const SettingsScopeCard(
           scope: SettingsScope.workspace,
           title: "Theme profile library",
-          description:
-              "Manage reusable profiles here and choose the default profile for newly created strategies.",
+          description: "Reusable profiles for new strategies.",
           child: _ProfileLibrarySection(),
         ),
       ],
@@ -418,18 +406,6 @@ class _ProfileLibrarySectionState
           const SizedBox(height: 6),
         ],
       ],
-    );
-  }
-}
-
-class _MapThemeSectionDivider extends StatelessWidget {
-  const _MapThemeSectionDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 1,
-      color: Settings.tacticalVioletTheme.border.withValues(alpha: 0.9),
     );
   }
 }

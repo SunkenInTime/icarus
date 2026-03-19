@@ -35,7 +35,7 @@ class SettingsTab extends ConsumerWidget {
       child: Padding(
         padding: const EdgeInsets.all(8),
         child: SizedBox(
-          width: 340,
+          width: Settings.sideBarContentWidth,
           child: Material(
             color: Colors.transparent,
             child: SingleChildScrollView(
