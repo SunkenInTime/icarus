@@ -9,6 +9,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/sector_circle_widget.dart';
@@ -186,6 +187,72 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets('counter-rotates the ability icon', (tester) async {
+      const rotation = math.pi / 5;
+
+      await _pumpWidget(
+        tester,
+        const SectorCircleWidget(
+          iconPath: 'assets/agents/Cypher/1.webp',
+          size: 120,
+          outlineColor: Colors.orange,
+          sweepAngleDegrees: 80,
+          hasCenterDot: true,
+          hasPerimeter: false,
+          id: 'sector-rotated',
+          isAlly: true,
+          rotation: rotation,
+        ),
+      );
+
+      expect(
+        _findAbilityTransformByAngle(tester, expectedAngle: -rotation),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('zero rotation leaves the icon transform neutral',
+        (tester) async {
+      await _pumpWidget(
+        tester,
+        const SectorCircleWidget(
+          iconPath: 'assets/agents/Cypher/1.webp',
+          size: 120,
+          outlineColor: Colors.orange,
+          sweepAngleDegrees: 80,
+          hasCenterDot: true,
+          hasPerimeter: false,
+          id: 'sector-zero-rotation',
+          isAlly: true,
+          rotation: 0,
+        ),
+      );
+
+      expect(
+        _findAbilityTransformByAngle(tester, expectedAngle: 0),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('no center dot omits the ability icon', (tester) async {
+      await _pumpWidget(
+        tester,
+        const SectorCircleWidget(
+          iconPath: 'assets/agents/Cypher/1.webp',
+          size: 120,
+          outlineColor: Colors.orange,
+          sweepAngleDegrees: 80,
+          hasCenterDot: false,
+          hasPerimeter: false,
+          id: 'sector-no-center-dot',
+          isAlly: true,
+          rotation: math.pi / 4,
+        ),
+      );
+
+      expect(find.byType(AbilityWidget), findsNothing);
+    });
   });
 
   group('SectorCircleAbility integration', () {
@@ -273,6 +340,45 @@ void main() {
 
       expect(find.byType(SectorCircleWidget), findsOneWidget);
     });
+
+    testWidgets('PlacedWidgetPreview forwards rotation for icon counter-rotation',
+        (tester) async {
+      const rotation = math.pi / 7;
+      final abilityInfo = AbilityInfo(
+        name: 'Sector',
+        iconPath: 'assets/agents/Cypher/1.webp',
+        type: AgentType.cypher,
+        index: 96,
+        abilityData: SectorCircleAbility(
+          iconPath: 'assets/agents/Cypher/1.webp',
+          size: 6.5,
+          outlineColor: Colors.cyan,
+          sweepAngleDegrees: 75,
+        ),
+      );
+      final placedAbility = PlacedAbility(
+        id: 'sector-preview-rotation',
+        data: abilityInfo,
+        position: const Offset(0, 0),
+        rotation: rotation,
+      );
+
+      await _pumpWidget(
+        tester,
+        PlacedWidgetPreview.build(
+          placedAbility,
+          1,
+          rotation: rotation,
+          agentSize: 40,
+          abilitySize: 24,
+        ),
+      );
+
+      expect(
+        _findAbilityTransformByAngle(tester, expectedAngle: -rotation),
+        findsOneWidget,
+      );
+    });
   });
 }
 
@@ -317,6 +423,34 @@ Future<void> _pumpWidget(WidgetTester tester, Widget child) async {
   );
 
   await tester.pump();
+}
+
+Finder _findAbilityTransformByAngle(
+  WidgetTester tester, {
+  required double expectedAngle,
+}) {
+  return find.byWidgetPredicate((widget) {
+    if (widget is! Transform) {
+      return false;
+    }
+
+    final element = tester.element(find.byWidget(widget));
+    final hasAbilityWidgetDescendant = find
+        .descendant(
+          of: find.byElementPredicate((candidate) => candidate == element),
+          matching: find.byType(AbilityWidget),
+        )
+        .evaluate()
+        .isNotEmpty;
+
+    if (!hasAbilityWidgetDescendant) {
+      return false;
+    }
+
+    final matrix = widget.transform;
+    final angle = math.atan2(matrix.entry(1, 0), matrix.entry(0, 0));
+    return (angle - expectedAngle).abs() < 0.0001;
+  });
 }
 
 SectorCirclePainter _sectorPainter(WidgetTester tester) {

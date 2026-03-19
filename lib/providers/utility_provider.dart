@@ -146,12 +146,21 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     final newState = [...state];
     final mapState = ref.read(mapProvider);
     final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
+    final agentSize = ref.read(strategySettingsProvider).agentSize;
     final abilitySize = ref.read(strategySettingsProvider).abilitySize;
     for (final utility in newState) {
-      utility.switchSides(mapScale: mapScale, abilitySize: abilitySize);
+      utility.switchSides(
+        mapScale: mapScale,
+        agentSize: agentSize,
+        abilitySize: abilitySize,
+      );
     }
     for (final utility in poppedUtilities) {
-      utility.switchSides(mapScale: mapScale, abilitySize: abilitySize);
+      utility.switchSides(
+        mapScale: mapScale,
+        agentSize: agentSize,
+        abilitySize: abilitySize,
+      );
     }
 
     state = newState;

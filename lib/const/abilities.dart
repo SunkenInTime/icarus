@@ -268,6 +268,7 @@ class SectorCircleAbility extends Ability {
       id: id,
       isAlly: isAlly,
       lineUpId: lineUpId,
+      rotation: rotation,
     );
   }
 }
@@ -303,9 +304,7 @@ class SquareAbility extends Ability {
     double? abilitySize,
   }) {
     assert(mapScale != null, 'mapScale must be provided');
-    if (abilitySize == null) {
-      abilitySize = Settings.abilitySize;
-    }
+    abilitySize ??= Settings.abilitySize;
 
     return Offset(
       _squareRenderedWidth(

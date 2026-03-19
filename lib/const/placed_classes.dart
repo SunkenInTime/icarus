@@ -1014,6 +1014,7 @@ class PlacedUtility extends PlacedWidget {
 
   Offset _getEffectiveUtilitySize({
     required double mapScale,
+    required double agentSize,
     required double abilitySize,
   }) {
     final utility = UtilityData.utilityWidgets[type]!;
@@ -1038,15 +1039,20 @@ class PlacedUtility extends PlacedWidget {
         mapScale: mapScale,
       );
     }
+    if (UtilityData.isRoleIcon(type)) {
+      return utility.getSize(agentSize: agentSize);
+    }
     return utility.getSize(abilitySize: abilitySize);
   }
 
   void switchSides({
     required double mapScale,
+    required double agentSize,
     required double abilitySize,
   }) {
     final size = _getEffectiveUtilitySize(
       mapScale: mapScale,
+      agentSize: agentSize,
       abilitySize: abilitySize,
     );
     final scaledSize = size.scale(CoordinateSystem.instance.scaleFactor,

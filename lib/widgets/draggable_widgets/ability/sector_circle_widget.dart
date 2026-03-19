@@ -22,6 +22,7 @@ class SectorCircleWidget extends ConsumerWidget {
     required this.id,
     required this.isAlly,
     this.lineUpId,
+    this.rotation,
   });
 
   final String? lineUpId;
@@ -36,6 +37,7 @@ class SectorCircleWidget extends ConsumerWidget {
   final int? opacity;
   final double? innerSize;
   final Color? fillColor;
+  final double? rotation;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -79,10 +81,7 @@ class SectorCircleWidget extends ConsumerWidget {
                   if (hasPerimeter)
                     _buildInnerCircle(coordinateSystem, secondaryScaleSize),
                   if (hasCenterDot)
-                    _buildCenterIcon(
-                      coordinateSystem: coordinateSystem,
-                      ref: ref,
-                    ),
+                    _buildCenterIcon(),
                 ],
               ),
             ),
@@ -120,18 +119,19 @@ class SectorCircleWidget extends ConsumerWidget {
     );
   }
 
-  Widget _buildCenterIcon({
-    required CoordinateSystem coordinateSystem,
-    required WidgetRef ref,
-  }) {
+  Widget _buildCenterIcon() {
     return Positioned.fill(
       child: Align(
         alignment: Alignment.center,
-        child: AbilityWidget(
-          lineUpId: lineUpId,
-          iconPath: iconPath,
-          id: id,
-          isAlly: isAlly,
+        child: Transform.rotate(
+          angle: -(rotation ?? 0),
+          alignment: Alignment.center,
+          child: AbilityWidget(
+            lineUpId: lineUpId,
+            iconPath: iconPath,
+            id: id,
+            isAlly: isAlly,
+          ),
         ),
       ),
     );
