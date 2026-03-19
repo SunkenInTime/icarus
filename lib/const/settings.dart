@@ -50,8 +50,8 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 53;
-  static const String versionName = "3.3.7";
+  static const int versionNumber = 54;
+  static const String versionName = "4.0.0";
   static final Uri desktopUpdaterArchiveUrl = Uri.parse(
     "https://sunkenintime.github.io/icarus/updates/windows/stable/app-archive.json",
   );
