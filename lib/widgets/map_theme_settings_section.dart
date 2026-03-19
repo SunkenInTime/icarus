@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class MapThemeSettingsSection extends StatelessWidget {
@@ -11,14 +12,32 @@ class MapThemeSettingsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return const Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("Map Theme", style: ShadTheme.of(context).textTheme.lead),
-        const SizedBox(height: 10),
-        const _ActiveThemeCard(),
-        const SizedBox(height: 16),
-        const _ProfileLibrarySection(),
+        SettingsScopeCard(
+          scope: SettingsScope.strategy,
+          title: "Map theme profiles",
+          description:
+              "Choose the active theme here. You can also set the default profile for new strategies.",
+          child: _ThemeProfilesSection(),
+        ),
+      ],
+    );
+  }
+}
+
+class _ThemeProfilesSection extends StatelessWidget {
+  const _ThemeProfilesSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ActiveThemeCard(),
+        SizedBox(height: 12),
+        _ProfileLibrarySection(),
       ],
     );
   }
@@ -66,60 +85,47 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
       orElse: () => MapThemeProfilesProvider.immutableDefaultProfile,
     );
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.card,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: const [Settings.cardForegroundBackdrop],
-        border: Border.all(
-          color: isOverride
-              ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.4)
-              : Settings.tacticalVioletTheme.border,
-        ),
-      ),
-      child: AnimatedSize(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        alignment: Alignment.topCenter,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
+      alignment: Alignment.topCenter,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Current assignment",
+            style: ShadTheme.of(context).textTheme.small.copyWith(
+                  color: Settings.tacticalVioletTheme.mutedForeground,
+                  letterSpacing: 0.3,
+                ),
+          ),
+          const SizedBox(height: 10),
+          if (!hasActiveStrategy)
             Text(
-              "Active Theme",
+              "Open or create a strategy to assign a map theme.",
               style: ShadTheme.of(context).textTheme.small.copyWith(
                     color: Settings.tacticalVioletTheme.mutedForeground,
-                    letterSpacing: 0.3,
                   ),
+            )
+          else
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              switchInCurve: Curves.easeOut,
+              switchOutCurve: Curves.easeIn,
+              layoutBuilder: (currentChild, previousChildren) {
+                return Stack(
+                  alignment: Alignment.topCenter,
+                  children: [
+                    ...previousChildren,
+                    if (currentChild != null) currentChild,
+                  ],
+                );
+              },
+              child: isOverride
+                  ? _buildOverrideState(context, effectivePalette)
+                  : _buildProfileAssignedState(context, assignedProfile),
             ),
-            const SizedBox(height: 10),
-            if (!hasActiveStrategy)
-              Text(
-                "Open a strategy to manage map themes.",
-                style: ShadTheme.of(context).textTheme.small.copyWith(
-                      color: Settings.tacticalVioletTheme.mutedForeground,
-                    ),
-              )
-            else
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 250),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                layoutBuilder: (currentChild, previousChildren) {
-                  return Stack(
-                    alignment: Alignment.topCenter,
-                    children: [
-                      ...previousChildren,
-                      if (currentChild != null) currentChild,
-                    ],
-                  );
-                },
-                child: isOverride
-                    ? _buildOverrideState(context, effectivePalette)
-                    : _buildProfileAssignedState(context, assignedProfile),
-              ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -191,7 +197,7 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
               color:
-                  Settings.tacticalVioletTheme.primary.withValues(alpha: 0.15),
+                  Settings.tacticalVioletTheme.primary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -352,7 +358,7 @@ class _ProfileLibrarySectionState
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              "Profile Library",
+              "Profiles",
               style: ShadTheme.of(context).textTheme.small.copyWith(
                     color: Settings.tacticalVioletTheme.mutedForeground,
                     letterSpacing: 0.3,
@@ -536,16 +542,15 @@ class _ProfileListRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(10),
-          boxShadow: const [Settings.cardForegroundBackdrop],
           border: Border.all(
             color: isSelected
-                ? Settings.tacticalVioletTheme.primary
+                ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.5)
                 : Settings.tacticalVioletTheme.border,
-            width: isSelected ? 1.5 : 1,
+            width: 1,
           ),
           color: isSelected
-              ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.1)
-              : Settings.tacticalVioletTheme.card,
+              ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.08)
+              : Settings.tacticalVioletTheme.secondary.withValues(alpha: 0.28),
         ),
         child: Row(
           children: [
@@ -710,7 +715,9 @@ class _EditableSwatch extends StatelessWidget {
               height: 42,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Settings.tacticalVioletTheme.border),
+                border: Border.all(
+                  color: Settings.tacticalVioletTheme.border,
+                ),
                 color: color,
               ),
             ),
