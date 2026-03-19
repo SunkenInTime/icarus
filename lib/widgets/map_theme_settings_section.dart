@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -287,9 +288,9 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
                 ),
           ),
           const SizedBox(height: 6),
-          ShadInput(
+          CustomTextField(
             controller: _saveNameController,
-            placeholder: const Text("Enter a name"),
+            hintText: "Enter a name",
           ),
           const SizedBox(height: 8),
           Align(
@@ -820,9 +821,16 @@ Future<String?> _showRenameDialog({
         ],
         child: Material(
           color: Colors.transparent,
-          child: ShadInput(
-            controller: controller,
-            placeholder: const Text("Profile name"),
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Consumer(
+              builder: (context, ref, _) {
+                return CustomTextField(
+                  controller: controller,
+                  hintText: "Profile name",
+                );
+              },
+            ),
           ),
         ),
       );
