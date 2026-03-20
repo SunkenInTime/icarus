@@ -31,7 +31,6 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
-import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:hive_ce/hive.dart';
@@ -3511,7 +3510,6 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   // Flush currently active page (uses activePageID). Safe if null/missing.
   Future<void> _syncCurrentPageToHive() async {
-    ref.read(textDraftProvider.notifier).commitAllDrafts();
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     log("Syncing current page to hive for strategy ${state.id}");
     final strat = box.get(state.id);
@@ -3531,7 +3529,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       drawingData: ref.read(drawingProvider).elements,
       agentData: ref.read(agentProvider),
       abilityData: ref.read(abilityProvider),
-      textData: ref.read(textProvider),
+      textData: ref.read(textProvider.notifier).snapshotForPersistence(),
       imageData: ref.read(placedImageProvider).images,
       utilityData: ref.read(utilityProvider),
       isAttack: ref.read(mapProvider).isAttack,

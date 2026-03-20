@@ -214,6 +214,17 @@ class TextProvider extends Notifier<List<PlacedText>> {
     return jsonEncode(jsonList);
   }
 
+  List<PlacedText> snapshotForPersistence() {
+    final drafts = ref.read(textDraftProvider);
+    return state
+        .map(
+          (text) => text.copyWith(
+            text: drafts[text.id] ?? text.text,
+          ),
+        )
+        .toList(growable: false);
+  }
+
   void fromHive(List<PlacedText> hiveText) {
     ref.read(textDraftProvider.notifier).clearAllDrafts();
     poppedText = [];
