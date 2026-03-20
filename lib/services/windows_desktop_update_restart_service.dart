@@ -125,7 +125,9 @@ try {
   if (Test-Path -LiteralPath \$updateDirectory) {
     \$updateItems = @(Get-ChildItem -LiteralPath \$updateDirectory -Force -ErrorAction SilentlyContinue)
     if (\$updateItems.Count -gt 0) {
-      Copy-Item -LiteralPath \$updateItems.FullName -Destination \$installDirectory -Recurse -Force
+      foreach (\$updateItem in \$updateItems) {
+        Copy-Item -LiteralPath \$updateItem.FullName -Destination \$installDirectory -Recurse -Force
+      }
     }
     Remove-Item -LiteralPath \$updateDirectory -Recurse -Force
   }

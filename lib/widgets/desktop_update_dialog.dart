@@ -242,6 +242,11 @@ class DesktopUpdateDialog extends StatelessWidget {
                   stackTrace: stackTrace,
                   source: 'DesktopUpdateDialog.restartToUpdate',
                 );
+                if (!context.mounted) {
+                  return;
+                }
+                controller.makeSkipUpdate();
+                Navigator.of(context).pop();
               }
             }
           },

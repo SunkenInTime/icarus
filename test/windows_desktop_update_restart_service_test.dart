@@ -38,7 +38,13 @@ void main() {
     expect(
       script,
       contains(
-        r'Copy-Item -LiteralPath $updateItems.FullName -Destination $installDirectory -Recurse -Force',
+        r'foreach ($updateItem in $updateItems) {',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        r'Copy-Item -LiteralPath $updateItem.FullName -Destination $installDirectory -Recurse -Force',
       ),
     );
     expect(
