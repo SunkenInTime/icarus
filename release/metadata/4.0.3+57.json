@@ -1,0 +1,21 @@
+{
+    "version":  "4.0.3+57",
+    "shortVersion":  57,
+    "title":  "4.0.3 Release",
+    "description":  "Desktop release metadata for Icarus.",
+    "date":  "2026-03-20",
+    "mandatory":  false,
+    "channels":  [
+                     "desktop",
+                     "stable"
+                 ],
+    "platforms":  [
+                      "windows"
+                  ],
+    "changes":  [
+                    {
+                        "message":  "Autosave now persists in-progress text drafts without committing live edits or resetting the text cursor.",
+                        "type":  "other"
+                    }
+                ]
+}
