@@ -100,6 +100,24 @@ class ConvexStrategyRepository {
     return controller.stream;
   }
 
+  Future<List<CloudFolderSummary>> fetchFolderPath(
+      String? folderPublicId) async {
+    if (folderPublicId == null) {
+      return const [];
+    }
+
+    final response = await _client.query('folders:getPath', {
+      'folderPublicId': folderPublicId,
+    });
+
+    return decodeConvexList(response)
+        .whereType<Map>()
+        .map((item) => CloudFolderSummary.fromJson(
+              Map<String, dynamic>.from(item),
+            ))
+        .toList(growable: false);
+  }
+
   Stream<RemoteStrategyHeader> watchStrategyHeader(String strategyPublicId) {
     final controller = StreamController<RemoteStrategyHeader>.broadcast();
     dynamic subscription;
@@ -216,6 +234,9 @@ class ConvexStrategyRepository {
     required String publicId,
     required String name,
     String? parentFolderPublicId,
+    int? iconIndex,
+    String? colorKey,
+    int? customColorValue,
   }) async {
     await _client.mutation(
       name: 'folders:create',
@@ -224,6 +245,9 @@ class ConvexStrategyRepository {
         'name': name,
         if (parentFolderPublicId != null)
           'parentFolderPublicId': parentFolderPublicId,
+        if (iconIndex != null) 'iconIndex': iconIndex,
+        if (colorKey != null) 'colorKey': colorKey,
+        if (customColorValue != null) 'customColorValue': customColorValue,
       },
     );
   }

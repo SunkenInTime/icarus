@@ -1,6 +1,10 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { assertStrategyRole, requireCurrentUser } from "./lib/auth";
+import {
+  assertStrategyRole,
+  getStrategyRoleForUser,
+  requireCurrentUser,
+} from "./lib/auth";
 import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
 
 async function listAccessibleStrategies(ctx: any, userId: any) {
@@ -58,10 +62,12 @@ export const listForFolder = query({
       }
     }
 
-    return all
+    const filtered = all
       .filter((s) => s.folderId === folderId)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map((s) => ({
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+
+    return Promise.all(
+      filtered.map(async (s) => ({
         publicId: s.publicId,
         name: s.name,
         mapData: s.mapData,
@@ -69,10 +75,14 @@ export const listForFolder = query({
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
         folderPublicId:
-          s.folderId === undefined ? null : folderIdToPublicId.get(s.folderId) ?? null,
+          s.folderId === undefined
+            ? null
+            : folderIdToPublicId.get(s.folderId) ?? null,
         themeProfileId: s.themeProfileId ?? null,
         themeOverridePalette: s.themeOverridePalette ?? null,
-      }));
+        role: await getStrategyRoleForUser(ctx, s, user._id),
+      })),
+    );
   },
 });
 
