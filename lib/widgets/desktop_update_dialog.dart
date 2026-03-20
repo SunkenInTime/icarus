@@ -1,7 +1,8 @@
 import 'package:desktop_updater/desktop_updater.dart';
-import 'package:desktop_updater/updater_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/windows_desktop_update_controller.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -11,7 +12,7 @@ class DesktopUpdateDialogListener extends StatefulWidget {
     required this.controller,
   });
 
-  final DesktopUpdaterController controller;
+  final WindowsDesktopUpdateController controller;
 
   @override
   State<DesktopUpdateDialogListener> createState() =>
@@ -75,7 +76,7 @@ class DesktopUpdateDialog extends StatelessWidget {
     required this.controller,
   });
 
-  final DesktopUpdaterController controller;
+  final WindowsDesktopUpdateController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -230,7 +231,16 @@ class DesktopUpdateDialog extends StatelessWidget {
             );
 
             if (confirmed) {
-              controller.restartApp();
+              try {
+                await controller.restartApp();
+              } catch (error, stackTrace) {
+                AppErrorReporter.reportError(
+                  'Failed to apply the downloaded desktop update. Please try downloading it again.',
+                  error: error,
+                  stackTrace: stackTrace,
+                  source: 'DesktopUpdateDialog.restartToUpdate',
+                );
+              }
             }
           },
           leading: const Icon(LucideIcons.rotateCcw),
@@ -250,7 +260,18 @@ class DesktopUpdateDialog extends StatelessWidget {
           ),
         ),
       ShadButton(
-        onPressed: controller.downloadUpdate,
+        onPressed: () async {
+          try {
+            await controller.downloadUpdate();
+          } catch (error, stackTrace) {
+            AppErrorReporter.reportError(
+              'Failed to download the desktop update. Please try again.',
+              error: error,
+              stackTrace: stackTrace,
+              source: 'DesktopUpdateDialog.downloadUpdate',
+            );
+          }
+        },
         leading: const Icon(LucideIcons.download),
         child: Text(
           controller.getLocalization?.downloadText ?? 'Download Update',
@@ -274,7 +295,7 @@ class _StatusPanel extends StatelessWidget {
     required this.controller,
   });
 
-  final DesktopUpdaterController controller;
+  final WindowsDesktopUpdateController controller;
 
   @override
   Widget build(BuildContext context) {

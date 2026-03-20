@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:desktop_updater/desktop_updater.dart';
-import 'package:desktop_updater/updater_controller.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +12,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/windows_desktop_update_controller.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/current_path_bar.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
@@ -36,7 +36,7 @@ class FolderNavigator extends ConsumerStatefulWidget {
 class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   bool _warnedOnce = false;
   bool _hasPromptedUpdateDialog = false;
-  DesktopUpdaterController? _desktopUpdaterController;
+  WindowsDesktopUpdateController? _desktopUpdaterController;
   final GlobalKey _importExportButtonKey = GlobalKey();
   final ShadPopoverController _importExportPopoverController =
       ShadPopoverController();
@@ -189,7 +189,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         final bool isDirectWindowsInstall =
             !kIsWeb && Platform.isWindows && !result.isSupported;
         if (isDirectWindowsInstall && _desktopUpdaterController == null) {
-          _desktopUpdaterController = DesktopUpdaterController(
+          _desktopUpdaterController = WindowsDesktopUpdateController(
             appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
             localization: const DesktopUpdateLocalization(
               updateAvailableText: 'Update Available',

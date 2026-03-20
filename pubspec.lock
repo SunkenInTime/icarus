@@ -226,7 +226,7 @@ packages:
     source: hosted
     version: "2.3.4"
   cryptography_plus:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: cryptography_plus
       sha256: "34db787df4f4740a39474b6fb0a610aa6dc13a5b5b68754b4787a79939ac0454"
