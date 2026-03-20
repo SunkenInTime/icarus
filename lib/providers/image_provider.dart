@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -46,7 +47,20 @@ class ImageState {
 }
 
 class PlacedImageProvider extends Notifier<ImageState> {
+  static final double _legacyWidthToWorldFactor =
+      (1000.0 * (16 / 9)) / CoordinateSystem.screenShotSize.width;
+
   List<PlacedImage> poppedImages = [];
+
+  static PlacedImage _migrateLoadedImage(PlacedImage image) {
+    final migrated = image.copyWith(scale: ImageScalePolicy.clamp(image.scale));
+    if (!migrated.usesWorldSize) {
+      migrated.scale =
+          ImageScalePolicy.clamp(migrated.scale * _legacyWidthToWorldFactor);
+      migrated.markSizeAsWorld();
+    }
+    return migrated;
+  }
 
   @override
   ImageState build() {
@@ -134,6 +148,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
       id: imageID,
       aspectRatio: effectiveAspectRatio,
       scale: ImageScalePolicy.defaultWidth,
+      sizeVersion: worldSizedMediaVersion,
       tagColorValue: tagColorValue,
     );
 
@@ -320,8 +335,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
     final images = jsonList
         .map((json) => PlacedImage.fromJson(json as Map<String, dynamic>))
-        .map((image) =>
-            image.copyWith(scale: ImageScalePolicy.clamp(image.scale)))
+        .map(_migrateLoadedImage)
         .toList();
 
     return images;
@@ -338,8 +352,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
     );
 
     return images
-        .map((image) =>
-            image.copyWith(scale: ImageScalePolicy.clamp(image.scale)))
+        .map(_migrateLoadedImage)
         .toList();
   }
 
@@ -394,10 +407,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
   void fromHive(List<PlacedImage> hiveImages) {
     poppedImages = [];
     state = state.copyWith(
-      images: hiveImages
-          .map((image) =>
-              image.copyWith(scale: ImageScalePolicy.clamp(image.scale)))
-          .toList(),
+      images: hiveImages.map(_migrateLoadedImage).toList(),
     );
   }
 

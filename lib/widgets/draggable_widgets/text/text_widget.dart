@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
@@ -11,10 +12,12 @@ class TextWidget extends ConsumerWidget {
     this.isFeedback = false,
     required this.id,
     required this.size,
+    required this.fontSize,
     this.tagColorValue,
   });
 
   final double size;
+  final double fontSize;
   final String text;
   final bool isFeedback;
   final String id;
@@ -26,6 +29,7 @@ class TextWidget extends ConsumerWidget {
       return _FeedbackTextWidget(
         text: text,
         size: size,
+        fontSize: fontSize,
         tagColorValue: tagColorValue,
       );
     }
@@ -34,6 +38,7 @@ class TextWidget extends ConsumerWidget {
       id: id,
       text: text,
       size: size,
+      fontSize: fontSize,
       tagColorValue: tagColorValue,
     );
   }
@@ -50,12 +55,14 @@ class _EditableTextWidget extends ConsumerStatefulWidget {
     required this.id,
     required this.text,
     required this.size,
+    required this.fontSize,
     this.tagColorValue,
   });
 
   final String id;
   final String text;
   final double size;
+  final double fontSize;
   final int? tagColorValue;
 
   @override
@@ -163,14 +170,10 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
           child: _TextBoxFrame(
             size: widget.size,
             tagColorValue: widget.tagColorValue,
-            child: TextField(
-              focusNode: _focusNode,
+            child: _SharedTextField(
               controller: _controller,
-              style: const TextStyle(fontSize: 12),
-              decoration: _textFieldDecoration,
-              maxLines: null,
-              minLines: null,
-              expands: true,
+              focusNode: _focusNode,
+              fontSize: widget.fontSize,
               onChanged: (value) {
                 _draftNotifier.setDraft(widget.id, value);
               },
@@ -189,11 +192,13 @@ class _FeedbackTextWidget extends StatefulWidget {
   const _FeedbackTextWidget({
     required this.text,
     required this.size,
+    required this.fontSize,
     this.tagColorValue,
   });
 
   final String text;
   final double size;
+  final double fontSize;
   final int? tagColorValue;
 
   @override
@@ -231,17 +236,57 @@ class _FeedbackTextWidgetState extends State<_FeedbackTextWidget> {
       size: widget.size,
       tagColorValue: widget.tagColorValue,
       child: IgnorePointer(
-        child: TextField(
+        child: _SharedTextField(
           controller: _controller,
+          fontSize: widget.fontSize,
           readOnly: true,
           enableInteractiveSelection: false,
           showCursor: false,
-          decoration: _textFieldDecoration,
-          maxLines: null,
-          minLines: null,
-          expands: true,
         ),
       ),
+    );
+  }
+}
+
+class _SharedTextField extends StatelessWidget {
+  const _SharedTextField({
+    required this.controller,
+    required this.fontSize,
+    this.focusNode,
+    this.readOnly = false,
+    this.enableInteractiveSelection = true,
+    this.showCursor = true,
+    this.onChanged,
+    this.onTapOutside,
+  });
+
+  final TextEditingController controller;
+  final double fontSize;
+  final FocusNode? focusNode;
+  final bool readOnly;
+  final bool enableInteractiveSelection;
+  final bool showCursor;
+  final ValueChanged<String>? onChanged;
+  final TapRegionCallback? onTapOutside;
+
+  @override
+  Widget build(BuildContext context) {
+    final coordinateSystem = CoordinateSystem.instance;
+    return TextField(
+      focusNode: focusNode,
+      controller: controller,
+      readOnly: readOnly,
+      enableInteractiveSelection: enableInteractiveSelection,
+      showCursor: showCursor,
+      style: TextStyle(
+        fontSize: coordinateSystem.worldHeightToScreen(fontSize),
+      ),
+      decoration: _textFieldDecoration,
+      maxLines: null,
+      minLines: null,
+      expands: true,
+      onChanged: onChanged,
+      onTapOutside: onTapOutside,
     );
   }
 }
@@ -259,8 +304,9 @@ class _TextBoxFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final coordinateSystem = CoordinateSystem.instance;
     return SizedBox(
-      width: size,
+      width: coordinateSystem.worldWidthToScreen(size),
       child: IntrinsicHeight(
         child: Row(
           children: [

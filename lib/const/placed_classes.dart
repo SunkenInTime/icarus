@@ -13,6 +13,8 @@ import 'package:json_annotation/json_annotation.dart';
 
 part "placed_classes.g.dart";
 
+const int worldSizedMediaVersion = 1;
+
 Offset getFlippedPosition({
   required Offset position,
   required Offset scaledSize,
@@ -124,18 +126,38 @@ class PlacedWidget extends HiveObject {
 
 @JsonSerializable()
 class PlacedText extends PlacedWidget {
+  static const double defaultWidth = 185;
+  static const double defaultFontSize = 16;
+  static const int currentSizeVersion = worldSizedMediaVersion;
+
   PlacedText({
     required super.position,
     required super.id,
-    this.size = 200,
+    this.size = 185,
+    this.fontSize = 16,
+    this.sizeVersion,
     this.tagColorValue,
   });
 
   String text = "";
+
+  @JsonKey(defaultValue: 185.0)
   double size;
+
+  @JsonKey(defaultValue: defaultFontSize)
+  double fontSize;
+
+  @JsonKey(defaultValue: null)
+  int? sizeVersion;
 
   @JsonKey(defaultValue: null)
   int? tagColorValue;
+
+  bool get usesWorldSize => (sizeVersion ?? 0) >= currentSizeVersion;
+
+  void markSizeAsWorld() {
+    sizeVersion = currentSizeVersion;
+  }
 
   void commitText(String nextText) {
     final action = TextContentAction(text: text);
@@ -187,6 +209,29 @@ class PlacedText extends PlacedWidget {
   @override
   Map<String, dynamic> toJson() => _$PlacedTextToJson(this);
 
+  PlacedText copyWith({
+    Offset? position,
+    String? id,
+    double? size,
+    double? fontSize,
+    int? sizeVersion,
+    int? tagColorValue,
+    String? text,
+    bool? isDeleted,
+  }) {
+    final copied = PlacedText(
+      position: position ?? this.position,
+      id: id ?? this.id,
+      size: size ?? this.size,
+      fontSize: fontSize ?? this.fontSize,
+      sizeVersion: sizeVersion ?? this.sizeVersion,
+      tagColorValue: tagColorValue ?? this.tagColorValue,
+    );
+    copied.text = text ?? this.text;
+    copied.isDeleted = isDeleted ?? this.isDeleted;
+    return copied;
+  }
+
   void switchSides(Offset size) {
     position = getFlippedPosition(position: position, scaledSize: size);
 
@@ -209,12 +254,15 @@ class PlacedText extends PlacedWidget {
 
 @JsonSerializable()
 class PlacedImage extends PlacedWidget {
+  static const int currentSizeVersion = worldSizedMediaVersion;
+
   PlacedImage({
     required super.position,
     required super.id,
     required this.aspectRatio,
     required this.scale,
     required this.fileExtension,
+    this.sizeVersion,
     this.tagColorValue,
   });
 
@@ -224,9 +272,18 @@ class PlacedImage extends PlacedWidget {
   double scale;
 
   @JsonKey(defaultValue: null)
+  int? sizeVersion;
+
+  @JsonKey(defaultValue: null)
   int? tagColorValue;
 
   String link = "";
+
+  bool get usesWorldSize => (sizeVersion ?? 0) >= currentSizeVersion;
+
+  void markSizeAsWorld() {
+    sizeVersion = currentSizeVersion;
+  }
 
   void updateLink(String link) {
     this.link = link;
@@ -267,6 +324,7 @@ class PlacedImage extends PlacedWidget {
     double? aspectRatio,
     double? scale,
     String? fileExtension,
+    int? sizeVersion,
     int? tagColorValue,
     bool? isDeleted,
     String? link,
@@ -277,12 +335,13 @@ class PlacedImage extends PlacedWidget {
       aspectRatio: aspectRatio ?? this.aspectRatio,
       scale: scale ?? this.scale,
       fileExtension: fileExtension ?? this.fileExtension,
+      sizeVersion: sizeVersion ?? this.sizeVersion,
       tagColorValue: tagColorValue ?? this.tagColorValue,
     );
     // Base class field
     // cloned.isDeleted = isDeleted ?? this.isDeleted;
     // Mutable field specific to PlacedImage
-    cloned.link = this.link;
+    cloned.link = link ?? this.link;
     return cloned;
   }
 

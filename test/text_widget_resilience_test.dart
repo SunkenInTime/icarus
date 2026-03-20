@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
@@ -21,6 +22,7 @@ class _NoopActionProvider extends ActionProvider {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  CoordinateSystem(playAreaSize: const Size(1920, 1080));
 
   ProviderContainer createContainer() {
     final container = ProviderContainer(
@@ -47,6 +49,7 @@ void main() {
                     id: placedText.id,
                     text: placedText.text,
                     size: placedText.size,
+                    fontSize: placedText.fontSize,
                     tagColorValue: placedText.tagColorValue,
                   );
                 },
@@ -97,6 +100,7 @@ void main() {
                 id: 'editable',
                 text: 'same text\nsecond line',
                 size: 220,
+                fontSize: 16,
                 isFeedback: false,
               ),
               SizedBox(height: 16),
@@ -104,6 +108,7 @@ void main() {
                 id: 'feedback',
                 text: 'same text\nsecond line',
                 size: 220,
+                fontSize: 16,
                 isFeedback: true,
               ),
             ],

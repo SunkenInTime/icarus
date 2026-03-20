@@ -1,0 +1,29 @@
+{
+  "version": "4.0.2+56",
+  "shortVersion": 56,
+  "title": "4.0.2 Release",
+  "description": "Desktop release metadata for Icarus.",
+  "date": "2026-03-20",
+  "mandatory": false,
+  "channels": [
+    "desktop",
+    "stable"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "changes": [
+    {
+      "message": "Placed text and images now use world-based sizing so they stay proportional to the map instead of using screen-only dimensions.",
+      "type": "other"
+    },
+    {
+      "message": "Text now scales with the coordinate system and uses a larger default font size for better readability.",
+      "type": "other"
+    },
+    {
+      "message": "Existing saved strategies automatically migrate legacy text and image sizes to the new sizing model.",
+      "type": "other"
+    }
+  ]
+}

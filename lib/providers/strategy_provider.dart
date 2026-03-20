@@ -668,13 +668,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     List<PlacedText> shiftTexts(List<PlacedText> texts) {
       return [
         for (final text in texts)
-          PlacedText(
+          text.copyWith(
             position: shift(text.position),
-            id: text.id,
-            size: text.size,
           )
-            ..text = text.text
-            ..isDeleted = text.isDeleted
       ];
     }
 

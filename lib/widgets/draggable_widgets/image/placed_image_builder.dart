@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
@@ -64,9 +65,20 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
       return ImageScaleController(
         isDragging: isDragging,
         onPanUpdate: (details) {
+          final renderBox = context.findRenderObject() as RenderBox?;
+          if (renderBox == null) return;
+
+          final topLeftGlobal = renderBox.localToGlobal(Offset.zero);
+          final screenZoom = ref.read(screenZoomProvider);
+          final widthInScreenPixels =
+              details.globalPosition.dx - topLeftGlobal.dx;
+          final widthInContentSpace = widthInScreenPixels / screenZoom;
+          final widthInWorldSpace =
+              CoordinateSystem.instance.screenWidthToWorld(widthInContentSpace);
+
           setState(() {
             isPanning = true;
-            localScale = ImageScalePolicy.clamp(details.delta.dx + localScale!);
+            localScale = ImageScalePolicy.clamp(widthInWorldSpace);
           });
         },
         onPanEnd: (details) {

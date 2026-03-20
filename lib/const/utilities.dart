@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/image_utility_widget.dart';
@@ -261,7 +262,7 @@ class TextToolData implements DraggableData {
   });
 
   factory TextToolData.defaults({int? tagColorValue}) {
-    const width = 200.0;
+    const width = 185.0;
     const height = 40.0;
     return TextToolData(
       centerPoint: const Offset(width / 2, height / 2),
@@ -275,8 +276,12 @@ class TextToolData implements DraggableData {
     required double scaleFactor,
     required double screenZoom,
   }) {
-    return centerPoint.scale(
-        scaleFactor * screenZoom, scaleFactor * screenZoom);
+    final coordinateSystem = CoordinateSystem.instance;
+    final scaledCenter = Offset(
+      coordinateSystem.worldWidthToScreen(centerPoint.dx),
+      coordinateSystem.worldHeightToScreen(centerPoint.dy),
+    );
+    return scaledCenter.scale(screenZoom, screenZoom);
   }
 }
 

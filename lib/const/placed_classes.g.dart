@@ -24,7 +24,9 @@ PlacedText _$PlacedTextFromJson(Map<String, dynamic> json) => PlacedText(
       position: const OffsetConverter()
           .fromJson(json['position'] as Map<String, dynamic>),
       id: json['id'] as String,
-      size: (json['size'] as num?)?.toDouble() ?? 200,
+      size: (json['size'] as num?)?.toDouble() ?? 185.0,
+      fontSize: (json['fontSize'] as num?)?.toDouble() ?? 20.0,
+      sizeVersion: (json['sizeVersion'] as num?)?.toInt(),
       tagColorValue: (json['tagColorValue'] as num?)?.toInt(),
     )
       ..isDeleted = json['isDeleted'] as bool? ?? false
@@ -37,6 +39,8 @@ Map<String, dynamic> _$PlacedTextToJson(PlacedText instance) =>
       'position': const OffsetConverter().toJson(instance.position),
       'text': instance.text,
       'size': instance.size,
+      'fontSize': instance.fontSize,
+      'sizeVersion': instance.sizeVersion,
       'tagColorValue': instance.tagColorValue,
     };
 
@@ -47,6 +51,7 @@ PlacedImage _$PlacedImageFromJson(Map<String, dynamic> json) => PlacedImage(
       aspectRatio: (json['aspectRatio'] as num).toDouble(),
       scale: (json['scale'] as num).toDouble(),
       fileExtension: json['fileExtension'] as String?,
+      sizeVersion: (json['sizeVersion'] as num?)?.toInt(),
       tagColorValue: (json['tagColorValue'] as num?)?.toInt(),
     )
       ..isDeleted = json['isDeleted'] as bool? ?? false
@@ -60,6 +65,7 @@ Map<String, dynamic> _$PlacedImageToJson(PlacedImage instance) =>
       'aspectRatio': instance.aspectRatio,
       'fileExtension': instance.fileExtension,
       'scale': instance.scale,
+      'sizeVersion': instance.sizeVersion,
       'tagColorValue': instance.tagColorValue,
       'link': instance.link,
     };

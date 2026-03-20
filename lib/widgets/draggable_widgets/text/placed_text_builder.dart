@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -27,7 +28,7 @@ class PlacedTextBuilder extends ConsumerStatefulWidget {
 }
 
 class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
-  static const double minSize = 50;
+  static const double minSize = 60;
   static const List<Color> _tagPalette = [
     Color(0xFF22C55E),
     Color(0xFF3B82F6),
@@ -73,10 +74,12 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         final widthInScreenPixels =
             details.globalPosition.dx - leftEdgeGlobal.dx;
         final widthInContentSpace = widthInScreenPixels / scale;
+        final widthInWorldSpace =
+            CoordinateSystem.instance.screenWidthToWorld(widthInContentSpace);
 
         setState(() {
           isPanning = true;
-          localSize = widthInContentSpace.clamp(minSize, double.infinity);
+          localSize = widthInWorldSpace.clamp(minSize, double.infinity);
         });
       },
       onPanEnd: (details) {
@@ -97,6 +100,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
               id: widget.placedText.id,
               text: draftText ?? widget.placedText.text,
               size: localSize!,
+              fontSize: widget.placedText.fontSize,
               tagColorValue: widget.placedText.tagColorValue,
               isFeedback: true,
             ),
@@ -131,6 +135,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
               id: widget.placedText.id,
               text: widget.placedText.text,
               size: localSize!,
+              fontSize: widget.placedText.fontSize,
               tagColorValue: widget.placedText.tagColorValue,
               isFeedback: false,
             ),

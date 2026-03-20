@@ -539,6 +539,7 @@ class PlacedWidgetPreview {
         text: w.text,
         id: w.id,
         size: textSize ?? w.size,
+        fontSize: w.fontSize,
         tagColorValue: w.tagColorValue,
       );
     }

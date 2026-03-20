@@ -278,6 +278,8 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                 id: uuid.v4(),
                 position: normalizedPosition,
                 size: textData.width,
+                fontSize: 16,
+                sizeVersion: worldSizedMediaVersion,
                 tagColorValue: textData.tagColorValue,
               );
               ref.read(textProvider.notifier).addText(placedText);

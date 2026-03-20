@@ -270,7 +270,9 @@ class PlacedTextAdapter extends TypeAdapter<PlacedText> {
     return PlacedText(
       position: fields[4] as Offset,
       id: fields[2] as String,
-      size: fields[1] == null ? 200 : (fields[1] as num).toDouble(),
+      size: fields[1] == null ? 185 : (fields[1] as num).toDouble(),
+      fontSize: fields[6] == null ? 20 : (fields[6] as num).toDouble(),
+      sizeVersion: (fields[7] as num?)?.toInt(),
       tagColorValue: (fields[5] as num?)?.toInt(),
     )
       ..text = fields[0] as String
@@ -280,7 +282,7 @@ class PlacedTextAdapter extends TypeAdapter<PlacedText> {
   @override
   void write(BinaryWriter writer, PlacedText obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.text)
       ..writeByte(1)
@@ -292,7 +294,11 @@ class PlacedTextAdapter extends TypeAdapter<PlacedText> {
       ..writeByte(4)
       ..write(obj.position)
       ..writeByte(5)
-      ..write(obj.tagColorValue);
+      ..write(obj.tagColorValue)
+      ..writeByte(6)
+      ..write(obj.fontSize)
+      ..writeByte(7)
+      ..write(obj.sizeVersion);
   }
 
   @override
@@ -322,6 +328,7 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       aspectRatio: (fields[1] as num).toDouble(),
       scale: (fields[2] as num).toDouble(),
       fileExtension: fields[8] as String?,
+      sizeVersion: (fields[10] as num?)?.toInt(),
       tagColorValue: (fields[9] as num?)?.toInt(),
     )
       ..link = fields[3] as String
@@ -331,7 +338,7 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
   @override
   void write(BinaryWriter writer, PlacedImage obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(9)
       ..writeByte(1)
       ..write(obj.aspectRatio)
       ..writeByte(2)
@@ -347,7 +354,9 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       ..writeByte(8)
       ..write(obj.fileExtension)
       ..writeByte(9)
-      ..write(obj.tagColorValue);
+      ..write(obj.tagColorValue)
+      ..writeByte(10)
+      ..write(obj.sizeVersion);
   }
 
   @override

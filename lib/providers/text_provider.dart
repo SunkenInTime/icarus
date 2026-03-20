@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
@@ -20,7 +21,22 @@ class TextProviderSnapshot {
 }
 
 class TextProvider extends Notifier<List<PlacedText>> {
+  static final double _legacyWidthToWorldFactor =
+      (1000.0 * (16 / 9)) / CoordinateSystem.screenShotSize.width;
+  static final double _legacyFontToWorldFactor =
+      1000.0 / CoordinateSystem.screenShotSize.height;
+
   List<PlacedText> poppedText = [];
+
+  static PlacedText _migrateLoadedText(PlacedText text) {
+    final migrated = text.copyWith();
+    if (!migrated.usesWorldSize) {
+      migrated.size = migrated.size * _legacyWidthToWorldFactor;
+      migrated.fontSize = migrated.fontSize * _legacyFontToWorldFactor;
+      migrated.markSizeAsWorld();
+    }
+    return migrated;
+  }
 
   @override
   List<PlacedText> build() {
@@ -201,13 +217,14 @@ class TextProvider extends Notifier<List<PlacedText>> {
   void fromHive(List<PlacedText> hiveText) {
     ref.read(textDraftProvider.notifier).clearAllDrafts();
     poppedText = [];
-    state = hiveText;
+    state = hiveText.map(_migrateLoadedText).toList();
   }
 
   static List<PlacedText> fromJson(String jsonString) {
     final List<dynamic> jsonList = jsonDecode(jsonString);
     return jsonList
         .map((json) => PlacedText.fromJson(json as Map<String, dynamic>))
+        .map(_migrateLoadedText)
         .toList();
   }
 

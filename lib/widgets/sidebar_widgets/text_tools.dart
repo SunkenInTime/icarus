@@ -72,6 +72,7 @@ class _TextToolsState extends ConsumerState<TextTools> {
                   id: "text-tool-preview",
                   text: "Write here...",
                   size: draggableData.width,
+                  fontSize: 16,
                   tagColorValue: draggableData.tagColorValue,
                   isFeedback: true,
                 ),
@@ -136,19 +137,16 @@ class _TextToolsState extends ConsumerState<TextTools> {
     final toolData =
         TextToolData.defaults(tagColorValue: _selectedTagColorValue);
     final placementCenter = ref.read(placementCenterProvider);
-
-    final coordinateSystem = CoordinateSystem.instance;
-    const screenPoint = Offset(200, 42);
-    final virtualPoint = coordinateSystem.screenToCoordinate(screenPoint);
-
     final centeredTopLeft =
-        placementCenter - Offset(virtualPoint.dx / 2, virtualPoint.dy / 2);
+        placementCenter - Offset(toolData.width / 2, toolData.height / 2);
 
     ref.read(textProvider.notifier).addText(
           PlacedText(
             position: centeredTopLeft,
             id: uuid.v4(),
             size: toolData.width,
+            fontSize: 16,
+            sizeVersion: worldSizedMediaVersion,
             tagColorValue: toolData.tagColorValue,
           ),
         );

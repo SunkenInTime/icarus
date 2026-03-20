@@ -1,7 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
@@ -161,18 +160,19 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
               onInvoke: (intent) {
                 _dismissDeleteMenu();
                 const uuid = Uuid();
-                final coordinateSystem = CoordinateSystem.instance;
-                const screenPoint = Offset(200, 42);
-                final virtualPoint =
-                    coordinateSystem.screenToCoordinate(screenPoint);
                 final placementCenter = ref.read(placementCenterProvider);
+                const defaultTextWidth = 185.0;
+                const defaultTextHeight = 40.0;
                 final centeredTopLeft = placementCenter -
-                    Offset(virtualPoint.dx / 2, virtualPoint.dy / 2);
+                    const Offset(defaultTextWidth / 2, defaultTextHeight / 2);
 
                 ref.read(textProvider.notifier).addText(
                       PlacedText(
                         position: centeredTopLeft,
                         id: uuid.v4(),
+                        size: defaultTextWidth,
+                        fontSize: 16,
+                        sizeVersion: worldSizedMediaVersion,
                       ),
                     );
                 return null;

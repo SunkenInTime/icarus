@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_widget_size_provider.dart';
@@ -168,11 +169,13 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final coordinateSystem = CoordinateSystem.instance;
     final clampedScale = ImageScalePolicy.clamp(widget.scale);
     const leftChromeWidth = 12.0; // left bar (10) + spacer (2)
     final safeAspectRatio = widget.aspectRatio <= 0 ? 1.0 : widget.aspectRatio;
+    final totalWidth = coordinateSystem.worldWidthToScreen(clampedScale);
     final cardWidth =
-        (clampedScale - leftChromeWidth).clamp(1.0, double.infinity);
+        (totalWidth - leftChromeWidth).clamp(1.0, double.infinity);
     final cardHeight = (cardWidth - 10) / safeAspectRatio + 10;
     final file = File(path.join(
       ref.watch(strategyProvider).storageDirectory!,
@@ -222,7 +225,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
         },
         child: SizeChangedLayoutNotifier(
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: clampedScale, minWidth: 0),
+            constraints: BoxConstraints(maxWidth: totalWidth, minWidth: 0),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
