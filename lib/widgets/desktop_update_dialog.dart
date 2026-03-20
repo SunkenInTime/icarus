@@ -2,8 +2,6 @@ import 'package:desktop_updater/desktop_updater.dart';
 import 'package:desktop_updater/updater_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/services/app_error_reporter.dart';
-import 'package:icarus/services/windows_desktop_update_restart_service.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -232,22 +230,7 @@ class DesktopUpdateDialog extends StatelessWidget {
             );
 
             if (confirmed) {
-              try {
-                await WindowsDesktopUpdateRestartService()
-                    .restartIntoDownloadedUpdate();
-              } catch (error, stackTrace) {
-                AppErrorReporter.reportError(
-                  'Failed to apply the downloaded desktop update. Please close and reopen Icarus, then try again.',
-                  error: error,
-                  stackTrace: stackTrace,
-                  source: 'DesktopUpdateDialog.restartToUpdate',
-                );
-                controller.makeSkipUpdate();
-                if (!context.mounted) {
-                  return;
-                }
-                Navigator.of(context).pop();
-              }
+              controller.restartApp();
             }
           },
           leading: const Icon(LucideIcons.rotateCcw),
