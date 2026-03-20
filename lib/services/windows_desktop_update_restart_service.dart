@@ -39,17 +39,24 @@ class WindowsDesktopUpdateRestartService {
       processId: pid,
     );
 
-    await Process.start(
-      'powershell',
-      [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        scriptFile.path,
-      ],
-      mode: ProcessStartMode.detached,
-    );
+    try {
+      await Process.start(
+        'powershell',
+        [
+          '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-File',
+          scriptFile.path,
+        ],
+        mode: ProcessStartMode.detached,
+      );
+    } catch (_) {
+      if (await scriptFile.exists()) {
+        await scriptFile.delete();
+      }
+      rethrow;
+    }
 
     exit(0);
   }
@@ -95,22 +102,38 @@ class WindowsDesktopUpdateRestartService {
 \$updateDirectory = '$escapedUpdateDirectory'
 \$scriptPath = \$MyInvocation.MyCommand.Path
 
-for (\$attempt = 0; \$attempt -lt 120; \$attempt++) {
-  \$process = Get-Process -Id \$trackedProcessId -ErrorAction SilentlyContinue
-  if (\$null -eq \$process) {
-    break
+try {
+  for (\$attempt = 0; \$attempt -lt 120; \$attempt++) {
+    \$process = Get-Process -Id \$trackedProcessId -ErrorAction SilentlyContinue
+    if (\$null -eq \$process) {
+      break
+    }
+
+    Start-Sleep -Milliseconds 500
   }
 
-  Start-Sleep -Milliseconds 500
-}
+  \$process = Get-Process -Id \$trackedProcessId -ErrorAction SilentlyContinue
+  if (\$null -ne \$process) {
+    Stop-Process -Id \$trackedProcessId -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    \$process = Get-Process -Id \$trackedProcessId -ErrorAction SilentlyContinue
+    if (\$null -ne \$process) {
+      exit 1
+    }
+  }
 
-if (Test-Path -LiteralPath \$updateDirectory) {
-  Copy-Item -Path (Join-Path \$updateDirectory '*') -Destination \$installDirectory -Recurse -Force
-  Remove-Item -LiteralPath \$updateDirectory -Recurse -Force
-}
+  if (Test-Path -LiteralPath \$updateDirectory) {
+    \$updateItems = @(Get-ChildItem -LiteralPath \$updateDirectory -Force -ErrorAction SilentlyContinue)
+    if (\$updateItems.Count -gt 0) {
+      Copy-Item -LiteralPath \$updateItems.FullName -Destination \$installDirectory -Recurse -Force
+    }
+    Remove-Item -LiteralPath \$updateDirectory -Recurse -Force
+  }
 
-Start-Process -FilePath \$executablePath -WorkingDirectory \$installDirectory
-Remove-Item -LiteralPath \$scriptPath -Force -ErrorAction SilentlyContinue
+  Start-Process -FilePath \$executablePath -WorkingDirectory \$installDirectory
+} finally {
+  Remove-Item -LiteralPath \$scriptPath -Force -ErrorAction SilentlyContinue
+}
 ''';
   }
 

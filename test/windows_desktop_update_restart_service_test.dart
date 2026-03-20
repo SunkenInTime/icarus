@@ -31,7 +31,35 @@ void main() {
     );
     expect(
       script,
-      contains("Copy-Item -Path (Join-Path \$updateDirectory '*')"),
+      contains(
+        r'$updateItems = @(Get-ChildItem -LiteralPath $updateDirectory -Force -ErrorAction SilentlyContinue)',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        r'Copy-Item -LiteralPath $updateItems.FullName -Destination $installDirectory -Recurse -Force',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        r'Stop-Process -Id $trackedProcessId -Force -ErrorAction SilentlyContinue',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        r'if ($null -ne $process) {',
+      ),
+    );
+    expect(script, contains('try {'));
+    expect(script, contains('} finally {'));
+    expect(
+      script,
+      contains(
+        r'Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue',
+      ),
     );
     expect(script, isNot(contains(r'xcopy /E /I /Y "update\*" "."')));
   });
