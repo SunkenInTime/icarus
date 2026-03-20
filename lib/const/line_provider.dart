@@ -53,12 +53,31 @@ class LineUp extends HiveObject {
     );
   }
 
-  void switchSides(
-      {required double agentSize,
-      required double abilitySize,
-      required double mapScale}) {
+  void switchSides({
+    required double agentSize,
+    required double abilitySize,
+    required double mapScale,
+  }) {
     agent.switchSides(agentSize);
     ability.switchSides(mapScale: mapScale, abilitySize: abilitySize);
+  }
+
+  void reflowForMarkerSizeChange({
+    required double oldAgentSize,
+    required double newAgentSize,
+    required double oldAbilitySize,
+    required double newAbilitySize,
+    required double mapScale,
+  }) {
+    agent.reflowForAgentSizeChange(
+      oldAgentSize: oldAgentSize,
+      newAgentSize: newAgentSize,
+    );
+    ability.reflowForAbilitySizeChange(
+      oldAbilitySize: oldAbilitySize,
+      newAbilitySize: newAbilitySize,
+      mapScale: mapScale,
+    );
   }
 
   factory LineUp.fromJson(Map<String, dynamic> json) => _$LineUpFromJson(json);
@@ -71,15 +90,9 @@ class SimpleImageData extends HiveObject {
   final String id;
   final String fileExtension;
 
-  SimpleImageData({
-    required this.id,
-    required this.fileExtension,
-  });
+  SimpleImageData({required this.id, required this.fileExtension});
 
-  SimpleImageData copyWith({
-    String? id,
-    String? fileExtension,
-  }) {
+  SimpleImageData copyWith({String? id, String? fileExtension}) {
     return SimpleImageData(
       id: id ?? this.id,
       fileExtension: fileExtension ?? this.fileExtension,
@@ -150,12 +163,13 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   void addLineUp(LineUp lineUp) {
     final action = UserAction(
-        type: ActionType.addition, id: lineUp.id, group: ActionGroup.lineUp);
+      type: ActionType.addition,
+      id: lineUp.id,
+      group: ActionGroup.lineUp,
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
-    state = state.copyWith(
-      lineUps: [...state.lineUps, lineUp],
-    );
+    state = state.copyWith(lineUps: [...state.lineUps, lineUp]);
   }
 
   void setAgent(PlacedAgent agent) {
@@ -192,19 +206,22 @@ class LineUpProvider extends Notifier<LineUpState> {
 
     for (final lineUp in newState) {
       lineUp.switchSides(
-          agentSize: agentSize, abilitySize: abilitySize, mapScale: mapScale);
+        agentSize: agentSize,
+        abilitySize: abilitySize,
+        mapScale: mapScale,
+      );
     }
 
     for (final lineUp in _poppedLineUps) {
       lineUp.switchSides(
-          agentSize: agentSize, abilitySize: abilitySize, mapScale: mapScale);
+        agentSize: agentSize,
+        abilitySize: abilitySize,
+        mapScale: mapScale,
+      );
     }
 
     currentAgent?.switchSides(agentSize);
-    currentAbility?.switchSides(
-      mapScale: mapScale,
-      abilitySize: abilitySize,
-    );
+    currentAbility?.switchSides(mapScale: mapScale, abilitySize: abilitySize);
 
     state = state.copyWith(
       lineUps: newState,
@@ -213,11 +230,55 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
-  void setSelectingPosition(bool isSelecting, {PlacingType? type}) {
-    state = state.copyWith(
-      isSelectingPosition: isSelecting,
-      placingType: type,
+  void reflowForMarkerSizeChange({
+    required double oldAgentSize,
+    required double newAgentSize,
+    required double oldAbilitySize,
+    required double newAbilitySize,
+    required double mapScale,
+  }) {
+    final newLineUps = [...state.lineUps];
+    for (final lineUp in newLineUps) {
+      lineUp.reflowForMarkerSizeChange(
+        oldAgentSize: oldAgentSize,
+        newAgentSize: newAgentSize,
+        oldAbilitySize: oldAbilitySize,
+        newAbilitySize: newAbilitySize,
+        mapScale: mapScale,
+      );
+    }
+
+    for (final lineUp in _poppedLineUps) {
+      lineUp.reflowForMarkerSizeChange(
+        oldAgentSize: oldAgentSize,
+        newAgentSize: newAgentSize,
+        oldAbilitySize: oldAbilitySize,
+        newAbilitySize: newAbilitySize,
+        mapScale: mapScale,
+      );
+    }
+
+    final currentAgent = state.currentAgent;
+    currentAgent?.reflowForAgentSizeChange(
+      oldAgentSize: oldAgentSize,
+      newAgentSize: newAgentSize,
     );
+    final currentAbility = state.currentAbility;
+    currentAbility?.reflowForAbilitySizeChange(
+      oldAbilitySize: oldAbilitySize,
+      newAbilitySize: newAbilitySize,
+      mapScale: mapScale,
+    );
+
+    state = state.copyWith(
+      lineUps: newLineUps,
+      currentAgent: currentAgent,
+      currentAbility: currentAbility,
+    );
+  }
+
+  void setSelectingPosition(bool isSelecting, {PlacingType? type}) {
+    state = state.copyWith(isSelectingPosition: isSelecting, placingType: type);
   }
 
   void clearCurrentPlacing() {
@@ -273,9 +334,7 @@ class LineUpProvider extends Notifier<LineUpState> {
   //Have a hover glow on what agent is selectabel in the sidebar list
 
   void fromHive(List<LineUp> lineUps) {
-    state = state.copyWith(
-      lineUps: lineUps,
-    );
+    state = state.copyWith(lineUps: lineUps);
   }
 
   static String objectToJson(List<LineUp> lineUps) {
@@ -293,9 +352,7 @@ class LineUpProvider extends Notifier<LineUpState> {
     final newState = [...state.lineUps];
 
     newState[index] = lineUp;
-    state = state.copyWith(
-      lineUps: newState,
-    );
+    state = state.copyWith(lineUps: newState);
   }
 
   void updateAbilityVisualState(
@@ -329,7 +386,10 @@ class LineUpProvider extends Notifier<LineUpState> {
     //the right click menu, and not through the delete key.
 
     final action = UserAction(
-        type: ActionType.deletion, id: id, group: ActionGroup.lineUp);
+      type: ActionType.deletion,
+      id: id,
+      group: ActionGroup.lineUp,
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     _poppedLineUps.add(state.lineUps.firstWhere((lineUp) => lineUp.id == id));
@@ -360,17 +420,17 @@ class LineUpProvider extends Notifier<LineUpState> {
   void redoAction(UserAction action) {
     switch (action.type) {
       case ActionType.addition:
-        final index =
-            _poppedLineUps.indexWhere((lineUp) => lineUp.id == action.id);
+        final index = _poppedLineUps.indexWhere(
+          (lineUp) => lineUp.id == action.id,
+        );
         state = state.copyWith(
           lineUps: [...state.lineUps, _poppedLineUps.removeAt(index)],
         );
       case ActionType.deletion:
-        final newState = state.copyWith(
-          lineUps: [...state.lineUps],
+        final newState = state.copyWith(lineUps: [...state.lineUps]);
+        final index = newState.lineUps.indexWhere(
+          (lineUp) => lineUp.id == action.id,
         );
-        final index =
-            newState.lineUps.indexWhere((lineUp) => lineUp.id == action.id);
         _poppedLineUps.add(newState.lineUps.removeAt(index));
         state = newState;
       case ActionType.edit:
@@ -401,8 +461,9 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 }
 
-final lineUpProvider =
-    NotifierProvider<LineUpProvider, LineUpState>(LineUpProvider.new);
+final lineUpProvider = NotifierProvider<LineUpProvider, LineUpState>(
+  LineUpProvider.new,
+);
 
 class HoveredLineUpProvider extends Notifier<String?> {
   @override

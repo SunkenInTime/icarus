@@ -11,8 +11,9 @@ import 'package:uuid/uuid.dart';
 
 import 'package:icarus/const/placed_classes.dart';
 
-final agentProvider =
-    NotifierProvider<AgentProvider, List<PlacedAgentNode>>(AgentProvider.new);
+final agentProvider = NotifierProvider<AgentProvider, List<PlacedAgentNode>>(
+  AgentProvider.new,
+);
 
 class AgentProviderSnapshot {
   final List<PlacedAgentNode> agents;
@@ -58,7 +59,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   void removeAgentAsAction(String id) {
     if (!state.any((agent) => agent.id == id)) return;
 
-    ref.read(actionProvider.notifier).addAction(
+    ref
+        .read(actionProvider.notifier)
+        .addAction(
           UserAction(
             type: ActionType.deletion,
             id: id,
@@ -76,8 +79,11 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
         ? AgentState.none
         : AgentState.dead;
 
-    final action =
-        UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent);
+    final action = UserAction(
+      type: ActionType.edit,
+      id: id,
+      group: ActionGroup.agent,
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     state = newState;
@@ -90,8 +96,10 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
     final agentSize = ref.read(strategySettingsProvider).agentSize;
 
-    final centerPosition =
-        Offset(position.dx + agentSize / 2, position.dy + agentSize / 2);
+    final centerPosition = Offset(
+      position.dx + agentSize / 2,
+      position.dy + agentSize / 2,
+    );
     final coordinateSystem = CoordinateSystem.instance;
 
     if (coordinateSystem.isOutOfBounds(centerPosition)) {
@@ -103,8 +111,11 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
     final temp = newState.removeAt(index);
 
-    final action =
-        UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent);
+    final action = UserAction(
+      type: ActionType.edit,
+      id: id,
+      group: ActionGroup.agent,
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
@@ -115,8 +126,10 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     required Offset position,
   }) {
     final agentSize = ref.read(strategySettingsProvider).agentSize;
-    final centerPosition =
-        Offset(position.dx + agentSize / 2, position.dy + agentSize / 2);
+    final centerPosition = Offset(
+      position.dx + agentSize / 2,
+      position.dy + agentSize / 2,
+    );
     final coordinateSystem = CoordinateSystem.instance;
     if (coordinateSystem.isOutOfBounds(centerPosition)) return null;
 
@@ -124,8 +137,11 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     if (sourceIndex < 0) return null;
 
     final sourceAgent = state[sourceIndex];
-    final duplicatedAgent =
-        _duplicateNode(sourceAgent, id: _uuid.v4(), position: position);
+    final duplicatedAgent = _duplicateNode(
+      sourceAgent,
+      id: _uuid.v4(),
+      position: position,
+    );
     addAgent(duplicatedAgent);
     return duplicatedAgent.id;
   }
@@ -151,7 +167,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     final node = newState[index];
     if (node is! PlacedViewConeAgent) return;
     node.updateGeometry(newRotation: rotation, newLength: length);
-    ref.read(actionProvider.notifier).addAction(
+    ref
+        .read(actionProvider.notifier)
+        .addAction(
           UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
         );
     state = newState;
@@ -168,7 +186,8 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     if (index < 0) return;
     final node = newState[index];
     if (node is! PlacedCircleAgent) return;
-    final hasChange = node.diameterMeters != diameterMeters ||
+    final hasChange =
+        node.diameterMeters != diameterMeters ||
         node.colorValue != colorValue ||
         node.opacityPercent != opacityPercent;
     if (!hasChange) return;
@@ -178,7 +197,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       newColorValue: colorValue,
       newOpacityPercent: opacityPercent,
     );
-    ref.read(actionProvider.notifier).addAction(
+    ref
+        .read(actionProvider.notifier)
+        .addAction(
           UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
         );
     state = newState;
@@ -207,7 +228,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       length: length,
     )..isDeleted = node.isDeleted;
 
-    ref.read(actionProvider.notifier).addAction(
+    ref
+        .read(actionProvider.notifier)
+        .addAction(
           UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
         );
     state = newState;
@@ -237,7 +260,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       opacityPercent: opacityPercent,
     )..isDeleted = node.isDeleted;
 
-    ref.read(actionProvider.notifier).addAction(
+    ref
+        .read(actionProvider.notifier)
+        .addAction(
           UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
         );
     state = newState;
@@ -314,14 +339,16 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   String toJson() {
-    final List<Map<String, dynamic>> jsonList =
-        state.map((agent) => agent.toJson()).toList();
+    final List<Map<String, dynamic>> jsonList = state
+        .map((agent) => agent.toJson())
+        .toList();
     return jsonEncode(jsonList);
   }
 
   static String objectToJson(List<PlacedAgentNode> agents) {
-    final List<Map<String, dynamic>> jsonList =
-        agents.map((agent) => agent.toJson()).toList();
+    final List<Map<String, dynamic>> jsonList = agents
+        .map((agent) => agent.toJson())
+        .toList();
     return jsonEncode(jsonList);
   }
 
@@ -368,6 +395,32 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     state = newState;
   }
 
+  void reflowForAgentSizeChange({
+    required double oldAgentSize,
+    required double newAgentSize,
+  }) {
+    if (oldAgentSize == newAgentSize) {
+      return;
+    }
+
+    final newState = [...state];
+    for (final agent in newState) {
+      agent.reflowForAgentSizeChange(
+        oldAgentSize: oldAgentSize,
+        newAgentSize: newAgentSize,
+      );
+    }
+
+    for (final agent in poppedAgents) {
+      agent.reflowForAgentSizeChange(
+        oldAgentSize: oldAgentSize,
+        newAgentSize: newAgentSize,
+      );
+    }
+
+    state = newState;
+  }
+
   void clearAll() {
     poppedAgents = [];
     state = [];
@@ -375,8 +428,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
   AgentProviderSnapshot takeSnapshot() {
     return AgentProviderSnapshot(
-      agents:
-          state.map((agent) => agent.snapshotCopy<PlacedAgentNode>()).toList(),
+      agents: state
+          .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
+          .toList(),
       poppedAgents: poppedAgents
           .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
           .toList(),

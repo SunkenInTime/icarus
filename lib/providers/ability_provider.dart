@@ -10,8 +10,9 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 
-final abilityProvider =
-    NotifierProvider<AbilityProvider, List<PlacedAbility>>(AbilityProvider.new);
+final abilityProvider = NotifierProvider<AbilityProvider, List<PlacedAbility>>(
+  AbilityProvider.new,
+);
 
 class AbilityProviderSnapshot {
   final List<PlacedAbility> abilities;
@@ -40,9 +41,10 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
   void addAbility(PlacedAbility placedAbility) {
     final action = UserAction(
-        type: ActionType.addition,
-        id: placedAbility.id,
-        group: ActionGroup.ability);
+      type: ActionType.addition,
+      id: placedAbility.id,
+      group: ActionGroup.ability,
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...state, placedAbility];
@@ -51,7 +53,9 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   void removeAbilityAsAction(String id) {
     if (!state.any((ability) => ability.id == id)) return;
 
-    ref.read(actionProvider.notifier).addAction(
+    ref
+        .read(actionProvider.notifier)
+        .addAction(
           UserAction(
             type: ActionType.deletion,
             id: id,
@@ -76,11 +80,15 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
     final abilitySize = ref.read(strategySettingsProvider).abilitySize;
 
-    final centerOffset = ability.data.abilityData!
-        .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize);
+    final centerOffset = ability.data.abilityData!.getAnchorPoint(
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
 
-    final centerPosition =
-        Offset(position.dx + centerOffset.dx, position.dy + centerOffset.dy);
+    final centerPosition = Offset(
+      position.dx + centerOffset.dx,
+      position.dy + centerOffset.dy,
+    );
 
     if (coordinateSystem.isOutOfBounds(centerPosition)) {
       removeAbilityAsAction(id);
@@ -91,8 +99,11 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
     final temp = newState.removeAt(index);
 
-    final action =
-        UserAction(type: ActionType.edit, id: id, group: ActionGroup.ability);
+    final action = UserAction(
+      type: ActionType.edit,
+      id: id,
+      group: ActionGroup.ability,
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
@@ -135,9 +146,10 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
       newArmLengthsMeters: armLengthsMeters,
     );
     final action = UserAction(
-        type: ActionType.edit,
-        id: newState[index].id,
-        group: ActionGroup.ability);
+      type: ActionType.edit,
+      id: newState[index].id,
+      group: ActionGroup.ability,
+    );
     ref.read(actionProvider.notifier).addAction(action);
     state = newState;
   }
@@ -154,7 +166,9 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
     updateGeometryHistory(index);
     newState[index].updateVisualState(visualState);
-    ref.read(actionProvider.notifier).addAction(
+    ref
+        .read(actionProvider.notifier)
+        .addAction(
           UserAction(
             type: ActionType.edit,
             id: newState[index].id,
@@ -269,6 +283,35 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     state = [];
   }
 
+  void reflowForAbilitySizeChange({
+    required double oldAbilitySize,
+    required double newAbilitySize,
+    required double mapScale,
+  }) {
+    if (oldAbilitySize == newAbilitySize) {
+      return;
+    }
+
+    final newState = [...state];
+    for (final ability in newState) {
+      ability.reflowForAbilitySizeChange(
+        oldAbilitySize: oldAbilitySize,
+        newAbilitySize: newAbilitySize,
+        mapScale: mapScale,
+      );
+    }
+
+    for (final ability in poppedAbility) {
+      ability.reflowForAbilitySizeChange(
+        oldAbilitySize: oldAbilitySize,
+        newAbilitySize: newAbilitySize,
+        mapScale: mapScale,
+      );
+    }
+
+    state = newState;
+  }
+
   AbilityProviderSnapshot takeSnapshot() {
     return AbilityProviderSnapshot(
       abilities: [...state],
@@ -282,14 +325,16 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   String toJson() {
-    final List<Map<String, dynamic>> jsonList =
-        state.map((ability) => ability.toJson()).toList();
+    final List<Map<String, dynamic>> jsonList = state
+        .map((ability) => ability.toJson())
+        .toList();
     return jsonEncode(jsonList);
   }
 
   static String objectToJson(List<PlacedAbility> abilities) {
-    final List<Map<String, dynamic>> jsonList =
-        abilities.map((ability) => ability.toJson()).toList();
+    final List<Map<String, dynamic>> jsonList = abilities
+        .map((ability) => ability.toJson())
+        .toList();
     return jsonEncode(jsonList);
   }
 

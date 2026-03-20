@@ -103,8 +103,8 @@ class StrategyData extends HiveObject {
     DateTime? createdAt,
     @Deprecated('Use pages instead') StrategySettings? strategySettings,
     // ignore: deprecated_member_use_from_same_package
-  })  : strategySettings = strategySettings ?? StrategySettings(),
-        createdAt = createdAt ?? lastEdited;
+  }) : strategySettings = strategySettings ?? StrategySettings(),
+       createdAt = createdAt ?? lastEdited;
 
   StrategyData copyWith({
     String? id,
@@ -153,8 +153,9 @@ class StrategyData extends HiveObject {
       strategySettings: strategySettings ?? this.strategySettings,
       createdAt: createdAt ?? this.createdAt,
       folderID: folderID ?? this.folderID,
-      themeProfileId:
-          clearThemeProfileId ? null : (themeProfileId ?? this.themeProfileId),
+      themeProfileId: clearThemeProfileId
+          ? null
+          : (themeProfileId ?? this.themeProfileId),
       themeOverridePalette: clearThemeOverridePalette
           ? null
           : (themeOverridePalette ?? this.themeOverridePalette),
@@ -190,14 +191,16 @@ class StrategyState {
       stratName: stratName ?? this.stratName,
       id: id ?? this.id,
       storageDirectory: storageDirectory ?? this.storageDirectory,
-      activePageId:
-          clearActivePageId ? null : (activePageId ?? this.activePageId),
+      activePageId: clearActivePageId
+          ? null
+          : (activePageId ?? this.activePageId),
     );
   }
 }
 
-final strategyProvider =
-    NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
+final strategyProvider = NotifierProvider<StrategyProvider, StrategyState>(
+  StrategyProvider.new,
+);
 
 class NewerVersionImportException implements Exception {
   const NewerVersionImportException({
@@ -230,10 +233,7 @@ enum ImportIssueCode {
 }
 
 class ImportIssue {
-  const ImportIssue({
-    required this.path,
-    required this.code,
-  });
+  const ImportIssue({required this.path, required this.code});
 
   final String path;
   final ImportIssueCode code;
@@ -249,11 +249,11 @@ class ImportBatchResult {
   });
 
   const ImportBatchResult.empty()
-      : strategiesImported = 0,
-        foldersCreated = 0,
-        themeProfilesImported = 0,
-        globalStateRestored = false,
-        issues = const [];
+    : strategiesImported = 0,
+      foldersCreated = 0,
+      themeProfilesImported = 0,
+      globalStateRestored = false,
+      issues = const [];
 
   final int strategiesImported;
   final int foldersCreated;
@@ -280,19 +280,14 @@ class ImportBatchResult {
 }
 
 class _ImportEntityListing {
-  const _ImportEntityListing({
-    required this.entities,
-    required this.issues,
-  });
+  const _ImportEntityListing({required this.entities, required this.issues});
 
   final List<FileSystemEntity> entities;
   final List<ImportIssue> issues;
 }
 
 class _ArchiveExportState {
-  _ArchiveExportState({
-    required this.rootDirectory,
-  });
+  _ArchiveExportState({required this.rootDirectory});
 
   final Directory rootDirectory;
   final List<ArchiveFolderEntry> folders = [];
@@ -453,8 +448,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       final worldMigrated = migrateToWorld16x9(legacyMigrated);
       final abilityScaleMigrated = migrateAbilityScale(worldMigrated);
       final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
-      final customCircleMigrated =
-          migrateCustomCircleWrapper(squareAoeMigrated);
+      final customCircleMigrated = migrateCustomCircleWrapper(
+        squareAoeMigrated,
+      );
       if (customCircleMigrated != squareAoeMigrated) {
         await box.put(customCircleMigrated.id, customCircleMigrated);
       } else if (squareAoeMigrated != abilityScaleMigrated) {
@@ -469,8 +465,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
   }
 
-  static StrategyData migrateAbilityScale(StrategyData strat,
-      {bool force = false}) {
+  static StrategyData migrateAbilityScale(
+    StrategyData strat, {
+    bool force = false,
+  }) {
     if (!force && strat.versionNumber >= AbilityScaleMigration.version) {
       return strat;
     }
@@ -480,7 +478,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       map: strat.mapData,
     );
 
-    final hasPageChanged = migratedPages.length == strat.pages.length &&
+    final hasPageChanged =
+        migratedPages.length == strat.pages.length &&
         migratedPages.asMap().entries.any((entry) {
           final index = entry.key;
           return entry.value != strat.pages[index];
@@ -497,8 +496,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  static StrategyData migrateSquareAoeCenter(StrategyData strat,
-      {bool force = false}) {
+  static StrategyData migrateSquareAoeCenter(
+    StrategyData strat, {
+    bool force = false,
+  }) {
     if (!force && strat.versionNumber >= SquareAoeCenterMigration.version) {
       return strat;
     }
@@ -507,7 +508,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       pages: strat.pages,
     );
 
-    final hasPageChanged = migratedPages.length == strat.pages.length &&
+    final hasPageChanged =
+        migratedPages.length == strat.pages.length &&
         migratedPages.asMap().entries.any((entry) {
           final index = entry.key;
           return entry.value != strat.pages[index];
@@ -524,8 +526,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  static StrategyData migrateCustomCircleWrapper(StrategyData strat,
-      {bool force = false}) {
+  static StrategyData migrateCustomCircleWrapper(
+    StrategyData strat, {
+    bool force = false,
+  }) {
     if (!force && strat.versionNumber >= CustomCircleWrapperMigration.version) {
       return strat;
     }
@@ -535,7 +539,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       map: strat.mapData,
     );
 
-    final hasPageChanged = migratedPages.length == strat.pages.length &&
+    final hasPageChanged =
+        migratedPages.length == strat.pages.length &&
         migratedPages.asMap().entries.any((entry) {
           final index = entry.key;
           return entry.value != strat.pages[index];
@@ -552,11 +557,15 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  static StrategyData migrateToCurrentVersion(StrategyData strat,
-      {bool forceAbilityScale = false}) {
+  static StrategyData migrateToCurrentVersion(
+    StrategyData strat, {
+    bool forceAbilityScale = false,
+  }) {
     final worldMigrated = migrateToWorld16x9(strat);
-    final abilityScaleMigrated =
-        migrateAbilityScale(worldMigrated, force: forceAbilityScale);
+    final abilityScaleMigrated = migrateAbilityScale(
+      worldMigrated,
+      force: forceAbilityScale,
+    );
     final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
     return migrateCustomCircleWrapper(squareAoeMigrated);
   }
@@ -612,8 +621,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       lastEdited: DateTime.now(),
     );
 
-    final worldMigrated = migrateToWorld16x9(updated,
-        force: originalVersion < Settings.versionNumber);
+    final worldMigrated = migrateToWorld16x9(
+      updated,
+      force: originalVersion < Settings.versionNumber,
+    );
     final abilityScaleMigrated = migrateAbilityScale(
       worldMigrated,
       force: originalVersion < AbilityScaleMigration.version,
@@ -628,8 +639,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
-  static StrategyData migrateToWorld16x9(StrategyData strat,
-      {bool force = false}) {
+  static StrategyData migrateToWorld16x9(
+    StrategyData strat, {
+    bool force = false,
+  }) {
     if (!force && strat.versionNumber >= 38) return strat;
 
     const double normalizedHeight = 1000.0;
@@ -645,14 +658,15 @@ class StrategyProvider extends Notifier<StrategyState> {
       return [
         for (final agent in agents)
           switch (agent) {
-            PlacedAgent() => agent.copyWith(position: shift(agent.position))
-              ..isDeleted = agent.isDeleted,
-            PlacedViewConeAgent() =>
-              agent.copyWith(position: shift(agent.position))
-                ..isDeleted = agent.isDeleted,
-            PlacedCircleAgent() =>
-              agent.copyWith(position: shift(agent.position))
-                ..isDeleted = agent.isDeleted,
+            PlacedAgent() => agent.copyWith(
+              position: shift(agent.position),
+            )..isDeleted = agent.isDeleted,
+            PlacedViewConeAgent() => agent.copyWith(
+              position: shift(agent.position),
+            )..isDeleted = agent.isDeleted,
+            PlacedCircleAgent() => agent.copyWith(
+              position: shift(agent.position),
+            )..isDeleted = agent.isDeleted,
           },
       ];
     }
@@ -661,7 +675,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       return [
         for (final ability in abilities)
           ability.copyWith(position: shift(ability.position))
-            ..isDeleted = ability.isDeleted
+            ..isDeleted = ability.isDeleted,
       ];
     }
 
@@ -669,12 +683,12 @@ class StrategyProvider extends Notifier<StrategyState> {
       return [
         for (final text in texts)
           PlacedText(
-            position: shift(text.position),
-            id: text.id,
-            size: text.size,
-          )
+              position: shift(text.position),
+              id: text.id,
+              size: text.size,
+            )
             ..text = text.text
-            ..isDeleted = text.isDeleted
+            ..isDeleted = text.isDeleted,
       ];
     }
 
@@ -682,7 +696,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       return [
         for (final image in images)
           image.copyWith(position: shift(image.position))
-            ..isDeleted = image.isDeleted
+            ..isDeleted = image.isDeleted,
       ];
     }
 
@@ -690,19 +704,19 @@ class StrategyProvider extends Notifier<StrategyState> {
       return [
         for (final utility in utilities)
           PlacedUtility(
-            type: utility.type,
-            position: shift(utility.position),
-            id: utility.id,
-            angle: utility.angle,
-            customDiameter: utility.customDiameter,
-            customWidth: utility.customWidth,
-            customLength: utility.customLength,
-            customColorValue: utility.customColorValue,
-            customOpacityPercent: utility.customOpacityPercent,
-          )
+              type: utility.type,
+              position: shift(utility.position),
+              id: utility.id,
+              angle: utility.angle,
+              customDiameter: utility.customDiameter,
+              customWidth: utility.customWidth,
+              customLength: utility.customLength,
+              customColorValue: utility.customColorValue,
+              customOpacityPercent: utility.customOpacityPercent,
+            )
             ..rotation = utility.rotation
             ..length = utility.length
-            ..isDeleted = utility.isDeleted
+            ..isDeleted = utility.isDeleted,
       ];
     }
 
@@ -720,7 +734,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               agent: shiftedAgent,
               ability: shiftedAbility,
             );
-          }()
+          }(),
       ];
     }
 
@@ -750,8 +764,9 @@ class StrategyProvider extends Notifier<StrategyState> {
               );
             }
             if (element is FreeDrawing) {
-              final shiftedPoints =
-                  element.listOfPoints.map(shift).toList(growable: false);
+              final shiftedPoints = element.listOfPoints
+                  .map(shift)
+                  .toList(growable: false);
 
               return FreeDrawing(
                 listOfPoints: shiftedPoints,
@@ -784,18 +799,20 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     final updatedPages = strat.pages
-        .map((page) => page.copyWith(
-              sortIndex: page.sortIndex,
-              name: page.name,
-              id: page.id,
-              agentData: shiftAgentNodes(page.agentData),
-              abilityData: shiftAbilities(page.abilityData),
-              textData: shiftTexts(page.textData),
-              imageData: shiftImages(page.imageData),
-              utilityData: shiftUtilities(page.utilityData),
-              drawingData: shiftDrawings(page.drawingData),
-              lineUps: shiftLineUps(page.lineUps),
-            ))
+        .map(
+          (page) => page.copyWith(
+            sortIndex: page.sortIndex,
+            name: page.name,
+            id: page.id,
+            agentData: shiftAgentNodes(page.agentData),
+            abilityData: shiftAbilities(page.abilityData),
+            textData: shiftTexts(page.textData),
+            imageData: shiftImages(page.imageData),
+            utilityData: shiftUtilities(page.utilityData),
+            drawingData: shiftDrawings(page.drawingData),
+            lineUps: shiftLineUps(page.lineUps),
+          ),
+        )
         .toList(growable: false);
 
     final migrated = strat.copyWith(
@@ -844,8 +861,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(utilityProvider.notifier).fromHive(migratedPage.utilityData);
     ref.read(mapProvider.notifier).setAttack(migratedPage.isAttack);
     ref.read(strategySettingsProvider.notifier).fromHive(migratedPage.settings);
-    ref.read(strategyThemeProvider.notifier).fromStrategy(
-          profileId: migrated.themeProfileId ??
+    ref
+        .read(strategyThemeProvider.notifier)
+        .fromStrategy(
+          profileId:
+              migrated.themeProfileId ??
               MapThemeProfilesProvider.immutableDefaultProfileId,
           overridePalette: migrated.themeOverridePalette,
         );
@@ -940,13 +960,17 @@ class StrategyProvider extends Notifier<StrategyState> {
         ordered[i].copyWith(sortIndex: i),
     ];
 
-    final updated =
-        strat.copyWith(pages: reindexed, lastEdited: DateTime.now());
+    final updated = strat.copyWith(
+      pages: reindexed,
+      lastEdited: DateTime.now(),
+    );
     await box.put(updated.id, updated);
   }
 
   PageTransitionDirection _resolveDirectionForPage(
-      String pageID, List<StrategyPage> orderedPages) {
+    String pageID,
+    List<StrategyPage> orderedPages,
+  ) {
     if (activePageID == null) return PageTransitionDirection.forward;
 
     final currentIndex = orderedPages.indexWhere((p) => p.id == activePageID);
@@ -964,9 +988,11 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   // Add these inside StrategyProvider
-  Future<void> setActivePageAnimated(String pageID,
-      {PageTransitionDirection? direction,
-      Duration duration = kPageTransitionDuration}) async {
+  Future<void> setActivePageAnimated(
+    String pageID, {
+    PageTransitionDirection? direction,
+    Duration duration = kPageTransitionDuration,
+  }) async {
     if (pageID == activePageID) return;
 
     final transitionState = ref.read(transitionProvider);
@@ -987,10 +1013,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     final startSettings = ref.read(strategySettingsProvider);
 
     final prev = _snapshotAllPlaced();
-    transitionNotifier.prepare(prev.values.toList(),
-        direction: resolvedDirection,
-        startAgentSize: startSettings.agentSize,
-        startAbilitySize: startSettings.abilitySize);
+    transitionNotifier.prepare(
+      prev.values.toList(),
+      direction: resolvedDirection,
+      startAgentSize: startSettings.agentSize,
+      startAbilitySize: startSettings.abilitySize,
+    );
 
     // Load target page (hydrates providers)
     await setActivePage(pageID);
@@ -1058,8 +1086,9 @@ class StrategyProvider extends Notifier<StrategyState> {
                 PageTransitionEntry.customWidthOf(to) ||
             PageTransitionEntry.customLengthOf(from) !=
                 PageTransitionEntry.customLengthOf(to)) {
-          entries
-              .add(PageTransitionEntry.move(from: from, to: to, order: order));
+          entries.add(
+            PageTransitionEntry.move(from: from, to: to, order: order),
+          );
         } else {
           // Unchanged: include as 'none' so it stays visible while base view is hidden
           entries.add(PageTransitionEntry.none(to: to, order: order));
@@ -1120,11 +1149,11 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> loadFromHive(String id) async {
-    final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .values
+    final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values
         .where((StrategyData strategy) {
-      return strategy.id == id;
-    }).firstOrNull;
+          return strategy.id == id;
+        })
+        .firstOrNull;
 
     if (newStrat == null) {
       return;
@@ -1155,8 +1184,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     final page = migratedStrategy.pages.first;
 
     if (migratedStrategy != newStrat) {
-      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-          .put(migratedStrategy.id, migratedStrategy);
+      await Hive.box<StrategyData>(
+        HiveBoxNames.strategiesBox,
+      ).put(migratedStrategy.id, migratedStrategy);
     }
 
     ref.read(agentProvider.notifier).fromHive(page.agentData);
@@ -1170,8 +1200,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref.read(placedImageProvider.notifier).fromHive(page.imageData);
     ref.read(lineUpProvider.notifier).fromHive(page.lineUps);
     ref.read(strategySettingsProvider.notifier).fromHive(page.settings);
-    ref.read(strategyThemeProvider.notifier).fromStrategy(
-          profileId: migratedStrategy.themeProfileId ??
+    ref
+        .read(strategyThemeProvider.notifier)
+        .fromStrategy(
+          profileId:
+              migratedStrategy.themeProfileId ??
               MapThemeProfilesProvider.immutableDefaultProfileId,
           overridePalette: migratedStrategy.themeOverridePalette,
         );
@@ -1200,10 +1233,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> loadFromFilePath(String filePath) async {
-    await _importStrategyFile(
-      file: XFile(filePath),
-      targetFolderId: null,
-    );
+    await _importStrategyFile(file: XFile(filePath), targetFolderId: null);
   }
 
   Future<void> loadFromFilePicker() async {
@@ -1216,10 +1246,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (result == null) return;
 
     for (PlatformFile file in result.files) {
-      await _importStrategyFile(
-        file: file.xFile,
-        targetFolderId: null,
-      );
+      await _importStrategyFile(file: file.xFile, targetFolderId: null);
     }
   }
 
@@ -1243,10 +1270,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       return const ImportBatchResult.empty();
     }
 
-    return _importZipArchive(
-      zipFile: File(filePath),
-      parentFolderId: null,
-    );
+    return _importZipArchive(zipFile: File(filePath), parentFolderId: null);
   }
 
   Future<ImportBatchResult> loadFromFileDrop(List<XFile> files) async {
@@ -1255,10 +1279,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     for (XFile file in files) {
       result = result.merge(
-        await _importDroppedItem(
-          file: file,
-          targetFolderId: targetFolderId,
-        ),
+        await _importDroppedItem(file: file, targetFolderId: targetFolderId),
       );
     }
 
@@ -1276,8 +1297,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     Directory tempDir = await Directory(
-            path.join(tempDirectoryPath, "xyz_icarus_strats", strategyID))
-        .create(recursive: true);
+      path.join(tempDirectoryPath, "xyz_icarus_strats", strategyID),
+    ).create(recursive: true);
     return tempDir;
   }
 
@@ -1321,16 +1342,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
 
       // Build the target path under the destination directory.
-      final targetPath = path.joinAll([
-        destinationPath,
-        ...segments,
-      ]);
+      final targetPath = path.joinAll([destinationPath, ...segments]);
 
       // Normalize and verify that the target path stays within destination.
       final normalizedTargetPath = path.normalize(targetPath);
       final bool isWithinDestination =
           path.isWithin(destinationPath, normalizedTargetPath) ||
-              normalizedTargetPath == destinationPath;
+          normalizedTargetPath == destinationPath;
       if (!isWithinDestination) {
         continue;
       }
@@ -1370,15 +1388,15 @@ class StrategyProvider extends Notifier<StrategyState> {
         foldersCreated: 0,
         themeProfilesImported: 0,
         globalStateRestored: false,
-        issues: [
-          ImportIssue(path: '', code: ImportIssueCode.ioError),
-        ],
+        issues: [ImportIssue(path: '', code: ImportIssueCode.ioError)],
       );
     }
 
     try {
-      final entityType =
-          await FileSystemEntity.type(file.path, followLinks: false);
+      final entityType = await FileSystemEntity.type(
+        file.path,
+        followLinks: false,
+      );
       switch (entityType) {
         case FileSystemEntityType.directory:
           return await _importDirectoryTree(
@@ -1431,10 +1449,7 @@ class StrategyProvider extends Notifier<StrategyState> {
             themeProfilesImported: 0,
             globalStateRestored: false,
             issues: [
-              ImportIssue(
-                path: file.path,
-                code: ImportIssueCode.ioError,
-              ),
+              ImportIssue(path: file.path, code: ImportIssueCode.ioError),
             ],
           );
       }
@@ -1445,10 +1460,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         themeProfilesImported: 0,
         globalStateRestored: false,
         issues: [
-          ImportIssue(
-            path: file.path,
-            code: ImportIssueCode.newerVersion,
-          ),
+          ImportIssue(path: file.path, code: ImportIssueCode.newerVersion),
         ],
       );
     } catch (error, stackTrace) {
@@ -1463,12 +1475,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         foldersCreated: 0,
         themeProfilesImported: 0,
         globalStateRestored: false,
-        issues: [
-          ImportIssue(
-            path: file.path,
-            code: ImportIssueCode.ioError,
-          ),
-        ],
+        issues: [ImportIssue(path: file.path, code: ImportIssueCode.ioError)],
       );
     }
   }
@@ -1477,7 +1484,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     required String name,
     required String? parentFolderId,
   }) {
-    return ref.read(folderProvider.notifier).createFolder(
+    return ref
+        .read(folderProvider.notifier)
+        .createFolder(
           name: name,
           icon: Icons.drive_folder_upload,
           color: FolderColor.generic,
@@ -1525,18 +1534,10 @@ class StrategyProvider extends Notifier<StrategyState> {
         stackTrace: stackTrace,
         source: 'StrategyProvider._listImportEntities',
       );
-      issues.add(
-        ImportIssue(
-          path: errorPath,
-          code: ImportIssueCode.ioError,
-        ),
-      );
+      issues.add(ImportIssue(path: errorPath, code: ImportIssueCode.ioError));
     }
 
-    return _ImportEntityListing(
-      entities: const [],
-      issues: issues,
-    );
+    return _ImportEntityListing(entities: const [], issues: issues);
   }
 
   String _resolveImportErrorPath(Object error, String fallbackPath) {
@@ -1642,8 +1643,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     required Directory sourceDir,
     required String? parentFolderId,
   }) async {
-    final manifestFile =
-        File(path.join(sourceDir.path, archiveMetadataFileName));
+    final manifestFile = File(
+      path.join(sourceDir.path, archiveMetadataFileName),
+    );
     _ManifestImportData? manifestData;
     if (await manifestFile.exists()) {
       try {
@@ -1793,8 +1795,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     final manifestPaths = filesByPath.keys
-        .where((pathValue) =>
-            path.posix.basename(pathValue) == archiveMetadataFileName)
+        .where(
+          (pathValue) =>
+              path.posix.basename(pathValue) == archiveMetadataFileName,
+        )
         .toList(growable: false);
     if (manifestPaths.isEmpty) {
       return null;
@@ -1845,7 +1849,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       final globals = manifestData.manifest.globals;
       if (globals == null) {
         throw const FormatException(
-            'Library backup archive is missing globals');
+          'Library backup archive is missing globals',
+        );
       }
       final globalImportResult = await _importArchiveGlobals(globals);
       profileIdRemap = globalImportResult.profileIdRemap;
@@ -1860,9 +1865,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       );
     }
 
-    final folderEntries = [...manifestData.manifest.folders]..sort((a, b) {
-        final depthCompare = _archivePathDepth(a.archivePath)
-            .compareTo(_archivePathDepth(b.archivePath));
+    final folderEntries = [...manifestData.manifest.folders]
+      ..sort((a, b) {
+        final depthCompare = _archivePathDepth(
+          a.archivePath,
+        ).compareTo(_archivePathDepth(b.archivePath));
         if (depthCompare != 0) {
           return depthCompare;
         }
@@ -1873,8 +1880,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     for (final folderEntry in folderEntries) {
       final resolvedParentFolderId = folderEntry.parentManifestId == null
           ? (manifestData.manifest.archiveType == ArchiveType.folderTree
-              ? parentFolderId
-              : null)
+                ? parentFolderId
+                : null)
           : localFolderIdsByManifestId[folderEntry.parentManifestId!];
       if (folderEntry.parentManifestId != null &&
           resolvedParentFolderId == null) {
@@ -1883,16 +1890,17 @@ class StrategyProvider extends Notifier<StrategyState> {
         );
       }
 
-      final createdFolder =
-          await ref.read(folderProvider.notifier).createFolder(
-                name: folderEntry.name,
-                icon: folderEntry.icon.toIconData(),
-                color: folderEntry.color,
-                customColor: folderEntry.customColorValue == null
-                    ? null
-                    : Color(folderEntry.customColorValue!),
-                parentID: resolvedParentFolderId,
-              );
+      final createdFolder = await ref
+          .read(folderProvider.notifier)
+          .createFolder(
+            name: folderEntry.name,
+            icon: folderEntry.icon.toIconData(),
+            color: folderEntry.color,
+            customColor: folderEntry.customColorValue == null
+                ? null
+                : Color(folderEntry.customColorValue!),
+            parentID: resolvedParentFolderId,
+          );
       localFolderIdsByManifestId[folderEntry.manifestId] = createdFolder.id;
       result = result.merge(
         const ImportBatchResult(
@@ -1905,11 +1913,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       );
     }
 
-    final materializedDirectory =
-        await Directory.systemTemp.createTemp('icarus-zip-manifest-import');
+    final materializedDirectory = await Directory.systemTemp.createTemp(
+      'icarus-zip-manifest-import',
+    );
     try {
-      for (final strategyEntry in [...manifestData.manifest.strategies]
-        ..sort((a, b) => a.archivePath.compareTo(b.archivePath))) {
+      for (final strategyEntry in [
+        ...manifestData.manifest.strategies,
+      ]..sort((a, b) => a.archivePath.compareTo(b.archivePath))) {
         final targetFolderId = strategyEntry.folderManifestId == null
             ? null
             : localFolderIdsByManifestId[strategyEntry.folderManifestId!];
@@ -2011,16 +2021,19 @@ class StrategyProvider extends Notifier<StrategyState> {
     for (final folder in manifest.folders) {
       if (!folderIds.add(folder.manifestId)) {
         throw FormatException(
-            'Duplicate folder manifest ID: ${folder.manifestId}');
+          'Duplicate folder manifest ID: ${folder.manifestId}',
+        );
       }
       if (!folderPaths.add(folder.archivePath)) {
         throw FormatException(
-            'Duplicate folder archive path: ${folder.archivePath}');
+          'Duplicate folder archive path: ${folder.archivePath}',
+        );
       }
       if (folder.parentManifestId == null) {
         rootFolders.add(folder);
       } else if (!manifest.folders.any(
-          (candidate) => candidate.manifestId == folder.parentManifestId)) {
+        (candidate) => candidate.manifestId == folder.parentManifestId,
+      )) {
         throw FormatException('Missing parent folder for ${folder.manifestId}');
       }
     }
@@ -2028,7 +2041,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (manifest.archiveType == ArchiveType.folderTree) {
       if (rootFolders.length != 1) {
         throw const FormatException(
-            'Folder tree archives must contain one root');
+          'Folder tree archives must contain one root',
+        );
       }
       if (rootFolders.single.archivePath.isNotEmpty) {
         throw const FormatException(
@@ -2037,8 +2051,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
     }
 
-    final knownFolderIds =
-        manifest.folders.map((folder) => folder.manifestId).toSet();
+    final knownFolderIds = manifest.folders
+        .map((folder) => folder.manifestId)
+        .toSet();
     final strategyPaths = <String>{};
     for (final strategy in manifest.strategies) {
       if (!strategyPaths.add(strategy.archivePath)) {
@@ -2097,10 +2112,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       if (!allowedFiles.contains(archivePath) &&
           !_shouldIgnoreImportedEntityName(path.posix.basename(archivePath))) {
         issues.add(
-          ImportIssue(
-            path: archivePath,
-            code: ImportIssueCode.unsupportedFile,
-          ),
+          ImportIssue(path: archivePath, code: ImportIssueCode.unsupportedFile),
         );
       }
     }
@@ -2119,7 +2131,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
       final normalizedPath = normalizeArchivePath(entry.name);
       if (_shouldIgnoreImportedEntityName(
-          path.posix.basename(normalizedPath))) {
+        path.posix.basename(normalizedPath),
+      )) {
         continue;
       }
       filesByPath[normalizedPath] = entry;
@@ -2218,8 +2231,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
 
       if (archivePath.startsWith('$normalizedParentPrefix/')) {
-        final remainder =
-            archivePath.substring(normalizedParentPrefix.length + 1);
+        final remainder = archivePath.substring(
+          normalizedParentPrefix.length + 1,
+        );
         if (remainder.isEmpty || !remainder.contains('/')) {
           continue;
         }
@@ -2234,8 +2248,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     var result = const ImportBatchResult.empty();
 
-    final tempDirectory =
-        await Directory.systemTemp.createTemp('icarus-zip-legacy-import');
+    final tempDirectory = await Directory.systemTemp.createTemp(
+      'icarus-zip-legacy-import',
+    );
     try {
       final sortedDirectories = directDirectories.toList()..sort();
       for (final directoryPrefix in sortedDirectories) {
@@ -2334,9 +2349,11 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<_ManifestImportData?> _loadManifestIfPresent(
-      Directory directory) async {
-    final manifestFile =
-        File(path.join(directory.path, archiveMetadataFileName));
+    Directory directory,
+  ) async {
+    final manifestFile = File(
+      path.join(directory.path, archiveMetadataFileName),
+    );
     if (!await manifestFile.exists()) {
       return null;
     }
@@ -2367,7 +2384,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       final globals = manifestData.manifest.globals;
       if (globals == null) {
         throw const FormatException(
-            'Library backup archive is missing globals');
+          'Library backup archive is missing globals',
+        );
       }
       final globalImportResult = await _importArchiveGlobals(globals);
       profileIdRemap = globalImportResult.profileIdRemap;
@@ -2382,9 +2400,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       );
     }
 
-    final folderEntries = [...manifestData.manifest.folders]..sort((a, b) {
-        final depthCompare = _archivePathDepth(a.archivePath)
-            .compareTo(_archivePathDepth(b.archivePath));
+    final folderEntries = [...manifestData.manifest.folders]
+      ..sort((a, b) {
+        final depthCompare = _archivePathDepth(
+          a.archivePath,
+        ).compareTo(_archivePathDepth(b.archivePath));
         if (depthCompare != 0) {
           return depthCompare;
         }
@@ -2395,8 +2415,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     for (final folderEntry in folderEntries) {
       final resolvedParentFolderId = folderEntry.parentManifestId == null
           ? (manifestData.manifest.archiveType == ArchiveType.folderTree
-              ? parentFolderId
-              : null)
+                ? parentFolderId
+                : null)
           : localFolderIdsByManifestId[folderEntry.parentManifestId!];
       if (folderEntry.parentManifestId != null &&
           resolvedParentFolderId == null) {
@@ -2405,16 +2425,17 @@ class StrategyProvider extends Notifier<StrategyState> {
         );
       }
 
-      final createdFolder =
-          await ref.read(folderProvider.notifier).createFolder(
-                name: folderEntry.name,
-                icon: folderEntry.icon.toIconData(),
-                color: folderEntry.color,
-                customColor: folderEntry.customColorValue == null
-                    ? null
-                    : Color(folderEntry.customColorValue!),
-                parentID: resolvedParentFolderId,
-              );
+      final createdFolder = await ref
+          .read(folderProvider.notifier)
+          .createFolder(
+            name: folderEntry.name,
+            icon: folderEntry.icon.toIconData(),
+            color: folderEntry.color,
+            customColor: folderEntry.customColorValue == null
+                ? null
+                : Color(folderEntry.customColorValue!),
+            parentID: resolvedParentFolderId,
+          );
       localFolderIdsByManifestId[folderEntry.manifestId] = createdFolder.id;
       result = result.merge(
         const ImportBatchResult(
@@ -2443,8 +2464,9 @@ class StrategyProvider extends Notifier<StrategyState> {
         await _importStrategyFile(
           file: XFile(
             _archivePathToFile(
-                    manifestData.rootDirectory, strategyEntry.archivePath)
-                .path,
+              manifestData.rootDirectory,
+              strategyEntry.archivePath,
+            ).path,
           ),
           targetFolderId: targetFolderId,
           displayNameOverride: strategyEntry.name,
@@ -2525,16 +2547,19 @@ class StrategyProvider extends Notifier<StrategyState> {
     for (final folder in manifest.folders) {
       if (!folderIds.add(folder.manifestId)) {
         throw FormatException(
-            'Duplicate folder manifest ID: ${folder.manifestId}');
+          'Duplicate folder manifest ID: ${folder.manifestId}',
+        );
       }
       if (!folderPaths.add(folder.archivePath)) {
         throw FormatException(
-            'Duplicate folder archive path: ${folder.archivePath}');
+          'Duplicate folder archive path: ${folder.archivePath}',
+        );
       }
       if (folder.parentManifestId == null) {
         rootFolders.add(folder);
       } else if (!manifest.folders.any(
-          (candidate) => candidate.manifestId == folder.parentManifestId)) {
+        (candidate) => candidate.manifestId == folder.parentManifestId,
+      )) {
         throw FormatException('Missing parent folder for ${folder.manifestId}');
       }
     }
@@ -2542,7 +2567,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (manifest.archiveType == ArchiveType.folderTree) {
       if (rootFolders.length != 1) {
         throw const FormatException(
-            'Folder tree archives must contain one root');
+          'Folder tree archives must contain one root',
+        );
       }
       if (rootFolders.single.archivePath.isNotEmpty) {
         throw const FormatException(
@@ -2551,8 +2577,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
     }
 
-    final knownFolderIds =
-        manifest.folders.map((folder) => folder.manifestId).toSet();
+    final knownFolderIds = manifest.folders
+        .map((folder) => folder.manifestId)
+        .toSet();
     final strategyPaths = <String>{};
     for (final strategy in manifest.strategies) {
       if (!strategyPaths.add(strategy.archivePath)) {
@@ -2572,8 +2599,10 @@ class StrategyProvider extends Notifier<StrategyState> {
           'Folder tree strategies must reference the exported root folder',
         );
       }
-      if (!(_archivePathToFile(manifestData.rootDirectory, strategy.archivePath)
-          .existsSync())) {
+      if (!(_archivePathToFile(
+        manifestData.rootDirectory,
+        strategy.archivePath,
+      ).existsSync())) {
         throw FormatException('Missing strategy file: ${strategy.archivePath}');
       }
     }
@@ -2588,8 +2617,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   File _archivePathToFile(Directory rootDirectory, String archivePath) {
     final normalized = normalizeArchivePath(archivePath);
-    final segments =
-        normalized.isEmpty ? const <String>[] : normalized.split('/');
+    final segments = normalized.isEmpty
+        ? const <String>[]
+        : normalized.split('/');
     return File(path.joinAll([rootDirectory.path, ...segments]));
   }
 
@@ -2627,8 +2657,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     final issues = <ImportIssue>[];
-    await for (final entity in manifestData.rootDirectory
-        .list(recursive: true, followLinks: false)) {
+    await for (final entity in manifestData.rootDirectory.list(
+      recursive: true,
+      followLinks: false,
+    )) {
       final relativePath = normalizeArchivePath(
         path.relative(entity.path, from: manifestData.rootDirectory.path),
       );
@@ -2648,14 +2680,12 @@ class StrategyProvider extends Notifier<StrategyState> {
         continue;
       }
 
-      final directoryAllowed = allowedDirectories.contains(relativePath) ||
+      final directoryAllowed =
+          allowedDirectories.contains(relativePath) ||
           allowedFiles.any((allowed) => allowed.startsWith('$relativePath/'));
       if (!directoryAllowed) {
         issues.add(
-          ImportIssue(
-            path: entity.path,
-            code: ImportIssueCode.unsupportedFile,
-          ),
+          ImportIssue(path: entity.path, code: ImportIssueCode.unsupportedFile),
         );
       }
     }
@@ -2664,13 +2694,16 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<_GlobalImportResult> _importArchiveGlobals(
-      ArchiveGlobals globals) async {
+    ArchiveGlobals globals,
+  ) async {
     await MapThemeProfilesProvider.bootstrap();
 
-    final profileBox =
-        Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
-    final appPreferencesBox =
-        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox);
+    final profileBox = Hive.box<MapThemeProfile>(
+      HiveBoxNames.mapThemeProfilesBox,
+    );
+    final appPreferencesBox = Hive.box<AppPreferences>(
+      HiveBoxNames.appPreferencesBox,
+    );
     final favoriteAgentsBox = Hive.box<bool>(HiveBoxNames.favoriteAgentsBox);
 
     final profileIdRemap = <String, String>{};
@@ -2705,8 +2738,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
       var localProfileId = importedProfile.id;
       if (profileBox.get(localProfileId) != null ||
-          MapThemeProfilesProvider.immutableBuiltInProfiles
-              .any((profile) => profile.id == localProfileId)) {
+          MapThemeProfilesProvider.immutableBuiltInProfiles.any(
+            (profile) => profile.id == localProfileId,
+          )) {
         localProfileId = const Uuid().v4();
       }
 
@@ -2722,15 +2756,14 @@ class StrategyProvider extends Notifier<StrategyState> {
       themeProfilesImported++;
     }
 
-    final resolvedDefaultProfileId = globals
-                .defaultThemeProfileIdForNewStrategies ==
-            null
+    final resolvedDefaultProfileId =
+        globals.defaultThemeProfileIdForNewStrategies == null
         ? MapThemeProfilesProvider.immutableDefaultProfileId
         : profileIdRemap[globals.defaultThemeProfileIdForNewStrategies!] ??
-            (profileBox.get(globals.defaultThemeProfileIdForNewStrategies!) !=
-                    null
-                ? globals.defaultThemeProfileIdForNewStrategies!
-                : MapThemeProfilesProvider.immutableDefaultProfileId);
+              (profileBox.get(globals.defaultThemeProfileIdForNewStrategies!) !=
+                      null
+                  ? globals.defaultThemeProfileIdForNewStrategies!
+                  : MapThemeProfilesProvider.immutableDefaultProfileId);
 
     await appPreferencesBox.put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,
@@ -2803,37 +2836,42 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
 
       Map<String, dynamic> json = jsonDecode(jsonData);
-      final versionNumber = int.tryParse(json["versionNumber"].toString()) ??
+      final versionNumber =
+          int.tryParse(json["versionNumber"].toString()) ??
           Settings.versionNumber;
       _throwIfImportedVersionIsTooNew(versionNumber);
 
       //Backwards compatibility for pre-pages exported strategies
-      final List<DrawingElement> drawingData =
-          DrawingProvider.fromJson(jsonEncode(json["drawingData"] ?? []));
+      final List<DrawingElement> drawingData = DrawingProvider.fromJson(
+        jsonEncode(json["drawingData"] ?? []),
+      );
 
-      final List<PlacedAgent> agentData =
-          AgentProvider.fromJson(jsonEncode(json["agentData"] ?? []))
-              .whereType<PlacedAgent>()
-              .toList(growable: false);
+      final List<PlacedAgent> agentData = AgentProvider.fromJson(
+        jsonEncode(json["agentData"] ?? []),
+      ).whereType<PlacedAgent>().toList(growable: false);
 
-      final List<PlacedAbility> abilityData =
-          AbilityProvider.fromJson(jsonEncode(json["abilityData"] ?? []));
+      final List<PlacedAbility> abilityData = AbilityProvider.fromJson(
+        jsonEncode(json["abilityData"] ?? []),
+      );
 
       final mapData = MapProvider.fromJson(jsonEncode(json["mapData"]));
-      final textData =
-          TextProvider.fromJson(jsonEncode(json["textData"] ?? []));
+      final textData = TextProvider.fromJson(
+        jsonEncode(json["textData"] ?? []),
+      );
 
       List<PlacedImage> imageData = [];
       if (!kIsWeb) {
         if (isZip) {
           imageData = await PlacedImageProvider.fromJson(
-              jsonString: jsonEncode(json["imageData"] ?? []),
-              strategyID: newID);
+            jsonString: jsonEncode(json["imageData"] ?? []),
+            strategyID: newID,
+          );
         } else {
           log('Legacy image data loading');
           imageData = await PlacedImageProvider.legacyFromJson(
-              jsonString: jsonEncode(json["imageData"] ?? []),
-              strategyID: newID);
+            jsonString: jsonEncode(json["imageData"] ?? []),
+            strategyID: newID,
+          );
         }
       }
 
@@ -2862,20 +2900,22 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
       final MapThemePalette? importedThemeOverridePalette =
           json["themePalette"] is Map<String, dynamic>
-              ? MapThemePalette.fromJson(json["themePalette"])
-              : (json["themePalette"] is Map
-                  ? MapThemePalette.fromJson(
-                      Map<String, dynamic>.from(json["themePalette"]))
-                  : null);
+          ? MapThemePalette.fromJson(json["themePalette"])
+          : (json["themePalette"] is Map
+                ? MapThemePalette.fromJson(
+                    Map<String, dynamic>.from(json["themePalette"]),
+                  )
+                : null);
       final rawImportedThemeProfileId = json['themeProfileId'];
-      final importedThemeProfileId = rawImportedThemeProfileId is String &&
+      final importedThemeProfileId =
+          rawImportedThemeProfileId is String &&
               rawImportedThemeProfileId.isNotEmpty
           ? rawImportedThemeProfileId
           : null;
       final String? resolvedThemeProfileId = importedThemeProfileId == null
           ? null
           : (themeProfileIdRemap[importedThemeProfileId] ??
-              importedThemeProfileId);
+                importedThemeProfileId);
 
       // bool needsMigration = (versionNumber < 15);
       final List<StrategyPage> pages = json["pages"] != null
@@ -2920,8 +2960,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
       newStrategy = await migrateLegacyData(newStrategy);
 
-      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-          .put(newStrategy.id, newStrategy);
+      await Hive.box<StrategyData>(
+        HiveBoxNames.strategiesBox,
+      ).put(newStrategy.id, newStrategy);
     } finally {
       if (isZip) {
         try {
@@ -2954,8 +2995,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<String> createNewStrategy(String name) async {
     final newID = const Uuid().v4();
     final pageID = const Uuid().v4();
-    final defaultThemeProfileId =
-        ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies;
+    final defaultThemeProfileId = ref
+        .read(mapThemeProfilesProvider)
+        .defaultProfileIdForNewStrategies;
     final newStrategy = StrategyData(
       mapData: MapValue.ascent,
       versionNumber: Settings.versionNumber,
@@ -2975,7 +3017,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           sortIndex: 0,
           isAttack: true,
           settings: StrategySettings(),
-        )
+        ),
       ],
       lastEdited: DateTime.now(),
 
@@ -2985,8 +3027,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       themeProfileId: defaultThemeProfileId,
     );
 
-    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .put(newStrategy.id, newStrategy);
+    await Hive.box<StrategyData>(
+      HiveBoxNames.strategiesBox,
+    ).put(newStrategy.id, newStrategy);
 
     return newStrategy.id;
   }
@@ -3076,8 +3119,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       throw StateError("Couldn't find folder to export");
     }
 
-    final stagingDirectory =
-        await Directory.systemTemp.createTemp('icarus-folder-export');
+    final stagingDirectory = await Directory.systemTemp.createTemp(
+      'icarus-folder-export',
+    );
     final rootDirectory = await _createUniqueChildDirectory(
       parentDirectory: stagingDirectory,
       desiredName: folder.name,
@@ -3099,15 +3143,16 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   @visibleForTesting
   Future<Directory> buildLibraryExportDirectoryForTest() async {
-    final stagingDirectory =
-        await Directory.systemTemp.createTemp('icarus-library-export');
+    final stagingDirectory = await Directory.systemTemp.createTemp(
+      'icarus-library-export',
+    );
     final rootDirectory = Directory(
       path.join(stagingDirectory.path, libraryBackupRootDirectoryName),
     );
     await rootDirectory.create(recursive: true);
-    final rootStrategiesDirectory =
-        Directory(path.join(rootDirectory.path, 'root_strategies'))
-          ..createSync(recursive: true);
+    final rootStrategiesDirectory = Directory(
+      path.join(rootDirectory.path, 'root_strategies'),
+    )..createSync(recursive: true);
     final foldersDirectory = Directory(path.join(rootDirectory.path, 'folders'))
       ..createSync(recursive: true);
 
@@ -3121,10 +3166,12 @@ class StrategyProvider extends Notifier<StrategyState> {
       exportState.strategies.add(
         ArchiveStrategyEntry(
           name: strategy.name,
-          archivePath: normalizeArchivePath(path.posix.join(
-            'root_strategies',
-            path.basename(strategyArchivePath),
-          )),
+          archivePath: normalizeArchivePath(
+            path.posix.join(
+              'root_strategies',
+              path.basename(strategyArchivePath),
+            ),
+          ),
           folderManifestId: null,
         ),
       );
@@ -3135,10 +3182,9 @@ class StrategyProvider extends Notifier<StrategyState> {
         parentDirectory: foldersDirectory,
         desiredName: rootFolder.name,
       );
-      final rootArchivePath = normalizeArchivePath(path.posix.join(
-        'folders',
-        path.basename(rootFolderDirectory.path),
-      ));
+      final rootArchivePath = normalizeArchivePath(
+        path.posix.join('folders', path.basename(rootFolderDirectory.path)),
+      );
       await _writeFolderArchive(
         folderID: rootFolder.id,
         exportDirectory: rootFolderDirectory,
@@ -3180,8 +3226,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     required String? parentManifestId,
     required String currentArchivePath,
   }) async {
-    final currentFolder =
-        ref.read(folderProvider.notifier).findFolderByID(folderID);
+    final currentFolder = ref
+        .read(folderProvider.notifier)
+        .findFolderByID(folderID);
     if (currentFolder == null) {
       return;
     }
@@ -3207,10 +3254,12 @@ class StrategyProvider extends Notifier<StrategyState> {
       exportState.strategies.add(
         ArchiveStrategyEntry(
           name: strategy.name,
-          archivePath: normalizeArchivePath(path.posix.join(
-            currentArchivePath,
-            path.basename(strategyArchivePath),
-          )),
+          archivePath: normalizeArchivePath(
+            path.posix.join(
+              currentArchivePath,
+              path.basename(strategyArchivePath),
+            ),
+          ),
           folderManifestId: manifestId,
         ),
       );
@@ -3221,10 +3270,9 @@ class StrategyProvider extends Notifier<StrategyState> {
         parentDirectory: exportDirectory,
         desiredName: subFolder.name,
       );
-      final childArchivePath = normalizeArchivePath(path.posix.join(
-        currentArchivePath,
-        path.basename(childDirectory.path),
-      ));
+      final childArchivePath = normalizeArchivePath(
+        path.posix.join(currentArchivePath, path.basename(childDirectory.path)),
+      );
       await _writeFolderArchive(
         folderID: subFolder.id,
         exportDirectory: childDirectory,
@@ -3248,10 +3296,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   List<StrategyData> _sortedStrategiesForFolder(String? folderID) {
-    final strategies = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .values
-        .where((strategy) => strategy.folderID == folderID)
-        .toList();
+    final strategies = Hive.box<StrategyData>(
+      HiveBoxNames.strategiesBox,
+    ).values.where((strategy) => strategy.folderID == folderID).toList();
     strategies.sort((a, b) {
       final nameCompare = a.name.compareTo(b.name);
       if (nameCompare != 0) {
@@ -3263,10 +3310,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   List<Folder> _sortedFoldersForParent(String? parentID) {
-    final folders = Hive.box<Folder>(HiveBoxNames.foldersBox)
-        .values
-        .where((folder) => folder.parentID == parentID)
-        .toList();
+    final folders = Hive.box<Folder>(
+      HiveBoxNames.foldersBox,
+    ).values.where((folder) => folder.parentID == parentID).toList();
     folders.sort((a, b) {
       final nameCompare = a.name.compareTo(b.name);
       if (nameCompare != 0) {
@@ -3289,14 +3335,12 @@ class StrategyProvider extends Notifier<StrategyState> {
           ),
         )
         .toList(growable: false);
-    final appPreferences =
-        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
-            .get(MapThemeProfilesProvider.appPreferencesSingletonKey);
-    final favoriteAgents = Hive.box<bool>(HiveBoxNames.favoriteAgentsBox)
-        .keys
-        .whereType<String>()
-        .toList()
-      ..sort();
+    final appPreferences = Hive.box<AppPreferences>(
+      HiveBoxNames.appPreferencesBox,
+    ).get(MapThemeProfilesProvider.appPreferencesSingletonKey);
+    final favoriteAgents = Hive.box<bool>(
+      HiveBoxNames.favoriteAgentsBox,
+    ).keys.whereType<String>().toList()..sort();
 
     return ArchiveGlobals(
       themeProfiles: profiles,
@@ -3322,7 +3366,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
 
     final manifestFile = File(
-        path.join(exportState.rootDirectory.path, archiveMetadataFileName));
+      path.join(exportState.rootDirectory.path, archiveMetadataFileName),
+    );
     await manifestFile.writeAsString(
       const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
     );
@@ -3333,8 +3378,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       return strategy.themeOverridePalette!;
     }
 
-    final profiles =
-        Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+    final profiles = Hive.box<MapThemeProfile>(
+      HiveBoxNames.mapThemeProfilesBox,
+    );
     final assignedProfile = strategy.themeProfileId == null
         ? null
         : profiles.get(strategy.themeProfileId!);
@@ -3385,17 +3431,21 @@ class StrategyProvider extends Notifier<StrategyState> {
       outPath = path.join(saveDir.path, "$archiveBase.ica");
     }
 
-    final jsonArchiveFile =
-        ArchiveFile.bytes("$archiveBase.json", utf8.encode(data));
+    final jsonArchiveFile = ArchiveFile.bytes(
+      "$archiveBase.json",
+      utf8.encode(data),
+    );
 
     final zipEncoder = ZipFileEncoder()..create(outPath);
 
     final supportDirectory =
         await _getApplicationSupportDirectoryOrSystemTemp();
-    final customDirectory =
-        Directory(path.join(supportDirectory.path, strategy.id));
-    final imagesDirectory =
-        Directory(path.join(customDirectory.path, 'images'));
+    final customDirectory = Directory(
+      path.join(supportDirectory.path, strategy.id),
+    );
+    final imagesDirectory = Directory(
+      path.join(customDirectory.path, 'images'),
+    );
     await imagesDirectory.create(recursive: true);
 
     await for (final entity in imagesDirectory.list()) {
@@ -3489,8 +3539,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     // final utilityData = ref.read(utilityProvider);
     await _syncCurrentPageToHive();
 
-    final StrategyData? savedStrat =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(id);
+    final StrategyData? savedStrat = Hive.box<StrategyData>(
+      HiveBoxNames.strategiesBox,
+    ).get(id);
 
     if (savedStrat == null) return;
 
@@ -3504,12 +3555,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       clearThemeOverridePalette: strategyTheme.overridePalette == null,
     );
 
-    await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .put(currentStrategy.id, currentStrategy);
+    await Hive.box<StrategyData>(
+      HiveBoxNames.strategiesBox,
+    ).put(currentStrategy.id, currentStrategy);
 
-    state = state.copyWith(
-      isSaved: true,
-    );
+    state = state.copyWith(isSaved: true);
     log("Save to hive was called");
   }
 
@@ -3571,11 +3621,11 @@ class StrategyProvider extends Notifier<StrategyState> {
     final target = ref.read(strategySettingsProvider);
     final newPages = [
       for (final page in strat.pages)
-        page.copyWith(
-          settings: page.settings.copyWith(
-            agentSize: target.agentSize,
-            abilitySize: target.abilitySize,
-          ),
+        _reflowPageMarkerSizes(
+          page: page,
+          map: strat.mapData,
+          oldSettings: page.settings,
+          newSettings: target,
         ),
     ];
 
@@ -3591,6 +3641,67 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
     await box.put(updated.id, updated);
     setUnsaved();
+  }
+
+  StrategyPage _reflowPageMarkerSizes({
+    required StrategyPage page,
+    required MapValue map,
+    required StrategySettings oldSettings,
+    required StrategySettings newSettings,
+  }) {
+    final mapScale = Maps.mapScale[map] ?? 1.0;
+
+    final agentData = [
+      for (final agent in page.agentData) _copyAgentNodeForPageReflow(agent),
+    ];
+    final abilityData = [
+      for (final ability in page.abilityData) ability.copyWith(),
+    ];
+    final lineUps = [
+      for (final lineUp in page.lineUps)
+        lineUp.copyWith(
+          agent: lineUp.agent.copyWith(),
+          ability: lineUp.ability.copyWith(),
+        ),
+    ];
+
+    for (final agent in agentData) {
+      agent.reflowForAgentSizeChange(
+        oldAgentSize: oldSettings.agentSize,
+        newAgentSize: newSettings.agentSize,
+      );
+    }
+    for (final ability in abilityData) {
+      ability.reflowForAbilitySizeChange(
+        oldAbilitySize: oldSettings.abilitySize,
+        newAbilitySize: newSettings.abilitySize,
+        mapScale: mapScale,
+      );
+    }
+    for (final lineUp in lineUps) {
+      lineUp.reflowForMarkerSizeChange(
+        oldAgentSize: oldSettings.agentSize,
+        newAgentSize: newSettings.agentSize,
+        oldAbilitySize: oldSettings.abilitySize,
+        newAbilitySize: newSettings.abilitySize,
+        mapScale: mapScale,
+      );
+    }
+
+    return page.copyWith(
+      agentData: agentData,
+      abilityData: abilityData,
+      lineUps: lineUps,
+      settings: newSettings.copyWith(),
+    );
+  }
+
+  PlacedAgentNode _copyAgentNodeForPageReflow(PlacedAgentNode agent) {
+    return switch (agent) {
+      PlacedAgent() => agent.copyWith(),
+      PlacedViewConeAgent() => agent.copyWith(),
+      PlacedCircleAgent() => agent.copyWith(),
+    };
   }
 
   void moveToFolder({required String strategyID, required String? parentID}) {

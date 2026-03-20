@@ -50,6 +50,10 @@ double _squareRenderedHeight({
 sealed class Ability {
   //
   Offset getAnchorPoint({double? mapScale, double? abilitySize});
+  Offset getScaleCenterPoint({double? mapScale, double? abilitySize}) {
+    return getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize);
+  }
+
   Offset getSize({double? mapScale, double? abilitySize});
   Widget createWidget({
     String? id,
@@ -362,6 +366,28 @@ class SquareAbility extends Ability {
   }
 
   @override
+  Offset getScaleCenterPoint({double? mapScale, double? abilitySize}) {
+    assert(mapScale != null, 'mapScale must be provided');
+    abilitySize ??= Settings.abilitySize;
+    return Offset(
+      _squareRenderedWidth(
+            isWall: isWall,
+            width: width,
+            mapScale: mapScale!,
+            abilitySize: abilitySize,
+          ) /
+          2,
+      (_squareRenderedHeight(
+                height: height,
+                distanceBetweenAOE: distanceBetweenAOE,
+                mapScale: mapScale,
+              ) +
+              (abilitySize / 2)) /
+          2,
+    );
+  }
+
+  @override
   Offset getSize({double? mapScale, double? abilitySize}) {
     assert(abilitySize != null, 'abilitySize must be provided');
     assert(mapScale != null, 'mapScale must be provided');
@@ -494,6 +520,15 @@ class RotatableImageAbility extends Ability {
     assert(abilitySize != null, 'abilitySize must be provided');
     assert(mapScale != null, 'mapScale must be provided');
     return Offset(width * mapScale!, (height * mapScale / 2) + 30);
+  }
+
+  @override
+  Offset getScaleCenterPoint({double? mapScale, double? abilitySize}) {
+    assert(mapScale != null, 'mapScale must be provided');
+    return Offset(
+      width * mapScale! / 2,
+      ((height * mapScale) + 30) / 2,
+    );
   }
 
   @override
