@@ -346,11 +346,6 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> switchPage(String pageID) async {
-    if (_isCloudMode()) {
-      await setActivePage(pageID);
-      return;
-    }
-
     await setActivePageAnimated(pageID);
   }
 
@@ -1308,76 +1303,32 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> backwardPage() async {
-    if (_isCloudMode()) {
-      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
-      if (snapshot == null || snapshot.pages.isEmpty) return;
-      final pages = [...snapshot.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-      final activeId = activePageID ?? pages.first.publicId;
-      final currentIndex = pages.indexWhere((p) => p.publicId == activeId);
-      if (currentIndex < 0) return;
-      var nextIndex = currentIndex - 1;
-      if (nextIndex < 0) nextIndex = pages.length - 1;
-      await setActivePage(pages[nextIndex].publicId);
-      return;
-    }
+    final orderedPageIds = _orderedPageIds();
+    if (orderedPageIds.isEmpty) return;
 
-    if (activePageID == null) return;
-
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final doc = box.get(state.id);
-    if (doc == null || doc.pages.isEmpty) return;
-
-    final pages = [...doc.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-
-    final currentIndex = pages.indexWhere((p) => p.id == activePageID);
+    final currentPageId = _currentOrderedPageId(orderedPageIds);
+    final currentIndex = orderedPageIds.indexOf(currentPageId);
     if (currentIndex == -1) return;
     int nextIndex = currentIndex - 1;
-    if (nextIndex < 0) nextIndex = pages.length - 1;
+    if (nextIndex < 0) nextIndex = orderedPageIds.length - 1;
 
-    final nextPage = pages[nextIndex];
-    await setActivePageAnimated(
-      nextPage.id,
-      direction: PageTransitionDirection.backward,
-    );
+    await setActivePageAnimated(orderedPageIds[nextIndex],
+        direction: PageTransitionDirection.backward);
   }
 
   Future<void> forwardPage() async {
-    if (_isCloudMode()) {
-      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
-      if (snapshot == null || snapshot.pages.isEmpty) return;
-      final pages = [...snapshot.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-      final activeId = activePageID ?? pages.first.publicId;
-      final currentIndex = pages.indexWhere((p) => p.publicId == activeId);
-      if (currentIndex < 0) return;
-      var nextIndex = currentIndex + 1;
-      if (nextIndex >= pages.length) nextIndex = 0;
-      await setActivePage(pages[nextIndex].publicId);
-      return;
-    }
+    final orderedPageIds = _orderedPageIds();
+    if (orderedPageIds.isEmpty) return;
 
-    if (activePageID == null) return;
-
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final doc = box.get(state.id);
-    if (doc == null || doc.pages.isEmpty) return;
-
-    final pages = [...doc.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-
-    final currentIndex = pages.indexWhere((p) => p.id == activePageID);
+    final currentPageId = _currentOrderedPageId(orderedPageIds);
+    final currentIndex = orderedPageIds.indexOf(currentPageId);
     if (currentIndex == -1) return;
 
     int nextIndex = currentIndex + 1;
-    if (nextIndex >= pages.length) nextIndex = 0;
+    if (nextIndex >= orderedPageIds.length) nextIndex = 0;
 
-    final nextPage = pages[nextIndex];
-    await setActivePageAnimated(
-      nextPage.id,
-      direction: PageTransitionDirection.forward,
-    );
+    await setActivePageAnimated(orderedPageIds[nextIndex],
+        direction: PageTransitionDirection.forward);
   }
 
   Future<void> reorderPage(int oldIndex, int newIndex) async {
@@ -1449,17 +1400,51 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
   }
 
-  PageTransitionDirection _resolveDirectionForPage(
-      String pageID, List<StrategyPage> orderedPages) {
-    if (activePageID == null) return PageTransitionDirection.forward;
+  List<String> _orderedPageIds() {
+    if (_isCloudMode()) {
+      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      if (snapshot == null || snapshot.pages.isEmpty) {
+        return const [];
+      }
 
-    final currentIndex = orderedPages.indexWhere((p) => p.id == activePageID);
-    final targetIndex = orderedPages.indexWhere((p) => p.id == pageID);
+      final orderedPages = [...snapshot.pages]
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      return orderedPages.map((page) => page.publicId).toList(growable: false);
+    }
+
+    final doc =
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(state.id);
+    if (doc == null || doc.pages.isEmpty) {
+      return const [];
+    }
+
+    final orderedPages = [...doc.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    return orderedPages.map((page) => page.id).toList(growable: false);
+  }
+
+  String _currentOrderedPageId(List<String> orderedPageIds) {
+    final currentPageId = activePageID ?? state.activePageId;
+    if (currentPageId != null && orderedPageIds.contains(currentPageId)) {
+      return currentPageId;
+    }
+    return orderedPageIds.first;
+  }
+
+  PageTransitionDirection _resolveDirectionForPage(
+      String pageID, List<String> orderedPageIds) {
+    if (orderedPageIds.isEmpty) {
+      return PageTransitionDirection.forward;
+    }
+
+    final currentIndex =
+        orderedPageIds.indexOf(_currentOrderedPageId(orderedPageIds));
+    final targetIndex = orderedPageIds.indexOf(pageID);
     if (currentIndex < 0 || targetIndex < 0) {
       return PageTransitionDirection.forward;
     }
 
-    final length = orderedPages.length;
+    final length = orderedPageIds.length;
     final forwardSteps = (targetIndex - currentIndex + length) % length;
     final backwardSteps = (currentIndex - targetIndex + length) % length;
     return forwardSteps <= backwardSteps
@@ -1472,10 +1457,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       {PageTransitionDirection? direction,
       Duration duration = kPageTransitionDuration}) async {
     if (pageID == activePageID) return;
-    if (_isCloudMode()) {
-      await setActivePage(pageID);
-      return;
-    }
 
     final transitionState = ref.read(transitionProvider);
     final transitionNotifier = ref.read(transitionProvider.notifier);
@@ -1484,14 +1465,14 @@ class StrategyProvider extends Notifier<StrategyState> {
       transitionNotifier.complete();
     }
 
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final doc = box.get(state.id);
-    if (doc == null || doc.pages.isEmpty) return;
+    final orderedPageIds = _orderedPageIds();
+    if (orderedPageIds.isEmpty || !orderedPageIds.contains(pageID)) {
+      await setActivePage(pageID);
+      return;
+    }
 
-    final orderedPages = [...doc.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
     final resolvedDirection =
-        direction ?? _resolveDirectionForPage(pageID, orderedPages);
+        direction ?? _resolveDirectionForPage(pageID, orderedPageIds);
     final startSettings = ref.read(strategySettingsProvider);
 
     final prev = _snapshotAllPlaced();
@@ -1604,10 +1585,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         return;
       }
       await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
-      final refreshed = ref.read(remoteStrategySnapshotProvider).valueOrNull;
-      if (refreshed != null) {
-        await _hydrateFromRemotePage(refreshed, pageID);
-      }
+      await setActivePageAnimated(pageID);
       return;
     }
 
@@ -1741,7 +1719,11 @@ class StrategyProvider extends Notifier<StrategyState> {
               refreshed.pages.any((page) => page.publicId == nextActivePageId)
           ? nextActivePageId
           : refreshed.pages.first.publicId;
-      await _hydrateFromRemotePage(refreshed, targetPageId);
+      if (targetPageId != activePageID) {
+        await setActivePageAnimated(targetPageId);
+      } else {
+        await _hydrateFromRemotePage(refreshed, targetPageId);
+      }
       return;
     }
 
