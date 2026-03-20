@@ -110,18 +110,22 @@ class MapThemeProfile extends HiveObject {
 
 class AppPreferences extends HiveObject {
   final String defaultThemeProfileIdForNewStrategies;
+  final bool autosaveEnabled;
 
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
+    this.autosaveEnabled = true,
   });
 
   AppPreferences copyWith({
     String? defaultThemeProfileIdForNewStrategies,
+    bool? autosaveEnabled,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
           defaultThemeProfileIdForNewStrategies ??
               this.defaultThemeProfileIdForNewStrategies,
+      autosaveEnabled: autosaveEnabled ?? this.autosaveEnabled,
     );
   }
 }
@@ -173,6 +177,10 @@ class MapThemeProfilesState {
 final mapThemeProfilesProvider =
     NotifierProvider<MapThemeProfilesProvider, MapThemeProfilesState>(
         MapThemeProfilesProvider.new);
+
+final appPreferencesProvider =
+    NotifierProvider<AppPreferencesNotifier, AppPreferences>(
+        AppPreferencesNotifier.new);
 
 final strategyThemeProvider =
     NotifierProvider<StrategyThemeProvider, StrategyThemeState>(
@@ -358,10 +366,16 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     final profileExists = state.profiles.any((p) => p.id == profileId);
     final resolvedProfileId =
         profileExists ? profileId : immutableDefaultProfileId;
+    final appPrefsBox =
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox);
+    final currentPrefs = appPrefsBox.get(appPreferencesSingletonKey) ??
+        AppPreferences(
+          defaultThemeProfileIdForNewStrategies: immutableDefaultProfileId,
+        );
 
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+    await appPrefsBox.put(
       appPreferencesSingletonKey,
-      AppPreferences(
+      currentPrefs.copyWith(
         defaultThemeProfileIdForNewStrategies: resolvedProfileId,
       ),
     );
@@ -417,7 +431,12 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
         profileBox.get(prefs.defaultThemeProfileIdForNewStrategies) == null) {
       await appPrefsBox.put(
         appPreferencesSingletonKey,
-        AppPreferences(
+        (prefs ??
+                AppPreferences(
+                  defaultThemeProfileIdForNewStrategies:
+                      immutableDefaultProfileId,
+                ))
+            .copyWith(
           defaultThemeProfileIdForNewStrategies: immutableDefaultProfileId,
         ),
       );
@@ -447,6 +466,36 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     return !existing.isBuiltIn ||
         existing.name != expected.name ||
         existing.palette != expected.palette;
+  }
+}
+
+class AppPreferencesNotifier extends Notifier<AppPreferences> {
+  @override
+  AppPreferences build() {
+    return _readFromHive();
+  }
+
+  Future<void> refreshFromHive() async {
+    state = _readFromHive();
+  }
+
+  Future<void> setAutosaveEnabled(bool enabled) async {
+    final updated = _readFromHive().copyWith(autosaveEnabled: enabled);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  AppPreferences _readFromHive() {
+    return Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).get(
+          MapThemeProfilesProvider.appPreferencesSingletonKey,
+        ) ??
+        AppPreferences(
+          defaultThemeProfileIdForNewStrategies:
+              MapThemeProfilesProvider.immutableDefaultProfileId,
+        );
   }
 }
 

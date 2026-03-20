@@ -9,6 +9,7 @@ import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Displays the current strategy name with a recent-strategies dropdown.
@@ -71,17 +72,20 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     setState(() => _isSwitching = true);
 
     try {
-      // Keep current work persisted before switching strategies.
-      if (currentStrategy.stratName != null) {
-        await ref
-            .read(strategyProvider.notifier)
-            .forceSaveNow(currentStrategy.id);
-      }
-      ref
-          .read(interactionStateProvider.notifier)
-          .update(InteractionState.navigation);
-      ref.read(agentFilterProvider.notifier).updateFilterState(FilterState.all);
-      await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
+      await guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'StrategyQuickSwitcher.switchStrategy',
+        onContinue: () async {
+          ref
+              .read(interactionStateProvider.notifier)
+              .update(InteractionState.navigation);
+          ref
+              .read(agentFilterProvider.notifier)
+              .updateFilterState(FilterState.all);
+          await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
+        },
+      );
     } finally {
       if (mounted) {
         setState(() => _isSwitching = false);

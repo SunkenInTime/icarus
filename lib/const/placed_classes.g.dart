@@ -25,7 +25,7 @@ PlacedText _$PlacedTextFromJson(Map<String, dynamic> json) => PlacedText(
           .fromJson(json['position'] as Map<String, dynamic>),
       id: json['id'] as String,
       size: (json['size'] as num?)?.toDouble() ?? 185.0,
-      fontSize: (json['fontSize'] as num?)?.toDouble() ?? 20.0,
+      fontSize: (json['fontSize'] as num?)?.toDouble() ?? 16.0,
       sizeVersion: (json['sizeVersion'] as num?)?.toInt(),
       tagColorValue: (json['tagColorValue'] as num?)?.toInt(),
     )

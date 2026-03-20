@@ -271,7 +271,7 @@ class PlacedTextAdapter extends TypeAdapter<PlacedText> {
       position: fields[4] as Offset,
       id: fields[2] as String,
       size: fields[1] == null ? 185 : (fields[1] as num).toDouble(),
-      fontSize: fields[6] == null ? 20 : (fields[6] as num).toDouble(),
+      fontSize: fields[6] == null ? 16 : (fields[6] as num).toDouble(),
       sizeVersion: (fields[7] as num?)?.toInt(),
       tagColorValue: (fields[5] as num?)?.toInt(),
     )
@@ -1470,15 +1470,18 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
     };
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies: fields[0] as String,
+      autosaveEnabled: fields[1] == null ? true : fields[1] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(1)
+      ..writeByte(2)
       ..writeByte(0)
-      ..write(obj.defaultThemeProfileIdForNewStrategies);
+      ..write(obj.defaultThemeProfileIdForNewStrategies)
+      ..writeByte(1)
+      ..write(obj.autosaveEnabled);
   }
 
   @override

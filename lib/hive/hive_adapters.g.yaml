@@ -503,10 +503,12 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 1
+    nextIndex: 2
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0
+      autosaveEnabled:
+        index: 1
   PlacedViewConeAgent:
     typeId: 29
     nextIndex: 9

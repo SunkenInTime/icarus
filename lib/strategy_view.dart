@@ -8,6 +8,7 @@ import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
 import 'package:icarus/widgets/delete_capture.dart';
 import 'package:icarus/widgets/demo_tag.dart';
@@ -31,24 +32,51 @@ class StrategyView extends ConsumerStatefulWidget {
 
 class _StrategyViewState extends ConsumerState<StrategyView>
     with WindowListener {
+  bool _isClosingWindow = false;
+
   @override
   void initState() {
     super.initState();
-    windowManager.addListener(this);
-    // _init();
+    if (!kIsWeb) {
+      windowManager.addListener(this);
+      _enableWindowCloseGuard();
+    }
   }
 
   @override
   void dispose() {
-    windowManager.removeListener(this);
+    if (!kIsWeb) {
+      windowManager.removeListener(this);
+      windowManager.setPreventClose(false);
+    }
     super.dispose();
   }
 
-  // void _init() async {
-  //   // Add this line to override the default close handler
-  //   // await windowManager.setPreventClose(true);
-  //   setState(() {});
-  // }
+  Future<void> _enableWindowCloseGuard() async {
+    await windowManager.setPreventClose(true);
+  }
+
+  Future<void> _leaveToLibrary() async {
+    await guardUnsavedStrategyExit(
+      context: context,
+      ref: ref,
+      source: 'StrategyView.leaveToLibrary',
+      onContinue: () async {
+        ref
+            .read(interactionStateProvider.notifier)
+            .update(InteractionState.navigation);
+        ref
+            .read(agentFilterProvider.notifier)
+            .updateFilterState(FilterState.all);
+        ref.read(deleteMenuProvider.notifier).requestClose();
+        await ref.read(strategyProvider.notifier).clearCurrentStrategy();
+        if (mounted) {
+          Navigator.pop(context);
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen(lineUpProvider, (previous, next) {
@@ -73,25 +101,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   children: [
                     ShadIconButton.ghost(
                       foregroundColor: Colors.white,
-                      onPressed: () async {
-                        await ref
-                            .read(strategyProvider.notifier)
-                            .forceSaveNow(ref.read(strategyProvider).id);
-
-                        if (!context.mounted) return;
-                        ref
-                            .read(interactionStateProvider.notifier)
-                            .update(InteractionState.navigation);
-                        ref
-                            .read(agentFilterProvider.notifier)
-                            .updateFilterState(FilterState.all);
-
-                        ref.read(deleteMenuProvider.notifier).requestClose();
-                        Navigator.pop(context);
-                        ref
-                            .read(strategyProvider.notifier)
-                            .clearCurrentStrategy();
-                      },
+                      onPressed: _leaveToLibrary,
                       icon: const Icon(Icons.home),
                     ),
                     const SizedBox(width: 5),
@@ -164,17 +174,23 @@ class _StrategyViewState extends ConsumerState<StrategyView>
 
   @override
   void onWindowClose() async {
-    // bool isPreventClose = await windowManager.isPreventClose();
-    // if (!isPreventClose) return;
-
-    if (ref.read(strategyProvider).isSaved) {
-      await windowManager.close(); // Close the window/app
+    if (kIsWeb) {
+      return;
+    }
+    if (_isClosingWindow) {
+      await windowManager.close();
       return;
     }
 
-    await ref
-        .read(strategyProvider.notifier)
-        .forceSaveNow(ref.read(strategyProvider).id);
-    await windowManager.close(); // Close the window/app
+    await guardUnsavedStrategyExit(
+      context: context,
+      ref: ref,
+      source: 'StrategyView.onWindowClose',
+      onContinue: () async {
+        _isClosingWindow = true;
+        await windowManager.setPreventClose(false);
+        await windowManager.close();
+      },
+    );
   }
 }

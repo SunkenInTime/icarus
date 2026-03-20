@@ -4,6 +4,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -19,6 +20,7 @@ class SettingsTab extends ConsumerWidget {
     final activeStrategyName = ref.watch(strategyProvider).stratName;
     final strategySettings = ref.watch(strategySettingsProvider);
     final mapState = ref.watch(mapProvider);
+    final appPreferences = ref.watch(appPreferencesProvider);
 
     // Left/right sheets default to expandCrossSide + minHeight only, so width
     // stays unbounded and the panel stretches to the full overlay. Cap width to
@@ -98,6 +100,34 @@ class SettingsTab extends ConsumerWidget {
                             },
                           ),
                           const _PageMarkerSizesSyncBanner(),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const _SectionDivider(),
+                    const SizedBox(height: 20),
+                    SettingsScopeCard(
+                      scope: SettingsScope.workspace,
+                      title: "Saving",
+                      description:
+                          "Control how Icarus persists strategy edits while you work.",
+                      child: Column(
+                        children: [
+                          _SettingsToggleTile(
+                            icon: Icons.save_outlined,
+                            title: "Autosave",
+                            description:
+                                "Automatically save the current strategy after 15 seconds of inactivity. When off, Icarus will ask before you leave unsaved work.",
+                            value: appPreferences.autosaveEnabled,
+                            onChanged: (value) async {
+                              await ref
+                                  .read(appPreferencesProvider.notifier)
+                                  .setAutosaveEnabled(value);
+                              ref
+                                  .read(strategyProvider.notifier)
+                                  .refreshAutosaveScheduling();
+                            },
+                          ),
                         ],
                       ),
                     ),
@@ -363,9 +393,9 @@ class _SettingValuePill extends StatelessWidget {
       child: Text(
         value,
         style: theme.textTheme.small.copyWith(
-              color: theme.colorScheme.foreground,
-              fontWeight: FontWeight.w700,
-            ),
+          color: theme.colorScheme.foreground,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }

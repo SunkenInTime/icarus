@@ -375,20 +375,34 @@ class StrategyProvider extends Notifier<StrategyState> {
     state = newState;
   }
 
-  void setUnsaved() async {
-    state = state.copyWith(isSaved: false);
+  void cancelPendingSave() {
     _saveTimer?.cancel();
+    _saveTimer = null;
+    _pendingSave = false;
+  }
+
+  void refreshAutosaveScheduling() {
+    cancelPendingSave();
+    if (state.stratName == null || state.isSaved) {
+      return;
+    }
+    if (!ref.read(appPreferencesProvider).autosaveEnabled) {
+      return;
+    }
     _saveTimer = Timer(Settings.autoSaveOffset, () async {
-      //Find some way to tell the user that it is saving now()
       if (state.stratName == null) return;
-      // ref.read(autoSaveProvider.notifier).ping();
       await _performSave(state.id);
     });
   }
 
+  void setUnsaved() async {
+    state = state.copyWith(isSaved: false);
+    refreshAutosaveScheduling();
+  }
+
   // For manual “Save now” actions
   Future<void> forceSaveNow(String id) async {
-    _saveTimer?.cancel();
+    cancelPendingSave();
     await _performSave(id);
   }
 
@@ -433,6 +447,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> clearCurrentStrategy() async {
+    cancelPendingSave();
     activePageID = null;
     ref.read(strategyThemeProvider.notifier).fromStrategy();
     state = StrategyState(
@@ -1115,6 +1130,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> loadFromHive(String id) async {
+    cancelPendingSave();
     final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .values
         .where((StrategyData strategy) {
@@ -2729,7 +2745,13 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     await appPreferencesBox.put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,
-      AppPreferences(
+      (appPreferencesBox
+                  .get(MapThemeProfilesProvider.appPreferencesSingletonKey) ??
+              AppPreferences(
+                defaultThemeProfileIdForNewStrategies:
+                    MapThemeProfilesProvider.immutableDefaultProfileId,
+              ))
+          .copyWith(
         defaultThemeProfileIdForNewStrategies: resolvedDefaultProfileId,
       ),
     );
@@ -2740,6 +2762,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     await ref.read(mapThemeProfilesProvider.notifier).refreshFromHive();
+    await ref.read(appPreferencesProvider.notifier).refreshFromHive();
     ref.invalidate(favoriteAgentsProvider);
 
     return _GlobalImportResult(
