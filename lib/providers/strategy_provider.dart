@@ -46,7 +46,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:icarus/debug/agent_debug_log.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -493,23 +492,6 @@ class StrategyProvider extends Notifier<StrategyState> {
         .openStrategy(strategyID);
     final snapshotAsync = ref.read(remoteStrategySnapshotProvider);
     final snapshot = snapshotAsync.valueOrNull;
-    // #region agent log
-    writeAgentDebugLog(
-      hypothesisId: 'E',
-      location: 'strategy_provider.dart:openStrategy',
-      message: 'cloud open strategy post-refresh',
-      data: {
-        'strategyId': strategyID,
-        'snapshotHasValue': snapshot != null,
-        'snapshotHasError': snapshotAsync.hasError,
-        'snapshotError': snapshotAsync.asError?.error.toString(),
-        'snapshotIsLoading': snapshotAsync.isLoading,
-        'pageCount': snapshot?.pages.length ?? 0,
-        'stateId': state.id,
-        'stateName': state.stratName,
-      },
-    );
-    // #endregion
     if (snapshot == null || snapshot.pages.isEmpty) {
       return;
     }

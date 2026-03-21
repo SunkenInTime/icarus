@@ -5,7 +5,6 @@ import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/debug/agent_debug_log.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
@@ -51,25 +50,6 @@ class FolderContent extends ConsumerWidget {
 
       final folders = foldersAsync.valueOrNull ?? const [];
       var strategies = strategiesAsync.valueOrNull ?? const [];
-      // #region agent log
-      writeAgentDebugLog(
-        hypothesisId: 'D',
-        location: 'folder_content.dart:build:isCloud',
-        message: 'cloud library render state',
-        data: {
-          'folderId': ref.read(folderProvider),
-          'foldersLoading': foldersAsync.isLoading,
-          'foldersHasError': foldersAsync.hasError,
-          'foldersError': foldersAsync.asError?.error.toString(),
-          'foldersCount': folders.length,
-          'strategiesLoading': strategiesAsync.isLoading,
-          'strategiesHasError': strategiesAsync.hasError,
-          'strategiesError': strategiesAsync.asError?.error.toString(),
-          'strategiesCount': strategies.length,
-          'search': search,
-        },
-      );
-      // #endregion
 
       if (search.isNotEmpty) {
         strategies = strategies
