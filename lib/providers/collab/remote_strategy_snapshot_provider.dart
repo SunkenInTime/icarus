@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer';
 
 import 'package:convex_flutter/convex_flutter.dart';
@@ -107,21 +108,42 @@ class RemoteStrategySnapshotNotifier
       name: 'pages:listForStrategy',
       args: {'strategyPublicId': strategyPublicId},
       onUpdate: (value) {
-        final pageIds = ((value as List?) ?? const [])
-            .whereType<Map>()
-            .map((item) => Map<String, dynamic>.from(item))
-            .map((item) => item['publicId'] as String?)
-            .whereType<String>()
-            .toSet();
-
-        _syncPageWatchersFromIds(strategyPublicId, pageIds);
-        _scheduleRefresh();
+        try {
+          final pageIds = _decodePageIds(value);
+          _syncPageWatchersFromIds(strategyPublicId, pageIds);
+          _scheduleRefresh();
+        } catch (error, stackTrace) {
+          log(
+            'Failed to decode pages subscription payload: $error',
+            name: 'remote_snapshot',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          _scheduleRefresh();
+        }
       },
       onError: (message, _) => _handleSubscriptionError(
         source: 'remote_snapshot:pages_subscription',
         message: message,
       ),
     );
+  }
+
+  Set<String> _decodePageIds(dynamic value) {
+    final decoded = value is String ? jsonDecode(value) : value;
+    if (decoded is! List) {
+      throw FormatException(
+        'Expected list payload for pages subscription, got ${decoded.runtimeType}',
+      );
+    }
+
+    return decoded
+        .map((item) => item is String ? jsonDecode(item) : item)
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .map((item) => item['publicId'] as String?)
+        .whereType<String>()
+        .toSet();
   }
 
   Future<void> _syncPageSubscriptions(RemoteStrategySnapshot snapshot) async {

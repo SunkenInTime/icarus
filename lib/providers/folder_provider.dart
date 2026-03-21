@@ -8,6 +8,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -142,6 +143,7 @@ class FolderProvider extends Notifier<String?> {
               name: name,
               parentFolderPublicId: newFolder.parentID,
             );
+        ref.invalidate(cloudFoldersProvider);
         return newFolder;
       } catch (error, stackTrace) {
         await _maybeReportCloudUnauthenticated(

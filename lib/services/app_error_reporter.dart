@@ -144,7 +144,11 @@ class AppErrorReporter {
       level: _developerLogLevel(level),
     );
 
-    appProviderContainer.read(inAppDebugProvider.notifier).addEntry(entry);
+    try {
+      appProviderContainer.read(inAppDebugProvider.notifier).addEntry(entry);
+    } catch (_) {
+      // Tests and early startup can report logs before the global container exists.
+    }
     _queuePersistedLogWrite(entry);
     return entry;
   }

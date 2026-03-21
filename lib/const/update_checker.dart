@@ -69,7 +69,8 @@ class UpdateChecker {
     bool? isWindowsOverride,
   }) async {
     final bool isWeb = isWebOverride ?? kIsWeb;
-    final bool isWindows = isWindowsOverride ?? (!isWeb && Platform.isWindows);
+    final bool isWindows = isWindowsOverride ??
+        ((!isWeb && Platform.isWindows) || windowsStoreCheckOverride != null);
 
     if (isWindows) {
       final windowsResult = await _checkWindowsStoreSignal();
@@ -95,7 +96,8 @@ class UpdateChecker {
     bool? isWindowsOverride,
   }) async {
     final bool isWeb = isWebOverride ?? kIsWeb;
-    final bool isWindows = isWindowsOverride ?? (!isWeb && Platform.isWindows);
+    final bool isWindows = isWindowsOverride ??
+        ((!isWeb && Platform.isWindows) || windowsStoreCheckOverride != null);
 
     if (!isWindows) {
       return _checkRemoteVersionSignal();

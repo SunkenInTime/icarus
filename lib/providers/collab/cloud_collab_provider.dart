@@ -37,7 +37,12 @@ final cloudCollabModeProvider =
 );
 
 final isCloudCollabEnabledProvider = Provider<bool>((ref) {
-  final auth = ref.watch(authProvider);
+  AppAuthState auth;
+  try {
+    auth = ref.watch(authProvider);
+  } catch (_) {
+    return false;
+  }
   final mode = ref.watch(cloudCollabModeProvider);
   return mode.isCloudEnabled(
     isAuthenticated: auth.isAuthenticated,
