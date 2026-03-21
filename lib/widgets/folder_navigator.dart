@@ -11,6 +11,7 @@ import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_migration_provider.dart';
+import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
@@ -282,7 +283,31 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
       if (strategyId != null) {
         if (!context.mounted) return;
-        await navigateWithLoading(context, strategyId);
+        if (ref.read(isCloudCollabEnabledProvider)) {
+          await Navigator.push(
+            context,
+            PageRouteBuilder(
+              transitionDuration: const Duration(milliseconds: 200),
+              reverseTransitionDuration: const Duration(milliseconds: 200),
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  const StrategyView(),
+              transitionsBuilder:
+                  (context, animation, secondaryAnimation, child) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.9, end: 1.0)
+                        .chain(CurveTween(curve: Curves.easeOut))
+                        .animate(animation),
+                    child: child,
+                  ),
+                );
+              },
+            ),
+          );
+        } else {
+          await navigateWithLoading(context, strategyId);
+        }
       }
     }
 
