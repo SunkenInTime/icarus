@@ -12,7 +12,10 @@ class CustomTextField extends ConsumerWidget {
     this.minLines,
     this.maxLines,
     this.onSubmitted,
-    // required this.onEnterPressed,
+    this.keyboardType,
+    this.autofillHints,
+    this.obscureText = false,
+    this.textInputAction,
   });
   final TextEditingController? controller;
   final String? hintText;
@@ -20,7 +23,10 @@ class CustomTextField extends ConsumerWidget {
   final int? minLines;
   final int? maxLines;
   final Function(String)? onSubmitted;
-  // final Function(EnterTextIntent intent) onEnterPressed;
+  final TextInputType? keyboardType;
+  final Iterable<String>? autofillHints;
+  final bool obscureText;
+  final TextInputAction? textInputAction;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -31,6 +37,10 @@ class CustomTextField extends ConsumerWidget {
         textAlign: textAlign ?? TextAlign.start,
         minLines: minLines,
         maxLines: maxLines ?? 1,
+        keyboardType: keyboardType,
+        autofillHints: autofillHints,
+        obscureText: obscureText,
+        textInputAction: textInputAction,
         placeholder: hintText != null ? Text(hintText!) : null,
         onSubmitted: onSubmitted,
       ),

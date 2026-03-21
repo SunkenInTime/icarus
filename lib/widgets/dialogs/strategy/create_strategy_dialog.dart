@@ -32,11 +32,19 @@ class _NameStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
           onPressed: () async {
             final strategyName = _textController.text;
             if (strategyName.isNotEmpty) {
-              final strategyID = await ref
-                  .read(strategyProvider.notifier)
-                  .createNewStrategy(strategyName);
-              if (!context.mounted) return;
-              Navigator.of(context).pop(strategyID); // Close the dialog
+              try {
+                final strategyID = await ref
+                    .read(strategyProvider.notifier)
+                    .createNewStrategy(strategyName);
+                if (!context.mounted) return;
+                Navigator.of(context).pop(strategyID); // Close the dialog
+              } catch (_) {
+                Settings.showToast(
+                  message:
+                      "Couldn't create cloud strategy right now. Please try logging in again.",
+                  backgroundColor: Settings.tacticalVioletTheme.destructive,
+                );
+              }
             } else {
               // Optionally, show an error message if the name is empty
               Settings.showToast(
@@ -56,11 +64,19 @@ class _NameStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
 
           onSubmitted: (value) async {
             if (value.isNotEmpty) {
-              final strategyID = await ref
-                  .read(strategyProvider.notifier)
-                  .createNewStrategy(value);
-              if (!context.mounted) return;
-              Navigator.of(context).pop(strategyID); // Close the dialog
+              try {
+                final strategyID = await ref
+                    .read(strategyProvider.notifier)
+                    .createNewStrategy(value);
+                if (!context.mounted) return;
+                Navigator.of(context).pop(strategyID); // Close the dialog
+              } catch (_) {
+                Settings.showToast(
+                  message:
+                      "Couldn't create cloud strategy right now. Please try logging in again.",
+                  backgroundColor: Settings.tacticalVioletTheme.destructive,
+                );
+              }
             } else {
               // Optionally, show an error message if the name is empty
               Settings.showToast(

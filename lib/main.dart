@@ -3,12 +3,16 @@ import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:ui' show PlatformDispatcher;
 
+import 'package:app_links/app_links.dart';
+import 'package:convex_flutter/convex_flutter.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/services/deep_link_registrar.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:windows_single_instance/windows_single_instance.dart';
 import 'package:icarus/const/custom_icons.dart';
@@ -19,7 +23,9 @@ import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/second_instance_args.dart';
 import 'package:icarus/const/settings.dart' show Settings;
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -36,6 +42,44 @@ import 'package:window_manager/window_manager.dart';
 late CustomMouseCursor staticDrawingCursor;
 WebViewEnvironment? webViewEnvironment;
 bool isWebViewInitialized = false;
+final AppLinks _appLinks = AppLinks();
+final StreamController<Uri> _deepLinkUriController =
+    StreamController<Uri>.broadcast();
+StreamSubscription<Uri>? _deepLinkStreamSub;
+
+Future<void> _initializeDeepLinkHandling() async {
+  try {
+    final initialLink = await _appLinks.getInitialLink();
+    if (initialLink != null) {
+      _publishDeepLink(initialLink, source: 'initial');
+    }
+  } catch (error, stackTrace) {
+    developer.log(
+      'Failed to read initial deep link: $error',
+      name: 'deep_link',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
+
+  _deepLinkStreamSub ??= _appLinks.uriLinkStream.listen(
+    (uri) => _publishDeepLink(uri, source: 'stream'),
+    onError: (Object error, StackTrace stackTrace) {
+      developer.log(
+        'Deep link stream error: $error',
+        name: 'deep_link',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    },
+  );
+}
+
+void _publishDeepLink(Uri uri, {required String source}) {
+  developer.log('Deep link received [$source]: $uri', name: 'deep_link');
+  _deepLinkUriController.add(uri);
+}
+
 Future<void> main(List<String> args) async {
   await runZonedGuarded(
     () async {
@@ -43,6 +87,9 @@ Future<void> main(List<String> args) async {
       appProviderContainer = ProviderContainer();
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
+
+      await registerDeepLinkProtocol('icarus');
+      await _initializeDeepLinkHandling();
 
       if (!kIsWeb && Platform.isWindows) {
         await WindowsSingleInstance.ensureSingleInstance(
@@ -83,6 +130,21 @@ Future<void> main(List<String> args) async {
       await MapThemeProfilesProvider.bootstrap();
 
       await StrategyProvider.migrateAllStrategies();
+
+      await ConvexClient.initialize(
+        const ConvexConfig(
+          deploymentUrl: 'https://majestic-eel-413.convex.cloud',
+          clientId: 'dev:majestic-eel-413',
+          operationTimeout: Duration(seconds: 30),
+          healthCheckQuery: 'health:ping',
+        ),
+      );
+
+      await Supabase.initialize(
+        url: 'https://gjdirtrtgnawqoruavqn.supabase.co',
+        anonKey: 'sb_publishable_6M0VCSZCvRFrcgNANWPVWw_U06T_rUo',
+        authOptions: const FlutterAuthClientOptions(detectSessionInUri: false),
+      );
 
       // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
 
@@ -209,6 +271,8 @@ class MyApp extends ConsumerStatefulWidget {
 
 class _MyAppState extends ConsumerState<MyApp> {
   StreamSubscription<List<String>>? _secondInstanceSub;
+  StreamSubscription<Uri>? _deepLinkSub;
+  final Set<String> _processedDeepLinks = <String>{};
 
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
     try {
@@ -223,9 +287,45 @@ class _MyAppState extends ConsumerState<MyApp> {
     }
   }
 
+  Future<void> _handleIncomingArgument(
+    String argument, {
+    required String source,
+  }) async {
+    final uri = Uri.tryParse(argument);
+    if (uri != null && uri.scheme.toLowerCase() == 'icarus') {
+      _handleIncomingUri(uri, source: source);
+      return;
+    }
+
+    await _loadFromFilePathWithWarning(argument);
+  }
+
+  void _handleIncomingUri(Uri uri, {required String source}) {
+    final uriText = uri.toString();
+    if (!_processedDeepLinks.add(uriText)) {
+      developer.log(
+        'Ignoring duplicate deep link [$source]: $uriText',
+        name: 'deep_link',
+      );
+      return;
+    }
+
+    developer.log('Handling deep link [$source]: $uriText', name: 'deep_link');
+    ref
+        .read(inAppDebugProvider.notifier)
+        .bulkAddLogs(<String>['Deep link [$source]: $uriText']);
+
+    unawaited(
+      ref
+          .read(authProvider.notifier)
+          .handleAuthCallbackUri(uri, source: source),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    ref.read(authProvider);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.data.isEmpty) return;
@@ -235,26 +335,31 @@ class _MyAppState extends ConsumerState<MyApp> {
           'Startup argument: $argument',
           source: 'main.startupArgs',
         );
+        unawaited(_handleIncomingArgument(argument, source: 'startup_args'));
       }
-      _loadFromFilePathWithWarning(widget.data.first);
     });
 
     _secondInstanceSub = secondInstanceArgsController.stream.listen((args) {
       if (args.isEmpty) return;
 
-      _loadFromFilePathWithWarning(args.first);
       for (final argument in args) {
         AppErrorReporter.reportInfo(
           'Second-instance argument: $argument',
           source: 'main.secondInstanceArgs',
         );
+        unawaited(_handleIncomingArgument(argument, source: 'second_instance'));
       }
     });
+
+    _deepLinkSub = _deepLinkUriController.stream.listen(
+      (uri) => _handleIncomingUri(uri, source: 'app_links'),
+    );
   }
 
   @override
   void dispose() {
     _secondInstanceSub?.cancel();
+    _deepLinkSub?.cancel();
     super.dispose();
   }
 

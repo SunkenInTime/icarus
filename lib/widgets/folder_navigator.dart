@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:desktop_updater/desktop_updater.dart';
@@ -8,6 +9,8 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_migration_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/update_status_provider.dart';
@@ -18,6 +21,7 @@ import 'package:icarus/widgets/current_path_bar.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
+import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
@@ -54,6 +58,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
     // Show the demo warning only once after the first frame on web.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(ref.read(cloudMigrationProvider.notifier).maybeMigrate());
       if (!_warnedOnce) {
         _warnedOnce = true;
 
@@ -228,6 +233,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final currentFolder = currentFolderId != null
         ? ref.read(folderProvider.notifier).findFolderByID(currentFolderId)
         : null;
+    final authState = ref.watch(authProvider);
     Future<void> navigateWithLoading(
         BuildContext context, String strategyId) async {
       // Show loading overlay
@@ -297,6 +303,28 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
               Row(
                 spacing: 15,
                 children: [
+                  ShadButton.secondary(
+                    onPressed: authState.isLoading
+                        ? null
+                        : () {
+                            if (authState.isAuthenticated) {
+                              unawaited(ref.read(authProvider.notifier).signOut());
+                            } else {
+                              showDialog<void>(
+                                context: context,
+                                builder: (_) => const AuthDialog(),
+                              );
+                            }
+                          },
+                    leading: Icon(
+                      authState.isAuthenticated ? Icons.logout : Icons.login,
+                    ),
+                    child: Text(
+                      authState.isLoading
+                          ? 'Please wait...'
+                          : (authState.isAuthenticated ? 'Sign Out' : 'Log In'),
+                    ),
+                  ),
                   ShadPopover(
                     controller: _importExportPopoverController,
                     padding: const EdgeInsets.all(8),
