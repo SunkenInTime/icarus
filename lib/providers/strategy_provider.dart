@@ -346,11 +346,6 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> switchPage(String pageID) async {
-    if (_isCloudMode()) {
-      await setActivePage(pageID);
-      return;
-    }
-
     await setActivePageAnimated(pageID);
   }
 
@@ -426,7 +421,95 @@ class StrategyProvider extends Notifier<StrategyState> {
       (p) => p.publicId == pagePublicId,
       orElse: () => snapshot.pages.first,
     );
+    final hydratedPage = _strategyPageFromRemote(snapshot, page);
+    final overridePalette = _decodeRemoteThemeOverride(snapshot);
 
+    activePageID = page.publicId;
+
+    _skipQueueingDuringHydration = true;
+    try {
+      ref.read(actionProvider.notifier).clearAllActions();
+      ref.read(agentProvider.notifier).fromHive(hydratedPage.agentData);
+      ref.read(abilityProvider.notifier).fromHive(hydratedPage.abilityData);
+      ref.read(drawingProvider.notifier).fromHive(hydratedPage.drawingData);
+      ref.read(textProvider.notifier).fromHive(hydratedPage.textData);
+      ref.read(placedImageProvider.notifier).fromHive(hydratedPage.imageData);
+      ref.read(utilityProvider.notifier).fromHive(hydratedPage.utilityData);
+      ref.read(lineUpProvider.notifier).fromHive(hydratedPage.lineUps);
+
+      ref.read(mapProvider.notifier).fromHive(
+            _mapValueFromName(snapshot.header.mapData),
+            hydratedPage.isAttack,
+          );
+      ref
+          .read(strategySettingsProvider.notifier)
+          .fromHive(hydratedPage.settings);
+      ref.read(strategyThemeProvider.notifier).fromStrategy(
+            profileId: snapshot.header.themeProfileId ??
+                MapThemeProfilesProvider.immutableDefaultProfileId,
+            overridePalette: overridePalette,
+          );
+
+      state = state.copyWith(
+        id: snapshot.header.publicId,
+        stratName: snapshot.header.name,
+        activePageId: page.publicId,
+        isSaved: true,
+        storageDirectory: null,
+      );
+      _lastHydratedRemoteStrategyId = snapshot.header.publicId;
+      _lastHydratedRemoteSequence = snapshot.header.sequence;
+      _lastHydratedRemotePageId = page.publicId;
+    } finally {
+      _skipQueueingDuringHydration = false;
+    }
+  }
+
+  MapValue _mapValueFromName(String mapName) {
+    final match =
+        Maps.mapNames.entries.where((entry) => entry.value == mapName);
+    if (match.isEmpty) {
+      return MapValue.ascent;
+    }
+    return match.first.key;
+  }
+
+  StrategySettings _decodeRemotePageSettings(RemotePage page) {
+    if (page.settings == null || page.settings!.isEmpty) {
+      return StrategySettings();
+    }
+
+    try {
+      return ref
+          .read(strategySettingsProvider.notifier)
+          .fromJson(page.settings!);
+    } catch (_) {
+      return StrategySettings();
+    }
+  }
+
+  MapThemePalette? _decodeRemoteThemeOverride(RemoteStrategySnapshot snapshot) {
+    if (snapshot.header.themeOverridePalette == null ||
+        snapshot.header.themeOverridePalette!.isEmpty) {
+      return null;
+    }
+
+    try {
+      final decoded = jsonDecode(snapshot.header.themeOverridePalette!);
+      if (decoded is Map<String, dynamic>) {
+        return MapThemePalette.fromJson(decoded);
+      }
+      if (decoded is Map) {
+        return MapThemePalette.fromJson(Map<String, dynamic>.from(decoded));
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  StrategyPage _strategyPageFromRemote(
+    RemoteStrategySnapshot snapshot,
+    RemotePage page,
+  ) {
     final pageElements = snapshot.elementsByPage[page.publicId] ?? const [];
     final pageLineups = snapshot.lineupsByPage[page.publicId] ?? const [];
 
@@ -483,68 +566,20 @@ class StrategyProvider extends Notifier<StrategyState> {
       } catch (_) {}
     }
 
-    final mapEntry = Maps.mapNames.entries.firstWhere(
-      (entry) => entry.value == snapshot.header.mapData,
-      orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
+    return StrategyPage(
+      id: page.publicId,
+      name: page.name,
+      drawingData: drawings,
+      agentData: agents,
+      abilityData: abilities,
+      textData: texts,
+      imageData: images,
+      utilityData: utilities,
+      sortIndex: page.sortIndex,
+      isAttack: page.isAttack,
+      settings: _decodeRemotePageSettings(page),
+      lineUps: lineUps,
     );
-
-    StrategySettings pageSettings = StrategySettings();
-    if (page.settings != null && page.settings!.isNotEmpty) {
-      try {
-        pageSettings = ref
-            .read(strategySettingsProvider.notifier)
-            .fromJson(page.settings!);
-      } catch (_) {}
-    }
-
-    MapThemePalette? overridePalette;
-    if (snapshot.header.themeOverridePalette != null &&
-        snapshot.header.themeOverridePalette!.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(snapshot.header.themeOverridePalette!);
-        if (decoded is Map<String, dynamic>) {
-          overridePalette = MapThemePalette.fromJson(decoded);
-        } else if (decoded is Map) {
-          overridePalette =
-              MapThemePalette.fromJson(Map<String, dynamic>.from(decoded));
-        }
-      } catch (_) {}
-    }
-
-    activePageID = page.publicId;
-
-    _skipQueueingDuringHydration = true;
-    try {
-      ref.read(actionProvider.notifier).clearAllActions();
-      ref.read(agentProvider.notifier).fromHive(agents);
-      ref.read(abilityProvider.notifier).fromHive(abilities);
-      ref.read(drawingProvider.notifier).fromHive(drawings);
-      ref.read(textProvider.notifier).fromHive(texts);
-      ref.read(placedImageProvider.notifier).fromHive(images);
-      ref.read(utilityProvider.notifier).fromHive(utilities);
-      ref.read(lineUpProvider.notifier).fromHive(lineUps);
-
-      ref.read(mapProvider.notifier).fromHive(mapEntry.key, page.isAttack);
-      ref.read(strategySettingsProvider.notifier).fromHive(pageSettings);
-      ref.read(strategyThemeProvider.notifier).fromStrategy(
-            profileId: snapshot.header.themeProfileId ??
-                MapThemeProfilesProvider.immutableDefaultProfileId,
-            overridePalette: overridePalette,
-          );
-
-      state = state.copyWith(
-        id: snapshot.header.publicId,
-        stratName: snapshot.header.name,
-        activePageId: page.publicId,
-        isSaved: true,
-        storageDirectory: null,
-      );
-      _lastHydratedRemoteStrategyId = snapshot.header.publicId;
-      _lastHydratedRemoteSequence = snapshot.header.sequence;
-      _lastHydratedRemotePageId = page.publicId;
-    } finally {
-      _skipQueueingDuringHydration = false;
-    }
   }
 
   String? _resolveHydrationTargetPage(RemoteStrategySnapshot snapshot) {
@@ -821,9 +856,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     _saveTimer?.cancel();
 
     if (_isCloudMode()) {
-      _saveTimer = Timer(Settings.autoSaveOffset, () async {
-        await _queueCurrentPageOps(flushImmediately: false);
-        await ref.read(strategyOpQueueProvider.notifier).flushNow();
+      final strategyId = state.id;
+      Future<void>.microtask(() async {
+        if (_skipQueueingDuringHydration) {
+          return;
+        }
+        await _performSave(strategyId);
       });
       return;
     }
@@ -838,8 +876,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> forceSaveNow(String id) async {
     _saveTimer?.cancel();
     if (_isCloudMode()) {
-      await _queueCurrentPageOps(flushImmediately: false);
-      await ref.read(strategyOpQueueProvider.notifier).flushNow();
+      await _performSave(id);
       return;
     }
     await _performSave(id);
@@ -854,23 +891,18 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     _saveInProgress = true;
     try {
-      ref.read(autoSaveProvider.notifier).ping(); // UI: Saving...
-      if (_isCloudMode()) {
-        await _queueCurrentPageOps(flushImmediately: false);
-        await ref.read(strategyOpQueueProvider.notifier).flushNow();
-      } else {
-        await saveToHive(id);
-      }
+      do {
+        _pendingSave = false;
+        ref.read(autoSaveProvider.notifier).ping(); // UI: Saving...
+        if (_isCloudMode()) {
+          await _queueCurrentPageOps(flushImmediately: false);
+          await ref.read(strategyOpQueueProvider.notifier).flushNow();
+        } else {
+          await saveToHive(id);
+        }
+      } while (_pendingSave);
     } finally {
       _saveInProgress = false;
-      if (_pendingSave) {
-        _pendingSave = false;
-        // Small debounce to coalesce rapid edits during the previous save
-        _saveTimer?.cancel();
-        // _saveTimer = Timer(const Duration(milliseconds: 500), () {
-        //   _performSave(id);
-        // });
-      }
     }
   }
 
@@ -1271,76 +1303,32 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> backwardPage() async {
-    if (_isCloudMode()) {
-      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
-      if (snapshot == null || snapshot.pages.isEmpty) return;
-      final pages = [...snapshot.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-      final activeId = activePageID ?? pages.first.publicId;
-      final currentIndex = pages.indexWhere((p) => p.publicId == activeId);
-      if (currentIndex < 0) return;
-      var nextIndex = currentIndex - 1;
-      if (nextIndex < 0) nextIndex = pages.length - 1;
-      await setActivePage(pages[nextIndex].publicId);
-      return;
-    }
+    final orderedPageIds = _orderedPageIds();
+    if (orderedPageIds.isEmpty) return;
 
-    if (activePageID == null) return;
-
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final doc = box.get(state.id);
-    if (doc == null || doc.pages.isEmpty) return;
-
-    final pages = [...doc.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-
-    final currentIndex = pages.indexWhere((p) => p.id == activePageID);
+    final currentPageId = _currentOrderedPageId(orderedPageIds);
+    final currentIndex = orderedPageIds.indexOf(currentPageId);
     if (currentIndex == -1) return;
     int nextIndex = currentIndex - 1;
-    if (nextIndex < 0) nextIndex = pages.length - 1;
+    if (nextIndex < 0) nextIndex = orderedPageIds.length - 1;
 
-    final nextPage = pages[nextIndex];
-    await setActivePageAnimated(
-      nextPage.id,
-      direction: PageTransitionDirection.backward,
-    );
+    await setActivePageAnimated(orderedPageIds[nextIndex],
+        direction: PageTransitionDirection.backward);
   }
 
   Future<void> forwardPage() async {
-    if (_isCloudMode()) {
-      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
-      if (snapshot == null || snapshot.pages.isEmpty) return;
-      final pages = [...snapshot.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-      final activeId = activePageID ?? pages.first.publicId;
-      final currentIndex = pages.indexWhere((p) => p.publicId == activeId);
-      if (currentIndex < 0) return;
-      var nextIndex = currentIndex + 1;
-      if (nextIndex >= pages.length) nextIndex = 0;
-      await setActivePage(pages[nextIndex].publicId);
-      return;
-    }
+    final orderedPageIds = _orderedPageIds();
+    if (orderedPageIds.isEmpty) return;
 
-    if (activePageID == null) return;
-
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final doc = box.get(state.id);
-    if (doc == null || doc.pages.isEmpty) return;
-
-    final pages = [...doc.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-
-    final currentIndex = pages.indexWhere((p) => p.id == activePageID);
+    final currentPageId = _currentOrderedPageId(orderedPageIds);
+    final currentIndex = orderedPageIds.indexOf(currentPageId);
     if (currentIndex == -1) return;
 
     int nextIndex = currentIndex + 1;
-    if (nextIndex >= pages.length) nextIndex = 0;
+    if (nextIndex >= orderedPageIds.length) nextIndex = 0;
 
-    final nextPage = pages[nextIndex];
-    await setActivePageAnimated(
-      nextPage.id,
-      direction: PageTransitionDirection.forward,
-    );
+    await setActivePageAnimated(orderedPageIds[nextIndex],
+        direction: PageTransitionDirection.forward);
   }
 
   Future<void> reorderPage(int oldIndex, int newIndex) async {
@@ -1365,10 +1353,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       ordered.insert(targetIndex, moved);
 
       try {
-      await ConvexClient.instance.mutation(name: "pages:reorder", args: {
-        "strategyPublicId": state.id,
-        "orderedPagePublicIds": ordered.map((p) => p.publicId).toList(),
-      });
+        await ConvexClient.instance.mutation(name: "pages:reorder", args: {
+          "strategyPublicId": state.id,
+          "orderedPagePublicIds": ordered.map((p) => p.publicId).toList(),
+        });
       } catch (error, stackTrace) {
         final handled = await _reportCloudUnauthenticated(
           source: 'strategy:pages_reorder',
@@ -1412,17 +1400,51 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
   }
 
-  PageTransitionDirection _resolveDirectionForPage(
-      String pageID, List<StrategyPage> orderedPages) {
-    if (activePageID == null) return PageTransitionDirection.forward;
+  List<String> _orderedPageIds() {
+    if (_isCloudMode()) {
+      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      if (snapshot == null || snapshot.pages.isEmpty) {
+        return const [];
+      }
 
-    final currentIndex = orderedPages.indexWhere((p) => p.id == activePageID);
-    final targetIndex = orderedPages.indexWhere((p) => p.id == pageID);
+      final orderedPages = [...snapshot.pages]
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      return orderedPages.map((page) => page.publicId).toList(growable: false);
+    }
+
+    final doc =
+        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(state.id);
+    if (doc == null || doc.pages.isEmpty) {
+      return const [];
+    }
+
+    final orderedPages = [...doc.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    return orderedPages.map((page) => page.id).toList(growable: false);
+  }
+
+  String _currentOrderedPageId(List<String> orderedPageIds) {
+    final currentPageId = activePageID ?? state.activePageId;
+    if (currentPageId != null && orderedPageIds.contains(currentPageId)) {
+      return currentPageId;
+    }
+    return orderedPageIds.first;
+  }
+
+  PageTransitionDirection _resolveDirectionForPage(
+      String pageID, List<String> orderedPageIds) {
+    if (orderedPageIds.isEmpty) {
+      return PageTransitionDirection.forward;
+    }
+
+    final currentIndex =
+        orderedPageIds.indexOf(_currentOrderedPageId(orderedPageIds));
+    final targetIndex = orderedPageIds.indexOf(pageID);
     if (currentIndex < 0 || targetIndex < 0) {
       return PageTransitionDirection.forward;
     }
 
-    final length = orderedPages.length;
+    final length = orderedPageIds.length;
     final forwardSteps = (targetIndex - currentIndex + length) % length;
     final backwardSteps = (currentIndex - targetIndex + length) % length;
     return forwardSteps <= backwardSteps
@@ -1435,10 +1457,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       {PageTransitionDirection? direction,
       Duration duration = kPageTransitionDuration}) async {
     if (pageID == activePageID) return;
-    if (_isCloudMode()) {
-      await setActivePage(pageID);
-      return;
-    }
 
     final transitionState = ref.read(transitionProvider);
     final transitionNotifier = ref.read(transitionProvider.notifier);
@@ -1447,14 +1465,14 @@ class StrategyProvider extends Notifier<StrategyState> {
       transitionNotifier.complete();
     }
 
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final doc = box.get(state.id);
-    if (doc == null || doc.pages.isEmpty) return;
+    final orderedPageIds = _orderedPageIds();
+    if (orderedPageIds.isEmpty || !orderedPageIds.contains(pageID)) {
+      await setActivePage(pageID);
+      return;
+    }
 
-    final orderedPages = [...doc.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
     final resolvedDirection =
-        direction ?? _resolveDirectionForPage(pageID, orderedPages);
+        direction ?? _resolveDirectionForPage(pageID, orderedPageIds);
     final startSettings = ref.read(strategySettingsProvider);
 
     final prev = _snapshotAllPlaced();
@@ -1549,14 +1567,14 @@ class StrategyProvider extends Notifier<StrategyState> {
       final pageID = const Uuid().v4();
       final nextIndex = pages.length;
       try {
-      await ConvexClient.instance.mutation(name: "pages:add", args: {
-        "strategyPublicId": state.id,
-        "pagePublicId": pageID,
-        "name": name ?? "Page ${pages.length + 1}",
-        "sortIndex": nextIndex,
-        "isAttack": pages.isNotEmpty ? pages.last.isAttack : true,
-        "settings": ref.read(strategySettingsProvider.notifier).toJson(),
-      });
+        await ConvexClient.instance.mutation(name: "pages:add", args: {
+          "strategyPublicId": state.id,
+          "pagePublicId": pageID,
+          "name": name ?? "Page ${pages.length + 1}",
+          "sortIndex": nextIndex,
+          "isAttack": pages.isNotEmpty ? pages.last.isAttack : true,
+          "settings": ref.read(strategySettingsProvider.notifier).toJson(),
+        });
       } catch (error, stackTrace) {
         final handled = await _reportCloudUnauthenticated(
           source: 'strategy:pages_add',
@@ -1567,10 +1585,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         return;
       }
       await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
-      final refreshed = ref.read(remoteStrategySnapshotProvider).valueOrNull;
-      if (refreshed != null) {
-        await _hydrateFromRemotePage(refreshed, pageID);
-      }
+      await setActivePageAnimated(pageID);
       return;
     }
 
@@ -1609,6 +1624,145 @@ class StrategyProvider extends Notifier<StrategyState> {
     await box.put(updated.id, updated);
 
     await setActivePageAnimated(newPage.id);
+  }
+
+  Future<void> renamePage(String pageId, String newName) async {
+    final trimmedName = newName.trim();
+    if (trimmedName.isEmpty) {
+      return;
+    }
+
+    if (_isCloudMode()) {
+      try {
+        await ConvexClient.instance.mutation(name: "pages:rename", args: {
+          "strategyPublicId": state.id,
+          "pagePublicId": pageId,
+          "name": trimmedName,
+        });
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:pages_rename',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!handled) rethrow;
+        return;
+      }
+      await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+      return;
+    }
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strategy = box.get(state.id);
+    if (strategy == null) {
+      return;
+    }
+
+    final updatedPages = [
+      for (final page in strategy.pages)
+        if (page.id == pageId) page.copyWith(name: trimmedName) else page,
+    ];
+
+    await box.put(
+      strategy.id,
+      strategy.copyWith(
+        pages: updatedPages,
+        lastEdited: DateTime.now(),
+      ),
+    );
+  }
+
+  Future<void> deletePage(String pageId) async {
+    if (_isCloudMode()) {
+      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      if (snapshot == null || snapshot.pages.length <= 1) {
+        return;
+      }
+
+      final orderedPages = [...snapshot.pages]
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      final deleteIndex =
+          orderedPages.indexWhere((page) => page.publicId == pageId);
+      if (deleteIndex < 0) {
+        return;
+      }
+
+      final remainingPages = [
+        for (final page in orderedPages)
+          if (page.publicId != pageId) page,
+      ];
+      final nextActivePageId =
+          activePageID == pageId ? remainingPages.first.publicId : activePageID;
+
+      try {
+        await ConvexClient.instance.mutation(name: "pages:delete", args: {
+          "strategyPublicId": state.id,
+          "pagePublicId": pageId,
+        });
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:pages_delete',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!handled) rethrow;
+        return;
+      }
+
+      await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+      final refreshed = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      if (refreshed == null || refreshed.pages.isEmpty) {
+        return;
+      }
+
+      final targetPageId = nextActivePageId != null &&
+              refreshed.pages.any((page) => page.publicId == nextActivePageId)
+          ? nextActivePageId
+          : refreshed.pages.first.publicId;
+      if (targetPageId != activePageID) {
+        await setActivePageAnimated(targetPageId);
+      } else {
+        await _hydrateFromRemotePage(refreshed, targetPageId);
+      }
+      return;
+    }
+
+    await _syncCurrentPageToHive();
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strategy = box.get(state.id);
+    if (strategy == null || strategy.pages.length <= 1) {
+      return;
+    }
+
+    final orderedPages = [...strategy.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    final remainingPages = [
+      for (final page in orderedPages)
+        if (page.id != pageId) page,
+    ];
+    if (remainingPages.isEmpty) {
+      return;
+    }
+
+    final reindexedPages = [
+      for (var i = 0; i < remainingPages.length; i++)
+        remainingPages[i].copyWith(sortIndex: i),
+    ];
+    final nextActivePageId =
+        activePageID == pageId ? reindexedPages.first.id : activePageID;
+
+    await box.put(
+      strategy.id,
+      strategy.copyWith(
+        pages: reindexedPages,
+        lastEdited: DateTime.now(),
+      ),
+    );
+
+    if (nextActivePageId != null && nextActivePageId != activePageID) {
+      await setActivePageAnimated(nextActivePageId);
+    }
   }
 
   Future<void> loadFromHive(String id) async {
@@ -1930,21 +2084,21 @@ class StrategyProvider extends Notifier<StrategyState> {
       final defaultThemeProfileId =
           ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies;
       try {
-      await ref.read(convexStrategyRepositoryProvider).createStrategy(
-            publicId: newID,
-            name: name,
-            mapData: Maps.mapNames[MapValue.ascent] ?? "ascent",
-            folderPublicId: ref.read(folderProvider),
-            themeProfileId: defaultThemeProfileId,
-          );
-      await ConvexClient.instance.mutation(name: "pages:add", args: {
-        "strategyPublicId": newID,
-        "pagePublicId": pageID,
-        "name": "Page 1",
-        "sortIndex": 0,
-        "isAttack": true,
-        "settings": ref.read(strategySettingsProvider.notifier).toJson(),
-      });
+        await ref.read(convexStrategyRepositoryProvider).createStrategy(
+              publicId: newID,
+              name: name,
+              mapData: Maps.mapNames[MapValue.ascent] ?? "ascent",
+              folderPublicId: ref.read(folderProvider),
+              themeProfileId: defaultThemeProfileId,
+            );
+        await ConvexClient.instance.mutation(name: "pages:add", args: {
+          "strategyPublicId": newID,
+          "pagePublicId": pageID,
+          "name": "Page 1",
+          "sortIndex": 0,
+          "isAttack": true,
+          "settings": ref.read(strategySettingsProvider.notifier).toJson(),
+        });
       } catch (error, stackTrace) {
         final handled = await _reportCloudUnauthenticated(
           source: 'strategy:create_new',
@@ -2119,6 +2273,18 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
+    await _zipStrategyData(
+      strategy: strategy,
+      saveDir: saveDir,
+      outputFilePath: outputFilePath,
+    );
+  }
+
+  Future<void> _zipStrategyData({
+    required StrategyData strategy,
+    Directory? saveDir,
+    String? outputFilePath,
+  }) async {
     final pages = strategy.pages.map((p) => p.toJson(strategy.id)).toList();
     final pageJson = jsonEncode(pages);
     final exportPalette = _resolveThemePaletteForExport(strategy);
@@ -2175,6 +2341,27 @@ class StrategyProvider extends Notifier<StrategyState> {
     await zipEncoder.close();
   }
 
+  StrategyData _strategyDataFromRemoteSnapshot(
+      RemoteStrategySnapshot snapshot) {
+    final orderedPages = [...snapshot.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+
+    return StrategyData(
+      id: snapshot.header.publicId,
+      name: snapshot.header.name,
+      mapData: _mapValueFromName(snapshot.header.mapData),
+      versionNumber: Settings.versionNumber,
+      lastEdited: snapshot.header.updatedAt,
+      createdAt: snapshot.header.createdAt,
+      folderID: null,
+      themeProfileId: snapshot.header.themeProfileId,
+      themeOverridePalette: _decodeRemoteThemeOverride(snapshot),
+      pages: orderedPages
+          .map((page) => _strategyPageFromRemote(snapshot, page))
+          .toList(growable: false),
+    );
+  }
+
   Future<void> exportFile(String id) async {
     await forceSaveNow(id);
 
@@ -2189,13 +2376,49 @@ class StrategyProvider extends Notifier<StrategyState> {
     await zipStrategy(id: id, outputFilePath: outputFile);
   }
 
+  Future<void> exportStrategy(String strategyID) async {
+    if (kIsWeb) {
+      Settings.showToast(
+        message: 'This feature is only supported in the Windows version.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+
+    if (_isCloudMode()) {
+      final snapshot = await ref
+          .read(convexStrategyRepositoryProvider)
+          .fetchSnapshot(strategyID);
+      final strategy = _strategyDataFromRemoteSnapshot(snapshot);
+      final outputFile = await FilePicker.platform.saveFile(
+        type: FileType.custom,
+        dialogTitle: 'Please select an output file:',
+        fileName: "${sanitizeFileName(strategy.name)}.ica",
+        allowedExtensions: [".ica"],
+      );
+
+      if (outputFile == null) {
+        return;
+      }
+
+      await _zipStrategyData(
+        strategy: strategy,
+        outputFilePath: outputFile,
+      );
+      return;
+    }
+
+    await loadFromHive(strategyID);
+    await exportFile(strategyID);
+  }
+
   Future<void> renameStrategy(String strategyID, String newName) async {
     if (_isCloudMode()) {
       try {
-      await ConvexClient.instance.mutation(name: "strategies:update", args: {
-        "strategyPublicId": strategyID,
-        "name": newName,
-      });
+        await ConvexClient.instance.mutation(name: "strategies:update", args: {
+          "strategyPublicId": strategyID,
+          "name": newName,
+        });
       } catch (error, stackTrace) {
         final handled = await _reportCloudUnauthenticated(
           source: 'strategy:rename',
@@ -2223,95 +2446,95 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> duplicateStrategy(String strategyID) async {
     if (_isCloudMode()) {
       try {
-      final snapshot = await ref
-          .read(convexStrategyRepositoryProvider)
-          .fetchSnapshot(strategyID);
-      final newStrategyID = const Uuid().v4();
-      await ref.read(convexStrategyRepositoryProvider).createStrategy(
-            publicId: newStrategyID,
-            name: "${snapshot.header.name} (Copy)",
-            mapData: snapshot.header.mapData,
-            folderPublicId: ref.read(folderProvider),
-            themeProfileId: snapshot.header.themeProfileId,
-            themeOverridePalette: snapshot.header.themeOverridePalette,
-          );
-
-      final pages = [...snapshot.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-
-      final pageIdMap = <String, String>{};
-      for (final page in pages) {
-        final newPageId = const Uuid().v4();
-        pageIdMap[page.publicId] = newPageId;
-        await ConvexClient.instance.mutation(name: "pages:add", args: {
-          "strategyPublicId": newStrategyID,
-          "pagePublicId": newPageId,
-          "name": page.name,
-          "sortIndex": page.sortIndex,
-          "isAttack": page.isAttack,
-          if (page.settings != null) "settings": page.settings,
-        });
-      }
-
-      final ops = <StrategyOp>[];
-      for (final page in pages) {
-        final newPageId = pageIdMap[page.publicId];
-        if (newPageId == null) continue;
-
-        final elements = snapshot.elementsByPage[page.publicId] ?? const [];
-        for (final element in elements) {
-          if (element.deleted) continue;
-          final payloadMap = element.decodedPayload();
-          payloadMap.putIfAbsent("elementType", () => element.elementType);
-          final newElementId = const Uuid().v4();
-          payloadMap["id"] = newElementId;
-          ops.add(StrategyOp(
-            opId: const Uuid().v4(),
-            kind: StrategyOpKind.add,
-            entityType: StrategyOpEntityType.element,
-            entityPublicId: newElementId,
-            pagePublicId: newPageId,
-            payload: jsonEncode(payloadMap),
-            sortIndex: element.sortIndex,
-          ));
-        }
-
-        final lineups = snapshot.lineupsByPage[page.publicId] ?? const [];
-        for (final lineup in lineups) {
-          if (lineup.deleted) continue;
-          final newLineupId = const Uuid().v4();
-          String lineupPayload = lineup.payload;
-          try {
-            final decoded = jsonDecode(lineup.payload);
-            if (decoded is Map<String, dynamic>) {
-              final payload = Map<String, dynamic>.from(decoded)
-                ..["id"] = newLineupId;
-              lineupPayload = jsonEncode(payload);
-            } else if (decoded is Map) {
-              final payload = Map<String, dynamic>.from(decoded)
-                ..["id"] = newLineupId;
-              lineupPayload = jsonEncode(payload);
-            }
-          } catch (_) {}
-          ops.add(StrategyOp(
-            opId: const Uuid().v4(),
-            kind: StrategyOpKind.add,
-            entityType: StrategyOpEntityType.lineup,
-            entityPublicId: newLineupId,
-            pagePublicId: newPageId,
-            payload: lineupPayload,
-            sortIndex: lineup.sortIndex,
-          ));
-        }
-      }
-
-      if (ops.isNotEmpty) {
-        await ref.read(convexStrategyRepositoryProvider).applyBatch(
-              strategyPublicId: newStrategyID,
-              clientId: const Uuid().v4(),
-              ops: ops,
+        final snapshot = await ref
+            .read(convexStrategyRepositoryProvider)
+            .fetchSnapshot(strategyID);
+        final newStrategyID = const Uuid().v4();
+        await ref.read(convexStrategyRepositoryProvider).createStrategy(
+              publicId: newStrategyID,
+              name: "${snapshot.header.name} (Copy)",
+              mapData: snapshot.header.mapData,
+              folderPublicId: ref.read(folderProvider),
+              themeProfileId: snapshot.header.themeProfileId,
+              themeOverridePalette: snapshot.header.themeOverridePalette,
             );
-      }
+
+        final pages = [...snapshot.pages]
+          ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+
+        final pageIdMap = <String, String>{};
+        for (final page in pages) {
+          final newPageId = const Uuid().v4();
+          pageIdMap[page.publicId] = newPageId;
+          await ConvexClient.instance.mutation(name: "pages:add", args: {
+            "strategyPublicId": newStrategyID,
+            "pagePublicId": newPageId,
+            "name": page.name,
+            "sortIndex": page.sortIndex,
+            "isAttack": page.isAttack,
+            if (page.settings != null) "settings": page.settings,
+          });
+        }
+
+        final ops = <StrategyOp>[];
+        for (final page in pages) {
+          final newPageId = pageIdMap[page.publicId];
+          if (newPageId == null) continue;
+
+          final elements = snapshot.elementsByPage[page.publicId] ?? const [];
+          for (final element in elements) {
+            if (element.deleted) continue;
+            final payloadMap = element.decodedPayload();
+            payloadMap.putIfAbsent("elementType", () => element.elementType);
+            final newElementId = const Uuid().v4();
+            payloadMap["id"] = newElementId;
+            ops.add(StrategyOp(
+              opId: const Uuid().v4(),
+              kind: StrategyOpKind.add,
+              entityType: StrategyOpEntityType.element,
+              entityPublicId: newElementId,
+              pagePublicId: newPageId,
+              payload: jsonEncode(payloadMap),
+              sortIndex: element.sortIndex,
+            ));
+          }
+
+          final lineups = snapshot.lineupsByPage[page.publicId] ?? const [];
+          for (final lineup in lineups) {
+            if (lineup.deleted) continue;
+            final newLineupId = const Uuid().v4();
+            String lineupPayload = lineup.payload;
+            try {
+              final decoded = jsonDecode(lineup.payload);
+              if (decoded is Map<String, dynamic>) {
+                final payload = Map<String, dynamic>.from(decoded)
+                  ..["id"] = newLineupId;
+                lineupPayload = jsonEncode(payload);
+              } else if (decoded is Map) {
+                final payload = Map<String, dynamic>.from(decoded)
+                  ..["id"] = newLineupId;
+                lineupPayload = jsonEncode(payload);
+              }
+            } catch (_) {}
+            ops.add(StrategyOp(
+              opId: const Uuid().v4(),
+              kind: StrategyOpKind.add,
+              entityType: StrategyOpEntityType.lineup,
+              entityPublicId: newLineupId,
+              pagePublicId: newPageId,
+              payload: lineupPayload,
+              sortIndex: lineup.sortIndex,
+            ));
+          }
+        }
+
+        if (ops.isNotEmpty) {
+          await ref.read(convexStrategyRepositoryProvider).applyBatch(
+                strategyPublicId: newStrategyID,
+                clientId: const Uuid().v4(),
+                ops: ops,
+              );
+        }
       } catch (error, stackTrace) {
         final handled = await _reportCloudUnauthenticated(
           source: 'strategy:duplicate',
@@ -2354,9 +2577,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> deleteStrategy(String strategyID) async {
     if (_isCloudMode()) {
       try {
-      await ConvexClient.instance.mutation(name: "strategies:delete", args: {
-        "strategyPublicId": strategyID,
-      });
+        await ConvexClient.instance.mutation(name: "strategies:delete", args: {
+          "strategyPublicId": strategyID,
+        });
       } catch (error, stackTrace) {
         final handled = await _reportCloudUnauthenticated(
           source: 'strategy:delete',

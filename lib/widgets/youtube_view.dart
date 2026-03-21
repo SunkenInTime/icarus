@@ -2,7 +2,6 @@ import 'dart:developer' show log;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:icarus/const/youtube_handler.dart';
 
 import 'package:icarus/main.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
@@ -47,6 +46,18 @@ class YoutubeView extends StatefulWidget {
 
 class _YoutubeViewState extends State<YoutubeView>
     with AutomaticKeepAliveClientMixin {
+  WebUri _buildEmbedUri() {
+    final embedUri = Uri.https(
+      'embed.icarus-strats.xyz',
+      '/',
+      <String, String>{
+        'url': widget.youtubeLink,
+        'quality': 'highres',
+      },
+    );
+    return WebUri(embedUri.toString());
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -80,9 +91,7 @@ class _YoutubeViewState extends State<YoutubeView>
             webViewEnvironment: webViewEnvironment,
             initialSettings:
                 InAppWebViewSettings(allowBackgroundAudioPlaying: false),
-            initialUrlRequest: URLRequest(
-                url: WebUri(
-                    "https://embed.icarus-strats.xyz/?v=${YoutubeHandler.extractYoutubeIdWithTimestamp(widget.youtubeLink)}")),
+            initialUrlRequest: URLRequest(url: _buildEmbedUri()),
           ),
         ),
       ],

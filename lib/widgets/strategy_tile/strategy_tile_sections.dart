@@ -4,30 +4,47 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/library_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-class StrategyTileViewData {
-  StrategyTileViewData(this.strategy)
-      : name = strategy.name,
-        mapName = _mapName(strategy.mapData),
-        attackLabel = _attackLabel(strategy.pages),
-        attackColor = _attackColor(strategy.pages),
-        thumbnailAsset =
-            'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
-        lastEditedLabel = _timeAgo(strategy.lastEdited),
-        agentTypes = _collectAgentTypes(strategy.pages);
+class StrategyTileDataFactory {
+  static LibraryStrategyItemData fromLocal(StrategyData strategy) {
+    return LibraryStrategyItemData(
+      id: strategy.id,
+      name: strategy.name,
+      mapName: _mapName(Maps.mapNames[strategy.mapData]),
+      statusLabel: _attackLabel(strategy.pages),
+      statusColor: _attackColor(strategy.pages),
+      thumbnailAsset:
+          'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
+      updatedLabel: _timeAgo(strategy.lastEdited),
+      agentTypes: _collectAgentTypes(strategy.pages),
+    );
+  }
 
-  final StrategyData strategy;
-  final String name;
-  final String mapName;
-  final String attackLabel;
-  final Color attackColor;
-  final String thumbnailAsset;
-  final String lastEditedLabel;
-  final List<AgentType> agentTypes;
+  static LibraryStrategyItemData fromCloud({
+    required String id,
+    required String name,
+    required String mapData,
+    required DateTime updatedAt,
+  }) {
+    final normalizedMap = mapData.trim().isEmpty
+        ? 'unknown'
+        : mapData.trim().toLowerCase().replaceAll(' ', '_');
 
-  static String _mapName(MapValue map) {
-    final raw = Maps.mapNames[map];
+    return LibraryStrategyItemData(
+      id: id,
+      name: name,
+      mapName: _mapName(mapData.trim()),
+      statusLabel: 'Synced',
+      statusColor: Colors.deepPurpleAccent,
+      thumbnailAsset: 'assets/maps/thumbnails/${normalizedMap}_thumbnail.webp',
+      updatedLabel: _timeAgo(updatedAt),
+      badgeLabel: 'Online',
+    );
+  }
+
+  static String _mapName(String? raw) {
     if (raw == null || raw.isEmpty) {
       return 'Unknown';
     }
@@ -40,13 +57,14 @@ class StrategyTileViewData {
     }
     final first = pages.first.isAttack;
     final mixed = pages.any((page) => page.isAttack != first);
-    if (mixed) return 'Mixed';
+    if (mixed) {
+      return 'Mixed';
+    }
     return first ? 'Attack' : 'Defend';
   }
 
   static Color _attackColor(List<StrategyPage> pages) {
-    final label = _attackLabel(pages);
-    switch (label) {
+    switch (_attackLabel(pages)) {
       case 'Attack':
         return Colors.redAccent;
       case 'Defend':
@@ -123,8 +141,7 @@ class StrategyTileThumbnail extends StatelessWidget {
 class StrategyTileDetails extends StatelessWidget {
   const StrategyTileDetails({super.key, required this.data});
 
-  final StrategyTileViewData data;
-
+  final LibraryStrategyItemData data;
   static const _maxVisibleAgents = 3;
 
   @override
@@ -133,10 +150,11 @@ class StrategyTileDetails extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-          color: ShadTheme.of(context).colorScheme.card,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Settings.tacticalVioletTheme.border),
-          boxShadow: const [Settings.cardForegroundBackdrop]),
+        color: ShadTheme.of(context).colorScheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Settings.tacticalVioletTheme.border),
+        boxShadow: const [Settings.cardForegroundBackdrop],
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -158,20 +176,43 @@ class StrategyTileDetails extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(data.mapName),
-                const SizedBox(height: 5),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 123),
-                  child: Row(
-                    spacing: 5,
-                    children: [
-                      ...agents
-                          .take(_maxVisibleAgents)
-                          .map((agent) => _AgentIcon(agentType: agent)),
-                      if (agents.length > _maxVisibleAgents)
-                        const _MoreAgentsIndicator(),
-                    ],
+                const SizedBox(height: 8),
+                if (data.badgeLabel != null)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Settings.tacticalVioletTheme.primary
+                          .withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Settings.tacticalVioletTheme.primary
+                            .withValues(alpha: 0.5),
+                      ),
+                    ),
+                    child: Text(
+                      data.badgeLabel!,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 123),
+                    child: Row(
+                      spacing: 5,
+                      children: [
+                        ...agents
+                            .take(_maxVisibleAgents)
+                            .map((agent) => _AgentIcon(agentType: agent)),
+                        if (agents.length > _maxVisibleAgents)
+                          const _MoreAgentsIndicator(),
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -180,11 +221,11 @@ class StrategyTileDetails extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                data.attackLabel,
-                style: TextStyle(color: data.attackColor),
+                data.statusLabel,
+                style: TextStyle(color: data.statusColor),
               ),
               const SizedBox(height: 5),
-              Text(data.lastEditedLabel, overflow: TextOverflow.ellipsis),
+              Text(data.updatedLabel, overflow: TextOverflow.ellipsis),
             ],
           ),
         ],
@@ -196,7 +237,7 @@ class StrategyTileDetails extends StatelessWidget {
 class StrategyTileDragPreview extends StatelessWidget {
   const StrategyTileDragPreview({super.key, required this.data});
 
-  final StrategyTileViewData data;
+  final LibraryStrategyItemData data;
 
   @override
   Widget build(BuildContext context) {

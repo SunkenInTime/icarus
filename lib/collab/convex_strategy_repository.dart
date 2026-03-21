@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_payload.dart';
 
 final convexStrategyRepositoryProvider = Provider<ConvexStrategyRepository>(
   (ref) => ConvexStrategyRepository(ConvexClient.instance),
@@ -20,25 +21,30 @@ class ConvexStrategyRepository {
     dynamic subscription;
 
     Future<void> start() async {
-      subscription = await _client.subscribe(
-        name: 'folders:listForParent',
-        args: {
-          if (parentFolderPublicId != null)
-            'parentFolderPublicId': parentFolderPublicId,
-        },
-        onUpdate: (value) {
-          final raw = (value as List?) ?? const [];
-          final mapped = raw
-              .whereType<Map>()
-              .map((item) =>
-                  CloudFolderSummary.fromJson(Map<String, dynamic>.from(item)))
-              .toList(growable: false);
-          controller.add(mapped);
-        },
-        onError: (message, value) {
-          controller.addError(Exception('folders:listForParent error: $message'));
-        },
-      );
+      try {
+        subscription = await _client.subscribe(
+          name: 'folders:listForParent',
+          args: {
+            if (parentFolderPublicId != null)
+              'parentFolderPublicId': parentFolderPublicId,
+          },
+          onUpdate: (value) {
+            final raw = decodeConvexList(value);
+            final mapped = raw
+                .whereType<Map>()
+                .map((item) => CloudFolderSummary.fromJson(
+                    Map<String, dynamic>.from(item)))
+                .toList(growable: false);
+            controller.add(mapped);
+          },
+          onError: (message, value) {
+            controller
+                .addError(Exception('folders:listForParent error: $message'));
+          },
+        );
+      } catch (error, stackTrace) {
+        controller.addError(error, stackTrace);
+      }
     }
 
     start();
@@ -58,25 +64,29 @@ class ConvexStrategyRepository {
     dynamic subscription;
 
     Future<void> start() async {
-      subscription = await _client.subscribe(
-        name: 'strategies:listForFolder',
-        args: {
-          if (folderPublicId != null) 'folderPublicId': folderPublicId,
-        },
-        onUpdate: (value) {
-          final raw = (value as List?) ?? const [];
-          final mapped = raw
-              .whereType<Map>()
-              .map((item) => CloudStrategySummary.fromJson(
-                  Map<String, dynamic>.from(item)))
-              .toList(growable: false);
-          controller.add(mapped);
-        },
-        onError: (message, value) {
-          controller
-              .addError(Exception('strategies:listForFolder error: $message'));
-        },
-      );
+      try {
+        subscription = await _client.subscribe(
+          name: 'strategies:listForFolder',
+          args: {
+            if (folderPublicId != null) 'folderPublicId': folderPublicId,
+          },
+          onUpdate: (value) {
+            final raw = decodeConvexList(value);
+            final mapped = raw
+                .whereType<Map>()
+                .map((item) => CloudStrategySummary.fromJson(
+                    Map<String, dynamic>.from(item)))
+                .toList(growable: false);
+            controller.add(mapped);
+          },
+          onError: (message, value) {
+            controller.addError(
+                Exception('strategies:listForFolder error: $message'));
+          },
+        );
+      } catch (error, stackTrace) {
+        controller.addError(error, stackTrace);
+      }
     }
 
     start();
@@ -90,24 +100,46 @@ class ConvexStrategyRepository {
     return controller.stream;
   }
 
+  Future<List<CloudFolderSummary>> fetchFolderPath(
+      String? folderPublicId) async {
+    if (folderPublicId == null) {
+      return const [];
+    }
+
+    final response = await _client.query('folders:getPath', {
+      'folderPublicId': folderPublicId,
+    });
+
+    return decodeConvexList(response)
+        .whereType<Map>()
+        .map((item) => CloudFolderSummary.fromJson(
+              Map<String, dynamic>.from(item),
+            ))
+        .toList(growable: false);
+  }
+
   Stream<RemoteStrategyHeader> watchStrategyHeader(String strategyPublicId) {
     final controller = StreamController<RemoteStrategyHeader>.broadcast();
     dynamic subscription;
 
     Future<void> start() async {
-      subscription = await _client.subscribe(
-        name: 'strategies:getHeader',
-        args: {'strategyPublicId': strategyPublicId},
-        onUpdate: (value) {
-          controller.add(
-            RemoteStrategyHeader.fromJson(
-                Map<String, dynamic>.from(value as Map)),
-          );
-        },
-        onError: (message, value) {
-          controller.addError(Exception('strategies:getHeader error: $message'));
-        },
-      );
+      try {
+        subscription = await _client.subscribe(
+          name: 'strategies:getHeader',
+          args: {'strategyPublicId': strategyPublicId},
+          onUpdate: (value) {
+            controller.add(
+              RemoteStrategyHeader.fromJson(decodeConvexMap(value)),
+            );
+          },
+          onError: (message, value) {
+            controller
+                .addError(Exception('strategies:getHeader error: $message'));
+          },
+        );
+      } catch (error, stackTrace) {
+        controller.addError(error, stackTrace);
+      }
     }
 
     start();
@@ -124,14 +156,13 @@ class ConvexStrategyRepository {
     final headerRaw = await _client.query('strategies:getHeader', {
       'strategyPublicId': strategyPublicId,
     });
-    final header =
-        RemoteStrategyHeader.fromJson(Map<String, dynamic>.from(headerRaw as Map));
+    final header = RemoteStrategyHeader.fromJson(decodeConvexMap(headerRaw));
 
     final pagesRaw = await _client.query('pages:listForStrategy', {
       'strategyPublicId': strategyPublicId,
     });
 
-    final pages = ((pagesRaw as List?) ?? const [])
+    final pages = decodeConvexList(pagesRaw)
         .whereType<Map>()
         .map((item) => RemotePage.fromJson(Map<String, dynamic>.from(item)))
         .toList(growable: false)
@@ -145,9 +176,10 @@ class ConvexStrategyRepository {
         'strategyPublicId': strategyPublicId,
         'pagePublicId': page.publicId,
       });
-      final elements = ((elementsRaw as List?) ?? const [])
+      final elements = decodeConvexList(elementsRaw)
           .whereType<Map>()
-          .map((item) => RemoteElement.fromJson(Map<String, dynamic>.from(item)))
+          .map(
+              (item) => RemoteElement.fromJson(Map<String, dynamic>.from(item)))
           .toList(growable: false)
         ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
       elementsByPage[page.publicId] = elements;
@@ -156,7 +188,7 @@ class ConvexStrategyRepository {
         'strategyPublicId': strategyPublicId,
         'pagePublicId': page.publicId,
       });
-      final lineups = ((lineupsRaw as List?) ?? const [])
+      final lineups = decodeConvexList(lineupsRaw)
           .whereType<Map>()
           .map((item) => RemoteLineup.fromJson(Map<String, dynamic>.from(item)))
           .toList(growable: false)
@@ -190,7 +222,8 @@ class ConvexStrategyRepository {
       },
     );
 
-    final resultList = ((response as Map)['results'] as List?) ?? const [];
+    final decodedResponse = decodeConvexMap(response);
+    final resultList = (decodedResponse['results'] as List?) ?? const [];
     return resultList
         .whereType<Map>()
         .map((item) => OpAck.fromJson(Map<String, dynamic>.from(item)))
@@ -201,6 +234,9 @@ class ConvexStrategyRepository {
     required String publicId,
     required String name,
     String? parentFolderPublicId,
+    int? iconIndex,
+    String? colorKey,
+    int? customColorValue,
   }) async {
     await _client.mutation(
       name: 'folders:create',
@@ -209,6 +245,9 @@ class ConvexStrategyRepository {
         'name': name,
         if (parentFolderPublicId != null)
           'parentFolderPublicId': parentFolderPublicId,
+        if (iconIndex != null) 'iconIndex': iconIndex,
+        if (colorKey != null) 'colorKey': colorKey,
+        if (customColorValue != null) 'customColorValue': customColorValue,
       },
     );
   }

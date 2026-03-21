@@ -45,6 +45,40 @@ final cloudStrategiesProvider =
   );
 });
 
+final cloudFolderPathProvider =
+    FutureProvider.autoDispose<List<CloudFolderSummary>>((ref) async {
+  final isCloud = ref.watch(isCloudCollabEnabledProvider);
+  final auth = ref.watch(authProvider);
+  if (!isCloud || auth.hasActiveAuthIncident) {
+    return const [];
+  }
+
+  final folderId = ref.watch(folderProvider);
+  if (folderId == null) {
+    return const [];
+  }
+
+  try {
+    return await ref
+        .watch(convexStrategyRepositoryProvider)
+        .fetchFolderPath(folderId);
+  } catch (error, stackTrace) {
+    if (_isInvalidFolderError(error)) {
+      ref.read(folderProvider.notifier).clearID();
+      return const [];
+    }
+    if (isConvexUnauthenticatedError(error)) {
+      await ref.read(authProvider.notifier).reportConvexUnauthenticated(
+            source: 'remote_library:folder_path',
+            error: error,
+            stackTrace: stackTrace,
+          );
+      return const [];
+    }
+    rethrow;
+  }
+});
+
 Stream<T> _recoverInvalidFolderScope<T>({
   required Ref ref,
   required String? folderId,

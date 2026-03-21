@@ -104,6 +104,41 @@ class Folder extends HiveObject {
     Icons.psychology,
   ];
 
+  static int folderIconIndex(IconData icon) {
+    final index = folderIcons.indexOf(icon);
+    return index >= 0 ? index : 0;
+  }
+
+  static IconData iconFromIndex(int? index) {
+    if (index == null || index < 0 || index >= folderIcons.length) {
+      return folderIcons[0];
+    }
+    return folderIcons[index];
+  }
+
+  static String colorKey(FolderColor color) => color.name;
+
+  static FolderColor colorFromKey(String? key) {
+    if (key == null) {
+      return FolderColor.generic;
+    }
+
+    for (final value in FolderColor.values) {
+      if (value.name == key) {
+        return value;
+      }
+    }
+
+    return FolderColor.generic;
+  }
+
+  static Color? customColorFromValue(int? value) {
+    if (value == null) {
+      return null;
+    }
+    return Color(value);
+  }
+
   bool get isRoot => parentID == null;
 }
 
@@ -133,6 +168,9 @@ class FolderProvider extends Notifier<String?> {
               publicId: newFolder.id,
               name: name,
               parentFolderPublicId: state,
+              iconIndex: Folder.folderIconIndex(icon),
+              colorKey: Folder.colorKey(color),
+              customColorValue: customColor?.toARGB32(),
             );
       } catch (error, stackTrace) {
         await _maybeReportCloudUnauthenticated(
@@ -144,7 +182,8 @@ class FolderProvider extends Notifier<String?> {
       return;
     }
 
-    await Hive.box<Folder>(HiveBoxNames.foldersBox).put(newFolder.id, newFolder);
+    await Hive.box<Folder>(HiveBoxNames.foldersBox)
+        .put(newFolder.id, newFolder);
   }
 
   void updateID(String? id) {
@@ -191,9 +230,12 @@ class FolderProvider extends Notifier<String?> {
   void deleteFolder(String folderID) async {
     if (ref.read(isCloudCollabEnabledProvider)) {
       try {
-        await ConvexClient.instance.mutation(name: 'folders:delete', args: {
-          'folderPublicId': folderID,
-        });
+        await ConvexClient.instance.mutation(
+          name: 'folders:deleteRecursive',
+          args: {
+            'folderPublicId': folderID,
+          },
+        );
       } catch (error, stackTrace) {
         await _maybeReportCloudUnauthenticated(
           source: 'folder:delete',
@@ -230,7 +272,7 @@ class FolderProvider extends Notifier<String?> {
   }
 
   void editFolder({
-    required Folder folder,
+    required String folderID,
     required String newName,
     required IconData newIcon,
     required FolderColor newColor,
@@ -239,8 +281,13 @@ class FolderProvider extends Notifier<String?> {
     if (ref.read(isCloudCollabEnabledProvider)) {
       try {
         await ConvexClient.instance.mutation(name: 'folders:update', args: {
-          'folderPublicId': folder.id,
+          'folderPublicId': folderID,
           'name': newName,
+          'iconIndex': Folder.folderIconIndex(newIcon),
+          'colorKey': Folder.colorKey(newColor),
+          if (newCustomColor != null)
+            'customColorValue': newCustomColor.toARGB32(),
+          if (newCustomColor == null) 'clearCustomColorValue': true,
         });
       } catch (error, stackTrace) {
         await _maybeReportCloudUnauthenticated(
@@ -252,6 +299,10 @@ class FolderProvider extends Notifier<String?> {
       return;
     }
 
+    final folder = findFolderByID(folderID);
+    if (folder == null) {
+      return;
+    }
     folder.name = newName;
     folder.icon = newIcon;
     folder.customColor = newCustomColor;

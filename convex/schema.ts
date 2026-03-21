@@ -15,6 +15,9 @@ export default defineSchema({
     ownerId: v.id("users"),
     name: v.string(),
     parentFolderId: v.optional(v.id("folders")),
+    iconIndex: v.optional(v.number()),
+    colorKey: v.optional(v.string()),
+    customColorValue: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

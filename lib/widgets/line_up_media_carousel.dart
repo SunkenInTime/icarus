@@ -14,6 +14,7 @@ import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/youtube_view.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class LineUpMediaCarousel extends ConsumerStatefulWidget {
   const LineUpMediaCarousel({
@@ -57,6 +58,13 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
         imageFolderPath = dir;
       });
     }
+  }
+
+  Future<void> _openYoutubeExternally() async {
+    final uri = Uri.tryParse(widget.youtubeLink);
+    if (uri == null) return;
+
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   @override
@@ -234,6 +242,15 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                           .read(lineUpProvider.notifier)
                           .deleteLineUpById(widget.lineUpId);
                     },
+                  ),
+                  ShadButton(
+                    onPressed: widget.youtubeLink.isEmpty
+                        ? null
+                        : () {
+                            _openYoutubeExternally();
+                          },
+                    leading: const Icon(LucideIcons.externalLink),
+                    child: const Text("Open YouTube"),
                   ),
                   ShadButton(
                     // height: 32,

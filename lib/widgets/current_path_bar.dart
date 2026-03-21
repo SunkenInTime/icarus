@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-import 'package:icarus/widgets/folder_navigator.dart';
+import 'package:icarus/widgets/library_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class CurrentPathBar extends ConsumerWidget {
@@ -11,87 +13,107 @@ class CurrentPathBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final isCloud = ref.watch(isCloudCollabEnabledProvider);
     final currentFolderId = ref.watch(folderProvider);
-    final currentFolder = currentFolderId != null
-        ? ref.read(folderProvider.notifier).findFolderByID(currentFolderId)
-        : null;
 
-    final pathIds =
-        ref.read(folderProvider.notifier).getFullPathIDs(currentFolder);
+    final pathItems = <LibraryPathItemData>[
+      const LibraryPathItemData(id: null, name: 'Home'),
+    ];
 
-    return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
-        // ignore: prefer_const_constructors
-        child: Row(
-          children: [
-            Expanded(
-              child: ShadBreadcrumb(
-                lastItemTextColor: Settings.tacticalVioletTheme.foreground,
-                textStyle: ShadTheme.of(context).textTheme.lead,
-                children: [
+    if (isCloud) {
+      final cloudPath =
+          ref.watch(cloudFolderPathProvider).valueOrNull ?? const [];
+      pathItems.addAll(
+        cloudPath.map(
+          (folder) => LibraryPathItemData(
+            id: folder.publicId,
+            name: folder.name,
+          ),
+        ),
+      );
+    } else {
+      final currentFolder = currentFolderId != null
+          ? ref.read(folderProvider.notifier).findFolderByID(currentFolderId)
+          : null;
+      final pathIds =
+          ref.read(folderProvider.notifier).getFullPathIDs(currentFolder);
+
+      for (final pathId in pathIds) {
+        final folder = ref.read(folderProvider.notifier).findFolderByID(pathId);
+        if (folder == null) {
+          continue;
+        }
+        pathItems.add(
+          LibraryPathItemData(
+            id: folder.id,
+            name: folder.name,
+          ),
+        );
+      }
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: ShadBreadcrumb(
+              lastItemTextColor: Settings.tacticalVioletTheme.foreground,
+              textStyle: ShadTheme.of(context).textTheme.lead,
+              children: [
+                for (var i = 0; i < pathItems.length; i++)
                   FolderTab(
-                    folder: null, // Represents root
-                    isActive: currentFolder == null,
+                    item: pathItems[i],
+                    isActive: i == pathItems.length - 1,
                   ),
-
-                  // Path folders
-                  for (int i = 0; i < pathIds.length; i++) ...[
-                    FolderTab(
-                      folder: ref
-                          .read(folderProvider.notifier)
-                          .findFolderByID(pathIds[i]),
-                      isActive: i == pathIds.length - 1,
-                    ),
-                  ],
-                ],
-              ),
+              ],
             ),
-          ],
-        ));
+          ),
+        ],
+      ),
+    );
   }
 }
 
 class FolderTab extends ConsumerWidget {
   const FolderTab({
     super.key,
-    required this.folder,
+    required this.item,
     this.isActive = false,
   });
 
-  final Folder? folder; // null for root
+  final LibraryPathItemData item;
   final bool isActive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final displayName = folder?.name ?? "Home";
-
     return ShadBreadcrumbLink(
       textStyle: ShadTheme.of(context).textTheme.lead,
       normalColor: isActive ? Settings.tacticalVioletTheme.foreground : null,
-      child: DragTarget(
+      child: DragTarget<LibraryDragItem>(
         builder: (context, candidateData, rejectedData) {
-          return Container(
+          return Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text(displayName),
+            child: Text(item.name),
           );
         },
         onAcceptWithDetails: (details) {
-          final item = details.data;
-          if (item is StrategyItem) {
-            // Move strategy to this folder
+          final dragItem = details.data;
+          if (dragItem is StrategyDragItem) {
             ref.read(strategyProvider.notifier).moveToFolder(
-                strategyID: item.strategy.id, parentID: folder?.id);
-          } else if (item is FolderItem) {
-            // Move folder to this folder
-
-            ref
-                .read(folderProvider.notifier)
-                .moveToFolder(folderID: item.folder.id, parentID: folder?.id);
+                  strategyID: dragItem.id,
+                  parentID: item.id,
+                );
+          } else if (dragItem is FolderDragItem) {
+            ref.read(folderProvider.notifier).moveToFolder(
+                  folderID: dragItem.id,
+                  parentID: item.id,
+                );
           }
         },
       ),
       onPressed: () {
-        ref.read(folderProvider.notifier).updateID(folder?.id);
+        ref.read(folderProvider.notifier).updateID(item.id);
       },
     );
   }

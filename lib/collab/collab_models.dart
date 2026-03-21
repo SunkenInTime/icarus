@@ -312,6 +312,7 @@ class CloudStrategySummary {
     required this.sequence,
     required this.createdAt,
     required this.updatedAt,
+    this.role,
   });
 
   final String publicId;
@@ -320,6 +321,7 @@ class CloudStrategySummary {
   final int sequence;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? role;
 
   factory CloudStrategySummary.fromJson(Map<String, dynamic> json) {
     return CloudStrategySummary(
@@ -333,6 +335,7 @@ class CloudStrategySummary {
       updatedAt: DateTime.fromMillisecondsSinceEpoch(
         (json['updatedAt'] as num?)?.toInt() ?? 0,
       ),
+      role: json['role'] as String?,
     );
   }
 }
@@ -344,6 +347,9 @@ class CloudFolderSummary {
     required this.createdAt,
     required this.updatedAt,
     this.parentFolderPublicId,
+    this.iconIndex,
+    this.colorKey,
+    this.customColorValue,
   });
 
   final String publicId;
@@ -351,6 +357,9 @@ class CloudFolderSummary {
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? parentFolderPublicId;
+  final int? iconIndex;
+  final String? colorKey;
+  final int? customColorValue;
 
   factory CloudFolderSummary.fromJson(Map<String, dynamic> json) {
     return CloudFolderSummary(
@@ -363,6 +372,9 @@ class CloudFolderSummary {
         (json['updatedAt'] as num?)?.toInt() ?? 0,
       ),
       parentFolderPublicId: json['parentFolderPublicId'] as String?,
+      iconIndex: (json['iconIndex'] as num?)?.toInt(),
+      colorKey: json['colorKey'] as String?,
+      customColorValue: (json['customColorValue'] as num?)?.toInt(),
     );
   }
 }

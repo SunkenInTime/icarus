@@ -7,6 +7,7 @@ import 'package:icarus/widgets/color_picker_button.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_pill.dart';
+import 'package:icarus/widgets/library_models.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -14,8 +15,18 @@ class FolderEditDialog extends ConsumerStatefulWidget {
   const FolderEditDialog({
     super.key,
     this.folder,
+    this.folderId,
+    this.initialName,
+    this.initialIcon,
+    this.initialColor,
+    this.initialCustomColor,
   });
   final Folder? folder;
+  final String? folderId;
+  final String? initialName;
+  final IconData? initialIcon;
+  final FolderColor? initialColor;
+  final Color? initialCustomColor;
   @override
   ConsumerState<ConsumerStatefulWidget> createState() =>
       _FolderEditDialogState();
@@ -37,12 +48,13 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
   void initState() {
     super.initState();
     // Listen to text changes and rebuild
-    _selectedColor = widget.folder?.color ?? FolderColor.generic;
-    if (widget.folder != null) {
-      _folderNameController.text = widget.folder!.name;
-      _selectedIcon = widget.folder!.icon;
-      _customColor = widget.folder!.customColor;
-    }
+    _selectedColor =
+        widget.folder?.color ?? widget.initialColor ?? FolderColor.generic;
+    _folderNameController.text =
+        widget.folder?.name ?? widget.initialName ?? '';
+    _selectedIcon =
+        widget.folder?.icon ?? widget.initialIcon ?? Folder.folderIcons[0];
+    _customColor = widget.folder?.customColor ?? widget.initialCustomColor;
     _folderNameController.addListener(() {
       setState(() {});
     });
@@ -66,9 +78,10 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
           child: ShadButton(
             leading: const Icon(Icons.check),
             onPressed: () async {
-              if (widget.folder != null) {
+              final editFolderId = widget.folder?.id ?? widget.folderId;
+              if (editFolderId != null) {
                 ref.read(folderProvider.notifier).editFolder(
-                      folder: widget.folder!,
+                      folderID: editFolderId,
                       newName: _folderNameController.text.isEmpty
                           ? "New Folder"
                           : _folderNameController.text,
@@ -128,15 +141,16 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                         child: Material(
                           color: Colors.transparent,
                           child: FolderPill(
-                            folder: Folder(
-                              icon: _selectedIcon,
+                            data: LibraryFolderItemData(
+                              id: 'preview',
                               name: _folderNameController.text,
-                              id: "null",
-                              dateCreated: DateTime.now(),
-                              color: _selectedColor,
-                              customColor: _customColor,
+                              icon: _selectedIcon,
+                              backgroundColor: _customColor ??
+                                  Folder.folderColorMap[_selectedColor] ??
+                                  Colors.grey,
                             ),
                             isDemo: true,
+                            enableDragAndDrop: false,
                           ),
                         ),
                       ),
