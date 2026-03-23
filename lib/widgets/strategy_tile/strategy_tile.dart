@@ -3,6 +3,7 @@ import 'dart:developer';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -15,9 +16,30 @@ import 'package:icarus/widgets/strategy_tile/strategy_tile_sections.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class StrategyTile extends ConsumerStatefulWidget {
-  const StrategyTile({super.key, required this.strategyData});
+  const StrategyTile.local({
+    super.key,
+    required this.strategyData,
+  })  : cloudStrategy = null,
+        canRename = true,
+        canDuplicate = true,
+        canDelete = true,
+        canMove = true;
 
-  final StrategyData strategyData;
+  const StrategyTile.cloud({
+    super.key,
+    required this.cloudStrategy,
+    required this.canRename,
+    required this.canDuplicate,
+    required this.canDelete,
+    required this.canMove,
+  }) : strategyData = null;
+
+  final StrategyData? strategyData;
+  final CloudStrategySummary? cloudStrategy;
+  final bool canRename;
+  final bool canDuplicate;
+  final bool canDelete;
+  final bool canMove;
 
   @override
   ConsumerState<ConsumerStatefulWidget> createState() => _StrategyTileState();
@@ -32,6 +54,15 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   final ShadContextMenuController _rightClickMenuController =
       ShadContextMenuController();
 
+  bool get _isCloud => widget.cloudStrategy != null;
+  String get _strategyId =>
+      widget.strategyData?.id ?? widget.cloudStrategy!.publicId;
+  String get _strategyName =>
+      widget.strategyData?.name ?? widget.cloudStrategy!.name;
+  StrategyTileViewData get _viewData => widget.strategyData != null
+      ? StrategyTileViewData.fromStrategy(widget.strategyData!)
+      : StrategyTileViewData.fromCloudSummary(widget.cloudStrategy!);
+
   @override
   void dispose() {
     _menuButtonController.dispose();
@@ -41,11 +72,14 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
 
   @override
   Widget build(BuildContext context) {
-    final viewData = StrategyTileViewData(widget.strategyData);
+    final viewData = _viewData;
 
     return Draggable<GridItem>(
-      data: StrategyItem(widget.strategyData),
+      data: _isCloud
+          ? StrategyItem.cloud(_strategyId)
+          : StrategyItem.local(widget.strategyData!),
       dragAnchorStrategy: pointerDragAnchorStrategy,
+      maxSimultaneousDrags: widget.canMove ? null : 0,
       feedback: Opacity(
         opacity: 0.95,
         child: Material(
@@ -101,9 +135,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                           onPressed: () {
                             _menuButtonController.toggle();
                           },
-                          icon: const Icon(
-                            Icons.more_vert_outlined,
-                          ),
+                          icon: const Icon(Icons.more_vert_outlined),
                         ),
                       ),
                     ),
@@ -121,23 +153,23 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     return [
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.pencil),
+        onPressed: widget.canRename ? () => _showRenameDialog() : null,
         child: const Text('Rename'),
-        onPressed: () => _showRenameDialog(),
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.copy),
+        onPressed: widget.canDuplicate ? () => _duplicateStrategy() : null,
         child: const Text('Duplicate'),
-        onPressed: () => _duplicateStrategy(),
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.upload),
-        child: const Text('Export'),
         onPressed: () => _exportStrategy(),
+        child: const Text('Export'),
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.trash2, color: Colors.redAccent),
+        onPressed: widget.canDelete ? () => _showDeleteDialog() : null,
         child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
-        onPressed: () => _showDeleteDialog(),
       ),
     ];
   }
@@ -151,9 +183,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     _showLoadingOverlay();
 
     try {
-      await ref
-          .read(strategyProvider.notifier)
-          .loadFromHive(widget.strategyData.id);
+      if (_isCloud) {
+        await ref.read(strategyProvider.notifier).openStrategy(_strategyId);
+      } else {
+        await ref.read(strategyProvider.notifier).loadFromHive(_strategyId);
+      }
       if (!context.mounted) return;
       Navigator.pop(context);
       await Navigator.push(
@@ -196,9 +230,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   }
 
   Future<void> _duplicateStrategy() async {
-    await ref
-        .read(strategyProvider.notifier)
-        .duplicateStrategy(widget.strategyData.id);
+    await ref.read(strategyProvider.notifier).duplicateStrategy(_strategyId);
   }
 
   Future<void> _exportStrategy() async {
@@ -210,18 +242,21 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       return;
     }
 
-    await ref
-        .read(strategyProvider.notifier)
-        .loadFromHive(widget.strategyData.id);
-    await StrategyImportExportService(ref).exportFile(widget.strategyData.id);
+    if (_isCloud) {
+      await StrategyImportExportService(ref).exportCloudStrategy(_strategyId);
+      return;
+    }
+
+    await ref.read(strategyProvider.notifier).loadFromHive(_strategyId);
+    await StrategyImportExportService(ref).exportFile(_strategyId);
   }
 
   Future<void> _showRenameDialog() async {
     await showShadDialog<void>(
       context: context,
       builder: (_) => RenameStrategyDialog(
-        strategyId: widget.strategyData.id,
-        currentName: widget.strategyData.name,
+        strategyId: _strategyId,
+        currentName: _strategyName,
       ),
     );
   }
@@ -230,8 +265,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     showDialog<void>(
       context: context,
       builder: (_) => DeleteStrategyAlertDialog(
-        strategyID: widget.strategyData.id,
-        name: widget.strategyData.name,
+        strategyID: _strategyId,
+        name: _strategyName,
       ),
     );
   }

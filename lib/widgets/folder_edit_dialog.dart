@@ -50,6 +50,11 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final previewColor =
+        Folder.folderColorMap[_selectedColor] ??
+        _customColor ??
+        Settings.tacticalVioletTheme.primary;
+
     return ShadDialog(
       title: Text(widget.folder != null ? "Edit Folder" : "Add Folder"),
       actions: [
@@ -161,6 +166,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                         onTap: () {
                           setState(() {
                             _selectedColor = color;
+                            _customColor = null;
                           });
                           // ref.read(penProvider.notifier).setColor(index);
                         },
@@ -189,9 +195,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                                 width: 300,
                                 child: ColorPicker(
                                   portraitOnly: true,
-                                  pickerColor:
-                                      Folder.folderColorMap[_selectedColor] ??
-                                          _customColor!,
+                                  pickerColor: previewColor,
                                   onColorChanged: (color) {
                                     setState(() {
                                       _selectedColor = FolderColor.custom;

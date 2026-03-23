@@ -458,6 +458,120 @@ class StrategyProvider extends Notifier<StrategyState> {
     await setActivePageAnimated(newPage.id);
   }
 
+  Future<void> renamePage(String pageId, String newName) async {
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+
+    if (_isCloudMode()) {
+      try {
+        await ConvexClient.instance.mutation(name: "pages:rename", args: {
+          "strategyPublicId": state.strategyId,
+          "pagePublicId": pageId,
+          "name": trimmed,
+        });
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:pages_rename',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!handled) rethrow;
+        return;
+      }
+      await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+      return;
+    }
+
+    final strategyId = state.strategyId;
+    if (strategyId == null) return;
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(strategyId);
+    if (strat == null) return;
+
+    final updatedPages = [
+      for (final page in strat.pages)
+        if (page.id == pageId) page.copyWith(name: trimmed) else page,
+    ];
+    await box.put(
+      strat.id,
+      strat.copyWith(pages: updatedPages, lastEdited: DateTime.now()),
+    );
+  }
+
+  Future<void> deletePage(String pageId) async {
+    if (_isCloudMode()) {
+      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      if (snapshot == null || snapshot.pages.length <= 1) {
+        return;
+      }
+      final pages = [...snapshot.pages]
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      final activePageId = ref.read(strategyPageSessionProvider).activePageId ??
+          pages.first.publicId;
+      final remaining =
+          pages.where((page) => page.publicId != pageId).toList(growable: false);
+      final nextActivePageId = activePageId == pageId && remaining.isNotEmpty
+          ? remaining.first.publicId
+          : activePageId;
+
+      if (activePageId == pageId) {
+        await ref.read(strategyPageSessionProvider.notifier).flushCurrentPage(
+              flushImmediately: true,
+            );
+      }
+
+      try {
+        await ConvexClient.instance.mutation(name: "pages:delete", args: {
+          "strategyPublicId": state.strategyId,
+          "pagePublicId": pageId,
+        });
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:pages_delete',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!handled) rethrow;
+        return;
+      }
+
+      await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+      if (nextActivePageId != activePageId) {
+        await ref
+            .read(strategyPageSessionProvider.notifier)
+            .setActivePage(nextActivePageId);
+      }
+      return;
+    }
+
+    final strategyId = state.strategyId;
+    if (strategyId == null) return;
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(strategyId);
+    if (strat == null || strat.pages.length <= 1) return;
+
+    final remaining = [...strat.pages]..removeWhere((page) => page.id == pageId);
+    final reindexed = [
+      for (var i = 0; i < remaining.length; i++)
+        remaining[i].copyWith(sortIndex: i),
+    ];
+    final activePageId = ref.read(strategyPageSessionProvider).activePageId;
+    final nextActivePageId =
+        activePageId == pageId ? reindexed.first.id : activePageId;
+
+    await box.put(
+      strat.id,
+      strat.copyWith(pages: reindexed, lastEdited: DateTime.now()),
+    );
+    if (nextActivePageId != null && nextActivePageId != activePageId) {
+      await ref.read(strategyProvider.notifier).setActivePageAnimated(
+            nextActivePageId,
+          );
+    }
+  }
+
   Future<void> loadFromHive(String id) async {
     cancelPendingSave();
     if (_isCloudMode()) {

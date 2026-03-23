@@ -61,6 +61,13 @@ class ConvexStrategyRepository {
         .toList(growable: false);
   }
 
+  Future<List<CloudFolderSummary>> listAllFolders() async {
+    final response = await _client.query('folders:listAll', {});
+    return _decodeObjectList(response)
+        .map(CloudFolderSummary.fromJson)
+        .toList(growable: false);
+  }
+
   Future<List<CloudStrategySummary>> listStrategiesForFolder(
     String? folderPublicId,
   ) async {
@@ -271,6 +278,11 @@ class ConvexStrategyRepository {
     required String publicId,
     required String name,
     String? parentFolderPublicId,
+    int? iconCodePoint,
+    String? iconFontFamily,
+    String? iconFontPackage,
+    String? color,
+    int? customColorValue,
   }) async {
     await _client.mutation(
       name: 'folders:create',
@@ -279,6 +291,11 @@ class ConvexStrategyRepository {
         'name': name,
         if (parentFolderPublicId != null)
           'parentFolderPublicId': parentFolderPublicId,
+        if (iconCodePoint != null) 'iconCodePoint': iconCodePoint,
+        if (iconFontFamily != null) 'iconFontFamily': iconFontFamily,
+        if (iconFontPackage != null) 'iconFontPackage': iconFontPackage,
+        if (color != null) 'color': color,
+        if (customColorValue != null) 'customColorValue': customColorValue,
       },
     );
   }

@@ -9,7 +9,11 @@ import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -2289,6 +2293,18 @@ class StrategyImportExportService {
       log("Couldn't find strategy to export");
       throw StateError("Couldn't find strategy to export");
     }
+    return zipStrategyData(
+      strategy: strategy,
+      saveDir: saveDir,
+      outputFilePath: outputFilePath,
+    );
+  }
+
+  Future<String> zipStrategyData({
+    required StrategyData strategy,
+    Directory? saveDir,
+    String? outputFilePath,
+  }) async {
 
     final payload = {
       'versionNumber': '${Settings.versionNumber}',
@@ -2343,6 +2359,20 @@ class StrategyImportExportService {
     return outPath;
   }
 
+  Future<void> exportCloudStrategy(String strategyId) async {
+    final snapshot =
+        await ref.read(convexStrategyRepositoryProvider).fetchSnapshot(strategyId);
+    final strategy = _strategyDataFromRemoteSnapshot(snapshot);
+    final outputFile = await FilePicker.platform.saveFile(
+      type: FileType.custom,
+      dialogTitle: 'Please select an output file:',
+      fileName: '${sanitizeStrategyFileName(strategy.name)}.ica',
+      allowedExtensions: ['ica'],
+    );
+    if (outputFile == null) return;
+    await zipStrategyData(strategy: strategy, outputFilePath: outputFile);
+  }
+
   Future<void> exportFile(String id) async {
     await ref.read(strategyProvider.notifier).forceSaveNow(id);
 
@@ -2356,5 +2386,117 @@ class StrategyImportExportService {
 
     if (outputFile == null) return;
     await zipStrategy(id: id, outputFilePath: outputFile);
+  }
+
+  StrategyData _strategyDataFromRemoteSnapshot(RemoteStrategySnapshot snapshot) {
+    final pages = <StrategyPage>[];
+    final mapValue = Maps.mapNames.entries
+        .where((entry) => entry.value == snapshot.header.mapData)
+        .map((entry) => entry.key)
+        .first;
+
+    for (final remotePage in snapshot.pages..sort((a, b) => a.sortIndex.compareTo(b.sortIndex))) {
+      final elements = snapshot.elementsByPage[remotePage.publicId] ?? const [];
+      final lineups = snapshot.lineupsByPage[remotePage.publicId] ?? const [];
+      final drawingData = <DrawingElement>[];
+      final agentData = <PlacedAgentNode>[];
+      final abilityData = <PlacedAbility>[];
+      final textData = <PlacedText>[];
+      final imageData = <PlacedImage>[];
+      final utilityData = <PlacedUtility>[];
+
+      for (final element in elements) {
+        if (element.deleted) continue;
+        final payload = element.decodedPayload();
+        try {
+          switch (element.elementType) {
+            case 'drawing':
+              final decoded = DrawingProvider.fromJson(jsonEncode([payload]));
+              if (decoded.isNotEmpty) drawingData.add(decoded.first);
+              break;
+            case 'agent':
+              agentData.add(PlacedAgentNode.fromJson(payload));
+              break;
+            case 'ability':
+              abilityData.add(PlacedAbility.fromJson(payload));
+              break;
+            case 'text':
+              textData.add(PlacedText.fromJson(payload));
+              break;
+            case 'image':
+              imageData.add(PlacedImage.fromJson(payload));
+              break;
+            case 'utility':
+              utilityData.add(PlacedUtility.fromJson(payload));
+              break;
+          }
+        } catch (_) {}
+      }
+
+      final parsedLineups = <LineUp>[];
+      for (final lineup in lineups) {
+        if (lineup.deleted) continue;
+        try {
+          final decoded = jsonDecode(lineup.payload);
+          if (decoded is Map<String, dynamic>) {
+            parsedLineups.add(LineUp.fromJson(decoded));
+          } else if (decoded is Map) {
+            parsedLineups.add(LineUp.fromJson(Map<String, dynamic>.from(decoded)));
+          }
+        } catch (_) {}
+      }
+
+      StrategySettings settings = StrategySettings();
+      if (remotePage.settings != null && remotePage.settings!.isNotEmpty) {
+        try {
+          settings = StrategySettings.fromJson(jsonDecode(remotePage.settings!));
+        } catch (_) {}
+      }
+
+      pages.add(
+        StrategyPage(
+          id: remotePage.publicId,
+          name: remotePage.name,
+          drawingData: drawingData,
+          agentData: agentData,
+          abilityData: abilityData,
+          textData: textData,
+          imageData: imageData,
+          utilityData: utilityData,
+          sortIndex: remotePage.sortIndex,
+          isAttack: remotePage.isAttack,
+          settings: settings,
+          lineUps: parsedLineups,
+        ),
+      );
+    }
+
+    MapThemePalette? overridePalette;
+    final rawPalette = snapshot.header.themeOverridePalette;
+    if (rawPalette != null && rawPalette.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(rawPalette);
+        if (decoded is Map<String, dynamic>) {
+          overridePalette = MapThemePalette.fromJson(decoded);
+        } else if (decoded is Map) {
+          overridePalette = MapThemePalette.fromJson(
+            Map<String, dynamic>.from(decoded),
+          );
+        }
+      } catch (_) {}
+    }
+
+    return StrategyData(
+      id: snapshot.header.publicId,
+      name: snapshot.header.name,
+      mapData: mapValue,
+      versionNumber: Settings.versionNumber,
+      lastEdited: snapshot.header.updatedAt,
+      createdAt: snapshot.header.createdAt,
+      folderID: null,
+      themeProfileId: snapshot.header.themeProfileId,
+      themeOverridePalette: overridePalette,
+      pages: pages,
+    );
   }
 }

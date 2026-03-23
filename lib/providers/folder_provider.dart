@@ -2,6 +2,7 @@ import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
@@ -120,6 +121,47 @@ final folderProvider =
     NotifierProvider<FolderProvider, String?>(FolderProvider.new);
 
 class FolderProvider extends Notifier<String?> {
+  static FolderColor decodeFolderColor(String? raw) {
+    if (raw == null) {
+      return FolderColor.generic;
+    }
+    for (final value in FolderColor.values) {
+      if (value.name == raw) {
+        return value;
+      }
+    }
+    return FolderColor.generic;
+  }
+
+  static IconData decodeFolderIcon(
+    CloudFolderSummary folder, {
+    IconData fallback = Icons.drive_folder_upload,
+  }) {
+    final codePoint = folder.iconCodePoint;
+    if (codePoint == null) {
+      return fallback;
+    }
+    return IconData(
+      codePoint,
+      fontFamily: folder.iconFontFamily,
+      fontPackage: folder.iconFontPackage,
+    );
+  }
+
+  static Folder cloudSummaryToFolder(CloudFolderSummary folder) {
+    return Folder(
+      name: folder.name,
+      id: folder.publicId,
+      dateCreated: folder.createdAt,
+      icon: decodeFolderIcon(folder),
+      color: decodeFolderColor(folder.color),
+      parentID: folder.parentFolderPublicId,
+      customColor: folder.customColorValue == null
+          ? null
+          : Color(folder.customColorValue!),
+    );
+  }
+
   Future<Folder> createFolder({
     required String name,
     required IconData icon,
@@ -143,6 +185,11 @@ class FolderProvider extends Notifier<String?> {
               publicId: newFolder.id,
               name: name,
               parentFolderPublicId: newFolder.parentID,
+              iconCodePoint: icon.codePoint,
+              iconFontFamily: icon.fontFamily,
+              iconFontPackage: icon.fontPackage,
+              color: color.name,
+              customColorValue: customColor?.toARGB32(),
             );
         ref.invalidate(cloudFoldersProvider);
         return newFolder;
@@ -245,10 +292,23 @@ class FolderProvider extends Notifier<String?> {
   }) async {
     if (ref.read(isCloudCollabEnabledProvider)) {
       try {
-        await ConvexClient.instance.mutation(name: 'folders:update', args: {
+        final args = <String, Object>{
           'folderPublicId': folder.id,
           'name': newName,
-        });
+          'iconCodePoint': newIcon.codePoint,
+          if (newIcon.fontFamily != null) 'iconFontFamily': newIcon.fontFamily!,
+          if (newIcon.fontFamily == null) 'clearIconFontFamily': true,
+          if (newIcon.fontPackage != null)
+            'iconFontPackage': newIcon.fontPackage!,
+          if (newIcon.fontPackage == null) 'clearIconFontPackage': true,
+          'color': newColor.name,
+          if (newCustomColor != null)
+            'customColorValue': newCustomColor.toARGB32(),
+          if (newCustomColor == null) 'clearCustomColorValue': true,
+        };
+        await ConvexClient.instance.mutation(name: 'folders:update', args: args);
+        ref.invalidate(cloudFoldersProvider);
+        ref.invalidate(cloudAllFoldersProvider);
       } catch (error, stackTrace) {
         await _maybeReportCloudUnauthenticated(
           source: 'folder:update',

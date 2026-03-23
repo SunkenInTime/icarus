@@ -15,6 +15,11 @@ export default defineSchema({
     ownerId: v.id("users"),
     name: v.string(),
     parentFolderId: v.optional(v.id("folders")),
+    iconCodePoint: v.optional(v.number()),
+    iconFontFamily: v.optional(v.string()),
+    iconFontPackage: v.optional(v.string()),
+    color: v.optional(v.string()),
+    customColorValue: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

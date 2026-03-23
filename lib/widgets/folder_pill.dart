@@ -80,7 +80,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
           final item = details.data;
           if (item is StrategyItem) {
             ref.read(strategyProvider.notifier).moveToFolder(
-                strategyID: item.strategy.id, parentID: widget.folder.id);
+                strategyID: item.strategyId, parentID: widget.folder.id);
           } else if (item is FolderItem) {
             ref.read(folderProvider.notifier).moveToFolder(
                 folderID: item.folder.id, parentID: widget.folder.id);

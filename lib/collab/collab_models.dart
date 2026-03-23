@@ -312,6 +312,8 @@ class CloudStrategySummary {
     required this.sequence,
     required this.createdAt,
     required this.updatedAt,
+    this.role,
+    this.attackLabel,
   });
 
   final String publicId;
@@ -320,6 +322,8 @@ class CloudStrategySummary {
   final int sequence;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? role;
+  final String? attackLabel;
 
   factory CloudStrategySummary.fromJson(Map<String, dynamic> json) {
     return CloudStrategySummary(
@@ -333,6 +337,8 @@ class CloudStrategySummary {
       updatedAt: DateTime.fromMillisecondsSinceEpoch(
         (json['updatedAt'] as num?)?.toInt() ?? 0,
       ),
+      role: json['role'] as String?,
+      attackLabel: json['attackLabel'] as String?,
     );
   }
 }
@@ -344,6 +350,11 @@ class CloudFolderSummary {
     required this.createdAt,
     required this.updatedAt,
     this.parentFolderPublicId,
+    this.iconCodePoint,
+    this.iconFontFamily,
+    this.iconFontPackage,
+    this.color,
+    this.customColorValue,
   });
 
   final String publicId;
@@ -351,6 +362,11 @@ class CloudFolderSummary {
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? parentFolderPublicId;
+  final int? iconCodePoint;
+  final String? iconFontFamily;
+  final String? iconFontPackage;
+  final String? color;
+  final int? customColorValue;
 
   factory CloudFolderSummary.fromJson(Map<String, dynamic> json) {
     return CloudFolderSummary(
@@ -363,6 +379,11 @@ class CloudFolderSummary {
         (json['updatedAt'] as num?)?.toInt() ?? 0,
       ),
       parentFolderPublicId: json['parentFolderPublicId'] as String?,
+      iconCodePoint: (json['iconCodePoint'] as num?)?.toInt(),
+      iconFontFamily: json['iconFontFamily'] as String?,
+      iconFontPackage: json['iconFontPackage'] as String?,
+      color: json['color'] as String?,
+      customColorValue: (json['customColorValue'] as num?)?.toInt(),
     );
   }
 }

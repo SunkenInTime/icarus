@@ -69,6 +69,32 @@ final cloudStrategiesProvider =
   }
 });
 
+final cloudAllFoldersProvider =
+    FutureProvider.autoDispose<List<CloudFolderSummary>>((ref) async {
+  final isCloud = ref.watch(isCloudCollabEnabledProvider);
+  final auth = ref.watch(authProvider);
+  if (!isCloud || auth.hasActiveAuthIncident) {
+    return const <CloudFolderSummary>[];
+  }
+
+  final repo = ref.watch(convexStrategyRepositoryProvider);
+  try {
+    return await repo.listAllFolders();
+  } catch (error, stackTrace) {
+    if (isConvexUnauthenticatedError(error)) {
+      unawaited(
+        ref.read(authProvider.notifier).reportConvexUnauthenticated(
+              source: 'remote_library:all_folders',
+              error: error,
+              stackTrace: stackTrace,
+            ),
+      );
+      return const <CloudFolderSummary>[];
+    }
+    rethrow;
+  }
+});
+
 bool _isInvalidFolderError(Object error) {
   final message = error.toString().toLowerCase();
   return message.contains('folder not found') || message.contains('forbidden');

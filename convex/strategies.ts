@@ -35,6 +35,10 @@ export const listForFolder = query({
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     const all = await listAccessibleStrategies(ctx as any, user._id);
+    const memberships = await ctx.db
+      .query("strategyCollaborators")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .collect();
 
     let folderId;
     if (args.folderPublicId !== undefined) {
@@ -58,21 +62,41 @@ export const listForFolder = query({
       }
     }
 
-    return all
-      .filter((s) => s.folderId === folderId)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map((s) => ({
-        publicId: s.publicId,
-        name: s.name,
-        mapData: s.mapData,
-        sequence: s.sequence,
-        createdAt: s.createdAt,
-        updatedAt: s.updatedAt,
-        folderPublicId:
-          s.folderId === undefined ? null : folderIdToPublicId.get(s.folderId) ?? null,
-        themeProfileId: s.themeProfileId ?? null,
-        themeOverridePalette: s.themeOverridePalette ?? null,
-      }));
+    return await Promise.all(
+      all
+        .filter((s) => s.folderId === folderId)
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .map(async (s) => {
+        const pages = await ctx.db
+          .query("pages")
+          .withIndex("by_strategyId", (q) => q.eq("strategyId", s._id))
+          .collect();
+        let attackLabel = "Unknown";
+        if (pages.length > 0) {
+          const first = pages[0].isAttack;
+          const mixed = pages.some((page) => page.isAttack !== first);
+          attackLabel = mixed ? "Mixed" : first ? "Attack" : "Defend";
+        }
+        const role = s.ownerId === user._id
+          ? "owner"
+          : memberships.find((m: any) => m.strategyId === s._id)?.role ?? "viewer";
+
+        return {
+          publicId: s.publicId,
+          name: s.name,
+          mapData: s.mapData,
+          sequence: s.sequence,
+          createdAt: s.createdAt,
+          updatedAt: s.updatedAt,
+          role,
+          attackLabel,
+          folderPublicId:
+            s.folderId === undefined ? null : folderIdToPublicId.get(s.folderId) ?? null,
+          themeProfileId: s.themeProfileId ?? null,
+          themeOverridePalette: s.themeOverridePalette ?? null,
+        };
+        }),
+    );
   },
 });
 

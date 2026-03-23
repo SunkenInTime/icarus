@@ -451,7 +451,11 @@ class FolderItem extends GridItem {
 }
 
 class StrategyItem extends GridItem {
-  final StrategyData strategy;
+  final String strategyId;
+  final StrategyData? strategy;
 
-  StrategyItem(this.strategy);
+  StrategyItem.local(this.strategy)
+      : strategyId = strategy!.id;
+
+  StrategyItem.cloud(this.strategyId) : strategy = null;
 }
