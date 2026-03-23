@@ -6,6 +6,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
 import 'package:icarus/providers/strategy_page.dart';
@@ -31,7 +32,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
   }
 
   Future<void> _selectPage(String id) async {
-    if (id == ref.read(strategyProvider.notifier).activePageID) return;
+    if (id == ref.read(strategyPageSessionProvider).activePageId) return;
     await ref.read(strategyProvider.notifier).setActivePageAnimated(id);
   }
 
@@ -96,7 +97,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
       for (var i = 0; i < remaining.length; i++)
         remaining[i].copyWith(sortIndex: i),
     ];
-    final activeId = ref.read(strategyProvider.notifier).activePageID;
+    final activeId = ref.read(strategyPageSessionProvider).activePageId;
     final newActive = (activeId == page.id) ? reindexed.first.id : activeId;
 
     final updated = strat.copyWith(
@@ -115,8 +116,9 @@ class _PagesBarState extends ConsumerState<PagesBar>
   @override
   Widget build(BuildContext context) {
     final isCloud = ref.watch(isCloudCollabEnabledProvider);
-    final activePageIdFromState =
-        ref.watch(strategyProvider.select((state) => state.activePageId));
+    final activePageIdFromState = ref.watch(
+      strategyPageSessionProvider.select((state) => state.activePageId),
+    );
 
     if (isCloud) {
       final snapshot = ref.watch(remoteStrategySnapshotProvider).valueOrNull;

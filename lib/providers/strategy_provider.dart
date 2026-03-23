@@ -16,7 +16,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
@@ -52,6 +51,11 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart'
+    as strategy_page_session;
+import 'package:icarus/providers/strategy_save_state_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 
 class StrategyData extends HiveObject {
   final String id;
@@ -171,35 +175,66 @@ class StrategyData extends HiveObject {
 }
 
 class StrategyState {
-  StrategyState({
-    required this.isSaved,
-    required this.stratName,
-    required this.id,
-    required this.storageDirectory,
-    this.activePageId,
-  });
+  const StrategyState({
+    String? strategyId,
+    String? strategyName,
+    StrategySource? source,
+    this.storageDirectory,
+    this.isOpen = false,
+    @Deprecated('Use strategyId') String? id,
+    @Deprecated('Use strategyName') String? stratName,
+    @Deprecated('Use source') bool? isCloudBacked,
+    @Deprecated('Use strategySaveStateProvider') bool? isSaved,
+    @Deprecated('Use strategySaveStateProvider') bool? hasPendingCloudSync,
+    @Deprecated('Use strategySaveStateProvider') String? cloudSyncError,
+    @Deprecated('Use strategyPageSessionProvider') String? activePageId,
+  })  : strategyId = strategyId ?? id,
+        strategyName = strategyName ?? stratName,
+        source = source ??
+            (isCloudBacked == null
+                ? null
+                : (isCloudBacked ? StrategySource.cloud : StrategySource.local));
 
-  final bool isSaved;
-  final String? stratName;
-  final String id;
+  final String? strategyId;
+  final String? strategyName;
+  final StrategySource? source;
   final String? storageDirectory;
-  final String? activePageId;
+  final bool isOpen;
+
+  String get id => strategyId ?? 'testID';
+  String? get stratName => strategyName;
+  bool get isCloudBacked => source == StrategySource.cloud;
 
   StrategyState copyWith({
-    bool? isSaved,
-    String? stratName,
-    String? id,
+    String? strategyId,
+    String? strategyName,
+    StrategySource? source,
     String? storageDirectory,
-    String? activePageId,
-    bool clearActivePageId = false,
+    bool? isOpen,
+    bool clearStrategyId = false,
+    bool clearStrategyName = false,
+    bool clearSource = false,
+    @Deprecated('Use strategyId') String? id,
+    @Deprecated('Use strategyName') String? stratName,
+    @Deprecated('Use source') bool? isCloudBacked,
+    @Deprecated('Ignored') bool? isSaved,
+    @Deprecated('Ignored') bool? hasPendingCloudSync,
+    @Deprecated('Ignored') String? cloudSyncError,
+    @Deprecated('Ignored') bool clearCloudSyncError = false,
+    @Deprecated('Ignored') String? activePageId,
+    @Deprecated('Ignored') bool clearActivePageId = false,
   }) {
+    final resolvedSource = source ??
+        (isCloudBacked == null
+            ? this.source
+            : (isCloudBacked ? StrategySource.cloud : StrategySource.local));
     return StrategyState(
-      isSaved: isSaved ?? this.isSaved,
-      stratName: stratName ?? this.stratName,
-      id: id ?? this.id,
+      strategyId: clearStrategyId ? null : (strategyId ?? id ?? this.strategyId),
+      strategyName:
+          clearStrategyName ? null : (strategyName ?? stratName ?? this.strategyName),
+      source: clearSource ? null : resolvedSource,
       storageDirectory: storageDirectory ?? this.storageDirectory,
-      activePageId:
-          clearActivePageId ? null : (activePageId ?? this.activePageId),
+      isOpen: isOpen ?? this.isOpen,
     );
   }
 }
@@ -346,71 +381,18 @@ class _ZipManifestData {
 }
 
 class StrategyProvider extends Notifier<StrategyState> {
-  String? activePageID;
   int? _lastHydratedRemoteSequence;
   String? _lastHydratedRemoteStrategyId;
   String? _lastHydratedRemotePageId;
 
   @override
   StrategyState build() {
-    ref.listen<StrategyOpQueueState>(strategyOpQueueProvider, (previous, next) {
-      final previousAcks = previous?.lastAcks ?? const <OpAck>[];
-      if (next.lastAcks.isEmpty || identical(previousAcks, next.lastAcks)) {
-        return;
-      }
-      unawaited(reconcile(next.lastAcks));
-    });
-    ref.listen<AsyncValue<RemoteStrategySnapshot?>>(
-      remoteStrategySnapshotProvider,
-      (previous, next) {
-        if (!_isCloudMode()) {
-          return;
-        }
-
-        final snapshot = next.valueOrNull;
-        if (snapshot == null || snapshot.pages.isEmpty) {
-          return;
-        }
-
-        final activeRemoteStrategy = ref
-            .read(remoteStrategySnapshotProvider.notifier)
-            .activeStrategyPublicId;
-        if (activeRemoteStrategy != snapshot.header.publicId ||
-            state.id != snapshot.header.publicId) {
-          return;
-        }
-
-        final queue = ref.read(strategyOpQueueProvider);
-        if (queue.isFlushing || queue.pending.isNotEmpty || !state.isSaved) {
-          return;
-        }
-
-        final prevSequence = previous?.valueOrNull?.header.sequence;
-        final sequenceChanged =
-            prevSequence == null || prevSequence != snapshot.header.sequence;
-        final targetPageId = _resolveHydrationTargetPage(snapshot);
-        if (!sequenceChanged || targetPageId == null) {
-          return;
-        }
-
-        final alreadyHydratedForSequence =
-            _lastHydratedRemoteStrategyId == snapshot.header.publicId &&
-                _lastHydratedRemoteSequence == snapshot.header.sequence &&
-                _lastHydratedRemotePageId == targetPageId;
-        if (alreadyHydratedForSequence) {
-          return;
-        }
-
-        unawaited(_hydrateFromRemotePage(snapshot, targetPageId));
-      },
-    );
-
-    return StrategyState(
-      isSaved: false,
-      stratName: null,
-      id: "testID",
+    return const StrategyState(
+      strategyId: null,
+      strategyName: null,
+      source: null,
       storageDirectory: null,
-      activePageId: null,
+      isOpen: false,
     );
   }
 
@@ -437,7 +419,29 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   //Used For Images
   void setFromState(StrategyState newState) {
-    state = newState;
+    final hasIdentity = newState.strategyId != null ||
+        newState.id != 'testID' ||
+        newState.stratName != null;
+    state = newState.copyWith(
+      source: newState.source ??
+          (newState.isCloudBacked
+              ? StrategySource.cloud
+              : (hasIdentity ? StrategySource.local : null)),
+      isOpen: newState.isOpen || hasIdentity,
+    );
+  }
+
+  String? get activePageID =>
+      ref.read(strategyPageSessionProvider).activePageId;
+
+  set activePageID(String? value) {
+    final session = ref.read(strategyPageSessionProvider);
+    ref.read(strategyPageSessionProvider.notifier).setStateForTest(
+          session.copyWith(
+            activePageId: value,
+            clearActivePageId: value == null,
+          ),
+        );
   }
 
   void cancelPendingSave() {
@@ -448,7 +452,10 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   void refreshAutosaveScheduling() {
     cancelPendingSave();
-    if (state.stratName == null || state.isSaved) {
+    if (!state.isOpen || !ref.read(strategySaveStateProvider).isDirty) {
+      return;
+    }
+    if (_isCloudMode()) {
       return;
     }
     if (!ref.read(appPreferencesProvider).autosaveEnabled) {
@@ -482,6 +489,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> openStrategy(String strategyID) async {
+    cancelPendingSave();
+    ref.read(strategySaveStateProvider.notifier).reset();
+
     if (!_isCloudMode()) {
       await loadFromHive(strategyID);
       return;
@@ -490,26 +500,36 @@ class StrategyProvider extends Notifier<StrategyState> {
     await ref
         .read(remoteStrategySnapshotProvider.notifier)
         .openStrategy(strategyID);
-    final snapshotAsync = ref.read(remoteStrategySnapshotProvider);
-    final snapshot = snapshotAsync.valueOrNull;
-    if (snapshot == null || snapshot.pages.isEmpty) {
+    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+    if (snapshot == null) {
       return;
     }
 
-    final firstPage = [...snapshot.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-    final page = firstPage.first;
+    state = state.copyWith(
+      strategyId: snapshot.header.publicId,
+      strategyName: snapshot.header.name,
+      source: StrategySource.cloud,
+      storageDirectory: null,
+      isOpen: true,
+    );
 
-    await _hydrateFromRemotePage(snapshot, page.publicId);
+    await ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
+          strategyId: snapshot.header.publicId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
   }
 
   Future<void> switchPage(String pageID) async {
     if (_isCloudMode()) {
-      await setActivePage(pageID);
+      await ref.read(strategyPageSessionProvider.notifier).setActivePage(pageID);
       return;
     }
 
-    await setActivePageAnimated(pageID);
+    await ref.read(strategyPageSessionProvider.notifier).setActivePageAnimated(
+          pageID,
+          direction: PageTransitionDirection.forward,
+        );
   }
 
   Future<void> enqueueOps(
@@ -523,11 +543,14 @@ class StrategyProvider extends Notifier<StrategyState> {
     ref
         .read(strategyOpQueueProvider.notifier)
         .enqueueAll(ops, flushImmediately: flushImmediately);
-    if (_skipQueueingDuringHydration) {
+    if (ref.read(strategyPageSessionProvider).isApplyingPage) {
       return;
     }
 
-    state = state.copyWith(isSaved: false);
+    ref.read(strategySaveStateProvider.notifier)
+      ..markDirty()
+      ..setPendingCloudSync(true)
+      ..setCloudSyncError(null);
   }
 
   Future<void> reconcile(List<OpAck> acks) async {
@@ -566,14 +589,16 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     if (hasReject) {
       await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
-      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
-      if (snapshot != null && state.activePageId != null) {
-        await _hydrateFromRemotePage(snapshot, state.activePageId!);
+      final activePageId = ref.read(strategyPageSessionProvider).activePageId;
+      if (activePageId != null) {
+        await ref.read(strategyPageSessionProvider.notifier).setActivePage(
+              activePageId,
+            );
       }
       return;
     }
 
-    state = state.copyWith(isSaved: true);
+    ref.read(strategySaveStateProvider.notifier).markPersisted();
   }
 
   Future<void> _hydrateFromRemotePage(
@@ -694,7 +719,10 @@ class StrategyProvider extends Notifier<StrategyState> {
         id: snapshot.header.publicId,
         stratName: snapshot.header.name,
         activePageId: page.publicId,
+        isCloudBacked: true,
+        hasPendingCloudSync: false,
         isSaved: true,
+        clearCloudSyncError: true,
         storageDirectory: null,
       );
       _lastHydratedRemoteStrategyId = snapshot.header.publicId;
@@ -710,7 +738,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return null;
     }
 
-    final candidate = state.activePageId ?? activePageID;
+    final candidate =
+        ref.read(strategyPageSessionProvider).activePageId ?? activePageID;
     if (candidate != null &&
         snapshot.pages.any((page) => page.publicId == candidate)) {
       return candidate;
@@ -794,7 +823,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   List<StrategyOp> _buildOpsFromCurrentPageSnapshot() {
     final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
-    final activePageId = state.activePageId;
+    final activePageId = ref.read(strategyPageSessionProvider).activePageId;
     if (snapshot == null || activePageId == null) {
       return const <StrategyOp>[];
     }
@@ -968,17 +997,40 @@ class StrategyProvider extends Notifier<StrategyState> {
     await enqueueOps(ops, flushImmediately: flushImmediately);
   }
 
-  void setUnsaved() async {
-    if (_skipQueueingDuringHydration) {
+  Future<void> notifyCloudMutation({bool flushImmediately = false}) async {
+    if (!_isCloudMode() || _skipQueueingDuringHydration) {
       return;
     }
 
-    state = state.copyWith(isSaved: false);
+    ref.read(strategySaveStateProvider.notifier)
+      ..markDirty()
+      ..setPendingCloudSync(true)
+      ..setCloudSyncError(null);
+    await _queueCurrentPageOps(flushImmediately: flushImmediately);
+  }
+
+  void setUnsaved() async {
+    if (_skipQueueingDuringHydration ||
+        ref.read(strategyPageSessionProvider).isApplyingPage) {
+      return;
+    }
+
+    if (_isCloudMode()) {
+      unawaited(notifyCloudMutation(flushImmediately: false));
+      return;
+    }
+
+    ref.read(strategySaveStateProvider.notifier).markDirty();
     refreshAutosaveScheduling();
   }
 
   Future<void> forceSaveNow(String id) async {
     cancelPendingSave();
+    if (_isCloudMode()) {
+      ref.read(strategySaveStateProvider.notifier)
+        ..markDirty()
+        ..setPendingCloudSync(true);
+    }
     await _performSave(id);
   }
 
@@ -992,13 +1044,16 @@ class StrategyProvider extends Notifier<StrategyState> {
     _saveInProgress = true;
     try {
       ref.read(autoSaveProvider.notifier).ping(); // UI: Saving...
+      ref.read(strategySaveStateProvider.notifier).markSaving(true);
       if (_isCloudMode()) {
-        await _queueCurrentPageOps(flushImmediately: false);
-        await ref.read(strategyOpQueueProvider.notifier).flushNow();
+        await ref
+            .read(strategyPageSessionProvider.notifier)
+            .flushCurrentPage(flushImmediately: true);
       } else {
         await saveToHive(id);
       }
     } finally {
+      ref.read(strategySaveStateProvider.notifier).markSaving(false);
       _saveInProgress = false;
       if (_pendingSave) {
         _pendingSave = false;
@@ -1031,13 +1086,23 @@ class StrategyProvider extends Notifier<StrategyState> {
     cancelPendingSave();
     activePageID = null;
     ref.read(strategyThemeProvider.notifier).fromStrategy();
+    ref.read(strategySaveStateProvider.notifier).reset();
+    ref.read(strategyPageSessionProvider.notifier).setStateForTest(
+          const StrategyPageSessionState(
+            activePageId: null,
+            availablePageIds: [],
+            transitionState: strategy_page_session.PageTransitionState.idle,
+            isApplyingPage: false,
+          ),
+        );
     state = StrategyState(
-      isSaved: true,
-      stratName: null,
-      id: "testID",
+      strategyId: null,
+      strategyName: null,
+      source: null,
       storageDirectory: state.storageDirectory,
-      activePageId: null,
+      isOpen: false,
     );
+    ref.read(remoteStrategySnapshotProvider.notifier).clear();
   }
   // --- MIGRATION: create a first page from legacy flat fields ----------------
 
@@ -1400,59 +1465,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   // Switch active page: flush old page first, then hydrate new
   Future<void> setActivePage(String pageID) async {
-    if (pageID == activePageID) return;
-
-    if (_isCloudMode()) {
-      await _setActivePageCloud(pageID);
-      return;
-    }
-
-    // Flush current before switching
-    await _syncCurrentPageToHive();
-
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final doc = box.get(state.id);
-    if (doc == null) return;
-
-    final page = doc.pages.firstWhere(
-      (p) => p.id == pageID,
-      orElse: () => doc.pages.first,
-    );
-
-    activePageID = page.id;
-    state = state.copyWith(activePageId: page.id);
-
-    ref.read(actionProvider.notifier).resetActionState();
-    final migrated = migrateToCurrentVersion(doc);
-    final migratedPage = migrated.pages.firstWhere(
-      (p) => p.id == page.id,
-      orElse: () => migrated.pages.first,
-    );
-    if (migrated != doc) {
-      await box.put(migrated.id, migrated);
-    }
-
-    ref.read(agentProvider.notifier).fromHive(migratedPage.agentData);
-    ref.read(abilityProvider.notifier).fromHive(migratedPage.abilityData);
-    ref.read(drawingProvider.notifier).fromHive(migratedPage.drawingData);
-    ref.read(textProvider.notifier).fromHive(migratedPage.textData);
-    ref.read(placedImageProvider.notifier).fromHive(migratedPage.imageData);
-    ref.read(utilityProvider.notifier).fromHive(migratedPage.utilityData);
-    ref.read(mapProvider.notifier).setAttack(migratedPage.isAttack);
-    ref.read(strategySettingsProvider.notifier).fromHive(migratedPage.settings);
-    ref.read(strategyThemeProvider.notifier).fromStrategy(
-          profileId: migrated.themeProfileId ??
-              MapThemeProfilesProvider.immutableDefaultProfileId,
-          overridePalette: migrated.themeOverridePalette,
-        );
-    ref.read(lineUpProvider.notifier).fromHive(migratedPage.lineUps);
-
-    // Defer path rebuild until next frame (layout complete)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref
-          .read(drawingProvider.notifier)
-          .rebuildAllPaths(CoordinateSystem.instance);
-    });
+    await ref.read(strategyPageSessionProvider.notifier).setActivePage(pageID);
   }
 
   Future<void> _setActivePageCloud(String pageID) async {
@@ -1468,76 +1481,15 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> backwardPage() async {
-    if (_isCloudMode()) {
-      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
-      if (snapshot == null || snapshot.pages.isEmpty) return;
-      final pages = [...snapshot.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-      final activeId = activePageID ?? pages.first.publicId;
-      final currentIndex = pages.indexWhere((p) => p.publicId == activeId);
-      if (currentIndex < 0) return;
-      var nextIndex = currentIndex - 1;
-      if (nextIndex < 0) nextIndex = pages.length - 1;
-      await setActivePage(pages[nextIndex].publicId);
-      return;
-    }
-
-    if (activePageID == null) return;
-
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final doc = box.get(state.id);
-    if (doc == null || doc.pages.isEmpty) return;
-
-    final pages = [...doc.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-
-    final currentIndex = pages.indexWhere((p) => p.id == activePageID);
-    if (currentIndex == -1) return;
-    int nextIndex = currentIndex - 1;
-    if (nextIndex < 0) nextIndex = pages.length - 1;
-
-    final nextPage = pages[nextIndex];
-    await setActivePageAnimated(
-      nextPage.id,
-      direction: PageTransitionDirection.backward,
-    );
+    await ref
+        .read(strategyPageSessionProvider.notifier)
+        .switchRelativePage(PageSwitchDirection.previous);
   }
 
   Future<void> forwardPage() async {
-    if (_isCloudMode()) {
-      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
-      if (snapshot == null || snapshot.pages.isEmpty) return;
-      final pages = [...snapshot.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-      final activeId = activePageID ?? pages.first.publicId;
-      final currentIndex = pages.indexWhere((p) => p.publicId == activeId);
-      if (currentIndex < 0) return;
-      var nextIndex = currentIndex + 1;
-      if (nextIndex >= pages.length) nextIndex = 0;
-      await setActivePage(pages[nextIndex].publicId);
-      return;
-    }
-
-    if (activePageID == null) return;
-
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final doc = box.get(state.id);
-    if (doc == null || doc.pages.isEmpty) return;
-
-    final pages = [...doc.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-
-    final currentIndex = pages.indexWhere((p) => p.id == activePageID);
-    if (currentIndex == -1) return;
-
-    int nextIndex = currentIndex + 1;
-    if (nextIndex >= pages.length) nextIndex = 0;
-
-    final nextPage = pages[nextIndex];
-    await setActivePageAnimated(
-      nextPage.id,
-      direction: PageTransitionDirection.forward,
-    );
+    await ref
+        .read(strategyPageSessionProvider.notifier)
+        .switchRelativePage(PageSwitchDirection.next);
   }
 
   Future<void> reorderPage(int oldIndex, int newIndex) async {
@@ -1631,57 +1583,11 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> setActivePageAnimated(String pageID,
       {PageTransitionDirection? direction,
       Duration duration = kPageTransitionDuration}) async {
-    if (pageID == activePageID) return;
-    if (_isCloudMode()) {
-      await setActivePage(pageID);
-      return;
-    }
-
-    final transitionState = ref.read(transitionProvider);
-    final transitionNotifier = ref.read(transitionProvider.notifier);
-    if (transitionState.active ||
-        transitionState.phase == PageTransitionPhase.preparing) {
-      transitionNotifier.complete();
-    }
-
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final doc = box.get(state.id);
-    if (doc == null || doc.pages.isEmpty) return;
-
-    final orderedPages = [...doc.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-    final resolvedDirection =
-        direction ?? _resolveDirectionForPage(pageID, orderedPages);
-    final startSettings = ref.read(strategySettingsProvider);
-
-    final prev = _snapshotAllPlaced();
-    transitionNotifier.prepare(prev.values.toList(),
-        direction: resolvedDirection,
-        startAgentSize: startSettings.agentSize,
-        startAbilitySize: startSettings.abilitySize);
-
-    // Load target page (hydrates providers)
-    await setActivePage(pageID);
-    final endSettings = ref.read(strategySettingsProvider);
-
-    // After layout, snapshot next and start transition
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final next = _snapshotAllPlaced();
-      final entries = _diffToTransitions(prev, next);
-      if (entries.isNotEmpty) {
-        transitionNotifier.start(
-          entries,
+    await ref.read(strategyPageSessionProvider.notifier).setActivePageAnimated(
+          pageID,
+          direction: direction ?? PageTransitionDirection.forward,
           duration: duration,
-          direction: resolvedDirection,
-          startAgentSize: startSettings.agentSize,
-          endAgentSize: endSettings.agentSize,
-          startAbilitySize: startSettings.abilitySize,
-          endAbilitySize: endSettings.abilitySize,
         );
-      } else {
-        transitionNotifier.complete();
-      }
-    });
   }
 
   Map<String, PlacedWidget> _snapshotAllPlaced() {
@@ -1858,51 +1764,27 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     // We clear previous data to avoid artifacts when loading a new strategy
     final migratedStrategy = migrateToCurrentVersion(newStrat);
-    final page = migratedStrategy.pages.first;
 
     if (migratedStrategy != newStrat) {
       await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
           .put(migratedStrategy.id, migratedStrategy);
     }
 
-    ref.read(agentProvider.notifier).fromHive(page.agentData);
-    ref.read(abilityProvider.notifier).fromHive(page.abilityData);
-    ref.read(drawingProvider.notifier).fromHive(page.drawingData);
-
-    ref
-        .read(mapProvider.notifier)
-        .fromHive(migratedStrategy.mapData, page.isAttack);
-    ref.read(textProvider.notifier).fromHive(page.textData);
-    ref.read(placedImageProvider.notifier).fromHive(page.imageData);
-    ref.read(lineUpProvider.notifier).fromHive(page.lineUps);
-    ref.read(strategySettingsProvider.notifier).fromHive(page.settings);
-    ref.read(strategyThemeProvider.notifier).fromStrategy(
-          profileId: migratedStrategy.themeProfileId ??
-              MapThemeProfilesProvider.immutableDefaultProfileId,
-          overridePalette: migratedStrategy.themeOverridePalette,
-        );
-    ref.read(utilityProvider.notifier).fromHive(page.utilityData);
-    activePageID = page.id;
-
-    if (kIsWeb) {
-      state = StrategyState(
-        isSaved: true,
-        stratName: migratedStrategy.name,
-        id: migratedStrategy.id,
-        storageDirectory: null,
-        activePageId: page.id,
-      );
-      return;
-    }
-    final newDir = await setStorageDirectory(migratedStrategy.id);
-
+    final newDir = kIsWeb ? null : await setStorageDirectory(migratedStrategy.id);
     state = StrategyState(
-      isSaved: true,
-      stratName: migratedStrategy.name,
-      id: migratedStrategy.id,
-      storageDirectory: newDir.path,
-      activePageId: page.id,
+      strategyId: migratedStrategy.id,
+      strategyName: migratedStrategy.name,
+      source: StrategySource.local,
+      storageDirectory: newDir?.path,
+      isOpen: true,
     );
+    ref.read(strategySaveStateProvider.notifier).reset();
+    await ref.read(strategyPageSessionProvider.notifier).initializeForStrategy(
+          strategyId: migratedStrategy.id,
+          source: StrategySource.local,
+          selectFirstPageIfNeeded: true,
+        );
+    ref.read(strategySaveStateProvider.notifier).markPersisted();
   }
 
   Future<void> loadFromFilePath(String filePath) async {
@@ -4397,9 +4279,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put(currentStrategy.id, currentStrategy);
 
-    state = state.copyWith(
-      isSaved: true,
-    );
+    ref.read(strategySaveStateProvider.notifier).markPersisted();
     log("Save to hive was called");
   }
 

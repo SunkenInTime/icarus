@@ -8,6 +8,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
@@ -207,7 +208,7 @@ class SettingsTab extends ConsumerWidget {
                             icon: Icons.save_outlined,
                             title: "Autosave",
                             description:
-                                "Automatically save the current strategy after 15 seconds of inactivity. When off, Icarus will ask before you leave unsaved work.",
+                                "Automatically save local strategies after 15 seconds of inactivity. Cloud strategies sync live while you edit.",
                             value: appPreferences.autosaveEnabled,
                             onChanged: (value) async {
                               await ref
@@ -530,13 +531,15 @@ class _PageMarkerSizesSyncBannerState
   @override
   Widget build(BuildContext context) {
     final stratState = ref.watch(strategyProvider);
+    final activePageId =
+        ref.watch(strategyPageSessionProvider.select((state) => state.activePageId));
     final liveSettings = ref.watch(strategySettingsProvider);
     final strategy =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(stratState.id);
     final showCta = stratState.stratName != null &&
         markerSizesDifferAcrossPages(
           strategy: strategy,
-          activePageId: stratState.activePageId,
+          activePageId: activePageId,
           liveSettings: liveSettings,
         );
 

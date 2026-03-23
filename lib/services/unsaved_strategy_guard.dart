@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -8,6 +11,12 @@ enum UnsavedStrategyDecision {
   save,
   dontSave,
   cancel,
+}
+
+enum CloudExitDecision {
+  stay,
+  retrySync,
+  retryAuth,
 }
 
 Future<UnsavedStrategyDecision> showUnsavedStrategyDialog(
@@ -51,6 +60,123 @@ Future<UnsavedStrategyDecision> showUnsavedStrategyDialog(
   return result ?? UnsavedStrategyDecision.cancel;
 }
 
+Future<CloudExitDecision> _showCloudSyncBlockedDialog(
+  BuildContext context, {
+  required String message,
+  required bool showRetryAuth,
+}) async {
+  final result = await showShadDialog<CloudExitDecision>(
+    context: context,
+    builder: (context) {
+      return ShadDialog.alert(
+        title: const Text('Cloud sync pending'),
+        description: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Text(message),
+        ),
+        actions: [
+          ShadButton.secondary(
+            onPressed: () {
+              Navigator.of(context).pop(CloudExitDecision.stay);
+            },
+            child: const Text('Stay Here'),
+          ),
+          if (showRetryAuth)
+            ShadButton.secondary(
+              onPressed: () {
+                Navigator.of(context).pop(CloudExitDecision.retryAuth);
+              },
+              child: const Text('Retry Convex Auth'),
+            ),
+          ShadButton(
+            onPressed: () {
+              Navigator.of(context).pop(CloudExitDecision.retrySync);
+            },
+            child: const Text('Retry Sync'),
+          ),
+        ],
+      );
+    },
+  );
+
+  return result ?? CloudExitDecision.stay;
+}
+
+Future<bool> _waitForCloudSync(
+  WidgetRef ref, {
+  Duration timeout = const Duration(seconds: 8),
+  Duration pollInterval = const Duration(milliseconds: 120),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final saveState = ref.read(strategySaveStateProvider);
+    final queueState = ref.read(strategyOpQueueProvider);
+    if (!saveState.hasPendingCloudSync &&
+        queueState.pending.isEmpty &&
+        !queueState.isFlushing &&
+        saveState.cloudSyncError == null) {
+      return true;
+    }
+    await Future<void>.delayed(pollInterval);
+  }
+  return false;
+}
+
+Future<bool> _guardCloudStrategyExit({
+  required BuildContext context,
+  required WidgetRef ref,
+  required Future<void> Function() onContinue,
+}) async {
+  while (true) {
+    final strategyState = ref.read(strategyProvider);
+    final saveState = ref.read(strategySaveStateProvider);
+    final queueState = ref.read(strategyOpQueueProvider);
+    final authState = ref.read(authProvider);
+
+    final hasPendingSync =
+        saveState.hasPendingCloudSync || queueState.pending.isNotEmpty;
+    final cloudError = saveState.cloudSyncError ?? queueState.lastError;
+    if (!hasPendingSync && cloudError == null) {
+      if (!context.mounted) {
+        return false;
+      }
+      await onContinue();
+      return true;
+    }
+
+    if (queueState.isFlushing && cloudError == null) {
+      final synced = await _waitForCloudSync(ref);
+      if (synced) {
+        continue;
+      }
+    }
+
+    if (!context.mounted) {
+      return false;
+    }
+
+    final decision = await _showCloudSyncBlockedDialog(
+      context,
+      message: cloudError ??
+          'Icarus is still syncing cloud edits. Stay on this screen until sync completes.',
+      showRetryAuth: authState.hasActiveAuthIncident,
+    );
+
+    switch (decision) {
+      case CloudExitDecision.stay:
+        return false;
+      case CloudExitDecision.retryAuth:
+        await ref
+            .read(authProvider.notifier)
+            .reinitializeConvexAuth(source: 'cloud_exit_guard');
+        break;
+      case CloudExitDecision.retrySync:
+        await ref.read(strategyProvider.notifier).forceSaveNow(strategyState.id);
+        break;
+    }
+  }
+}
+
 Future<bool> guardUnsavedStrategyExit({
   required BuildContext context,
   required WidgetRef ref,
@@ -58,7 +184,16 @@ Future<bool> guardUnsavedStrategyExit({
   required String source,
 }) async {
   final strategyState = ref.read(strategyProvider);
-  if (strategyState.stratName == null || strategyState.isSaved) {
+  final saveState = ref.read(strategySaveStateProvider);
+  if (strategyState.isCloudBacked) {
+    return _guardCloudStrategyExit(
+      context: context,
+      ref: ref,
+      onContinue: onContinue,
+    );
+  }
+
+  if (strategyState.stratName == null || !saveState.isDirty) {
     await onContinue();
     return true;
   }

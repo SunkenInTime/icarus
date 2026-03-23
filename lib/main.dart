@@ -42,6 +42,8 @@ import 'package:window_manager/window_manager.dart';
 late CustomMouseCursor staticDrawingCursor;
 WebViewEnvironment? webViewEnvironment;
 bool isWebViewInitialized = false;
+bool isWebViewWarmupComplete = false;
+Future<void>? _webViewEnvironmentWarmupFuture;
 final AppLinks _appLinks = AppLinks();
 final StreamController<Uri> _deepLinkUriController =
     StreamController<Uri>.broadcast();
@@ -84,6 +86,7 @@ Future<void> main(List<String> args) async {
   await runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+
       appProviderContainer = ProviderContainer();
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
@@ -148,8 +151,6 @@ Future<void> main(List<String> args) async {
 
       // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
 
-      await _initWebViewEnvironment();
-
       if (!kIsWeb) {
         await windowManager.ensureInitialized();
         WindowOptions windowOptions = const WindowOptions(
@@ -161,14 +162,6 @@ Future<void> main(List<String> args) async {
           await windowManager.focus();
         });
       }
-
-      // Ensure WebView2 environment is initialized on Windows before any InAppWebView
-      // widgets are created. This is especially important in testing/dev where the
-      // WebView user-data folder and runtime selection can affect behavior.
-      // if (!kIsWeb && Platform.isWindows) {
-      //   await _initWebViewEnvironment();
-      // }
-
       runApp(
         UncontrolledProviderScope(
           container: appProviderContainer,
@@ -185,6 +178,33 @@ Future<void> main(List<String> args) async {
       );
     },
   );
+}
+
+Future<void> warmUpWebViewEnvironment() {
+  if (kIsWeb || !Platform.isWindows) {
+    isWebViewWarmupComplete = true;
+    return Future.value();
+  }
+
+  return _webViewEnvironmentWarmupFuture ??=
+      _warmUpWebViewEnvironmentInternal();
+}
+
+Future<void> _warmUpWebViewEnvironmentInternal() async {
+  try {
+    await _initWebViewEnvironment();
+  } catch (error, stackTrace) {
+    webViewEnvironment = null;
+    isWebViewInitialized = false;
+    AppErrorReporter.reportWarning(
+      'WebView failed to initialize. Youtube embeds will be unavailable.',
+      source: 'main.warmUpWebViewEnvironment',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  } finally {
+    isWebViewWarmupComplete = true;
+  }
 }
 
 void _installGlobalErrorHandlers() {
@@ -243,21 +263,25 @@ Future<void> _initializePersistedDebugLog() async {
 Future<void> _initWebViewEnvironment() async {
   if (kIsWeb) return;
   if (Platform.isWindows) {
+    if (isWebViewInitialized && webViewEnvironment != null) {
+      return;
+    }
+
     final dir = await getApplicationSupportDirectory();
     final availableVersion = await WebViewEnvironment.getAvailableVersion();
 
     if (availableVersion == null) {
+      webViewEnvironment = null;
       isWebViewInitialized = false;
       return;
     }
-
-    isWebViewInitialized = true;
 
     webViewEnvironment = await WebViewEnvironment.create(
       settings: WebViewEnvironmentSettings(
         userDataFolder: path.join(dir.path, 'webview'),
       ),
     );
+    isWebViewInitialized = true;
   }
 }
 
@@ -328,6 +352,8 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref.read(authProvider);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(warmUpWebViewEnvironment());
+
       if (widget.data.isEmpty) return;
 
       for (final argument in widget.data) {

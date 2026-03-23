@@ -73,6 +73,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   void _warnWebView() async {
     if (kIsWeb) return;
     if (!Platform.isWindows) return;
+    await warmUpWebViewEnvironment();
+    if (!mounted) return;
     if (isWebViewInitialized) return;
     await showShadDialog<void>(
       context: context,

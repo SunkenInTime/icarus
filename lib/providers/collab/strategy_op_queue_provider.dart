@@ -95,18 +95,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       return;
     }
 
-    final byOpId = <String, PendingOp>{
-      for (final existing in state.pending) existing.op.opId: existing,
-    };
-
-    byOpId[op.opId] = PendingOp(
+    final incoming = PendingOp(
       op: op,
       clientId: state.clientId ?? const Uuid().v4(),
       attempts: 0,
     );
+    final mergedPending = _mergePending(state.pending, incoming);
 
     state = state.copyWith(
-      pending: byOpId.values.toList(growable: false),
+      pending: mergedPending,
       clearError: true,
     );
 
@@ -119,6 +116,101 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _debounceTimer = Timer(_debounceDelay, () {
       unawaited(flushNow());
     });
+  }
+
+  List<PendingOp> _mergePending(List<PendingOp> pending, PendingOp incoming) {
+    final entityKey = _entityKeyForOp(incoming.op);
+    if (entityKey == null) {
+      return [...pending, incoming];
+    }
+
+    final merged = <PendingOp>[];
+    var handled = false;
+
+    for (final existing in pending) {
+      if (handled || _entityKeyForOp(existing.op) != entityKey) {
+        merged.add(existing);
+        continue;
+      }
+
+      final replacement = _mergePendingOp(existing, incoming);
+      if (replacement != null) {
+        merged.add(replacement);
+      }
+      handled = true;
+    }
+
+    if (!handled) {
+      merged.add(incoming);
+    }
+
+    return merged;
+  }
+
+  String? _entityKeyForOp(StrategyOp op) {
+    switch (op.entityType) {
+      case StrategyOpEntityType.strategy:
+        return 'strategy';
+      case StrategyOpEntityType.page:
+        return op.entityPublicId == null ? null : 'page:${op.entityPublicId}';
+      case StrategyOpEntityType.element:
+        if (op.pagePublicId == null || op.entityPublicId == null) {
+          return null;
+        }
+        return 'element:${op.pagePublicId}:${op.entityPublicId}';
+      case StrategyOpEntityType.lineup:
+        if (op.pagePublicId == null || op.entityPublicId == null) {
+          return null;
+        }
+        return 'lineup:${op.pagePublicId}:${op.entityPublicId}';
+    }
+  }
+
+  PendingOp? _mergePendingOp(PendingOp existing, PendingOp incoming) {
+    final existingOp = existing.op;
+    final incomingOp = incoming.op;
+
+    if (incomingOp.kind == StrategyOpKind.delete &&
+        existingOp.kind == StrategyOpKind.add) {
+      return null;
+    }
+
+    if (existingOp.kind == StrategyOpKind.add &&
+        incomingOp.kind == StrategyOpKind.patch) {
+      return PendingOp(
+        op: StrategyOp(
+          opId: existingOp.opId,
+          kind: StrategyOpKind.add,
+          entityType: existingOp.entityType,
+          entityPublicId: existingOp.entityPublicId,
+          pagePublicId: existingOp.pagePublicId,
+          payload: incomingOp.payload ?? existingOp.payload,
+          sortIndex: incomingOp.sortIndex ?? existingOp.sortIndex,
+          expectedRevision: existingOp.expectedRevision,
+          expectedSequence: existingOp.expectedSequence,
+        ),
+        clientId: existing.clientId,
+        attempts: existing.attempts,
+        lastAttemptAt: existing.lastAttemptAt,
+      );
+    }
+
+    return PendingOp(
+      op: StrategyOp(
+        opId: existingOp.opId,
+        kind: incomingOp.kind,
+        entityType: incomingOp.entityType,
+        entityPublicId: incomingOp.entityPublicId ?? existingOp.entityPublicId,
+        pagePublicId: incomingOp.pagePublicId ?? existingOp.pagePublicId,
+        payload: incomingOp.payload ?? existingOp.payload,
+        sortIndex: incomingOp.sortIndex ?? existingOp.sortIndex,
+        expectedRevision: incomingOp.expectedRevision ?? existingOp.expectedRevision,
+        expectedSequence: incomingOp.expectedSequence ?? existingOp.expectedSequence,
+      ),
+      clientId: existing.clientId,
+      attempts: existing.attempts,
+      lastAttemptAt: existing.lastAttemptAt,
+    );
   }
 
   void enqueueAll(Iterable<StrategyOp> ops, {bool flushImmediately = false}) {
