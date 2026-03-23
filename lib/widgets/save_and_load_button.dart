@@ -11,6 +11,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/widgets/settings_tab.dart';
@@ -105,7 +106,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 }
                 final newController = ScreenshotController();
                 final currentPageID =
-                    ref.read(strategyProvider.notifier).activePageID;
+                    ref.read(strategyPageSessionProvider).activePageId;
 
                 if (currentPageID == null) return;
 

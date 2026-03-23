@@ -3,11 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -18,6 +21,7 @@ class SettingsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activeStrategyName = ref.watch(strategyProvider).stratName;
+    final authState = ref.watch(authProvider);
     final strategySettings = ref.watch(strategySettingsProvider);
     final mapState = ref.watch(mapProvider);
     final appPreferences = ref.watch(appPreferencesProvider);
@@ -58,6 +62,93 @@ class SettingsTab extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    SettingsScopeCard(
+                      scope: SettingsScope.workspace,
+                      title: 'Account',
+                      description:
+                          'Sign in to enable cloud sync and collaborative strategy storage.',
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              if (authState.avatarUrl != null)
+                                CircleAvatar(
+                                  radius: 16,
+                                  backgroundImage:
+                                      NetworkImage(authState.avatarUrl!),
+                                )
+                              else
+                                const CircleAvatar(
+                                  radius: 16,
+                                  child: Icon(Icons.person, size: 16),
+                                ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  authState.isAuthenticated
+                                      ? authState.displayName
+                                      : 'Not signed in',
+                                  style: const TextStyle(fontSize: 15),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            width: double.infinity,
+                            child: authState.isAuthenticated
+                                ? ShadButton.secondary(
+                                    onPressed: authState.isLoading
+                                        ? null
+                                        : () => ref
+                                            .read(authProvider.notifier)
+                                            .signOut(),
+                                    child: authState.isLoading
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Text('Sign out'),
+                                  )
+                                : ShadButton(
+                                    onPressed: authState.isLoading
+                                        ? null
+                                        : () {
+                                            showDialog<void>(
+                                              context: context,
+                                              builder: (_) => const AuthDialog(),
+                                            );
+                                          },
+                                    child: authState.isLoading
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Text('Sign in / sign up'),
+                                  ),
+                          ),
+                          if (authState.errorMessage != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              authState.errorMessage!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Settings.tacticalVioletTheme.destructive,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const _SectionDivider(),
+                    const SizedBox(height: 20),
                     SettingsScopeCard(
                       scope: SettingsScope.strategy,
                       title: "Page object sizing",
@@ -117,7 +208,7 @@ class SettingsTab extends ConsumerWidget {
                             icon: Icons.save_outlined,
                             title: "Autosave",
                             description:
-                                "Automatically save the current strategy after 15 seconds of inactivity. When off, Icarus will ask before you leave unsaved work.",
+                                "Automatically save local strategies after 15 seconds of inactivity. Cloud strategies sync live while you edit.",
                             value: appPreferences.autosaveEnabled,
                             onChanged: (value) async {
                               await ref
@@ -440,13 +531,15 @@ class _PageMarkerSizesSyncBannerState
   @override
   Widget build(BuildContext context) {
     final stratState = ref.watch(strategyProvider);
+    final activePageId =
+        ref.watch(strategyPageSessionProvider.select((state) => state.activePageId));
     final liveSettings = ref.watch(strategySettingsProvider);
     final strategy =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(stratState.id);
     final showCta = stratState.stratName != null &&
         markerSizesDifferAcrossPages(
           strategy: strategy,
-          activePageId: stratState.activePageId,
+          activePageId: activePageId,
           liveSettings: liveSettings,
         );
 

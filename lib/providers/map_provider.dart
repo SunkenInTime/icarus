@@ -8,6 +8,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 
 final mapProvider = NotifierProvider<MapProvider, MapState>(MapProvider.new);
 
@@ -49,7 +50,10 @@ class MapProvider extends Notifier<MapState> {
     return MapState(currentMap: MapValue.ascent, isAttack: true);
   }
 
-  void updateMap(MapValue map) => state = state.copyWith(currentMap: map);
+  void updateMap(MapValue map) {
+    state = state.copyWith(currentMap: map);
+    ref.read(strategyProvider.notifier).setUnsaved();
+  }
 
   void fromHive(MapValue map, bool isAttack) {
     state = state.copyWith(currentMap: map, isAttack: isAttack);
@@ -76,10 +80,12 @@ class MapProvider extends Notifier<MapState> {
     ref.read(textProvider.notifier).switchSides();
     ref.read(placedImageProvider.notifier).switchSides();
     state = state.copyWith(isAttack: !state.isAttack);
+    ref.read(strategyProvider.notifier).setUnsaved();
   }
 
   void setAttack(bool isAttack) {
     state = state.copyWith(isAttack: isAttack);
+    ref.read(strategyProvider.notifier).setUnsaved();
   }
 
   String toJson() {
@@ -95,3 +101,5 @@ class MapProvider extends Notifier<MapState> {
     return mapValue;
   }
 }
+
+

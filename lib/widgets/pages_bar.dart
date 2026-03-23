@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
+import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
 import 'package:icarus/providers/strategy_page.dart';
@@ -28,7 +32,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
   }
 
   Future<void> _selectPage(String id) async {
-    if (id == ref.read(strategyProvider.notifier).activePageID) return;
+    if (id == ref.read(strategyPageSessionProvider).activePageId) return;
     await ref.read(strategyProvider.notifier).setActivePageAnimated(id);
   }
 
@@ -93,7 +97,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
       for (var i = 0; i < remaining.length; i++)
         remaining[i].copyWith(sortIndex: i),
     ];
-    final activeId = ref.read(strategyProvider.notifier).activePageID;
+    final activeId = ref.read(strategyPageSessionProvider).activePageId;
     final newActive = (activeId == page.id) ? reindexed.first.id : activeId;
 
     final updated = strat.copyWith(
@@ -111,9 +115,39 @@ class _PagesBarState extends ConsumerState<PagesBar>
 
   @override
   Widget build(BuildContext context) {
+    final isCloud = ref.watch(isCloudCollabEnabledProvider);
+    final activePageIdFromState = ref.watch(
+      strategyPageSessionProvider.select((state) => state.activePageId),
+    );
+
+    if (isCloud) {
+      final snapshot = ref.watch(remoteStrategySnapshotProvider).valueOrNull;
+      if (snapshot == null || snapshot.pages.isEmpty) {
+        return const SizedBox.shrink();
+      }
+
+      final pages = [...snapshot.pages]
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      final activePageId = activePageIdFromState ?? pages.first.publicId;
+      final activeName = pages
+          .firstWhere(
+            (p) => p.publicId == activePageId,
+            orElse: () => pages.first,
+          )
+          .name;
+
+      return _CloudSimplePagesBar(
+        pages: pages,
+        activePageId: activePageId,
+        activeName: activeName,
+        expanded: _expanded,
+        onAdd: _addPage,
+        onSelect: (id) => ref.read(strategyProvider.notifier).switchPage(id),
+        onToggle: () => setState(() => _expanded = !_expanded),
+      );
+    }
+
     final strategyId = ref.watch(strategyProvider).id;
-    final activePageIdFromState =
-        ref.watch(strategyProvider.select((state) => state.activePageId));
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
     return ValueListenableBuilder(
@@ -165,6 +199,118 @@ class _PagesBarState extends ConsumerState<PagesBar>
                 ),
         );
       },
+    );
+  }
+}
+
+class _CloudSimplePagesBar extends StatelessWidget {
+  const _CloudSimplePagesBar({
+    required this.pages,
+    required this.activePageId,
+    required this.activeName,
+    required this.expanded,
+    required this.onAdd,
+    required this.onSelect,
+    required this.onToggle,
+  });
+
+  final List<RemotePage> pages;
+  final String activePageId;
+  final String activeName;
+  final bool expanded;
+  final Future<void> Function() onAdd;
+  final ValueChanged<String> onSelect;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeInOut,
+      decoration: BoxDecoration(
+        color: Settings.tacticalVioletTheme.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Settings.tacticalVioletTheme.border,
+          width: 2,
+        ),
+      ),
+      width: 224,
+      padding: EdgeInsets.zero,
+      child: expanded
+          ? Container(
+              constraints: const BoxConstraints(maxHeight: 310),
+              child: Column(
+                children: [
+                  Flexible(
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                      itemCount: pages.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, index) {
+                        final page = pages[index];
+                        final isActive = page.publicId == activePageId;
+                        return OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: isActive
+                                ? Settings.tacticalVioletTheme.primary
+                                    .withValues(alpha: 0.18)
+                                : Colors.transparent,
+                            side: BorderSide(
+                              color: isActive
+                                  ? Settings.tacticalVioletTheme.primary
+                                  : Settings.tacticalVioletTheme.border,
+                            ),
+                            alignment: Alignment.centerLeft,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                          ),
+                          onPressed: () => onSelect(page.publicId),
+                          child: Text(
+                            page.name,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  Divider(height: 1, color: Settings.tacticalVioletTheme.border),
+                  SizedBox(
+                    height: 48,
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 8),
+                        _SquareIconButton(
+                          icon: Icons.add,
+                          onTap: () => onAdd(),
+                          tooltip: 'Add page',
+                          color: Settings.tacticalVioletTheme.primary,
+                          shortcutLabel: 'C',
+                        ),
+                        const Spacer(),
+                        ShadIconButton.ghost(
+                          foregroundColor: Colors.white,
+                          onPressed: onToggle,
+                          icon: const Icon(
+                            Icons.keyboard_arrow_up,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : _CollapsedPill(
+              activeName: activeName,
+              onAdd: () => onAdd(),
+              onToggle: onToggle,
+            ),
     );
   }
 }
