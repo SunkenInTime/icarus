@@ -16,10 +16,11 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/strategy/strategy_migrator.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:uuid/uuid.dart';
 
@@ -61,7 +62,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
       throw StateError('Strategy $strategyId not found.');
     }
 
-    final migrated = StrategyProvider.migrateToCurrentVersion(current);
+    final migrated = StrategyMigrator.migrateToCurrentVersion(current);
     if (!identical(current, migrated)) {
       await box.put(migrated.id, migrated);
     }

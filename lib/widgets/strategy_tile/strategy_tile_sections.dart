@@ -3,7 +3,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _agentIconSize = 27;

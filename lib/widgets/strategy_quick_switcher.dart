@@ -9,6 +9,7 @@ import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 

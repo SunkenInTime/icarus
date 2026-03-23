@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/dialogs/strategy/delete_strategy_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/rename_strategy_dialog.dart';
@@ -211,9 +213,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     await ref
         .read(strategyProvider.notifier)
         .loadFromHive(widget.strategyData.id);
-    await ref
-        .read(strategyProvider.notifier)
-        .exportFile(widget.strategyData.id);
+    await StrategyImportExportService(ref).exportFile(widget.strategyData.id);
   }
 
   Future<void> _showRenameDialog() async {

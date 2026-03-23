@@ -1,4 +1,4 @@
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 
 /// Whether [agentSize] / [abilitySize] differ across strategy pages, using

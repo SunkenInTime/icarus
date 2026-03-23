@@ -27,8 +27,10 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_migrator.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
@@ -132,7 +134,7 @@ Future<void> main(List<String> args) async {
 
       await MapThemeProfilesProvider.bootstrap();
 
-      await StrategyProvider.migrateAllStrategies();
+      await StrategyMigrator.migrateAllStrategies();
 
       await ConvexClient.initialize(
         const ConvexConfig(
@@ -300,7 +302,7 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
     try {
-      await ref.read(strategyProvider.notifier).loadFromFilePath(filePath);
+      await StrategyImportExportService(ref).loadFromFilePath(filePath);
     } on NewerVersionImportException catch (error, stackTrace) {
       AppErrorReporter.reportError(
         NewerVersionImportException.userMessage,

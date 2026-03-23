@@ -17,6 +17,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';

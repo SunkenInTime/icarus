@@ -14,6 +14,8 @@ import 'package:icarus/providers/collab/cloud_migration_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
@@ -111,7 +113,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       return;
     }
     try {
-      await ref.read(strategyProvider.notifier).loadFromFilePicker();
+      await StrategyImportExportService(ref).loadFromFilePicker();
     } on NewerVersionImportException catch (error, stackTrace) {
       AppErrorReporter.reportError(
         NewerVersionImportException.userMessage,
@@ -135,9 +137,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       return;
     }
     try {
-      final result = await ref
-          .read(strategyProvider.notifier)
-          .importBackupFromFilePicker();
+      final result =
+          await StrategyImportExportService(ref).importBackupFromFilePicker();
       if (result.hasImports || result.issues.isNotEmpty) {
         final message = buildImportSummaryMessage(result);
         if (result.hasImports) {
@@ -174,7 +175,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       return;
     }
     try {
-      await ref.read(strategyProvider.notifier).exportLibrary();
+      await StrategyImportExportService(ref).exportLibrary();
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
         'Failed to export library.',

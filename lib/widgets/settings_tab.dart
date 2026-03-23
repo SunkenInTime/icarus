@@ -10,6 +10,7 @@ import 'package:icarus/providers/marker_sizes_sync.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';

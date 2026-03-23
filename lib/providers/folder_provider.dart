@@ -10,6 +10,7 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:uuid/uuid.dart';
 
 enum FolderColor {

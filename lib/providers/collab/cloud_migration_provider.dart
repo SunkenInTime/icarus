@@ -12,7 +12,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_cloud_migration.dart';
 import 'package:uuid/uuid.dart';

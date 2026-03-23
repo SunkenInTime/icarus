@@ -10,6 +10,7 @@ import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:icarus/widgets/custom_search_field.dart';

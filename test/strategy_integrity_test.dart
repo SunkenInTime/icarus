@@ -17,10 +17,11 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/strategy/strategy_migrator.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
 
 class _IcaFixture {
@@ -165,7 +166,7 @@ Future<StrategyData> _importStrategyFromDecoded({
     pages: pages,
   );
 
-  strategy = await StrategyProvider.migrateLegacyData(strategy);
+  strategy = await StrategyMigrator.migrateLegacyData(strategy);
   return strategy;
 }
 
@@ -619,7 +620,7 @@ void main() {
         ],
       );
 
-      final migrated = StrategyProvider.migrateToWorld16x9(source, force: true);
+      final migrated = StrategyMigrator.migrateToWorld16x9(source, force: true);
       final page = migrated.pages.single;
 
       final migratedLine = page.drawingData.first as Line;

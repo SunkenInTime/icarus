@@ -11,6 +11,7 @@ import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 
 class _NoopStrategyProvider extends StrategyProvider {
   @override

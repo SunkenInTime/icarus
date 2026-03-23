@@ -23,6 +23,7 @@ import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/strategy_page_apply.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
 

@@ -8,8 +8,8 @@ import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';

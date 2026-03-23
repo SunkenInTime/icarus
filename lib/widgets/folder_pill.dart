@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
@@ -209,9 +210,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
         leading: const Icon(Icons.file_upload),
         child: const Text('Export'),
         onPressed: () async {
-          await ref
-              .read(strategyProvider.notifier)
-              .exportFolder(widget.folder.id);
+          await StrategyImportExportService(ref).exportFolder(widget.folder.id);
         },
       ),
       ShadContextMenuItem(
