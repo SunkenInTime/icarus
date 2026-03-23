@@ -67,7 +67,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   Future<void> _switchStrategy(String strategyId) async {
     if (_isSwitching || _isEditingName) return;
     final currentStrategy = ref.read(strategyProvider);
-    if (currentStrategy.id == strategyId) return;
+    if (currentStrategy.strategyId == strategyId) return;
 
     _closePortal();
     setState(() => _isSwitching = true);
@@ -101,7 +101,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
 
   void _startEditingName() {
     final currentStrategy = ref.read(strategyProvider);
-    final currentName = currentStrategy.stratName;
+    final currentName = currentStrategy.strategyName;
     if (_isSwitching || _isEditingName || currentName == null) return;
 
     _closePortal();
@@ -168,7 +168,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
     try {
       await ref
           .read(strategyProvider.notifier)
-          .renameStrategy(ref.read(strategyProvider).id, nextName);
+          .renameStrategy(ref.read(strategyProvider).strategyId!, nextName);
       if (!mounted) return;
       _originalName = null;
       setState(() {
@@ -245,7 +245,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   @override
   Widget build(BuildContext context) {
     final currentStrategy = ref.watch(strategyProvider);
-    final strategyName = currentStrategy.stratName ?? 'Untitled Strategy';
+    final strategyName = currentStrategy.strategyName ?? 'Untitled Strategy';
     final strategiesBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
     return Padding(
@@ -257,7 +257,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
           builder: (context, box, _) {
             final recents = _recentStrategies(
               box: box,
-              currentStrategyId: currentStrategy.id,
+              currentStrategyId: currentStrategy.strategyId!,
             );
 
             return OverlayPortal(
@@ -415,18 +415,19 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                               ),
                             )
                           : Tooltip(
-                              message: currentStrategy.stratName == null
+                              message: currentStrategy.strategyName == null
                                   ? 'Load a strategy to rename it'
                                   : 'Rename strategy',
                               child: Material(
                                 color: Colors.transparent,
                                 child: InkWell(
-                                  onTap: currentStrategy.stratName == null
+                                  onTap: currentStrategy.strategyName == null
                                       ? null
                                       : _startEditingName,
-                                  mouseCursor: currentStrategy.stratName == null
-                                      ? SystemMouseCursors.basic
-                                      : SystemMouseCursors.click,
+                                  mouseCursor:
+                                      currentStrategy.strategyName == null
+                                          ? SystemMouseCursors.basic
+                                          : SystemMouseCursors.click,
                                   borderRadius: BorderRadius.circular(8),
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(

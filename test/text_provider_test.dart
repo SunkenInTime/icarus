@@ -13,11 +13,13 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 
 class _NoopActionProvider extends ActionProvider {
   @override
@@ -237,17 +239,23 @@ void main() {
         .setDraft('text-1', 'saved draft');
 
     final strategyNotifier = container.read(strategyProvider.notifier);
-    strategyNotifier
-      ..setFromState(
-        StrategyState(
-          isSaved: false,
-          stratName: strategy.name,
-          id: strategy.id,
-          storageDirectory: null,
-          activePageId: page.id,
-        ),
-      )
-      ..activePageID = page.id;
+    strategyNotifier.setFromState(
+      StrategyState(
+        strategyId: strategy.id,
+        strategyName: strategy.name,
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+    );
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+          const StrategyPageSessionState(
+            activePageId: 'page-1',
+            availablePageIds: ['page-1'],
+            transitionState: PageTransitionState.idle,
+            isApplyingPage: false,
+          ),
+        );
 
     await strategyNotifier.saveToHive(strategy.id);
 
@@ -316,17 +324,23 @@ void main() {
         .setDraft('text-1', 'draft leaving page');
 
     final strategyNotifier = container.read(strategyProvider.notifier);
-    strategyNotifier
-      ..setFromState(
-        StrategyState(
-          isSaved: false,
-          stratName: strategy.name,
-          id: strategy.id,
-          storageDirectory: null,
-          activePageId: pageOne.id,
-        ),
-      )
-      ..activePageID = pageOne.id;
+    strategyNotifier.setFromState(
+      StrategyState(
+        strategyId: strategy.id,
+        strategyName: strategy.name,
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+    );
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+          const StrategyPageSessionState(
+            activePageId: 'page-1',
+            availablePageIds: ['page-1', 'page-2'],
+            transitionState: PageTransitionState.idle,
+            isApplyingPage: false,
+          ),
+        );
 
     await strategyNotifier.setActivePage(pageTwo.id);
 

@@ -65,8 +65,8 @@ class StrategyPageSessionState {
   }
 }
 
-final strategyPageSessionProvider = NotifierProvider<
-    StrategyPageSessionNotifier, StrategyPageSessionState>(
+final strategyPageSessionProvider =
+    NotifierProvider<StrategyPageSessionNotifier, StrategyPageSessionState>(
   StrategyPageSessionNotifier.new,
 );
 
@@ -121,7 +121,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         }
 
         if (_canSafelyReapplyRemotePage()) {
-          unawaited(_loadAndApplyPage(targetPageId));
+          unawaited(_rehydrateActivePageFromSource(targetPageId));
         } else {
           _pendingRemoteReapply = true;
         }
@@ -133,7 +133,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         _pendingRemoteReapply = false;
         final pageId = state.activePageId;
         if (pageId != null) {
-          unawaited(_loadAndApplyPage(pageId));
+          unawaited(_rehydrateActivePageFromSource(pageId));
         }
       }
     });
@@ -156,13 +156,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
   String? get activePageId => state.activePageId;
 
-  set activePageId(String? value) {
-    state = state.copyWith(
-      activePageId: value,
-      clearActivePageId: value == null,
-    );
-  }
-
   Future<void> initializeForStrategy({
     required String strategyId,
     required StrategySource source,
@@ -184,7 +177,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     );
 
     if (selected != null) {
-      await _loadAndApplyPage(selected, flushCurrentPageFirst: false);
+      await _rehydrateActivePageFromSource(selected);
     }
   }
 
@@ -192,7 +185,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (pageId == state.activePageId) {
       return;
     }
-    await _loadAndApplyPage(pageId, flushCurrentPageFirst: true);
+    await _switchToPage(pageId, animated: false);
   }
 
   Future<void> setActivePageAnimated(
@@ -206,7 +199,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
     final strategyState = ref.read(strategyProvider);
     if (strategyState.source == StrategySource.cloud) {
-      await setActivePage(pageId);
+      await _switchToPage(pageId, animated: false);
       return;
     }
 
@@ -232,7 +225,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       startAbilitySize: startSettings.abilitySize,
     );
 
-    await setActivePage(pageId);
+    await _switchToPage(
+      pageId,
+      animated: true,
+      direction: direction,
+    );
     final endSettings = ref.read(strategySettingsProvider);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -296,8 +293,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       strategyState.source ?? StrategySource.local,
     );
     await source.flushCurrentPage();
-    if (flushImmediately &&
-        strategyState.source == StrategySource.cloud) {
+    if (flushImmediately && strategyState.source == StrategySource.cloud) {
       await ref.read(strategyOpQueueProvider.notifier).flushNow();
     }
   }
@@ -308,9 +304,23 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     state = newState;
   }
 
-  Future<void> _loadAndApplyPage(
+  void reset() {
+    state = const StrategyPageSessionState(
+      activePageId: null,
+      availablePageIds: [],
+      transitionState: PageTransitionState.idle,
+      isApplyingPage: false,
+    );
+    _lastHydratedRemoteSequence = null;
+    _lastHydratedRemoteStrategyId = null;
+    _lastHydratedRemotePageId = null;
+    _pendingRemoteReapply = false;
+  }
+
+  Future<void> _switchToPage(
     String pageId, {
-    bool flushCurrentPageFirst = true,
+    required bool animated,
+    PageTransitionDirection? direction,
   }) async {
     final strategyState = ref.read(strategyProvider);
     final strategyId = strategyState.strategyId;
@@ -320,21 +330,54 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
 
     final pageSource = _resolvePageSource(strategyId, source);
-    if (flushCurrentPageFirst) {
-      await pageSource.flushCurrentPage();
-      if (source == StrategySource.cloud) {
-        await ref.read(strategyOpQueueProvider.notifier).flushNow();
-      }
+    await pageSource.flushCurrentPage();
+    if (source == StrategySource.cloud) {
+      await ref.read(strategyOpQueueProvider.notifier).flushNow();
     }
 
     final pageData = await pageSource.loadPage(pageId);
+    await _applyLoadedPageData(
+      pageData,
+      strategyId: strategyId,
+      source: source,
+    );
+
+    if (animated && direction != null) {
+      _updateHydrationBookkeeping(pageData.pageId);
+    }
+  }
+
+  Future<void> _rehydrateActivePageFromSource(String pageId) async {
+    final strategyState = ref.read(strategyProvider);
+    final strategyId = strategyState.strategyId;
+    final source = strategyState.source;
+    if (strategyId == null || source == null) {
+      return;
+    }
+
+    final pageData =
+        await _resolvePageSource(strategyId, source).loadPage(pageId);
+    await _applyLoadedPageData(
+      pageData,
+      strategyId: strategyId,
+      source: source,
+    );
+  }
+
+  Future<void> _applyLoadedPageData(
+    StrategyEditorPageData pageData, {
+    required String strategyId,
+    required StrategySource source,
+  }) async {
     final themeProfileId = _resolveThemeProfileId(source, strategyId);
-    final themeOverridePalette = _resolveThemeOverridePalette(source, strategyId);
+    final themeOverridePalette =
+        _resolveThemeOverridePalette(source, strategyId);
 
     state = state.copyWith(
       isApplyingPage: true,
       activePageId: pageData.pageId,
-      availablePageIds: await pageSource.listPageIds(),
+      availablePageIds:
+          await _resolvePageSource(strategyId, source).listPageIds(),
     );
 
     try {
@@ -392,8 +435,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     String strategyId,
   ) {
     if (source == StrategySource.cloud) {
-      final payload =
-          ref.read(remoteStrategySnapshotProvider).valueOrNull?.header.themeOverridePalette;
+      final payload = ref
+          .read(remoteStrategySnapshotProvider)
+          .valueOrNull
+          ?.header
+          .themeOverridePalette;
       if (payload == null || payload.isEmpty) {
         return null;
       }
@@ -493,7 +539,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
     await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
     if (_canSafelyReapplyRemotePage() && state.activePageId != null) {
-      await _loadAndApplyPage(state.activePageId!);
+      await _rehydrateActivePageFromSource(state.activePageId!);
     } else {
       _pendingRemoteReapply = true;
     }
@@ -550,7 +596,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
                 PageTransitionEntry.customWidthOf(to) ||
             PageTransitionEntry.customLengthOf(from) !=
                 PageTransitionEntry.customLengthOf(to)) {
-          entries.add(PageTransitionEntry.move(from: from, to: to, order: order));
+          entries
+              .add(PageTransitionEntry.move(from: from, to: to, order: order));
         } else {
           entries.add(PageTransitionEntry.none(to: to, order: order));
         }

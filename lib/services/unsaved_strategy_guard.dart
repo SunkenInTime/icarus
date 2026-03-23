@@ -5,6 +5,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 enum UnsavedStrategyDecision {
@@ -171,7 +172,11 @@ Future<bool> _guardCloudStrategyExit({
             .reinitializeConvexAuth(source: 'cloud_exit_guard');
         break;
       case CloudExitDecision.retrySync:
-        await ref.read(strategyProvider.notifier).forceSaveNow(strategyState.id);
+        final strategyId = strategyState.strategyId;
+        if (strategyId == null) {
+          return false;
+        }
+        await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
         break;
     }
   }
@@ -185,7 +190,7 @@ Future<bool> guardUnsavedStrategyExit({
 }) async {
   final strategyState = ref.read(strategyProvider);
   final saveState = ref.read(strategySaveStateProvider);
-  if (strategyState.isCloudBacked) {
+  if (strategyState.source == StrategySource.cloud) {
     return _guardCloudStrategyExit(
       context: context,
       ref: ref,
@@ -193,7 +198,7 @@ Future<bool> guardUnsavedStrategyExit({
     );
   }
 
-  if (strategyState.stratName == null || !saveState.isDirty) {
+  if (strategyState.strategyName == null || !saveState.isDirty) {
     await onContinue();
     return true;
   }
@@ -202,9 +207,11 @@ Future<bool> guardUnsavedStrategyExit({
   switch (decision) {
     case UnsavedStrategyDecision.save:
       try {
-        await ref
-            .read(strategyProvider.notifier)
-            .forceSaveNow(strategyState.id);
+        final strategyId = strategyState.strategyId;
+        if (strategyId == null) {
+          return false;
+        }
+        await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
       } catch (error, stackTrace) {
         AppErrorReporter.reportError(
           'Failed to save strategy before leaving.',

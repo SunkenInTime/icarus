@@ -67,7 +67,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 }
 
                 await StrategyImportExportService(ref)
-                    .exportFile(ref.read(strategyProvider).id);
+                    .exportFile(ref.read(strategyProvider).strategyId!);
               },
               icon: const Icon(Icons.file_upload),
             ),
@@ -91,7 +91,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 });
                 CoordinateSystem.instance.setIsScreenshot(true);
 
-                final String id = ref.read(strategyProvider).id;
+                final String id = ref.read(strategyProvider).strategyId!;
 
                 await ref.read(strategyProvider.notifier).forceSaveNow(id);
 
@@ -168,7 +168,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                     type: FileType.custom,
                     dialogTitle: 'Please select an output file:',
                     fileName:
-                        "${ref.read(strategyProvider).stratName ?? "new image"}.png",
+                        "${ref.read(strategyProvider).strategyName ?? "new image"}.png",
                     allowedExtensions: ['png'],
                   );
                   if (outputFile != null) {

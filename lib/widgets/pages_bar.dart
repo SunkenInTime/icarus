@@ -147,7 +147,10 @@ class _PagesBarState extends ConsumerState<PagesBar>
       );
     }
 
-    final strategyId = ref.watch(strategyProvider).id;
+    final strategyId = ref.watch(strategyProvider).strategyId;
+    if (strategyId == null) {
+      return const SizedBox();
+    }
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
     return ValueListenableBuilder(
@@ -277,7 +280,8 @@ class _CloudSimplePagesBar extends StatelessWidget {
                       },
                     ),
                   ),
-                  Divider(height: 1, color: Settings.tacticalVioletTheme.border),
+                  Divider(
+                      height: 1, color: Settings.tacticalVioletTheme.border),
                   SizedBox(
                     height: 48,
                     child: Row(

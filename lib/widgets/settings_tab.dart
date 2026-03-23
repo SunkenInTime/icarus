@@ -21,7 +21,7 @@ class SettingsTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final activeStrategyName = ref.watch(strategyProvider).stratName;
+    final activeStrategyName = ref.watch(strategyProvider).strategyName;
     final authState = ref.watch(authProvider);
     final strategySettings = ref.watch(strategySettingsProvider);
     final mapState = ref.watch(mapProvider);
@@ -120,7 +120,8 @@ class SettingsTab extends ConsumerWidget {
                                         : () {
                                             showDialog<void>(
                                               context: context,
-                                              builder: (_) => const AuthDialog(),
+                                              builder: (_) =>
+                                                  const AuthDialog(),
                                             );
                                           },
                                     child: authState.isLoading
@@ -532,12 +533,14 @@ class _PageMarkerSizesSyncBannerState
   @override
   Widget build(BuildContext context) {
     final stratState = ref.watch(strategyProvider);
-    final activePageId =
-        ref.watch(strategyPageSessionProvider.select((state) => state.activePageId));
+    final activePageId = ref.watch(
+        strategyPageSessionProvider.select((state) => state.activePageId));
     final liveSettings = ref.watch(strategySettingsProvider);
-    final strategy =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(stratState.id);
-    final showCta = stratState.stratName != null &&
+    final strategyId = stratState.strategyId;
+    final strategy = strategyId == null
+        ? null
+        : Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
+    final showCta = stratState.strategyName != null &&
         markerSizesDifferAcrossPages(
           strategy: strategy,
           activePageId: activePageId,

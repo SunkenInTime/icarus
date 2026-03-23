@@ -1297,7 +1297,8 @@ class StrategyImportExportService {
             'Failed to import zip strategy $archivePath.',
             error: error,
             stackTrace: stackTrace,
-            source: 'StrategyImportExportService._importLegacyZipEntitiesIntoFolder',
+            source:
+                'StrategyImportExportService._importLegacyZipEntitiesIntoFolder',
           );
           result = result.merge(
             ImportBatchResult(
@@ -1716,15 +1717,15 @@ class StrategyImportExportService {
       themeProfilesImported++;
     }
 
-    final resolvedDefaultProfileId =
-        globals.defaultThemeProfileIdForNewStrategies == null
-            ? MapThemeProfilesProvider.immutableDefaultProfileId
-            : profileIdRemap[globals.defaultThemeProfileIdForNewStrategies!] ??
-                (profileBox.get(
-                            globals.defaultThemeProfileIdForNewStrategies!) !=
-                        null
-                    ? globals.defaultThemeProfileIdForNewStrategies!
-                    : MapThemeProfilesProvider.immutableDefaultProfileId);
+    final resolvedDefaultProfileId = globals
+                .defaultThemeProfileIdForNewStrategies ==
+            null
+        ? MapThemeProfilesProvider.immutableDefaultProfileId
+        : profileIdRemap[globals.defaultThemeProfileIdForNewStrategies!] ??
+            (profileBox.get(globals.defaultThemeProfileIdForNewStrategies!) !=
+                    null
+                ? globals.defaultThemeProfileIdForNewStrategies!
+                : MapThemeProfilesProvider.immutableDefaultProfileId);
 
     await appPreferencesBox.put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,
@@ -1803,9 +1804,8 @@ class StrategyImportExportService {
       }
 
       final json = jsonDecode(jsonData) as Map<String, dynamic>;
-      final versionNumber =
-          int.tryParse(json['versionNumber'].toString()) ??
-              Settings.versionNumber;
+      final versionNumber = int.tryParse(json['versionNumber'].toString()) ??
+          Settings.versionNumber;
       _throwIfImportedVersionIsTooNew(versionNumber);
 
       final drawingData =
@@ -1911,8 +1911,9 @@ class StrategyImportExportService {
         lastEdited: DateTime.now(),
         folderID: targetFolderId,
         themeProfileId: resolvedThemeProfileId,
-        themeOverridePalette:
-            resolvedThemeProfileId == null ? importedThemeOverridePalette : null,
+        themeOverridePalette: resolvedThemeProfileId == null
+            ? importedThemeOverridePalette
+            : null,
       );
 
       newStrategy = await StrategyMigrator.migrateLegacyData(newStrategy);
@@ -1950,10 +1951,11 @@ class StrategyImportExportService {
 
   Future<void> _flushCurrentStrategyIfNeeded() async {
     final strategyState = ref.read(strategyProvider);
-    if (strategyState.stratName == null || strategyState.id == 'testID') {
+    final strategyId = strategyState.strategyId;
+    if (strategyState.strategyName == null || strategyId == null) {
       return;
     }
-    await ref.read(strategyProvider.notifier).forceSaveNow(strategyState.id);
+    await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
   }
 
   Future<void> exportFolder(String folderID) async {
@@ -2348,7 +2350,7 @@ class StrategyImportExportService {
       type: FileType.custom,
       dialogTitle: 'Please select an output file:',
       fileName:
-          '${sanitizeStrategyFileName(ref.read(strategyProvider).stratName ?? "new strategy")}.ica',
+          '${sanitizeStrategyFileName(ref.read(strategyProvider).strategyName ?? "new strategy")}.ica',
       allowedExtensions: ['ica'],
     );
 

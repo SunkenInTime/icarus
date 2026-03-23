@@ -126,34 +126,18 @@ class StrategyData extends HiveObject {
 
 class StrategyState {
   const StrategyState({
-    String? strategyId,
-    String? strategyName,
-    StrategySource? source,
+    required this.strategyId,
+    required this.strategyName,
+    required this.source,
     this.storageDirectory,
     this.isOpen = false,
-    @Deprecated('Use strategyId') String? id,
-    @Deprecated('Use strategyName') String? stratName,
-    @Deprecated('Use source') bool? isCloudBacked,
-    @Deprecated('Use strategySaveStateProvider') bool? isSaved,
-    @Deprecated('Use strategySaveStateProvider') bool? hasPendingCloudSync,
-    @Deprecated('Use strategySaveStateProvider') String? cloudSyncError,
-    @Deprecated('Use strategyPageSessionProvider') String? activePageId,
-  })  : strategyId = strategyId ?? id,
-        strategyName = strategyName ?? stratName,
-        source = source ??
-            (isCloudBacked == null
-                ? null
-                : (isCloudBacked ? StrategySource.cloud : StrategySource.local));
+  });
 
   final String? strategyId;
   final String? strategyName;
   final StrategySource? source;
   final String? storageDirectory;
   final bool isOpen;
-
-  String get id => strategyId ?? 'testID';
-  String? get stratName => strategyName;
-  bool get isCloudBacked => source == StrategySource.cloud;
 
   StrategyState copyWith({
     String? strategyId,
@@ -164,26 +148,12 @@ class StrategyState {
     bool clearStrategyId = false,
     bool clearStrategyName = false,
     bool clearSource = false,
-    @Deprecated('Use strategyId') String? id,
-    @Deprecated('Use strategyName') String? stratName,
-    @Deprecated('Use source') bool? isCloudBacked,
-    @Deprecated('Ignored') bool? isSaved,
-    @Deprecated('Ignored') bool? hasPendingCloudSync,
-    @Deprecated('Ignored') String? cloudSyncError,
-    @Deprecated('Ignored') bool clearCloudSyncError = false,
-    @Deprecated('Ignored') String? activePageId,
-    @Deprecated('Ignored') bool clearActivePageId = false,
   }) {
-    final resolvedSource = source ??
-        (isCloudBacked == null
-            ? this.source
-            : (isCloudBacked ? StrategySource.cloud : StrategySource.local));
     return StrategyState(
-      strategyId: clearStrategyId ? null : (strategyId ?? id ?? this.strategyId),
-      strategyName: clearStrategyName
-          ? null
-          : (strategyName ?? stratName ?? this.strategyName),
-      source: clearSource ? null : resolvedSource,
+      strategyId: clearStrategyId ? null : (strategyId ?? this.strategyId),
+      strategyName:
+          clearStrategyName ? null : (strategyName ?? this.strategyName),
+      source: clearSource ? null : (source ?? this.source),
       storageDirectory: storageDirectory ?? this.storageDirectory,
       isOpen: isOpen ?? this.isOpen,
     );

@@ -351,9 +351,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
           json as Map<String, dynamic>, strategyID)),
     );
 
-    return images
-        .map(_migrateLoadedImage)
-        .toList();
+    return images.map(_migrateLoadedImage).toList();
   }
 
   void updateScale(int index, double scale) {
@@ -369,7 +367,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
     String imageID,
     String fileExtenstion,
   ) async {
-    final strategyID = ref.read(strategyProvider).id;
+    final strategyID = ref.read(strategyProvider).strategyId;
     // Get the system's application support directory.
     if (kIsWeb) return;
     final directory = await getApplicationSupportDirectory();

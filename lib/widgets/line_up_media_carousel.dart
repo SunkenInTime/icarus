@@ -49,7 +49,10 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
   }
 
   Future<void> _loadDirectory() async {
-    final strategyID = ref.read(strategyProvider).id;
+    final strategyID = ref.read(strategyProvider).strategyId;
+    if (strategyID == null) {
+      return;
+    }
     final dir = await PlacedImageProvider.getImageFolder(strategyID);
     if (mounted) {
       setState(() {
