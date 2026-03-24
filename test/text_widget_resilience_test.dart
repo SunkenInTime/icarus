@@ -13,10 +13,13 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -266,17 +269,23 @@ void main() {
     container.read(textProvider.notifier).fromHive(page.textData);
 
     final strategyNotifier = container.read(strategyProvider.notifier);
-    strategyNotifier
-      ..setFromState(
-        StrategyState(
-          isSaved: false,
-          stratName: strategy.name,
-          id: strategy.id,
-          storageDirectory: null,
-          activePageId: page.id,
-        ),
-      )
-      ..activePageID = page.id;
+    strategyNotifier.setFromState(
+      StrategyState(
+        strategyId: strategy.id,
+        strategyName: strategy.name,
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+    );
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+          const StrategyPageSessionState(
+            activePageId: 'page-1',
+            availablePageIds: ['page-1'],
+            transitionState: PageTransitionState.idle,
+            isApplyingPage: false,
+          ),
+        );
 
     await tester.pumpWidget(buildTextHarness(container));
     await tester.enterText(find.byType(TextField), 'before edited');

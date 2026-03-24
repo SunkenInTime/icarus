@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -11,43 +14,71 @@ class CurrentPathBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final workspace = ref.watch(libraryWorkspaceProvider);
+    final isCloud = workspace == LibraryWorkspace.cloud;
     final currentFolderId = ref.watch(folderProvider);
-    final currentFolder = currentFolderId != null
-        ? ref.read(folderProvider.notifier).findFolderByID(currentFolderId)
+    final cloudFolders = isCloud
+        ? (ref.watch(cloudAllFoldersProvider).valueOrNull ?? const [])
+            .map(FolderProvider.cloudSummaryToFolder)
+            .toList(growable: false)
         : null;
-
-    final pathIds =
-        ref.read(folderProvider.notifier).getFullPathIDs(currentFolder);
+    final currentFolder = currentFolderId == null
+        ? null
+        : isCloud
+            ? cloudFolders
+                ?.where((folder) => folder.id == currentFolderId)
+                .firstOrNull
+            : ref
+                .read(folderProvider.notifier)
+                .findLocalFolderByID(currentFolderId);
+    final pathFolders = isCloud
+        ? _cloudPathFolders(currentFolder, cloudFolders)
+        : ref
+            .read(folderProvider.notifier)
+            .getFullPathIDs(currentFolder)
+            .map((id) => ref.read(folderProvider.notifier).findFolderByID(id))
+            .whereType<Folder>()
+            .toList(growable: false);
 
     return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
-        // ignore: prefer_const_constructors
-        child: Row(
-          children: [
-            Expanded(
-              child: ShadBreadcrumb(
-                lastItemTextColor: Settings.tacticalVioletTheme.foreground,
-                textStyle: ShadTheme.of(context).textTheme.lead,
-                children: [
+      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: ShadBreadcrumb(
+              lastItemTextColor: Settings.tacticalVioletTheme.foreground,
+              textStyle: ShadTheme.of(context).textTheme.lead,
+              children: [
+                FolderTab(
+                  folder: null,
+                  isActive: currentFolder == null,
+                ),
+                for (int i = 0; i < pathFolders.length; i++)
                   FolderTab(
-                    folder: null, // Represents root
-                    isActive: currentFolder == null,
+                    folder: pathFolders[i],
+                    isActive: i == pathFolders.length - 1,
                   ),
-
-                  // Path folders
-                  for (int i = 0; i < pathIds.length; i++) ...[
-                    FolderTab(
-                      folder: ref
-                          .read(folderProvider.notifier)
-                          .findFolderByID(pathIds[i]),
-                      isActive: i == pathIds.length - 1,
-                    ),
-                  ],
-                ],
-              ),
+              ],
             ),
-          ],
-        ));
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Folder> _cloudPathFolders(Folder? folder, List<Folder>? cloudFolders) {
+    final pathFolders = <Folder>[];
+    var current = folder;
+    while (current != null) {
+      pathFolders.insert(0, current);
+      final parentId = current.parentID;
+      if (parentId == null) {
+        current = null;
+        continue;
+      }
+      current = cloudFolders?.where((item) => item.id == parentId).firstOrNull;
+    }
+    return pathFolders;
   }
 }
 
@@ -58,12 +89,12 @@ class FolderTab extends ConsumerWidget {
     this.isActive = false,
   });
 
-  final Folder? folder; // null for root
+  final Folder? folder;
   final bool isActive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final displayName = folder?.name ?? "Home";
+    final displayName = folder?.name ?? 'Home';
 
     return ShadBreadcrumbLink(
       textStyle: ShadTheme.of(context).textTheme.lead,
@@ -78,15 +109,19 @@ class FolderTab extends ConsumerWidget {
         onAcceptWithDetails: (details) {
           final item = details.data;
           if (item is StrategyItem) {
-            // Move strategy to this folder
             ref.read(strategyProvider.notifier).moveToFolder(
-                strategyID: item.strategy.id, parentID: folder?.id);
+                  strategyID: item.strategyId,
+                  parentID: folder?.id,
+                  source: item.strategy == null
+                      ? StrategySource.cloud
+                      : StrategySource.local,
+                );
           } else if (item is FolderItem) {
-            // Move folder to this folder
-
-            ref
-                .read(folderProvider.notifier)
-                .moveToFolder(folderID: item.folder.id, parentID: folder?.id);
+            ref.read(folderProvider.notifier).moveToFolder(
+                  folderID: item.folder.id,
+                  parentID: folder?.id,
+                  workspace: ref.read(libraryWorkspaceProvider),
+                );
           }
         },
       ),
@@ -95,4 +130,8 @@ class FolderTab extends ConsumerWidget {
       },
     );
   }
+}
+
+extension on Iterable<Folder> {
+  Folder? get firstOrNull => isEmpty ? null : first;
 }

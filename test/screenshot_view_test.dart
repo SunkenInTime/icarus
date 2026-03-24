@@ -16,6 +16,8 @@ import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
@@ -164,12 +166,12 @@ void main() {
   });
 
   Widget buildHarness({required bool isAttack}) {
-    final strategyState = StrategyState(
-      isSaved: true,
-      stratName: 'test strategy',
-      id: 'strategy-id',
+    const strategyState = StrategyState(
+      strategyId: 'strategy-id',
+      strategyName: 'test strategy',
+      source: StrategySource.local,
       storageDirectory: null,
-      activePageId: 'page-1',
+      isOpen: true,
     );
 
     return ProviderScope(

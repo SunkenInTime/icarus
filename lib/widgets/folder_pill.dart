@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
@@ -79,10 +83,18 @@ class _FolderPillState extends ConsumerState<FolderPill>
           final item = details.data;
           if (item is StrategyItem) {
             ref.read(strategyProvider.notifier).moveToFolder(
-                strategyID: item.strategy.id, parentID: widget.folder.id);
+              strategyID: item.strategyId,
+              parentID: widget.folder.id,
+              source: item.strategy == null
+                  ? StrategySource.cloud
+                  : StrategySource.local,
+            );
           } else if (item is FolderItem) {
             ref.read(folderProvider.notifier).moveToFolder(
-                folderID: item.folder.id, parentID: widget.folder.id);
+              folderID: item.folder.id,
+              parentID: widget.folder.id,
+              workspace: ref.read(libraryWorkspaceProvider),
+            );
           }
         },
         builder: (context, candidateData, rejectedData) {
@@ -209,9 +221,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
         leading: const Icon(Icons.file_upload),
         child: const Text('Export'),
         onPressed: () async {
-          await ref
-              .read(strategyProvider.notifier)
-              .exportFolder(widget.folder.id);
+          await StrategyImportExportService(ref).exportFolder(widget.folder.id);
         },
       ),
       ShadContextMenuItem(
@@ -229,7 +239,10 @@ class _FolderPillState extends ConsumerState<FolderPill>
           ).then((confirmed) {
             if (confirmed) {
               if (widget.isDemo) return;
-              ref.read(folderProvider.notifier).deleteFolder(widget.folder.id);
+              ref.read(folderProvider.notifier).deleteFolder(
+                    widget.folder.id,
+                    workspace: ref.read(libraryWorkspaceProvider),
+                  );
             }
           });
         },
@@ -275,11 +288,16 @@ class _FolderPillState extends ConsumerState<FolderPill>
   }
 
   bool _isParentFolder(String folderId) {
+    final workspace = ref.read(libraryWorkspaceProvider);
     String? currentParentId = widget.folder.parentID;
     while (currentParentId != null) {
       if (currentParentId == folderId) return true;
-      final parentFolder =
-          ref.read(folderProvider.notifier).findFolderByID(currentParentId);
+      final parentFolder = workspace == LibraryWorkspace.local
+          ? ref.read(folderProvider.notifier).findLocalFolderByID(currentParentId)
+          : ref.read(folderProvider.notifier).findCloudFolderByID(
+                currentParentId,
+                ref.read(cloudAllFoldersProvider).valueOrNull ?? const [],
+              );
       currentParentId = parentFolder?.parentID;
     }
     return false;

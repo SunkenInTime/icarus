@@ -18,22 +18,24 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 
 class _NoopStrategyProvider extends StrategyProvider {
   @override
   StrategyState build() {
-    return StrategyState(
-      isSaved: true,
-      stratName: null,
-      id: 'test-strategy',
+    return const StrategyState(
+      strategyId: 'test-strategy',
+      strategyName: null,
+      source: StrategySource.local,
       storageDirectory: null,
-      activePageId: null,
+      isOpen: true,
     );
   }
 
   @override
   void setUnsaved() {
-    state = state.copyWith(isSaved: false);
+    state = state.copyWith(isOpen: true);
   }
 }
 

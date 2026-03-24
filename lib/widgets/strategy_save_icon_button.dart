@@ -123,7 +123,7 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
           // manual save path shows a SnackBar
           await ref
               .read(strategyProvider.notifier)
-              .forceSaveNow(ref.read(strategyProvider).id);
+              .forceSaveNow(ref.read(strategyProvider).strategyId!);
           if (!context.mounted) return;
 
           toastification.showCustom(

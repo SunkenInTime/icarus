@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 
 void main() {

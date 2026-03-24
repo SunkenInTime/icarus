@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:desktop_updater/desktop_updater.dart';
@@ -8,8 +9,12 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
@@ -18,6 +23,7 @@ import 'package:icarus/widgets/current_path_bar.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
+import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
@@ -67,6 +73,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   void _warnWebView() async {
     if (kIsWeb) return;
     if (!Platform.isWindows) return;
+    await warmUpWebViewEnvironment();
+    if (!mounted) return;
     if (isWebViewInitialized) return;
     await showShadDialog<void>(
       context: context,
@@ -103,7 +111,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       return;
     }
     try {
-      await ref.read(strategyProvider.notifier).loadFromFilePicker();
+      await StrategyImportExportService(ref).loadFromFilePicker();
     } on NewerVersionImportException catch (error, stackTrace) {
       AppErrorReporter.reportError(
         NewerVersionImportException.userMessage,
@@ -127,9 +135,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       return;
     }
     try {
-      final result = await ref
-          .read(strategyProvider.notifier)
-          .importBackupFromFilePicker();
+      final result =
+          await StrategyImportExportService(ref).importBackupFromFilePicker();
       if (result.hasImports || result.issues.isNotEmpty) {
         final message = buildImportSummaryMessage(result);
         if (result.hasImports) {
@@ -166,7 +173,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       return;
     }
     try {
-      await ref.read(strategyProvider.notifier).exportLibrary();
+      await StrategyImportExportService(ref).exportLibrary();
     } catch (error, stackTrace) {
       AppErrorReporter.reportError(
         'Failed to export library.',
@@ -224,10 +231,14 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final double height = MediaQuery.sizeOf(context).height - 90;
     final Size playAreaSize = Size(height * (16 / 9), height);
     CoordinateSystem(playAreaSize: playAreaSize);
+    final workspace = ref.watch(libraryWorkspaceProvider);
+    final isCloudWorkspace = workspace == LibraryWorkspace.cloud;
+    final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
     final currentFolderId = ref.watch(folderProvider);
     final currentFolder = currentFolderId != null
-        ? ref.read(folderProvider.notifier).findFolderByID(currentFolderId)
+        ? ref.read(folderProvider.notifier).findLocalFolderByID(currentFolderId)
         : null;
+    final authState = ref.watch(authProvider);
     Future<void> navigateWithLoading(
         BuildContext context, String strategyId) async {
       // Show loading overlay
@@ -276,7 +287,31 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
       if (strategyId != null) {
         if (!context.mounted) return;
-        await navigateWithLoading(context, strategyId);
+        if (isCloudWorkspace) {
+          await Navigator.push(
+            context,
+            PageRouteBuilder(
+              transitionDuration: const Duration(milliseconds: 200),
+              reverseTransitionDuration: const Duration(milliseconds: 200),
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  const StrategyView(),
+              transitionsBuilder:
+                  (context, animation, secondaryAnimation, child) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.9, end: 1.0)
+                        .chain(CurveTween(curve: Curves.easeOut))
+                        .animate(animation),
+                    child: child,
+                  ),
+                );
+              },
+                    ),
+                  );
+        } else {
+          await navigateWithLoading(context, strategyId);
+        }
       }
     }
 
@@ -297,6 +332,51 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
               Row(
                 spacing: 15,
                 children: [
+                  if (cloudAvailable)
+                    ShadSelect<LibraryWorkspace>(
+                      initialValue: workspace,
+                      selectedOptionBuilder: (context, value) {
+                        return Text(
+                          value == LibraryWorkspace.cloud ? 'Cloud' : 'Local',
+                        );
+                      },
+                      options: const [
+                        ShadOption(
+                          value: LibraryWorkspace.local,
+                          child: Text('Local'),
+                        ),
+                        ShadOption(
+                          value: LibraryWorkspace.cloud,
+                          child: Text('Cloud'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        ref.read(libraryWorkspaceProvider.notifier).select(value);
+                      },
+                    ),
+                  ShadButton.secondary(
+                    onPressed: authState.isLoading
+                        ? null
+                        : () {
+                            if (authState.isAuthenticated) {
+                              unawaited(ref.read(authProvider.notifier).signOut());
+                            } else {
+                              showDialog<void>(
+                                context: context,
+                                builder: (_) => const AuthDialog(),
+                              );
+                            }
+                          },
+                    leading: Icon(
+                      authState.isAuthenticated ? Icons.logout : Icons.login,
+                    ),
+                    child: Text(
+                      authState.isLoading
+                          ? 'Please wait...'
+                          : (authState.isAuthenticated ? 'Sign Out' : 'Log In'),
+                    ),
+                  ),
                   ShadPopover(
                     controller: _importExportPopoverController,
                     padding: const EdgeInsets.all(8),
@@ -347,7 +427,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                     },
                     child: ShadButton.secondary(
                       key: _importExportButtonKey,
-                      onPressed: _toggleImportExportPopover,
+                      onPressed: isCloudWorkspace ? null : _toggleImportExportPopover,
                       leading: const Icon(Icons.import_export),
                       trailing: const Icon(Icons.keyboard_arrow_down),
                       child: const Text('Import / Export'),
@@ -368,7 +448,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                   ShadButton(
                     onPressed: showCreateDialog,
                     leading: const Icon(Icons.add),
-                    child: const Text('Create Strategy'),
+                    child: Text(
+                      isCloudWorkspace ? 'Create Cloud Strategy' : 'Create Strategy',
+                    ),
                   ),
                 ],
               )
@@ -395,7 +477,11 @@ class FolderItem extends GridItem {
 }
 
 class StrategyItem extends GridItem {
-  final StrategyData strategy;
+  final String strategyId;
+  final StrategyData? strategy;
 
-  StrategyItem(this.strategy);
+  StrategyItem.local(this.strategy)
+      : strategyId = strategy!.id;
+
+  StrategyItem.cloud(this.strategyId) : strategy = null;
 }

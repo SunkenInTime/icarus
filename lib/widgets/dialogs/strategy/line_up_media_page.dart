@@ -125,8 +125,12 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   }
 
   Widget _buildImageGrid() {
+    final strategyId = ref.read(strategyProvider).strategyId;
+    if (strategyId == null) {
+      return const SizedBox.shrink();
+    }
     return FutureBuilder(
-        future: _setImageDirectory(ref.read(strategyProvider).id),
+        future: _setImageDirectory(strategyId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());

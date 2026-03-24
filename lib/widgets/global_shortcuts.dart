@@ -221,7 +221,8 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             SaveStrategyIntent: CallbackAction<SaveStrategyIntent>(
               onInvoke: (intent) async {
                 _dismissDeleteMenu();
-                final strategyId = ref.read(strategyProvider).id;
+                final strategyId = ref.read(strategyProvider).strategyId;
+                if (strategyId == null) return null;
                 try {
                   await ref.read(strategyProvider.notifier).forceSaveNow(
                         strategyId,

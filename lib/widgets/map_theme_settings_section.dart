@@ -74,7 +74,7 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
   Widget build(BuildContext context) {
     final strategyTheme = ref.watch(strategyThemeProvider);
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
-    final hasActiveStrategy = ref.watch(strategyProvider).stratName != null;
+    final hasActiveStrategy = ref.watch(strategyProvider).strategyName != null;
     final profilesState = ref.watch(mapThemeProfilesProvider);
 
     final isOverride = strategyTheme.overridePalette != null;
@@ -342,7 +342,7 @@ class _ProfileLibrarySectionState
   Widget build(BuildContext context) {
     final profilesState = ref.watch(mapThemeProfilesProvider);
     final strategyTheme = ref.watch(strategyThemeProvider);
-    final hasActiveStrategy = ref.watch(strategyProvider).stratName != null;
+    final hasActiveStrategy = ref.watch(strategyProvider).strategyName != null;
 
     final activeProfileId = strategyTheme.overridePalette == null
         ? (strategyTheme.profileId ??

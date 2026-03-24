@@ -1,26 +1,60 @@
 import 'package:flutter/material.dart';
+import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _agentIconSize = 27;
 const double _agentRowSpacing = 5;
 
 class StrategyTileViewData {
-  StrategyTileViewData(this.strategy)
-      : name = strategy.name,
-        mapName = _mapName(strategy.mapData),
-        attackLabel = _attackLabel(strategy.pages),
-        attackColor = _attackColor(strategy.pages),
-        thumbnailAsset =
-            'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
-        lastEditedLabel = _timeAgo(strategy.lastEdited),
-        agentTypes = _collectAgentTypes(strategy.pages);
+  const StrategyTileViewData({
+    required this.name,
+    required this.mapName,
+    required this.attackLabel,
+    required this.attackColor,
+    required this.thumbnailAsset,
+    required this.lastEditedLabel,
+    required this.agentTypes,
+  });
 
-  final StrategyData strategy;
+  factory StrategyTileViewData.fromStrategy(StrategyData strategy) {
+    return StrategyTileViewData(
+      name: strategy.name,
+      mapName: _mapName(strategy.mapData),
+      attackLabel: _attackLabel(strategy.pages),
+      attackColor: _attackColor(_attackLabel(strategy.pages)),
+      thumbnailAsset:
+          'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
+      lastEditedLabel: _timeAgo(strategy.lastEdited),
+      agentTypes: _collectAgentTypes(strategy.pages),
+    );
+  }
+
+  factory StrategyTileViewData.fromCloudSummary(CloudStrategySummary strategy) {
+    MapValue? mapValue;
+    for (final entry in Maps.mapNames.entries) {
+      if (entry.value == strategy.mapData) {
+        mapValue = entry.key;
+        break;
+      }
+    }
+    final attackLabel = strategy.attackLabel ?? 'Unknown';
+    return StrategyTileViewData(
+      name: strategy.name,
+      mapName: _mapName(mapValue),
+      attackLabel: attackLabel,
+      attackColor: _attackColor(attackLabel),
+      thumbnailAsset:
+          'assets/maps/thumbnails/${strategy.mapData}_thumbnail.webp',
+      lastEditedLabel: _timeAgo(strategy.updatedAt),
+      agentTypes: const [],
+    );
+  }
+
   final String name;
   final String mapName;
   final String attackLabel;
@@ -29,8 +63,8 @@ class StrategyTileViewData {
   final String lastEditedLabel;
   final List<AgentType> agentTypes;
 
-  static String _mapName(MapValue map) {
-    final raw = Maps.mapNames[map];
+  static String _mapName(MapValue? map) {
+    final raw = map == null ? null : Maps.mapNames[map];
     if (raw == null || raw.isEmpty) {
       return 'Unknown';
     }
@@ -47,8 +81,7 @@ class StrategyTileViewData {
     return first ? 'Attack' : 'Defend';
   }
 
-  static Color _attackColor(List<StrategyPage> pages) {
-    final label = _attackLabel(pages);
+  static Color _attackColor(String label) {
     switch (label) {
       case 'Attack':
         return Colors.redAccent;

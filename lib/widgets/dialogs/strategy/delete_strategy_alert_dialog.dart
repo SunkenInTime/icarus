@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DeleteStrategyAlertDialog extends ConsumerWidget {
@@ -8,9 +9,11 @@ class DeleteStrategyAlertDialog extends ConsumerWidget {
     super.key,
     required this.strategyID,
     required this.name,
+    required this.source,
   });
   final String strategyID;
   final String name;
+  final StrategySource source;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ShadDialog.alert(
@@ -53,7 +56,7 @@ class DeleteStrategyAlertDialog extends ConsumerWidget {
           onPressed: () async {
             await ref
                 .read(strategyProvider.notifier)
-                .deleteStrategy(strategyID);
+                .deleteStrategy(strategyID, source: source);
 
             if (!context.mounted) return;
 
