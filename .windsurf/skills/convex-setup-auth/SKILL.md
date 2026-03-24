@@ -1,6 +1,6 @@
 ---
 name: convex-setup-auth
-description: Set up Convex authentication with proper user management, identity mapping, and access control patterns. Use when implementing auth flows.
+description: Sets up Convex authentication with user management, identity mapping, and access control. Use this skill when adding login or signup to a Convex app, configuring Convex Auth, Clerk, WorkOS AuthKit, Auth0, or custom JWT providers, wiring auth.config.ts, protecting queries and mutations with ctx.auth.getUserIdentity(), creating a users table with identity mapping, or setting up role-based access control, even if the user just says "add auth" or "make it require login."
 ---
 
 # Convex Authentication Setup
@@ -13,6 +13,13 @@ Implement secure authentication in Convex with user management and access contro
 - Implementing user management (users table, identity mapping)
 - Creating authentication helper functions
 - Setting up auth providers (Convex Auth, Clerk, WorkOS AuthKit, Auth0, custom JWT)
+
+## When Not to Use
+
+- Auth for a non-Convex backend
+- Pure OAuth/OIDC documentation without a Convex implementation
+- Debugging unrelated bugs that happen to surface near auth code
+- The auth provider is already fully configured and the user only needs a one-line fix
 
 ## First Step: Choose the Auth Provider
 
@@ -65,12 +72,42 @@ For shared auth behavior, use the official Convex docs as the source of truth:
 - [Authentication](https://docs.convex.dev/auth) for general auth and authorization guidance
 - [Convex Auth Authorization](https://labs.convex.dev/auth/authz) when the provider is Convex Auth
 
-Do not invent a provider-agnostic user sync pattern from memory.
-For third-party providers, only add app-level user storage if the app actually needs user documents in Convex.
-For Convex Auth, do not add a parallel `users` table plus `storeUser` flow. Follow the Convex Auth docs and built-in auth tables instead.
+Prefer official docs over recalled steps, because provider CLIs and Convex Auth internals change between versions. Inventing setup from memory risks outdated patterns.
+For third-party providers, only add app-level user storage if the app actually needs user documents in Convex. Not every app needs a `users` table.
+For Convex Auth, follow the Convex Auth docs and built-in auth tables rather than adding a parallel `users` table plus `storeUser` flow, because Convex Auth already manages user records internally.
+After running provider initialization commands, verify generated files and complete the post-init wiring steps the provider reference calls out. Initialization commands rarely finish the entire integration.
 
-Do not invent provider-specific setup from memory when the docs are available.
-Do not assume provider initialization commands finish the entire integration. Verify generated files and complete the post-init wiring steps the provider reference calls out.
+## Core Pattern: Protecting Backend Functions
+
+The most common auth task is checking identity in Convex functions.
+
+```ts
+// Bad: trusting a client-provided userId
+export const getMyProfile = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.userId);
+  },
+});
+```
+
+```ts
+// Good: verifying identity server-side
+export const getMyProfile = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Not authenticated");
+
+    return await ctx.db
+      .query("users")
+      .withIndex("by_tokenIdentifier", (q) =>
+        q.eq("tokenIdentifier", identity.tokenIdentifier)
+      )
+      .unique();
+  },
+});
+```
 
 ## Workflow
 

@@ -10,9 +10,8 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
 import 'package:icarus/providers/auth_provider.dart';
-import 'package:icarus/providers/collab/cloud_migration_provider.dart';
-import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -61,7 +60,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
     // Show the demo warning only once after the first frame on web.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(ref.read(cloudMigrationProvider.notifier).maybeMigrate());
       if (!_warnedOnce) {
         _warnedOnce = true;
 
@@ -233,9 +231,12 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final double height = MediaQuery.sizeOf(context).height - 90;
     final Size playAreaSize = Size(height * (16 / 9), height);
     CoordinateSystem(playAreaSize: playAreaSize);
+    final workspace = ref.watch(libraryWorkspaceProvider);
+    final isCloudWorkspace = workspace == LibraryWorkspace.cloud;
+    final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
     final currentFolderId = ref.watch(folderProvider);
     final currentFolder = currentFolderId != null
-        ? ref.read(folderProvider.notifier).findFolderByID(currentFolderId)
+        ? ref.read(folderProvider.notifier).findLocalFolderByID(currentFolderId)
         : null;
     final authState = ref.watch(authProvider);
     Future<void> navigateWithLoading(
@@ -286,7 +287,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
       if (strategyId != null) {
         if (!context.mounted) return;
-        if (ref.read(isCloudCollabEnabledProvider)) {
+        if (isCloudWorkspace) {
           await Navigator.push(
             context,
             PageRouteBuilder(
@@ -306,8 +307,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                   ),
                 );
               },
-            ),
-          );
+                    ),
+                  );
         } else {
           await navigateWithLoading(context, strategyId);
         }
@@ -331,6 +332,29 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
               Row(
                 spacing: 15,
                 children: [
+                  if (cloudAvailable)
+                    ShadSelect<LibraryWorkspace>(
+                      initialValue: workspace,
+                      selectedOptionBuilder: (context, value) {
+                        return Text(
+                          value == LibraryWorkspace.cloud ? 'Cloud' : 'Local',
+                        );
+                      },
+                      options: const [
+                        ShadOption(
+                          value: LibraryWorkspace.local,
+                          child: Text('Local'),
+                        ),
+                        ShadOption(
+                          value: LibraryWorkspace.cloud,
+                          child: Text('Cloud'),
+                        ),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) return;
+                        ref.read(libraryWorkspaceProvider.notifier).select(value);
+                      },
+                    ),
                   ShadButton.secondary(
                     onPressed: authState.isLoading
                         ? null
@@ -403,7 +427,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                     },
                     child: ShadButton.secondary(
                       key: _importExportButtonKey,
-                      onPressed: _toggleImportExportPopover,
+                      onPressed: isCloudWorkspace ? null : _toggleImportExportPopover,
                       leading: const Icon(Icons.import_export),
                       trailing: const Icon(Icons.keyboard_arrow_down),
                       child: const Text('Import / Export'),
@@ -424,7 +448,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                   ShadButton(
                     onPressed: showCreateDialog,
                     leading: const Icon(Icons.add),
-                    child: const Text('Create Strategy'),
+                    child: Text(
+                      isCloudWorkspace ? 'Create Cloud Strategy' : 'Create Strategy',
+                    ),
                   ),
                 ],
               )

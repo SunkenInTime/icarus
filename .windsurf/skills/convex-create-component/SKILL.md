@@ -1,6 +1,6 @@
 ---
 name: convex-create-component
-description: Design and build Convex components with clear boundaries, isolated state, and app-facing wrappers. Use when creating a new Convex component, extracting reusable backend logic into one, or packaging Convex functionality for reuse across apps.
+description: Designs and builds Convex components with isolated tables, clear boundaries, and app-facing wrappers. Use this skill when creating a new Convex component, extracting reusable backend logic into a component, building a third-party integration that owns its own tables, packaging Convex functionality for reuse, or when the user mentions defineComponent, app.use, ComponentApi, ctx.runQuery/runMutation across component boundaries, or wants to separate concerns into isolated Convex modules.
 ---
 
 # Convex Create Component
@@ -173,15 +173,15 @@ Note the reference path shape: a function in `convex/components/notifications/li
 
 ## Critical Rules
 
-- Keep authentication in the app. `ctx.auth` is not available inside components.
-- Keep environment access in the app. Component functions cannot read `process.env`.
-- Pass parent app IDs across the boundary as strings. `Id` types become plain strings in the app-facing `ComponentApi`.
-- Do not use `v.id("parentTable")` for app-owned tables inside component args or schema.
-- Import `query`, `mutation`, and `action` from the component's own `./_generated/server`.
-- Do not expose component functions directly to clients. Create app wrappers when client access is needed.
-- If the component defines HTTP handlers, mount the routes in the app's `convex/http.ts`.
-- If the component needs pagination, use `paginator` from `convex-helpers` instead of built-in `.paginate()`.
-- Add `args` and `returns` validators to all public component functions.
+- Keep authentication in the app, because `ctx.auth` is not available inside components.
+- Keep environment access in the app, because component functions cannot read `process.env`.
+- Pass parent app IDs across the boundary as strings, because `Id` types become plain strings in the app-facing `ComponentApi`.
+- Do not use `v.id("parentTable")` for app-owned tables inside component args or schema, because the component has no access to the app's table namespace.
+- Import `query`, `mutation`, and `action` from the component's own `./_generated/server`, not the app's generated files.
+- Do not expose component functions directly to clients. Create app wrappers when client access is needed, because components are internal and need auth/env wiring the app provides.
+- If the component defines HTTP handlers, mount the routes in the app's `convex/http.ts`, because components cannot register their own HTTP routes.
+- If the component needs pagination, use `paginator` from `convex-helpers` instead of built-in `.paginate()`, because `.paginate()` does not work across the component boundary.
+- Add `args` and `returns` validators to all public component functions, because the component boundary requires explicit type contracts.
 
 ## Patterns
 
@@ -242,136 +242,9 @@ args: { userId: v.id("users") }
 args: { userId: v.string() }
 ```
 
-### Function Handles for callbacks
+### Advanced Patterns
 
-When the app needs to pass a callback function to the component, use function handles. This is common for components that run app-defined logic on a schedule or in a workflow.
-
-```ts
-// App side: create a handle and pass it to the component
-import { createFunctionHandle } from "convex/server";
-
-export const startJob = mutation({
-  handler: async (ctx) => {
-    const handle = await createFunctionHandle(internal.myModule.processItem);
-    await ctx.runMutation(components.workpool.enqueue, {
-      callback: handle,
-    });
-  },
-});
-```
-
-```ts
-// Component side: accept and invoke the handle
-import { v } from "convex/values";
-import type { FunctionHandle } from "convex/server";
-import { mutation } from "./_generated/server.js";
-
-export const enqueue = mutation({
-  args: { callback: v.string() },
-  handler: async (ctx, args) => {
-    const handle = args.callback as FunctionHandle<"mutation">;
-    await ctx.scheduler.runAfter(0, handle, {});
-  },
-});
-```
-
-### Deriving validators from schema
-
-Instead of manually repeating field types in return validators, extend the schema validator:
-
-```ts
-import { v } from "convex/values";
-import schema from "./schema.js";
-
-const notificationDoc = schema.tables.notifications.validator.extend({
-  _id: v.id("notifications"),
-  _creationTime: v.number(),
-});
-
-export const getLatest = query({
-  args: {},
-  returns: v.nullable(notificationDoc),
-  handler: async (ctx) => {
-    return await ctx.db.query("notifications").order("desc").first();
-  },
-});
-```
-
-### Static configuration with a globals table
-
-A common pattern for component configuration is a single-document "globals" table:
-
-```ts
-// schema.ts
-export default defineSchema({
-  globals: defineTable({
-    maxRetries: v.number(),
-    webhookUrl: v.optional(v.string()),
-  }),
-  // ... other tables
-});
-```
-
-```ts
-// lib.ts
-export const configure = mutation({
-  args: { maxRetries: v.number(), webhookUrl: v.optional(v.string()) },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const existing = await ctx.db.query("globals").first();
-    if (existing) {
-      await ctx.db.patch(existing._id, args);
-    } else {
-      await ctx.db.insert("globals", args);
-    }
-    return null;
-  },
-});
-```
-
-### Class-based client wrappers
-
-For components with many functions or configuration options, a class-based client provides a cleaner API. This pattern is common in published components.
-
-```ts
-// src/client/index.ts
-import type { GenericMutationCtx, GenericDataModel } from "convex/server";
-import type { ComponentApi } from "../component/_generated/component.js";
-
-type MutationCtx = Pick<GenericMutationCtx<GenericDataModel>, "runMutation">;
-
-export class Notifications {
-  constructor(
-    private component: ComponentApi,
-    private options?: { defaultChannel?: string },
-  ) {}
-
-  async send(ctx: MutationCtx, args: { userId: string; message: string }) {
-    return await ctx.runMutation(this.component.lib.send, {
-      ...args,
-      channel: this.options?.defaultChannel ?? "default",
-    });
-  }
-}
-```
-
-```ts
-// App usage
-import { Notifications } from "@convex-dev/notifications";
-import { components } from "./_generated/api";
-
-const notifications = new Notifications(components.notifications, {
-  defaultChannel: "alerts",
-});
-
-export const send = mutation({
-  args: { message: v.string() },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    await notifications.send(ctx, { userId, message: args.message });
-  },
-});
-```
+For additional patterns including function handles for callbacks, deriving validators from schema, static configuration with a globals table, and class-based client wrappers, see `references/advanced-patterns.md`.
 
 ## Validation
 

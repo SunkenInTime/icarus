@@ -1,6 +1,6 @@
 ---
 name: convex-quickstart
-description: Initialize a new Convex project from scratch or add Convex to an existing app. Use when starting a new project with Convex, scaffolding a Convex app, or integrating Convex into an existing frontend.
+description: Initializes a new Convex project from scratch or adds Convex to an existing app. Use this skill when starting a new project with Convex, scaffolding with npm create convex@latest, adding Convex to an existing React, Next.js, Vue, Svelte, or other frontend, wiring up ConvexProvider, configuring environment variables for the deployment URL, or running npx convex dev for the first time, even if the user just says "set up Convex" or "add a backend."
 ---
 
 # Convex Quickstart
@@ -84,7 +84,7 @@ Tell the user to run `npx convex dev` in their terminal. On first run it will pr
 
 The user should keep `npx convex dev` running in the background while you work on code. The watcher will automatically pick up any files you create or edit in `convex/`.
 
-**Exception - cloud agents (Codex, Jules, Devin):** These environments cannot open a browser for login. See the Agent Mode section below for how to run anonymously without user interaction.
+**Exception - cloud or headless agents:** Environments that cannot open a browser for interactive login should use Agent Mode (see below) to run anonymously without user interaction.
 
 ### Start the frontend
 
@@ -116,7 +116,7 @@ The template already has:
 - Tailwind and shadcn/ui ready (for shadcn templates)
 - Auth provider configured (for auth templates)
 
-You are ready to start adding schema, functions, and UI.
+Proceed to adding schema, functions, and UI.
 
 ## Path 2: Add Convex to an Existing App
 
@@ -227,9 +227,9 @@ The env var name depends on the framework:
 
 `npx convex dev` writes the correct variable to `.env.local` automatically.
 
-## Agent Mode (Cloud-Based Agents)
+## Agent Mode (Cloud and Headless Agents)
 
-When running in a cloud-based agent environment (Codex, Jules, Devin, Cursor Background Agents) where you cannot log in interactively, set `CONVEX_AGENT_MODE=anonymous` to use a local anonymous deployment.
+When running in a cloud or headless agent environment where interactive browser login is not possible, set `CONVEX_AGENT_MODE=anonymous` to use a local anonymous deployment.
 
 Add `CONVEX_AGENT_MODE=anonymous` to `.env.local`, or set it inline:
 

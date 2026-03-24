@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -13,7 +14,8 @@ class CurrentPathBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isCloud = ref.watch(isCloudCollabEnabledProvider);
+    final workspace = ref.watch(libraryWorkspaceProvider);
+    final isCloud = workspace == LibraryWorkspace.cloud;
     final currentFolderId = ref.watch(folderProvider);
     final cloudFolders = isCloud
         ? (ref.watch(cloudAllFoldersProvider).valueOrNull ?? const [])
@@ -26,7 +28,9 @@ class CurrentPathBar extends ConsumerWidget {
             ? cloudFolders
                 ?.where((folder) => folder.id == currentFolderId)
                 .firstOrNull
-            : ref.read(folderProvider.notifier).findFolderByID(currentFolderId);
+            : ref
+                .read(folderProvider.notifier)
+                .findLocalFolderByID(currentFolderId);
     final pathFolders = isCloud
         ? _cloudPathFolders(currentFolder, cloudFolders)
         : ref
@@ -108,11 +112,15 @@ class FolderTab extends ConsumerWidget {
             ref.read(strategyProvider.notifier).moveToFolder(
                   strategyID: item.strategyId,
                   parentID: folder?.id,
+                  source: item.strategy == null
+                      ? StrategySource.cloud
+                      : StrategySource.local,
                 );
           } else if (item is FolderItem) {
             ref.read(folderProvider.notifier).moveToFolder(
                   folderID: item.folder.id,
                   parentID: folder?.id,
+                  workspace: ref.read(libraryWorkspaceProvider),
                 );
           }
         },

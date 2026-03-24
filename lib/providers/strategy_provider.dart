@@ -18,6 +18,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -31,7 +32,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
@@ -82,7 +82,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (!state.isOpen || !ref.read(strategySaveStateProvider).isDirty) {
       return;
     }
-    if (_isCloudMode()) {
+    if (_currentStrategyIsCloud()) {
       return;
     }
     if (!ref.read(appPreferencesProvider).autosaveEnabled) {
@@ -98,8 +98,22 @@ class StrategyProvider extends Notifier<StrategyState> {
     });
   }
 
-  bool _isCloudMode() {
-    return ref.read(isCloudCollabEnabledProvider);
+  bool _currentStrategyIsCloud() {
+    return state.source == StrategySource.cloud;
+  }
+
+  bool _selectedWorkspaceIsCloud() {
+    return ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
+  }
+
+  StrategySource _resolveLibraryMutationSource() {
+    final currentSource = state.source;
+    if (currentSource != null) {
+      return currentSource;
+    }
+    return _selectedWorkspaceIsCloud()
+        ? StrategySource.cloud
+        : StrategySource.local;
   }
 
   Future<bool> _reportCloudUnauthenticated({
@@ -120,13 +134,12 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> openStrategy(String strategyID) async {
+    await openCloudStrategy(strategyID);
+  }
+
+  Future<void> openCloudStrategy(String strategyID) async {
     cancelPendingSave();
     ref.read(strategySaveStateProvider.notifier).reset();
-
-    if (!_isCloudMode()) {
-      await loadFromHive(strategyID);
-      return;
-    }
 
     await ref
         .read(remoteStrategySnapshotProvider.notifier)
@@ -152,7 +165,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> switchPage(String pageID) async {
-    if (_isCloudMode()) {
+    if (_currentStrategyIsCloud()) {
       await ref
           .read(strategyPageSessionProvider.notifier)
           .setActivePage(pageID);
@@ -169,7 +182,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     List<StrategyOp> ops, {
     bool flushImmediately = false,
   }) async {
-    if (!_isCloudMode() || ops.isEmpty) {
+    if (!_currentStrategyIsCloud() || ops.isEmpty) {
       return;
     }
 
@@ -187,7 +200,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> notifyCloudMutation({bool flushImmediately = false}) async {
-    if (!_isCloudMode()) {
+    if (!_currentStrategyIsCloud()) {
       return;
     }
 
@@ -205,7 +218,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    if (_isCloudMode()) {
+    if (_currentStrategyIsCloud()) {
       unawaited(notifyCloudMutation(flushImmediately: false));
       return;
     }
@@ -216,7 +229,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> forceSaveNow(String id) async {
     cancelPendingSave();
-    if (_isCloudMode()) {
+    if (_currentStrategyIsCloud()) {
       ref.read(strategySaveStateProvider.notifier)
         ..markDirty()
         ..setPendingCloudSync(true);
@@ -235,7 +248,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     try {
       ref.read(autoSaveProvider.notifier).ping(); // UI: Saving...
       ref.read(strategySaveStateProvider.notifier).markSaving(true);
-      if (_isCloudMode()) {
+      if (_currentStrategyIsCloud()) {
         await ref
             .read(strategyPageSessionProvider.notifier)
             .flushCurrentPage(flushImmediately: true);
@@ -307,7 +320,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> reorderPage(int oldIndex, int newIndex) async {
     if (oldIndex == newIndex) return;
 
-    if (_isCloudMode()) {
+    if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
       if (snapshot == null || snapshot.pages.isEmpty) return;
       final ordered = [...snapshot.pages]
@@ -387,7 +400,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> addPage([String? name]) async {
-    if (_isCloudMode()) {
+    if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
       if (snapshot == null) return;
       final pages = [...snapshot.pages]
@@ -464,7 +477,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    if (_isCloudMode()) {
+    if (_currentStrategyIsCloud()) {
       try {
         await ConvexClient.instance.mutation(name: "pages:rename", args: {
           "strategyPublicId": state.strategyId,
@@ -501,7 +514,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> deletePage(String pageId) async {
-    if (_isCloudMode()) {
+    if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
       if (snapshot == null || snapshot.pages.length <= 1) {
         return;
@@ -574,10 +587,6 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> loadFromHive(String id) async {
     cancelPendingSave();
-    if (_isCloudMode()) {
-      await openStrategy(id);
-      return;
-    }
     final newStrat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .values
         .where((StrategyData strategy) {
@@ -635,7 +644,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<String> createNewStrategy(String name) async {
-    if (_isCloudMode()) {
+    if (_selectedWorkspaceIsCloud()) {
       final newID = const Uuid().v4();
       final pageID = const Uuid().v4();
       final defaultThemeProfileId =
@@ -669,7 +678,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
       ref.invalidate(cloudStrategiesProvider);
       ref.invalidate(cloudFoldersProvider);
-      await openStrategy(newID);
+      await openCloudStrategy(newID);
       return newID;
     }
     final newID = const Uuid().v4();
@@ -726,8 +735,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     setUnsaved();
   }
 
-  Future<void> renameStrategy(String strategyID, String newName) async {
-    if (_isCloudMode()) {
+  Future<void> renameStrategy(
+    String strategyID,
+    String newName, {
+    StrategySource? source,
+  }) async {
+    final resolvedSource = source ?? _resolveLibraryMutationSource();
+    if (resolvedSource == StrategySource.cloud) {
       try {
         await ConvexClient.instance.mutation(name: "strategies:update", args: {
           "strategyPublicId": strategyID,
@@ -742,7 +756,12 @@ class StrategyProvider extends Notifier<StrategyState> {
         if (!handled) rethrow;
         return;
       }
-      await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+      if (state.strategyId == strategyID &&
+          state.source == StrategySource.cloud) {
+        await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+      } else {
+        ref.invalidate(cloudStrategiesProvider);
+      }
       return;
     }
 
@@ -760,8 +779,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
   }
 
-  Future<void> duplicateStrategy(String strategyID) async {
-    if (_isCloudMode()) {
+  Future<void> duplicateStrategy(
+    String strategyID, {
+    StrategySource? source,
+  }) async {
+    final resolvedSource = source ?? _resolveLibraryMutationSource();
+    if (resolvedSource == StrategySource.cloud) {
       try {
         final snapshot = await ref
             .read(convexStrategyRepositoryProvider)
@@ -861,6 +884,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         if (!handled) rethrow;
         return;
       }
+      ref.invalidate(cloudStrategiesProvider);
       return;
     }
 
@@ -891,8 +915,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     await strategyBox.put(duplicatedStrategy.id, duplicatedStrategy);
   }
 
-  Future<void> deleteStrategy(String strategyID) async {
-    if (_isCloudMode()) {
+  Future<void> deleteStrategy(
+    String strategyID, {
+    StrategySource? source,
+  }) async {
+    final resolvedSource = source ?? _resolveLibraryMutationSource();
+    if (resolvedSource == StrategySource.cloud) {
       try {
         await ConvexClient.instance.mutation(name: "strategies:delete", args: {
           "strategyPublicId": strategyID,
@@ -905,6 +933,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         );
         if (!handled) rethrow;
       }
+      ref.invalidate(cloudStrategiesProvider);
       return;
     }
 
@@ -920,7 +949,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> saveToHive(String id) async {
-    if (_isCloudMode()) {
+    if (_currentStrategyIsCloud()) {
       return;
     }
     // final drawingData = ref.read(drawingProvider).elements;
@@ -956,7 +985,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   // Flush currently active page into Hive. Safe if no active page is selected.
   Future<void> _syncCurrentPageToHive() async {
-    if (_isCloudMode()) {
+    if (_currentStrategyIsCloud()) {
       return;
     }
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
@@ -1043,8 +1072,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     setUnsaved();
   }
 
-  void moveToFolder({required String strategyID, required String? parentID}) {
-    if (_isCloudMode()) {
+  void moveToFolder({
+    required String strategyID,
+    required String? parentID,
+    StrategySource? source,
+  }) {
+    final resolvedSource = source ?? _resolveLibraryMutationSource();
+    if (resolvedSource == StrategySource.cloud) {
       unawaited(() async {
         try {
           await ConvexClient.instance.mutation(name: "strategies:move", args: {
@@ -1059,6 +1093,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           );
         }
       }());
+      ref.invalidate(cloudStrategiesProvider);
       return;
     }
     final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);

@@ -8,6 +8,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/dialogs/strategy/delete_strategy_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/rename_strategy_dialog.dart';
@@ -184,7 +185,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
 
     try {
       if (_isCloud) {
-        await ref.read(strategyProvider.notifier).openStrategy(_strategyId);
+        await ref.read(strategyProvider.notifier).openCloudStrategy(_strategyId);
       } else {
         await ref.read(strategyProvider.notifier).loadFromHive(_strategyId);
       }
@@ -230,7 +231,10 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   }
 
   Future<void> _duplicateStrategy() async {
-    await ref.read(strategyProvider.notifier).duplicateStrategy(_strategyId);
+    await ref.read(strategyProvider.notifier).duplicateStrategy(
+          _strategyId,
+          source: _isCloud ? StrategySource.cloud : StrategySource.local,
+        );
   }
 
   Future<void> _exportStrategy() async {
@@ -257,6 +261,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       builder: (_) => RenameStrategyDialog(
         strategyId: _strategyId,
         currentName: _strategyName,
+        source: _isCloud ? StrategySource.cloud : StrategySource.local,
       ),
     );
   }
@@ -267,6 +272,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       builder: (_) => DeleteStrategyAlertDialog(
         strategyID: _strategyId,
         name: _strategyName,
+        source: _isCloud ? StrategySource.cloud : StrategySource.local,
       ),
     );
   }

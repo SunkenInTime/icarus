@@ -50,6 +50,8 @@ final AppLinks _appLinks = AppLinks();
 final StreamController<Uri> _deepLinkUriController =
     StreamController<Uri>.broadcast();
 StreamSubscription<Uri>? _deepLinkStreamSub;
+final List<Uri> _bufferedDeepLinks = <Uri>[];
+bool _hasDeepLinkListener = false;
 
 Future<void> _initializeDeepLinkHandling() async {
   try {
@@ -81,6 +83,10 @@ Future<void> _initializeDeepLinkHandling() async {
 
 void _publishDeepLink(Uri uri, {required String source}) {
   developer.log('Deep link received [$source]: $uri', name: 'deep_link');
+  if (!_hasDeepLinkListener) {
+    _bufferedDeepLinks.add(uri);
+    return;
+  }
   _deepLinkUriController.add(uri);
 }
 
@@ -382,12 +388,21 @@ class _MyAppState extends ConsumerState<MyApp> {
     _deepLinkSub = _deepLinkUriController.stream.listen(
       (uri) => _handleIncomingUri(uri, source: 'app_links'),
     );
+    _hasDeepLinkListener = true;
+    if (_bufferedDeepLinks.isNotEmpty) {
+      final pendingUris = List<Uri>.from(_bufferedDeepLinks);
+      _bufferedDeepLinks.clear();
+      for (final uri in pendingUris) {
+        _deepLinkUriController.add(uri);
+      }
+    }
   }
 
   @override
   void dispose() {
     _secondInstanceSub?.cancel();
     _deepLinkSub?.cancel();
+    _hasDeepLinkListener = false;
     super.dispose();
   }
 

@@ -6,6 +6,7 @@ import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 
 final cloudFoldersProvider =
     FutureProvider.autoDispose<List<CloudFolderSummary>>((ref) async {
@@ -21,7 +22,9 @@ final cloudFoldersProvider =
     return await repo.listFoldersForParent(parentFolderId);
   } catch (error, stackTrace) {
     if (_isInvalidFolderError(error)) {
-      ref.read(folderProvider.notifier).clearID();
+      ref
+          .read(folderProvider.notifier)
+          .updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
       return const <CloudFolderSummary>[];
     }
     if (isConvexUnauthenticatedError(error)) {
@@ -52,7 +55,9 @@ final cloudStrategiesProvider =
     return await repo.listStrategiesForFolder(folderId);
   } catch (error, stackTrace) {
     if (_isInvalidFolderError(error)) {
-      ref.read(folderProvider.notifier).clearID();
+      ref
+          .read(folderProvider.notifier)
+          .updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
       return const <CloudStrategySummary>[];
     }
     if (isConvexUnauthenticatedError(error)) {

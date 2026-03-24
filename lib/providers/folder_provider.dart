@@ -8,10 +8,11 @@ import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
-import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:uuid/uuid.dart';
 
 enum FolderColor {
@@ -121,6 +122,9 @@ final folderProvider =
     NotifierProvider<FolderProvider, String?>(FolderProvider.new);
 
 class FolderProvider extends Notifier<String?> {
+  String? _localCurrentFolderId;
+  String? _cloudCurrentFolderId;
+
   static FolderColor decodeFolderColor(String? raw) {
     if (raw == null) {
       return FolderColor.generic;
@@ -168,18 +172,20 @@ class FolderProvider extends Notifier<String?> {
     required FolderColor color,
     Color? customColor,
     String? parentID,
+    LibraryWorkspace? workspace,
   }) async {
+    final targetWorkspace = workspace ?? _currentWorkspace;
     final newFolder = Folder(
       icon: icon,
       name: name,
       id: const Uuid().v4(),
       dateCreated: DateTime.now(),
-      parentID: parentID ?? state,
+      parentID: parentID ?? _currentFolderIdForWorkspace(targetWorkspace),
       customColor: customColor,
       color: color,
     );
 
-    if (ref.read(isCloudCollabEnabledProvider)) {
+    if (targetWorkspace == LibraryWorkspace.cloud) {
       try {
         await ref.read(convexStrategyRepositoryProvider).createFolder(
               publicId: newFolder.id,
@@ -207,11 +213,22 @@ class FolderProvider extends Notifier<String?> {
   }
 
   void updateID(String? id) {
-    state = id;
+    updateWorkspaceFolderId(_currentWorkspace, id);
   }
 
   void clearID() {
-    state = null;
+    updateWorkspaceFolderId(_currentWorkspace, null);
+  }
+
+  void updateWorkspaceFolderId(LibraryWorkspace workspace, String? id) {
+    _setFolderIdForWorkspace(workspace, id);
+    if (_currentWorkspace == workspace) {
+      state = id;
+    }
+  }
+
+  String? currentFolderIdForWorkspace(LibraryWorkspace workspace) {
+    return _currentFolderIdForWorkspace(workspace);
   }
 
   List<String> getFullPathIDs(Folder? folder) {
@@ -221,7 +238,7 @@ class FolderProvider extends Notifier<String?> {
     while (currentFolder != null) {
       pathIDs.insert(0, currentFolder.id);
       if (currentFolder.parentID != null) {
-        currentFolder = findFolderByID(currentFolder.parentID!);
+        currentFolder = findLocalFolderByID(currentFolder.parentID!);
       } else {
         currentFolder = null;
       }
@@ -231,9 +248,6 @@ class FolderProvider extends Notifier<String?> {
   }
 
   List<Folder> findFolderChildren(String id) {
-    if (ref.read(isCloudCollabEnabledProvider)) {
-      return [];
-    }
     return Hive.box<Folder>(HiveBoxNames.foldersBox)
         .values
         .where((f) => f.parentID == id)
@@ -241,14 +255,31 @@ class FolderProvider extends Notifier<String?> {
   }
 
   Folder? findFolderByID(String id) {
-    if (ref.read(isCloudCollabEnabledProvider)) {
-      return null;
-    }
+    return _currentWorkspace == LibraryWorkspace.cloud
+        ? null
+        : findLocalFolderByID(id);
+  }
+
+  Folder? findLocalFolderByID(String id) {
     return Hive.box<Folder>(HiveBoxNames.foldersBox).get(id);
   }
 
-  void deleteFolder(String folderID) async {
-    if (ref.read(isCloudCollabEnabledProvider)) {
+  Folder? findCloudFolderByID(
+    String id,
+    Iterable<CloudFolderSummary> cloudFolders,
+  ) {
+    return cloudFolders
+        .where((folder) => folder.publicId == id)
+        .map(cloudSummaryToFolder)
+        .firstOrNull;
+  }
+
+  void deleteFolder(
+    String folderID, {
+    LibraryWorkspace? workspace,
+  }) async {
+    final targetWorkspace = workspace ?? _currentWorkspace;
+    if (targetWorkspace == LibraryWorkspace.cloud) {
       try {
         await ConvexClient.instance.mutation(name: 'folders:delete', args: {
           'folderPublicId': folderID,
@@ -260,8 +291,8 @@ class FolderProvider extends Notifier<String?> {
           stackTrace: stackTrace,
         );
       }
-      if (state == folderID) {
-        state = null;
+      if (_currentFolderIdForWorkspace(LibraryWorkspace.cloud) == folderID) {
+        updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
       }
       return;
     }
@@ -277,7 +308,10 @@ class FolderProvider extends Notifier<String?> {
     }
 
     for (final id in idsToDelete) {
-      await ref.read(strategyProvider.notifier).deleteStrategy(id);
+      await ref.read(strategyProvider.notifier).deleteStrategy(
+            id,
+            source: StrategySource.local,
+          );
     }
 
     await Hive.box<Folder>(HiveBoxNames.foldersBox).delete(folderID);
@@ -289,8 +323,10 @@ class FolderProvider extends Notifier<String?> {
     required IconData newIcon,
     required FolderColor newColor,
     required Color? newCustomColor,
+    LibraryWorkspace? workspace,
   }) async {
-    if (ref.read(isCloudCollabEnabledProvider)) {
+    final targetWorkspace = workspace ?? _currentWorkspace;
+    if (targetWorkspace == LibraryWorkspace.cloud) {
       try {
         final args = <String, Object>{
           'folderPublicId': folder.id,
@@ -326,8 +362,13 @@ class FolderProvider extends Notifier<String?> {
     await folder.save();
   }
 
-  void moveToFolder({required String folderID, String? parentID}) async {
-    if (ref.read(isCloudCollabEnabledProvider)) {
+  void moveToFolder({
+    required String folderID,
+    String? parentID,
+    LibraryWorkspace? workspace,
+  }) async {
+    final targetWorkspace = workspace ?? _currentWorkspace;
+    if (targetWorkspace == LibraryWorkspace.cloud) {
       try {
         await ConvexClient.instance.mutation(name: 'folders:move', args: {
           'folderPublicId': folderID,
@@ -343,12 +384,29 @@ class FolderProvider extends Notifier<String?> {
       return;
     }
 
-    final folder = findFolderByID(folderID);
+    final folder = findLocalFolderByID(folderID);
 
     if (folder != null) {
       folder.parentID = parentID;
       await folder.save();
     }
+  }
+
+  LibraryWorkspace get _currentWorkspace => ref.read(libraryWorkspaceProvider);
+
+  String? _currentFolderIdForWorkspace(LibraryWorkspace workspace) {
+    return switch (workspace) {
+      LibraryWorkspace.local => _localCurrentFolderId,
+      LibraryWorkspace.cloud => _cloudCurrentFolderId,
+    };
+  }
+
+  void _setFolderIdForWorkspace(LibraryWorkspace workspace, String? id) {
+    if (workspace == LibraryWorkspace.local) {
+      _localCurrentFolderId = id;
+      return;
+    }
+    _cloudCurrentFolderId = id;
   }
 
   Future<void> _maybeReportCloudUnauthenticated({
@@ -369,6 +427,13 @@ class FolderProvider extends Notifier<String?> {
 
   @override
   String? build() {
-    return null;
+    ref.listen<LibraryWorkspace>(libraryWorkspaceProvider, (_, workspace) {
+      state = _currentFolderIdForWorkspace(workspace);
+    });
+    return _currentFolderIdForWorkspace(ref.read(libraryWorkspaceProvider));
   }
+}
+
+extension on Iterable<Folder> {
+  Folder? get firstOrNull => isEmpty ? null : first;
 }

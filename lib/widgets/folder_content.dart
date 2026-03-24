@@ -5,10 +5,10 @@ import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
@@ -35,8 +35,13 @@ class FolderContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isCloud = ref.watch(isCloudCollabEnabledProvider);
+    final workspace = ref.watch(libraryWorkspaceProvider);
+    final isCloud = workspace == LibraryWorkspace.cloud;
     if (isCloud) {
+      final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
+      if (!cloudAvailable) {
+        return _buildCloudUnavailableState(context, ref);
+      }
       final folders = (ref.watch(cloudFoldersProvider).valueOrNull ?? const [])
           .map(FolderProvider.cloudSummaryToFolder)
           .toList(growable: false);
@@ -151,6 +156,96 @@ class FolderContent extends ConsumerWidget {
     required bool isCloud,
   }) {
     final hasStrategies = localStrategies.isNotEmpty || cloudStrategies.isNotEmpty;
+    final Widget emptyState = Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(isCloud ? 'No cloud strategies yet' : 'No strategies available'),
+          Text(
+            isCloud
+                ? 'Create a cloud strategy to start your online workspace'
+                : 'Create a new strategy or drop strategies, folders, or .zip archives',
+          ),
+        ],
+      ),
+    );
+    final Widget content = LayoutBuilder(
+      builder: (context, constraints) {
+        const double minTileWidth = 250;
+        const double spacing = 20;
+        const double padding = 32;
+        int crossAxisCount =
+            ((constraints.maxWidth - padding + spacing) / (minTileWidth + spacing))
+                .floor();
+        crossAxisCount = crossAxisCount.clamp(1, double.infinity).toInt();
+
+        return CustomScrollView(
+          slivers: [
+            if (folders.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: folders
+                        .map((folder) => FolderPill(folder: folder))
+                        .toList(),
+                  ),
+                ),
+              ),
+            if (hasStrategies)
+              SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverGrid(
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: crossAxisCount,
+                    mainAxisExtent: 250,
+                    crossAxisSpacing: 20,
+                    mainAxisSpacing: 20,
+                  ),
+                  delegate: SliverChildListDelegate.fixed(
+                    [
+                      ...localStrategies.map(
+                        (strategy) => StrategyTile.local(
+                          strategyData: strategy,
+                        ),
+                      ),
+                      ...cloudStrategies.map((strategy) {
+                        final caps =
+                            StrategyCapabilities.fromCloudRole(strategy.role);
+                        return StrategyTile.cloud(
+                          cloudStrategy: strategy,
+                          canRename: caps.canRenameStrategy,
+                          canDuplicate: caps.canDuplicateStrategy,
+                          canDelete: caps.canDeleteStrategy,
+                          canMove: caps.canMoveStrategy,
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              )
+            else if (folders.isNotEmpty)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Padding(
+                    padding: EdgeInsets.only(top: 48),
+                    child: Text(
+                      'No strategies in this folder',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+    final wrappedContent =
+        isCloud ? content : IcaDropTarget(child: content);
+
     return Stack(
       children: [
         const Positioned.fill(
@@ -205,111 +300,39 @@ class FolderContent extends ConsumerWidget {
               ),
               Expanded(
                 child: (folders.isEmpty && !hasStrategies)
-                    ? const IcaDropTarget(
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text('No strategies available'),
-                              Text(
-                                'Create a new strategy or drop strategies, folders, or .zip archives',
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : IcaDropTarget(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            const double minTileWidth = 250;
-                            const double spacing = 20;
-                            const double padding = 32;
-                            int crossAxisCount =
-                                ((constraints.maxWidth - padding + spacing) /
-                                        (minTileWidth + spacing))
-                                    .floor();
-                            crossAxisCount =
-                                crossAxisCount.clamp(1, double.infinity).toInt();
-
-                            return CustomScrollView(
-                              slivers: [
-                                if (folders.isNotEmpty)
-                                  SliverToBoxAdapter(
-                                    child: Padding(
-                                      padding:
-                                          const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                                      child: Wrap(
-                                        spacing: 10,
-                                        runSpacing: 10,
-                                        children: folders
-                                            .map((folder) =>
-                                                FolderPill(folder: folder))
-                                            .toList(),
-                                      ),
-                                    ),
-                                  ),
-                                if (hasStrategies)
-                                  SliverPadding(
-                                    padding: const EdgeInsets.all(16),
-                                    sliver: SliverGrid(
-                                      gridDelegate:
-                                          SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: crossAxisCount,
-                                        mainAxisExtent: 250,
-                                        crossAxisSpacing: 20,
-                                        mainAxisSpacing: 20,
-                                      ),
-                                      delegate: SliverChildListDelegate.fixed(
-                                        [
-                                          ...localStrategies.map(
-                                            (strategy) =>
-                                                StrategyTile.local(
-                                              strategyData: strategy,
-                                            ),
-                                          ),
-                                          ...cloudStrategies.map((strategy) {
-                                            final caps =
-                                                StrategyCapabilities.fromCloudRole(
-                                              strategy.role,
-                                            );
-                                            return StrategyTile.cloud(
-                                              cloudStrategy: strategy,
-                                              canRename:
-                                                  caps.canRenameStrategy,
-                                              canDuplicate:
-                                                  caps.canDuplicateStrategy,
-                                              canDelete:
-                                                  caps.canDeleteStrategy,
-                                              canMove: caps.canMoveStrategy,
-                                            );
-                                          }),
-                                        ],
-                                      ),
-                                    ),
-                                  )
-                                else if (folders.isNotEmpty)
-                                  const SliverFillRemaining(
-                                    hasScrollBody: false,
-                                    child: Center(
-                                      child: Padding(
-                                        padding: EdgeInsets.only(top: 48),
-                                        child: Text(
-                                          'No strategies in this folder',
-                                          style: TextStyle(color: Colors.grey),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
+                    ? (isCloud
+                        ? emptyState
+                        : IcaDropTarget(child: emptyState))
+                    : wrappedContent,
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildCloudUnavailableState(BuildContext context, WidgetRef ref) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('Cloud workspace unavailable'),
+          const SizedBox(height: 8),
+          const Text(
+            'Sign in again or switch back to Local to keep working.',
+          ),
+          const SizedBox(height: 16),
+          ShadButton.secondary(
+            onPressed: () {
+              ref
+                  .read(libraryWorkspaceProvider.notifier)
+                  .select(LibraryWorkspace.local);
+            },
+            child: const Text('Back to Local'),
+          ),
+        ],
+      ),
     );
   }
 }

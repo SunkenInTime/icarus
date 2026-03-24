@@ -3,12 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -99,7 +99,10 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       strategyPageSessionProvider.select((state) => state.activePageId),
     );
     final caps = ref.watch(currentStrategyCapabilitiesProvider);
-    final isCloud = ref.watch(isCloudCollabEnabledProvider);
+    final isCloud = ref.watch(
+          strategyProvider.select((value) => value.source),
+        ) ==
+        StrategySource.cloud;
     if (!isCloud) {
       final strategyId = ref.watch(strategyProvider).strategyId;
       if (strategyId == null) {

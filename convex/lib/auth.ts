@@ -12,17 +12,58 @@ const roleRank: Record<StrategyRole, number> = {
   owner: 3,
 };
 
+export function getCanonicalExternalId(identity: {
+  tokenIdentifier: string;
+}): string {
+  return identity.tokenIdentifier;
+}
+
+export function getLegacyExternalId(identity: {
+  subject?: string | null;
+  tokenIdentifier: string;
+}): string | null {
+  const subject = identity.subject;
+  if (subject == null || subject == identity.tokenIdentifier) {
+    return null;
+  }
+  return subject;
+}
+
+export async function findUserByIdentity(
+  ctx: AnyCtx,
+  identity: {
+    subject?: string | null;
+    tokenIdentifier: string;
+  },
+): Promise<Doc<"users"> | null> {
+  const canonicalExternalId = getCanonicalExternalId(identity);
+  const canonicalUser = await ctx.db
+    .query("users")
+    .withIndex("by_externalId", (q) => q.eq("externalId", canonicalExternalId))
+    .first();
+
+  if (canonicalUser !== null) {
+    return canonicalUser;
+  }
+
+  const legacyExternalId = getLegacyExternalId(identity);
+  if (legacyExternalId == null) {
+    return null;
+  }
+
+  return await ctx.db
+    .query("users")
+    .withIndex("by_externalId", (q) => q.eq("externalId", legacyExternalId))
+    .first();
+}
+
 export async function requireCurrentUser(ctx: AnyCtx): Promise<Doc<"users">> {
   const identity = await ctx.auth.getUserIdentity();
   if (identity === null) {
     throw unauthenticatedError();
   }
 
-  const externalId = identity.subject ?? identity.tokenIdentifier;
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_externalId", (q) => q.eq("externalId", externalId))
-    .first();
+  const user = await findUserByIdentity(ctx, identity);
 
   if (user === null) {
     throw new Error("Missing user record. Call users:ensureCurrentUser before querying collaborative data.");

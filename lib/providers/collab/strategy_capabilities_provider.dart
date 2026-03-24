@@ -1,6 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 
 class StrategyCapabilities {
   const StrategyCapabilities({
@@ -74,7 +76,10 @@ class StrategyCapabilities {
 }
 
 final currentStrategyCapabilitiesProvider = Provider<StrategyCapabilities>((ref) {
-  if (!ref.watch(isCloudCollabEnabledProvider)) {
+  final strategySource =
+      ref.watch(strategyProvider.select((value) => value.source));
+  if (strategySource != StrategySource.cloud ||
+      !ref.watch(isCloudCollabEnabledProvider)) {
     return StrategyCapabilities.fullAccess();
   }
   final role =

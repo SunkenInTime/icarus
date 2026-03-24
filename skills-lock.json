@@ -4,27 +4,27 @@
     "convex-create-component": {
       "source": "get-convex/agent-skills",
       "sourceType": "github",
-      "computedHash": "dab09d7c164ad5ed7cce61e8e0d14019969d4511d294bb2e9c46742b35c50e04"
+      "computedHash": "84897925dd765dd58847b3b05b22ad706e65609f93a962345b48a97ff93a760f"
     },
     "convex-migration-helper": {
       "source": "get-convex/agent-skills",
       "sourceType": "github",
-      "computedHash": "fafc14244b2d06e48a9b0c1fd82c97ac9e10d11907b05ea1774b7da245630aab"
+      "computedHash": "b99262360eb6fba714155b630537861da2d4c890365f629c75d607c8a1405c7b"
     },
     "convex-performance-audit": {
       "source": "get-convex/agent-skills",
       "sourceType": "github",
-      "computedHash": "72bb6d836c16d6bbbfd2ebbcbe4009268f933aae864225e7846f21f342a2567b"
+      "computedHash": "1a41a616f9615b9229928653fa22c752e86487f415c73082dd17f1073e059127"
     },
     "convex-quickstart": {
       "source": "get-convex/agent-skills",
       "sourceType": "github",
-      "computedHash": "90304d1faa4e7b2409db08a6d5c0807c8bb331a5023197d525f3780cf883f5f6"
+      "computedHash": "51322b7e70b0f47ec67650b2db721eb91043cba99bf8c864366b7b250d8a313f"
     },
     "convex-setup-auth": {
       "source": "get-convex/agent-skills",
       "sourceType": "github",
-      "computedHash": "0e299633b83f579b494e45b91ba2f2c4690caba4a8c26acaaf26d8bd47a2be36"
+      "computedHash": "7cc29991c446d2ea574dc9abb5fb85c0c9a7f3ef3af4c94454eef45017bda794"
     }
   }
 }
