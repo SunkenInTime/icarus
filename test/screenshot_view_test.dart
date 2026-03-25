@@ -163,7 +163,12 @@ void main() {
     CoordinateSystem.instance.setIsScreenshot(false);
   });
 
-  Widget buildHarness({required bool isAttack}) {
+  Widget buildHarness({
+    required bool isAttack,
+    bool showSpawnBarrier = false,
+    bool showRegionNames = false,
+    bool showUltOrbs = false,
+  }) {
     final strategyState = StrategyState(
       isSaved: true,
       stratName: 'test strategy',
@@ -200,6 +205,9 @@ void main() {
           data: const MediaQueryData(size: CoordinateSystem.screenShotSize),
           child: ScreenshotView(
             mapValue: MapValue.bind,
+            showSpawnBarrier: showSpawnBarrier,
+            showRegionNames: showRegionNames,
+            showUltOrbs: showUltOrbs,
             agents: const [],
             abilities: const [],
             text: const [],
@@ -228,6 +236,24 @@ void main() {
     return tester.widget<Transform>(transformFinder);
   }
 
+  Finder findSemanticsLabel(String label) {
+    return find.byWidgetPredicate(
+      (widget) =>
+          widget is Semantics &&
+          widget.properties.label == label,
+    );
+  }
+
+  Transform findTransformForLabel(WidgetTester tester, String label) {
+    final transformFinder = find.ancestor(
+      of: findSemanticsLabel(label),
+      matching: find.byType(Transform),
+    );
+
+    expect(transformFinder, findsOneWidget);
+    return tester.widget<Transform>(transformFinder);
+  }
+
   testWidgets('defense screenshots flip the painter layer', (tester) async {
     await tester.pumpWidget(buildHarness(isAttack: false));
     await tester.pumpAndSettle();
@@ -247,5 +273,79 @@ void main() {
 
     expect(transform.transform.storage[0], 1);
     expect(transform.transform.storage[5], 1);
+  });
+
+  testWidgets('spawn barrier visibility follows screenshot flags',
+      (tester) async {
+    await tester.pumpWidget(
+      buildHarness(
+        isAttack: true,
+        showSpawnBarrier: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(findSemanticsLabel('Barrier'), findsOneWidget);
+
+    await tester.pumpWidget(buildHarness(isAttack: true));
+    await tester.pumpAndSettle();
+
+    expect(findSemanticsLabel('Barrier'), findsNothing);
+  });
+
+  testWidgets('region names visibility follows screenshot flags',
+      (tester) async {
+    await tester.pumpWidget(
+      buildHarness(
+        isAttack: true,
+        showRegionNames: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(findSemanticsLabel('Callouts'), findsOneWidget);
+
+    await tester.pumpWidget(buildHarness(isAttack: true));
+    await tester.pumpAndSettle();
+
+    expect(findSemanticsLabel('Callouts'), findsNothing);
+  });
+
+  testWidgets('ultimate orb visibility follows screenshot flags',
+      (tester) async {
+    await tester.pumpWidget(
+      buildHarness(
+        isAttack: true,
+        showUltOrbs: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(findSemanticsLabel('Ult Orbs'), findsOneWidget);
+
+    await tester.pumpWidget(buildHarness(isAttack: true));
+    await tester.pumpAndSettle();
+
+    expect(findSemanticsLabel('Ult Orbs'), findsNothing);
+  });
+
+  testWidgets('defense helper overlays flip for barriers and ult orbs',
+      (tester) async {
+    await tester.pumpWidget(
+      buildHarness(
+        isAttack: false,
+        showSpawnBarrier: true,
+        showUltOrbs: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final barrierTransform = findTransformForLabel(tester, 'Barrier');
+    final ultOrbTransform = findTransformForLabel(tester, 'Ult Orbs');
+
+    expect(barrierTransform.transform.storage[0], -1);
+    expect(barrierTransform.transform.storage[5], -1);
+    expect(ultOrbTransform.transform.storage[0], -1);
+    expect(ultOrbTransform.transform.storage[5], -1);
   });
 }

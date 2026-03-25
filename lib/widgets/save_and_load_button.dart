@@ -10,6 +10,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
@@ -106,6 +107,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 final newController = ScreenshotController();
                 final currentPageID =
                     ref.read(strategyProvider.notifier).activePageID;
+                final mapState = ref.read(mapProvider);
 
                 if (currentPageID == null) return;
 
@@ -136,6 +138,9 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                               home: ScreenshotView(
                                 isAttack: activePage.isAttack,
                                 mapValue: newStrat.mapData,
+                                showSpawnBarrier: mapState.showSpawnBarrier,
+                                showRegionNames: mapState.showRegionNames,
+                                showUltOrbs: mapState.showUltOrbs,
                                 agents: activePage.agentData,
                                 abilities: activePage.abilityData,
                                 text: activePage.textData,

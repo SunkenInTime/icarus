@@ -48,6 +48,9 @@ class ScreenshotView extends ConsumerWidget {
   const ScreenshotView({
     super.key,
     required this.mapValue,
+    required this.showSpawnBarrier,
+    required this.showRegionNames,
+    required this.showUltOrbs,
     required this.agents,
     required this.abilities,
     required this.text,
@@ -63,6 +66,9 @@ class ScreenshotView extends ConsumerWidget {
   });
   final StrategyState strategyState;
   final MapValue mapValue;
+  final bool showSpawnBarrier;
+  final bool showRegionNames;
+  final bool showUltOrbs;
   final List<PlacedAgentNode> agents;
   final List<PlacedAbility> abilities;
   final List<PlacedText> text;
@@ -102,6 +108,12 @@ class ScreenshotView extends ConsumerWidget {
         .rebuildAllPaths(CoordinateSystem.instance);
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
+    String barrierAssetName =
+        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_spawn_walls.svg';
+    String calloutsAssetName =
+        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_call_outs${isAttack ? "" : "_defense"}.svg';
+    String ultOrbsAssetName =
+        'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_ult_orbs.svg';
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
     final mapColorMapper = _MapSvgColorMapper({
       0xFF271406: effectivePalette.baseColor,
@@ -144,6 +156,50 @@ class ScreenshotView extends ConsumerWidget {
               fit: BoxFit.contain,
             ),
           ),
+          if (showSpawnBarrier)
+            Positioned(
+              left: mapLeft,
+              top: 0,
+              width: mapWidth,
+              height: CoordinateSystem.screenShotSize.height,
+              child: Transform.flip(
+                flipX: !isAttack,
+                flipY: !isAttack,
+                child: SvgPicture.asset(
+                  barrierAssetName,
+                  semanticsLabel: 'Barrier',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          if (showRegionNames)
+            Positioned(
+              left: mapLeft,
+              top: 0,
+              width: mapWidth,
+              height: CoordinateSystem.screenShotSize.height,
+              child: SvgPicture.asset(
+                calloutsAssetName,
+                semanticsLabel: 'Callouts',
+                fit: BoxFit.contain,
+              ),
+            ),
+          if (showUltOrbs)
+            Positioned(
+              left: mapLeft,
+              top: 0,
+              width: mapWidth,
+              height: CoordinateSystem.screenShotSize.height,
+              child: Transform.flip(
+                flipX: !isAttack,
+                flipY: !isAttack,
+                child: SvgPicture.asset(
+                  ultOrbsAssetName,
+                  semanticsLabel: 'Ult Orbs',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
           const Positioned.fill(
             child: PlacedWidgetBuilder(),
           ),
