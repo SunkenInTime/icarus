@@ -53,6 +53,17 @@ class LineUp extends HiveObject {
     );
   }
 
+  LineUp deepCopy() {
+    return LineUp(
+      id: id,
+      agent: agent.deepCopy<PlacedAgent>(),
+      ability: ability.deepCopy<PlacedAbility>(),
+      youtubeLink: youtubeLink,
+      images: images.map((image) => image.copyWith()).toList(),
+      notes: notes,
+    );
+  }
+
   void switchSides(
       {required double agentSize,
       required double abilitySize,
@@ -274,7 +285,7 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   void fromHive(List<LineUp> lineUps) {
     state = state.copyWith(
-      lineUps: lineUps,
+      lineUps: lineUps.map((lineUp) => lineUp.deepCopy()).toList(),
     );
   }
 
@@ -388,16 +399,19 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   LineUpProviderSnapshot takeSnapshot() {
     return LineUpProviderSnapshot(
-      lineUps: [...state.lineUps],
-      poppedLineUps: [..._poppedLineUps],
+      lineUps: state.lineUps.map((lineUp) => lineUp.deepCopy()).toList(),
+      poppedLineUps:
+          _poppedLineUps.map((lineUp) => lineUp.deepCopy()).toList(),
     );
   }
 
   void restoreSnapshot(LineUpProviderSnapshot snapshot) {
     _poppedLineUps
       ..clear()
-      ..addAll(snapshot.poppedLineUps);
-    state = state.copyWith(lineUps: [...snapshot.lineUps]);
+      ..addAll(snapshot.poppedLineUps.map((lineUp) => lineUp.deepCopy()));
+    state = state.copyWith(
+      lineUps: snapshot.lineUps.map((lineUp) => lineUp.deepCopy()).toList(),
+    );
   }
 }
 

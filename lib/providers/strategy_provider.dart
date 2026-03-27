@@ -355,6 +355,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   bool _saveInProgress = false;
   bool _pendingSave = false;
 
+  bool get _hasLoadedStrategy =>
+      state.stratName != null && state.id != 'testID';
+
   void _reportImportFailure(
     String message, {
     Object? error,
@@ -383,7 +386,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   void refreshAutosaveScheduling() {
     cancelPendingSave();
-    if (state.stratName == null || state.isSaved) {
+    if (!_hasLoadedStrategy || state.isSaved) {
       return;
     }
     if (!ref.read(appPreferencesProvider).autosaveEnabled) {
@@ -404,6 +407,20 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> forceSaveNow(String id) async {
     cancelPendingSave();
     await _performSave(id);
+  }
+
+  Future<bool> flushPendingAutosaveBeforeExit() async {
+    if (!_hasLoadedStrategy || state.isSaved) {
+      return true;
+    }
+
+    if (!ref.read(appPreferencesProvider).autosaveEnabled) {
+      return false;
+    }
+
+    cancelPendingSave();
+    await forceSaveNow(state.id);
+    return true;
   }
 
   // Ensures only one save runs at a time; coalesces a pending one
@@ -3025,7 +3042,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> _flushCurrentStrategyIfNeeded() async {
-    if (state.stratName == null || state.id == 'testID') {
+    if (!_hasLoadedStrategy) {
       return;
     }
     await forceSaveNow(state.id);
@@ -3557,7 +3574,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       utilityData: ref.read(utilityProvider),
       isAttack: ref.read(mapProvider).isAttack,
       settings: ref.read(strategySettingsProvider),
-      lineUps: ref.read(lineUpProvider).lineUps,
+      lineUps:
+          ref.read(lineUpProvider).lineUps.map((lineUp) => lineUp.deepCopy()).toList(),
     );
 
     final strategyTheme = ref.read(strategyThemeProvider);

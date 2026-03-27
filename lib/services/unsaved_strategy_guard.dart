@@ -63,6 +63,28 @@ Future<bool> guardUnsavedStrategyExit({
     return true;
   }
 
+  try {
+    final canContinueSilently = await ref
+        .read(strategyProvider.notifier)
+        .flushPendingAutosaveBeforeExit();
+    if (canContinueSilently) {
+      await onContinue();
+      return true;
+    }
+  } catch (error, stackTrace) {
+    AppErrorReporter.reportError(
+      'Failed to save strategy before leaving.',
+      error: error,
+      stackTrace: stackTrace,
+      source: source,
+    );
+    return false;
+  }
+
+  if (!context.mounted) {
+    return false;
+  }
+
   final decision = await showUnsavedStrategyDialog(context);
   switch (decision) {
     case UnsavedStrategyDecision.save:

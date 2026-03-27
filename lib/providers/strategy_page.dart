@@ -78,7 +78,9 @@ class StrategyPage extends HiveObject {
       )),
       settings: settings?.copyWith() ?? this.settings.copyWith(),
       isAttack: isAttack ?? this.isAttack,
-      lineUps: lineUps ?? List<LineUp>.from(this.lineUps),
+      lineUps: (lineUps ?? this.lineUps)
+          .map((lineUp) => lineUp.deepCopy())
+          .toList(),
     );
   }
 
