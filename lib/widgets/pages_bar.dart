@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
-
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
@@ -17,11 +17,95 @@ class PagesBar extends ConsumerStatefulWidget {
   ConsumerState<PagesBar> createState() => _PagesBarState();
 }
 
-class _PagesBarState extends ConsumerState<PagesBar>
-    with SingleTickerProviderStateMixin {
+class _PagesBarState extends ConsumerState<PagesBar> {
+  static const double _defaultExpandedHeight = 310;
+  static const double _minExpandedHeight = 120;
+  static const double _maxExpandedHeight = 520;
+
   bool _expanded = false;
+  bool _isResizing = false;
+  double? _liveExpandedHeight;
+  double? _persistedExpandedHeightCache;
+  final GlobalKey _expandedPanelKey = GlobalKey();
 
   StrategyData? _strategy(Box<StrategyData> box, String id) => box.get(id);
+
+  double _clampExpandedHeight(double height) {
+    return height.clamp(_minExpandedHeight, _maxExpandedHeight).toDouble();
+  }
+
+  double _effectiveExpandedHeight(double persistedHeight) {
+    final baseHeight = _persistedExpandedHeightCache ?? persistedHeight;
+    return _clampExpandedHeight(
+      _isResizing ? (_liveExpandedHeight ?? baseHeight) : baseHeight,
+    );
+  }
+
+  void _startResize() {
+    final context = _expandedPanelKey.currentContext;
+    final renderBox = context?.findRenderObject() as RenderBox?;
+    final renderedHeight = renderBox != null && renderBox.hasSize
+        ? renderBox.size.height
+        : (_persistedExpandedHeightCache ?? _defaultExpandedHeight);
+
+    setState(() {
+      _isResizing = true;
+      _liveExpandedHeight = _clampExpandedHeight(renderedHeight);
+    });
+  }
+
+  void _updateResize(Offset globalPosition) {
+    final context = _expandedPanelKey.currentContext;
+    if (context == null) return;
+
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) return;
+
+    final localPosition = renderBox.globalToLocal(globalPosition);
+    final nextHeight =
+        _clampExpandedHeight(renderBox.size.height - localPosition.dy);
+    final currentHeight = _liveExpandedHeight;
+    if (currentHeight != null && (nextHeight - currentHeight).abs() < 0.5) {
+      return;
+    }
+
+    setState(() {
+      _liveExpandedHeight = nextHeight;
+    });
+  }
+
+  Future<void> _endResize() async {
+    if (!_isResizing) return;
+
+    final height = _clampExpandedHeight(
+      _liveExpandedHeight ??
+          _persistedExpandedHeightCache ??
+          _defaultExpandedHeight,
+    );
+
+    setState(() {
+      _isResizing = false;
+      _liveExpandedHeight = null;
+      _persistedExpandedHeightCache = height;
+    });
+
+    await ref
+        .read(appPreferencesProvider.notifier)
+        .setPagesBarExpandedHeight(height);
+
+    if (!mounted) return;
+    setState(() {
+      _persistedExpandedHeightCache = null;
+    });
+  }
+
+  Future<void> _collapsePanel() async {
+    if (_isResizing) {
+      await _endResize();
+    }
+    if (!mounted) return;
+    setState(() => _expanded = false);
+  }
 
   Future<void> _addPage() async {
     await ref.read(strategyProvider.notifier).addPage();
@@ -114,6 +198,9 @@ class _PagesBarState extends ConsumerState<PagesBar>
     final strategyId = ref.watch(strategyProvider).id;
     final activePageIdFromState =
         ref.watch(strategyProvider.select((state) => state.activePageId));
+    final persistedExpandedHeight = ref.watch(
+      appPreferencesProvider.select((prefs) => prefs.pagesBarExpandedHeight),
+    );
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
     return ValueListenableBuilder(
@@ -143,18 +230,21 @@ class _PagesBarState extends ConsumerState<PagesBar>
             ),
           ),
           width: 224,
-          // Height grows when expanded
           padding: EdgeInsets.zero,
           child: _expanded
               ? _ExpandedPanel(
                   pages: pages,
-                  strategy: strat,
                   activePageId: activePageId,
+                  height: _effectiveExpandedHeight(persistedExpandedHeight),
+                  panelKey: _expandedPanelKey,
                   onSelect: _selectPage,
                   onRename: (p) => _renamePage(strat, p),
                   onDelete: (p) => _deletePage(strat, p),
                   onAdd: _addPage,
-                  onCollapse: () => setState(() => _expanded = false),
+                  onCollapse: _collapsePanel,
+                  onResizeStart: _startResize,
+                  onResizeUpdate: _updateResize,
+                  onResizeEnd: _endResize,
                 )
               : _CollapsedPill(
                   activeName: activeName,
@@ -221,40 +311,46 @@ class _CollapsedPill extends StatelessWidget {
 class _ExpandedPanel extends ConsumerWidget {
   const _ExpandedPanel({
     required this.pages,
-    required this.strategy,
     required this.activePageId,
+    required this.height,
+    required this.panelKey,
     required this.onSelect,
     required this.onRename,
     required this.onDelete,
     required this.onAdd,
     required this.onCollapse,
+    required this.onResizeStart,
+    required this.onResizeUpdate,
+    required this.onResizeEnd,
   });
 
   final List<StrategyPage> pages;
-  final StrategyData strategy;
   final String? activePageId;
+  final double height;
+  final GlobalKey panelKey;
   final ValueChanged<String> onSelect;
   final ValueChanged<StrategyPage> onRename;
   final ValueChanged<StrategyPage> onDelete;
   final VoidCallback onAdd;
   final VoidCallback onCollapse;
+  final VoidCallback onResizeStart;
+  final ValueChanged<Offset> onResizeUpdate;
+  final Future<void> Function() onResizeEnd;
 
   static const double _rowHeight = 40; // each page tile height
   static const double _verticalSpacing = 10; // separator height
+  static const double _resizeHandleHeight = 6;
   static const double _headerFooterHeight = 48 + 1; // bottom bar + divider
-  static const double _topPadding = 8; // list top padding
+  static const double _topPadding = 6; // handle + gap should match side inset
   static const double _bottomPadding = 0; // list bottom padding inside Expanded
-  static const double _maxPanelHeight = 310; // previous max constraint
 
-  double _computeDesiredHeight(int count) {
-    if (count == 0) return _headerFooterHeight + 56; // fallback
+  static double _computeContentHeight(int count) {
+    if (count == 0) return _headerFooterHeight + _resizeHandleHeight + 56;
     final rowsHeight = count * _rowHeight;
     final spacersHeight = (count - 1) * _verticalSpacing;
     final listSection =
         _topPadding + rowsHeight + spacersHeight + _bottomPadding;
-    final total =
-        listSection + _headerFooterHeight; // include footer (add/collapse)
-    return total.clamp(0, _maxPanelHeight);
+    return _resizeHandleHeight + listSection + _headerFooterHeight;
   }
 
   Widget proxyDecorator(Widget child, int index, Animation<double> animation) {
@@ -263,8 +359,14 @@ class _ExpandedPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final desiredHeight = _computeDesiredHeight(pages.length);
-    final needsScroll = desiredHeight >= _maxPanelHeight - 0.5; // approximate
+    final contentHeight = _computeContentHeight(pages.length);
+    final listViewportHeight =
+        height - _resizeHandleHeight - _headerFooterHeight - _topPadding - 8;
+    final availableListHeight = listViewportHeight > 0 ? listViewportHeight : 0;
+    final contentListHeight = pages.isEmpty
+        ? 56.0
+        : (pages.length * _rowHeight) + ((pages.length - 1) * _verticalSpacing);
+    final needsScroll = contentListHeight > availableListHeight + 0.5;
     final activeIndex = activePageId == null
         ? -1
         : pages.indexWhere((p) => p.id == activePageId);
@@ -279,17 +381,18 @@ class _ExpandedPanel extends ConsumerWidget {
       if (forwardIndex >= pages.length) forwardIndex = 0;
     }
 
-    return Container(
-      constraints: BoxConstraints(
-        // Allow it to grow with content up to max
-        maxHeight: _maxPanelHeight,
-        minHeight: desiredHeight,
-      ),
+    return SizedBox(
+      key: panelKey,
+      height: height < contentHeight ? contentHeight : height,
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          // List / content section
-          Flexible(
+          _ResizeHandle(
+            height: _resizeHandleHeight,
+            onResizeStart: onResizeStart,
+            onResizeUpdate: onResizeUpdate,
+            onResizeEnd: onResizeEnd,
+          ),
+          Expanded(
             child: Padding(
               padding: const EdgeInsets.only(top: _topPadding),
               child: ReorderableListView.builder(
@@ -299,7 +402,7 @@ class _ExpandedPanel extends ConsumerWidget {
                       .reorderPage(oldIndex, newIndex);
                 },
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                shrinkWrap: needsScroll ? false : true,
+                shrinkWrap: false,
                 physics:
                     needsScroll ? null : const NeverScrollableScrollPhysics(),
                 itemCount: pages.length,
@@ -375,6 +478,54 @@ class _ExpandedPanel extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ResizeHandle extends StatelessWidget {
+  const _ResizeHandle({
+    required this.height,
+    required this.onResizeStart,
+    required this.onResizeUpdate,
+    required this.onResizeEnd,
+  });
+
+  final double height;
+  final VoidCallback onResizeStart;
+  final ValueChanged<Offset> onResizeUpdate;
+  final Future<void> Function() onResizeEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeUpDown,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onVerticalDragStart: (_) => onResizeStart(),
+        onVerticalDragUpdate: (details) =>
+            onResizeUpdate(details.globalPosition),
+        onVerticalDragEnd: (_) {
+          onResizeEnd();
+        },
+        onVerticalDragCancel: () {
+          onResizeEnd();
+        },
+        child: SizedBox(
+          height: height,
+          width: double.infinity,
+          child: Center(
+            child: Container(
+              width: 36,
+              height: 2,
+              decoration: BoxDecoration(
+                color: Settings.tacticalVioletTheme.mutedForeground
+                    .withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
