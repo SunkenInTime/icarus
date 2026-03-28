@@ -1,7 +1,11 @@
 PODS:
+  - cryptography_flutter_plus (0.2.0):
+    - FlutterMacOS
   - custom_mouse_cursor (0.0.1):
     - FlutterMacOS
   - desktop_drop (0.0.1):
+    - FlutterMacOS
+  - desktop_updater (0.0.1):
     - FlutterMacOS
   - file_picker (0.0.1):
     - FlutterMacOS
@@ -23,8 +27,10 @@ PODS:
     - FlutterMacOS
 
 DEPENDENCIES:
+  - cryptography_flutter_plus (from `Flutter/ephemeral/.symlinks/plugins/cryptography_flutter_plus/macos`)
   - custom_mouse_cursor (from `Flutter/ephemeral/.symlinks/plugins/custom_mouse_cursor/macos`)
   - desktop_drop (from `Flutter/ephemeral/.symlinks/plugins/desktop_drop/macos`)
+  - desktop_updater (from `Flutter/ephemeral/.symlinks/plugins/desktop_updater/macos`)
   - file_picker (from `Flutter/ephemeral/.symlinks/plugins/file_picker/macos`)
   - flutter_inappwebview_macos (from `Flutter/ephemeral/.symlinks/plugins/flutter_inappwebview_macos/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
@@ -39,10 +45,14 @@ SPEC REPOS:
     - OrderedSet
 
 EXTERNAL SOURCES:
+  cryptography_flutter_plus:
+    :path: Flutter/ephemeral/.symlinks/plugins/cryptography_flutter_plus/macos
   custom_mouse_cursor:
     :path: Flutter/ephemeral/.symlinks/plugins/custom_mouse_cursor/macos
   desktop_drop:
     :path: Flutter/ephemeral/.symlinks/plugins/desktop_drop/macos
+  desktop_updater:
+    :path: Flutter/ephemeral/.symlinks/plugins/desktop_updater/macos
   file_picker:
     :path: Flutter/ephemeral/.symlinks/plugins/file_picker/macos
   flutter_inappwebview_macos:
@@ -61,8 +71,10 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/window_manager/macos
 
 SPEC CHECKSUMS:
+  cryptography_flutter_plus: b790cf76f050be15566d4ae320574b35cff72d1e
   custom_mouse_cursor: 19b9cb1bcd2e792e326c15e32b48f8dba06132da
   desktop_drop: e52397f93b3daec9fe1d504f1d5a21b76403d8ae
+  desktop_updater: c6cadea9a19511e0b0630183a58e949ad8f99031
   file_picker: e716a70a9fe5fd9e09ebc922d7541464289443af
   flutter_inappwebview_macos: bdf207b8f4ebd58e86ae06cd96b147de99a67c9b
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1

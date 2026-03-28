@@ -133,9 +133,7 @@ class _PagesBarState extends ConsumerState<PagesBar>
             )
             .name;
 
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeInOut,
+        return Container(
           decoration: BoxDecoration(
             color: Settings.tacticalVioletTheme.card,
             borderRadius: BorderRadius.circular(16),
@@ -281,9 +279,7 @@ class _ExpandedPanel extends ConsumerWidget {
       if (forwardIndex >= pages.length) forwardIndex = 0;
     }
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      curve: Curves.easeInOut,
+    return Container(
       constraints: BoxConstraints(
         // Allow it to grow with content up to max
         maxHeight: _maxPanelHeight,
