@@ -59,7 +59,7 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
               painter: LinePainter(
                 resizeCounter: resizeCounter,
                 hoveredLineUpId: ref.watch(hoveredLineUpIdProvider),
-                lineUps: ref.watch(lineUpProvider).lineUps,
+                groups: ref.watch(lineUpProvider).groups,
                 coordinateSystem: CoordinateSystem.instance,
                 abilitySize: ref.watch(strategySettingsProvider).abilitySize,
                 agentSize: coordinateSystem.scale(
@@ -81,7 +81,7 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
 
 class LinePainter extends CustomPainter {
   final String? hoveredLineUpId;
-  final List<LineUp> lineUps;
+  final List<LineUpGroup> groups;
   final CoordinateSystem coordinateSystem;
   final double abilitySize;
   final double agentSize;
@@ -94,7 +94,7 @@ class LinePainter extends CustomPainter {
     super.repaint,
     required this.resizeCounter,
     required this.hoveredLineUpId,
-    required this.lineUps,
+    required this.groups,
     required this.coordinateSystem,
     required this.abilitySize,
     required this.agentSize,
@@ -117,25 +117,32 @@ class LinePainter extends CustomPainter {
       ..isAntiAlias = true;
 
     // Current lineup highlight moved to CurrentLineUpPainter.
-    for (final lineUp in lineUps) {
+    for (final group in groups) {
       final startPosition =
-          coordinateSystem.coordinateToScreen(lineUp.agent.position) +
+          coordinateSystem.coordinateToScreen(group.agent.position) +
               Offset((agentSize / 2), (agentSize / 2));
 
-      final endPosition = coordinateSystem
-              .coordinateToScreen(lineUp.ability.position) +
-          lineUp.ability.data.abilityData!
-              .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
-              .scale(
-                  coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
+      for (final item in group.items) {
+        final endPosition =
+            coordinateSystem.coordinateToScreen(item.ability.position) +
+                item.ability.data.abilityData!
+                    .getAnchorPoint(
+                      mapScale: mapScale,
+                      abilitySize: abilitySize,
+                    )
+                    .scale(
+                      coordinateSystem.scaleFactor,
+                      coordinateSystem.scaleFactor,
+                    );
 
-      canvas.drawLine(
-        startPosition,
-        endPosition,
-        (hoveredLineUpId == lineUp.id && hoveredLineUpId != null)
-            ? highlightPaint
-            : paint,
-      );
+        canvas.drawLine(
+          startPosition,
+          endPosition,
+          (hoveredLineUpId == group.id && hoveredLineUpId != null)
+              ? highlightPaint
+              : paint,
+        );
+      }
     }
   }
 
@@ -143,7 +150,7 @@ class LinePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
     if (oldDelegate is LinePainter) {
       return oldDelegate.hoveredLineUpId != hoveredLineUpId ||
-          oldDelegate.lineUps != lineUps ||
+          oldDelegate.groups != groups ||
           oldDelegate.coordinateSystem.effectiveSize !=
               coordinateSystem.effectiveSize ||
           oldDelegate.abilitySize != abilitySize ||

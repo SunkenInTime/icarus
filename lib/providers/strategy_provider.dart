@@ -20,6 +20,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
+import 'package:icarus/migrations/lineup_group_migration.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -486,7 +487,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
       final customCircleMigrated =
           migrateCustomCircleWrapper(squareAoeMigrated);
-      if (customCircleMigrated != squareAoeMigrated) {
+      final lineUpGroupMigrated = migrateLineUpGroups(customCircleMigrated);
+      if (lineUpGroupMigrated != customCircleMigrated) {
+        await box.put(lineUpGroupMigrated.id, lineUpGroupMigrated);
+      } else if (customCircleMigrated != squareAoeMigrated) {
         await box.put(customCircleMigrated.id, customCircleMigrated);
       } else if (squareAoeMigrated != abilityScaleMigrated) {
         await box.put(squareAoeMigrated.id, squareAoeMigrated);
@@ -589,7 +593,32 @@ class StrategyProvider extends Notifier<StrategyState> {
     final abilityScaleMigrated =
         migrateAbilityScale(worldMigrated, force: forceAbilityScale);
     final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
-    return migrateCustomCircleWrapper(squareAoeMigrated);
+    final customCircleMigrated = migrateCustomCircleWrapper(squareAoeMigrated);
+    return migrateLineUpGroups(customCircleMigrated);
+  }
+
+  static StrategyData migrateLineUpGroups(StrategyData strat,
+      {bool force = false}) {
+    if (!force && strat.versionNumber >= LineUpGroupMigration.version) {
+      return strat;
+    }
+
+    final migratedPages = LineUpGroupMigration.migratePages(pages: strat.pages);
+    final hasPageChanged = migratedPages.length == strat.pages.length &&
+        migratedPages.asMap().entries.any((entry) {
+          final index = entry.key;
+          return entry.value != strat.pages[index];
+        });
+
+    if (!hasPageChanged && !force) {
+      return strat;
+    }
+
+    return strat.copyWith(
+      pages: migratedPages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
   }
 
   static Future<StrategyData> migrateLegacyData(StrategyData strat) async {
@@ -733,19 +762,24 @@ class StrategyProvider extends Notifier<StrategyState> {
       ];
     }
 
-    List<LineUp> shiftLineUps(List<LineUp> lineUps) {
+    List<LineUpGroup> shiftLineUpGroups(List<LineUpGroup> lineUpGroups) {
       return [
-        for (final lineUp in lineUps)
+        for (final group in lineUpGroups)
           () {
-            final shiftedAgent = lineUp.agent.copyWith(
-              position: shift(lineUp.agent.position),
-            )..isDeleted = lineUp.agent.isDeleted;
-            final shiftedAbility = lineUp.ability.copyWith(
-              position: shift(lineUp.ability.position),
-            )..isDeleted = lineUp.ability.isDeleted;
-            return lineUp.copyWith(
+            final shiftedAgent = group.agent.copyWith(
+              position: shift(group.agent.position),
+            )..isDeleted = group.agent.isDeleted;
+            final shiftedItems = [
+              for (final item in group.items)
+                item.copyWith(
+                  ability: item.ability.copyWith(
+                    position: shift(item.ability.position),
+                  )..isDeleted = item.ability.isDeleted,
+                ),
+            ];
+            return group.copyWith(
               agent: shiftedAgent,
-              ability: shiftedAbility,
+              items: shiftedItems,
             );
           }()
       ];
@@ -821,7 +855,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               imageData: shiftImages(page.imageData),
               utilityData: shiftUtilities(page.utilityData),
               drawingData: shiftDrawings(page.drawingData),
-              lineUps: shiftLineUps(page.lineUps),
+              lineUpGroups: shiftLineUpGroups(page.lineUpGroups),
             ))
         .toList(growable: false);
 
@@ -876,7 +910,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               MapThemeProfilesProvider.immutableDefaultProfileId,
           overridePalette: migrated.themeOverridePalette,
         );
-    ref.read(lineUpProvider.notifier).fromHive(migratedPage.lineUps);
+    ref.read(lineUpProvider.notifier).fromHive(migratedPage.lineUpGroups);
 
     // Defer path rebuild until next frame (layout complete)
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1167,10 +1201,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       List<String> allImageIds = [];
       for (final page in newStrat.pages) {
         allImageIds.addAll(page.imageData.map((image) => image.id));
-        for (final lineUp in page.lineUps) {
-          List<String> lineUpImages = [];
-          lineUpImages.addAll(lineUp.images.map((image) => image.id));
-          allImageIds.addAll(lineUpImages);
+        for (final group in page.lineUpGroups) {
+          for (final item in group.items) {
+            allImageIds.addAll(item.images.map((image) => image.id));
+          }
         }
       }
       await ref
@@ -1196,7 +1230,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         .fromHive(migratedStrategy.mapData, page.isAttack);
     ref.read(textProvider.notifier).fromHive(page.textData);
     ref.read(placedImageProvider.notifier).fromHive(page.imageData);
-    ref.read(lineUpProvider.notifier).fromHive(page.lineUps);
+    ref.read(lineUpProvider.notifier).fromHive(page.lineUpGroups);
     ref.read(strategySettingsProvider.notifier).fromHive(page.settings);
     ref.read(strategyThemeProvider.notifier).fromStrategy(
           profileId: migratedStrategy.themeProfileId ??
@@ -3006,7 +3040,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           textData: [],
           imageData: [],
           utilityData: [],
-          lineUps: [],
+          lineUpGroups: [],
           sortIndex: 0,
           isAttack: true,
           settings: StrategySettings(),
@@ -3574,8 +3608,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       utilityData: ref.read(utilityProvider),
       isAttack: ref.read(mapProvider).isAttack,
       settings: ref.read(strategySettingsProvider),
-      lineUps:
-          ref.read(lineUpProvider).lineUps.map((lineUp) => lineUp.deepCopy()).toList(),
+      lineUpGroups: ref
+          .read(lineUpProvider)
+          .groups
+          .map((group) => group.deepCopy())
+          .toList(),
     );
 
     final strategyTheme = ref.read(strategyThemeProvider);

@@ -17,6 +17,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/custom_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/sector_circle_widget.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
@@ -625,6 +626,224 @@ void main() {
         isFalse,
       );
     });
+
+    testWidgets('lineup square body right-click does not show menu',
+        (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_TestActionProvider.new),
+          mapProvider.overrideWith(_FixedMapProvider.new),
+        ],
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+
+      final lineUp = LineUp(
+        id: 'lineup-body-no-menu',
+        agent: PlacedAgent(
+          id: 'lineup-body-agent',
+          type: AgentType.breach,
+          position: const Offset(20, 20),
+        ),
+        ability: PlacedAbility(
+          id: 'lineup-body-ability',
+          data: AgentData.agents[AgentType.breach]!.abilities.first,
+          position: Offset.zero,
+        ),
+        youtubeLink: '',
+        images: const [],
+        notes: 'body hover note',
+      );
+      container.read(lineUpProvider.notifier).fromHive([lineUp]);
+
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Stack(
+            children: [
+              LineUpAbilityWidget(lineUp: lineUp),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final squareRect = tester.getRect(find.byType(CustomSquareWidget));
+      await tester.tapAt(
+        squareRect.topCenter + const Offset(0, 6),
+        buttons: kSecondaryButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Range'), findsNothing);
+      expect(find.text('Delete'), findsNothing);
+    });
+
+    testWidgets('lineup square icon right-click still shows menu',
+        (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_TestActionProvider.new),
+          mapProvider.overrideWith(_FixedMapProvider.new),
+        ],
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+
+      final lineUp = LineUp(
+        id: 'lineup-icon-menu',
+        agent: PlacedAgent(
+          id: 'lineup-icon-agent',
+          type: AgentType.breach,
+          position: const Offset(20, 20),
+        ),
+        ability: PlacedAbility(
+          id: 'lineup-icon-ability',
+          data: AgentData.agents[AgentType.breach]!.abilities.first,
+          position: Offset.zero,
+        ),
+        youtubeLink: '',
+        images: const [],
+        notes: 'icon hover note',
+      );
+      container.read(lineUpProvider.notifier).fromHive([lineUp]);
+
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Stack(
+            children: [
+              LineUpAbilityWidget(lineUp: lineUp),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _openContextMenu(tester, find.byType(AbilityWidget));
+
+      expect(find.text('Range'), findsOneWidget);
+      expect(find.text('Delete'), findsOneWidget);
+    });
+
+    testWidgets('lineup note hover is icon-only', (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_TestActionProvider.new),
+          mapProvider.overrideWith(_FixedMapProvider.new),
+        ],
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+
+      final lineUp = LineUp(
+        id: 'lineup-hover-note',
+        agent: PlacedAgent(
+          id: 'lineup-hover-agent',
+          type: AgentType.breach,
+          position: const Offset(20, 20),
+        ),
+        ability: PlacedAbility(
+          id: 'lineup-hover-ability',
+          data: AgentData.agents[AgentType.breach]!.abilities.first,
+          position: Offset.zero,
+        ),
+        youtubeLink: '',
+        images: const [],
+        notes: 'icon-only note',
+      );
+      container.read(lineUpProvider.notifier).fromHive([lineUp]);
+
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Stack(
+            children: [
+              LineUpAbilityWidget(lineUp: lineUp),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer();
+
+      final squareRect = tester.getRect(find.byType(CustomSquareWidget));
+      await mouse.moveTo(squareRect.topCenter + const Offset(0, 6));
+      await tester.pumpAndSettle();
+
+      expect(find.text('icon-only note'), findsNothing);
+
+      await mouse.moveTo(tester.getCenter(find.byType(AbilityWidget)));
+      await tester.pumpAndSettle();
+
+      expect(find.text('icon-only note'), findsOneWidget);
+    });
+
+    testWidgets('lineup resizable square body right-click does not show menu',
+        (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_TestActionProvider.new),
+          mapProvider.overrideWith(_FixedMapProvider.new),
+        ],
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+
+      final lineUp = LineUp(
+        id: 'lineup-resizable-body-no-menu',
+        agent: PlacedAgent(
+          id: 'lineup-resizable-agent',
+          type: AgentType.neon,
+          position: const Offset(20, 20),
+        ),
+        ability: PlacedAbility(
+          id: 'lineup-resizable-ability',
+          data: AgentData.agents[AgentType.neon]!.abilities.first,
+          position: Offset.zero,
+          rotation: math.pi / 6,
+        ),
+        youtubeLink: '',
+        images: const [],
+        notes: 'resizable note',
+      );
+      container.read(lineUpProvider.notifier).fromHive([lineUp]);
+
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Stack(
+            children: [
+              LineUpAbilityWidget(lineUp: lineUp),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final resizableRect = tester.getRect(find.byType(ResizableSquareWidget));
+      await tester.tapAt(
+        resizableRect.topCenter + const Offset(0, 6),
+        buttons: kSecondaryButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Range'), findsNothing);
+      expect(find.text('Delete'), findsNothing);
+    });
   });
 }
 
@@ -692,7 +911,7 @@ AbilityInfo _sectorAbilityInfo() {
     name: 'Sector',
     iconPath: 'assets/agents/Cypher/1.webp',
     type: AgentType.cypher,
-    index: 95,
+    index: 0,
     abilityData: SectorCircleAbility(
       iconPath: 'assets/agents/Cypher/1.webp',
       size: 6.5,

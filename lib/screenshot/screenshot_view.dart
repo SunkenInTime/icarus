@@ -45,7 +45,7 @@ class _MapSvgColorMapper extends ColorMapper {
 }
 
 class ScreenshotView extends ConsumerWidget {
-  const ScreenshotView({
+  ScreenshotView({
     super.key,
     required this.mapValue,
     required this.showSpawnBarrier,
@@ -60,10 +60,13 @@ class ScreenshotView extends ConsumerWidget {
     required this.strategySettings,
     required this.isAttack,
     required this.strategyState,
-    required this.lineUps,
+    List<LineUpGroup> lineUpGroups = const [],
+    @Deprecated('Use lineUpGroups instead') List<LineUp> lineUps = const [],
     required this.themeProfileId,
     required this.themeOverridePalette,
-  });
+  }) : lineUpGroups = lineUpGroups.isNotEmpty
+            ? lineUpGroups
+            : lineUps.map(LineUpGroup.fromLegacyLineUp).toList();
   final StrategyState strategyState;
   final MapValue mapValue;
   final bool showSpawnBarrier;
@@ -77,7 +80,7 @@ class ScreenshotView extends ConsumerWidget {
   final List<PlacedUtility> utilities;
   final StrategySettings strategySettings;
   final bool isAttack;
-  final List<LineUp> lineUps;
+  final List<LineUpGroup> lineUpGroups;
   final String? themeProfileId;
   final MapThemePalette? themeOverridePalette;
 
@@ -101,7 +104,7 @@ class ScreenshotView extends ConsumerWidget {
         );
     ref.read(utilityProvider.notifier).fromHive(utilities);
 
-    ref.read(lineUpProvider.notifier).fromHive(lineUps);
+    ref.read(lineUpProvider.notifier).fromHive(lineUpGroups);
 
     ref
         .read(drawingProvider.notifier)

@@ -4,8 +4,8 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 
-class FramedIconShell extends ConsumerWidget {
-  const FramedIconShell({
+class FramedAbilityIconShell extends ConsumerWidget {
+  const FramedAbilityIconShell({
     super.key,
     required this.size,
     required this.isAlly,
@@ -21,8 +21,8 @@ class FramedIconShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final isLineUpHovered = lineUpId != null &&
-        ref.watch(hoveredLineUpIdProvider) == lineUpId;
+    final isLineUpHovered =
+        lineUpId != null && ref.watch(hoveredLineUpIdProvider) == lineUpId;
 
     return Container(
       width: coordinateSystem.scale(size),

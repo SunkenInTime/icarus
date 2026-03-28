@@ -14,11 +14,13 @@ class MouseWatch extends ConsumerStatefulWidget {
     this.cursor = SystemMouseCursors.basic,
     this.deleteTarget,
     this.lineUpId,
+    this.lineUpItemId,
     this.contextMenuItems,
     this.onTap,
   });
 
   final String? lineUpId;
+  final String? lineUpItemId;
   final Widget child;
   final HoveredDeleteTarget? deleteTarget;
   final SystemMouseCursor cursor;
@@ -89,19 +91,17 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
 
   @override
   Widget build(BuildContext context) {
-    final LineUp? lineUp = widget.lineUpId == null
-        ? null
-        : ref.watch(
-            lineUpProvider.select((state) {
-              for (final lineUp in state.lineUps) {
-                if (lineUp.id == widget.lineUpId) {
-                  return lineUp;
-                }
-              }
-              return null;
-            }),
-          );
-    final lineUpNotes = lineUp?.notes;
+    ref.watch(lineUpProvider);
+    final LineUpItem? lineUpItem =
+        widget.lineUpId == null || widget.lineUpItemId == null
+            ? null
+            : ref
+                .read(lineUpProvider.notifier)
+                .getItemById(
+                  groupId: widget.lineUpId!,
+                  itemId: widget.lineUpItemId!,
+                );
+    final lineUpNotes = lineUpItem?.notes;
     final hasLineUpNote = (lineUpNotes?.trim().isNotEmpty ?? false);
     final menuItems = widget.contextMenuItems ??
         (widget.lineUpId == null
@@ -114,9 +114,9 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
                   ),
                   child: const Text('Delete'),
                   onPressed: () {
-                    ref
-                        .read(lineUpProvider.notifier)
-                        .deleteLineUpById(widget.lineUpId!);
+                    ref.read(lineUpProvider.notifier).deleteGroupById(
+                          widget.lineUpId!,
+                        );
                   },
                 ),
               ]);
@@ -150,9 +150,10 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
                 showDialog(
                   context: context,
                   builder: (context) => LineUpMediaCarousel(
-                    lineUpId: widget.lineUpId!,
-                    images: lineUp!.images,
-                    youtubeLink: lineUp.youtubeLink,
+                    lineUpGroupId: widget.lineUpId!,
+                    lineUpItemId: widget.lineUpItemId!,
+                    images: lineUpItem!.images,
+                    youtubeLink: lineUpItem.youtubeLink,
                   ),
                 );
               });

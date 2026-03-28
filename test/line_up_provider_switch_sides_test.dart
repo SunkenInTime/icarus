@@ -1,6 +1,6 @@
 import 'dart:math' as math;
-import 'dart:ui';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
@@ -11,6 +11,8 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:toastification/toastification.dart';
 
 class _NoopActionProvider extends ActionProvider {
   @override
@@ -49,6 +51,150 @@ ProviderContainer _createContainer(MapValue mapValue) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('LineUpProvider locked add-item mode', () {
+    setUp(() {
+      CoordinateSystem(playAreaSize: const Size(1920, 1080));
+    });
+
+    test('startNewItemForGroup stores target group and locked agent type', () {
+      final container = _createContainer(MapValue.bind);
+      final notifier = container.read(lineUpProvider.notifier);
+      final group = LineUpGroup(
+        id: 'group-1',
+        agent: PlacedAgent(
+          id: 'group-agent',
+          type: AgentType.breach,
+          position: const Offset(120, 220),
+        ),
+        items: [
+          LineUpItem(
+            id: 'item-1',
+            ability: PlacedAbility(
+              id: 'ability-1',
+              data: AgentData.agents[AgentType.breach]!.abilities.first,
+              position: const Offset(220, 320),
+            ),
+          ),
+        ],
+      );
+
+      notifier.addGroup(group);
+      notifier.startNewItemForGroup(group.id);
+
+      final state = container.read(lineUpProvider);
+      expect(state.currentGroupId, group.id);
+      expect(state.placementMode, LineUpPlacementMode.addItemToGroup);
+      expect(state.lockedAgentType, AgentType.breach);
+      expect(state.currentAgent, isNull);
+      expect(notifier.getCurrentPreviewAgent()?.id, group.agent.id);
+      expect(notifier.isLockedAddItemMode, isTrue);
+    });
+
+    test('setCurrentAbility accepts matching ability in locked add-item mode',
+        () {
+      final container = _createContainer(MapValue.bind);
+      final notifier = container.read(lineUpProvider.notifier);
+      final group = LineUpGroup(
+        id: 'group-accept',
+        agent: PlacedAgent(
+          id: 'group-agent',
+          type: AgentType.breach,
+          position: const Offset(120, 220),
+        ),
+        items: const [],
+      );
+
+      notifier.addGroup(group);
+      notifier.startNewItemForGroup(group.id);
+
+      final ability = PlacedAbility(
+        id: 'new-ability',
+        data: AgentData.agents[AgentType.breach]!.abilities.first,
+        position: const Offset(300, 400),
+      );
+
+      notifier.setCurrentAbility(ability);
+
+      final state = container.read(lineUpProvider);
+      expect(state.currentAbility, isNotNull);
+      expect(state.currentAbility!.data.type, AgentType.breach);
+      expect(state.currentAbility!.lineUpID, group.id);
+    });
+
+    testWidgets(
+        'setCurrentAbility rejects mismatched ability in locked add-item mode',
+        (tester) async {
+      await tester.pumpWidget(
+        const ToastificationWrapper(
+          child: ShadApp(
+            home: SizedBox.shrink(),
+          ),
+        ),
+      );
+      final container = _createContainer(MapValue.bind);
+      final notifier = container.read(lineUpProvider.notifier);
+      final group = LineUpGroup(
+        id: 'group-reject',
+        agent: PlacedAgent(
+          id: 'group-agent',
+          type: AgentType.breach,
+          position: const Offset(120, 220),
+        ),
+        items: const [],
+      );
+
+      notifier.addGroup(group);
+      notifier.startNewItemForGroup(group.id);
+      notifier.setCurrentAbility(
+        PlacedAbility(
+          id: 'good-ability',
+          data: AgentData.agents[AgentType.breach]!.abilities.first,
+          position: const Offset(300, 400),
+        ),
+      );
+
+      notifier.setCurrentAbility(
+        PlacedAbility(
+          id: 'bad-ability',
+          data: AgentData.agents[AgentType.sova]!.abilities.first,
+          position: const Offset(320, 420),
+        ),
+      );
+
+      final currentAbility = container.read(lineUpProvider).currentAbility;
+      expect(currentAbility, isNotNull);
+      expect(currentAbility!.id, 'good-ability');
+      expect(currentAbility.data.type, AgentType.breach);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+    });
+
+    test('clearCurrentPlacing resets locked add-item metadata', () {
+      final container = _createContainer(MapValue.bind);
+      final notifier = container.read(lineUpProvider.notifier);
+      final group = LineUpGroup(
+        id: 'group-clear',
+        agent: PlacedAgent(
+          id: 'group-agent',
+          type: AgentType.breach,
+          position: const Offset(120, 220),
+        ),
+        items: const [],
+      );
+
+      notifier.addGroup(group);
+      notifier.startNewItemForGroup(group.id);
+      notifier.clearCurrentPlacing();
+
+      final state = container.read(lineUpProvider);
+      expect(state.currentGroupId, isNull);
+      expect(state.currentAbility, isNull);
+      expect(state.placementMode, isNull);
+      expect(state.lockedAgentType, isNull);
+      expect(notifier.isLockedAddItemMode, isFalse);
+    });
+  });
 
   group('LineUpProvider.switchSides', () {
     late AbilityInfo abilityInfo;

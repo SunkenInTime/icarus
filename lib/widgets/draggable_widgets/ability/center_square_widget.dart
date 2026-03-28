@@ -17,6 +17,7 @@ class CenterSquareWidget extends ConsumerWidget {
     required this.id,
     required this.isAlly,
     this.lineUpId,
+    this.lineUpItemId,
     this.visualState,
     this.watchMouse = true,
     this.contextMenuItems,
@@ -29,6 +30,7 @@ class CenterSquareWidget extends ConsumerWidget {
   final String? id;
   final bool isAlly;
   final String? lineUpId;
+  final String? lineUpItemId;
   final AbilityVisualState? visualState;
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
@@ -72,6 +74,7 @@ class CenterSquareWidget extends ConsumerWidget {
                 alignment: Alignment.center,
                 child: AbilityWidget(
                   lineUpId: lineUpId,
+                  lineUpItemId: lineUpItemId,
                   iconPath: iconPath,
                   id: id,
                   isAlly: isAlly,

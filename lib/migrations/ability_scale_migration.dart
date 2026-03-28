@@ -42,22 +42,25 @@ class AbilityScaleMigration {
             for (final ability in page.abilityData)
               migratePlacedAbilityPosition(ability: ability, map: map),
           ],
-          lineUps: [
-            for (final lineUp in page.lineUps)
-              _migrateLineUpAbilityPosition(lineUp: lineUp, map: map),
+          lineUpGroups: [
+            for (final group in page.lineUpGroups)
+              _migrateLineUpGroupAbilityPosition(group: group, map: map),
           ],
         ),
     ];
   }
 
-  static LineUp _migrateLineUpAbilityPosition({
-    required LineUp lineUp,
+  static LineUpGroup _migrateLineUpGroupAbilityPosition({
+    required LineUpGroup group,
     required MapValue map,
   }) {
-    final migratedAbility =
-        migratePlacedAbilityPosition(ability: lineUp.ability, map: map);
-    if (migratedAbility == lineUp.ability) return lineUp;
-    return lineUp.copyWith(ability: migratedAbility);
+    final migratedItems = [
+      for (final item in group.items)
+        item.copyWith(
+          ability: migratePlacedAbilityPosition(ability: item.ability, map: map),
+        ),
+    ];
+    return group.copyWith(items: migratedItems);
   }
 
   static PlacedAbility migratePlacedAbilityPosition({
@@ -285,9 +288,14 @@ class SquareAoeCenterMigration {
             for (final ability in page.abilityData)
               migratePlacedAbility(ability),
           ],
-          lineUps: [
-            for (final lineUp in page.lineUps)
-              lineUp.copyWith(ability: migratePlacedAbility(lineUp.ability)),
+          lineUpGroups: [
+            for (final group in page.lineUpGroups)
+              group.copyWith(
+                items: [
+                  for (final item in group.items)
+                    item.copyWith(ability: migratePlacedAbility(item.ability)),
+                ],
+              ),
           ],
         ),
     ];

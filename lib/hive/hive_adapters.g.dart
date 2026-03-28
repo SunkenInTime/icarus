@@ -1101,8 +1101,9 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       sortIndex: (fields[1] as num).toInt(),
       isAttack: fields[9] as bool,
       settings: fields[10] as StrategySettings,
-      lineUps:
-          fields[11] == null ? const [] : (fields[11] as List).cast<LineUp>(),
+      lineUpGroups: fields[12] == null
+          ? const []
+          : (fields[12] as List).cast<LineUpGroup>(),
     );
   }
 
@@ -1132,8 +1133,8 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..write(obj.isAttack)
       ..writeByte(10)
       ..write(obj.settings)
-      ..writeByte(11)
-      ..write(obj.lineUps);
+      ..writeByte(12)
+      ..write(obj.lineUpGroups);
   }
 
   @override
@@ -1705,6 +1706,94 @@ class AbilityVisualStateAdapter extends TypeAdapter<AbilityVisualState> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is AbilityVisualStateAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class LineUpGroupAdapter extends TypeAdapter<LineUpGroup> {
+  @override
+  final typeId = 33;
+
+  @override
+  LineUpGroup read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return LineUpGroup(
+      id: fields[0] as String,
+      agent: fields[1] as PlacedAgent,
+      items: (fields[2] as List).cast<LineUpItem>(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, LineUpGroup obj) {
+    writer
+      ..writeByte(3)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.agent)
+      ..writeByte(2)
+      ..write(obj.items);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LineUpGroupAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class LineUpItemAdapter extends TypeAdapter<LineUpItem> {
+  @override
+  final typeId = 34;
+
+  @override
+  LineUpItem read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return LineUpItem(
+      id: fields[0] as String,
+      ability: fields[1] as PlacedAbility,
+      youtubeLink: fields[2] == null ? '' : fields[2] as String,
+      notes: fields[3] == null ? '' : fields[3] as String,
+      images: fields[4] == null
+          ? const []
+          : (fields[4] as List).cast<SimpleImageData>(),
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, LineUpItem obj) {
+    writer
+      ..writeByte(5)
+      ..writeByte(0)
+      ..write(obj.id)
+      ..writeByte(1)
+      ..write(obj.ability)
+      ..writeByte(2)
+      ..write(obj.youtubeLink)
+      ..writeByte(3)
+      ..write(obj.notes)
+      ..writeByte(4)
+      ..write(obj.images);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LineUpItemAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

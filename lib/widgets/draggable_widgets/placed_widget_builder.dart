@@ -183,7 +183,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref.read(lineUpProvider.notifier).setAgent(placedAgent);
+                ref.read(lineUpProvider.notifier).startNewGroup(placedAgent);
                 return;
               }
               ref.read(agentProvider.notifier).addAgent(placedAgent);
@@ -200,7 +200,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref.read(lineUpProvider.notifier).setAbility(placedAbility);
+                ref.read(lineUpProvider.notifier).setCurrentAbility(placedAbility);
                 return;
               }
 
@@ -890,12 +890,12 @@ class _LineUpAgents extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lineUps = ref.watch(lineUpProvider).lineUps;
+    final groups = ref.watch(lineUpProvider).groups;
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        for (final lineUp in lineUps) LineUpAgentWidget(lineUp: lineUp),
+        for (final group in groups) LineUpGroupAgentWidget(group: group),
       ],
     );
   }
@@ -906,12 +906,14 @@ class _LineUpAbilities extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lineUps = ref.watch(lineUpProvider).lineUps;
+    final groups = ref.watch(lineUpProvider).groups;
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        for (final lineUp in lineUps) LineUpAbilityWidget(lineUp: lineUp),
+        for (final group in groups)
+          for (final item in group.items)
+            LineUpItemAbilityWidget(groupId: group.id, item: item),
       ],
     );
   }

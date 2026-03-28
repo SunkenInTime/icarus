@@ -19,6 +19,7 @@ class CustomCircleWidget extends ConsumerWidget {
     required this.id,
     required this.isAlly,
     this.lineUpId,
+    this.lineUpItemId,
     this.visualState,
     this.watchMouse = true,
     this.contextMenuItems,
@@ -28,6 +29,7 @@ class CustomCircleWidget extends ConsumerWidget {
   final bool isAlly;
   final String? id;
   final String iconPath;
+  final String? lineUpItemId;
   final double size;
   final Color rangeOutlineColor;
   final bool hasCenterDot;
@@ -182,6 +184,7 @@ class CustomCircleWidget extends ConsumerWidget {
         alignment: Alignment.center,
         child: AbilityWidget(
           lineUpId: lineUpId,
+          lineUpItemId: lineUpItemId,
           iconPath: iconPath,
           id: id,
           isAlly: isAlly,
