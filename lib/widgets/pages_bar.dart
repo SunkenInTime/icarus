@@ -19,7 +19,9 @@ class PagesBar extends ConsumerStatefulWidget {
 
 class _PagesBarState extends ConsumerState<PagesBar> {
   static const double _defaultExpandedHeight = 310;
-  static const double _minExpandedHeight = 120;
+  static final double _minExpandedHeight = _ExpandedPanel.minHeightForVisibleRows(
+    2,
+  );
   static const double _maxExpandedHeight = 520;
 
   bool _expanded = false;
@@ -347,12 +349,12 @@ class _ExpandedPanel extends ConsumerWidget {
   static const double _topPadding = 6; // handle + gap should match side inset
   static const double _bottomPadding = 0; // list bottom padding inside Expanded
 
-  static double _computeContentHeight(int count) {
-    if (count == 0) return _headerFooterHeight + _resizeHandleHeight + 56;
-    final rowsHeight = count * _rowHeight;
-    final spacersHeight = (count - 1) * _verticalSpacing;
+  static double minHeightForVisibleRows(int visibleRows) {
+    final clampedRows = visibleRows < 1 ? 1 : visibleRows;
+    final rowsHeight = clampedRows * _rowHeight;
+    final spacersHeight = (clampedRows - 1) * 8.0;
     final listSection =
-        _topPadding + rowsHeight + spacersHeight + _bottomPadding;
+        _topPadding + rowsHeight + spacersHeight + _bottomPadding + 8;
     return _resizeHandleHeight + listSection + _headerFooterHeight;
   }
 
@@ -362,7 +364,6 @@ class _ExpandedPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final contentHeight = _computeContentHeight(pages.length);
     final listViewportHeight =
         height - _resizeHandleHeight - _headerFooterHeight - _topPadding - 8;
     final availableListHeight = listViewportHeight > 0 ? listViewportHeight : 0;
@@ -386,7 +387,7 @@ class _ExpandedPanel extends ConsumerWidget {
 
     return SizedBox(
       key: panelKey,
-      height: height < contentHeight ? contentHeight : height,
+      height: height,
       child: Column(
         children: [
           _ResizeHandle(
