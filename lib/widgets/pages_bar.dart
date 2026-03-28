@@ -245,6 +245,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
                   onResizeStart: _startResize,
                   onResizeUpdate: _updateResize,
                   onResizeEnd: _endResize,
+                  isResizeActive: _isResizing,
                 )
               : _CollapsedPill(
                   activeName: activeName,
@@ -322,6 +323,7 @@ class _ExpandedPanel extends ConsumerWidget {
     required this.onResizeStart,
     required this.onResizeUpdate,
     required this.onResizeEnd,
+    required this.isResizeActive,
   });
 
   final List<StrategyPage> pages;
@@ -336,6 +338,7 @@ class _ExpandedPanel extends ConsumerWidget {
   final VoidCallback onResizeStart;
   final ValueChanged<Offset> onResizeUpdate;
   final Future<void> Function() onResizeEnd;
+  final bool isResizeActive;
 
   static const double _rowHeight = 40; // each page tile height
   static const double _verticalSpacing = 10; // separator height
@@ -391,6 +394,7 @@ class _ExpandedPanel extends ConsumerWidget {
             onResizeStart: onResizeStart,
             onResizeUpdate: onResizeUpdate,
             onResizeEnd: onResizeEnd,
+            isActive: isResizeActive,
           ),
           Expanded(
             child: Padding(
@@ -489,38 +493,81 @@ class _ResizeHandle extends StatelessWidget {
     required this.onResizeStart,
     required this.onResizeUpdate,
     required this.onResizeEnd,
+    required this.isActive,
   });
 
   final double height;
   final VoidCallback onResizeStart;
   final ValueChanged<Offset> onResizeUpdate;
   final Future<void> Function() onResizeEnd;
+  final bool isActive;
 
   @override
   Widget build(BuildContext context) {
+    return _ResizeHandleStateful(
+      height: height,
+      onResizeStart: onResizeStart,
+      onResizeUpdate: onResizeUpdate,
+      onResizeEnd: onResizeEnd,
+      isActive: isActive,
+    );
+  }
+}
+
+class _ResizeHandleStateful extends StatefulWidget {
+  const _ResizeHandleStateful({
+    required this.height,
+    required this.onResizeStart,
+    required this.onResizeUpdate,
+    required this.onResizeEnd,
+    required this.isActive,
+  });
+
+  final double height;
+  final VoidCallback onResizeStart;
+  final ValueChanged<Offset> onResizeUpdate;
+  final Future<void> Function() onResizeEnd;
+  final bool isActive;
+
+  @override
+  State<_ResizeHandleStateful> createState() => _ResizeHandleStatefulState();
+}
+
+class _ResizeHandleStatefulState extends State<_ResizeHandleStateful> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isHighlighted = widget.isActive || _isHovered;
+    final handleColor = isHighlighted
+        ? Settings.tacticalVioletTheme.primary
+        : Settings.tacticalVioletTheme.mutedForeground.withValues(alpha: 0.5);
+
     return MouseRegion(
       cursor: SystemMouseCursors.resizeUpDown,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onVerticalDragStart: (_) => onResizeStart(),
+        onVerticalDragStart: (_) => widget.onResizeStart(),
         onVerticalDragUpdate: (details) =>
-            onResizeUpdate(details.globalPosition),
+            widget.onResizeUpdate(details.globalPosition),
         onVerticalDragEnd: (_) {
-          onResizeEnd();
+          widget.onResizeEnd();
         },
         onVerticalDragCancel: () {
-          onResizeEnd();
+          widget.onResizeEnd();
         },
         child: SizedBox(
-          height: height,
+          height: widget.height,
           width: double.infinity,
           child: Center(
-            child: Container(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
               width: 36,
               height: 2,
               decoration: BoxDecoration(
-                color: Settings.tacticalVioletTheme.mutedForeground
-                    .withValues(alpha: 0.5),
+                color: handleColor,
                 borderRadius: BorderRadius.circular(999),
               ),
             ),
