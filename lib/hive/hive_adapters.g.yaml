@@ -387,7 +387,7 @@ types:
         index: 6
   StrategyPage:
     typeId: 20
-    nextIndex: 13
+    nextIndex: 14
     fields:
       id:
         index: 0
@@ -411,6 +411,8 @@ types:
         index: 9
       settings:
         index: 10
+      lineUps:
+        index: 11
       lineUpGroups:
         index: 12
   LineUp:

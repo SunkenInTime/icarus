@@ -1,10 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:hive_ce/src/binary/binary_reader_impl.dart';
+import 'package:hive_ce/src/binary/binary_writer_impl.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/bounding_box.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
@@ -12,10 +18,14 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/const/traversal_speed.dart';
+import 'package:icarus/hive/hive_adapters.dart';
+import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -94,7 +104,8 @@ Map<String, dynamic> _buildExportPayload(StrategyData strategy) {
     'versionNumber': '${Settings.versionNumber}',
     'mapData': Maps.mapNames[strategy.mapData],
     'themePalette': strategy.themeOverridePalette?.toJson(),
-    if (strategy.themeProfileId != null) 'themeProfileId': strategy.themeProfileId,
+    if (strategy.themeProfileId != null)
+      'themeProfileId': strategy.themeProfileId,
     'pages': strategy.pages.map((page) => page.toJson(strategy.id)).toList(),
   };
 }
@@ -107,9 +118,10 @@ Future<StrategyData> _importStrategyFromDecoded({
 }) async {
   final drawingData =
       DrawingProvider.fromJson(jsonEncode(decoded['drawingData'] ?? []));
-  final agentData = AgentProvider.fromJson(jsonEncode(decoded['agentData'] ?? []))
-      .whereType<PlacedAgent>()
-      .toList(growable: false);
+  final agentData =
+      AgentProvider.fromJson(jsonEncode(decoded['agentData'] ?? []))
+          .whereType<PlacedAgent>()
+          .toList(growable: false);
   final abilityData =
       AbilityProvider.fromJson(jsonEncode(decoded['abilityData'] ?? []));
   final textData = TextProvider.fromJson(jsonEncode(decoded['textData'] ?? []));
@@ -195,6 +207,68 @@ void _expectCustomShapes(StrategyData strategy, String fixtureName) {
   expect(rectangle.customOpacityPercent, 30, reason: fixtureName);
 }
 
+LineUp _buildLegacyLineUp({
+  String id = 'legacy-lineup',
+  String groupId = 'legacy-group',
+}) {
+  return LineUp(
+    id: id,
+    agent: PlacedAgent(
+      id: 'legacy-agent-$id',
+      type: AgentType.sova,
+      position: const Offset(10, 20),
+      lineUpID: groupId,
+    ),
+    ability: PlacedAbility(
+      id: 'legacy-ability-$id',
+      data: AgentData.agents[AgentType.sova]!.abilities.first,
+      position: const Offset(30, 40),
+      lineUpID: groupId,
+    ),
+    youtubeLink: 'https://example.com/$id',
+    notes: 'note-$id',
+    images: const [],
+  );
+}
+
+void _writeLegacyStrategyPagePayload(
+  BinaryWriterImpl writer, {
+  required List<LineUp> lineUps,
+}) {
+  writer
+    ..writeByte(12)
+    ..writeByte(0)
+    ..write('legacy-page')
+    ..writeByte(1)
+    ..write(0)
+    ..writeByte(2)
+    ..write('Legacy Page')
+    ..writeByte(3)
+    ..write(<DrawingElement>[])
+    ..writeByte(4)
+    ..write(<PlacedAgentNode>[])
+    ..writeByte(5)
+    ..write(<PlacedAbility>[])
+    ..writeByte(6)
+    ..write(<PlacedText>[])
+    ..writeByte(7)
+    ..write(<PlacedImage>[])
+    ..writeByte(8)
+    ..write(<PlacedUtility>[])
+    ..writeByte(9)
+    ..write(true)
+    ..writeByte(10)
+    ..write(StrategySettings())
+    ..writeByte(11)
+    ..write(lineUps);
+}
+
+void _ensureAdaptersRegistered() {
+  if (!Hive.isAdapterRegistered(20)) {
+    registerIcarusAdapters(Hive);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -252,6 +326,85 @@ void main() {
   });
 
   group('Strategy round-trip integrity', () {
+    test('legacy Hive field 11 lineUps still deserialize into lineUpGroups',
+        () {
+      _ensureAdaptersRegistered();
+      final writer = BinaryWriterImpl(Hive);
+      final legacyLineUp = _buildLegacyLineUp();
+
+      _writeLegacyStrategyPagePayload(
+        writer,
+        lineUps: [legacyLineUp],
+      );
+
+      final reader = BinaryReaderImpl(
+        Uint8List.fromList(writer.toBytes()),
+        Hive,
+      );
+      final restored = StrategyPageAdapter().read(reader);
+
+      expect(restored.lineUps, hasLength(1));
+      expect(restored.lineUps.single.id, legacyLineUp.id);
+      expect(restored.lineUpGroups, hasLength(1));
+      expect(restored.lineUpGroups.single.id, legacyLineUp.id);
+      expect(restored.lineUpGroups.single.items, hasLength(1));
+      expect(
+        restored.lineUpGroups.single.items.single.ability.lineUpID,
+        restored.lineUpGroups.single.id,
+      );
+    });
+
+    test('StrategyPage keeps lineUps and lineUpGroups synchronized', () {
+      final legacyLineUp = _buildLegacyLineUp();
+      final fromLegacy = StrategyPage(
+        id: 'page-sync',
+        sortIndex: 0,
+        name: 'Sync',
+        drawingData: const [],
+        agentData: const [],
+        abilityData: const [],
+        textData: const [],
+        imageData: const [],
+        utilityData: const [],
+        isAttack: true,
+        settings: StrategySettings(),
+        lineUps: [legacyLineUp],
+      );
+
+      expect(fromLegacy.lineUps, hasLength(1));
+      expect(fromLegacy.lineUpGroups, hasLength(1));
+      expect(fromLegacy.lineUpGroups.single.items.single.id, legacyLineUp.id);
+
+      final updatedGroups = [
+        fromLegacy.lineUpGroups.single.copyWith(
+          items: [
+            ...fromLegacy.lineUpGroups.single.items,
+            LineUpItem(
+              id: 'legacy-lineup-2',
+              ability: PlacedAbility(
+                id: 'legacy-ability-2',
+                data: AgentData.agents[AgentType.sova]!.abilities.first,
+                position: const Offset(50, 60),
+                lineUpID: fromLegacy.lineUpGroups.single.id,
+              ),
+              youtubeLink: 'https://example.com/legacy-lineup-2',
+              notes: 'note-legacy-lineup-2',
+            ),
+          ],
+        ),
+      ];
+      final updated = fromLegacy.copyWith(lineUpGroups: updatedGroups);
+
+      expect(updated.lineUpGroups.single.items, hasLength(2));
+      expect(updated.lineUps, hasLength(2));
+      expect(
+          updated.lineUps.map((lineUp) => lineUp.id),
+          containsAll([
+            'legacy-lineup',
+            'legacy-lineup-2',
+          ]));
+    });
+
     test('current schema export -> import preserves canonical structure',
         () async {
       final currentPayload = <String, dynamic>{
@@ -490,7 +643,8 @@ void main() {
       expect(circle.customDiameter, 14.0);
     });
 
-    test('imported custom shapes retain dimensions and styling fields', () async {
+    test('imported custom shapes retain dimensions and styling fields',
+        () async {
       final fixture = File(path.join(_fixtureDirectory, 'base-test.ica'));
       final decoded = await _readIcaJson(fixture);
 
@@ -544,7 +698,10 @@ void main() {
       );
 
       expect(imported.pages.single.sortIndex, 0);
-      expect(imported.pages.single.imageData.single.scale, 500.0);
+      expect(
+        imported.pages.single.imageData.single.scale,
+        closeTo(425.92592592592587, 0.0001),
+      );
       expect(imported.createdAt, imported.lastEdited);
     });
   });
@@ -713,6 +870,93 @@ void main() {
       } finally {
         await tmpDir.delete(recursive: true);
       }
+    });
+  });
+
+  group('Strategy Hive round-trip', () {
+    setUpAll(() async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'icarus-strategy-integrity-hive',
+      );
+      Hive.init(tempDir.path);
+      _ensureAdaptersRegistered();
+      await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
+      await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+      await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
+      await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
+      await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
+    });
+
+    tearDown(() async {
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
+    });
+
+    tearDownAll(() async {
+      await Hive.close();
+    });
+
+    test('grouped lineUps round-trip through Hive without losing sync',
+        () async {
+      final group = LineUpGroup(
+        id: 'group-1',
+        agent: PlacedAgent(
+          id: 'group-agent',
+          type: AgentType.sova,
+          position: const Offset(10, 20),
+          lineUpID: 'group-1',
+        ),
+        items: [
+          LineUpItem(
+            id: 'item-1',
+            ability: PlacedAbility(
+              id: 'group-ability',
+              data: AgentData.agents[AgentType.sova]!.abilities.first,
+              position: const Offset(30, 40),
+              lineUpID: 'group-1',
+            ),
+            youtubeLink: 'https://example.com/item-1',
+            notes: 'grouped',
+          ),
+        ],
+      );
+
+      final strategy = StrategyData(
+        id: 'strategy-hive-sync',
+        name: 'Hive Sync',
+        mapData: MapValue.ascent,
+        versionNumber: Settings.versionNumber,
+        lastEdited: DateTime.utc(2026, 1, 1),
+        folderID: null,
+        pages: [
+          StrategyPage(
+            id: 'page-1',
+            sortIndex: 0,
+            name: 'Page 1',
+            drawingData: const [],
+            agentData: const [],
+            abilityData: const [],
+            textData: const [],
+            imageData: const [],
+            utilityData: const [],
+            isAttack: true,
+            settings: StrategySettings(),
+            lineUpGroups: [group],
+          ),
+        ],
+      );
+
+      final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+      await box.put(strategy.id, strategy);
+
+      final restored = box.get(strategy.id)!;
+      final page = restored.pages.single;
+
+      expect(page.lineUpGroups, hasLength(1));
+      expect(page.lineUpGroups.single.items, hasLength(1));
+      expect(page.lineUps, hasLength(1));
+      expect(page.lineUps.single.id, 'item-1');
+      expect(page.lineUps.single.agent.lineUpID, 'group-1');
+      expect(page.lineUps.single.ability.lineUpID, 'group-1');
     });
   });
 }

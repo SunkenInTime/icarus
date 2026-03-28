@@ -1104,13 +1104,15 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       lineUpGroups: fields[12] == null
           ? const []
           : (fields[12] as List).cast<LineUpGroup>(),
+      lineUps:
+          fields[11] == null ? const [] : (fields[11] as List).cast<LineUp>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, StrategyPage obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -1133,6 +1135,8 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..write(obj.isAttack)
       ..writeByte(10)
       ..write(obj.settings)
+      ..writeByte(11)
+      ..write(obj.lineUps)
       ..writeByte(12)
       ..write(obj.lineUpGroups);
   }
