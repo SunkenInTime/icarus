@@ -758,16 +758,185 @@ class LineUpProvider extends Notifier<LineUpState> {
 final lineUpProvider =
     NotifierProvider<LineUpProvider, LineUpState>(LineUpProvider.new);
 
-class HoveredLineUpProvider extends Notifier<String?> {
-  @override
-  String? build() {
-    return null;
+enum LineUpHoverKind { group, item }
+
+class HoveredLineUpTarget {
+  const HoveredLineUpTarget.group({
+    required this.groupId,
+    required this.ownerToken,
+  })  : itemId = null,
+        kind = LineUpHoverKind.group;
+
+  const HoveredLineUpTarget.item({
+    required this.groupId,
+    required this.itemId,
+    required this.ownerToken,
+  }) : kind = LineUpHoverKind.item;
+
+  final String groupId;
+  final String? itemId;
+  final LineUpHoverKind kind;
+  final Object ownerToken;
+
+  bool matchesAgent(String candidateGroupId) {
+    return groupId == candidateGroupId;
   }
 
-  void setHoveredLineUpId(String? id) {
-    state = id;
+  bool matchesAbility(String candidateGroupId, String candidateItemId) {
+    if (groupId != candidateGroupId) return false;
+    return kind == LineUpHoverKind.group || itemId == candidateItemId;
+  }
+
+  bool matchesConnector(String candidateGroupId, String candidateItemId) {
+    return matchesAbility(candidateGroupId, candidateItemId);
   }
 }
 
-final hoveredLineUpIdProvider =
-    NotifierProvider<HoveredLineUpProvider, String?>(HoveredLineUpProvider.new);
+class HoveredLineUpProvider extends Notifier<HoveredLineUpTarget?> {
+  @override
+  HoveredLineUpTarget? build() {
+    return null;
+  }
+
+  void setHoveredGroup({
+    required String groupId,
+    required Object ownerToken,
+  }) {
+    state = HoveredLineUpTarget.group(
+      groupId: groupId,
+      ownerToken: ownerToken,
+    );
+  }
+
+  void setHoveredItem({
+    required String groupId,
+    required String itemId,
+    required Object ownerToken,
+  }) {
+    state = HoveredLineUpTarget.item(
+      groupId: groupId,
+      itemId: itemId,
+      ownerToken: ownerToken,
+    );
+  }
+
+  void clearIfOwned(Object ownerToken) {
+    if (state?.ownerToken != ownerToken) return;
+    state = null;
+  }
+}
+
+final hoveredLineUpTargetProvider =
+    NotifierProvider<HoveredLineUpProvider, HoveredLineUpTarget?>(
+  HoveredLineUpProvider.new,
+);
+
+class LineUpAbilityHitboxEntry {
+  const LineUpAbilityHitboxEntry({
+    required this.groupId,
+    required this.itemId,
+    required this.globalRect,
+  });
+
+  final String groupId;
+  final String itemId;
+  final Rect globalRect;
+}
+
+class LineUpAbilityStackCandidate {
+  const LineUpAbilityStackCandidate({
+    required this.groupId,
+    required this.itemId,
+    required this.ability,
+    required this.globalRect,
+    required this.paintOrder,
+  });
+
+  final String groupId;
+  final String itemId;
+  final PlacedAbility ability;
+  final Rect globalRect;
+  final int paintOrder;
+}
+
+String _lineUpAbilityHitboxKey(String groupId, String itemId) {
+  return '$groupId::$itemId';
+}
+
+class LineUpAbilityHitboxRegistry
+    extends Notifier<Map<String, LineUpAbilityHitboxEntry>> {
+  @override
+  Map<String, LineUpAbilityHitboxEntry> build() {
+    return const {};
+  }
+
+  void register({
+    required String groupId,
+    required String itemId,
+    required Rect globalRect,
+  }) {
+    final key = _lineUpAbilityHitboxKey(groupId, itemId);
+    final current = state[key];
+    if (current != null && current.globalRect == globalRect) {
+      return;
+    }
+
+    state = {
+      ...state,
+      key: LineUpAbilityHitboxEntry(
+        groupId: groupId,
+        itemId: itemId,
+        globalRect: globalRect,
+      ),
+    };
+  }
+
+  void unregister({
+    required String groupId,
+    required String itemId,
+  }) {
+    final key = _lineUpAbilityHitboxKey(groupId, itemId);
+    if (!state.containsKey(key)) {
+      return;
+    }
+
+    final nextState = {...state}..remove(key);
+    state = nextState;
+  }
+}
+
+final lineUpAbilityHitboxRegistryProvider = NotifierProvider<
+    LineUpAbilityHitboxRegistry, Map<String, LineUpAbilityHitboxEntry>>(
+  LineUpAbilityHitboxRegistry.new,
+);
+
+List<LineUpAbilityStackCandidate> resolveLineUpAbilityStackCandidates({
+  required LineUpState lineUpState,
+  required Map<String, LineUpAbilityHitboxEntry> hitboxes,
+  required Offset globalPosition,
+}) {
+  final candidates = <LineUpAbilityStackCandidate>[];
+  var paintOrder = 0;
+
+  for (final group in lineUpState.groups) {
+    for (final item in group.items) {
+      final key = _lineUpAbilityHitboxKey(group.id, item.id);
+      final hitbox = hitboxes[key];
+      if (hitbox != null && hitbox.globalRect.contains(globalPosition)) {
+        candidates.add(
+          LineUpAbilityStackCandidate(
+            groupId: group.id,
+            itemId: item.id,
+            ability: item.ability,
+            globalRect: hitbox.globalRect,
+            paintOrder: paintOrder,
+          ),
+        );
+      }
+      paintOrder++;
+    }
+  }
+
+  candidates.sort((a, b) => b.paintOrder.compareTo(a.paintOrder));
+  return candidates;
+}

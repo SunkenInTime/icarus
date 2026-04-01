@@ -58,7 +58,7 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
             child: CustomPaint(
               painter: LinePainter(
                 resizeCounter: resizeCounter,
-                hoveredLineUpId: ref.watch(hoveredLineUpIdProvider),
+                hoveredLineUpTarget: ref.watch(hoveredLineUpTargetProvider),
                 groups: ref.watch(lineUpProvider).groups,
                 coordinateSystem: CoordinateSystem.instance,
                 abilitySize: ref.watch(strategySettingsProvider).abilitySize,
@@ -80,7 +80,7 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
 }
 
 class LinePainter extends CustomPainter {
-  final String? hoveredLineUpId;
+  final HoveredLineUpTarget? hoveredLineUpTarget;
   final List<LineUpGroup> groups;
   final CoordinateSystem coordinateSystem;
   final double abilitySize;
@@ -93,7 +93,7 @@ class LinePainter extends CustomPainter {
   LinePainter({
     super.repaint,
     required this.resizeCounter,
-    required this.hoveredLineUpId,
+    required this.hoveredLineUpTarget,
     required this.groups,
     required this.coordinateSystem,
     required this.abilitySize,
@@ -138,7 +138,7 @@ class LinePainter extends CustomPainter {
         canvas.drawLine(
           startPosition,
           endPosition,
-          (hoveredLineUpId == group.id && hoveredLineUpId != null)
+          (hoveredLineUpTarget?.matchesConnector(group.id, item.id) ?? false)
               ? highlightPaint
               : paint,
         );
@@ -149,7 +149,7 @@ class LinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
     if (oldDelegate is LinePainter) {
-      return oldDelegate.hoveredLineUpId != hoveredLineUpId ||
+      return oldDelegate.hoveredLineUpTarget != hoveredLineUpTarget ||
           oldDelegate.groups != groups ||
           oldDelegate.coordinateSystem.effectiveSize !=
               coordinateSystem.effectiveSize ||

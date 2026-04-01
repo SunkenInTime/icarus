@@ -20,6 +20,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.d
 import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/sector_circle_widget.dart';
+import 'package:icarus/widgets/line_up_media_carousel.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -844,6 +845,201 @@ void main() {
       expect(find.text('Range'), findsNothing);
       expect(find.text('Delete'), findsNothing);
     });
+
+    testWidgets(
+        'stacked lineup icon left-click opens selector before media carousel',
+        (tester) async {
+      final container = _createLineUpContainer();
+      final groups = _stackedLineUpGroups();
+      container.read(lineUpProvider.notifier).fromHive(groups);
+
+      await _pumpLineUpAbilities(
+        tester,
+        container: container,
+        groups: groups,
+      );
+
+      await tester.tap(find.byType(AbilityWidget).last);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('lineup-stack-selector')), findsOneWidget);
+      expect(find.byType(LineUpMediaCarousel), findsNothing);
+    });
+
+    testWidgets('stack selector hover previews the hovered lineup item',
+        (tester) async {
+      final container = _createLineUpContainer();
+      final groups = _stackedLineUpGroups();
+      container.read(lineUpProvider.notifier).fromHive(groups);
+
+      await _pumpLineUpAbilities(
+        tester,
+        container: container,
+        groups: groups,
+      );
+
+      await tester.tap(find.byType(AbilityWidget).last);
+      await tester.pumpAndSettle();
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer();
+      await mouse.moveTo(
+        tester.getCenter(
+          find.byKey(
+            const ValueKey('lineup-stack-option-group-a-item-a'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final hoveredTarget = container.read(hoveredLineUpTargetProvider);
+      expect(hoveredTarget?.groupId, 'group-a');
+      expect(hoveredTarget?.itemId, 'item-a');
+    });
+
+    testWidgets('stack selector option opens the selected lineup media',
+        (tester) async {
+      final container = _createLineUpContainer();
+      final groups = _stackedLineUpGroups();
+      container.read(lineUpProvider.notifier).fromHive(groups);
+
+      await _pumpLineUpAbilities(
+        tester,
+        container: container,
+        groups: groups,
+      );
+
+      await tester.tap(find.byType(AbilityWidget).last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey('lineup-stack-option-group-a-item-a'),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+
+      expect(find.byType(LineUpMediaCarousel), findsOneWidget);
+    });
+
+    testWidgets(
+        'stacked lineup icon right-click opens selector before context menu',
+        (tester) async {
+      final container = _createLineUpContainer();
+      final groups = _stackedLineUpGroups();
+      container.read(lineUpProvider.notifier).fromHive(groups);
+
+      await _pumpLineUpAbilities(
+        tester,
+        container: container,
+        groups: groups,
+      );
+
+      await _openContextMenu(tester, find.byType(AbilityWidget).last);
+
+      expect(find.byKey(const ValueKey('lineup-stack-selector')), findsOneWidget);
+      expect(find.text('Range'), findsNothing);
+    });
+
+    testWidgets(
+        'stacked lineup right-click selection targets only the chosen item',
+        (tester) async {
+      final container = _createLineUpContainer();
+      final groups = _stackedLineUpGroups();
+      container.read(lineUpProvider.notifier).fromHive(groups);
+
+      await _pumpLineUpAbilities(
+        tester,
+        container: container,
+        groups: groups,
+      );
+
+      await _openContextMenu(tester, find.byType(AbilityWidget).last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey('lineup-stack-option-group-a-item-a'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Range'), findsOneWidget);
+      await tester.tap(find.text('Range'));
+      await tester.pumpAndSettle();
+
+      final currentGroups = container.read(lineUpProvider).groups;
+      expect(
+        currentGroups.first.items.single.ability.visualState.showRangeFill,
+        isFalse,
+      );
+      expect(
+        currentGroups.last.items.single.ability.visualState.showRangeFill,
+        isTrue,
+      );
+    });
+
+    testWidgets('stacked lineup square body right-click stays non-interactive',
+        (tester) async {
+      final container = _createLineUpContainer();
+      final groups = _stackedLineUpGroups();
+      container.read(lineUpProvider.notifier).fromHive(groups);
+
+      await _pumpLineUpAbilities(
+        tester,
+        container: container,
+        groups: groups,
+      );
+
+      final squareRect = tester.getRect(find.byType(CustomSquareWidget).last);
+      await tester.tapAt(
+        squareRect.topCenter + const Offset(0, 6),
+        buttons: kSecondaryButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('lineup-stack-selector')), findsNothing);
+      expect(find.text('Range'), findsNothing);
+    });
+
+    testWidgets('closing stack selector clears selector-owned hover preview',
+        (tester) async {
+      final container = _createLineUpContainer();
+      final groups = _stackedLineUpGroups();
+      container.read(lineUpProvider.notifier).fromHive(groups);
+
+      await _pumpLineUpAbilities(
+        tester,
+        container: container,
+        groups: groups,
+      );
+
+      await tester.tap(find.byType(AbilityWidget).last);
+      await tester.pumpAndSettle();
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer();
+      await mouse.moveTo(
+        tester.getCenter(
+          find.byKey(
+            const ValueKey('lineup-stack-option-group-a-item-a'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(container.read(hoveredLineUpTargetProvider)?.itemId, 'item-a');
+
+      await tester.tapAt(const Offset(8, 8));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('lineup-stack-selector')), findsNothing);
+      expect(container.read(hoveredLineUpTargetProvider), isNull);
+    });
   });
 }
 
@@ -904,6 +1100,82 @@ Future<void> _openContextMenu(WidgetTester tester, Finder finder) async {
     kind: PointerDeviceKind.mouse,
   );
   await tester.pumpAndSettle();
+}
+
+ProviderContainer _createLineUpContainer() {
+  return ProviderContainer(
+    overrides: [
+      actionProvider.overrideWith(_TestActionProvider.new),
+      mapProvider.overrideWith(_FixedMapProvider.new),
+    ],
+  );
+}
+
+Future<void> _pumpLineUpAbilities(
+  WidgetTester tester, {
+  required ProviderContainer container,
+  required List<LineUpGroup> groups,
+}) async {
+  addTearDown(() async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    container.dispose();
+  });
+
+  await tester.pumpWidget(
+    _buildHarness(
+      container: container,
+      child: Stack(
+        children: [
+          for (final group in groups)
+            for (final item in group.items)
+              LineUpItemAbilityWidget(groupId: group.id, item: item),
+        ],
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+List<LineUpGroup> _stackedLineUpGroups() {
+  const sharedPosition = Offset(48, 64);
+  return [
+    LineUpGroup(
+      id: 'group-a',
+      agent: PlacedAgent(
+        id: 'agent-a',
+        type: AgentType.breach,
+        position: const Offset(20, 20),
+      ),
+      items: [
+        LineUpItem(
+          id: 'item-a',
+          ability: PlacedAbility(
+            id: 'ability-a',
+            data: AgentData.agents[AgentType.breach]!.abilities.first,
+            position: sharedPosition,
+          ),
+        ),
+      ],
+    ),
+    LineUpGroup(
+      id: 'group-b',
+      agent: PlacedAgent(
+        id: 'agent-b',
+        type: AgentType.breach,
+        position: const Offset(24, 24),
+      ),
+      items: [
+        LineUpItem(
+          id: 'item-b',
+          ability: PlacedAbility(
+            id: 'ability-b',
+            data: AgentData.agents[AgentType.breach]!.abilities.first,
+            position: sharedPosition,
+          ),
+        ),
+      ],
+    ),
+  ];
 }
 
 AbilityInfo _sectorAbilityInfo() {

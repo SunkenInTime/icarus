@@ -42,6 +42,7 @@ class AbilityWidget extends ConsumerWidget {
       size: abilitySize,
       isAlly: isAlly,
       lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       child: Image.asset(
         iconPath,
         fit: BoxFit.contain,

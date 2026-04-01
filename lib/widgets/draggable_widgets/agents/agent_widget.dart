@@ -98,6 +98,9 @@ class AgentWidget extends ConsumerWidget {
         (deadStateProgress ?? (state == AgentState.dead ? 1.0 : 0.0))
             .clamp(0.0, 1.0);
     final hasDeadStyling = deadProgress > 0;
+    final hoverTarget = ref.watch(hoveredLineUpTargetProvider);
+    final isLineUpHovered =
+        lineUpId != null && (hoverTarget?.matchesAgent(lineUpId!) ?? false);
 
     final agentImage = RepaintBoundary(child: Image.asset(agent.iconPath));
 
@@ -110,7 +113,7 @@ class AgentWidget extends ConsumerWidget {
     final deadBgColor = isAlly ? _mutedAllyBGColor : _mutedEnemyBGColor;
     bgColor = Color.lerp(bgColor, deadBgColor, deadProgress) ?? bgColor;
 
-    if (lineUpId != null && ref.watch(hoveredLineUpIdProvider) == lineUpId) {
+    if (isLineUpHovered) {
       bgColor = Colors.deepPurple;
     }
 
@@ -125,7 +128,7 @@ class AgentWidget extends ConsumerWidget {
     outlineColor = Color.lerp(outlineColor, deadOutlineColor, deadProgress) ??
         outlineColor;
 
-    if (lineUpId != null && ref.watch(hoveredLineUpIdProvider) == lineUpId) {
+    if (isLineUpHovered) {
       outlineColor = Colors.deepPurpleAccent;
     }
 

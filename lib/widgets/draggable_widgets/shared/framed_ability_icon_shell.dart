@@ -11,18 +11,22 @@ class FramedAbilityIconShell extends ConsumerWidget {
     required this.isAlly,
     required this.child,
     this.lineUpId,
+    this.lineUpItemId,
   });
 
   final double size;
   final bool isAlly;
   final Widget child;
   final String? lineUpId;
+  final String? lineUpItemId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final isLineUpHovered =
-        lineUpId != null && ref.watch(hoveredLineUpIdProvider) == lineUpId;
+    final hoverTarget = ref.watch(hoveredLineUpTargetProvider);
+    final isLineUpHovered = lineUpId != null &&
+        lineUpItemId != null &&
+        (hoverTarget?.matchesAbility(lineUpId!, lineUpItemId!) ?? false);
 
     return Container(
       width: coordinateSystem.scale(size),
