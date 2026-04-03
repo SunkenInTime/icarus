@@ -39,6 +39,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
   ProviderContainer? _container;
   bool _hoverCleanupScheduled = false;
   bool _hitboxMeasurementScheduled = false;
+  bool _hitboxCleanupScheduled = false;
   Rect? _lastRegisteredHitbox;
   String? _registeredGroupId;
   String? _registeredItemId;
@@ -56,7 +57,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
         oldWidget.lineUpItemId != widget.lineUpItemId;
 
     if (didChangeLineUpTarget) {
-      _unregisterHitbox(
+      _scheduleHitboxUnregister(
         groupId: oldWidget.lineUpId,
         itemId: oldWidget.lineUpItemId,
       );
@@ -66,7 +67,11 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
 
   @override
   void dispose() {
-    _unregisterHitbox(groupId: _registeredGroupId, itemId: _registeredItemId);
+    _scheduleHitboxUnregister(
+      groupId: _registeredGroupId,
+      itemId: _registeredItemId,
+      container: _container,
+    );
     _scheduleHoverCleanup(container: _container);
     super.dispose();
   }
@@ -111,9 +116,18 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
   bool get _isStackAwareLineUpItem =>
       widget.lineUpId != null && widget.lineUpItemId != null;
 
-  void _unregisterHitbox({
+  bool get _hasResolvedLineUpItem =>
+      widget.lineUpId != null &&
+      widget.lineUpItemId != null &&
+      ref.read(lineUpProvider.notifier).getItemById(
+            groupId: widget.lineUpId!,
+            itemId: widget.lineUpItemId!,
+          ) != null;
+
+  void _performHitboxUnregister({
     String? groupId,
     String? itemId,
+    ProviderContainer? container,
   }) {
     final activeGroupId = groupId;
     final activeItemId = itemId;
@@ -121,7 +135,8 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
       return;
     }
 
-    _container
+    final activeContainer = container ?? _container;
+    activeContainer
         ?.read(lineUpAbilityHitboxRegistryProvider.notifier)
         .unregister(groupId: activeGroupId, itemId: activeItemId);
 
@@ -131,8 +146,43 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     }
   }
 
+  void _scheduleHitboxUnregister({
+    String? groupId,
+    String? itemId,
+    ProviderContainer? container,
+  }) {
+    final activeGroupId = groupId;
+    final activeItemId = itemId;
+    final activeContainer = container ?? _container;
+    if (activeGroupId == null ||
+        activeItemId == null ||
+        activeContainer == null ||
+        _hitboxCleanupScheduled) {
+      return;
+    }
+
+    _hitboxCleanupScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _hitboxCleanupScheduled = false;
+      _performHitboxUnregister(
+        groupId: activeGroupId,
+        itemId: activeItemId,
+        container: activeContainer,
+      );
+    });
+  }
+
   void _scheduleHitboxMeasurement() {
-    if (!_isStackAwareLineUpItem || _hitboxMeasurementScheduled) {
+    if (!_isStackAwareLineUpItem || !_hasResolvedLineUpItem) {
+      _scheduleHitboxUnregister(
+        groupId: widget.lineUpId,
+        itemId: widget.lineUpItemId,
+      );
+      _lastRegisteredHitbox = null;
+      return;
+    }
+
+    if (_hitboxMeasurementScheduled) {
       return;
     }
 
@@ -322,7 +372,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     );
 
     final effectiveOnTap = widget.onTap ??
-        (widget.lineUpId == null
+        (widget.lineUpId == null || lineUpItem == null
             ? null
             : () {
                 showDialog(
@@ -330,7 +380,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
                   builder: (context) => LineUpMediaCarousel(
                     lineUpGroupId: widget.lineUpId!,
                     lineUpItemId: widget.lineUpItemId!,
-                    images: lineUpItem!.images,
+                    images: lineUpItem.images,
                     youtubeLink: lineUpItem.youtubeLink,
                   ),
                 );

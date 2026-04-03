@@ -123,6 +123,7 @@ class _LineUpAbilityStackSelectorDialogState
         controller: _controller,
         anchor: ShadGlobalAnchor(widget.globalPosition),
         useSameGroupIdForChild: false,
+        child: const SizedBox.expand(),
         popover: (_) {
           return Container(
             key: const ValueKey('lineup-stack-selector'),
@@ -175,7 +176,6 @@ class _LineUpAbilityStackSelectorDialogState
             ),
           );
         },
-        child: const SizedBox.expand(),
       ),
     );
   }
@@ -227,6 +227,52 @@ class _LineUpAbilityContextMenuDialogState
     Navigator.of(context).pop();
   }
 
+  void _closeRouteIfNeeded() {
+    if (_didCloseRoute || !mounted) {
+      return;
+    }
+
+    _didCloseRoute = true;
+    Navigator.of(context).pop();
+  }
+
+  ShadContextMenuItem _wrapItem(ShadContextMenuItem item) {
+    return ShadContextMenuItem.raw(
+      key: item.key,
+      variant: item.variant,
+      items: [
+        for (final nested in item.items)
+          if (nested is ShadContextMenuItem) _wrapItem(nested) else nested,
+      ],
+      enabled: item.enabled,
+      leading: item.leading,
+      trailing: item.trailing,
+      leadingPadding: item.leadingPadding,
+      trailingPadding: item.trailingPadding,
+      padding: item.padding,
+      insetPadding: item.insetPadding,
+      onPressed: () {
+        _closeRouteIfNeeded();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          item.onPressed?.call();
+        });
+      },
+      anchor: item.anchor,
+      showDelay: item.showDelay,
+      height: item.height,
+      buttonVariant: item.buttonVariant,
+      decoration: item.decoration,
+      textStyle: item.textStyle,
+      trailingTextStyle: item.trailingTextStyle,
+      constraints: item.constraints,
+      subMenuPadding: item.subMenuPadding,
+      backgroundColor: item.backgroundColor,
+      selectedBackgroundColor: item.selectedBackgroundColor,
+      closeOnTap: true,
+      child: item.child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Material(
@@ -234,7 +280,10 @@ class _LineUpAbilityContextMenuDialogState
       child: ShadContextMenu(
         controller: _controller,
         anchor: ShadGlobalAnchor(widget.globalPosition),
-        items: widget.items,
+        items: [
+          for (final item in widget.items)
+            _wrapItem(item),
+        ],
         child: const SizedBox.expand(),
       ),
     );

@@ -981,6 +981,45 @@ void main() {
       );
     });
 
+    testWidgets(
+        'stacked lineup delete closes anchored context menu without stale state',
+        (tester) async {
+      final container = _createLineUpContainer();
+      final groups = _stackedLineUpGroups();
+      container.read(lineUpProvider.notifier).fromHive(groups);
+
+      await _pumpLineUpAbilities(
+        tester,
+        container: container,
+        groups: groups,
+      );
+
+      await _openContextMenu(tester, find.byType(AbilityWidget).last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey('lineup-stack-option-group-a-item-a'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Delete'), findsOneWidget);
+
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(
+        container.read(lineUpProvider).groups.map((group) => group.id),
+        isNot(contains('group-a')),
+      );
+      expect(
+        container.read(lineUpAbilityHitboxRegistryProvider).keys,
+        isNot(contains('group-a::item-a')),
+      );
+    });
+
     testWidgets('stacked lineup square body right-click stays non-interactive',
         (tester) async {
       final container = _createLineUpContainer();
