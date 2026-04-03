@@ -10,7 +10,10 @@ import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_cont
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 
 class LineUpGroupAgentWidget extends ConsumerWidget {
-  const LineUpGroupAgentWidget({super.key, required this.group});
+  LineUpGroupAgentWidget({
+    Key? key,
+    required this.group,
+  }) : super(key: key ?? ValueKey('lineup-agent-widget-${group.id}'));
 
   final LineUpGroup group;
 
@@ -34,11 +37,13 @@ class LineUpGroupAgentWidget extends ConsumerWidget {
 }
 
 class LineUpItemAbilityWidget extends ConsumerWidget {
-  const LineUpItemAbilityWidget({
-    super.key,
+  LineUpItemAbilityWidget({
+    Key? key,
     required this.groupId,
     required this.item,
-  });
+  }) : super(
+          key: key ?? ValueKey('lineup-ability-widget-$groupId-${item.id}'),
+        );
 
   final String groupId;
   final LineUpItem item;

@@ -1020,6 +1020,50 @@ void main() {
       );
     });
 
+    testWidgets(
+        'remaining stacked lineup item stays interactive after deleting sibling',
+        (tester) async {
+      final container = _createLineUpContainer();
+      final groups = _stackedLineUpGroups();
+      container.read(lineUpProvider.notifier).fromHive(groups);
+
+      await _pumpLineUpAbilities(
+        tester,
+        container: container,
+        groups: groups,
+      );
+
+      await _openContextMenu(tester, find.byType(AbilityWidget).last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey('lineup-stack-option-group-a-item-a'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(lineUpProvider).groups.map((group) => group.id),
+        ['group-b'],
+      );
+      expect(find.byType(AbilityWidget), findsOneWidget);
+
+      await _openContextMenu(tester, find.byType(AbilityWidget).first);
+
+      expect(find.byKey(const ValueKey('lineup-stack-selector')), findsNothing);
+      expect(find.text('Range'), findsOneWidget);
+      expect(find.text('Delete'), findsOneWidget);
+
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+
+      expect(container.read(lineUpProvider).groups, isEmpty);
+    });
+
     testWidgets('stacked lineup square body right-click stays non-interactive',
         (tester) async {
       final container = _createLineUpContainer();
@@ -1163,12 +1207,17 @@ Future<void> _pumpLineUpAbilities(
   await tester.pumpWidget(
     _buildHarness(
       container: container,
-      child: Stack(
-        children: [
-          for (final group in groups)
-            for (final item in group.items)
-              LineUpItemAbilityWidget(groupId: group.id, item: item),
-        ],
+      child: Consumer(
+        builder: (context, ref, _) {
+          final currentGroups = ref.watch(lineUpProvider).groups;
+          return Stack(
+            children: [
+              for (final group in currentGroups)
+                for (final item in group.items)
+                  LineUpItemAbilityWidget(groupId: group.id, item: item),
+            ],
+          );
+        },
       ),
     ),
   );
