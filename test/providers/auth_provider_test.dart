@@ -172,6 +172,69 @@ void main() {
         container.read(authProvider).convexAuthStatus, ConvexAuthStatus.ready);
   });
 
+  test(
+      'email password sign-in relies on auth-state listener and does not duplicate setup',
+      () async {
+    supabaseApi.currentSession = fakeSession();
+    supabaseApi.emitSignedInEventOnPasswordSignIn = true;
+    convexApi.autoAuthenticateOnSetAuth = false;
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    container.read(authProvider);
+    await pumpMicrotasks();
+    expect(convexApi.setAuthCalls, 1);
+
+    final error = await container.read(authProvider.notifier).signInWithEmailPassword(
+          email: 'test@example.com',
+          password: 'password',
+        );
+    await pumpMicrotasks();
+
+    expect(error, isNull);
+    expect(convexApi.setAuthCalls, 1);
+    expect(convexApi.reconnectCalls, 1);
+    expect(convexApi.mutationCalls, 0);
+
+    convexApi.emitAuthState(true);
+    await pumpMicrotasks();
+
+    expect(convexApi.mutationCalls, 1);
+    expect(
+      container.read(authProvider).convexAuthStatus,
+      ConvexAuthStatus.ready,
+    );
+  });
+
+  test('stale startup setup does not mark user ready after sign-out', () async {
+    supabaseApi.currentSession = fakeSession();
+    convexApi.autoAuthenticateOnSetAuth = false;
+    convexApi.setAuthCompleter = Completer<AuthProviderAuthHandle>();
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    container.read(authProvider);
+    await pumpMicrotasks();
+
+    expect(convexApi.setAuthCalls, 1);
+    expect(convexApi.clearAuthCalls, 0);
+
+    await container.read(authProvider.notifier).signOut();
+    expect(container.read(authProvider).convexAuthStatus, ConvexAuthStatus.signedOut);
+    expect(convexApi.clearAuthCalls, 1);
+
+    convexApi.setAuthCompleter!.complete(FakeAuthHandle());
+    await pumpMicrotasks();
+    convexApi.emitAuthState(true);
+    await pumpMicrotasks();
+
+    expect(convexApi.mutationCalls, 0);
+    final state = container.read(authProvider);
+    expect(state.isAuthenticated, isFalse);
+    expect(state.isConvexUserReady, isFalse);
+    expect(state.convexAuthStatus, ConvexAuthStatus.signedOut);
+  });
+
   test('null session clears Convex auth cleanly', () async {
     supabaseApi.currentSession = null;
     final container = ProviderContainer();
@@ -386,6 +449,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   @override
   Session? currentSession;
   bool emitInitialSessionOnListen = false;
+  bool emitSignedInEventOnPasswordSignIn = false;
   Session? sessionFromUrlSession;
   int getSessionFromUrlCalls = 0;
   final List<MultiStreamController<AuthState>> _controllers =
@@ -438,12 +502,20 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
     required String email,
     required String password,
   }) async {
+    if (emitSignedInEventOnPasswordSignIn) {
+      for (final controller in _controllers) {
+        controller.add(AuthState(AuthChangeEvent.signedIn, currentSession));
+      }
+    }
     return AuthResponse(session: currentSession);
   }
 
   @override
   Future<void> signOut() async {
     currentSession = null;
+    for (final controller in _controllers) {
+      controller.add(AuthState(AuthChangeEvent.signedOut, currentSession));
+    }
   }
 
   @override
