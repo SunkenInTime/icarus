@@ -12,6 +12,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -139,11 +140,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     });
 
     ref.listen<StrategyOpQueueState>(strategyOpQueueProvider, (previous, next) {
-      final previousAcks = previous?.lastAcks ?? const <OpAck>[];
-      if (next.lastAcks.isEmpty || identical(previousAcks, next.lastAcks)) {
+      final previousAckBatch = previous?.lastAckBatch ?? const <AckedEntityIntent>[];
+      if (next.lastAckBatch.isEmpty ||
+          identical(previousAckBatch, next.lastAckBatch)) {
         return;
       }
-      unawaited(_reconcileAcks(next.lastAcks));
+      unawaited(_reconcileAcks(next.lastAcks, next.lastAckBatch));
     });
 
     return const StrategyPageSessionState(
@@ -175,6 +177,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       transitionState: PageTransitionState.idle,
       isApplyingPage: false,
     );
+    ref.read(activePageLiveSyncProvider.notifier).setContext(
+          strategyPublicId: strategyId,
+          activePageId: selected,
+        );
 
     if (selected != null) {
       await _rehydrateActivePageFromSource(selected);
@@ -243,6 +249,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         transitionNotifier.complete();
       }
       state = state.copyWith(transitionState: PageTransitionState.idle);
+      _resumePendingRemoteReapplyIfPossible();
     });
   }
 
@@ -303,6 +310,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     _lastHydratedRemoteStrategyId = null;
     _lastHydratedRemotePageId = null;
     _pendingRemoteReapply = false;
+    ref.read(activePageLiveSyncProvider.notifier).reset();
   }
 
   Future<void> _switchToPage(
@@ -321,6 +329,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     await pageSource.flushCurrentPage();
     if (source == StrategySource.cloud) {
       await ref.read(strategyOpQueueProvider.notifier).flushNow();
+      ref.read(activePageLiveSyncProvider.notifier).setContext(
+            strategyPublicId: strategyId,
+            activePageId: pageId,
+          );
     }
 
     final pageData = await pageSource.loadPage(pageId);
@@ -343,8 +355,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       return;
     }
 
-    final pageData =
-        await _resolvePageSource(strategyId, source).loadPage(pageId);
+    ref.read(activePageLiveSyncProvider.notifier).setContext(
+          strategyPublicId: strategyId,
+          activePageId: pageId,
+        );
+    final pageData = await _resolvePageSource(strategyId, source).loadPage(pageId);
     await _applyLoadedPageData(
       pageData,
       strategyId: strategyId,
@@ -385,6 +400,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         activePageId: pageData.pageId,
         isApplyingPage: false,
       );
+      _resumePendingRemoteReapplyIfPossible();
     }
   }
 
@@ -455,12 +471,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   bool _canSafelyReapplyRemotePage() {
-    final saveState = ref.read(strategySaveStateProvider);
     return !state.isApplyingPage &&
-        state.transitionState == PageTransitionState.idle &&
-        !saveState.isDirty &&
-        !saveState.hasPendingCloudSync &&
-        !saveState.isSaving;
+        state.transitionState == PageTransitionState.idle;
   }
 
   String? _resolveHydrationTargetPage(RemoteStrategySnapshot snapshot) {
@@ -489,12 +501,16 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     _lastHydratedRemotePageId = pageId;
   }
 
-  Future<void> _reconcileAcks(List<OpAck> acks) async {
+  Future<void> _reconcileAcks(
+    List<OpAck> acks,
+    List<AckedEntityIntent> ackBatch,
+  ) async {
     final strategyState = ref.read(strategyProvider);
     if (strategyState.source != StrategySource.cloud || acks.isEmpty) {
       return;
     }
 
+    ref.read(activePageLiveSyncProvider.notifier).recordAckBatch(ackBatch);
     var hasReject = false;
     for (final ack in acks) {
       if (ack.isAck) {
@@ -525,15 +541,38 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           );
     }
 
-    if (!hasReject) {
+    await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+    final activePageId = state.activePageId;
+    final strategyId = strategyState.strategyId;
+    if (activePageId != null && strategyId != null) {
+      final desiredOpsByEntityKey =
+          ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+                strategyPublicId: strategyId,
+                pageId: activePageId,
+              );
+      ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
+            pageId: activePageId,
+            desiredOpsByEntityKey: desiredOpsByEntityKey,
+            flushImmediately: false,
+          );
+      if (_canSafelyReapplyRemotePage()) {
+        await _rehydrateActivePageFromSource(activePageId);
+      } else {
+        _pendingRemoteReapply = true;
+      }
+    } else if (hasReject) {
+      _pendingRemoteReapply = true;
+    }
+  }
+
+  void _resumePendingRemoteReapplyIfPossible() {
+    if (!_pendingRemoteReapply || !_canSafelyReapplyRemotePage()) {
       return;
     }
-
-    await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
-    if (_canSafelyReapplyRemotePage() && state.activePageId != null) {
-      await _rehydrateActivePageFromSource(state.activePageId!);
-    } else {
-      _pendingRemoteReapply = true;
+    _pendingRemoteReapply = false;
+    final pageId = state.activePageId;
+    if (pageId != null) {
+      unawaited(_rehydrateActivePageFromSource(pageId));
     }
   }
 

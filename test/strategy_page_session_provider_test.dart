@@ -12,6 +12,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -61,6 +62,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
 
   final String? strategyPublicId;
   int enqueueAllCount = 0;
+  int syncDesiredOpsForPageCount = 0;
   int flushNowCount = 0;
   final List<StrategyOp> enqueuedOps = [];
 
@@ -76,8 +78,10 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   void setActiveStrategy(String? strategyPublicId) {
     state = state.copyWith(
       strategyPublicId: strategyPublicId,
-      pending: const [],
+      queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+      inFlightByEntityKey: const <EntitySyncKey, InFlightEntityIntent>{},
       lastAcks: const [],
+      lastAckBatch: const [],
       clearError: true,
     );
   }
@@ -87,11 +91,20 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     final collected = ops.toList(growable: false);
     enqueueAllCount++;
     enqueuedOps.addAll(collected);
+    final queued = <EntitySyncKey, QueuedEntityIntent>{};
+    for (final op in collected) {
+      final key = entityKeyForStrategyOp(op);
+      if (key == null) {
+        continue;
+      }
+      queued[key] = QueuedEntityIntent(
+        entityKey: key,
+        pending: PendingOp(op: op, clientId: state.clientId ?? 'test-client'),
+      );
+    }
     state = state.copyWith(
-      pending: [
-        for (final op in collected)
-          PendingOp(op: op, clientId: state.clientId ?? 'test-client'),
-      ],
+      queuedByEntityKey: queued,
+      inFlightByEntityKey: const <EntitySyncKey, InFlightEntityIntent>{},
       clearError: true,
     );
     if (flushImmediately) {
@@ -100,17 +113,35 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   }
 
   @override
+  void syncDesiredOpsForPage({
+    required String pageId,
+    required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
+    bool flushImmediately = false,
+  }) {
+    syncDesiredOpsForPageCount++;
+    super.syncDesiredOpsForPage(
+      pageId: pageId,
+      desiredOpsByEntityKey: desiredOpsByEntityKey,
+      flushImmediately: flushImmediately,
+    );
+  }
+
+  @override
   Future<void> flushNow() async {
     flushNowCount++;
     state = state.copyWith(
-      pending: const [],
+      queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+      inFlightByEntityKey: const <EntitySyncKey, InFlightEntityIntent>{},
       isFlushing: false,
       lastFlushAt: DateTime.now(),
     );
   }
 
-  void emitAcks(List<OpAck> acks) {
-    state = state.copyWith(lastAcks: acks);
+  void emitAcks(List<OpAck> acks, [List<AckedEntityIntent>? ackBatch]) {
+    state = state.copyWith(
+      lastAcks: acks,
+      lastAckBatch: ackBatch ?? const <AckedEntityIntent>[],
+    );
   }
 }
 
@@ -338,7 +369,92 @@ void main() {
     expect(container.read(textProvider).single.text, 'after');
   });
 
-  test('reject refresh does not flush current cloud page', () async {
+  test('active-page projection keeps local entity while untouched remote updates live',
+      () async {
+    const strategyId = 'cloud-strategy';
+    final pageOne =
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);
+    final initialSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [pageOne],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'remote-a',
+          ),
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-2',
+            text: 'remote-b',
+          ),
+        ],
+      },
+    );
+    final updatedSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 2,
+      pages: [pageOne],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'remote-a',
+          ),
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-2',
+            text: 'remote-b-updated',
+          ),
+        ],
+      },
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(initialSnapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'text-1', position: const Offset(10, 20))..text = 'local-a',
+      PlacedText(id: 'text-2', position: const Offset(30, 40))..text = 'remote-b',
+    ]);
+    await container.read(strategyPageSessionProvider.notifier).flushCurrentPage();
+
+    remoteNotifier.setSnapshot(updatedSnapshot);
+    await _settle();
+
+    final textsById = {
+      for (final text in container.read(textProvider)) text.id: text.text,
+    };
+    expect(textsById['text-1'], 'local-a');
+    expect(textsById['text-2'], 'remote-b-updated');
+  });
+
+  test('reject refresh preserves local state and queues follow-up sync', () async {
     const strategyId = 'cloud-strategy';
     final pageOne =
         _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);
@@ -399,17 +515,37 @@ void main() {
     remoteNotifier.setSnapshot(updatedSnapshot);
     queueNotifier.emitAcks(const [
       OpAck(
+        opId: 'op-1',
+        status: 'reject',
+        latestSequence: 2,
+        reason: 'conflict',
+      ),
+    ], const [
+      AckedEntityIntent(
+        entityKey: 'element:page-1:text-1',
+        op: StrategyOp(
+          opId: 'op-1',
+          kind: StrategyOpKind.patch,
+          entityType: StrategyOpEntityType.element,
+          entityPublicId: 'text-1',
+          pagePublicId: 'page-1',
+          payload: '{"text":"after"}',
+        ),
+        ack: OpAck(
           opId: 'op-1',
           status: 'reject',
           latestSequence: 2,
-          reason: 'conflict'),
+          reason: 'conflict',
+        ),
+      ),
     ]);
     await _settle();
 
     expect(remoteNotifier.refreshCount, 1);
-    expect(queueNotifier.enqueueAllCount, 0);
+    expect(queueNotifier.syncDesiredOpsForPageCount, 1);
     expect(queueNotifier.flushNowCount, 0);
-    expect(container.read(textProvider).single.text, 'after');
+    expect(container.read(textProvider).single.text, 'local-only');
+    expect(container.read(strategyOpQueueProvider).pending, isNotEmpty);
   });
 
   test('user page switch still flushes current cloud page', () async {
@@ -463,8 +599,7 @@ void main() {
         .read(strategyPageSessionProvider.notifier)
         .setActivePage('page-2');
 
-    expect(queueNotifier.enqueueAllCount, 1);
-    expect(queueNotifier.enqueuedOps, isNotEmpty);
+    expect(queueNotifier.syncDesiredOpsForPageCount, 1);
     expect(queueNotifier.flushNowCount, 1);
     expect(container.read(textProvider).single.text, 'page-two');
   });
@@ -604,6 +739,7 @@ void main() {
 
     queueNotifier
       ..enqueueAllCount = 0
+      ..syncDesiredOpsForPageCount = 0
       ..flushNowCount = 0
       ..enqueuedOps.clear();
     container.read(textProvider.notifier).fromHive([
@@ -627,12 +763,13 @@ void main() {
       overlay_transition.PageTransitionPhase.preparing,
     );
     expect(transitionState.direction, PageTransitionDirection.backward);
+    expect(queueNotifier.syncDesiredOpsForPageCount, 1);
     expect(queueNotifier.flushNowCount, 1);
     expect(container.read(strategyPageSessionProvider).activePageId, 'page-1');
     expect(container.read(textProvider).single.text, 'before');
   });
 
-  test('pending remote reapply resumes through non-flushing path', () async {
+  test('pending cloud sync does not block projected active-page rehydrate', () async {
     const strategyId = 'cloud-strategy';
     final pageOne =
         _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);
@@ -691,13 +828,6 @@ void main() {
       ..markDirty()
       ..setPendingCloudSync(true);
     remoteNotifier.setSnapshot(updatedSnapshot);
-    await _settle();
-
-    expect(container.read(textProvider).single.text, 'before');
-    expect(queueNotifier.enqueueAllCount, 0);
-    expect(queueNotifier.flushNowCount, 0);
-
-    container.read(strategySaveStateProvider.notifier).markPersisted();
     await _settle();
 
     expect(container.read(textProvider).single.text, 'after');

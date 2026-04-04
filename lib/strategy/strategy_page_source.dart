@@ -10,6 +10,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -167,6 +168,16 @@ class CloudStrategyPageSource implements StrategyPageSource {
       orElse: () => pages.first,
     );
 
+    final projected = ref.read(activePageLiveSyncProvider.notifier).projectPageState(
+          strategyPublicId: strategyId,
+          pageId: page.publicId,
+        );
+    if (projected != null &&
+        (page.publicId == activePageId() ||
+            ref.read(activePageLiveSyncProvider.notifier).hasOverlayForPage(page.publicId))) {
+      return _hydrateProjectedPage(snapshot, page, projected);
+    }
+
     final elements = snapshot.elementsByPage[page.publicId] ?? const [];
     final lineups = snapshot.lineupsByPage[page.publicId] ?? const [];
 
@@ -266,14 +277,122 @@ class CloudStrategyPageSource implements StrategyPageSource {
       return;
     }
 
-    final ops = _buildOpsFromCurrentPageSnapshot(pageId);
-    if (ops.isEmpty) {
-      return;
+    final desiredOpsByEntityKey =
+        ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: strategyId,
+              pageId: pageId,
+            );
+    ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
+          pageId: pageId,
+          desiredOpsByEntityKey: desiredOpsByEntityKey,
+          flushImmediately: false,
+        );
+  }
+
+  StrategyEditorPageData _hydrateProjectedPage(
+    RemoteStrategySnapshot snapshot,
+    RemotePage page,
+    ActivePageProjectedState projected,
+  ) {
+    final agents = <PlacedAgentNode>[];
+    final abilities = <PlacedAbility>[];
+    final drawings = <DrawingElement>[];
+    final texts = <PlacedText>[];
+    final images = <PlacedImage>[];
+    final utilities = <PlacedUtility>[];
+
+    for (final element in projected.elements) {
+      final payload = _decodeJsonObject(element.payload);
+      try {
+        switch (element.elementType) {
+          case 'agent':
+            agents.add(PlacedAgentNode.fromJson(payload));
+            break;
+          case 'ability':
+            abilities.add(PlacedAbility.fromJson(payload));
+            break;
+          case 'drawing':
+            final decoded = DrawingProvider.fromJson(jsonEncode([payload]));
+            if (decoded.isNotEmpty) {
+              drawings.add(decoded.first);
+            }
+            break;
+          case 'text':
+            texts.add(PlacedText.fromJson(payload));
+            break;
+          case 'image':
+            images.add(PlacedImage.fromJson(payload));
+            break;
+          case 'utility':
+            utilities.add(PlacedUtility.fromJson(payload));
+            break;
+        }
+      } catch (_) {
+        // Ignore malformed payloads during hydration.
+      }
     }
 
-    ref
-        .read(strategyOpQueueProvider.notifier)
-        .enqueueAll(ops, flushImmediately: false);
+    final parsedLineups = <LineUp>[];
+    for (final lineup in projected.lineups) {
+      try {
+        final decoded = jsonDecode(lineup.payload);
+        if (decoded is Map<String, dynamic>) {
+          parsedLineups.add(LineUp.fromJson(decoded));
+        } else if (decoded is Map) {
+          parsedLineups.add(LineUp.fromJson(Map<String, dynamic>.from(decoded)));
+        }
+      } catch (_) {
+        // Ignore malformed payloads during hydration.
+      }
+    }
+
+    final mapValue = Maps.mapNames.entries.firstWhere(
+      (entry) => entry.value == snapshot.header.mapData,
+      orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
+    );
+
+    final settings = _parsePageSettings(projected.settingsJson);
+
+    return StrategyEditorPageData(
+      pageId: projected.pageId,
+      pageName: page.name,
+      isAttack: projected.isAttack,
+      map: mapValue.key,
+      settings: settings,
+      agents: agents,
+      abilities: abilities,
+      drawings: drawings,
+      texts: texts,
+      images: images,
+      utilities: utilities,
+      lineups: parsedLineups,
+    );
+  }
+
+  StrategySettings _parsePageSettings(String? settingsJson) {
+    if (settingsJson == null || settingsJson.isEmpty) {
+      return StrategySettings();
+    }
+    try {
+      return ref.read(strategySettingsProvider.notifier).fromJson(settingsJson);
+    } catch (_) {
+      return StrategySettings();
+    }
+  }
+
+  Map<String, dynamic> _decodeJsonObject(String payload) {
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    } catch (_) {
+      // Ignore malformed payloads during hydration.
+    }
+    return <String, dynamic>{};
   }
 
   List<_CollabElementEnvelope> _collectLocalElementEnvelopes() {
