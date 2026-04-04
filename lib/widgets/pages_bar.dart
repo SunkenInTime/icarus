@@ -359,7 +359,8 @@ class _ExpandedPanel extends StatelessWidget {
               padding: const EdgeInsets.only(top: _topPadding),
               child: ReorderableListView.builder(
                 onReorder: onReorder == null ? (_, __) {} : onReorder!,
-                buildDefaultDragHandles: canReorderPages,
+                // Rows use ReorderableDragStartListener; default handles overlap delete.
+                buildDefaultDragHandles: false,
                 padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
                 shrinkWrap: needsScroll ? false : true,
                 physics:
