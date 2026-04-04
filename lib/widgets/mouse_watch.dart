@@ -307,14 +307,27 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(lineUpProvider);
-    final LineUpItem? lineUpItem =
-        widget.lineUpId == null || widget.lineUpItemId == null
-            ? null
-            : ref.read(lineUpProvider.notifier).getItemById(
-                  groupId: widget.lineUpId!,
-                  itemId: widget.lineUpItemId!,
-                );
+    final LineUpItem? lineUpItem = ref.watch(
+      lineUpProvider.select((state) {
+        final groupId = widget.lineUpId;
+        final itemId = widget.lineUpItemId;
+        if (groupId == null || itemId == null) {
+          return null;
+        }
+        for (final group in state.groups) {
+          if (group.id != groupId) {
+            continue;
+          }
+          for (final item in group.items) {
+            if (item.id == itemId) {
+              return item;
+            }
+          }
+          return null;
+        }
+        return null;
+      }),
+    );
     final lineUpNotes = lineUpItem?.notes;
     final hasLineUpNote = (lineUpNotes?.trim().isNotEmpty ?? false);
     _scheduleHitboxMeasurement();

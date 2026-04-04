@@ -607,7 +607,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final hasPageChanged = migratedPages.length == strat.pages.length &&
         migratedPages.asMap().entries.any((entry) {
           final index = entry.key;
-          return entry.value != strat.pages[index];
+          return !identical(entry.value, strat.pages[index]);
         });
 
     if (!hasPageChanged && !force) {

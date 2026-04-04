@@ -1,3 +1,4 @@
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 
 class LineUpGroupMigration {
@@ -12,6 +13,23 @@ class LineUpGroupMigration {
   }
 
   static StrategyPage _migratePage(StrategyPage page) {
+    bool groupNeedsMigration(LineUpGroup group) {
+      if (group.agent.lineUpID != group.id) {
+        return true;
+      }
+      for (final item in group.items) {
+        if (item.ability.lineUpID != group.id) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    final hasChanged = page.lineUpGroups.any(groupNeedsMigration);
+    if (!hasChanged) {
+      return page;
+    }
+
     final migratedGroups = [
       for (final group in page.lineUpGroups)
         group.copyWith(
@@ -24,16 +42,6 @@ class LineUpGroupMigration {
           ],
         ),
     ];
-
-    final hasChanged = migratedGroups.length != page.lineUpGroups.length ||
-        migratedGroups.asMap().entries.any((entry) {
-          final index = entry.key;
-          return entry.value != page.lineUpGroups[index];
-        });
-
-    if (!hasChanged) {
-      return page;
-    }
 
     return page.copyWith(lineUpGroups: migratedGroups);
   }
