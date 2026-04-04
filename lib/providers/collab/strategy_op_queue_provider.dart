@@ -3,10 +3,12 @@ import 'dart:developer';
 import 'dart:math' as math;
 
 import 'package:convex_flutter/convex_flutter.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -14,39 +16,52 @@ class StrategyOpQueueState {
   const StrategyOpQueueState({
     this.strategyPublicId,
     this.clientId,
-    this.pending = const <PendingOp>[],
+    this.queuedByEntityKey = const <EntitySyncKey, QueuedEntityIntent>{},
+    this.inFlightByEntityKey = const <EntitySyncKey, InFlightEntityIntent>{},
     this.isFlushing = false,
     this.lastError,
     this.lastFlushAt,
     this.lastAcks = const <OpAck>[],
+    this.lastAckBatch = const <AckedEntityIntent>[],
   });
 
   final String? strategyPublicId;
   final String? clientId;
-  final List<PendingOp> pending;
+  final Map<EntitySyncKey, QueuedEntityIntent> queuedByEntityKey;
+  final Map<EntitySyncKey, InFlightEntityIntent> inFlightByEntityKey;
   final bool isFlushing;
   final String? lastError;
   final DateTime? lastFlushAt;
   final List<OpAck> lastAcks;
+  final List<AckedEntityIntent> lastAckBatch;
+
+  List<PendingOp> get pending => [
+        ...queuedByEntityKey.values.map((intent) => intent.pending),
+        ...inFlightByEntityKey.values.map((intent) => intent.pending),
+      ];
 
   StrategyOpQueueState copyWith({
     String? strategyPublicId,
     String? clientId,
-    List<PendingOp>? pending,
+    Map<EntitySyncKey, QueuedEntityIntent>? queuedByEntityKey,
+    Map<EntitySyncKey, InFlightEntityIntent>? inFlightByEntityKey,
     bool? isFlushing,
     String? lastError,
     bool clearError = false,
     DateTime? lastFlushAt,
     List<OpAck>? lastAcks,
+    List<AckedEntityIntent>? lastAckBatch,
   }) {
     return StrategyOpQueueState(
       strategyPublicId: strategyPublicId ?? this.strategyPublicId,
       clientId: clientId ?? this.clientId,
-      pending: pending ?? this.pending,
+      queuedByEntityKey: queuedByEntityKey ?? this.queuedByEntityKey,
+      inFlightByEntityKey: inFlightByEntityKey ?? this.inFlightByEntityKey,
       isFlushing: isFlushing ?? this.isFlushing,
       lastError: clearError ? null : (lastError ?? this.lastError),
       lastFlushAt: lastFlushAt ?? this.lastFlushAt,
       lastAcks: lastAcks ?? this.lastAcks,
+      lastAckBatch: lastAckBatch ?? this.lastAckBatch,
     );
   }
 }
@@ -77,149 +92,178 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   void setActiveStrategy(String? strategyPublicId) {
-    if (state.strategyPublicId == strategyPublicId) return;
+    if (state.strategyPublicId == strategyPublicId) {
+      return;
+    }
 
     _debounceTimer?.cancel();
     state = state.copyWith(
       strategyPublicId: strategyPublicId,
       clientId: const Uuid().v4(),
-      pending: const [],
-      lastAcks: const [],
+      queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
+      inFlightByEntityKey: const <EntitySyncKey, InFlightEntityIntent>{},
+      lastAcks: const <OpAck>[],
+      lastAckBatch: const <AckedEntityIntent>[],
       clearError: true,
     );
   }
 
   void enqueue(StrategyOp op, {bool flushImmediately = false}) {
-    final currentStrategyId = state.strategyPublicId;
-    if (currentStrategyId == null) {
+    final entityKey = entityKeyForStrategyOp(op);
+    if (entityKey == null) {
+      return;
+    }
+    final pageId = pageIdForEntityKey(entityKey);
+    if (pageId != null) {
+      syncDesiredOpsForPage(
+        pageId: pageId,
+        desiredOpsByEntityKey: {entityKey: op},
+        clearMissing: false,
+        flushImmediately: flushImmediately,
+      );
       return;
     }
 
-    final incoming = PendingOp(
-      op: op,
-      clientId: state.clientId ?? const Uuid().v4(),
-      attempts: 0,
+    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.queuedByEntityKey,
     );
-    final mergedPending = _mergePending(state.pending, incoming);
-
+    queued[entityKey] = QueuedEntityIntent(
+      entityKey: entityKey,
+      pending: PendingOp(
+        op: op,
+        clientId: state.clientId ?? const Uuid().v4(),
+      ),
+    );
     state = state.copyWith(
-      pending: mergedPending,
+      queuedByEntityKey: queued,
       clearError: true,
     );
-
-    if (flushImmediately) {
-      unawaited(flushNow());
-      return;
-    }
-
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(_debounceDelay, () {
-      unawaited(flushNow());
-    });
-  }
-
-  List<PendingOp> _mergePending(List<PendingOp> pending, PendingOp incoming) {
-    final entityKey = _entityKeyForOp(incoming.op);
-    if (entityKey == null) {
-      return [...pending, incoming];
-    }
-
-    final merged = <PendingOp>[];
-    var handled = false;
-
-    for (final existing in pending) {
-      if (handled || _entityKeyForOp(existing.op) != entityKey) {
-        merged.add(existing);
-        continue;
-      }
-
-      final replacement = _mergePendingOp(existing, incoming);
-      if (replacement != null) {
-        merged.add(replacement);
-      }
-      handled = true;
-    }
-
-    if (!handled) {
-      merged.add(incoming);
-    }
-
-    return merged;
-  }
-
-  String? _entityKeyForOp(StrategyOp op) {
-    switch (op.entityType) {
-      case StrategyOpEntityType.strategy:
-        return 'strategy';
-      case StrategyOpEntityType.page:
-        return op.entityPublicId == null ? null : 'page:${op.entityPublicId}';
-      case StrategyOpEntityType.element:
-        if (op.pagePublicId == null || op.entityPublicId == null) {
-          return null;
-        }
-        return 'element:${op.pagePublicId}:${op.entityPublicId}';
-      case StrategyOpEntityType.lineup:
-        if (op.pagePublicId == null || op.entityPublicId == null) {
-          return null;
-        }
-        return 'lineup:${op.pagePublicId}:${op.entityPublicId}';
-    }
-  }
-
-  PendingOp? _mergePendingOp(PendingOp existing, PendingOp incoming) {
-    final existingOp = existing.op;
-    final incomingOp = incoming.op;
-
-    if (incomingOp.kind == StrategyOpKind.delete &&
-        existingOp.kind == StrategyOpKind.add) {
-      return null;
-    }
-
-    if (existingOp.kind == StrategyOpKind.add &&
-        incomingOp.kind == StrategyOpKind.patch) {
-      return PendingOp(
-        op: StrategyOp(
-          opId: existingOp.opId,
-          kind: StrategyOpKind.add,
-          entityType: existingOp.entityType,
-          entityPublicId: existingOp.entityPublicId,
-          pagePublicId: existingOp.pagePublicId,
-          payload: incomingOp.payload ?? existingOp.payload,
-          sortIndex: incomingOp.sortIndex ?? existingOp.sortIndex,
-          expectedRevision: existingOp.expectedRevision,
-          expectedSequence: existingOp.expectedSequence,
-        ),
-        clientId: existing.clientId,
-        attempts: existing.attempts,
-        lastAttemptAt: existing.lastAttemptAt,
-      );
-    }
-
-    return PendingOp(
-      op: StrategyOp(
-        opId: existingOp.opId,
-        kind: incomingOp.kind,
-        entityType: incomingOp.entityType,
-        entityPublicId: incomingOp.entityPublicId ?? existingOp.entityPublicId,
-        pagePublicId: incomingOp.pagePublicId ?? existingOp.pagePublicId,
-        payload: incomingOp.payload ?? existingOp.payload,
-        sortIndex: incomingOp.sortIndex ?? existingOp.sortIndex,
-        expectedRevision: incomingOp.expectedRevision ?? existingOp.expectedRevision,
-        expectedSequence: incomingOp.expectedSequence ?? existingOp.expectedSequence,
-      ),
-      clientId: existing.clientId,
-      attempts: existing.attempts,
-      lastAttemptAt: existing.lastAttemptAt,
-    );
+    _scheduleFlush(flushImmediately: flushImmediately);
   }
 
   void enqueueAll(Iterable<StrategyOp> ops, {bool flushImmediately = false}) {
+    final opsByPage = <String, Map<EntitySyncKey, StrategyOp>>{};
+    final genericQueued = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.queuedByEntityKey,
+    );
+
     for (final op in ops) {
-      enqueue(op, flushImmediately: false);
+      final entityKey = entityKeyForStrategyOp(op);
+      if (entityKey == null) {
+        continue;
+      }
+      final pageId = pageIdForEntityKey(entityKey);
+      if (pageId == null) {
+        genericQueued[entityKey] = QueuedEntityIntent(
+          entityKey: entityKey,
+          pending: PendingOp(
+            op: op,
+            clientId: state.clientId ?? const Uuid().v4(),
+          ),
+        );
+        continue;
+      }
+      opsByPage.putIfAbsent(pageId, () => <EntitySyncKey, StrategyOp>{})[entityKey] =
+          op;
     }
-    if (flushImmediately) {
-      unawaited(flushNow());
+
+    if (!mapEquals(genericQueued, state.queuedByEntityKey)) {
+      state = state.copyWith(
+        queuedByEntityKey: genericQueued,
+        clearError: true,
+      );
     }
+
+    for (final entry in opsByPage.entries) {
+      syncDesiredOpsForPage(
+        pageId: entry.key,
+        desiredOpsByEntityKey: entry.value,
+        clearMissing: false,
+        flushImmediately: false,
+      );
+    }
+    _scheduleFlush(flushImmediately: flushImmediately);
+  }
+
+  void syncDesiredOpsForPage({
+    required String pageId,
+    required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
+    bool clearMissing = true,
+    bool flushImmediately = false,
+  }) {
+    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.queuedByEntityKey,
+    );
+    final pageKeys = clearMissing
+        ? <EntitySyncKey>{
+            ...queued.keys.where((key) => pageIdForEntityKey(key) == pageId),
+            ...desiredOpsByEntityKey.keys,
+          }
+        : desiredOpsByEntityKey.keys.toSet();
+
+    var changed = false;
+    for (final key in pageKeys) {
+      final desired = desiredOpsByEntityKey[key];
+      final existingQueued = queued[key];
+      final inFlight = state.inFlightByEntityKey[key]?.pending.op;
+
+      if (desired == null) {
+        if (queued.remove(key) != null) {
+          changed = true;
+          _debugLog('queued.drop $key reason=returned_to_remote_base');
+        }
+        continue;
+      }
+
+      if (inFlight != null && _sameIntent(desired, inFlight)) {
+        if (queued.remove(key) != null) {
+          changed = true;
+          _debugLog('queued.drop $key reason=covered_by_in_flight');
+        }
+        continue;
+      }
+
+      if (existingQueued != null && _sameIntent(existingQueued.pending.op, desired)) {
+        continue;
+      }
+
+      final mergedDesired = existingQueued == null
+          ? desired
+          : _mergeQueuedIntent(existingQueued.pending.op, desired);
+      if (mergedDesired == null) {
+        if (queued.remove(key) != null) {
+          changed = true;
+          _debugLog('queued.drop $key reason=coalesced_to_noop');
+        }
+        continue;
+      }
+
+      queued[key] = QueuedEntityIntent(
+        entityKey: key,
+        pending: PendingOp(
+          op: mergedDesired,
+          clientId: state.clientId ?? const Uuid().v4(),
+          attempts: existingQueued?.pending.attempts ?? 0,
+          lastAttemptAt: existingQueued?.pending.lastAttemptAt,
+        ),
+      );
+      changed = true;
+      _debugLog(
+        existingQueued == null
+            ? 'queued.upsert $key kind=${mergedDesired.kind.name}'
+            : 'queued.replace $key kind=${mergedDesired.kind.name}',
+      );
+    }
+
+    if (!changed) {
+      return;
+    }
+
+    state = state.copyWith(
+      queuedByEntityKey: queued,
+      clearError: true,
+    );
+    _scheduleFlush(flushImmediately: flushImmediately);
   }
 
   Future<void> flushNow() async {
@@ -228,7 +272,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
 
     final strategyPublicId = state.strategyPublicId;
-    if (strategyPublicId == null || state.pending.isEmpty) {
+    if (strategyPublicId == null || state.queuedByEntityKey.isEmpty) {
       return;
     }
 
@@ -248,62 +292,105 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
 
     if (!auth.isAuthenticated || !auth.isConvexUserReady || !isConnected) {
-      final incremented = [
-        for (final pending in state.pending) pending.incrementAttempt(),
-      ];
+      final incremented = <EntitySyncKey, QueuedEntityIntent>{
+        for (final entry in state.queuedByEntityKey.entries)
+          entry.key: QueuedEntityIntent(
+            entityKey: entry.key,
+            pending: entry.value.pending.incrementAttempt(),
+          ),
+      };
       state = state.copyWith(
-        pending: incremented,
+        queuedByEntityKey: incremented,
         lastError: !auth.isAuthenticated
             ? 'Not authenticated for cloud sync.'
             : (!auth.isConvexUserReady
                 ? 'Cloud user setup is not ready.'
                 : 'Cloud connection is offline.'),
       );
-      _scheduleRetry(incremented);
+      _scheduleRetry(incremented.values.map((intent) => intent.pending).toList());
       return;
     }
 
-    state = state.copyWith(isFlushing: true, clearError: true);
+    final batch = state.queuedByEntityKey.values
+        .where((intent) => !state.inFlightByEntityKey.containsKey(intent.entityKey))
+        .take(_maxBatchSize)
+        .toList(growable: false);
+    if (batch.isEmpty) {
+      return;
+    }
 
-    final batch = state.pending.take(_maxBatchSize).toList(growable: false);
-    final ops = batch.map((pending) => pending.op).toList(growable: false);
+    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.queuedByEntityKey,
+    );
+    final inFlight = Map<EntitySyncKey, InFlightEntityIntent>.from(
+      state.inFlightByEntityKey,
+    );
+    final sentAt = DateTime.now();
+    final batchByOpId = <String, QueuedEntityIntent>{};
+    for (final intent in batch) {
+      queued.remove(intent.entityKey);
+      inFlight[intent.entityKey] = InFlightEntityIntent(
+        entityKey: intent.entityKey,
+        pending: intent.pending,
+        sentAt: sentAt,
+      );
+      batchByOpId[intent.pending.op.opId] = intent;
+      _debugLog('inflight.send ${intent.entityKey} op=${intent.pending.op.opId}');
+    }
+
+    state = state.copyWith(
+      queuedByEntityKey: queued,
+      inFlightByEntityKey: inFlight,
+      isFlushing: true,
+      clearError: true,
+    );
 
     try {
       final acks = await _repo.applyBatch(
         strategyPublicId: strategyPublicId,
         clientId: state.clientId ?? const Uuid().v4(),
-        ops: ops,
+        ops: batch.map((intent) => intent.pending.op).toList(growable: false),
       );
 
-      final rejected = <String, PendingOp>{};
-      for (final pending in batch) {
-        rejected[pending.op.opId] = pending;
-      }
-
+      final latestQueued = Map<EntitySyncKey, QueuedEntityIntent>.from(
+        state.queuedByEntityKey,
+      );
+      final latestInFlight = Map<EntitySyncKey, InFlightEntityIntent>.from(
+        state.inFlightByEntityKey,
+      );
+      final acked = <AckedEntityIntent>[];
       for (final ack in acks) {
-        if (ack.isAck) {
-          rejected.remove(ack.opId);
+        final sent = batchByOpId[ack.opId];
+        if (sent == null) {
           continue;
         }
-
-        final pending = rejected[ack.opId];
-        if (pending != null) {
-          rejected[ack.opId] = pending.incrementAttempt();
-        }
+        latestInFlight.remove(sent.entityKey);
+        acked.add(
+          AckedEntityIntent(
+            entityKey: sent.entityKey,
+            op: sent.pending.op,
+            ack: ack,
+          ),
+        );
+        _debugLog(
+          'inflight.${ack.isAck ? 'ack' : 'reject'} ${sent.entityKey} op=${ack.opId}',
+        );
       }
 
-      final untouched = state.pending.skip(batch.length).toList(growable: false);
-      final retried = rejected.values.toList(growable: false);
+      for (final sent in batch) {
+        latestInFlight.remove(sent.entityKey);
+      }
+
       state = state.copyWith(
-        pending: [...retried, ...untouched],
+        queuedByEntityKey: latestQueued,
+        inFlightByEntityKey: latestInFlight,
         isFlushing: false,
         lastFlushAt: DateTime.now(),
         lastAcks: acks,
+        lastAckBatch: acked,
       );
 
-      if (rejected.isNotEmpty) {
-        _scheduleRetry(retried);
-      } else if (untouched.isNotEmpty) {
+      if (state.queuedByEntityKey.isNotEmpty) {
         unawaited(flushNow());
       }
     } catch (error, stackTrace) {
@@ -315,32 +402,73 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 stackTrace: stackTrace,
               ),
         );
-        state = state.copyWith(
-          isFlushing: false,
+        _restoreBatchAfterFailure(
+          batch,
           lastError: 'Cloud authentication expired. Retry required.',
         );
         return;
       }
 
-      log('Failed flushing op queue: $error',
-          error: error, stackTrace: stackTrace);
-
-      final incremented = [
-        for (final pending in state.pending) pending.incrementAttempt(),
-      ];
-
-      state = state.copyWith(
-        pending: incremented,
-        isFlushing: false,
-        lastError: '$error',
+      log(
+        'Failed flushing op queue: $error',
+        error: error,
+        stackTrace: stackTrace,
       );
-
-      _scheduleRetry(incremented);
+      _restoreBatchAfterFailure(batch, lastError: '$error');
     }
   }
 
+  void _restoreBatchAfterFailure(
+    List<QueuedEntityIntent> batch, {
+    required String lastError,
+  }) {
+    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.queuedByEntityKey,
+    );
+    final inFlight = Map<EntitySyncKey, InFlightEntityIntent>.from(
+      state.inFlightByEntityKey,
+    );
+    final retried = <PendingOp>[];
+
+    for (final sent in batch) {
+      inFlight.remove(sent.entityKey);
+      if (queued.containsKey(sent.entityKey)) {
+        continue;
+      }
+      final retriedPending = sent.pending.incrementAttempt();
+      queued[sent.entityKey] = QueuedEntityIntent(
+        entityKey: sent.entityKey,
+        pending: retriedPending,
+      );
+      retried.add(retriedPending);
+      _debugLog('queued.retry ${sent.entityKey} reason=flush_failure');
+    }
+
+    state = state.copyWith(
+      queuedByEntityKey: queued,
+      inFlightByEntityKey: inFlight,
+      isFlushing: false,
+      lastError: lastError,
+    );
+    _scheduleRetry(retried);
+  }
+
+  void _scheduleFlush({required bool flushImmediately}) {
+    if (flushImmediately) {
+      unawaited(flushNow());
+      return;
+    }
+
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(_debounceDelay, () {
+      unawaited(flushNow());
+    });
+  }
+
   void _scheduleRetry(List<PendingOp> pending) {
-    if (pending.isEmpty) return;
+    if (pending.isEmpty) {
+      return;
+    }
 
     final maxAttempt = pending.fold<int>(
       0,
@@ -353,5 +481,56 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _debounceTimer = Timer(Duration(milliseconds: delayMs), () {
       unawaited(flushNow());
     });
+  }
+
+  bool _sameIntent(StrategyOp left, StrategyOp right) {
+    return left.kind == right.kind &&
+        left.entityType == right.entityType &&
+        left.entityPublicId == right.entityPublicId &&
+        left.pagePublicId == right.pagePublicId &&
+        left.payload == right.payload &&
+        left.sortIndex == right.sortIndex &&
+        left.expectedRevision == right.expectedRevision &&
+        left.expectedSequence == right.expectedSequence;
+  }
+
+  StrategyOp? _mergeQueuedIntent(StrategyOp existing, StrategyOp desired) {
+    if (desired.kind == StrategyOpKind.delete &&
+        existing.kind == StrategyOpKind.add) {
+      return null;
+    }
+
+    if (existing.kind == StrategyOpKind.add && desired.kind == StrategyOpKind.patch) {
+      return StrategyOp(
+        opId: existing.opId,
+        kind: StrategyOpKind.add,
+        entityType: existing.entityType,
+        entityPublicId: existing.entityPublicId,
+        pagePublicId: existing.pagePublicId,
+        payload: desired.payload ?? existing.payload,
+        sortIndex: desired.sortIndex ?? existing.sortIndex,
+        expectedRevision: existing.expectedRevision,
+        expectedSequence: existing.expectedSequence,
+      );
+    }
+
+    return StrategyOp(
+      opId: existing.opId,
+      kind: desired.kind,
+      entityType: desired.entityType,
+      entityPublicId: desired.entityPublicId ?? existing.entityPublicId,
+      pagePublicId: desired.pagePublicId ?? existing.pagePublicId,
+      payload: desired.payload ?? existing.payload,
+      sortIndex: desired.sortIndex ?? existing.sortIndex,
+      expectedRevision: desired.expectedRevision ?? existing.expectedRevision,
+      expectedSequence: desired.expectedSequence ?? existing.expectedSequence,
+    );
+  }
+
+  void _debugLog(String message) {
+    assert(() {
+      log(message, name: 'strategy_op_queue');
+      return true;
+    }());
   }
 }

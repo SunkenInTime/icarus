@@ -212,6 +212,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     }
 
     if (_currentStrategyIsCloud()) {
+      ref.read(strategySaveStateProvider.notifier)
+        ..markDirty()
+        ..setPendingCloudSync(true)
+        ..setCloudSyncError(null);
       unawaited(notifyCloudMutation(flushImmediately: false));
       return;
     }

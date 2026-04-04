@@ -10,6 +10,8 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -22,7 +24,6 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
-import 'package:uuid/uuid.dart';
 
 abstract class StrategyPageSource {
   Future<List<String>> listPageIds();
@@ -167,6 +168,16 @@ class CloudStrategyPageSource implements StrategyPageSource {
       orElse: () => pages.first,
     );
 
+    final projected = ref.read(activePageLiveSyncProvider.notifier).projectPageState(
+          strategyPublicId: strategyId,
+          pageId: page.publicId,
+        );
+    if (projected != null &&
+        (page.publicId == activePageId() ||
+            ref.read(activePageLiveSyncProvider.notifier).hasOverlayForPage(page.publicId))) {
+      return _hydrateProjectedPage(snapshot, page, projected);
+    }
+
     final elements = snapshot.elementsByPage[page.publicId] ?? const [];
     final lineups = snapshot.lineupsByPage[page.publicId] ?? const [];
 
@@ -266,255 +277,122 @@ class CloudStrategyPageSource implements StrategyPageSource {
       return;
     }
 
-    final ops = _buildOpsFromCurrentPageSnapshot(pageId);
-    if (ops.isEmpty) {
-      return;
-    }
-
-    ref
-        .read(strategyOpQueueProvider.notifier)
-        .enqueueAll(ops, flushImmediately: false);
+    final desiredOpsByEntityKey =
+        ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: strategyId,
+              pageId: pageId,
+            );
+    ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
+          pageId: pageId,
+          desiredOpsByEntityKey: desiredOpsByEntityKey,
+          flushImmediately: false,
+        );
   }
 
-  List<_CollabElementEnvelope> _collectLocalElementEnvelopes() {
-    final envelopes = <_CollabElementEnvelope>[];
+  StrategyEditorPageData _hydrateProjectedPage(
+    RemoteStrategySnapshot snapshot,
+    RemotePage page,
+    ActivePageProjectedState projected,
+  ) {
+    final agents = <PlacedAgentNode>[];
+    final abilities = <PlacedAbility>[];
+    final drawings = <DrawingElement>[];
+    final texts = <PlacedText>[];
+    final images = <PlacedImage>[];
+    final utilities = <PlacedUtility>[];
 
-    for (final agent in ref.read(agentProvider)) {
-      final payload = Map<String, dynamic>.from(agent.toJson())
-        ..putIfAbsent('elementType', () => 'agent');
-      envelopes.add(
-        _CollabElementEnvelope(
-          publicId: agent.id,
-          elementType: 'agent',
-          payload: payload,
-        ),
-      );
-    }
-
-    for (final ability in ref.read(abilityProvider)) {
-      final payload = Map<String, dynamic>.from(ability.toJson())
-        ..putIfAbsent('elementType', () => 'ability');
-      envelopes.add(
-        _CollabElementEnvelope(
-          publicId: ability.id,
-          elementType: 'ability',
-          payload: payload,
-        ),
-      );
-    }
-
-    for (final drawing in ref.read(drawingProvider).elements) {
-      final encoded = jsonDecode(DrawingProvider.objectToJson([drawing])) as List;
-      final payload = Map<String, dynamic>.from(
-        (encoded.isEmpty ? <String, dynamic>{} : encoded.first) as Map,
-      )..putIfAbsent('elementType', () => 'drawing');
-      envelopes.add(
-        _CollabElementEnvelope(
-          publicId: drawing.id,
-          elementType: 'drawing',
-          payload: payload,
-        ),
-      );
-    }
-
-    for (final text in ref.read(textProvider)) {
-      final payload = Map<String, dynamic>.from(text.toJson())
-        ..putIfAbsent('elementType', () => 'text');
-      envelopes.add(
-        _CollabElementEnvelope(
-          publicId: text.id,
-          elementType: 'text',
-          payload: payload,
-        ),
-      );
-    }
-
-    for (final image in ref.read(placedImageProvider).images) {
-      final payload = Map<String, dynamic>.from(image.toJson())
-        ..putIfAbsent('elementType', () => 'image');
-      envelopes.add(
-        _CollabElementEnvelope(
-          publicId: image.id,
-          elementType: 'image',
-          payload: payload,
-        ),
-      );
-    }
-
-    for (final utility in ref.read(utilityProvider)) {
-      final payload = Map<String, dynamic>.from(utility.toJson())
-        ..putIfAbsent('elementType', () => 'utility');
-      envelopes.add(
-        _CollabElementEnvelope(
-          publicId: utility.id,
-          elementType: 'utility',
-          payload: payload,
-        ),
-      );
-    }
-
-    return envelopes;
-  }
-
-  List<StrategyOp> _buildOpsFromCurrentPageSnapshot(String pageId) {
-    final remoteElements = _snapshot.elementsByPage[pageId] ?? const <RemoteElement>[];
-    final remoteById = {
-      for (final element in remoteElements) element.publicId: element,
-    };
-
-    final local = _collectLocalElementEnvelopes();
-    final localById = {
-      for (var i = 0; i < local.length; i++) local[i].publicId: (local[i], i),
-    };
-
-    final ops = <StrategyOp>[];
-    for (final entry in localById.entries) {
-      final localEnvelope = entry.value.$1;
-      final localIndex = entry.value.$2;
-      final remote = remoteById[entry.key];
-      final payload = jsonEncode(localEnvelope.payload);
-
-      if (remote == null || remote.deleted) {
-        ops.add(
-          StrategyOp(
-            opId: const Uuid().v4(),
-            kind: StrategyOpKind.add,
-            entityType: StrategyOpEntityType.element,
-            entityPublicId: localEnvelope.publicId,
-            pagePublicId: pageId,
-            payload: payload,
-            sortIndex: localIndex,
-          ),
-        );
-        continue;
-      }
-
-      if (remote.payload != payload ||
-          remote.sortIndex != localIndex ||
-          remote.elementType != localEnvelope.elementType) {
-        ops.add(
-          StrategyOp(
-            opId: const Uuid().v4(),
-            kind: StrategyOpKind.patch,
-            entityType: StrategyOpEntityType.element,
-            entityPublicId: localEnvelope.publicId,
-            pagePublicId: pageId,
-            payload: payload,
-            sortIndex: localIndex,
-          ),
-        );
+    for (final element in projected.elements) {
+      final payload = _decodeJsonObject(element.payload);
+      try {
+        switch (element.elementType) {
+          case 'agent':
+            agents.add(PlacedAgentNode.fromJson(payload));
+            break;
+          case 'ability':
+            abilities.add(PlacedAbility.fromJson(payload));
+            break;
+          case 'drawing':
+            final decoded = DrawingProvider.fromJson(jsonEncode([payload]));
+            if (decoded.isNotEmpty) {
+              drawings.add(decoded.first);
+            }
+            break;
+          case 'text':
+            texts.add(PlacedText.fromJson(payload));
+            break;
+          case 'image':
+            images.add(PlacedImage.fromJson(payload));
+            break;
+          case 'utility':
+            utilities.add(PlacedUtility.fromJson(payload));
+            break;
+        }
+      } catch (_) {
+        // Ignore malformed payloads during hydration.
       }
     }
 
-    for (final remote in remoteElements) {
-      if (remote.deleted || localById.containsKey(remote.publicId)) {
-        continue;
-      }
-      ops.add(
-        StrategyOp(
-          opId: const Uuid().v4(),
-          kind: StrategyOpKind.delete,
-          entityType: StrategyOpEntityType.element,
-          entityPublicId: remote.publicId,
-          pagePublicId: pageId,
-        ),
-      );
-    }
-
-    final remoteLineups = _snapshot.lineupsByPage[pageId] ?? const <RemoteLineup>[];
-    final remoteLineupsById = {
-      for (final lineup in remoteLineups) lineup.publicId: lineup,
-    };
-    final localLineups = ref.read(lineUpProvider).lineUps;
-    final localLineupsById = {
-      for (var i = 0; i < localLineups.length; i++) localLineups[i].id: (localLineups[i], i),
-    };
-
-    for (final entry in localLineupsById.entries) {
-      final lineup = entry.value.$1;
-      final localIndex = entry.value.$2;
-      final payload = jsonEncode(lineup.toJson());
-      final remote = remoteLineupsById[entry.key];
-
-      if (remote == null || remote.deleted) {
-        ops.add(
-          StrategyOp(
-            opId: const Uuid().v4(),
-            kind: StrategyOpKind.add,
-            entityType: StrategyOpEntityType.lineup,
-            entityPublicId: lineup.id,
-            pagePublicId: pageId,
-            payload: payload,
-            sortIndex: localIndex,
-          ),
-        );
-        continue;
-      }
-
-      if (remote.payload != payload || remote.sortIndex != localIndex) {
-        ops.add(
-          StrategyOp(
-            opId: const Uuid().v4(),
-            kind: StrategyOpKind.patch,
-            entityType: StrategyOpEntityType.lineup,
-            entityPublicId: lineup.id,
-            pagePublicId: pageId,
-            payload: payload,
-            sortIndex: localIndex,
-          ),
-        );
+    final parsedLineups = <LineUp>[];
+    for (final lineup in projected.lineups) {
+      try {
+        final decoded = jsonDecode(lineup.payload);
+        if (decoded is Map<String, dynamic>) {
+          parsedLineups.add(LineUp.fromJson(decoded));
+        } else if (decoded is Map) {
+          parsedLineups.add(LineUp.fromJson(Map<String, dynamic>.from(decoded)));
+        }
+      } catch (_) {
+        // Ignore malformed payloads during hydration.
       }
     }
 
-    for (final remote in remoteLineups) {
-      if (remote.deleted || localLineupsById.containsKey(remote.publicId)) {
-        continue;
-      }
-      ops.add(
-        StrategyOp(
-          opId: const Uuid().v4(),
-          kind: StrategyOpKind.delete,
-          entityType: StrategyOpEntityType.lineup,
-          entityPublicId: remote.publicId,
-          pagePublicId: pageId,
-        ),
-      );
-    }
-
-    final page = _snapshot.pages.firstWhere(
-      (entry) => entry.publicId == pageId,
-      orElse: () => _snapshot.pages.first,
+    final mapValue = Maps.mapNames.entries.firstWhere(
+      (entry) => entry.value == snapshot.header.mapData,
+      orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
     );
-    final latestSettings = ref.read(strategySettingsProvider.notifier).toJson();
-    if (page.settings != latestSettings || page.isAttack != ref.read(mapProvider).isAttack) {
-      ops.add(
-        StrategyOp(
-          opId: const Uuid().v4(),
-          kind: StrategyOpKind.patch,
-          entityType: StrategyOpEntityType.page,
-          entityPublicId: page.publicId,
-          payload: jsonEncode(
-            {
-              'settings': latestSettings,
-              'isAttack': ref.read(mapProvider).isAttack,
-            },
-          ),
-        ),
-      );
-    }
 
-    return ops;
+    final settings = _parsePageSettings(projected.settingsJson);
+
+    return StrategyEditorPageData(
+      pageId: projected.pageId,
+      pageName: page.name,
+      isAttack: projected.isAttack,
+      map: mapValue.key,
+      settings: settings,
+      agents: agents,
+      abilities: abilities,
+      drawings: drawings,
+      texts: texts,
+      images: images,
+      utilities: utilities,
+      lineups: parsedLineups,
+    );
   }
-}
 
-class _CollabElementEnvelope {
-  const _CollabElementEnvelope({
-    required this.publicId,
-    required this.elementType,
-    required this.payload,
-  });
+  StrategySettings _parsePageSettings(String? settingsJson) {
+    if (settingsJson == null || settingsJson.isEmpty) {
+      return StrategySettings();
+    }
+    try {
+      return ref.read(strategySettingsProvider.notifier).fromJson(settingsJson);
+    } catch (_) {
+      return StrategySettings();
+    }
+  }
 
-  final String publicId;
-  final String elementType;
-  final Map<String, dynamic> payload;
+  Map<String, dynamic> _decodeJsonObject(String payload) {
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is Map<String, dynamic>) {
+        return decoded;
+      }
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    } catch (_) {
+      // Ignore malformed payloads during hydration.
+    }
+    return <String, dynamic>{};
+  }
+
 }
