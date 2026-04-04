@@ -318,8 +318,10 @@ class AuthProvider extends Notifier<AppAuthState> {
   AuthProviderAuthHandle? _convexAuthHandle;
   Future<void>? _inFlightConvexSetup;
   bool _queuedConvexSetup = false;
+  String? _queuedConvexTrigger;
   bool _showingIncidentPrompt = false;
   int _incidentCounter = 0;
+  int _authGeneration = 0;
 
   @visibleForTesting
   static AuthProviderSupabaseApi? debugSupabaseApi;
@@ -330,6 +332,9 @@ class AuthProvider extends Notifier<AppAuthState> {
   @visibleForTesting
   static Duration? debugConvexAuthReadyTimeout;
 
+  late final AuthProviderSupabaseApi _supabaseApi;
+  late final AuthProviderConvexApi _convexApi;
+
   @visibleForTesting
   static void resetTestOverrides() {
     debugSupabaseApi = null;
@@ -337,15 +342,33 @@ class AuthProvider extends Notifier<AppAuthState> {
     debugConvexAuthReadyTimeout = null;
   }
 
-  AuthProviderSupabaseApi get _supabaseApi =>
-      debugSupabaseApi ?? const _DefaultAuthProviderSupabaseApi();
+  int _advanceAuthGeneration() {
+    _authGeneration += 1;
+    return _authGeneration;
+  }
 
-  AuthProviderConvexApi get _convexApi =>
-      debugConvexApi ?? const _DefaultAuthProviderConvexApi();
+  String _sessionFingerprint(Session? session) {
+    if (session == null) {
+      return 'signed_out';
+    }
+
+    return '${session.user.id}:${session.accessToken}';
+  }
+
+  bool _isAuthContextCurrent({
+    required int generation,
+    required String sessionFingerprint,
+  }) {
+    return generation == _authGeneration &&
+        _sessionFingerprint(_supabaseApi.currentSession) == sessionFingerprint;
+  }
 
   @override
   AppAuthState build() {
+    _supabaseApi = debugSupabaseApi ?? const _DefaultAuthProviderSupabaseApi();
+    _convexApi = debugConvexApi ?? const _DefaultAuthProviderConvexApi();
     final session = _supabaseApi.currentSession;
+    final initialGeneration = _advanceAuthGeneration();
 
     _supabaseAuthSub ??= _supabaseApi.onAuthStateChange.listen(
       _handleSupabaseAuthStateChange,
@@ -357,7 +380,13 @@ class AuthProvider extends Notifier<AppAuthState> {
       _convexAuthHandle?.dispose();
     });
 
-    unawaited(_configureConvexAuth(trigger: 'build'));
+    Future<void>.microtask(() async {
+      await _configureConvexAuth(
+        trigger: 'build',
+        generation: initialGeneration,
+        sessionFingerprint: _sessionFingerprint(session),
+      );
+    });
 
     return AppAuthState.fromSession(
       session,
@@ -370,6 +399,7 @@ class AuthProvider extends Notifier<AppAuthState> {
 
   void _handleSupabaseAuthStateChange(AuthState event) {
     final currentSession = event.session;
+    final generation = _advanceAuthGeneration();
     state = AppAuthState.fromSession(
       currentSession,
       isLoading: false,
@@ -383,7 +413,13 @@ class AuthProvider extends Notifier<AppAuthState> {
       _clearAuthIncident();
     }
 
-    unawaited(_configureConvexAuth(trigger: 'supabase:${event.event}'));
+    unawaited(
+      _configureConvexAuth(
+        trigger: 'supabase:${event.event}',
+        generation: generation,
+        sessionFingerprint: _sessionFingerprint(currentSession),
+      ),
+    );
   }
 
   void _handleSupabaseAuthStreamError(Object error, StackTrace stackTrace) {
@@ -483,7 +519,6 @@ class AuthProvider extends Notifier<AppAuthState> {
         return message;
       }
 
-      await _configureConvexAuth(trigger: 'email_password_sign_in');
       state = state.copyWith(isLoading: false);
       return null;
     } catch (error, stackTrace) {
@@ -533,7 +568,6 @@ class AuthProvider extends Notifier<AppAuthState> {
         return message;
       }
 
-      await _configureConvexAuth(trigger: 'email_password_sign_up');
       state = state.copyWith(isLoading: false);
       return null;
     } catch (error, stackTrace) {
@@ -726,11 +760,20 @@ class AuthProvider extends Notifier<AppAuthState> {
     unawaited(_showAuthIncidentPrompt(incidentId));
   }
 
-  Future<void> _configureConvexAuth({required String trigger}) async {
+  Future<void> _configureConvexAuth({
+    required String trigger,
+    int? generation,
+    String? sessionFingerprint,
+  }) async {
     await Future<void>.value();
+
+    final targetGeneration = generation ?? _authGeneration;
+    final targetFingerprint =
+        sessionFingerprint ?? _sessionFingerprint(_supabaseApi.currentSession);
 
     if (_inFlightConvexSetup != null) {
       _queuedConvexSetup = true;
+      _queuedConvexTrigger = trigger;
       await _inFlightConvexSetup;
       return;
     }
@@ -739,14 +782,20 @@ class AuthProvider extends Notifier<AppAuthState> {
     _inFlightConvexSetup = completer.future;
 
     try {
-      await _runConvexAuthSetup(trigger: trigger);
+      await _runConvexAuthSetup(
+        trigger: trigger,
+        generation: targetGeneration,
+        sessionFingerprint: targetFingerprint,
+      );
     } finally {
       completer.complete();
       _inFlightConvexSetup = null;
 
       if (_queuedConvexSetup) {
         _queuedConvexSetup = false;
-        unawaited(_configureConvexAuth(trigger: 'queued'));
+        final queuedTrigger = _queuedConvexTrigger ?? 'queued';
+        _queuedConvexTrigger = null;
+        unawaited(_configureConvexAuth(trigger: queuedTrigger));
       }
     }
   }
@@ -788,8 +837,19 @@ class AuthProvider extends Notifier<AppAuthState> {
     return 'stream';
   }
 
-  Future<void> _runConvexAuthSetup({required String trigger}) async {
+  Future<void> _runConvexAuthSetup({
+    required String trigger,
+    required int generation,
+    required String sessionFingerprint,
+  }) async {
     final session = _supabaseApi.currentSession;
+    if (!_isAuthContextCurrent(
+      generation: generation,
+      sessionFingerprint: sessionFingerprint,
+    )) {
+      return;
+    }
+
     log(
       'Starting Convex auth setup [$trigger] (hasSession: ${session != null})',
       name: 'auth',
@@ -798,6 +858,12 @@ class AuthProvider extends Notifier<AppAuthState> {
       _convexAuthHandle?.dispose();
       _convexAuthHandle = null;
       await _convexApi.clearAuth();
+      if (!_isAuthContextCurrent(
+        generation: generation,
+        sessionFingerprint: sessionFingerprint,
+      )) {
+        return;
+      }
       _clearAuthIncident();
       state = AppAuthState.fromSession(
         null,
@@ -820,9 +886,15 @@ class AuthProvider extends Notifier<AppAuthState> {
       _convexAuthHandle?.dispose();
       final wasAuthenticatedBeforeSetup = _convexApi.isAuthenticated;
       bool? reconnectResult;
-      _convexAuthHandle = await _convexApi.setAuthWithRefresh(
+      final authHandle = await _convexApi.setAuthWithRefresh(
         fetchToken: _fetchSupabaseAccessToken,
         onAuthChange: (isAuthenticated) {
+          if (!_isAuthContextCurrent(
+            generation: generation,
+            sessionFingerprint: sessionFingerprint,
+          )) {
+            return;
+          }
           if (isAuthenticated) {
             return;
           }
@@ -841,6 +913,18 @@ class AuthProvider extends Notifier<AppAuthState> {
           );
         },
       );
+      _convexAuthHandle = authHandle;
+
+      if (!_isAuthContextCurrent(
+        generation: generation,
+        sessionFingerprint: sessionFingerprint,
+      )) {
+        authHandle.dispose();
+        if (identical(_convexAuthHandle, authHandle)) {
+          _convexAuthHandle = null;
+        }
+        return;
+      }
 
       log(
         'Convex auth handle configured [$trigger] (wasAuthenticatedBeforeSetup: '
@@ -868,11 +952,31 @@ class AuthProvider extends Notifier<AppAuthState> {
         trigger: trigger,
         reconnectResult: reconnectResult,
       );
+      if (!_isAuthContextCurrent(
+        generation: generation,
+        sessionFingerprint: sessionFingerprint,
+      )) {
+        authHandle.dispose();
+        if (identical(_convexAuthHandle, authHandle)) {
+          _convexAuthHandle = null;
+        }
+        return;
+      }
       log(
         'Convex auth ready [$trigger] via $readinessSource',
         name: 'auth',
       );
       await _convexApi.mutation(name: 'users:ensureCurrentUser', args: {});
+      if (!_isAuthContextCurrent(
+        generation: generation,
+        sessionFingerprint: sessionFingerprint,
+      )) {
+        authHandle.dispose();
+        if (identical(_convexAuthHandle, authHandle)) {
+          _convexAuthHandle = null;
+        }
+        return;
+      }
       log(
         'Convex current user ensured [$trigger]',
         name: 'auth',
@@ -885,6 +989,13 @@ class AuthProvider extends Notifier<AppAuthState> {
         clearError: true,
       );
     } catch (error, stackTrace) {
+      if (!_isAuthContextCurrent(
+        generation: generation,
+        sessionFingerprint: sessionFingerprint,
+      )) {
+        return;
+      }
+
       log(
         'Failed configuring Convex auth [$trigger]: $error',
         name: 'auth',

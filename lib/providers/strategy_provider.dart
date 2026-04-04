@@ -165,13 +165,6 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> switchPage(String pageID) async {
-    if (_currentStrategyIsCloud()) {
-      await ref
-          .read(strategyPageSessionProvider.notifier)
-          .setActivePage(pageID);
-      return;
-    }
-
     await ref.read(strategyPageSessionProvider.notifier).setActivePageAnimated(
           pageID,
           direction: PageTransitionDirection.forward,
@@ -428,7 +421,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
       await ref
           .read(strategyPageSessionProvider.notifier)
-          .setActivePage(pageID);
+          .setActivePageAnimated(
+            pageID,
+            direction: PageTransitionDirection.forward,
+          );
       return;
     }
 
@@ -523,8 +519,9 @@ class StrategyProvider extends Notifier<StrategyState> {
         ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
       final activePageId = ref.read(strategyPageSessionProvider).activePageId ??
           pages.first.publicId;
-      final remaining =
-          pages.where((page) => page.publicId != pageId).toList(growable: false);
+      final remaining = pages
+          .where((page) => page.publicId != pageId)
+          .toList(growable: false);
       final nextActivePageId = activePageId == pageId && remaining.isNotEmpty
           ? remaining.first.publicId
           : activePageId;
@@ -554,7 +551,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       if (nextActivePageId != activePageId) {
         await ref
             .read(strategyPageSessionProvider.notifier)
-            .setActivePage(nextActivePageId);
+            .setActivePageAnimated(
+              nextActivePageId,
+              direction: PageTransitionDirection.forward,
+            );
       }
       return;
     }
@@ -565,7 +565,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     final strat = box.get(strategyId);
     if (strat == null || strat.pages.length <= 1) return;
 
-    final remaining = [...strat.pages]..removeWhere((page) => page.id == pageId);
+    final remaining = [...strat.pages]
+      ..removeWhere((page) => page.id == pageId);
     final reindexed = [
       for (var i = 0; i < remaining.length; i++)
         remaining[i].copyWith(sortIndex: i),

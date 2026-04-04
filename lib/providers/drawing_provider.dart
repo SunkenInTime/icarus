@@ -11,6 +11,7 @@ import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:uuid/uuid.dart';
 
 class DrawingState {
@@ -82,48 +83,72 @@ class DrawingProvider extends Notifier<DrawingState> {
   }
 
   void undoAction(UserAction action) {
-    final newElements = [...state.elements];
-    try {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      final newElements = [...state.elements];
       switch (action.type) {
         case ActionType.addition:
-          final index = DrawingElement.getIndexByID(action.id, newElements);
-          poppedElements.add(newElements.removeAt(index));
-
+          _removeDrawingById(action.id);
+          return;
         case ActionType.deletion:
-          final index = DrawingElement.getIndexByID(action.id, poppedElements);
-          newElements.add(poppedElements.removeAt(index));
+          if (poppedElements.isEmpty) return;
+          newElements.add(cloneDrawingElement(poppedElements.removeLast()));
+          state = state.copyWith(elements: newElements);
+          _triggerRepaint();
+          return;
         case ActionType.edit:
         case ActionType.bulkDeletion:
         case ActionType.transaction:
-          break;
+          return;
       }
-    } catch (_) {
-      dev.log("Can't find index in undo action");
     }
-    state = state.copyWith(elements: newElements);
-    _triggerRepaint();
+    switch (action.type) {
+      case ActionType.addition:
+        _removeDrawingById(action.id);
+        return;
+      case ActionType.deletion:
+        final before = delta.before?.drawing;
+        if (before == null) return;
+        _upsertDrawing(cloneDrawingElement(before));
+        return;
+      case ActionType.edit:
+      case ActionType.bulkDeletion:
+      case ActionType.transaction:
+        return;
+    }
   }
 
   void redoAction(UserAction action) {
-    final newElements = [...state.elements];
-    try {
+    final delta = action.objectDelta;
+    if (delta == null) {
       switch (action.type) {
         case ActionType.addition:
-          final index = DrawingElement.getIndexByID(action.id, poppedElements);
-          newElements.add(poppedElements.removeAt(index));
+          if (poppedElements.isEmpty) return;
+          _upsertDrawing(cloneDrawingElement(poppedElements.removeLast()));
+          return;
         case ActionType.deletion:
-          final index = DrawingElement.getIndexByID(action.id, newElements);
-          poppedElements.add(newElements.removeAt(index));
+          _removeDrawingById(action.id);
+          return;
         case ActionType.edit:
         case ActionType.bulkDeletion:
         case ActionType.transaction:
-          break;
+          return;
       }
-    } catch (_) {
-      dev.log("Can't find index in redo action");
     }
-    state = state.copyWith(elements: newElements);
-    _triggerRepaint();
+    switch (action.type) {
+      case ActionType.addition:
+        final after = delta.after?.drawing;
+        if (after == null) return;
+        _upsertDrawing(cloneDrawingElement(after));
+        return;
+      case ActionType.deletion:
+        _removeDrawingById(action.id);
+        return;
+      case ActionType.edit:
+      case ActionType.bulkDeletion:
+      case ActionType.transaction:
+        return;
+    }
   }
 
   String toJson() {
@@ -369,12 +394,16 @@ class DrawingProvider extends Notifier<DrawingState> {
     final newElements = [...state.elements];
 
     final poppedElement = newElements.removeAt(index);
-    poppedElements.add(poppedElement);
+    poppedElements.removeWhere((element) => element.id == poppedElement.id);
+    poppedElements.add(cloneDrawingElement(poppedElement));
 
     final action = UserAction(
       type: ActionType.deletion,
       id: poppedElement.id,
       group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        before: ActionObjectState.drawing(poppedElement),
+      ),
     );
     ref.read(actionProvider.notifier).addAction(action);
 
@@ -637,9 +666,13 @@ class DrawingProvider extends Notifier<DrawingState> {
     );
 
     final action = UserAction(
-        type: ActionType.addition,
-        id: finalDrawing.id,
-        group: ActionGroup.drawing);
+      type: ActionType.addition,
+      id: finalDrawing.id,
+      group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.drawing(finalDrawing),
+      ),
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     _triggerRepaint();
@@ -717,6 +750,9 @@ class DrawingProvider extends Notifier<DrawingState> {
       type: ActionType.addition,
       id: rectangle.id,
       group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.drawing(rectangle),
+      ),
     );
     ref.read(actionProvider.notifier).addAction(action);
 
@@ -797,6 +833,9 @@ class DrawingProvider extends Notifier<DrawingState> {
       type: ActionType.addition,
       id: ellipse.id,
       group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.drawing(ellipse),
+      ),
     );
     ref.read(actionProvider.notifier).addAction(action);
 
@@ -874,6 +913,9 @@ class DrawingProvider extends Notifier<DrawingState> {
       type: ActionType.addition,
       id: line.id,
       group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.drawing(line),
+      ),
     );
     ref.read(actionProvider.notifier).addAction(action);
 
@@ -902,21 +944,68 @@ class DrawingProvider extends Notifier<DrawingState> {
   DrawingProviderSnapshot takeSnapshot() {
     return DrawingProviderSnapshot(
       state: DrawingState(
-        elements: [...state.elements],
+        elements: state.elements.map((element) => cloneDrawingElement(element)).toList(),
         updateCounter: state.updateCounter,
-        currentElement: state.currentElement,
+        currentElement: state.currentElement == null
+            ? null
+            : cloneDrawingElement(state.currentElement!),
       ),
-      poppedElements: [...poppedElements],
+      poppedElements:
+          poppedElements.map((element) => cloneDrawingElement(element)).toList(),
     );
   }
 
   void restoreSnapshot(DrawingProviderSnapshot snapshot) {
-    poppedElements = [...snapshot.poppedElements];
+    poppedElements =
+        snapshot.poppedElements.map((element) => cloneDrawingElement(element)).toList();
     state = DrawingState(
-      elements: [...snapshot.state.elements],
+      elements: snapshot.state.elements
+          .map((element) => cloneDrawingElement(element))
+          .toList(),
       updateCounter: snapshot.state.updateCounter,
-      currentElement: snapshot.state.currentElement,
+      currentElement: snapshot.state.currentElement == null
+          ? null
+          : cloneDrawingElement(snapshot.state.currentElement!),
     );
+    _triggerRepaint();
+  }
+
+  void switchSides() {
+    final switched = state.elements.map(switchDrawingElementSides).toList();
+    final current = state.currentElement == null
+        ? null
+        : switchDrawingElementSides(state.currentElement!);
+    poppedElements = poppedElements.map(switchDrawingElementSides).toList();
+    state = DrawingState(
+      elements: switched,
+      updateCounter: state.updateCounter,
+      currentElement: current,
+    );
+    _triggerRepaint();
+  }
+
+  void _upsertDrawing(DrawingElement element) {
+    final newElements = [...state.elements];
+    final index = DrawingElement.getIndexByID(element.id, newElements);
+    if (index < 0) {
+      newElements.add(element);
+    } else {
+      newElements[index] = element;
+    }
+    state = state.copyWith(elements: newElements);
+    _triggerRepaint();
+  }
+
+  void _removeDrawingById(String id) {
+    final newElements = [...state.elements];
+    final index = DrawingElement.getIndexByID(id, newElements);
+    if (index < 0) {
+      return;
+    }
+    final removedElement = newElements.removeAt(index);
+    poppedElements.removeWhere((element) => element.id == id);
+    poppedElements.add(cloneDrawingElement(removedElement));
+    state = state.copyWith(elements: newElements);
     _triggerRepaint();
   }
 }

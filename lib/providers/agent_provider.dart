@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:uuid/uuid.dart';
@@ -26,6 +27,7 @@ class AgentProviderSnapshot {
 
 class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   List<PlacedAgentNode> poppedAgents = [];
+  final Map<String, ActionObjectState> _pendingEditBefore = {};
   static const _uuid = Uuid();
 
   @override
@@ -38,6 +40,9 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       type: ActionType.addition,
       id: placedAgent.id,
       group: ActionGroup.agent,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.agent(placedAgent),
+      ),
     );
 
     ref.read(actionProvider.notifier).addAction(action);
@@ -50,19 +55,25 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     final index = PlacedWidget.getIndexByID(id, newState);
 
     if (index < 0) return;
-    poppedAgents.add(newState.removeAt(index));
+    final removedAgent = newState.removeAt(index);
+    poppedAgents.removeWhere((agent) => agent.id == id);
+    poppedAgents.add(clonePlacedAgentNode(removedAgent));
 
     state = newState;
   }
 
   void removeAgentAsAction(String id) {
-    if (!state.any((agent) => agent.id == id)) return;
+    final index = PlacedWidget.getIndexByID(id, state);
+    if (index < 0) return;
 
     ref.read(actionProvider.notifier).addAction(
           UserAction(
             type: ActionType.deletion,
             id: id,
             group: ActionGroup.agent,
+            objectDelta: ObjectHistoryDelta(
+              before: ActionObjectState.agent(state[index]),
+            ),
           ),
         );
     removeAgent(id);
@@ -72,12 +83,21 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
     if (index < 0) return;
+    final before = ActionObjectState.agent(newState[index]);
     newState[index].state = newState[index].state == AgentState.dead
         ? AgentState.none
         : AgentState.dead;
 
     final action =
-        UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent);
+        UserAction(
+          type: ActionType.edit,
+          id: id,
+          group: ActionGroup.agent,
+          objectDelta: ObjectHistoryDelta(
+            before: before,
+            after: ActionObjectState.agent(newState[index]),
+          ),
+        );
     ref.read(actionProvider.notifier).addAction(action);
 
     state = newState;
@@ -99,12 +119,20 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       return;
     }
     if (index < 0) return;
+    final before = ActionObjectState.agent(newState[index]);
     newState[index].updatePosition(position);
 
     final temp = newState.removeAt(index);
 
-    final action =
-        UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent);
+    final action = UserAction(
+      type: ActionType.edit,
+      id: id,
+      group: ActionGroup.agent,
+      objectDelta: ObjectHistoryDelta(
+        before: before,
+        after: ActionObjectState.agent(temp),
+      ),
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
@@ -131,13 +159,11 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   void updateViewConeHistory(String id) {
-    final newState = [...state];
-    final index = PlacedWidget.getIndexByID(id, newState);
+    final index = PlacedWidget.getIndexByID(id, state);
     if (index < 0) return;
-    final node = newState[index];
+    final node = state[index];
     if (node is! PlacedViewConeAgent) return;
-    node.updateGeometryHistory();
-    state = newState;
+    _pendingEditBefore[id] = ActionObjectState.agent(node);
   }
 
   void updateViewConeGeometry({
@@ -150,9 +176,18 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     if (index < 0) return;
     final node = newState[index];
     if (node is! PlacedViewConeAgent) return;
+    final before = _pendingEditBefore.remove(id) ?? ActionObjectState.agent(node);
     node.updateGeometry(newRotation: rotation, newLength: length);
     ref.read(actionProvider.notifier).addAction(
-          UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.agent,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.agent(node),
+            ),
+          ),
         );
     state = newState;
   }
@@ -168,18 +203,26 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     if (index < 0) return;
     final node = newState[index];
     if (node is! PlacedCircleAgent) return;
+    final before = ActionObjectState.agent(node);
     final hasChange = node.diameterMeters != diameterMeters ||
         node.colorValue != colorValue ||
         node.opacityPercent != opacityPercent;
     if (!hasChange) return;
-    node.updateGeometryHistory();
     node.updateGeometry(
       newDiameterMeters: diameterMeters,
       newColorValue: colorValue,
       newOpacityPercent: opacityPercent,
     );
     ref.read(actionProvider.notifier).addAction(
-          UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.agent,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.agent(node),
+            ),
+          ),
         );
     state = newState;
   }
@@ -195,6 +238,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     if (index < 0) return false;
     final node = newState[index];
     if (node is! PlacedAgent) return false;
+    final before = ActionObjectState.agent(node);
 
     newState[index] = PlacedViewConeAgent(
       id: node.id,
@@ -208,7 +252,15 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     )..isDeleted = node.isDeleted;
 
     ref.read(actionProvider.notifier).addAction(
-          UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.agent,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.agent(newState[index]),
+            ),
+          ),
         );
     state = newState;
     return true;
@@ -225,6 +277,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     if (index < 0) return false;
     final node = newState[index];
     if (node is! PlacedAgent) return false;
+    final before = ActionObjectState.agent(node);
 
     newState[index] = PlacedCircleAgent(
       id: node.id,
@@ -238,30 +291,58 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     )..isDeleted = node.isDeleted;
 
     ref.read(actionProvider.notifier).addAction(
-          UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.agent,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.agent(newState[index]),
+            ),
+          ),
         );
     state = newState;
     return true;
   }
 
   void undoAction(UserAction action) {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      switch (action.type) {
+        case ActionType.addition:
+          removeAgent(action.id);
+          return;
+        case ActionType.deletion:
+          if (poppedAgents.isEmpty) return;
+          _upsertAgent(clonePlacedAgentNode(poppedAgents.removeLast()));
+          return;
+        case ActionType.edit:
+          final index = PlacedWidget.getIndexByID(action.id, state);
+          if (index < 0) return;
+          final newState = [...state];
+          newState[index].undoAction();
+          state = newState;
+          return;
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          return;
+      }
+    }
     switch (action.type) {
       case ActionType.addition:
         removeAgent(action.id);
         return;
       case ActionType.deletion:
-        final index = PlacedWidget.getIndexByID(action.id, poppedAgents);
-        if (index < 0) {
+        final before = delta.before?.agent;
+        if (before == null) {
           return;
         }
-        final newState = [...state];
-
-        final restoredAgent = poppedAgents.removeAt(index);
-        newState.add(restoredAgent);
-        state = newState;
+        _upsertAgent(clonePlacedAgentNode(before));
         return;
       case ActionType.edit:
-        undoPosition(action.id);
+        final before = delta.before?.agent;
+        if (before == null) return;
+        _upsertAgent(clonePlacedAgentNode(before));
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -269,36 +350,17 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     }
   }
 
-  void undoPosition(String id) {
-    final newState = [...state];
-
-    final index = PlacedWidget.getIndexByID(id, newState);
-    if (index < 0) return;
-
-    newState[index].undoAction();
-
-    state = newState;
-  }
-
   void redoAction(UserAction action) {
-    final newState = [...state];
-
-    try {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      final newState = [...state];
       switch (action.type) {
         case ActionType.addition:
-          final index = PlacedWidget.getIndexByID(action.id, poppedAgents);
-          if (index < 0) return;
-          final restoredAgent = poppedAgents.removeAt(index);
-          newState.add(restoredAgent);
-          state = newState;
+          if (poppedAgents.isEmpty) return;
+          _upsertAgent(clonePlacedAgentNode(poppedAgents.removeLast()));
           return;
-
         case ActionType.deletion:
-          final index = PlacedWidget.getIndexByID(action.id, newState);
-          if (index < 0) return;
-          final removedAgent = newState.removeAt(index);
-          poppedAgents.add(removedAgent);
-          state = newState;
+          removeAgent(action.id);
           return;
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
@@ -310,7 +372,25 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
         case ActionType.transaction:
           return;
       }
-    } catch (_) {}
+    }
+    switch (action.type) {
+      case ActionType.addition:
+        final after = delta.after?.agent;
+        if (after == null) return;
+        _upsertAgent(clonePlacedAgentNode(after));
+        return;
+      case ActionType.deletion:
+        removeAgent(action.id);
+        return;
+      case ActionType.edit:
+        final after = delta.after?.agent;
+        if (after == null) return;
+        _upsertAgent(clonePlacedAgentNode(after));
+        return;
+      case ActionType.bulkDeletion:
+      case ActionType.transaction:
+        return;
+    }
   }
 
   String toJson() {
@@ -327,6 +407,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
   void fromHive(List<PlacedAgentNode> hiveAgents) {
     poppedAgents = [];
+    _pendingEditBefore.clear();
     state = hiveAgents;
   }
 
@@ -370,6 +451,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
   void clearAll() {
     poppedAgents = [];
+    _pendingEditBefore.clear();
     state = [];
   }
 
@@ -387,9 +469,21 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     poppedAgents = snapshot.poppedAgents
         .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
         .toList();
+    _pendingEditBefore.clear();
     state = snapshot.agents
         .map((agent) => agent.snapshotCopy<PlacedAgentNode>())
         .toList();
+  }
+
+  void _upsertAgent(PlacedAgentNode agent) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(agent.id, newState);
+    if (index < 0) {
+      newState.add(agent);
+    } else {
+      newState[index] = agent;
+    }
+    state = newState;
   }
 
   PlacedAgentNode _duplicateNode(
