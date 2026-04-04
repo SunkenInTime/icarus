@@ -10,6 +10,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -19,6 +20,8 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/transition_provider.dart'
+    as overlay_transition;
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
@@ -314,7 +317,6 @@ void main() {
       remoteNotifier: remoteNotifier,
       queueNotifier: queueNotifier,
     );
-
     await container
         .read(strategyPageSessionProvider.notifier)
         .initializeForStrategy(
@@ -382,7 +384,6 @@ void main() {
       remoteNotifier: remoteNotifier,
       queueNotifier: queueNotifier,
     );
-
     await container
         .read(strategyPageSessionProvider.notifier)
         .initializeForStrategy(
@@ -466,6 +467,169 @@ void main() {
     expect(queueNotifier.enqueuedOps, isNotEmpty);
     expect(queueNotifier.flushNowCount, 1);
     expect(container.read(textProvider).single.text, 'page-two');
+  });
+
+  test('cloud animated page switch uses shared transition state', () async {
+    const strategyId = 'cloud-strategy';
+    final snapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0),
+        _remotePage(strategyId: strategyId, pageId: 'page-2', sortIndex: 1),
+      ],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'before',
+          ),
+        ],
+        'page-2': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-2',
+            elementId: 'text-2',
+            text: 'after',
+          ),
+        ],
+      },
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(snapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'local-text', position: const Offset(50, 60))
+        ..text = 'needs-sync',
+    ]);
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .setActivePageAnimated(
+          'page-2',
+          direction: PageTransitionDirection.forward,
+        );
+
+    expect(
+      container.read(strategyPageSessionProvider).transitionState,
+      PageTransitionState.animatingForward,
+    );
+    final transitionState =
+        container.read(overlay_transition.transitionProvider);
+    expect(transitionState.hideView, isTrue);
+    expect(
+      transitionState.phase,
+      overlay_transition.PageTransitionPhase.preparing,
+    );
+    expect(transitionState.direction, PageTransitionDirection.forward);
+    expect(queueNotifier.flushNowCount, 1);
+    expect(container.read(textProvider).single.text, 'after');
+  });
+
+  test('cloud relative page switch preserves backward transition direction',
+      () async {
+    const strategyId = 'cloud-strategy';
+    final snapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0),
+        _remotePage(strategyId: strategyId, pageId: 'page-2', sortIndex: 1),
+      ],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'before',
+          ),
+        ],
+        'page-2': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-2',
+            elementId: 'text-2',
+            text: 'after',
+          ),
+        ],
+      },
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(snapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    await container.read(strategyPageSessionProvider.notifier).setActivePage(
+          'page-2',
+        );
+
+    queueNotifier
+      ..enqueueAllCount = 0
+      ..flushNowCount = 0
+      ..enqueuedOps.clear();
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'page-two-draft', position: const Offset(40, 70))
+        ..text = 'draft',
+    ]);
+
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .switchRelativePage(PageSwitchDirection.previous);
+
+    expect(
+      container.read(strategyPageSessionProvider).transitionState,
+      PageTransitionState.animatingBackward,
+    );
+    final transitionState =
+        container.read(overlay_transition.transitionProvider);
+    expect(transitionState.hideView, isTrue);
+    expect(
+      transitionState.phase,
+      overlay_transition.PageTransitionPhase.preparing,
+    );
+    expect(transitionState.direction, PageTransitionDirection.backward);
+    expect(queueNotifier.flushNowCount, 1);
+    expect(container.read(strategyPageSessionProvider).activePageId, 'page-1');
+    expect(container.read(textProvider).single.text, 'before');
   });
 
   test('pending remote reapply resumes through non-flushing path', () async {

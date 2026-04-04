@@ -197,12 +197,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       return;
     }
 
-    final strategyState = ref.read(strategyProvider);
-    if (strategyState.source == StrategySource.cloud) {
-      await _switchToPage(pageId, animated: false);
-      return;
-    }
-
     final transitionState = ref.read(transitionProvider);
     final transitionNotifier = ref.read(transitionProvider.notifier);
     if (transitionState.active ||
@@ -268,12 +262,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         : (currentIndex - 1 + state.availablePageIds.length) %
             state.availablePageIds.length;
     final nextPageId = state.availablePageIds[nextIndex];
-    final strategyState = ref.read(strategyProvider);
-    if (strategyState.source == StrategySource.cloud) {
-      await setActivePage(nextPageId);
-      return;
-    }
-
     await setActivePageAnimated(
       nextPageId,
       direction: direction == PageSwitchDirection.next
