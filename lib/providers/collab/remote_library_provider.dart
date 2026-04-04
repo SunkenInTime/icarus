@@ -9,23 +9,27 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 
 final cloudFoldersProvider =
-    FutureProvider.autoDispose<List<CloudFolderSummary>>((ref) async {
+    StreamProvider.autoDispose<List<CloudFolderSummary>>((ref) async* {
   final isCloud = ref.watch(isCloudCollabEnabledProvider);
   final auth = ref.watch(authProvider);
   if (!isCloud || auth.hasActiveAuthIncident) {
-    return const <CloudFolderSummary>[];
+    yield const <CloudFolderSummary>[];
+    return;
   }
 
   final parentFolderId = ref.watch(folderProvider);
   final repo = ref.watch(convexStrategyRepositoryProvider);
   try {
-    return await repo.listFoldersForParent(parentFolderId);
+    await for (final folders in repo.watchFoldersForParent(parentFolderId)) {
+      yield folders;
+    }
   } catch (error, stackTrace) {
     if (_isInvalidFolderError(error)) {
       ref
           .read(folderProvider.notifier)
           .updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
-      return const <CloudFolderSummary>[];
+      yield const <CloudFolderSummary>[];
+      return;
     }
     if (isConvexUnauthenticatedError(error)) {
       unawaited(
@@ -35,30 +39,35 @@ final cloudFoldersProvider =
               stackTrace: stackTrace,
             ),
       );
-      return const <CloudFolderSummary>[];
+      yield const <CloudFolderSummary>[];
+      return;
     }
     rethrow;
   }
 });
 
 final cloudStrategiesProvider =
-    FutureProvider.autoDispose<List<CloudStrategySummary>>((ref) async {
+    StreamProvider.autoDispose<List<CloudStrategySummary>>((ref) async* {
   final isCloud = ref.watch(isCloudCollabEnabledProvider);
   final auth = ref.watch(authProvider);
   if (!isCloud || auth.hasActiveAuthIncident) {
-    return const <CloudStrategySummary>[];
+    yield const <CloudStrategySummary>[];
+    return;
   }
 
   final folderId = ref.watch(folderProvider);
   final repo = ref.watch(convexStrategyRepositoryProvider);
   try {
-    return await repo.listStrategiesForFolder(folderId);
+    await for (final strategies in repo.watchStrategiesForFolder(folderId)) {
+      yield strategies;
+    }
   } catch (error, stackTrace) {
     if (_isInvalidFolderError(error)) {
       ref
           .read(folderProvider.notifier)
           .updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
-      return const <CloudStrategySummary>[];
+      yield const <CloudStrategySummary>[];
+      return;
     }
     if (isConvexUnauthenticatedError(error)) {
       unawaited(
@@ -68,23 +77,27 @@ final cloudStrategiesProvider =
               stackTrace: stackTrace,
             ),
       );
-      return const <CloudStrategySummary>[];
+      yield const <CloudStrategySummary>[];
+      return;
     }
     rethrow;
   }
 });
 
 final cloudAllFoldersProvider =
-    FutureProvider.autoDispose<List<CloudFolderSummary>>((ref) async {
+    StreamProvider.autoDispose<List<CloudFolderSummary>>((ref) async* {
   final isCloud = ref.watch(isCloudCollabEnabledProvider);
   final auth = ref.watch(authProvider);
   if (!isCloud || auth.hasActiveAuthIncident) {
-    return const <CloudFolderSummary>[];
+    yield const <CloudFolderSummary>[];
+    return;
   }
 
   final repo = ref.watch(convexStrategyRepositoryProvider);
   try {
-    return await repo.listAllFolders();
+    await for (final folders in repo.watchAllFolders()) {
+      yield folders;
+    }
   } catch (error, stackTrace) {
     if (isConvexUnauthenticatedError(error)) {
       unawaited(
@@ -94,7 +107,8 @@ final cloudAllFoldersProvider =
               stackTrace: stackTrace,
             ),
       );
-      return const <CloudFolderSummary>[];
+      yield const <CloudFolderSummary>[];
+      return;
     }
     rethrow;
   }

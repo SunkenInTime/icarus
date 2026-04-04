@@ -33,13 +33,15 @@ class ConvexStrategyRepository {
     if (decoded is Map) {
       return Map<String, dynamic>.from(decoded);
     }
-    throw FormatException('Expected object payload, received ${decoded.runtimeType}');
+    throw FormatException(
+        'Expected object payload, received ${decoded.runtimeType}');
   }
 
   List<Map<String, dynamic>> _decodeObjectList(dynamic value) {
     final decoded = _decodeJsonPayload(value);
     if (decoded is! List) {
-      throw FormatException('Expected list payload, received ${decoded.runtimeType}');
+      throw FormatException(
+          'Expected list payload, received ${decoded.runtimeType}');
     }
 
     return decoded
@@ -66,6 +68,46 @@ class ConvexStrategyRepository {
     return _decodeObjectList(response)
         .map(CloudFolderSummary.fromJson)
         .toList(growable: false);
+  }
+
+  Stream<List<CloudFolderSummary>> watchAllFolders() {
+    final controller = StreamController<List<CloudFolderSummary>>.broadcast();
+    dynamic subscription;
+
+    Future<void> start() async {
+      try {
+        controller.add(await listAllFolders());
+      } catch (error, stackTrace) {
+        controller.addError(error, stackTrace);
+      }
+
+      subscription = await _client.subscribe(
+        name: 'folders:listAll',
+        args: const {},
+        onUpdate: (value) {
+          try {
+            final mapped = _decodeObjectList(value)
+                .map(CloudFolderSummary.fromJson)
+                .toList(growable: false);
+            controller.add(mapped);
+          } catch (error, stackTrace) {
+            controller.addError(error, stackTrace);
+          }
+        },
+        onError: (message, value) {
+          controller.addError(Exception('folders:listAll error: $message'));
+        },
+      );
+    }
+
+    start();
+    controller.onCancel = () {
+      try {
+        subscription?.cancel();
+      } catch (_) {}
+    };
+
+    return controller.stream;
   }
 
   Future<List<CloudStrategySummary>> listStrategiesForFolder(
@@ -109,7 +151,8 @@ class ConvexStrategyRepository {
           }
         },
         onError: (message, value) {
-          controller.addError(Exception('folders:listForParent error: $message'));
+          controller
+              .addError(Exception('folders:listForParent error: $message'));
         },
       );
     }
@@ -186,7 +229,8 @@ class ConvexStrategyRepository {
           }
         },
         onError: (message, value) {
-          controller.addError(Exception('strategies:getHeader error: $message'));
+          controller
+              .addError(Exception('strategies:getHeader error: $message'));
         },
       );
     }
@@ -267,7 +311,8 @@ class ConvexStrategyRepository {
       },
     );
 
-    final resultList = (_decodeObject(response)['results'] as List?) ?? const [];
+    final resultList =
+        (_decodeObject(response)['results'] as List?) ?? const [];
     return resultList
         .whereType<Map>()
         .map((item) => OpAck.fromJson(Map<String, dynamic>.from(item)))
