@@ -357,6 +357,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required String strategyId,
     required StrategySource source,
   }) async {
+    final preserveHistory = source == StrategySource.cloud &&
+        _lastHydratedRemoteStrategyId == strategyId &&
+        _lastHydratedRemotePageId == pageData.pageId;
     final themeProfileId = _resolveThemeProfileId(source, strategyId);
     final themeOverridePalette =
         _resolveThemeOverridePalette(source, strategyId);
@@ -374,6 +377,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         pageData,
         themeProfileId: themeProfileId,
         themeOverridePalette: themeOverridePalette,
+        preserveHistory: preserveHistory,
       );
       _updateHydrationBookkeeping(pageData.pageId);
     } finally {

@@ -5,6 +5,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'dart:ui';
@@ -150,7 +151,13 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   void addLineUp(LineUp lineUp) {
     final action = UserAction(
-        type: ActionType.addition, id: lineUp.id, group: ActionGroup.lineUp);
+      type: ActionType.addition,
+      id: lineUp.id,
+      group: ActionGroup.lineUp,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.lineUp(lineUp),
+      ),
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     state = state.copyWith(
@@ -329,10 +336,20 @@ class LineUpProvider extends Notifier<LineUpState> {
     //the right click menu, and not through the delete key.
 
     final action = UserAction(
-        type: ActionType.deletion, id: id, group: ActionGroup.lineUp);
+      type: ActionType.deletion,
+      id: id,
+      group: ActionGroup.lineUp,
+      objectDelta: ObjectHistoryDelta(
+        before: ActionObjectState.lineUp(
+          state.lineUps.firstWhere((lineUp) => lineUp.id == id),
+        ),
+      ),
+    );
     ref.read(actionProvider.notifier).addAction(action);
-
-    _poppedLineUps.add(state.lineUps.firstWhere((lineUp) => lineUp.id == id));
+    _poppedLineUps.removeWhere((lineUp) => lineUp.id == id);
+    _poppedLineUps.add(
+      cloneLineUp(state.lineUps.firstWhere((lineUp) => lineUp.id == id)),
+    );
 
     state = state.copyWith(
       lineUps: state.lineUps.where((lineUp) => lineUp.id != id).toList(),
@@ -340,15 +357,31 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void undoAction(UserAction action) {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      switch (action.type) {
+        case ActionType.addition:
+          deleteLineUpById(action.id);
+          return;
+        case ActionType.deletion:
+          if (_poppedLineUps.isEmpty) return;
+          _upsertLineUp(cloneLineUp(_poppedLineUps.removeLast()));
+          return;
+        case ActionType.edit:
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          return;
+      }
+    }
     switch (action.type) {
       case ActionType.addition:
         deleteLineUpById(action.id);
+        return;
       case ActionType.deletion:
-        if (_poppedLineUps.isEmpty) return;
-        final newState = state.copyWith(
-          lineUps: [...state.lineUps, _poppedLineUps.removeLast()],
-        );
-        state = newState;
+        final before = delta.before?.lineUp;
+        if (before == null) return;
+        _upsertLineUp(cloneLineUp(before));
+        return;
       case ActionType.edit:
       //Do nothing
       case ActionType.bulkDeletion:
@@ -358,21 +391,45 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void redoAction(UserAction action) {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      switch (action.type) {
+        case ActionType.addition:
+          if (_poppedLineUps.isEmpty) return;
+          _upsertLineUp(cloneLineUp(_poppedLineUps.removeLast()));
+          return;
+        case ActionType.deletion:
+          final existing = state.lineUps.where((lineUp) => lineUp.id == action.id);
+          if (existing.isEmpty) return;
+          _poppedLineUps.removeWhere((lineUp) => lineUp.id == action.id);
+          _poppedLineUps.add(cloneLineUp(existing.first));
+          state = state.copyWith(
+            lineUps:
+                state.lineUps.where((lineUp) => lineUp.id != action.id).toList(),
+          );
+          return;
+        case ActionType.edit:
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          return;
+      }
+    }
     switch (action.type) {
       case ActionType.addition:
-        final index =
-            _poppedLineUps.indexWhere((lineUp) => lineUp.id == action.id);
-        state = state.copyWith(
-          lineUps: [...state.lineUps, _poppedLineUps.removeAt(index)],
-        );
+        final after = delta.after?.lineUp;
+        if (after == null) return;
+        _upsertLineUp(cloneLineUp(after));
+        return;
       case ActionType.deletion:
-        final newState = state.copyWith(
-          lineUps: [...state.lineUps],
+        final existing = state.lineUps.where((lineUp) => lineUp.id == action.id);
+        if (existing.isEmpty) return;
+        _poppedLineUps.removeWhere((lineUp) => lineUp.id == action.id);
+        _poppedLineUps.add(cloneLineUp(existing.first));
+        state = state.copyWith(
+          lineUps:
+              state.lineUps.where((lineUp) => lineUp.id != action.id).toList(),
         );
-        final index =
-            newState.lineUps.indexWhere((lineUp) => lineUp.id == action.id);
-        _poppedLineUps.add(newState.lineUps.removeAt(index));
-        state = newState;
+        return;
       case ActionType.edit:
       //Do nothing
       case ActionType.bulkDeletion:
@@ -388,16 +445,29 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   LineUpProviderSnapshot takeSnapshot() {
     return LineUpProviderSnapshot(
-      lineUps: [...state.lineUps],
-      poppedLineUps: [..._poppedLineUps],
+      lineUps: state.lineUps.map((lineUp) => cloneLineUp(lineUp)).toList(),
+      poppedLineUps: _poppedLineUps.map((lineUp) => cloneLineUp(lineUp)).toList(),
     );
   }
 
   void restoreSnapshot(LineUpProviderSnapshot snapshot) {
     _poppedLineUps
       ..clear()
-      ..addAll(snapshot.poppedLineUps);
-    state = state.copyWith(lineUps: [...snapshot.lineUps]);
+      ..addAll(snapshot.poppedLineUps.map((lineUp) => cloneLineUp(lineUp)));
+    state = state.copyWith(
+      lineUps: snapshot.lineUps.map((lineUp) => cloneLineUp(lineUp)).toList(),
+    );
+  }
+
+  void _upsertLineUp(LineUp lineUp) {
+    final newState = [...state.lineUps];
+    final index = newState.indexWhere((existing) => existing.id == lineUp.id);
+    if (index < 0) {
+      newState.add(lineUp);
+    } else {
+      newState[index] = lineUp;
+    }
+    state = state.copyWith(lineUps: newState);
   }
 }
 

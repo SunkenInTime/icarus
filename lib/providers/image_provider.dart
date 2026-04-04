@@ -11,6 +11,7 @@ import 'dart:ui' as ui;
 import 'dart:async' show Completer;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:path/path.dart' as path;
@@ -156,6 +157,11 @@ class PlacedImageProvider extends Notifier<ImageState> {
       type: ActionType.addition,
       id: placedImage.id,
       group: ActionGroup.image,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.image(placedImage),
+        afterImageSizes:
+            ref.read(imageWidgetSizeProvider.notifier).takeSnapshotForIds([imageID]),
+      ),
     );
 
     ref.read(actionProvider.notifier).addAction(action);
@@ -164,13 +170,20 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   void removeImageAsAction(String id) {
-    if (!state.images.any((image) => image.id == id)) return;
+    final index = PlacedWidget.getIndexByID(id, state.images);
+    if (index < 0) return;
 
     ref.read(actionProvider.notifier).addAction(
           UserAction(
             type: ActionType.deletion,
             id: id,
             group: ActionGroup.image,
+            objectDelta: ObjectHistoryDelta(
+              before: ActionObjectState.image(state.images[index]),
+              beforeImageSizes: ref
+                  .read(imageWidgetSizeProvider.notifier)
+                  .takeSnapshotForIds([id]),
+            ),
           ),
         );
     removeImage(id);
@@ -181,8 +194,9 @@ class PlacedImageProvider extends Notifier<ImageState> {
     final index = PlacedWidget.getIndexByID(id, newImages);
 
     if (index < 0) return;
-    final image = newImages.removeAt(index);
-    poppedImages.add(image);
+    final removedImage = newImages.removeAt(index);
+    poppedImages.removeWhere((item) => item.id == id);
+    poppedImages.add(clonePlacedImage(removedImage));
 
     state = state.copyWith(images: newImages);
   }
@@ -192,6 +206,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
     final index = PlacedWidget.getIndexByID(id, newImages);
 
     if (index < 0) return;
+    final before = ActionObjectState.image(newImages[index]);
     newImages[index].updatePosition(position);
 
     final temp = newImages.removeAt(index);
@@ -200,6 +215,14 @@ class PlacedImageProvider extends Notifier<ImageState> {
       type: ActionType.edit,
       id: id,
       group: ActionGroup.image,
+      objectDelta: ObjectHistoryDelta(
+        before: before,
+        after: ActionObjectState.image(temp),
+        beforeImageSizes:
+            ref.read(imageWidgetSizeProvider.notifier).takeSnapshotForIds([id]),
+        afterImageSizes:
+            ref.read(imageWidgetSizeProvider.notifier).takeSnapshotForIds([id]),
+      ),
     );
     ref.read(actionProvider.notifier).addAction(action);
 
@@ -229,56 +252,97 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   void undoAction(UserAction action) {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      switch (action.type) {
+        case ActionType.addition:
+          removeImage(action.id);
+          return;
+        case ActionType.deletion:
+          if (poppedImages.isEmpty) return;
+          _upsertImage(clonePlacedImage(poppedImages.removeLast()));
+          return;
+        case ActionType.edit:
+          final index = PlacedWidget.getIndexByID(action.id, state.images);
+          if (index < 0) return;
+          final newImages = [...state.images];
+          newImages[index].undoAction();
+          state = state.copyWith(images: newImages);
+          return;
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          return;
+      }
+    }
     switch (action.type) {
       case ActionType.addition:
+        _clearImageSizes(delta.afterImageSizes.keys);
         removeImage(action.id);
+        return;
       case ActionType.deletion:
-        if (poppedImages.isEmpty) {
+        final before = delta.before?.image;
+        if (before == null) {
           return;
         }
-        final newImages = [...state.images];
-        newImages.add(poppedImages.removeLast());
-        state = state.copyWith(images: newImages);
+        _upsertImage(clonePlacedImage(before));
+        _restoreImageSizes(delta.beforeImageSizes);
+        return;
       case ActionType.edit:
-        undoPosition(action.id);
+        final before = delta.before?.image;
+        if (before == null) return;
+        _upsertImage(clonePlacedImage(before));
+        _restoreImageSizes(delta.beforeImageSizes);
+        return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
         return;
     }
   }
 
-  void undoPosition(String id) {
-    final newImages = [...state.images];
-    final index = PlacedWidget.getIndexByID(id, newImages);
-
-    if (index < 0) return;
-    newImages[index].undoAction();
-
-    state = state.copyWith(images: newImages);
-  }
-
   void redoAction(UserAction action) {
-    final newImages = [...state.images];
-
-    try {
+    final delta = action.objectDelta;
+    if (delta == null) {
       switch (action.type) {
         case ActionType.addition:
-          final index = PlacedWidget.getIndexByID(action.id, poppedImages);
-          newImages.add(poppedImages.removeAt(index));
-
+          if (poppedImages.isEmpty) return;
+          _upsertImage(clonePlacedImage(poppedImages.removeLast()));
+          return;
         case ActionType.deletion:
-          final index = PlacedWidget.getIndexByID(action.id, poppedImages);
-          poppedImages.add(newImages.removeAt(index));
-
+          removeImage(action.id);
+          return;
         case ActionType.edit:
-          final index = PlacedWidget.getIndexByID(action.id, newImages);
+          final index = PlacedWidget.getIndexByID(action.id, state.images);
+          if (index < 0) return;
+          final newImages = [...state.images];
           newImages[index].redoAction();
+          state = state.copyWith(images: newImages);
+          return;
         case ActionType.bulkDeletion:
         case ActionType.transaction:
           return;
       }
-    } catch (_) {}
-    state = state.copyWith(images: newImages);
+    }
+    switch (action.type) {
+      case ActionType.addition:
+        final after = delta.after?.image;
+        if (after == null) return;
+        _upsertImage(clonePlacedImage(after));
+        _restoreImageSizes(delta.afterImageSizes);
+        return;
+      case ActionType.deletion:
+        _clearImageSizes(delta.beforeImageSizes.keys);
+        removeImage(action.id);
+        return;
+      case ActionType.edit:
+        final after = delta.after?.image;
+        if (after == null) return;
+        _upsertImage(clonePlacedImage(after));
+        _restoreImageSizes(delta.afterImageSizes);
+        return;
+      case ActionType.bulkDeletion:
+      case ActionType.transaction:
+        return;
+    }
   }
 
   static Future<Directory> getImageFolder(String strategyID) async {
@@ -416,14 +480,39 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
   PlacedImageProviderSnapshot takeSnapshot() {
     return PlacedImageProviderSnapshot(
-      images: [...state.images],
-      poppedImages: [...poppedImages],
+      images: state.images.map((image) => clonePlacedImage(image)).toList(),
+      poppedImages:
+          poppedImages.map((image) => clonePlacedImage(image)).toList(),
     );
   }
 
   void restoreSnapshot(PlacedImageProviderSnapshot snapshot) {
-    poppedImages = [...snapshot.poppedImages];
-    state = state.copyWith(images: [...snapshot.images]);
+    poppedImages =
+        snapshot.poppedImages.map((image) => clonePlacedImage(image)).toList();
+    state = state.copyWith(
+      images: snapshot.images.map((image) => clonePlacedImage(image)).toList(),
+    );
+  }
+
+  void _upsertImage(PlacedImage image) {
+    final newImages = [...state.images];
+    final index = PlacedWidget.getIndexByID(image.id, newImages);
+    if (index < 0) {
+      newImages.add(image);
+    } else {
+      newImages[index] = image;
+    }
+    state = state.copyWith(images: newImages);
+  }
+
+  void _restoreImageSizes(Map<String, Offset> snapshot) {
+    if (snapshot.isEmpty) return;
+    ref.read(imageWidgetSizeProvider.notifier).restoreSnapshot(snapshot);
+  }
+
+  void _clearImageSizes(Iterable<String> ids) {
+    if (ids.isEmpty) return;
+    ref.read(imageWidgetSizeProvider.notifier).clearEntries(ids);
   }
 }
 

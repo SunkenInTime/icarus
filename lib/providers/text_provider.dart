@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
 
@@ -48,6 +49,11 @@ class TextProvider extends Notifier<List<PlacedText>> {
       type: ActionType.addition,
       id: text.id,
       group: ActionGroup.text,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.text(text),
+        afterTextHeights:
+            ref.read(textWidgetHeightProvider.notifier).takeSnapshotForIds([text.id]),
+      ),
     );
 
     ref.read(actionProvider.notifier).addAction(action);
@@ -56,13 +62,20 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   void removeTextAsAction(String id) {
-    if (!state.any((text) => text.id == id)) return;
+    final index = PlacedWidget.getIndexByID(id, state);
+    if (index < 0) return;
 
     ref.read(actionProvider.notifier).addAction(
           UserAction(
             type: ActionType.deletion,
             id: id,
             group: ActionGroup.text,
+            objectDelta: ObjectHistoryDelta(
+              before: ActionObjectState.text(state[index]),
+              beforeTextHeights: ref
+                  .read(textWidgetHeightProvider.notifier)
+                  .takeSnapshotForIds([id]),
+            ),
           ),
         );
     removeText(id);
@@ -74,14 +87,26 @@ class TextProvider extends Notifier<List<PlacedText>> {
     final index = PlacedWidget.getIndexByID(id, newState);
 
     if (index < 0) return;
+    final before = ActionObjectState.text(newState[index]);
 
     newState[index].updatePosition(position);
 
     //Moving foward
     final temp = newState.removeAt(index);
 
-    final action =
-        UserAction(type: ActionType.edit, id: id, group: ActionGroup.text);
+    final action = UserAction(
+      type: ActionType.edit,
+      id: id,
+      group: ActionGroup.text,
+      objectDelta: ObjectHistoryDelta(
+        before: before,
+        after: ActionObjectState.text(temp),
+        beforeTextHeights:
+            ref.read(textWidgetHeightProvider.notifier).takeSnapshotForIds([id]),
+        afterTextHeights:
+            ref.read(textWidgetHeightProvider.notifier).takeSnapshotForIds([id]),
+      ),
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
@@ -109,9 +134,24 @@ class TextProvider extends Notifier<List<PlacedText>> {
 
     if (newState[index].text == nextText) return;
 
+    final before = ActionObjectState.text(newState[index]);
     newState[index].commitText(nextText);
     ref.read(actionProvider.notifier).addAction(
-          UserAction(type: ActionType.edit, id: id, group: ActionGroup.text),
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.text,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.text(newState[index]),
+              beforeTextHeights: ref
+                  .read(textWidgetHeightProvider.notifier)
+                  .takeSnapshotForIds([id]),
+              afterTextHeights: ref
+                  .read(textWidgetHeightProvider.notifier)
+                  .takeSnapshotForIds([id]),
+            ),
+          ),
         );
     state = newState;
   }
@@ -126,25 +166,46 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   void undoAction(UserAction action) {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      switch (action.type) {
+        case ActionType.addition:
+          removeText(action.id);
+          return;
+        case ActionType.deletion:
+          if (poppedText.isEmpty) return;
+          _upsertText(clonePlacedText(poppedText.removeLast()));
+          return;
+        case ActionType.edit:
+          final index = PlacedWidget.getIndexByID(action.id, state);
+          if (index < 0) return;
+          final newState = [...state];
+          newState[index].undoAction();
+          state = newState;
+          return;
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          return;
+      }
+    }
     switch (action.type) {
       case ActionType.addition:
+        _clearTextHeights(delta.afterTextHeights.keys);
         removeText(action.id);
+        return;
       case ActionType.deletion:
-        if (poppedText.isEmpty) return;
-
-        final newState = [...state];
-
-        newState.add(poppedText.removeLast());
-        state = newState;
+        final before = delta.before?.text;
+        if (before == null) return;
+        _upsertText(clonePlacedText(before));
+        _restoreTextHeights(delta.beforeTextHeights);
+        return;
 
       case ActionType.edit:
-        final newState = [...state];
-
-        final index = PlacedWidget.getIndexByID(action.id, newState);
-
-        newState[index].undoAction();
-
-        state = newState;
+        final before = delta.before?.text;
+        if (before == null) return;
+        _upsertText(clonePlacedText(before));
+        _restoreTextHeights(delta.beforeTextHeights);
+        return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
         return;
@@ -152,29 +213,49 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   void redoAction(UserAction action) {
-    final newState = [...state];
-
-    try {
+    final delta = action.objectDelta;
+    if (delta == null) {
       switch (action.type) {
         case ActionType.addition:
-          final index = PlacedWidget.getIndexByID(action.id, poppedText);
-          newState.add(poppedText.removeAt(index));
-
+          if (poppedText.isEmpty) return;
+          _upsertText(clonePlacedText(poppedText.removeLast()));
+          return;
         case ActionType.deletion:
-          final index = PlacedWidget.getIndexByID(action.id, poppedText);
-
-          poppedText.add(newState.removeAt(index));
-
+          removeText(action.id);
+          return;
         case ActionType.edit:
-          final index = PlacedWidget.getIndexByID(action.id, newState);
-
+          final index = PlacedWidget.getIndexByID(action.id, state);
+          if (index < 0) return;
+          final newState = [...state];
           newState[index].redoAction();
+          state = newState;
+          return;
         case ActionType.bulkDeletion:
         case ActionType.transaction:
           return;
       }
-    } catch (_) {}
-    state = newState;
+    }
+    switch (action.type) {
+      case ActionType.addition:
+        final after = delta.after?.text;
+        if (after == null) return;
+        _upsertText(clonePlacedText(after));
+        _restoreTextHeights(delta.afterTextHeights);
+        return;
+      case ActionType.deletion:
+        _clearTextHeights(delta.beforeTextHeights.keys);
+        removeText(action.id);
+        return;
+      case ActionType.edit:
+        final after = delta.after?.text;
+        if (after == null) return;
+        _upsertText(clonePlacedText(after));
+        _restoreTextHeights(delta.afterTextHeights);
+        return;
+      case ActionType.bulkDeletion:
+      case ActionType.transaction:
+        return;
+    }
   }
 
   void updateSize(int index, double size) {
@@ -197,8 +278,8 @@ class TextProvider extends Notifier<List<PlacedText>> {
       text.text = draft;
       ref.read(textDraftProvider.notifier).clearDraft(id);
     }
-    poppedText.add(text);
-
+    poppedText.removeWhere((item) => item.id == id);
+    poppedText.add(clonePlacedText(text));
     state = newState;
   }
 
@@ -253,14 +334,35 @@ class TextProvider extends Notifier<List<PlacedText>> {
 
   TextProviderSnapshot takeSnapshot() {
     return TextProviderSnapshot(
-      texts: [...state],
-      poppedText: [...poppedText],
+      texts: state.map((text) => clonePlacedText(text)).toList(),
+      poppedText: poppedText.map((text) => clonePlacedText(text)).toList(),
     );
   }
 
   void restoreSnapshot(TextProviderSnapshot snapshot) {
     ref.read(textDraftProvider.notifier).clearAllDrafts();
-    poppedText = [...snapshot.poppedText];
-    state = [...snapshot.texts];
+    poppedText = snapshot.poppedText.map((text) => clonePlacedText(text)).toList();
+    state = snapshot.texts.map((text) => clonePlacedText(text)).toList();
+  }
+
+  void _upsertText(PlacedText text) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(text.id, newState);
+    if (index < 0) {
+      newState.add(text);
+    } else {
+      newState[index] = text;
+    }
+    state = newState;
+  }
+
+  void _restoreTextHeights(Map<String, Offset> snapshot) {
+    if (snapshot.isEmpty) return;
+    ref.read(textWidgetHeightProvider.notifier).restoreSnapshot(snapshot);
+  }
+
+  void _clearTextHeights(Iterable<String> ids) {
+    if (ids.isEmpty) return;
+    ref.read(textWidgetHeightProvider.notifier).clearEntries(ids);
   }
 }
