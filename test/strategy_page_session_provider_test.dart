@@ -12,6 +12,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -116,12 +117,14 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   void syncDesiredOpsForPage({
     required String pageId,
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
+    bool clearMissing = true,
     bool flushImmediately = false,
   }) {
     syncDesiredOpsForPageCount++;
     super.syncDesiredOpsForPage(
       pageId: pageId,
       desiredOpsByEntityKey: desiredOpsByEntityKey,
+      clearMissing: clearMissing,
       flushImmediately: flushImmediately,
     );
   }
@@ -204,18 +207,21 @@ RemoteElement _remoteText({
   required String pageId,
   required String elementId,
   required String text,
+  int sortIndex = 0,
 }) {
   final placedText = PlacedText(
     id: elementId,
     position: const Offset(10, 20),
   )..text = text;
+  final payload = Map<String, dynamic>.from(placedText.toJson())
+    ..putIfAbsent('elementType', () => 'text');
   return RemoteElement(
     publicId: elementId,
     strategyPublicId: strategyId,
     pagePublicId: pageId,
     elementType: 'text',
-    payload: jsonEncode(placedText.toJson()),
-    sortIndex: 0,
+    payload: jsonEncode(payload),
+    sortIndex: sortIndex,
     revision: 1,
     deleted: false,
   );
@@ -369,32 +375,11 @@ void main() {
     expect(container.read(textProvider).single.text, 'after');
   });
 
-  test('active-page projection keeps local entity while untouched remote updates live',
+  test('projected active-page merge prefers local overlay for touched entities',
       () async {
     const strategyId = 'cloud-strategy';
     final pageOne =
         _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);
-    final initialSnapshot = _cloudSnapshot(
-      strategyId: strategyId,
-      sequence: 1,
-      pages: [pageOne],
-      elementsByPage: {
-        'page-1': [
-          _remoteText(
-            strategyId: strategyId,
-            pageId: 'page-1',
-            elementId: 'text-1',
-            text: 'remote-a',
-          ),
-          _remoteText(
-            strategyId: strategyId,
-            pageId: 'page-1',
-            elementId: 'text-2',
-            text: 'remote-b',
-          ),
-        ],
-      },
-    );
     final updatedSnapshot = _cloudSnapshot(
       strategyId: strategyId,
       sequence: 2,
@@ -406,49 +391,72 @@ void main() {
             pageId: 'page-1',
             elementId: 'text-1',
             text: 'remote-a',
+            sortIndex: 0,
           ),
           _remoteText(
             strategyId: strategyId,
             pageId: 'page-1',
             elementId: 'text-2',
             text: 'remote-b-updated',
+            sortIndex: 1,
           ),
         ],
       },
     );
 
-    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(initialSnapshot);
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(updatedSnapshot);
     final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
-    final container = await _cloudContainer(
-      strategyState: const StrategyState(
-        strategyId: strategyId,
-        strategyName: 'Cloud Strategy',
-        source: StrategySource.cloud,
-        storageDirectory: null,
-        isOpen: true,
-      ),
-      remoteNotifier: remoteNotifier,
-      queueNotifier: queueNotifier,
+    final container = ProviderContainer(
+      overrides: [
+        strategyProvider.overrideWith(
+          () => _StaticStrategyProvider(
+            const StrategyState(
+              strategyId: strategyId,
+              strategyName: 'Cloud Strategy',
+              source: StrategySource.cloud,
+              storageDirectory: null,
+              isOpen: true,
+            ),
+          ),
+        ),
+        remoteStrategySnapshotProvider.overrideWith(() => remoteNotifier),
+        strategyOpQueueProvider.overrideWith(() => queueNotifier),
+      ],
     );
-    await container
-        .read(strategyPageSessionProvider.notifier)
-        .initializeForStrategy(
-          strategyId: strategyId,
-          source: StrategySource.cloud,
-          selectFirstPageIfNeeded: true,
+    addTearDown(container.dispose);
+    await container.read(remoteStrategySnapshotProvider.future);
+
+    final localTextPayload = Map<String, dynamic>.from(
+      (PlacedText(id: 'text-1', position: const Offset(10, 20))..text = 'local-a')
+          .toJson(),
+    )..putIfAbsent('elementType', () => 'text');
+    container.read(activePageLiveSyncProvider.notifier).setStateForTest(
+          ActivePageLiveSyncState(
+            strategyPublicId: strategyId,
+            activePageId: 'page-1',
+            overlayByEntityKey: {
+              elementEntityKey('page-1', 'text-1'): ActivePageOverlayEntry(
+                entityKey: elementEntityKey('page-1', 'text-1'),
+                entityType: ActivePageOverlayEntityType.element,
+                desiredPayload: jsonEncode(localTextPayload),
+                desiredSortIndex: 0,
+                deletion: false,
+                baseRevision: 1,
+                dirtyAt: DateTime.now(),
+              ),
+            },
+          ),
         );
 
-    container.read(textProvider.notifier).fromHive([
-      PlacedText(id: 'text-1', position: const Offset(10, 20))..text = 'local-a',
-      PlacedText(id: 'text-2', position: const Offset(30, 40))..text = 'remote-b',
-    ]);
-    await container.read(strategyPageSessionProvider.notifier).flushCurrentPage();
-
-    remoteNotifier.setSnapshot(updatedSnapshot);
-    await _settle();
+    final projectedState = container
+        .read(activePageLiveSyncProvider.notifier)
+        .projectPageState(strategyPublicId: strategyId, pageId: 'page-1');
 
     final textsById = {
-      for (final text in container.read(textProvider)) text.id: text.text,
+      for (final element in projectedState!.elements)
+        element.publicId: PlacedText.fromJson(
+          jsonDecode(element.payload) as Map<String, dynamic>,
+        ).text,
     };
     expect(textsById['text-1'], 'local-a');
     expect(textsById['text-2'], 'remote-b-updated');

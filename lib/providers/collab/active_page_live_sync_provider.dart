@@ -3,9 +3,7 @@ import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
-import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
-import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
@@ -67,6 +65,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
 
   void reset() {
     state = const ActivePageLiveSyncState();
+  }
+
+  void setStateForTest(ActivePageLiveSyncState nextState) {
+    state = nextState;
   }
 
   void setContext({
@@ -134,7 +136,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       final hasInFlight = queueState.inFlightByEntityKey.containsKey(key);
       final existingOverlay = state.overlayByEntityKey[key];
 
-      final shouldPreserveTouched = hasQueued || hasInFlight || existingOverlay != null;
+      final shouldPreserveTouched = hasQueued || hasInFlight;
       final matchesRemote = _entitiesEquivalent(local, remote);
 
       if (matchesRemote && !hasQueued && !hasInFlight) {
@@ -159,6 +161,12 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         );
         nextOverlay[key] = overlay;
         _debugLog('overlay.keep $key reason=pending_reconciliation');
+        continue;
+      }
+
+      if (matchesRemote && existingOverlay != null && !shouldPreserveTouched) {
+        nextOverlay.remove(key);
+        _debugLog('overlay.remove $key reason=stale_overlay_cleared');
         continue;
       }
 

@@ -118,6 +118,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       syncDesiredOpsForPage(
         pageId: pageId,
         desiredOpsByEntityKey: {entityKey: op},
+        clearMissing: false,
         flushImmediately: flushImmediately,
       );
       return;
@@ -177,6 +178,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       syncDesiredOpsForPage(
         pageId: entry.key,
         desiredOpsByEntityKey: entry.value,
+        clearMissing: false,
         flushImmediately: false,
       );
     }
@@ -186,15 +188,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   void syncDesiredOpsForPage({
     required String pageId,
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
+    bool clearMissing = true,
     bool flushImmediately = false,
   }) {
     final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
       state.queuedByEntityKey,
     );
-    final pageKeys = <EntitySyncKey>{
-      ...queued.keys.where((key) => pageIdForEntityKey(key) == pageId),
-      ...desiredOpsByEntityKey.keys,
-    };
+    final pageKeys = clearMissing
+        ? <EntitySyncKey>{
+            ...queued.keys.where((key) => pageIdForEntityKey(key) == pageId),
+            ...desiredOpsByEntityKey.keys,
+          }
+        : desiredOpsByEntityKey.keys.toSet();
 
     var changed = false;
     for (final key in pageKeys) {

@@ -12,6 +12,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
