@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 Future<LineUpAbilityStackCandidate?> showLineUpAbilityStackSelector({
@@ -117,65 +118,143 @@ class _LineUpAbilityStackSelectorDialogState
 
   @override
   Widget build(BuildContext context) {
+    final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    final contentPadding = EdgeInsets.all(
+      (abilitySize * 0.24).clamp(4.0, 10.0),
+    );
+    final indexStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
+          fontSize: abilitySize * 0.68,
+          fontWeight: FontWeight.w600,
+          height: 1.0,
+        );
+
     return Material(
       color: Colors.transparent,
       child: ShadPopover(
         controller: _controller,
         anchor: ShadGlobalAnchor(widget.globalPosition),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         useSameGroupIdForChild: false,
         child: const SizedBox.expand(),
         popover: (_) {
-          return Container(
-            key: const ValueKey('lineup-stack-selector'),
-            constraints: const BoxConstraints(minWidth: 120, maxWidth: 180),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final (index, candidate) in widget.candidates.indexed)
-                  MouseRegion(
-                    onEnter: (_) {
-                      ref.read(hoveredLineUpTargetProvider.notifier).setHoveredItem(
-                            groupId: candidate.groupId,
-                            itemId: candidate.itemId,
-                            ownerToken: _hoverOwnerToken,
-                          );
-                    },
-                    onExit: (_) {
-                      ref
-                          .read(hoveredLineUpTargetProvider.notifier)
-                          .clearIfOwned(_hoverOwnerToken);
-                    },
-                    child: ShadButton.raw(
+          return IntrinsicWidth(
+            child: Container(
+              key: const ValueKey('lineup-stack-selector'),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (index, candidate) in widget.candidates.indexed)
+                    _LineUpStackSelectorOption(
                       key: ValueKey(
                         'lineup-stack-option-${candidate.groupId}-${candidate.itemId}',
                       ),
-                      variant: ShadButtonVariant.ghost,
-                      width: double.infinity,
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      onPressed: () => _selectCandidate(candidate),
-                      child: Row(
-                        spacing: 8,
-                        children: [
-                          Text('${index + 1}'),
-                          Image.asset(
-                            candidate.ability.data.iconPath,
-                            width: 18,
-                            height: 18,
-                            fit: BoxFit.contain,
-                          ),
-                        ],
-                      ),
+                      index: index,
+                      candidate: candidate,
+                      abilitySize: abilitySize,
+                      indexStyle: indexStyle,
+                      contentPadding: contentPadding,
+                      onSelect: () => _selectCandidate(candidate),
+                      onHoverLineUpEnter: () {
+                        ref
+                            .read(hoveredLineUpTargetProvider.notifier)
+                            .setHoveredItem(
+                              groupId: candidate.groupId,
+                              itemId: candidate.itemId,
+                              ownerToken: _hoverOwnerToken,
+                            );
+                      },
+                      onHoverLineUpExit: () {
+                        ref
+                            .read(hoveredLineUpTargetProvider.notifier)
+                            .clearIfOwned(_hoverOwnerToken);
+                      },
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _LineUpStackSelectorOption extends StatefulWidget {
+  const _LineUpStackSelectorOption({
+    super.key,
+    required this.index,
+    required this.candidate,
+    required this.abilitySize,
+    required this.indexStyle,
+    required this.contentPadding,
+    required this.onSelect,
+    required this.onHoverLineUpEnter,
+    required this.onHoverLineUpExit,
+  });
+
+  final int index;
+  final LineUpAbilityStackCandidate candidate;
+  final double abilitySize;
+  final TextStyle? indexStyle;
+  final EdgeInsetsGeometry contentPadding;
+  final VoidCallback onSelect;
+  final VoidCallback onHoverLineUpEnter;
+  final VoidCallback onHoverLineUpExit;
+
+  @override
+  State<_LineUpStackSelectorOption> createState() =>
+      _LineUpStackSelectorOptionState();
+}
+
+class _LineUpStackSelectorOptionState
+    extends State<_LineUpStackSelectorOption> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final ringColor = ShadTheme.of(context).colorScheme.ring;
+    final gap = (widget.abilitySize * 0.2).clamp(4.0, 8.0);
+
+    return MouseRegion(
+      onEnter: (_) {
+        setState(() => _hovered = true);
+        widget.onHoverLineUpEnter();
+      },
+      onExit: (_) {
+        setState(() => _hovered = false);
+        widget.onHoverLineUpExit();
+      },
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onSelect,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          padding: widget.contentPadding,
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: _hovered ? ringColor : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: gap,
+            children: [
+              Text('${widget.index + 1}', style: widget.indexStyle),
+              Image.asset(
+                widget.candidate.ability.data.iconPath,
+                width: widget.abilitySize,
+                height: widget.abilitySize,
+                fit: BoxFit.contain,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -247,10 +326,13 @@ class _LineUpAbilityContextMenuDialogState
       enabled: item.enabled,
       leading: item.leading,
       trailing: item.trailing,
-      leadingPadding: item.leadingPadding,
-      trailingPadding: item.trailingPadding,
-      padding: item.padding,
-      insetPadding: item.insetPadding,
+      leadingPadding:
+          item.leadingPadding ?? const EdgeInsetsDirectional.only(end: 6),
+      trailingPadding:
+          item.trailingPadding ?? const EdgeInsetsDirectional.only(start: 6),
+      padding: item.padding ?? EdgeInsets.zero,
+      insetPadding:
+          item.insetPadding ?? const EdgeInsets.symmetric(horizontal: 4),
       onPressed: () {
         _closeRouteIfNeeded();
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -264,7 +346,7 @@ class _LineUpAbilityContextMenuDialogState
       decoration: item.decoration,
       textStyle: item.textStyle,
       trailingTextStyle: item.trailingTextStyle,
-      constraints: item.constraints,
+      constraints: item.constraints ?? const BoxConstraints(minWidth: 0),
       subMenuPadding: item.subMenuPadding,
       backgroundColor: item.backgroundColor,
       selectedBackgroundColor: item.selectedBackgroundColor,
@@ -280,9 +362,10 @@ class _LineUpAbilityContextMenuDialogState
       child: ShadContextMenu(
         controller: _controller,
         anchor: ShadGlobalAnchor(widget.globalPosition),
+        constraints: const BoxConstraints(minWidth: 0),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         items: [
-          for (final item in widget.items)
-            _wrapItem(item),
+          for (final item in widget.items) _wrapItem(item),
         ],
         child: const SizedBox.expand(),
       ),
