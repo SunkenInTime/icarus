@@ -48,8 +48,9 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
               .contains(rawExtension)) {
             final fileExtension = '.$rawExtension';
             await ref.read(placedImageProvider.notifier).addImage(
-                imageBytes: await file.readAsBytes(),
-                fileExtension: fileExtension);
+                  imageBytes: await file.readAsBytes(),
+                  fileExtension: fileExtension,
+                );
           }
         }
       },

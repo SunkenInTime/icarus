@@ -184,6 +184,7 @@ RemoteStrategySnapshot _cloudSnapshot({
     pages: pages,
     elementsByPage: elementsByPage,
     lineupsByPage: const {},
+    assetsById: const {},
   );
 }
 

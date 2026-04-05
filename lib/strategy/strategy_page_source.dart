@@ -12,6 +12,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -211,7 +212,17 @@ class CloudStrategyPageSource implements StrategyPageSource {
             texts.add(PlacedText.fromJson(payload));
             break;
           case 'image':
-            images.add(PlacedImage.fromJson(payload));
+            final hydrated = PlacedImage.fromJson(payload);
+            final remoteAsset = snapshot.assetsById[hydrated.id];
+            hydrated.link = remoteAsset?.url ?? '';
+            images.add(hydrated);
+            if (remoteAsset != null) {
+              ref.read(cloudMediaCacheProvider.notifier).ensureAssetCached(
+                    strategyId: strategyId,
+                    strategyPublicId: strategyId,
+                    asset: remoteAsset,
+                  );
+            }
             break;
           case 'utility':
             utilities.add(PlacedUtility.fromJson(payload));
@@ -321,7 +332,17 @@ class CloudStrategyPageSource implements StrategyPageSource {
             texts.add(PlacedText.fromJson(payload));
             break;
           case 'image':
-            images.add(PlacedImage.fromJson(payload));
+            final hydrated = PlacedImage.fromJson(payload);
+            final remoteAsset = snapshot.assetsById[hydrated.id];
+            hydrated.link = remoteAsset?.url ?? '';
+            images.add(hydrated);
+            if (remoteAsset != null) {
+              ref.read(cloudMediaCacheProvider.notifier).ensureAssetCached(
+                    strategyId: strategyId,
+                    strategyPublicId: strategyId,
+                    asset: remoteAsset,
+                  );
+            }
             break;
           case 'utility':
             utilities.add(PlacedUtility.fromJson(payload));

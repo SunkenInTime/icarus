@@ -3,6 +3,7 @@ import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -439,7 +440,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       entities[key] = _NormalizedEntity(
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.lineup,
-        payload: jsonEncode(lineup.toJson()),
+        payload: jsonEncode(cloudLineupPayload(lineup)),
         sortIndex: index,
         revision: 0,
         deleted: false,
@@ -499,7 +500,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     }
 
     for (final image in ref.read(placedImageProvider).images) {
-      final payload = Map<String, dynamic>.from(image.toJson())
+      final payload = Map<String, dynamic>.from(
+        cloudImagePayloadFromPlacedImage(image),
+      )
         ..putIfAbsent('elementType', () => 'image');
       envelopes.add(
         _CollabElementEnvelope(

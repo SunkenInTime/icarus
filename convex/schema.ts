@@ -111,8 +111,14 @@ export default defineSchema({
     publicId: v.string(),
     strategyId: v.id("strategies"),
     pageId: v.id("pages"),
+    // Legacy rows predate ownerType and are treated as element-owned.
+    ownerType: v.optional(v.union(v.literal("element"), v.literal("lineup"))),
     elementId: v.optional(v.id("elements")),
-    storagePath: v.string(),
+    lineupId: v.optional(v.id("lineups")),
+    storageId: v.optional(v.id("_storage")),
+    // Legacy rows predate fileExtension and may need best-effort inference.
+    fileExtension: v.optional(v.string()),
+    storagePath: v.optional(v.string()),
     mimeType: v.string(),
     width: v.optional(v.number()),
     height: v.optional(v.number()),
@@ -122,7 +128,8 @@ export default defineSchema({
   })
     .index("by_publicId", ["publicId"])
     .index("by_strategyId", ["strategyId"])
-    .index("by_pageId", ["pageId"]),
+    .index("by_pageId", ["pageId"])
+    .index("by_lineupId", ["lineupId"]),
   operationEvents: defineTable({
     strategyId: v.id("strategies"),
     pageId: v.optional(v.id("pages")),

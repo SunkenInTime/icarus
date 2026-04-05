@@ -1708,3 +1708,157 @@ class AbilityVisualStateAdapter extends TypeAdapter<AbilityVisualState> {
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }
+
+class CloudMediaOwnerTypeAdapter extends TypeAdapter<CloudMediaOwnerType> {
+  @override
+  final typeId = 33;
+
+  @override
+  CloudMediaOwnerType read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return CloudMediaOwnerType.element;
+      case 1:
+        return CloudMediaOwnerType.lineup;
+      default:
+        return CloudMediaOwnerType.element;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, CloudMediaOwnerType obj) {
+    switch (obj) {
+      case CloudMediaOwnerType.element:
+        writer.writeByte(0);
+      case CloudMediaOwnerType.lineup:
+        writer.writeByte(1);
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CloudMediaOwnerTypeAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class CloudMediaJobStateAdapter extends TypeAdapter<CloudMediaJobState> {
+  @override
+  final typeId = 34;
+
+  @override
+  CloudMediaJobState read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return CloudMediaJobState.pendingUpload;
+      case 1:
+        return CloudMediaJobState.pendingAttach;
+      case 2:
+        return CloudMediaJobState.failed;
+      default:
+        return CloudMediaJobState.pendingUpload;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, CloudMediaJobState obj) {
+    switch (obj) {
+      case CloudMediaJobState.pendingUpload:
+        writer.writeByte(0);
+      case CloudMediaJobState.pendingAttach:
+        writer.writeByte(1);
+      case CloudMediaJobState.failed:
+        writer.writeByte(2);
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CloudMediaJobStateAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class CloudMediaUploadJobAdapter extends TypeAdapter<CloudMediaUploadJob> {
+  @override
+  final typeId = 35;
+
+  @override
+  CloudMediaUploadJob read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return CloudMediaUploadJob(
+      jobId: fields[0] as String,
+      strategyPublicId: fields[1] as String,
+      pagePublicId: fields[2] as String,
+      ownerType: fields[3] as CloudMediaOwnerType,
+      ownerPublicId: fields[4] as String,
+      assetPublicId: fields[5] as String,
+      fileExtension: fields[6] as String,
+      mimeType: fields[7] as String,
+      state: fields[11] as CloudMediaJobState,
+      attempts: (fields[12] as num).toInt(),
+      updatedAt: fields[14] as DateTime,
+      width: (fields[8] as num?)?.toInt(),
+      height: (fields[9] as num?)?.toInt(),
+      storageId: fields[10] as String?,
+      lastError: fields[13] as String?,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, CloudMediaUploadJob obj) {
+    writer
+      ..writeByte(15)
+      ..writeByte(0)
+      ..write(obj.jobId)
+      ..writeByte(1)
+      ..write(obj.strategyPublicId)
+      ..writeByte(2)
+      ..write(obj.pagePublicId)
+      ..writeByte(3)
+      ..write(obj.ownerType)
+      ..writeByte(4)
+      ..write(obj.ownerPublicId)
+      ..writeByte(5)
+      ..write(obj.assetPublicId)
+      ..writeByte(6)
+      ..write(obj.fileExtension)
+      ..writeByte(7)
+      ..write(obj.mimeType)
+      ..writeByte(8)
+      ..write(obj.width)
+      ..writeByte(9)
+      ..write(obj.height)
+      ..writeByte(10)
+      ..write(obj.storageId)
+      ..writeByte(11)
+      ..write(obj.state)
+      ..writeByte(12)
+      ..write(obj.attempts)
+      ..writeByte(13)
+      ..write(obj.lastError)
+      ..writeByte(14)
+      ..write(obj.updatedAt);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CloudMediaUploadJobAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}

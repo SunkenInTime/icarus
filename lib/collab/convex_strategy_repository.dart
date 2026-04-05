@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 
 final convexStrategyRepositoryProvider = Provider<ConvexStrategyRepository>(
   (ref) => ConvexStrategyRepository(ConvexClient.instance),
@@ -262,6 +263,15 @@ class ConvexStrategyRepository {
 
     final elementsByPage = <String, List<RemoteElement>>{};
     final lineupsByPage = <String, List<RemoteLineup>>{};
+    final assetsRaw = await _client.query('images:listForStrategy', {
+      'strategyPublicId': strategyPublicId,
+    });
+    final assets = _decodeObjectList(assetsRaw)
+        .map(RemoteImageAsset.fromJson)
+        .toList(growable: false);
+    final assetsById = <String, RemoteImageAsset>{
+      for (final asset in assets) asset.publicId: asset,
+    };
 
     for (final page in pages) {
       final elementsRaw = await _client.query('elements:listForPage', {
@@ -290,7 +300,61 @@ class ConvexStrategyRepository {
       pages: pages,
       elementsByPage: elementsByPage,
       lineupsByPage: lineupsByPage,
+      assetsById: assetsById,
     );
+  }
+
+  Future<String> generateImageUploadUrl(String strategyPublicId) async {
+    final response = await _client.mutation(
+      name: 'images:generateUploadUrl',
+      args: {
+        'strategyPublicId': strategyPublicId,
+      },
+    );
+    return (_decodeObject(response)['uploadUrl'] as String?) ?? '';
+  }
+
+  Future<void> completeImageUpload({
+    required String strategyPublicId,
+    required String pagePublicId,
+    required String assetPublicId,
+    required CloudMediaOwnerType ownerType,
+    required String ownerPublicId,
+    required String storageId,
+    required String mimeType,
+    required String fileExtension,
+    int? width,
+    int? height,
+  }) async {
+    await _client.mutation(
+      name: 'images:completeUpload',
+      args: {
+        'strategyPublicId': strategyPublicId,
+        'pagePublicId': pagePublicId,
+        'assetPublicId': assetPublicId,
+        'ownerType': ownerType.name,
+        'ownerPublicId': ownerPublicId,
+        'storageId': storageId,
+        'mimeType': mimeType,
+        'fileExtension': fileExtension,
+        if (width != null) 'width': width,
+        if (height != null) 'height': height,
+      },
+    );
+  }
+
+  Future<String?> getImageAssetUrl({
+    required String strategyPublicId,
+    required String assetPublicId,
+  }) async {
+    final response = await _client.query(
+      'images:getAssetUrl',
+      {
+        'strategyPublicId': strategyPublicId,
+        'assetPublicId': assetPublicId,
+      },
+    );
+    return _decodeObject(response)['url'] as String?;
   }
 
   Future<List<OpAck>> applyBatch({

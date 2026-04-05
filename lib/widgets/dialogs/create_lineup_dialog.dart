@@ -3,10 +3,15 @@ import 'dart:typed_data' show Uint8List;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/services/clipboard_service.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
 import 'package:path/path.dart' as path;
@@ -25,6 +30,33 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   final TextEditingController _youtubeLinkController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   final List<SimpleImageData> _imagePaths = [];
+
+  Future<void> _enqueueLineupMediaJobs({
+    required String lineupId,
+    required List<SimpleImageData> images,
+  }) async {
+    final strategyState = ref.read(strategyProvider);
+    if (strategyState.source != StrategySource.cloud ||
+        strategyState.strategyId == null) {
+      return;
+    }
+
+    final pageId = ref.read(strategyPageSessionProvider).activePageId;
+    if (pageId == null) {
+      return;
+    }
+
+    for (final image in images) {
+      await ref.read(cloudMediaUploadQueueProvider.notifier).enqueueJobForLocalFile(
+            strategyPublicId: strategyState.strategyId!,
+            pagePublicId: pageId,
+            ownerType: CloudMediaOwnerType.lineup,
+            ownerPublicId: lineupId,
+            assetPublicId: image.id,
+            fileExtension: image.fileExtension,
+          );
+    }
+  }
 
   @override
   void initState() {
@@ -88,6 +120,10 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                 );
 
                 ref.read(lineUpProvider.notifier).updateLineUp(lineUp);
+                await _enqueueLineupMediaJobs(
+                  lineupId: lineUp.id,
+                  images: lineUp.images,
+                );
               } else {
                 final id = const Uuid().v4();
 
@@ -107,6 +143,10 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                 );
 
                 ref.read(lineUpProvider.notifier).addLineUp(currentLineUp);
+                await _enqueueLineupMediaJobs(
+                  lineupId: currentLineUp.id,
+                  images: currentLineUp.images,
+                );
               }
 
               ref

@@ -33,6 +33,7 @@ import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -48,6 +49,23 @@ final strategyProvider =
 class StrategyProvider extends Notifier<StrategyState> {
   @override
   StrategyState build() {
+    ref.listen<AppAuthState>(authProvider, (previous, next) {
+      final strategyId = state.strategyId;
+      if (state.source != StrategySource.cloud || strategyId == null) {
+        return;
+      }
+      final becameReady = !(previous?.isConvexUserReady ?? false) &&
+          next.isConvexUserReady;
+      if (!becameReady) {
+        return;
+      }
+      unawaited(
+        ref.read(cloudMediaUploadQueueProvider.notifier).retryNow(
+              ignoreBackoff: true,
+            ),
+      );
+    });
+
     return const StrategyState(
       strategyId: null,
       strategyName: null,
@@ -149,11 +167,13 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
+    final storageDirectory =
+        kIsWeb ? null : (await setStorageDirectory(snapshot.header.publicId)).path;
     state = state.copyWith(
       strategyId: snapshot.header.publicId,
       strategyName: snapshot.header.name,
       source: StrategySource.cloud,
-      storageDirectory: null,
+      storageDirectory: storageDirectory,
       isOpen: true,
     );
 
@@ -162,6 +182,11 @@ class StrategyProvider extends Notifier<StrategyState> {
           source: StrategySource.cloud,
           selectFirstPageIfNeeded: true,
         );
+    unawaited(
+      ref.read(cloudMediaUploadQueueProvider.notifier).setActiveStrategy(
+            snapshot.header.publicId,
+          ),
+    );
   }
 
   Future<void> switchPage(String pageID) async {
@@ -295,6 +320,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       isOpen: false,
     );
     ref.read(remoteStrategySnapshotProvider.notifier).clear();
+    unawaited(
+      ref.read(cloudMediaUploadQueueProvider.notifier).setActiveStrategy(null),
+    );
   }
 
   // Switch active page: flush old page first, then hydrate new

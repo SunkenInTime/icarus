@@ -5,6 +5,7 @@ import 'dart:ui' show Offset;
 
 import 'package:flutter/material.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -42,6 +43,9 @@ import 'package:icarus/strategy/strategy_models.dart';
   AdapterSpec<StrategyPage>(),
   AdapterSpec<LineUp>(),
   AdapterSpec<SimpleImageData>(),
+  AdapterSpec<CloudMediaOwnerType>(),
+  AdapterSpec<CloudMediaJobState>(),
+  AdapterSpec<CloudMediaUploadJob>(),
   AdapterSpec<AgentState>(),
   AdapterSpec<RectangleDrawing>(),
   AdapterSpec<EllipseDrawing>(),

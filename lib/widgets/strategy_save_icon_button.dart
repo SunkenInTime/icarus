@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auto_save_notifier.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
@@ -120,11 +121,19 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
         foregroundColor: Colors.white,
         icon: icon,
         onPressed: () async {
-          // manual save path shows a SnackBar
           await ref
               .read(strategyProvider.notifier)
               .forceSaveNow(ref.read(strategyProvider).strategyId!);
           if (!context.mounted) return;
+
+          final latestSaveState = ref.read(strategySaveStateProvider);
+          final hasIncompleteMediaSync = latestSaveState.hasPendingMediaSync ||
+              latestSaveState.mediaSyncErrorCount > 0;
+          final toastMessage = hasIncompleteMediaSync
+              ? latestSaveState.mediaSyncErrorCount > 0
+                  ? 'Local save complete. Media sync needs retry.'
+                  : 'Local save complete. Media still syncing.'
+              : 'Save Complete';
 
           toastification.showCustom(
             context: context,
@@ -143,7 +152,7 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
                   ),
                 ),
                 child: Text(
-                  'Save Complete',
+                  toastMessage,
                   style: ShadTheme.of(context)
                       .textTheme
                       .small
@@ -152,20 +161,6 @@ class _AutoSaveButtonState extends ConsumerState<AutoSaveButton>
               );
             },
           );
-          // ScaffoldMessenger.of(context).showSnackBar(
-          //   const SnackBar(
-          //     content: Center(
-          //       child: Text(
-          //         "File Saved",
-          //         style: TextStyle(color: Colors.white),
-          //       ),
-          //     ),
-          //     duration: Duration(seconds: 2),
-          //     backgroundColor: Settings.sideBarColor,
-          //     behavior: SnackBarBehavior.floating,
-          //     width: 200,
-          //   ),
-          // );
         },
       ),
     );
