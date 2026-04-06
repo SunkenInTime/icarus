@@ -1,0 +1,49 @@
+{
+  "version": "4.2.0+63",
+  "shortVersion": 63,
+  "title": "4.2.0 Release",
+  "description": "Desktop release metadata for Icarus.",
+  "date": "2026-04-06",
+  "mandatory": false,
+  "channels": [
+    "desktop",
+    "stable"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "changes": [
+    {
+      "message": "Stack multiple lineup abilities in one place and pick them from a clearer menu, with improved styling and hover feedback.",
+      "type": "feat"
+    },
+    {
+      "message": "Resize the pages bar, persist your height between sessions, and show two rows when there is room; tighter sidebar chrome and a clearer resize handle.",
+      "type": "feat"
+    },
+    {
+      "message": "Export screenshots with options to show or hide the spawn barrier, region names, and ultimate orb markers.",
+      "type": "feat"
+    },
+    {
+      "message": "Strategy tiles list agents in role order so compositions are quicker to scan.",
+      "type": "improvement"
+    },
+    {
+      "message": "Grouped lineup placement with migration from older saves; legacy lineup data is preserved for Hive compatibility.",
+      "type": "feat"
+    },
+    {
+      "message": "More reliable lineup editing: better migration change detection, scoped hover updates, cleaner stacked menu hitboxes, and tests around lineup item interactions.",
+      "type": "fix"
+    },
+    {
+      "message": "Autosave uses safer deep copies and flushes before exit so you are less likely to lose work when closing the app.",
+      "type": "improvement"
+    },
+    {
+      "message": "Direct Windows updates verify downloads more reliably before applying an installer.",
+      "type": "fix"
+    }
+  ]
+}
