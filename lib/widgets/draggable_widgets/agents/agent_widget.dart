@@ -3,12 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
+import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Grayscale color matrix for dead agents
 const List<double> _identityColorMatrix = <double>[
@@ -94,6 +98,9 @@ class AgentWidget extends ConsumerWidget {
         (deadStateProgress ?? (state == AgentState.dead ? 1.0 : 0.0))
             .clamp(0.0, 1.0);
     final hasDeadStyling = deadProgress > 0;
+    final hoverTarget = ref.watch(hoveredLineUpTargetProvider);
+    final isLineUpHovered =
+        lineUpId != null && (hoverTarget?.matchesAgent(lineUpId!) ?? false);
 
     final agentImage = RepaintBoundary(child: Image.asset(agent.iconPath));
 
@@ -106,7 +113,7 @@ class AgentWidget extends ConsumerWidget {
     final deadBgColor = isAlly ? _mutedAllyBGColor : _mutedEnemyBGColor;
     bgColor = Color.lerp(bgColor, deadBgColor, deadProgress) ?? bgColor;
 
-    if (lineUpId != null && ref.watch(hoveredLineUpIdProvider) == lineUpId) {
+    if (isLineUpHovered) {
       bgColor = Colors.deepPurple;
     }
 
@@ -118,11 +125,10 @@ class AgentWidget extends ConsumerWidget {
 
     final deadOutlineColor =
         isAlly ? _mutedAllyOutlineColor : _mutedEnemyOutlineColor;
-    outlineColor =
-        Color.lerp(outlineColor, deadOutlineColor, deadProgress) ??
-            outlineColor;
+    outlineColor = Color.lerp(outlineColor, deadOutlineColor, deadProgress) ??
+        outlineColor;
 
-    if (lineUpId != null && ref.watch(hoveredLineUpIdProvider) == lineUpId) {
+    if (isLineUpHovered) {
       outlineColor = Colors.deepPurpleAccent;
     }
 
@@ -134,8 +140,7 @@ class AgentWidget extends ConsumerWidget {
       agentDisplay = Stack(
         children: [
           ColorFiltered(
-            colorFilter:
-                ColorFilter.matrix(_lerpColorMatrix(deadProgress)),
+            colorFilter: ColorFilter.matrix(_lerpColorMatrix(deadProgress)),
             child: agentImage,
           ),
           Positioned.fill(
@@ -171,6 +176,62 @@ class AgentWidget extends ConsumerWidget {
         : (id?.isNotEmpty ?? false)
             ? HoveredDeleteTarget.agent(id: id!, ownerToken: Object())
             : null;
+    final plainAgent = lineUpId == null && (id?.isNotEmpty ?? false)
+        ? ref.watch(
+            agentProvider.select(
+              (agents) => agents.whereType<PlacedAgent>().firstWhere(
+                    (entry) => entry.id == id,
+                    orElse: () => PlacedAgent(
+                      type: agent.type,
+                      position: Offset.zero,
+                      id: '',
+                    ),
+                  ),
+            ),
+          )
+        : null;
+
+    final contextMenuItems = <ShadContextMenuItem>[
+      if (lineUpId != null)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.plus),
+          child: const Text('Add Lineup Item'),
+          onPressed: () {
+            final group =
+                ref.read(lineUpProvider.notifier).getGroupById(lineUpId!);
+            if (group == null) return;
+            ref
+                .read(abilityBarProvider.notifier)
+                .updateData(AgentData.agents[group.agent.type]!);
+            ref
+                .read(interactionStateProvider.notifier)
+                .update(InteractionState.lineUpPlacing);
+            ref.read(lineUpProvider.notifier).startNewItemForGroup(lineUpId!);
+          },
+        ),
+      if (lineUpId != null)
+        ShadContextMenuItem(
+          leading: Icon(
+            Icons.delete,
+            color: Settings.tacticalVioletTheme.destructive,
+          ),
+          child: const Text('Delete Lineup Group'),
+          onPressed: () {
+            ref.read(lineUpProvider.notifier).deleteGroupById(lineUpId!);
+          },
+        ),
+      if (lineUpId == null && plainAgent != null && plainAgent.id.isNotEmpty)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.plus),
+          child: const Text('Create Lineup'),
+          onPressed: () {
+            ref
+                .read(interactionStateProvider.notifier)
+                .update(InteractionState.lineUpPlacing);
+            ref.read(lineUpProvider.notifier).startNewGroup(plainAgent);
+          },
+        ),
+    ];
 
     Widget agentCard;
     // Use Ink + InkWell so the ripple shows on top of the background
@@ -208,6 +269,7 @@ class AgentWidget extends ConsumerWidget {
       lineUpId: lineUpId,
       cursor: SystemMouseCursors.click,
       deleteTarget: deleteTarget,
+      contextMenuItems: contextMenuItems.isEmpty ? null : contextMenuItems,
       child: agentCard,
     );
   }
@@ -216,7 +278,8 @@ class AgentWidget extends ConsumerWidget {
 List<double> _lerpColorMatrix(double t) {
   return List<double>.generate(
     _identityColorMatrix.length,
-    (index) => _identityColorMatrix[index] +
+    (index) =>
+        _identityColorMatrix[index] +
         (_grayscaleColorMatrix[index] - _identityColorMatrix[index]) * t,
   );
 }

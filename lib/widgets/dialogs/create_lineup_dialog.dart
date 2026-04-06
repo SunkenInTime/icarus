@@ -1,10 +1,9 @@
-import 'dart:typed_data' show Uint8List;
-
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/services/clipboard_service.dart';
@@ -14,8 +13,14 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
 class CreateLineupDialog extends ConsumerStatefulWidget {
-  const CreateLineupDialog({super.key, this.lineUpId});
-  final String? lineUpId;
+  const CreateLineupDialog({
+    super.key,
+    this.lineUpGroupId,
+    this.lineUpItemId,
+  });
+
+  final String? lineUpGroupId;
+  final String? lineUpItemId;
 
   @override
   ConsumerState<CreateLineupDialog> createState() => _CreateLineupDialogState();
@@ -26,28 +31,23 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   final TextEditingController _notesController = TextEditingController();
   final List<SimpleImageData> _imagePaths = [];
 
+  bool get _isEditing =>
+      widget.lineUpGroupId != null && widget.lineUpItemId != null;
+
   @override
   void initState() {
     super.initState();
-    if (widget.lineUpId != null) {
-      final lineUp =
-          ref.read(lineUpProvider.notifier).getLineUpById(widget.lineUpId!);
-
-      _youtubeLinkController.text = lineUp!.youtubeLink;
-      _notesController.text = lineUp.notes;
-      _imagePaths.addAll(lineUp.images);
+    if (_isEditing) {
+      final item = ref.read(lineUpProvider.notifier).getItemById(
+            groupId: widget.lineUpGroupId!,
+            itemId: widget.lineUpItemId!,
+          );
+      if (item != null) {
+        _youtubeLinkController.text = item.youtubeLink;
+        _notesController.text = item.notes;
+        _imagePaths.addAll(item.images);
+      }
     }
-    // final state = ref.read(lineUpProvider);
-    // if (state.currentAgent != null) {
-    //   try {
-    //     _selectedAgent = AgentData.agents[state.currentAgent!.type];
-    //   } catch (e) {
-    //     // Handle case where agent is not found
-    //   }
-    // }
-    // if (state.currentAbility != null) {
-    //   _selectedAbility = state.currentAbility!.data;
-    // }
   }
 
   @override
@@ -57,10 +57,89 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
     super.dispose();
   }
 
+  Future<void> _save() async {
+    final lineUpState = ref.read(lineUpProvider);
+    final notifier = ref.read(lineUpProvider.notifier);
+
+    if (_isEditing) {
+      final existingItem = notifier.getItemById(
+        groupId: widget.lineUpGroupId!,
+        itemId: widget.lineUpItemId!,
+      );
+      if (existingItem != null) {
+        ref.read(actionProvider.notifier).performTransaction(
+              groups: const [ActionGroup.lineUp],
+              mutation: () {
+                notifier.updateItem(
+                  groupId: widget.lineUpGroupId!,
+                  item: existingItem.copyWith(
+                    youtubeLink: _youtubeLinkController.text,
+                    notes: _notesController.text,
+                    images: _imagePaths,
+                  ),
+                );
+              },
+            );
+      }
+    } else {
+      final currentAbility = lineUpState.currentAbility;
+      if (currentAbility == null) {
+        return;
+      }
+
+      final item = LineUpItem(
+        id: const Uuid().v4(),
+        ability: currentAbility,
+        youtubeLink: _youtubeLinkController.text,
+        images: _imagePaths,
+        notes: _notesController.text,
+      );
+
+      if (lineUpState.currentGroupId != null) {
+        ref.read(actionProvider.notifier).performTransaction(
+              groups: const [ActionGroup.lineUp],
+              mutation: () {
+                notifier.addItemToGroup(
+                  groupId: lineUpState.currentGroupId!,
+                  item: item.copyWith(
+                    ability: item.ability.copyWith(
+                      lineUpID: lineUpState.currentGroupId,
+                    ),
+                  ),
+                );
+              },
+            );
+      } else {
+        final currentAgent = lineUpState.currentAgent;
+        if (currentAgent == null) {
+          return;
+        }
+
+        final groupId = const Uuid().v4();
+        notifier.addGroup(
+          LineUpGroup(
+            id: groupId,
+            agent: currentAgent.copyWith(lineUpID: groupId),
+            items: [
+              item.copyWith(
+                ability: item.ability.copyWith(lineUpID: groupId),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+
+    ref
+        .read(interactionStateProvider.notifier)
+        .update(InteractionState.navigation);
+    if (mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // final bool canSave = _selectedAgent != null && _selectedAbility != null;
-
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
@@ -70,52 +149,12 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         }
       },
       child: ShadDialog(
-        title: Text(
-          widget.lineUpId != null ? "Edit Line Up" : "Create Line Up",
-        ),
+        title: Text(_isEditing ? "Edit Line Up" : "Create Line Up"),
         actions: [
           ShadButton(
-            onPressed: () async {
-              if (widget.lineUpId != null) {
-                LineUp lineUp = ref
-                    .read(lineUpProvider.notifier)
-                    .getLineUpById(widget.lineUpId!)!;
-
-                lineUp = lineUp.copyWith(
-                  youtubeLink: _youtubeLinkController.text,
-                  notes: _notesController.text,
-                  images: _imagePaths,
-                );
-
-                ref.read(lineUpProvider.notifier).updateLineUp(lineUp);
-              } else {
-                final id = const Uuid().v4();
-
-                final LineUp currentLineUp = LineUp(
-                  id: id,
-                  agent: ref
-                      .read(lineUpProvider)
-                      .currentAgent!
-                      .copyWith(lineUpID: id),
-                  ability: ref
-                      .read(lineUpProvider)
-                      .currentAbility!
-                      .copyWith(lineUpID: id),
-                  youtubeLink: _youtubeLinkController.text,
-                  images: _imagePaths,
-                  notes: _notesController.text,
-                );
-
-                ref.read(lineUpProvider.notifier).addLineUp(currentLineUp);
-              }
-
-              ref
-                  .read(interactionStateProvider.notifier)
-                  .update(InteractionState.navigation);
-              Navigator.of(context).pop();
-            },
+            onPressed: _save,
             child: const Text("Done"),
-          )
+          ),
         ],
         child: SizedBox(
           width: 600,
@@ -133,11 +172,11 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
 
               if (result == null) return;
               final imageFile = result.files.first.xFile;
-              final String fileExtension = path.extension(imageFile.path);
-              final Uint8List imageBytes = await imageFile.readAsBytes();
+              final fileExtension = path.extension(imageFile.path);
+              final imageBytes = await imageFile.readAsBytes();
               final id = const Uuid().v4();
 
-              final SimpleImageData imageData =
+              final imageData =
                   SimpleImageData(id: id, fileExtension: fileExtension);
 
               await ref
@@ -159,7 +198,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
                 return;
               }
 
-              final String? fileExtension =
+              final fileExtension =
                   PlacedImageSerializer.detectImageFormat(bytes);
 
               if (fileExtension == null) {
@@ -171,7 +210,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
               }
 
               final id = const Uuid().v4();
-              final SimpleImageData imageData =
+              final imageData =
                   SimpleImageData(id: id, fileExtension: fileExtension);
 
               await ref

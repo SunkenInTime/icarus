@@ -6,6 +6,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
@@ -17,12 +18,14 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 class LineUpMediaCarousel extends ConsumerStatefulWidget {
   const LineUpMediaCarousel({
     super.key,
-    required this.lineUpId,
+    required this.lineUpGroupId,
+    required this.lineUpItemId,
     required this.images,
     required this.youtubeLink,
   });
   final List<SimpleImageData> images;
-  final String lineUpId;
+  final String lineUpGroupId;
+  final String lineUpItemId;
   final String youtubeLink;
 
   @override
@@ -229,23 +232,29 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                     onPressed: () {
                       Navigator.of(context).pop();
 
-                      ref
-                          .read(lineUpProvider.notifier)
-                          .deleteLineUpById(widget.lineUpId);
+                      ref.read(actionProvider.notifier).performTransaction(
+                            groups: const [ActionGroup.lineUp],
+                            mutation: () {
+                              ref.read(lineUpProvider.notifier).deleteItem(
+                                    groupId: widget.lineUpGroupId,
+                                    itemId: widget.lineUpItemId,
+                                  );
+                            },
+                          );
                     },
                   ),
                   ShadButton(
                     // height: 32,
                     leading: const Icon(LucideIcons.pencil),
                     // width: 80,
-                    child: const Text("Edit"),
-                    onPressed: () {
-                      String lineUpId = widget.lineUpId;
+                  child: const Text("Edit"),
+                  onPressed: () {
                       Navigator.of(context).pop();
                       showDialog(
                         context: context,
                         builder: (context) => CreateLineupDialog(
-                          lineUpId: lineUpId,
+                          lineUpGroupId: widget.lineUpGroupId,
+                          lineUpItemId: widget.lineUpItemId,
                         ),
                       );
                     },

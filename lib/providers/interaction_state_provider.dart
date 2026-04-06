@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 
 enum InteractionState {
@@ -35,12 +36,17 @@ class InteractionStateProvider extends Notifier<InteractionState> {
           .finishFreeDrawing(null, coordinateSystem);
     } else if (state == InteractionState.lineUpPlacing) {
       ref.read(lineUpProvider.notifier).clearCurrentPlacing();
+      ref.read(abilityBarProvider.notifier).updateData(null);
     }
 
     state = newState;
   }
 
   void forceUpdateToNavigation() {
+    if (state == InteractionState.lineUpPlacing) {
+      ref.read(lineUpProvider.notifier).clearCurrentPlacing();
+      ref.read(abilityBarProvider.notifier).updateData(null);
+    }
     state = InteractionState.navigation;
   }
 }

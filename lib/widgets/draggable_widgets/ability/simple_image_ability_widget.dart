@@ -4,14 +4,15 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
-class AgentIconWidget extends ConsumerWidget {
-  const AgentIconWidget({
+class SimpleImageAbilityWidget extends ConsumerWidget {
+  const SimpleImageAbilityWidget({
     super.key,
     required this.imagePath,
     required this.size,
     this.index,
     required this.id,
     this.lineUpId,
+    this.lineUpItemId,
   });
 
   final double size;
@@ -19,6 +20,7 @@ class AgentIconWidget extends ConsumerWidget {
   final int? index;
   final String? id;
   final String? lineUpId;
+  final String? lineUpItemId;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
@@ -30,6 +32,7 @@ class AgentIconWidget extends ConsumerWidget {
 
     return MouseWatch(
       lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       cursor: SystemMouseCursors.click,
       deleteTarget: deleteTarget,
       child: SizedBox(

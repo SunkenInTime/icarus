@@ -41,6 +41,8 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
   AdapterSpec<FolderColor>(),
   AdapterSpec<StrategyPage>(),
   AdapterSpec<LineUp>(),
+  AdapterSpec<LineUpGroup>(),
+  AdapterSpec<LineUpItem>(),
   AdapterSpec<SimpleImageData>(),
   AdapterSpec<AgentState>(),
   AdapterSpec<RectangleDrawing>(),

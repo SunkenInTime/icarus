@@ -8,13 +8,11 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/team_provider.dart';
 import 'package:icarus/widgets/current_line_up_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
-import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
-import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/placed_lineup_agent_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:uuid/uuid.dart';
 
@@ -34,6 +32,10 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
     // log(ref.watch(mapProvider).isAttack.toString());
     return LayoutBuilder(builder: (context, constraints) {
       final lineUp = ref.watch(lineUpProvider);
+      final previewAgent =
+          ref.read(lineUpProvider.notifier).getCurrentPreviewAgent();
+      final isLockedAddItemMode =
+          ref.read(lineUpProvider.notifier).isLockedAddItemMode;
       return DragTarget(
         builder: (context, candidateData, rejectedData) {
           return Stack(
@@ -41,7 +43,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
               const Positioned.fill(
                 child: CurrentLineUpPainter(),
               ),
-              if (lineUp.currentAgent == null)
+              if (lineUp.currentAgent == null && lineUp.currentGroupId == null)
                 Align(
                   alignment: Alignment.center,
                   child: Container(
@@ -97,56 +99,34 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                       return;
                     }
 
-                    ref.read(lineUpProvider.notifier).updateAbilityPosition(
-                        coordinateSystem.screenToCoordinate(localOffset));
+                    ref
+                        .read(lineUpProvider.notifier)
+                        .updateCurrentAbilityPosition(
+                            coordinateSystem.screenToCoordinate(localOffset));
                   },
                 ),
-              if (lineUp.currentAgent != null)
-                Positioned(
-                  left: coordinateSystem
-                      .coordinateToScreen(lineUp.currentAgent!.position)
-                      .dx,
-                  top: coordinateSystem
-                      .coordinateToScreen(lineUp.currentAgent!.position)
-                      .dy,
-                  child: Draggable<PlacedWidget>(
-                    data: lineUp.currentAgent,
-                    dragAnchorStrategy: ref
-                        .read(screenZoomProvider.notifier)
-                        .zoomDragAnchorStrategy,
-                    feedback: Opacity(
-                      opacity: Settings.feedbackOpacity,
-                      child: ZoomTransform(
-                        child: AgentWidget(
-                          isAlly: lineUp.currentAgent!.isAlly,
-                          id: "",
-                          agent: AgentData.agents[lineUp.currentAgent!.type]!,
-                        ),
-                      ),
-                    ),
-                    childWhenDragging: const SizedBox.shrink(),
-                    onDragEnd: (details) {
-                      RenderBox renderBox =
-                          context.findRenderObject() as RenderBox;
-                      Offset localOffset =
-                          renderBox.globalToLocal(details.offset);
+              if (previewAgent != null && isLockedAddItemMode)
+                PlacedLineupAgentWidget(
+                  agent: previewAgent,
+                  draggable: false,
+                ),
+              if (lineUp.currentAgent != null && !isLockedAddItemMode)
+                PlacedLineupAgentWidget(
+                  agent: lineUp.currentAgent!,
+                  draggable: true,
+                  onDragEnd: (details) {
+                    RenderBox renderBox =
+                        context.findRenderObject() as RenderBox;
+                    Offset localOffset =
+                        renderBox.globalToLocal(details.offset);
 
-                      //Basically makes sure that if more than half is of the screen it gets deleted
-                      Offset virtualOffset =
-                          coordinateSystem.screenToCoordinate(localOffset);
+                    final virtualOffset =
+                        coordinateSystem.screenToCoordinate(localOffset);
 
-                      ref
-                          .read(lineUpProvider.notifier)
-                          .updateAgentPosition(virtualOffset);
-                    },
-                    child: RepaintBoundary(
-                      child: AgentWidget(
-                        isAlly: lineUp.currentAgent!.isAlly,
-                        id: lineUp.currentAgent!.id,
-                        agent: AgentData.agents[lineUp.currentAgent!.type]!,
-                      ),
-                    ),
-                  ),
+                    ref
+                        .read(lineUpProvider.notifier)
+                        .updateCurrentAgentPosition(virtualOffset);
+                  },
                 ),
             ],
           );
@@ -159,6 +139,15 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
           const uuid = Uuid();
 
           if (details.data is AgentData) {
+            if (isLockedAddItemMode) {
+              Settings.showToast(
+                message:
+                    "You can only add abilities for the selected lineup agent right now.",
+                backgroundColor: Settings.tacticalVioletTheme.destructive,
+              );
+              return;
+            }
+
             PlacedAgent placedAgent = PlacedAgent(
               id: uuid.v4(),
               type: (details.data as AgentData).type,
@@ -166,7 +155,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
               isAlly: ref.read(teamProvider),
             );
 
-            ref.read(lineUpProvider.notifier).setAgent(placedAgent);
+            ref.read(lineUpProvider.notifier).startNewGroup(placedAgent);
             ref
                 .read(abilityBarProvider.notifier)
                 .updateData(AgentData.agents[placedAgent.type]!);
@@ -178,7 +167,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
               isAlly: ref.read(teamProvider),
             );
 
-            ref.read(lineUpProvider.notifier).setAbility(placedAbility);
+            ref.read(lineUpProvider.notifier).setCurrentAbility(placedAbility);
           }
         },
         onLeave: (data) {},

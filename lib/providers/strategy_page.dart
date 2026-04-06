@@ -25,8 +25,30 @@ class StrategyPage extends HiveObject {
   final List<PlacedImage> imageData;
   final List<PlacedUtility> utilityData;
   final bool isAttack;
+  @Deprecated('Use lineUpGroups instead.')
   final List<LineUp> lineUps;
+  final List<LineUpGroup> lineUpGroups;
   final StrategySettings settings;
+
+  static List<LineUpGroup> _groupsFromLegacyLineUps(List<LineUp> lineUps) {
+    return lineUps.map(LineUpGroup.fromLegacyLineUp).toList();
+  }
+
+  static List<LineUp> _legacyLineUpsFromGroups(List<LineUpGroup> groups) {
+    return [
+      for (final group in groups)
+        ...group.items.map(
+          (item) => LineUp(
+            id: item.id,
+            agent: group.agent.copyWith(lineUpID: group.id),
+            ability: item.ability.copyWith(lineUpID: group.id),
+            youtubeLink: item.youtubeLink,
+            notes: item.notes,
+            images: item.images.map((image) => image.copyWith()).toList(),
+          ),
+        ),
+    ];
+  }
 
   StrategyPage({
     required this.id,
@@ -40,8 +62,18 @@ class StrategyPage extends HiveObject {
     required this.sortIndex,
     required this.isAttack,
     required this.settings,
-    this.lineUps = const [],
-  });
+    List<LineUpGroup> lineUpGroups = const [],
+    @Deprecated('Use lineUpGroups instead') List<LineUp> lineUps = const [],
+  })  : lineUps = (lineUpGroups.isNotEmpty
+                ? _legacyLineUpsFromGroups(lineUpGroups)
+                : lineUps)
+            .map((lineUp) => lineUp.deepCopy())
+            .toList(),
+        lineUpGroups = (lineUpGroups.isNotEmpty
+                ? lineUpGroups
+                : _groupsFromLegacyLineUps(lineUps))
+            .map((group) => group.deepCopy())
+            .toList();
 
   StrategyPage copyWith({
     String? id,
@@ -55,8 +87,14 @@ class StrategyPage extends HiveObject {
     List<PlacedUtility>? utilityData,
     bool? isAttack,
     StrategySettings? settings,
-    List<LineUp>? lineUps,
+    List<LineUpGroup>? lineUpGroups,
+    @Deprecated('Use lineUpGroups instead') List<LineUp>? lineUps,
   }) {
+    final resolvedLineUpGroups = lineUpGroups ??
+        (lineUps != null
+            ? _groupsFromLegacyLineUps(lineUps)
+            : this.lineUpGroups);
+
     return StrategyPage(
       id: id ?? this.id,
       sortIndex: sortIndex ?? this.sortIndex,
@@ -78,7 +116,7 @@ class StrategyPage extends HiveObject {
       )),
       settings: settings?.copyWith() ?? this.settings.copyWith(),
       isAttack: isAttack ?? this.isAttack,
-      lineUps: lineUps ?? List<LineUp>.from(this.lineUps),
+      lineUpGroups: resolvedLineUpGroups,
     );
   }
 
@@ -98,7 +136,7 @@ class StrategyPage extends HiveObject {
                "utilityData": ${UtilityProvider.objectToJson(utilityData)},
                "isAttack": "${isAttack.toString()}",
                "settings": ${StrategySettingsProvider.objectToJson(settings)},
-               "lineUpData": ${LineUpProvider.objectToJson(lineUps)}
+               "lineUpGroups": ${LineUpProvider.objectToJson(lineUpGroups)}
                }
              ''';
 
@@ -160,7 +198,11 @@ class StrategyPage extends HiveObject {
       utilityData: UtilityProvider.fromJson(jsonEncode(json['utilityData'])),
       isAttack: isAttack,
       settings: StrategySettings.fromJson(json['settings']),
-      lineUps: LineUpProvider.fromJson(jsonEncode(json['lineUpData'])),
+      lineUpGroups: json['lineUpGroups'] != null
+          ? LineUpProvider.fromJson(jsonEncode(json['lineUpGroups']))
+          : json['lineUpData'] != null
+              ? LineUpProvider.fromLegacyJson(jsonEncode(json['lineUpData']))
+              : const [],
     );
   }
 }

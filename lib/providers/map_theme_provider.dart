@@ -111,21 +111,26 @@ class MapThemeProfile extends HiveObject {
 class AppPreferences extends HiveObject {
   final String defaultThemeProfileIdForNewStrategies;
   final bool autosaveEnabled;
+  final double pagesBarExpandedHeight;
 
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
     this.autosaveEnabled = true,
+    this.pagesBarExpandedHeight = 310.0,
   });
 
   AppPreferences copyWith({
     String? defaultThemeProfileIdForNewStrategies,
     bool? autosaveEnabled,
+    double? pagesBarExpandedHeight,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
           defaultThemeProfileIdForNewStrategies ??
               this.defaultThemeProfileIdForNewStrategies,
       autosaveEnabled: autosaveEnabled ?? this.autosaveEnabled,
+      pagesBarExpandedHeight:
+          pagesBarExpandedHeight ?? this.pagesBarExpandedHeight,
     );
   }
 }
@@ -481,6 +486,15 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
 
   Future<void> setAutosaveEnabled(bool enabled) async {
     final updated = _readFromHive().copyWith(autosaveEnabled: enabled);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setPagesBarExpandedHeight(double height) async {
+    final updated = _readFromHive().copyWith(pagesBarExpandedHeight: height);
     await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,
       updated,
