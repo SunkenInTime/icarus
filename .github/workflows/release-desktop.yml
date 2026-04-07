@@ -20,6 +20,7 @@ on:
         default: stable
         options:
           - stable
+          - prerelease
       mandatory:
         description: Mark the desktop update as mandatory.
         type: boolean
@@ -107,7 +108,7 @@ jobs:
       - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-release
+          name: desktop-release-${{ inputs.channel }}
           path: |
             release/out/desktop/**
             dist/**
@@ -133,6 +134,7 @@ jobs:
           }
           $versionName = $versionLine.Matches[0].Groups[1].Value.Trim()
           $channel = "${{ inputs.channel }}"
+          Write-Host "Published channel: $channel"
 
           Write-Host "Latest installer:"
           Write-Host "https://sunkenintime.github.io/icarus/downloads/windows/$channel/icarus-setup-latest.exe"

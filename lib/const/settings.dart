@@ -4,6 +4,19 @@ import 'package:icarus/const/color_option.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
+const String kUpdateChannel = String.fromEnvironment(
+  'ICARUS_UPDATE_CHANNEL',
+  defaultValue: 'stable',
+);
+
+Uri buildDesktopUpdaterArchiveUrl(String channel) {
+  final trimmedChannel = channel.trim();
+  final resolvedChannel = trimmedChannel.isEmpty ? 'stable' : trimmedChannel;
+  return Uri.parse(
+    "https://sunkenintime.github.io/icarus/updates/windows/$resolvedChannel/app-archive.json",
+  );
+}
+
 class Settings {
   static const double agentSize = 35;
   static const double agentSizeMin = 15;
@@ -52,9 +65,8 @@ class Settings {
   static const Duration autoSaveOffset = Duration(seconds: 15);
   static const int versionNumber = 63;
   static const String versionName = "4.2.0";
-  static final Uri desktopUpdaterArchiveUrl = Uri.parse(
-    "https://sunkenintime.github.io/icarus/updates/windows/stable/app-archive.json",
-  );
+  static final Uri desktopUpdaterArchiveUrl =
+      buildDesktopUpdaterArchiveUrl(kUpdateChannel);
 
   static const double sideBarContentWidth = 325;
   static const double sideBarPanelWidth = sideBarContentWidth + 20;
