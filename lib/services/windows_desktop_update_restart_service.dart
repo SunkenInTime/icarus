@@ -18,7 +18,9 @@ class WindowsDesktopUpdateRestartService {
       return;
     }
 
-    final executablePath = (await _updater.getExecutablePath())?.trim();
+    final executablePath = normalizeExecutablePath(
+      await _updater.getExecutablePath(),
+    );
     if (executablePath == null || executablePath.isEmpty) {
       throw const FileSystemException(
         'Unable to resolve the installed executable path.',
@@ -120,7 +122,10 @@ class WindowsDesktopUpdateRestartService {
     required String updateDirectory,
     required int processId,
   }) {
-    final escapedExecutablePath = _escapePowerShellLiteral(executablePath);
+    final normalizedExecutablePath =
+        normalizeExecutablePath(executablePath) ?? executablePath.trim();
+    final escapedExecutablePath =
+        _escapePowerShellLiteral(normalizedExecutablePath);
     final escapedInstallDirectory = _escapePowerShellLiteral(installDirectory);
     final escapedUpdateDirectory = _escapePowerShellLiteral(updateDirectory);
 
@@ -193,5 +198,14 @@ try {
 
   static String _escapePowerShellLiteral(String value) {
     return value.replaceAll("'", "''");
+  }
+
+  static String? normalizeExecutablePath(String? executablePath) {
+    final normalized = executablePath?.replaceAll('\u0000', '').trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+
+    return normalized;
   }
 }

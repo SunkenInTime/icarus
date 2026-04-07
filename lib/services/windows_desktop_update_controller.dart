@@ -22,8 +22,8 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
         _updater = updater ?? DesktopUpdater(),
         _httpClient = httpClient ?? http.Client(),
         _ownsHttpClient = httpClient == null,
-        _restartService =
-            restartService ?? WindowsDesktopUpdateRestartService(updater: updater) {
+        _restartService = restartService ??
+            WindowsDesktopUpdateRestartService(updater: updater) {
     if (autoCheck) {
       unawaited(checkVersion());
     }
@@ -151,7 +151,8 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
         );
         completedBytes += file.length;
         _downloadedBytes = completedBytes;
-        _downloadProgress = _calculateProgress(_downloadedBytes, _downloadSizeBytes);
+        _downloadProgress =
+            _calculateProgress(_downloadedBytes, _downloadSizeBytes);
         notifyListeners();
       }
 
@@ -211,7 +212,8 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
           await destination.delete();
         }
         if (attempt < 2) {
-          await Future<void>.delayed(Duration(milliseconds: 400 * (attempt + 1)));
+          await Future<void>.delayed(
+              Duration(milliseconds: 400 * (attempt + 1)));
         }
       }
     }
@@ -247,8 +249,7 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
           sink.add(chunk);
           fileBytesReceived += chunk.length;
           _downloadedBytes = completedBytes + fileBytesReceived;
-          _downloadProgress =
-              _calculateProgress(_downloadedBytes, totalBytes);
+          _downloadProgress = _calculateProgress(_downloadedBytes, totalBytes);
           notifyListeners();
         },
         onDone: () async {
@@ -307,7 +308,9 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
   }
 
   Future<String> _resolveInstallDirectory() async {
-    final executablePath = (await _updater.getExecutablePath())?.trim();
+    final executablePath =
+        WindowsDesktopUpdateRestartService.normalizeExecutablePath(
+            await _updater.getExecutablePath());
     if (executablePath == null || executablePath.isEmpty) {
       throw const FileSystemException(
         'Unable to resolve the installed executable path.',
