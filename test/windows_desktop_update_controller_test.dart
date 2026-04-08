@@ -97,7 +97,7 @@ void main() {
     final controller = WindowsDesktopUpdateController(
       appArchiveUrl: Uri.parse('https://example.com/app-archive.json'),
       updater: _FakeDesktopUpdater(
-        executablePath: executablePath,
+        executablePath: '$executablePath\u0000',
         update: update,
       ),
       autoCheck: false,

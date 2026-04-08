@@ -4,7 +4,7 @@ import 'package:icarus/services/windows_desktop_update_restart_service.dart';
 void main() {
   test('restart script uses absolute install paths and working directory', () {
     final script = WindowsDesktopUpdateRestartService.buildRestartScript(
-      executablePath: r"C:\Users\Alice\App's\Icarus\icarus.exe",
+      executablePath: "C:\\Users\\Alice\\App's\\Icarus\\icarus.exe\u0000",
       installDirectory: r"C:\Users\Alice\App's\Icarus",
       updateDirectory: r"C:\Users\Alice\App's\Icarus\update",
       processId: 4242,
@@ -15,6 +15,7 @@ void main() {
       script,
       contains(r"$executablePath = 'C:\Users\Alice\App''s\Icarus\icarus.exe'"),
     );
+    expect(script, isNot(contains('\u0000')));
     expect(
       script,
       contains(r"$installDirectory = 'C:\Users\Alice\App''s\Icarus'"),
@@ -62,5 +63,14 @@ void main() {
       ),
     );
     expect(script, isNot(contains(r'xcopy /E /I /Y "update\*" "."')));
+  });
+
+  test('normalizeExecutablePath strips plugin null terminator', () {
+    expect(
+      WindowsDesktopUpdateRestartService.normalizeExecutablePath(
+        'C:\\Users\\Alice\\Icarus\\icarus.exe\u0000',
+      ),
+      r'C:\Users\Alice\Icarus\icarus.exe',
+    );
   });
 }
