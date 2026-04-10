@@ -125,6 +125,82 @@ void main() {
     expect(controller.downloadProgress, 1);
     expect(requestCounts['icarus.exe'], 2);
   });
+
+  test('downloadUpdate preserves verification errors during cleanup', () async {
+    final installDirectory =
+        await Directory.systemTemp.createTemp('icarus_update_cleanup_');
+    final executablePath = '${installDirectory.path}\\icarus.exe';
+    await File(executablePath).writeAsBytes(utf8.encode('old exe'));
+    addTearDown(() async {
+      if (await installDirectory.exists()) {
+        await installDirectory.delete(recursive: true);
+      }
+    });
+
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() async {
+      await server.close(force: true);
+    });
+
+    final fileBytes = utf8.encode('corrupted payload');
+    server.listen((HttpRequest request) async {
+      request.response.statusCode = HttpStatus.ok;
+      request.response.contentLength = fileBytes.length;
+      request.response.add(fileBytes);
+      await request.response.close();
+    });
+
+    final update = ItemModel(
+      version: '4.0.6+60',
+      shortVersion: 60,
+      changes: <ChangeModel>[
+        ChangeModel(message: 'Cleanup regression test'),
+      ],
+      date: '2026-04-10',
+      mandatory: false,
+      url: 'http://${server.address.host}:${server.port}/updates',
+      platform: 'windows',
+      changedFiles: <FileHashModel>[
+        FileHashModel(
+          filePath: 'icarus.exe',
+          calculatedHash: await _hashBytes(utf8.encode('expected payload')),
+          length: fileBytes.length,
+        ),
+      ],
+      appName: 'Icarus',
+    );
+
+    final controller = WindowsDesktopUpdateController(
+      appArchiveUrl: Uri.parse('https://example.com/app-archive.json'),
+      updater: _FakeDesktopUpdater(
+        executablePath: '$executablePath\u0000',
+        update: update,
+      ),
+      autoCheck: false,
+    );
+    addTearDown(controller.dispose);
+
+    await controller.checkVersion();
+
+    await expectLater(
+      controller.downloadUpdate(),
+      throwsA(
+        isA<FileSystemException>().having(
+          (error) => error.message,
+          'message',
+          contains('hash mismatch'),
+        ),
+      ),
+    );
+
+    expect(
+      await Directory('${installDirectory.path}${Platform.pathSeparator}update')
+          .exists(),
+      isFalse,
+    );
+    expect(controller.isDownloaded, isFalse);
+    expect(controller.downloadProgress, 0);
+  });
 }
 
 class _FakeDesktopUpdater extends DesktopUpdater {

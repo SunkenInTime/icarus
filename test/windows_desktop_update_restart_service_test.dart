@@ -7,6 +7,8 @@ void main() {
       executablePath: "C:\\Users\\Alice\\App's\\Icarus\\icarus.exe\u0000",
       installDirectory: r"C:\Users\Alice\App's\Icarus",
       updateDirectory: r"C:\Users\Alice\App's\Icarus\update",
+      logPath:
+          r"C:\Users\Alice\AppData\Roaming\Icarus\windows_desktop_updater.log",
       processId: 4242,
     );
 
@@ -23,6 +25,12 @@ void main() {
     expect(
       script,
       contains(r"$updateDirectory = 'C:\Users\Alice\App''s\Icarus\update'"),
+    );
+    expect(
+      script,
+      contains(
+        r"$logPath = 'C:\Users\Alice\AppData\Roaming\Icarus\windows_desktop_updater.log'",
+      ),
     );
     expect(
       script,
@@ -62,6 +70,22 @@ void main() {
         r'Remove-Item -LiteralPath $scriptPath -Force -ErrorAction SilentlyContinue',
       ),
     );
+    expect(script, contains('function Write-Log {'));
+    expect(
+        script,
+        contains(
+            r'Write-Log "Updater script started. scriptPath=$scriptPath"'));
+    expect(script,
+        contains(r'Write-Log "Updated executable launch command issued."'));
+    expect(script, contains(r'Write-Log ("ERROR: " + $_.Exception.Message)'));
+    expect(
+        script,
+        contains(
+            r'Write-Log "Preserving updater script for inspection at $scriptPath"'));
+    expect(
+        script,
+        contains(
+            r'Write-Log "Updater script exiting. deleteScriptOnExit=$deleteScriptOnExit"'));
     expect(script, isNot(contains(r'xcopy /E /I /Y "update\*" "."')));
   });
 
