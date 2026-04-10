@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/windows_desktop_update_restart_service.dart';
 
 class WindowsDesktopUpdateController extends ChangeNotifier {
@@ -107,6 +108,16 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
         0,
         (int total, FileHashModel file) => total + file.length,
       );
+      _reportInfoSafely(
+        'Desktop update detected.',
+        source: 'WindowsDesktopUpdateController.checkVersion',
+        error: <String, Object?>{
+          'version': versionResponse.version,
+          'changedFileCount': files.length,
+          'downloadSizeBytes': _downloadSizeBytes,
+          'updateUrl': versionResponse.url,
+        },
+      );
       notifyListeners();
     } catch (_) {
       // Leave the direct installer updater silent if the remote metadata fails.
@@ -131,6 +142,16 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
     final installDirectory = await _resolveInstallDirectory();
     final updateDirectory = Directory(path.join(installDirectory, 'update'));
     await _resetUpdateDirectory(updateDirectory);
+    _reportInfoSafely(
+      'Starting desktop update download.',
+      source: 'WindowsDesktopUpdateController.downloadUpdate',
+      error: <String, Object?>{
+        'installDirectory': installDirectory,
+        'updateDirectory': updateDirectory.path,
+        'changedFileCount': files.length,
+        'downloadSizeBytes': _downloadSizeBytes,
+      },
+    );
 
     _skipUpdate = false;
     _isDownloading = true;
@@ -162,10 +183,32 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
       );
 
       _isDownloaded = true;
-    } catch (_) {
+      _reportInfoSafely(
+        'Desktop update download completed and verified.',
+        source: 'WindowsDesktopUpdateController.downloadUpdate',
+        error: <String, Object?>{
+          'updateDirectory': updateDirectory.path,
+          'changedFileCount': files.length,
+          'downloadSizeBytes': _downloadSizeBytes,
+        },
+      );
+    } catch (error, stackTrace) {
       _isDownloaded = false;
-      await _cleanupPartialDownload(updateDirectory);
-      rethrow;
+      try {
+        await _cleanupPartialDownload(updateDirectory);
+      } catch (cleanupError, cleanupStackTrace) {
+        _reportInfoSafely(
+          'Failed to clean up a partial desktop update download.',
+          source: 'WindowsDesktopUpdateController.downloadUpdate',
+          error: <String, Object?>{
+            'updateDirectory': updateDirectory.path,
+            'downloadError': error.toString(),
+            'cleanupError': cleanupError.toString(),
+            'cleanupStackTrace': cleanupStackTrace.toString(),
+          },
+        );
+      }
+      Error.throwWithStackTrace(error, stackTrace);
     } finally {
       _isDownloading = false;
       notifyListeners();
@@ -178,6 +221,16 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
       throw StateError('No desktop update is available to apply.');
     }
 
+    _reportInfoSafely(
+      'Restart requested to apply downloaded desktop update.',
+      source: 'WindowsDesktopUpdateController.restartApp',
+      error: <String, Object?>{
+        'version': update.version,
+        'changedFileCount': _requiredChangedFiles(update).length,
+        'updaterLogPath':
+            WindowsDesktopUpdateRestartService.resolveUpdaterLogPath(),
+      },
+    );
     await _restartService.restartIntoDownloadedUpdate(
       expectedFiles: _requiredChangedFiles(update),
     );
@@ -244,26 +297,15 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
     var fileBytesReceived = 0;
 
     try {
-      await response.stream.listen(
-        (List<int> chunk) {
-          sink.add(chunk);
-          fileBytesReceived += chunk.length;
-          _downloadedBytes = completedBytes + fileBytesReceived;
-          _downloadProgress = _calculateProgress(_downloadedBytes, totalBytes);
-          notifyListeners();
-        },
-        onDone: () async {
-          await sink.close();
-        },
-        onError: (Object error) async {
-          await sink.close();
-          throw error;
-        },
-        cancelOnError: true,
-      ).asFuture<void>();
-    } catch (_) {
+      await for (final List<int> chunk in response.stream) {
+        sink.add(chunk);
+        fileBytesReceived += chunk.length;
+        _downloadedBytes = completedBytes + fileBytesReceived;
+        _downloadProgress = _calculateProgress(_downloadedBytes, totalBytes);
+        notifyListeners();
+      }
+    } finally {
       await sink.close();
-      rethrow;
     }
   }
 
@@ -321,18 +363,25 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
   }
 
   Future<void> _resetUpdateDirectory(Directory updateDirectory) async {
-    if (await updateDirectory.exists()) {
-      await updateDirectory.delete(recursive: true);
-    }
+    await _deleteDirectoryIfExistsWithRetry(
+      updateDirectory,
+      source: 'WindowsDesktopUpdateController._resetUpdateDirectory',
+      bestEffort: false,
+    );
     await updateDirectory.create(recursive: true);
   }
 
   Future<void> _cleanupPartialDownload(Directory updateDirectory) async {
-    if (await updateDirectory.exists()) {
-      await updateDirectory.delete(recursive: true);
+    try {
+      await _deleteDirectoryIfExistsWithRetry(
+        updateDirectory,
+        source: 'WindowsDesktopUpdateController._cleanupPartialDownload',
+        bestEffort: true,
+      );
+    } finally {
+      _downloadedBytes = 0;
+      _downloadProgress = 0;
     }
-    _downloadedBytes = 0;
-    _downloadProgress = 0;
   }
 
   List<FileHashModel> _requiredChangedFiles(ItemModel update) {
@@ -382,5 +431,66 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
     final bytes = await file.readAsBytes();
     final hash = await Blake2b().hash(bytes);
     return base64Encode(hash.bytes);
+  }
+
+  Future<void> _deleteDirectoryIfExistsWithRetry(
+    Directory directory, {
+    required String source,
+    required bool bestEffort,
+  }) async {
+    if (!await directory.exists()) {
+      return;
+    }
+
+    Object? lastError;
+    StackTrace? lastStackTrace;
+
+    for (var attempt = 0; attempt < 5; attempt++) {
+      try {
+        await directory.delete(recursive: true);
+        return;
+      } catch (error, stackTrace) {
+        lastError = error;
+        lastStackTrace = stackTrace;
+        if (attempt == 4) {
+          break;
+        }
+
+        await Future<void>.delayed(
+          Duration(milliseconds: 150 * (attempt + 1)),
+        );
+      }
+    }
+
+    if (bestEffort) {
+      _reportInfoSafely(
+        'Unable to delete the staged desktop update directory after retries.',
+        source: source,
+        error: <String, Object?>{
+          'directory': directory.path,
+          'error': lastError.toString(),
+          'stackTrace': lastStackTrace.toString(),
+        },
+      );
+      return;
+    }
+
+    Error.throwWithStackTrace(lastError!, lastStackTrace!);
+  }
+
+  void _reportInfoSafely(
+    String message, {
+    required String source,
+    Object? error,
+  }) {
+    try {
+      AppErrorReporter.reportInfo(
+        message,
+        source: source,
+        error: error,
+      );
+    } catch (_) {
+      // Logging must never interrupt the update flow.
+    }
   }
 }

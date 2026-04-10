@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:desktop_updater/desktop_updater.dart';
 import 'package:path/path.dart' as path;
 
+import 'package:icarus/services/app_error_reporter.dart';
+
 class WindowsDesktopUpdateRestartService {
   WindowsDesktopUpdateRestartService({
     DesktopUpdater? updater,
@@ -29,6 +31,7 @@ class WindowsDesktopUpdateRestartService {
 
     final installDirectory = File(executablePath).parent.path;
     final updateDirectory = path.join(installDirectory, 'update');
+    final updaterLogPath = resolveUpdaterLogPath();
     final updateFolder = Directory(updateDirectory);
     if (!await updateFolder.exists()) {
       throw FileSystemException(
@@ -46,14 +49,28 @@ class WindowsDesktopUpdateRestartService {
       executablePath: executablePath,
       installDirectory: installDirectory,
       updateDirectory: updateDirectory,
+      logPath: updaterLogPath,
       processId: pid,
+    );
+    final powerShellExecutable = _resolvePowerShellExecutable();
+    _reportInfoSafely(
+      'Starting detached desktop update apply script.',
+      source: 'WindowsDesktopUpdateRestartService.restartIntoDownloadedUpdate',
+      error: <String, String>{
+        'powershell': powerShellExecutable,
+        'scriptPath': scriptFile.path,
+        'updaterLogPath': updaterLogPath,
+        'installDirectory': installDirectory,
+        'updateDirectory': updateDirectory,
+      },
     );
 
     try {
       await Process.start(
-        _resolvePowerShellExecutable(),
+        powerShellExecutable,
         <String>[
           '-NoProfile',
+          '-NonInteractive',
           '-ExecutionPolicy',
           'Bypass',
           '-File',
@@ -97,6 +114,7 @@ class WindowsDesktopUpdateRestartService {
     required String executablePath,
     required String installDirectory,
     required String updateDirectory,
+    required String logPath,
     required int processId,
   }) async {
     final scriptPath = path.join(
@@ -109,6 +127,7 @@ class WindowsDesktopUpdateRestartService {
         executablePath: executablePath,
         installDirectory: installDirectory,
         updateDirectory: updateDirectory,
+        logPath: logPath,
         processId: processId,
       ),
       flush: true,
@@ -120,6 +139,7 @@ class WindowsDesktopUpdateRestartService {
     required String executablePath,
     required String installDirectory,
     required String updateDirectory,
+    required String logPath,
     required int processId,
   }) {
     final normalizedExecutablePath =
@@ -128,6 +148,7 @@ class WindowsDesktopUpdateRestartService {
         _escapePowerShellLiteral(normalizedExecutablePath);
     final escapedInstallDirectory = _escapePowerShellLiteral(installDirectory);
     final escapedUpdateDirectory = _escapePowerShellLiteral(updateDirectory);
+    final escapedLogPath = _escapePowerShellLiteral(logPath);
 
     return '''
 \$ErrorActionPreference = 'Stop'
@@ -135,12 +156,31 @@ class WindowsDesktopUpdateRestartService {
 \$executablePath = '$escapedExecutablePath'
 \$installDirectory = '$escapedInstallDirectory'
 \$updateDirectory = '$escapedUpdateDirectory'
+\$logPath = '$escapedLogPath'
 \$scriptPath = \$MyInvocation.MyCommand.Path
+\$deleteScriptOnExit = \$true
+
+function Write-Log {
+  param([string]\$Message)
+  \$timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
+  \$line = "[\$timestamp] \$Message"
+  \$logDirectory = Split-Path -Parent \$logPath
+  if (-not [string]::IsNullOrWhiteSpace(\$logDirectory) -and -not (Test-Path -LiteralPath \$logDirectory)) {
+    New-Item -ItemType Directory -Path \$logDirectory -Force | Out-Null
+  }
+  Add-Content -LiteralPath \$logPath -Value \$line -Encoding UTF8
+}
 
 try {
+  Write-Log "Updater script started. scriptPath=\$scriptPath"
+  Write-Log "Executable path: \$executablePath"
+  Write-Log "Install directory: \$installDirectory"
+  Write-Log "Update directory: \$updateDirectory"
+
   for (\$attempt = 0; \$attempt -lt 120; \$attempt++) {
     \$process = Get-Process -Id \$trackedProcessId -ErrorAction SilentlyContinue
     if (\$null -eq \$process) {
+      Write-Log "Tracked process exited after \$attempt polling attempts."
       break
     }
 
@@ -149,29 +189,58 @@ try {
 
   \$process = Get-Process -Id \$trackedProcessId -ErrorAction SilentlyContinue
   if (\$null -ne \$process) {
+    Write-Log "Tracked process still running. Attempting forced stop."
     Stop-Process -Id \$trackedProcessId -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
     \$process = Get-Process -Id \$trackedProcessId -ErrorAction SilentlyContinue
     if (\$null -ne \$process) {
+      Write-Log "Tracked process could not be terminated. Aborting update apply."
       exit 1
     }
   }
 
   if (Test-Path -LiteralPath \$updateDirectory) {
     \$updateItems = @(Get-ChildItem -LiteralPath \$updateDirectory -Force -ErrorAction SilentlyContinue)
+    Write-Log "Found \$((\$updateItems | Measure-Object).Count) staged update item(s)."
     if (\$updateItems.Count -gt 0) {
       foreach (\$updateItem in \$updateItems) {
+        Write-Log "Copying \$((\$updateItem.FullName)) to \$installDirectory"
         Copy-Item -LiteralPath \$updateItem.FullName -Destination \$installDirectory -Recurse -Force
       }
     }
+    Write-Log "Removing staged update directory."
     Remove-Item -LiteralPath \$updateDirectory -Recurse -Force
+  } else {
+    Write-Log "Staged update directory was missing when script started."
   }
 
+  Write-Log "Launching updated executable."
   Start-Process -FilePath \$executablePath -WorkingDirectory \$installDirectory
+  Write-Log "Updated executable launch command issued."
+} catch {
+  \$deleteScriptOnExit = \$false
+  Write-Log ("ERROR: " + \$_.Exception.Message)
+  Write-Log "Preserving updater script for inspection at \$scriptPath"
+  throw
 } finally {
-  Remove-Item -LiteralPath \$scriptPath -Force -ErrorAction SilentlyContinue
+  Write-Log "Updater script exiting. deleteScriptOnExit=\$deleteScriptOnExit"
+  if (\$deleteScriptOnExit) {
+    Remove-Item -LiteralPath \$scriptPath -Force -ErrorAction SilentlyContinue
+  }
 }
 ''';
+  }
+
+  static String resolveUpdaterLogPath() {
+    final supportDirectory = AppErrorReporter.applicationSupportDirectoryPath;
+    if (supportDirectory != null && supportDirectory.trim().isNotEmpty) {
+      return path.join(supportDirectory, 'windows_desktop_updater.log');
+    }
+
+    return path.join(
+      Directory.systemTemp.path,
+      'icarus_windows_desktop_updater.log',
+    );
   }
 
   static List<String> _splitRelativePath(String filePath) {
@@ -207,5 +276,21 @@ try {
     }
 
     return normalized;
+  }
+
+  void _reportInfoSafely(
+    String message, {
+    required String source,
+    Object? error,
+  }) {
+    try {
+      AppErrorReporter.reportInfo(
+        message,
+        source: source,
+        error: error,
+      );
+    } catch (_) {
+      // Logging must never interrupt the update flow.
+    }
   }
 }
