@@ -1,0 +1,62 @@
+{
+    "appName":  "Icarus",
+    "description":  "Desktop release metadata for Icarus.",
+    "items":  [
+                  {
+                      "version":  "4.2.4+67",
+                      "shortVersion":  67,
+                      "changes":  [
+                                      {
+                                          "message":  "Local prerelease build for updater testing.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-04-13",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/prerelease/4.2.4%2B67-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.2.3+66",
+                      "shortVersion":  66,
+                      "changes":  [
+                                      {
+                                          "message":  "Local prerelease build for updater testing.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-04-13",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/prerelease/4.2.3%2B66-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.2.2+65",
+                      "shortVersion":  65,
+                      "changes":  [
+                                      {
+                                          "message":  "Replace this with the desktop release summary.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-04-07",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/prerelease/4.2.2%2B65-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.2.1+64",
+                      "shortVersion":  64,
+                      "changes":  [
+                                      {
+                                          "message":  "Replace this with the desktop release summary.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-04-07",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/prerelease/4.2.1%2B64-windows",
+                      "platform":  "windows"
+                  }
+              ]
+}
