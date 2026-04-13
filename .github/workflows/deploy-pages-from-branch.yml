@@ -4,8 +4,16 @@ on:
   push:
     branches:
       - gh-pages
+  workflow_dispatch:
+    inputs:
+      pages_branch:
+        description: Branch that contains the static Pages content.
+        required: true
+        default: gh-pages
+        type: string
 
 permissions:
+  contents: read
   pages: write
   id-token: write
 
@@ -16,6 +24,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.pages_branch || github.ref_name }}
+          fetch-depth: 1
 
       - uses: actions/configure-pages@v5
 

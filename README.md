@@ -57,8 +57,9 @@ This command:
 - builds the desktop prerelease package locally
 - stages the same GitHub Pages content under `release/out/gh-pages`
 - force-pushes that staged content to the `gh-pages` branch
+- dispatches the Pages deploy workflow so GitHub republishes the site from `gh-pages`
 
-GitHub Actions then runs only the Pages deployment step from `.github/workflows/deploy-pages-from-branch.yml`.
+To trigger the deploy step, provide a token with permission to dispatch workflows through `-GitHubToken`, `GITHUB_TOKEN`, or `GH_TOKEN`.
 
 ## Contributing
 If you would like to contribute, please fork the repository and submit a pull request with your proposed changes.
