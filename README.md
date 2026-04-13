@@ -46,6 +46,20 @@ There is a helper script for bumping versions across `pubspec.yaml` and `lib/con
 powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 -Bump patch
 ```
 
+## Local Prerelease Publish
+To test the desktop auto-updater without waiting for the full GitHub Actions build, build and publish the prerelease updater payload locally:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/publish_prerelease_local.ps1
+```
+
+This command:
+- bumps the app version by `patch` by default
+- builds the desktop prerelease package locally
+- stages the same GitHub Pages content under `release/out/gh-pages`
+- force-pushes that staged content to the `gh-pages` branch
+
+GitHub Actions then runs only the Pages deployment step from `.github/workflows/deploy-pages-from-branch.yml`.
+
 ## Contributing
 If you would like to contribute, please fork the repository and submit a pull request with your proposed changes.
 

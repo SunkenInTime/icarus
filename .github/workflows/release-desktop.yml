@@ -75,35 +75,30 @@ jobs:
         shell: pwsh
         run: fvm install
 
-      - name: Bump Version
-        if: ${{ inputs.version_bump != 'none' }}
+      - name: Run Desktop Release Script
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 -Bump ${{ inputs.version_bump }}
-
-      - name: Build Desktop Release
-        shell: pwsh
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          MANDATORY: ${{ inputs.mandatory }}
-          RELEASE_TITLE: ${{ inputs.release_title }}
-          CHANGE_MESSAGE: ${{ inputs.change_message }}
         run: |
-          $mandatorySwitch = @()
-          if ($env:MANDATORY -eq "true") {
-            $mandatorySwitch = @("-Mandatory")
+          $args = @(
+            "-ExecutionPolicy", "Bypass",
+            "-File", "scripts/release_desktop.ps1",
+            "-VersionBump", "${{ inputs.version_bump }}",
+            "-Channel", "${{ inputs.channel }}",
+            "-ChangeMessage", "${{ inputs.change_message }}"
+          )
+
+          if ("${{ inputs.publish_pages }}" -eq "true") {
+            $args += @("-PublishPages", "-PagesPublishMode", "github-actions")
           }
 
-          $titleArgs = @()
-          if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_TITLE)) {
-            $titleArgs = @("-MetadataTitle", $env:RELEASE_TITLE)
+          if ("${{ inputs.mandatory }}" -eq "true") {
+            $args += "-Mandatory"
           }
 
-          & powershell -ExecutionPolicy Bypass -File scripts/build_desktop_release.ps1 `
-            -Channel $env:CHANNEL `
-            -AppArchiveBaseUrl "https://sunkenintime.github.io/icarus/updates/windows/$($env:CHANNEL)" `
-            -InitialChangeMessage $env:CHANGE_MESSAGE `
-            @mandatorySwitch `
-            @titleArgs
+          if (-not [string]::IsNullOrWhiteSpace("${{ inputs.release_title }}")) {
+            $args += @("-ReleaseTitle", "${{ inputs.release_title }}")
+          }
+
+          & powershell @args
 
       - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v4
