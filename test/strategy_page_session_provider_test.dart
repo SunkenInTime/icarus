@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
@@ -16,6 +17,7 @@ import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -374,6 +376,59 @@ void main() {
     expect(queueNotifier.enqueueAllCount, 0);
     expect(queueNotifier.flushNowCount, 0);
     expect(container.read(textProvider).single.text, 'after');
+  });
+
+  test('cloud agent addition queues an add op immediately', () async {
+    const strategyId = 'cloud-strategy';
+    final snapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0),
+      ],
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(snapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    container.read(agentProvider.notifier).addAgent(
+          PlacedAgent(
+            id: 'agent-1',
+            type: AgentType.jett,
+            position: const Offset(120, 160),
+          ),
+        );
+    await _settle();
+
+    final pending = container.read(strategyOpQueueProvider).pending;
+    expect(
+      pending.any(
+        (entry) =>
+            entry.op.kind == StrategyOpKind.add &&
+            entry.op.entityType == StrategyOpEntityType.element &&
+            entry.op.entityPublicId == 'agent-1' &&
+            entry.op.pagePublicId == 'page-1',
+      ),
+      isTrue,
+    );
   });
 
   test('projected active-page merge prefers local overlay for touched entities',

@@ -46,6 +46,30 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 final strategyProvider =
     NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
 
+void _logStrategyProviderDebug({
+  required String runId,
+  required String hypothesisId,
+  required String location,
+  required String message,
+  Map<String, Object?> data = const {},
+}) {
+  unawaited(
+    File(r'E:\Projects\icarus-cloud\debug-16ee23.log').writeAsString(
+      '${jsonEncode({
+        'sessionId': '16ee23',
+        'runId': runId,
+        'hypothesisId': hypothesisId,
+        'location': location,
+        'message': message,
+        'data': data,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      })}\n',
+      mode: FileMode.append,
+      flush: true,
+    ),
+  );
+}
+
 class StrategyProvider extends Notifier<StrategyState> {
   @override
   StrategyState build() {
@@ -308,6 +332,19 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> clearCurrentStrategy() async {
+    // #region agent log
+    _logStrategyProviderDebug(
+      runId: 'pre-fix',
+      hypothesisId: 'H2',
+      location: 'strategy_provider.dart:311',
+      message: 'clearCurrentStrategy start',
+      data: {
+        'previousStrategyId': state.strategyId,
+        'previousSource': state.source?.name,
+        'previousIsOpen': state.isOpen,
+      },
+    );
+    // #endregion
     cancelPendingSave();
     ref.read(strategyThemeProvider.notifier).fromStrategy();
     ref.read(strategySaveStateProvider.notifier).reset();
@@ -319,6 +356,19 @@ class StrategyProvider extends Notifier<StrategyState> {
       storageDirectory: state.storageDirectory,
       isOpen: false,
     );
+    // #region agent log
+    _logStrategyProviderDebug(
+      runId: 'pre-fix',
+      hypothesisId: 'H2',
+      location: 'strategy_provider.dart:323',
+      message: 'clearCurrentStrategy state cleared',
+      data: {
+        'strategyId': state.strategyId,
+        'source': state.source?.name,
+        'isOpen': state.isOpen,
+      },
+    );
+    // #endregion
     ref.read(remoteStrategySnapshotProvider.notifier).clear();
     unawaited(
       ref.read(cloudMediaUploadQueueProvider.notifier).setActiveStrategy(null),

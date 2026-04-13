@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,6 +18,30 @@ import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Displays the current strategy name with a recent-strategies dropdown.
+void _logStrategyQuickSwitcherDebug({
+  required String runId,
+  required String hypothesisId,
+  required String location,
+  required String message,
+  Map<String, Object?> data = const {},
+}) {
+  unawaited(
+    File(r'E:\Projects\icarus-cloud\debug-16ee23.log').writeAsString(
+      '${jsonEncode({
+        'sessionId': '16ee23',
+        'runId': runId,
+        'hypothesisId': hypothesisId,
+        'location': location,
+        'message': message,
+        'data': data,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      })}\n',
+      mode: FileMode.append,
+      flush: true,
+    ),
+  );
+}
+
 class StrategyQuickSwitcher extends ConsumerStatefulWidget {
   const StrategyQuickSwitcher({super.key});
 
@@ -255,10 +283,46 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
         child: ValueListenableBuilder<Box<StrategyData>>(
           valueListenable: strategiesBox.listenable(),
           builder: (context, box, _) {
-            final recents = _recentStrategies(
-              box: box,
-              currentStrategyId: currentStrategy.strategyId!,
-            );
+            final currentStrategyId = currentStrategy.strategyId;
+            late final List<StrategyData> recents;
+            if (currentStrategyId == null) {
+              // #region agent log
+              _logStrategyQuickSwitcherDebug(
+                runId: 'pre-fix',
+                hypothesisId: 'H1',
+                location: 'strategy_quick_switcher.dart:258',
+                message: 'Quick switcher rebuilt with null strategy id',
+                data: {
+                  'mounted': mounted,
+                  'isOpen': _isOpen,
+                  'isSwitching': _isSwitching,
+                  'isEditingName': _isEditingName,
+                  'routeIsCurrent': ModalRoute.of(context)?.isCurrent,
+                  'boxIsOpen': box.isOpen,
+                  'strategyName': currentStrategy.strategyName,
+                },
+              );
+              // #endregion
+              // #region agent log
+              _logStrategyQuickSwitcherDebug(
+                runId: 'post-fix',
+                hypothesisId: 'H1',
+                location: 'strategy_quick_switcher.dart:286',
+                message: 'Quick switcher rendered null-safe fallback',
+                data: {
+                  'mounted': mounted,
+                  'routeIsCurrent': ModalRoute.of(context)?.isCurrent,
+                  'boxIsOpen': box.isOpen,
+                },
+              );
+              // #endregion
+              recents = const <StrategyData>[];
+            } else {
+              recents = _recentStrategies(
+                box: box,
+                currentStrategyId: currentStrategyId,
+              );
+            }
 
             return OverlayPortal(
               controller: _controller,
@@ -457,7 +521,9 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                     SizedBox(
                       width: 38,
                       child: ShadIconButton.ghost(
-                        onPressed: _isSwitching || _isEditingName
+                        onPressed: currentStrategyId == null ||
+                                _isSwitching ||
+                                _isEditingName
                             ? null
                             : () => _isOpen ? _closePortal() : _openPortal(),
                         icon: _isSwitching

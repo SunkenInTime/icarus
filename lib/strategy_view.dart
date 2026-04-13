@@ -1,3 +1,7 @@
+import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +26,30 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
+
+void _logStrategyViewDebug({
+  required String runId,
+  required String hypothesisId,
+  required String location,
+  required String message,
+  Map<String, Object?> data = const {},
+}) {
+  unawaited(
+    File(r'E:\Projects\icarus-cloud\debug-16ee23.log').writeAsString(
+      '${jsonEncode({
+        'sessionId': '16ee23',
+        'runId': runId,
+        'hypothesisId': hypothesisId,
+        'location': location,
+        'message': message,
+        'data': data,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      })}\n',
+      mode: FileMode.append,
+      flush: true,
+    ),
+  );
+}
 
 class StrategyView extends ConsumerStatefulWidget {
   const StrategyView({super.key});
@@ -62,6 +90,19 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       ref: ref,
       source: 'StrategyView.leaveToLibrary',
       onContinue: () async {
+        // #region agent log
+        _logStrategyViewDebug(
+          runId: 'pre-fix',
+          hypothesisId: 'H3',
+          location: 'strategy_view.dart:65',
+          message: 'leaveToLibrary onContinue start',
+          data: {
+            'mounted': mounted,
+            'strategyIdBeforeClear': ref.read(strategyProvider).strategyId,
+            'routeIsCurrent': ModalRoute.of(context)?.isCurrent,
+          },
+        );
+        // #endregion
         ref
             .read(interactionStateProvider.notifier)
             .update(InteractionState.navigation);
@@ -70,7 +111,33 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             .updateFilterState(FilterState.all);
         ref.read(deleteMenuProvider.notifier).requestClose();
         await ref.read(strategyProvider.notifier).clearCurrentStrategy();
+        // #region agent log
+        _logStrategyViewDebug(
+          runId: 'post-fix',
+          hypothesisId: 'H3',
+          location: 'strategy_view.dart:82',
+          message: 'leaveToLibrary after clear before pop',
+          data: {
+            'mounted': mounted,
+            'strategyIdAfterClear': ref.read(strategyProvider).strategyId,
+            'routeIsCurrent': ModalRoute.of(context)?.isCurrent,
+          },
+        );
+        // #endregion
         if (mounted) {
+          // #region agent log
+          _logStrategyViewDebug(
+            runId: 'post-fix',
+            hypothesisId: 'H3',
+            location: 'strategy_view.dart:82',
+            message: 'leaveToLibrary pop after clear',
+            data: {
+              'mounted': mounted,
+              'strategyIdAtPop': ref.read(strategyProvider).strategyId,
+              'routeIsCurrent': ModalRoute.of(context)?.isCurrent,
+            },
+          );
+          // #endregion
           Navigator.pop(context);
         }
       },

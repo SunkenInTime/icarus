@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:desktop_updater/desktop_updater.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -47,6 +47,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   final ShadPopoverController _importExportPopoverController =
       ShadPopoverController();
 
+  bool get _isWindowsDesktop =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
   @override
   void dispose() {
     _importExportPopoverController.dispose();
@@ -72,7 +75,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
   void _warnWebView() async {
     if (kIsWeb) return;
-    if (!Platform.isWindows) return;
+    if (!_isWindowsDesktop) return;
     await warmUpWebViewEnvironment();
     if (!mounted) return;
     if (isWebViewInitialized) return;
@@ -194,7 +197,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         }
 
         final bool isDirectWindowsInstall =
-            !kIsWeb && Platform.isWindows && !result.isSupported;
+            _isWindowsDesktop && !result.isSupported;
         if (isDirectWindowsInstall && _desktopUpdaterController == null) {
           _desktopUpdaterController = WindowsDesktopUpdateController(
             appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
