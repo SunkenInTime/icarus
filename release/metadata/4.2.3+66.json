@@ -3,7 +3,7 @@
     "shortVersion":  66,
     "title":  "4.2.3 Release",
     "description":  "Desktop release metadata for Icarus.",
-    "date":  "2026-04-13",
+    "date":  "2026-04-08",
     "mandatory":  false,
     "channels":  [
                      "desktop",
@@ -14,7 +14,7 @@
                   ],
     "changes":  [
                     {
-                        "message":  "Local prerelease build for updater testing.",
+                        "message":  "Replace this with the desktop release summary.",
                         "type":  "other"
                     }
                 ]

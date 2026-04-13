@@ -1,13 +1,13 @@
 {
-    "version":  "4.2.4+67",
-    "shortVersion":  67,
-    "title":  "4.2.4 Release",
+    "version":  "4.2.5+68",
+    "shortVersion":  68,
+    "title":  "4.2.5 Release",
     "description":  "Desktop release metadata for Icarus.",
-    "date":  "2026-04-08",
+    "date":  "2026-04-10",
     "mandatory":  false,
     "channels":  [
                      "desktop",
-                     "prerelease"
+                     "stable"
                  ],
     "platforms":  [
                       "windows"
