@@ -33,6 +33,7 @@ node_modules/
 .pub-cache/
 .pub/
 /build/
+/dist/
 release/out/
 
 # Symbolication related
