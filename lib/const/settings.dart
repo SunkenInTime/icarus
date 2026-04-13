@@ -8,10 +8,29 @@ const String kUpdateChannel = String.fromEnvironment(
   'ICARUS_UPDATE_CHANNEL',
   defaultValue: 'stable',
 );
+final String kResolvedUpdateChannel = normalizeUpdateChannel(kUpdateChannel);
+
+String normalizeUpdateChannel(String channel) {
+  switch (channel.trim().toLowerCase()) {
+    case 'prerelease':
+    case 'pre-release':
+    case 'pre_release':
+      return 'prerelease';
+    case 'stable':
+    default:
+      return 'stable';
+  }
+}
+
+String updateChannelLabel(String channel) {
+  return switch (normalizeUpdateChannel(channel)) {
+    'prerelease' => 'Pre-release',
+    _ => 'Stable',
+  };
+}
 
 Uri buildDesktopUpdaterArchiveUrl(String channel) {
-  final trimmedChannel = channel.trim();
-  final resolvedChannel = trimmedChannel.isEmpty ? 'stable' : trimmedChannel;
+  final resolvedChannel = normalizeUpdateChannel(channel);
   return Uri.parse(
     "https://sunkenintime.github.io/icarus/updates/windows/$resolvedChannel/app-archive.json",
   );
@@ -66,7 +85,7 @@ class Settings {
   static const int versionNumber = 65;
   static const String versionName = "4.2.2";
   static final Uri desktopUpdaterArchiveUrl =
-      buildDesktopUpdaterArchiveUrl(kUpdateChannel);
+      buildDesktopUpdaterArchiveUrl(kResolvedUpdateChannel);
 
   static const double sideBarContentWidth = 325;
   static const double sideBarPanelWidth = sideBarContentWidth + 20;

@@ -190,7 +190,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
             !kIsWeb && Platform.isWindows && !result.isSupported;
         if (isDirectWindowsInstall && _desktopUpdaterController == null) {
           debugPrint(
-            'Desktop updater channel: $kUpdateChannel | Manifest: ${Settings.desktopUpdaterArchiveUrl}',
+            'Desktop updater channel: $kResolvedUpdateChannel | Manifest: ${Settings.desktopUpdaterArchiveUrl}',
           );
           _desktopUpdaterController = WindowsDesktopUpdateController(
             appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
