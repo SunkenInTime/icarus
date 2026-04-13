@@ -3,6 +3,20 @@
     "description":  "Desktop release metadata for Icarus.",
     "items":  [
                   {
+                      "version":  "4.2.15+78",
+                      "shortVersion":  78,
+                      "changes":  [
+                                      {
+                                          "message":  "Local prerelease build for updater testing.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-04-13",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/prerelease/4.2.15%2B78-windows",
+                      "platform":  "windows"
+                  },
+                  {
                       "version":  "4.2.14+77",
                       "shortVersion":  77,
                       "changes":  [
