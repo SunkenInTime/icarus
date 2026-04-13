@@ -15,11 +15,12 @@ class InAppDebugDialog extends ConsumerWidget {
     final supportDirectory =
         AppErrorReporter.applicationSupportDirectoryPath ?? 'Unavailable';
     final persistedLogPath = AppErrorReporter.persistedLogPath;
+    final updateChannel = updateChannelLabel(kResolvedUpdateChannel);
 
     return ShadDialog(
-      title: const Text('In-App Debug Logs'),
-      description: const Text(
-        'Use Copy to send the latest debug report.',
+      title: Text('In-App Debug Logs ($updateChannel Channel)'),
+      description: Text(
+        'Use Copy to send the latest debug report. Current channel: $updateChannel.',
       ),
       constraints: const BoxConstraints(maxWidth: 720, maxHeight: 620),
       actions: [
@@ -124,6 +125,24 @@ class _RuntimeInfoCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
+          SelectableText(
+            'Update channel: ${updateChannelLabel(kResolvedUpdateChannel)} ($kResolvedUpdateChannel)',
+            style: const TextStyle(
+              fontFamily: 'Consolas',
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 4),
+          SelectableText(
+            'Desktop updater manifest: ${Settings.desktopUpdaterArchiveUrl}',
+            style: const TextStyle(
+              fontFamily: 'Consolas',
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 4),
           SelectableText(
             'Support directory: $supportDirectory',
             style: const TextStyle(
