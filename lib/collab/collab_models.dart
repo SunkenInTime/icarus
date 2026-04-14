@@ -364,6 +364,7 @@ class CloudStrategySummary {
     required this.updatedAt,
     this.role,
     this.attackLabel,
+    this.folderPublicId,
   });
 
   final String publicId;
@@ -374,6 +375,7 @@ class CloudStrategySummary {
   final DateTime updatedAt;
   final String? role;
   final String? attackLabel;
+  final String? folderPublicId;
 
   factory CloudStrategySummary.fromJson(Map<String, dynamic> json) {
     return CloudStrategySummary(
@@ -389,6 +391,7 @@ class CloudStrategySummary {
       ),
       role: json['role'] as String?,
       attackLabel: json['attackLabel'] as String?,
+      folderPublicId: json['folderPublicId'] as String?,
     );
   }
 }
@@ -405,6 +408,7 @@ class CloudFolderSummary {
     this.iconFontPackage,
     this.color,
     this.customColorValue,
+    this.role,
   });
 
   final String publicId;
@@ -417,6 +421,7 @@ class CloudFolderSummary {
   final String? iconFontPackage;
   final String? color;
   final int? customColorValue;
+  final String? role;
 
   factory CloudFolderSummary.fromJson(Map<String, dynamic> json) {
     return CloudFolderSummary(
@@ -434,6 +439,38 @@ class CloudFolderSummary {
       iconFontPackage: json['iconFontPackage'] as String?,
       color: json['color'] as String?,
       customColorValue: (json['customColorValue'] as num?)?.toInt(),
+      role: json['role'] as String?,
+    );
+  }
+}
+
+class ShareLinkSummary {
+  const ShareLinkSummary({
+    required this.token,
+    required this.role,
+    required this.createdAt,
+    this.revokedAt,
+  });
+
+  final String token;
+  final String role;
+  final DateTime createdAt;
+  final DateTime? revokedAt;
+
+  bool get isRevoked => revokedAt != null;
+
+  factory ShareLinkSummary.fromJson(Map<String, dynamic> json) {
+    return ShareLinkSummary(
+      token: json['token'] as String,
+      role: json['role'] as String,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['createdAt'] as num?)?.toInt() ?? 0,
+      ),
+      revokedAt: (json['revokedAt'] as num?) == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(
+              (json['revokedAt'] as num).toInt(),
+            ),
     );
   }
 }

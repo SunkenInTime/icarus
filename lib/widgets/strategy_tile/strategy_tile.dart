@@ -12,6 +12,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/dialogs/strategy/delete_strategy_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/rename_strategy_dialog.dart';
+import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile_sections.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -56,6 +57,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       ShadContextMenuController();
 
   bool get _isCloud => widget.cloudStrategy != null;
+  bool get _canShare => _isCloud && widget.cloudStrategy?.role == 'owner';
   String get _strategyId =>
       widget.strategyData?.id ?? widget.cloudStrategy!.publicId;
   String get _strategyName =>
@@ -167,6 +169,12 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         onPressed: () => _exportStrategy(),
         child: const Text('Export'),
       ),
+      if (_canShare)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.link2),
+          onPressed: _showShareDialog,
+          child: const Text('Share'),
+        ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.trash2, color: Colors.redAccent),
         onPressed: widget.canDelete ? () => _showDeleteDialog() : null,
@@ -185,7 +193,9 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
 
     try {
       if (_isCloud) {
-        await ref.read(strategyProvider.notifier).openCloudStrategy(_strategyId);
+        await ref
+            .read(strategyProvider.notifier)
+            .openCloudStrategy(_strategyId);
       } else {
         await ref.read(strategyProvider.notifier).loadFromHive(_strategyId);
       }
@@ -262,6 +272,17 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         strategyId: _strategyId,
         currentName: _strategyName,
         source: _isCloud ? StrategySource.cloud : StrategySource.local,
+      ),
+    );
+  }
+
+  Future<void> _showShareDialog() async {
+    await showShadDialog<void>(
+      context: context,
+      builder: (_) => ShareLinksDialog(
+        targetType: 'strategy',
+        targetPublicId: _strategyId,
+        title: _strategyName,
       ),
     );
   }

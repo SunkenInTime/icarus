@@ -27,6 +27,7 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
@@ -351,11 +352,17 @@ class _MyAppState extends ConsumerState<MyApp> {
         .read(inAppDebugProvider.notifier)
         .bulkAddLogs(<String>['Deep link [$source]: $uriText']);
 
-    unawaited(
-      ref
+    unawaited(() async {
+      final handledAuth = await ref
           .read(authProvider.notifier)
-          .handleAuthCallbackUri(uri, source: source),
-    );
+          .handleAuthCallbackUri(uri, source: source);
+      if (handledAuth) {
+        return;
+      }
+      await ref
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(uri, source: source);
+    }());
   }
 
   @override
@@ -414,6 +421,16 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(authProvider, (_, next) {
+      if (next.isAuthenticated && next.isConvexUserReady) {
+        unawaited(
+          ref
+              .read(shareLinkControllerProvider.notifier)
+              .redeemPendingIfPossible(),
+        );
+      }
+    });
+
     return ToastificationWrapper(
       config: const ToastificationConfig(
         alignment: Alignment.bottomCenter,
