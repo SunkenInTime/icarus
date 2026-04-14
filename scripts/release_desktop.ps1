@@ -5,7 +5,7 @@ param(
     [string]$Channel = "stable",
     [switch]$Mandatory,
     [switch]$PublishPages,
-    [ValidateSet("none", "github-actions", "git-branch")]
+    [ValidateSet("none", "git-branch")]
     [string]$PagesPublishMode = "none",
     [string]$PagesBranch = "gh-pages",
     [string]$PagesRemote = "origin",
@@ -78,9 +78,6 @@ switch ($PagesPublishMode) {
     "none" {
         Write-Host "Pages publish requested, but PagesPublishMode is 'none'. Files remain staged locally." -ForegroundColor Yellow
     }
-    "github-actions" {
-        Write-Host "Pages content staged for GitHub Actions deployment at $PagesStageRoot." -ForegroundColor Green
-    }
     "git-branch" {
         Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
             "-ExecutionPolicy",
@@ -94,7 +91,21 @@ switch ($PagesPublishMode) {
             "-Remote",
             $PagesRemote,
             "-SyncPaths",
-            "updates/windows/$Channel",
+            "updates/windows/$Channel"
+        )
+
+        Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            "scripts/publish_pages_branch.ps1",
+            "-SourceDir",
+            $PagesStageRoot,
+            "-Branch",
+            $PagesBranch,
+            "-Remote",
+            $PagesRemote,
+            "-SyncPaths",
             "downloads/windows/$Channel"
         )
     }

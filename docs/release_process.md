@@ -108,8 +108,8 @@ Use this when you want to publish the Microsoft Store channel.
 
 - Local prerelease publish:
   - `scripts/publish_prerelease_local.ps1` pushes the staged site content to `gh-pages`.
-  - It then dispatches `.github/workflows/deploy-pages-from-branch.yml` so GitHub republishes Pages from that branch.
-  - The dispatch step needs a GitHub token with permission to run workflows. Pass it through `-GitHubToken`, `GITHUB_TOKEN`, or `GH_TOKEN`.
+  - GitHub Pages should be configured to serve `gh-pages` from `/ (root)`.
+  - No extra Pages deploy workflow is needed for prerelease testing.
 - Direct desktop installs now use a per-user install path and per-user registry registration.
 - Store installs should continue to use the Microsoft Store update path only.
 - The metadata file should not be a generic `template.json` in the live metadata folder, because the manifest generator treats every JSON file there as a real release entry.

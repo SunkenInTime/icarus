@@ -44,21 +44,15 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   build:
     runs-on: windows-latest
-    environment: github-pages
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - uses: actions/configure-pages@v5
-        if: ${{ inputs.publish_pages }}
 
       - uses: dart-lang/setup-dart@v1
 
@@ -87,7 +81,7 @@ jobs:
           )
 
           if ("${{ inputs.publish_pages }}" -eq "true") {
-            $args += @("-PublishPages", "-PagesPublishMode", "github-actions")
+            $args += @("-PublishPages", "-PagesPublishMode", "git-branch")
           }
 
           if ("${{ inputs.mandatory }}" -eq "true") {
@@ -108,16 +102,6 @@ jobs:
             release/out/desktop/**
             dist/**
           if-no-files-found: error
-
-      - name: Upload Pages Artifact
-        if: ${{ inputs.publish_pages }}
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: release/out/gh-pages
-
-      - name: Deploy To GitHub Pages
-        if: ${{ inputs.publish_pages }}
-        uses: actions/deploy-pages@v4
 
       - name: Print Published Download URLs
         if: ${{ inputs.publish_pages }}
