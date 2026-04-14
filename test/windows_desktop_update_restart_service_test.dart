@@ -2,6 +2,42 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/services/windows_desktop_update_restart_service.dart';
 
 void main() {
+  test('launcher script records handoff and starts powershell via cmd', () {
+    final script = WindowsDesktopUpdateRestartService.buildLauncherScript(
+      powerShellExecutable:
+          r'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe',
+      scriptPath: r"C:\Users\Alice\App's\Temp\icarus_apply_update.ps1",
+      launcherLogPath:
+          r"C:\Users\Alice\AppData\Roaming\Icarus\windows_desktop_updater_launcher.log",
+    );
+
+    expect(
+      script,
+      contains(
+        r'set "PS_EXECUTABLE=C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        'set "UPDATER_SCRIPT=C:\\Users\\Alice\\App\'s\\Temp\\icarus_apply_update.ps1"',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        r'set "LAUNCHER_LOG=C:\Users\Alice\AppData\Roaming\Icarus\windows_desktop_updater_launcher.log"',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        r'start "" /min "%PS_EXECUTABLE%" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%UPDATER_SCRIPT%"',
+      ),
+    );
+    expect(script, contains(r'del "%~f0" >nul 2>&1'));
+  });
+
   test('restart script uses absolute install paths and working directory', () {
     final script = WindowsDesktopUpdateRestartService.buildRestartScript(
       executablePath: "C:\\Users\\Alice\\App's\\Icarus\\icarus.exe\u0000",
@@ -35,7 +71,23 @@ void main() {
     expect(
       script,
       contains(
-        r'Start-Process -FilePath $executablePath -WorkingDirectory $installDirectory',
+        r'$startedProcess = Start-Process -FilePath $executablePath -WorkingDirectory $installDirectory -PassThru',
+      ),
+    );
+    expect(
+      script,
+      contains(r'for ($launchAttempt = 1; $launchAttempt -le 10; $launchAttempt++) {'),
+    );
+    expect(
+      script,
+      contains(
+        r'Write-Log "Updated executable confirmed running with pid $(($confirmedProcess.Id))."',
+      ),
+    );
+    expect(
+      script,
+      contains(
+        "throw 'Updated executable did not remain running after launch attempts.'",
       ),
     );
     expect(
@@ -76,7 +128,7 @@ void main() {
         contains(
             r'Write-Log "Updater script started. scriptPath=$scriptPath"'));
     expect(script,
-        contains(r'Write-Log "Updated executable launch command issued."'));
+        contains(r'Write-Log "Updated executable launch command issued on attempt $launchAttempt with pid $(($startedProcess.Id))."'));
     expect(script, contains(r'Write-Log ("ERROR: " + $_.Exception.Message)'));
     expect(
         script,

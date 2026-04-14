@@ -32,6 +32,7 @@ class WindowsDesktopUpdateRestartService {
     final installDirectory = File(executablePath).parent.path;
     final updateDirectory = path.join(installDirectory, 'update');
     final updaterLogPath = resolveUpdaterLogPath();
+    final launcherLogPath = resolveLauncherLogPath();
     final updateFolder = Directory(updateDirectory);
     if (!await updateFolder.exists()) {
       throw FileSystemException(
@@ -52,14 +53,21 @@ class WindowsDesktopUpdateRestartService {
       logPath: updaterLogPath,
       processId: pid,
     );
-    final powerShellExecutable = _resolvePowerShellExecutable();
+    final launcherFile = await _writeLauncherScript(
+      powerShellExecutable: _resolvePowerShellExecutable(),
+      scriptPath: scriptFile.path,
+      launcherLogPath: launcherLogPath,
+    );
+    final commandExecutable = _resolveCommandExecutable();
     _reportInfoSafely(
-      'Starting detached desktop update apply script.',
+      'Starting detached desktop update launcher.',
       source: 'WindowsDesktopUpdateRestartService.restartIntoDownloadedUpdate',
       error: <String, String>{
-        'powershell': powerShellExecutable,
+        'command': commandExecutable,
+        'launcherPath': launcherFile.path,
         'scriptPath': scriptFile.path,
         'updaterLogPath': updaterLogPath,
+        'launcherLogPath': launcherLogPath,
         'installDirectory': installDirectory,
         'updateDirectory': updateDirectory,
       },
@@ -67,14 +75,10 @@ class WindowsDesktopUpdateRestartService {
 
     try {
       await Process.start(
-        powerShellExecutable,
+        commandExecutable,
         <String>[
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-File',
-          scriptFile.path,
+          '/c',
+          launcherFile.path,
         ],
         mode: ProcessStartMode.detached,
       );
@@ -82,9 +86,13 @@ class WindowsDesktopUpdateRestartService {
       if (await scriptFile.exists()) {
         await scriptFile.delete();
       }
+      if (await launcherFile.exists()) {
+        await launcherFile.delete();
+      }
       rethrow;
     }
 
+    await Future<void>.delayed(const Duration(milliseconds: 250));
     exit(0);
   }
 
@@ -133,6 +141,52 @@ class WindowsDesktopUpdateRestartService {
       flush: true,
     );
     return scriptFile;
+  }
+
+  Future<File> _writeLauncherScript({
+    required String powerShellExecutable,
+    required String scriptPath,
+    required String launcherLogPath,
+  }) async {
+    final launcherPath = path.join(
+      Directory.systemTemp.path,
+      'icarus_launch_update_${pid}_${DateTime.now().microsecondsSinceEpoch}.cmd',
+    );
+    final launcherFile = File(launcherPath);
+    await launcherFile.writeAsString(
+      buildLauncherScript(
+        powerShellExecutable: powerShellExecutable,
+        scriptPath: scriptPath,
+        launcherLogPath: launcherLogPath,
+      ),
+      flush: true,
+    );
+    return launcherFile;
+  }
+
+  static String buildLauncherScript({
+    required String powerShellExecutable,
+    required String scriptPath,
+    required String launcherLogPath,
+  }) {
+    final escapedPowerShellExecutable =
+        _escapeBatchQuotedValue(powerShellExecutable);
+    final escapedScriptPath = _escapeBatchQuotedValue(scriptPath);
+    final escapedLauncherLogPath = _escapeBatchQuotedValue(launcherLogPath);
+
+    return '''
+@echo off
+setlocal EnableExtensions
+set "PS_EXECUTABLE=$escapedPowerShellExecutable"
+set "UPDATER_SCRIPT=$escapedScriptPath"
+set "LAUNCHER_LOG=$escapedLauncherLogPath"
+for %%I in ("%LAUNCHER_LOG%") do if not exist "%%~dpI" mkdir "%%~dpI"
+>> "%LAUNCHER_LOG%" echo [%date% %time%] Launcher started. script="%UPDATER_SCRIPT%"
+start "" /min "%PS_EXECUTABLE%" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%UPDATER_SCRIPT%"
+set "START_EXIT_CODE=%errorlevel%"
+>> "%LAUNCHER_LOG%" echo [%date% %time%] Launcher finished with exitCode=%START_EXIT_CODE%
+del "%~f0" >nul 2>&1
+''';
   }
 
   static String buildRestartScript({
@@ -215,8 +269,33 @@ try {
   }
 
   Write-Log "Launching updated executable."
-  Start-Process -FilePath \$executablePath -WorkingDirectory \$installDirectory
-  Write-Log "Updated executable launch command issued."
+  \$startedProcess = \$null
+  for (\$launchAttempt = 1; \$launchAttempt -le 10; \$launchAttempt++) {
+    try {
+      \$startedProcess = Start-Process -FilePath \$executablePath -WorkingDirectory \$installDirectory -PassThru
+      Write-Log "Updated executable launch command issued on attempt \$launchAttempt with pid \$((\$startedProcess.Id))."
+    } catch {
+      Write-Log "Launch attempt \$launchAttempt failed: \$((\$_.Exception.Message))"
+    }
+
+    if (\$null -ne \$startedProcess) {
+      Start-Sleep -Milliseconds 400
+      \$confirmedProcess = Get-Process -Id \$startedProcess.Id -ErrorAction SilentlyContinue
+      if (\$null -ne \$confirmedProcess) {
+        Write-Log "Updated executable confirmed running with pid \$((\$confirmedProcess.Id))."
+        break
+      }
+
+      Write-Log "Launch attempt \$launchAttempt exited before confirmation."
+      \$startedProcess = \$null
+    }
+
+    Start-Sleep -Milliseconds 600
+  }
+
+  if (\$null -eq \$startedProcess) {
+    throw 'Updated executable did not remain running after launch attempts.'
+  }
 } catch {
   \$deleteScriptOnExit = \$false
   Write-Log ("ERROR: " + \$_.Exception.Message)
@@ -243,6 +322,18 @@ try {
     );
   }
 
+  static String resolveLauncherLogPath() {
+    final supportDirectory = AppErrorReporter.applicationSupportDirectoryPath;
+    if (supportDirectory != null && supportDirectory.trim().isNotEmpty) {
+      return path.join(supportDirectory, 'windows_desktop_updater_launcher.log');
+    }
+
+    return path.join(
+      Directory.systemTemp.path,
+      'icarus_windows_desktop_updater_launcher.log',
+    );
+  }
+
   static List<String> _splitRelativePath(String filePath) {
     return filePath
         .split(RegExp(r'[\\\/]+'))
@@ -265,8 +356,25 @@ try {
     );
   }
 
+  static String _resolveCommandExecutable() {
+    final systemRoot = Platform.environment['SystemRoot'];
+    if (systemRoot == null || systemRoot.isEmpty) {
+      return 'cmd';
+    }
+
+    return path.join(
+      systemRoot,
+      'System32',
+      'cmd.exe',
+    );
+  }
+
   static String _escapePowerShellLiteral(String value) {
     return value.replaceAll("'", "''");
+  }
+
+  static String _escapeBatchQuotedValue(String value) {
+    return value.replaceAll('"', '""');
   }
 
   static String? normalizeExecutablePath(String? executablePath) {
