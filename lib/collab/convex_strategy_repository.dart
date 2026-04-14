@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
-import 'package:icarus/collab/cloud_media_models.dart';
 
 final convexStrategyRepositoryProvider = Provider<ConvexStrategyRepository>(
   (ref) => ConvexStrategyRepository(ConvexClient.instance),
@@ -376,10 +375,7 @@ class ConvexStrategyRepository {
 
   Future<void> completeImageUpload({
     required String strategyPublicId,
-    required String pagePublicId,
     required String assetPublicId,
-    required CloudMediaOwnerType ownerType,
-    required String ownerPublicId,
     required String storageId,
     required String mimeType,
     required String fileExtension,
@@ -390,10 +386,7 @@ class ConvexStrategyRepository {
       name: 'images:completeUpload',
       args: {
         'strategyPublicId': strategyPublicId,
-        'pagePublicId': pagePublicId,
         'assetPublicId': assetPublicId,
-        'ownerType': ownerType.name,
-        'ownerPublicId': ownerPublicId,
         'storageId': storageId,
         'mimeType': mimeType,
         'fileExtension': fileExtension,

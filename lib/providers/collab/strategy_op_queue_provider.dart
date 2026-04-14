@@ -163,8 +163,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         );
         continue;
       }
-      opsByPage.putIfAbsent(pageId, () => <EntitySyncKey, StrategyOp>{})[entityKey] =
-          op;
+      opsByPage.putIfAbsent(
+          pageId, () => <EntitySyncKey, StrategyOp>{})[entityKey] = op;
     }
 
     if (!mapEquals(genericQueued, state.queuedByEntityKey)) {
@@ -185,84 +185,44 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _scheduleFlush(flushImmediately: flushImmediately);
   }
 
+  void syncDesiredOp({
+    required EntitySyncKey entityKey,
+    required StrategyOp? desiredOp,
+    bool flushImmediately = false,
+  }) {
+    final changed = _syncDesiredOpsForKeys(
+      keys: {entityKey},
+      desiredOpsByEntityKey: desiredOp == null
+          ? const <EntitySyncKey, StrategyOp>{}
+          : <EntitySyncKey, StrategyOp>{entityKey: desiredOp},
+    );
+    if (!changed) {
+      return;
+    }
+    _scheduleFlush(flushImmediately: flushImmediately);
+  }
+
   void syncDesiredOpsForPage({
     required String pageId,
     required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
     bool clearMissing = true,
     bool flushImmediately = false,
   }) {
-    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
-      state.queuedByEntityKey,
-    );
     final pageKeys = clearMissing
         ? <EntitySyncKey>{
-            ...queued.keys.where((key) => pageIdForEntityKey(key) == pageId),
+            ...state.queuedByEntityKey.keys
+                .where((key) => pageIdForEntityKey(key) == pageId),
             ...desiredOpsByEntityKey.keys,
           }
         : desiredOpsByEntityKey.keys.toSet();
 
-    var changed = false;
-    for (final key in pageKeys) {
-      final desired = desiredOpsByEntityKey[key];
-      final existingQueued = queued[key];
-      final inFlight = state.inFlightByEntityKey[key]?.pending.op;
-
-      if (desired == null) {
-        if (queued.remove(key) != null) {
-          changed = true;
-          _debugLog('queued.drop $key reason=returned_to_remote_base');
-        }
-        continue;
-      }
-
-      if (inFlight != null && _sameIntent(desired, inFlight)) {
-        if (queued.remove(key) != null) {
-          changed = true;
-          _debugLog('queued.drop $key reason=covered_by_in_flight');
-        }
-        continue;
-      }
-
-      if (existingQueued != null && _sameIntent(existingQueued.pending.op, desired)) {
-        continue;
-      }
-
-      final mergedDesired = existingQueued == null
-          ? desired
-          : _mergeQueuedIntent(existingQueued.pending.op, desired);
-      if (mergedDesired == null) {
-        if (queued.remove(key) != null) {
-          changed = true;
-          _debugLog('queued.drop $key reason=coalesced_to_noop');
-        }
-        continue;
-      }
-
-      queued[key] = QueuedEntityIntent(
-        entityKey: key,
-        pending: PendingOp(
-          op: mergedDesired,
-          clientId: state.clientId ?? const Uuid().v4(),
-          attempts: existingQueued?.pending.attempts ?? 0,
-          lastAttemptAt: existingQueued?.pending.lastAttemptAt,
-        ),
-      );
-      changed = true;
-      _debugLog(
-        existingQueued == null
-            ? 'queued.upsert $key kind=${mergedDesired.kind.name}'
-            : 'queued.replace $key kind=${mergedDesired.kind.name}',
-      );
-    }
-
+    final changed = _syncDesiredOpsForKeys(
+      keys: pageKeys,
+      desiredOpsByEntityKey: desiredOpsByEntityKey,
+    );
     if (!changed) {
       return;
     }
-
-    state = state.copyWith(
-      queuedByEntityKey: queued,
-      clearError: true,
-    );
     _scheduleFlush(flushImmediately: flushImmediately);
   }
 
@@ -307,12 +267,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 ? 'Cloud user setup is not ready.'
                 : 'Cloud connection is offline.'),
       );
-      _scheduleRetry(incremented.values.map((intent) => intent.pending).toList());
+      _scheduleRetry(
+          incremented.values.map((intent) => intent.pending).toList());
       return;
     }
 
     final batch = state.queuedByEntityKey.values
-        .where((intent) => !state.inFlightByEntityKey.containsKey(intent.entityKey))
+        .where((intent) =>
+            !state.inFlightByEntityKey.containsKey(intent.entityKey))
         .take(_maxBatchSize)
         .toList(growable: false);
     if (batch.isEmpty) {
@@ -335,7 +297,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         sentAt: sentAt,
       );
       batchByOpId[intent.pending.op.opId] = intent;
-      _debugLog('inflight.send ${intent.entityKey} op=${intent.pending.op.opId}');
+      _debugLog(
+          'inflight.send ${intent.entityKey} op=${intent.pending.op.opId}');
     }
 
     state = state.copyWith(
@@ -483,6 +446,78 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     });
   }
 
+  bool _syncDesiredOpsForKeys({
+    required Set<EntitySyncKey> keys,
+    required Map<EntitySyncKey, StrategyOp> desiredOpsByEntityKey,
+  }) {
+    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.queuedByEntityKey,
+    );
+
+    var changed = false;
+    for (final key in keys) {
+      final desired = desiredOpsByEntityKey[key];
+      final existingQueued = queued[key];
+      final inFlight = state.inFlightByEntityKey[key]?.pending.op;
+
+      if (desired == null) {
+        if (queued.remove(key) != null) {
+          changed = true;
+          _debugLog('queued.drop $key reason=returned_to_remote_base');
+        }
+        continue;
+      }
+
+      if (inFlight != null && _sameIntent(desired, inFlight)) {
+        if (queued.remove(key) != null) {
+          changed = true;
+          _debugLog('queued.drop $key reason=covered_by_in_flight');
+        }
+        continue;
+      }
+
+      if (existingQueued != null &&
+          _sameIntent(existingQueued.pending.op, desired)) {
+        continue;
+      }
+
+      final mergedDesired = existingQueued == null
+          ? desired
+          : _mergeQueuedIntent(existingQueued.pending.op, desired);
+      if (mergedDesired == null) {
+        if (queued.remove(key) != null) {
+          changed = true;
+          _debugLog('queued.drop $key reason=coalesced_to_noop');
+        }
+        continue;
+      }
+
+      queued[key] = QueuedEntityIntent(
+        entityKey: key,
+        pending: PendingOp(
+          op: mergedDesired,
+          clientId: state.clientId ?? const Uuid().v4(),
+          attempts: existingQueued?.pending.attempts ?? 0,
+          lastAttemptAt: existingQueued?.pending.lastAttemptAt,
+        ),
+      );
+      changed = true;
+      _debugLog(
+        existingQueued == null
+            ? 'queued.upsert $key kind=${mergedDesired.kind.name}'
+            : 'queued.replace $key kind=${mergedDesired.kind.name}',
+      );
+    }
+
+    if (changed) {
+      state = state.copyWith(
+        queuedByEntityKey: queued,
+        clearError: true,
+      );
+    }
+    return changed;
+  }
+
   bool _sameIntent(StrategyOp left, StrategyOp right) {
     return left.kind == right.kind &&
         left.entityType == right.entityType &&
@@ -500,7 +535,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       return null;
     }
 
-    if (existing.kind == StrategyOpKind.add && desired.kind == StrategyOpKind.patch) {
+    if (existing.kind == StrategyOpKind.add &&
+        desired.kind == StrategyOpKind.patch) {
       return StrategyOp(
         opId: existing.opId,
         kind: StrategyOpKind.add,

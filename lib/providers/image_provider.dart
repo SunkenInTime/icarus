@@ -14,7 +14,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as path;
@@ -162,8 +161,9 @@ class PlacedImageProvider extends Notifier<ImageState> {
       group: ActionGroup.image,
       objectDelta: ObjectHistoryDelta(
         after: ActionObjectState.image(placedImage),
-        afterImageSizes:
-            ref.read(imageWidgetSizeProvider.notifier).takeSnapshotForIds([imageID]),
+        afterImageSizes: ref
+            .read(imageWidgetSizeProvider.notifier)
+            .takeSnapshotForIds([imageID]),
       ),
     );
 
@@ -172,15 +172,12 @@ class PlacedImageProvider extends Notifier<ImageState> {
     state = state.copyWith(images: [...state.images, placedImage]);
 
     final strategyState = ref.read(strategyProvider);
-    final pagePublicId = ref.read(strategyPageSessionProvider).activePageId;
     if (strategyState.source == StrategySource.cloud &&
-        strategyState.strategyId != null &&
-        pagePublicId != null) {
+        strategyState.strategyId != null) {
       await ref
           .read(cloudMediaUploadQueueProvider.notifier)
           .enqueuePlacedImageUpload(
             strategyPublicId: strategyState.strategyId!,
-            pagePublicId: pagePublicId,
             imagePublicId: placedImage.id,
             fileExtension: fileExtension,
             width: null,

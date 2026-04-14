@@ -13,7 +13,6 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
@@ -56,12 +55,13 @@ class CloudMediaUploadQueueState {
   }
 }
 
-final cloudMediaUploadQueueProvider = NotifierProvider<
-    CloudMediaUploadQueueNotifier, CloudMediaUploadQueueState>(
+final cloudMediaUploadQueueProvider =
+    NotifierProvider<CloudMediaUploadQueueNotifier, CloudMediaUploadQueueState>(
   CloudMediaUploadQueueNotifier.new,
 );
 
-class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState> {
+class CloudMediaUploadQueueNotifier
+    extends Notifier<CloudMediaUploadQueueState> {
   Timer? _retryTimer;
 
   Box<CloudMediaUploadJob> get _box =>
@@ -99,7 +99,6 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
   Future<void> enqueuePlacedImageUpload({
     required String imagePublicId,
     String? strategyPublicId,
-    String? pagePublicId,
     String? fileExtension,
     String? mimeType,
     int? width,
@@ -107,11 +106,8 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
   }) async {
     final strategyState = ref.read(strategyProvider);
     final resolvedStrategyId = strategyPublicId ?? strategyState.strategyId;
-    final resolvedPageId =
-        pagePublicId ?? ref.read(strategyPageSessionProvider).activePageId;
     if (strategyState.source != StrategySource.cloud ||
-        resolvedStrategyId == null ||
-        resolvedPageId == null) {
+        resolvedStrategyId == null) {
       return;
     }
 
@@ -120,9 +116,6 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
       CloudMediaUploadJob(
         jobId: imagePublicId,
         strategyPublicId: resolvedStrategyId,
-        pagePublicId: resolvedPageId,
-        ownerType: CloudMediaOwnerType.element,
-        ownerPublicId: imagePublicId,
         assetPublicId: imagePublicId,
         fileExtension: normalizedExtension,
         mimeType: mimeType ?? mimeTypeForImageExtension(normalizedExtension),
@@ -138,9 +131,6 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
 
   Future<void> enqueueJobForLocalFile({
     required String strategyPublicId,
-    required String pagePublicId,
-    required CloudMediaOwnerType ownerType,
-    required String ownerPublicId,
     required String assetPublicId,
     required String fileExtension,
     String? mimeType,
@@ -152,9 +142,6 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
       CloudMediaUploadJob(
         jobId: assetPublicId,
         strategyPublicId: strategyPublicId,
-        pagePublicId: pagePublicId,
-        ownerType: ownerType,
-        ownerPublicId: ownerPublicId,
         assetPublicId: assetPublicId,
         fileExtension: normalizedExtension,
         mimeType: mimeType ?? mimeTypeForImageExtension(normalizedExtension),
@@ -170,8 +157,6 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
 
   Future<void> enqueueLineupMediaJobs({
     required String strategyPublicId,
-    required String pagePublicId,
-    required String lineupPublicId,
     required Iterable<SimpleImageData> images,
   }) async {
     for (final image in images) {
@@ -180,9 +165,6 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
         CloudMediaUploadJob(
           jobId: image.id,
           strategyPublicId: strategyPublicId,
-          pagePublicId: pagePublicId,
-          ownerType: CloudMediaOwnerType.lineup,
-          ownerPublicId: lineupPublicId,
           assetPublicId: image.id,
           fileExtension: normalizedExtension,
           mimeType: mimeTypeForImageExtension(normalizedExtension),
@@ -237,7 +219,10 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
     }
 
     if (_readJobs().isNotEmpty) {
-      unawaited(_processNextJob(ignoreBackoff: ignoreBackoff));
+      // Only bypass backoff for the initial user-triggered kick. Follow-up
+      // attempts must honor retry timing so transient attach failures do not
+      // hammer Convex in a tight loop.
+      unawaited(_processNextJob(ignoreBackoff: false));
     }
   }
 
@@ -268,7 +253,8 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
       return;
     }
 
-    if (job.state == CloudMediaJobState.pendingUpload || job.storageId == null) {
+    if (job.state == CloudMediaJobState.pendingUpload ||
+        job.storageId == null) {
       await _uploadJobBlob(job);
       return;
     }
@@ -292,7 +278,8 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
         return;
       }
 
-      final uploadUrl = await _repo.generateImageUploadUrl(job.strategyPublicId);
+      final uploadUrl =
+          await _repo.generateImageUploadUrl(job.strategyPublicId);
       if (uploadUrl.isEmpty) {
         throw StateError('Empty Convex upload URL');
       }
@@ -335,10 +322,7 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
     try {
       await _repo.completeImageUpload(
         strategyPublicId: job.strategyPublicId,
-        pagePublicId: job.pagePublicId,
         assetPublicId: job.assetPublicId,
-        ownerType: job.ownerType,
-        ownerPublicId: job.ownerPublicId,
         storageId: job.storageId!,
         mimeType: job.mimeType,
         fileExtension: job.fileExtension,
@@ -348,21 +332,6 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
       await _box.delete(job.jobId);
       _refreshState();
     } catch (error) {
-      if (_isOwnerNotFoundError(error)) {
-        await _box.put(
-          job.jobId,
-          job.copyWith(
-            state: CloudMediaJobState.pendingAttach,
-            attempts: job.attempts + 1,
-            lastError: 'owner_not_found',
-            updatedAt: DateTime.now(),
-          ),
-        );
-        _refreshState();
-        _scheduleRetryForNextEligibleJob();
-        return;
-      }
-
       await _markJobFailed(
         job,
         '$error',
@@ -425,7 +394,8 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
       return;
     }
 
-    final delay = earliest.isAfter(now) ? earliest.difference(now) : Duration.zero;
+    final delay =
+        earliest.isAfter(now) ? earliest.difference(now) : Duration.zero;
     _retryTimer = Timer(delay, () {
       unawaited(_processNextJob(ignoreBackoff: false));
     });
@@ -436,9 +406,6 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
     if (existing != null) {
       final merged = existing.copyWith(
         strategyPublicId: nextJob.strategyPublicId,
-        pagePublicId: nextJob.pagePublicId,
-        ownerType: nextJob.ownerType,
-        ownerPublicId: nextJob.ownerPublicId,
         assetPublicId: nextJob.assetPublicId,
         fileExtension: nextJob.fileExtension,
         mimeType: nextJob.mimeType,
@@ -477,20 +444,7 @@ class CloudMediaUploadQueueNotifier extends Notifier<CloudMediaUploadQueueState>
         return storageId;
       }
     }
-    throw const FormatException('Convex upload response did not include storageId');
-  }
-
-  bool _isOwnerNotFoundError(Object error) {
-    if (error is Map) {
-      final code = error['code']?.toString().toUpperCase();
-      final message = error['message']?.toString().toLowerCase();
-      if (code == 'OWNER_NOT_FOUND' || message == 'owner_not_found') {
-        return true;
-      }
-    }
-
-    final normalized = error.toString().toLowerCase();
-    return normalized.contains('owner_not_found') ||
-        normalized.contains('owner not found');
+    throw const FormatException(
+        'Convex upload response did not include storageId');
   }
 }

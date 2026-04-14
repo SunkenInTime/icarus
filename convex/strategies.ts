@@ -2,7 +2,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { QueryCtx, MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { deleteImageAssetsForPage } from "./images";
+import { deleteImageAssetsForStrategy } from "./images";
 import {
   assertFolderRole,
   assertStrategyRole,
@@ -332,10 +332,10 @@ export const deleteStrategy = mutation({
         await ctx.db.delete(lineup._id);
       }
 
-      await deleteImageAssetsForPage(ctx, page._id);
-
       await ctx.db.delete(page._id);
     }
+
+    await deleteImageAssetsForStrategy(ctx, strategy._id);
 
     const collaborators = await ctx.db
       .query("strategyCollaborators")

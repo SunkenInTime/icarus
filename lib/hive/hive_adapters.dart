@@ -43,7 +43,6 @@ import 'package:icarus/strategy/strategy_models.dart';
   AdapterSpec<StrategyPage>(),
   AdapterSpec<LineUp>(),
   AdapterSpec<SimpleImageData>(),
-  AdapterSpec<CloudMediaOwnerType>(),
   AdapterSpec<CloudMediaJobState>(),
   AdapterSpec<CloudMediaUploadJob>(),
   AdapterSpec<AgentState>(),

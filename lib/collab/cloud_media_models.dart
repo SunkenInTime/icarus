@@ -2,15 +2,15 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 
-enum CloudMediaOwnerType { element, lineup }
-
 enum CloudMediaJobState { pendingUpload, pendingAttach, failed }
 
 String normalizeImageExtension(String extension) {
   if (extension.isEmpty) {
     return extension;
   }
-  return extension.startsWith('.') ? extension.toLowerCase() : '.${extension.toLowerCase()}';
+  return extension.startsWith('.')
+      ? extension.toLowerCase()
+      : '.${extension.toLowerCase()}';
 }
 
 String mimeTypeForImageExtension(String extension) {
@@ -35,9 +35,6 @@ class CloudMediaUploadJob extends HiveObject {
   CloudMediaUploadJob({
     required this.jobId,
     required this.strategyPublicId,
-    required this.pagePublicId,
-    required this.ownerType,
-    required this.ownerPublicId,
     required this.assetPublicId,
     required this.fileExtension,
     required this.mimeType,
@@ -52,9 +49,6 @@ class CloudMediaUploadJob extends HiveObject {
 
   final String jobId;
   final String strategyPublicId;
-  final String pagePublicId;
-  final CloudMediaOwnerType ownerType;
-  final String ownerPublicId;
   final String assetPublicId;
   final String fileExtension;
   final String mimeType;
@@ -71,9 +65,6 @@ class CloudMediaUploadJob extends HiveObject {
   CloudMediaUploadJob copyWith({
     String? jobId,
     String? strategyPublicId,
-    String? pagePublicId,
-    CloudMediaOwnerType? ownerType,
-    String? ownerPublicId,
     String? assetPublicId,
     String? fileExtension,
     String? mimeType,
@@ -88,20 +79,19 @@ class CloudMediaUploadJob extends HiveObject {
     return CloudMediaUploadJob(
       jobId: jobId ?? this.jobId,
       strategyPublicId: strategyPublicId ?? this.strategyPublicId,
-      pagePublicId: pagePublicId ?? this.pagePublicId,
-      ownerType: ownerType ?? this.ownerType,
-      ownerPublicId: ownerPublicId ?? this.ownerPublicId,
       assetPublicId: assetPublicId ?? this.assetPublicId,
       fileExtension: fileExtension ?? this.fileExtension,
       mimeType: mimeType ?? this.mimeType,
       width: width ?? this.width,
       height: height ?? this.height,
-      storageId:
-          identical(storageId, _noChange) ? this.storageId : storageId as String?,
+      storageId: identical(storageId, _noChange)
+          ? this.storageId
+          : storageId as String?,
       state: state ?? this.state,
       attempts: attempts ?? this.attempts,
-      lastError:
-          identical(lastError, _noChange) ? this.lastError : lastError as String?,
+      lastError: identical(lastError, _noChange)
+          ? this.lastError
+          : lastError as String?,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
