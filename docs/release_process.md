@@ -49,6 +49,32 @@ Use this when you want to publish the direct installer channel.
 10. Install the direct desktop build on a test machine.
 11. Confirm the app detects the new desktop update and can download/restart successfully.
 
+## Desktop Prerelease Checklist
+
+Use this when you want to validate updater behavior before shipping to `main`.
+
+1. Checkout branch `update/prerelease`.
+2. Push the updater changes you want to validate.
+3. Go to `Actions` in GitHub.
+4. Open `Release Desktop`.
+5. Click `Run workflow`.
+6. Choose:
+   - `version_bump`: `none` if the version is already correct, otherwise `patch`, `minor`, or `major`
+   - `channel`: `prerelease`
+   - `mandatory`: `false` unless you want to force the update
+   - `publish_pages`: `true`
+7. Wait for the workflow to finish.
+8. Verify GitHub Pages published:
+   - `https://sunkenintime.github.io/icarus/updates/windows/prerelease/app-archive.json`
+   - `https://sunkenintime.github.io/icarus/downloads/windows/prerelease/icarus-setup-latest.exe`
+9. Install an older prerelease desktop build on a test machine and confirm:
+   - update prompt appears
+   - update downloads fully
+   - app exits for restart
+   - relaunched app is the new version
+   - second cold launch still shows the new version
+10. After validation, merge/fix as needed and publish stable from `main`.
+
 ## Store Release Checklist
 
 Use this when you want to publish the Microsoft Store channel.
@@ -69,6 +95,10 @@ Use this when you want to publish the Microsoft Store channel.
 
 - Desktop-only update:
   - Run `Release Desktop` only.
+- Desktop prerelease validation:
+  - Use branch `update/prerelease`.
+  - Run `Release Desktop` with `channel=prerelease`.
+  - After validation, rerun desktop release on `main` with `channel=stable`.
 - Store-only update:
   - Run `Release Store` only.
 - Both channels on the same version:
@@ -76,6 +106,10 @@ Use this when you want to publish the Microsoft Store channel.
 
 ## Notes
 
+- Local prerelease publish:
+  - `scripts/publish_prerelease_local.ps1` pushes the staged site content to `gh-pages`.
+  - GitHub Pages should be configured to serve `gh-pages` from `/ (root)`.
+  - No extra Pages deploy workflow is needed for prerelease testing.
 - Direct desktop installs now use a per-user install path and per-user registry registration.
 - Store installs should continue to use the Microsoft Store update path only.
 - The metadata file should not be a generic `template.json` in the live metadata folder, because the manifest generator treats every JSON file there as a real release entry.

@@ -20,6 +20,7 @@ on:
         default: stable
         options:
           - stable
+          - prerelease
       mandatory:
         description: Mark the desktop update as mandatory.
         type: boolean
@@ -43,21 +44,15 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   build:
     runs-on: windows-latest
-    environment: github-pages
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - uses: actions/configure-pages@v5
-        if: ${{ inputs.publish_pages }}
 
       - uses: dart-lang/setup-dart@v1
 
@@ -74,54 +69,39 @@ jobs:
         shell: pwsh
         run: fvm install
 
-      - name: Bump Version
-        if: ${{ inputs.version_bump != 'none' }}
+      - name: Run Desktop Release Script
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 -Bump ${{ inputs.version_bump }}
-
-      - name: Build Desktop Release
-        shell: pwsh
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          MANDATORY: ${{ inputs.mandatory }}
-          RELEASE_TITLE: ${{ inputs.release_title }}
-          CHANGE_MESSAGE: ${{ inputs.change_message }}
         run: |
-          $mandatorySwitch = @()
-          if ($env:MANDATORY -eq "true") {
-            $mandatorySwitch = @("-Mandatory")
+          $args = @(
+            "-ExecutionPolicy", "Bypass",
+            "-File", "scripts/release_desktop.ps1",
+            "-VersionBump", "${{ inputs.version_bump }}",
+            "-Channel", "${{ inputs.channel }}",
+            "-ChangeMessage", "${{ inputs.change_message }}"
+          )
+
+          if ("${{ inputs.publish_pages }}" -eq "true") {
+            $args += @("-PublishPages", "-PagesPublishMode", "git-branch")
           }
 
-          $titleArgs = @()
-          if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_TITLE)) {
-            $titleArgs = @("-MetadataTitle", $env:RELEASE_TITLE)
+          if ("${{ inputs.mandatory }}" -eq "true") {
+            $args += "-Mandatory"
           }
 
-          & powershell -ExecutionPolicy Bypass -File scripts/build_desktop_release.ps1 `
-            -Channel $env:CHANNEL `
-            -AppArchiveBaseUrl "https://sunkenintime.github.io/icarus/updates/windows/$($env:CHANNEL)" `
-            -InitialChangeMessage $env:CHANGE_MESSAGE `
-            @mandatorySwitch `
-            @titleArgs
+          if (-not [string]::IsNullOrWhiteSpace("${{ inputs.release_title }}")) {
+            $args += @("-ReleaseTitle", "${{ inputs.release_title }}")
+          }
+
+          & powershell @args
 
       - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-release
+          name: desktop-release-${{ inputs.channel }}
           path: |
             release/out/desktop/**
             dist/**
           if-no-files-found: error
-
-      - name: Upload Pages Artifact
-        if: ${{ inputs.publish_pages }}
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: release/out/gh-pages
-
-      - name: Deploy To GitHub Pages
-        if: ${{ inputs.publish_pages }}
-        uses: actions/deploy-pages@v4
 
       - name: Print Published Download URLs
         if: ${{ inputs.publish_pages }}
@@ -133,6 +113,7 @@ jobs:
           }
           $versionName = $versionLine.Matches[0].Groups[1].Value.Trim()
           $channel = "${{ inputs.channel }}"
+          Write-Host "Published channel: $channel"
 
           Write-Host "Latest installer:"
           Write-Host "https://sunkenintime.github.io/icarus/downloads/windows/$channel/icarus-setup-latest.exe"
