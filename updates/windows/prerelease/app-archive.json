@@ -3,6 +3,20 @@
     "description":  "Desktop release metadata for Icarus.",
     "items":  [
                   {
+                      "version":  "4.2.17+80",
+                      "shortVersion":  80,
+                      "changes":  [
+                                      {
+                                          "message":  "Local prerelease build for updater testing.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-04-13",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/prerelease/4.2.17%2B80-windows",
+                      "platform":  "windows"
+                  },
+                  {
                       "version":  "4.2.16+79",
                       "shortVersion":  79,
                       "changes":  [
