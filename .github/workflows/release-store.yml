@@ -80,11 +80,25 @@ jobs:
             throw "Repository variable MSSTORE_PRODUCT_ID is not configured."
           }
 
-          $packageInfo = Get-Content release/out/store/package-info.json -Raw | ConvertFrom-Json
-          $packagePath = Join-Path $PWD "release/out/store/$($packageInfo.packageFile)"
+          $sellerId = $env:SELLER_ID.Trim()
+          if ([string]::IsNullOrWhiteSpace($sellerId)) {
+            throw "Repository secret SELLER_ID is not configured."
+          }
 
-          msstore reconfigure --tenantId $env:AZURE_AD_TENANT_ID --sellerId $env:SELLER_ID --clientId $env:AZURE_AD_APPLICATION_CLIENT_ID --clientSecret $env:AZURE_AD_APPLICATION_SECRET
-          msstore publish $env:GITHUB_WORKSPACE -i $packagePath -id $env:PRODUCT_ID
+          $parsedSellerId = 0
+          if (-not [int]::TryParse($sellerId, [ref]$parsedSellerId)) {
+            throw "Repository secret SELLER_ID must be the numeric Seller ID from Partner Center, not a publisher name, app ID, or other identifier."
+          }
+
+          $packageInfo = Get-Content release/out/store/package-info.json -Raw | ConvertFrom-Json
+          $packageDirectory = Join-Path $env:GITHUB_WORKSPACE "release/out/store"
+          $packagePath = Join-Path $packageDirectory $packageInfo.packageFile
+          if (-not (Test-Path $packagePath)) {
+            throw "Store package not found at $packagePath"
+          }
+
+          msstore reconfigure --tenantId $env:AZURE_AD_TENANT_ID --sellerId $sellerId --clientId $env:AZURE_AD_APPLICATION_CLIENT_ID --clientSecret $env:AZURE_AD_APPLICATION_SECRET
+          msstore publish $env:GITHUB_WORKSPACE -i $packageDirectory -id $env:PRODUCT_ID
 
       - name: Commit Version Changes
         if: ${{ github.ref_type == 'branch' }}
