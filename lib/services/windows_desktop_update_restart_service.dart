@@ -374,7 +374,7 @@ try {
   }
 
   static String _escapeBatchQuotedValue(String value) {
-    return value.replaceAll('"', '""');
+    return value.replaceAll('"', '""').replaceAll('%', '%%');
   }
 
   static String? normalizeExecutablePath(String? executablePath) {
