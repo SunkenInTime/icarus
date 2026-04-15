@@ -249,7 +249,7 @@ try {
     \$process = Get-Process -Id \$trackedProcessId -ErrorAction SilentlyContinue
     if (\$null -ne \$process) {
       Write-Log "Tracked process could not be terminated. Aborting update apply."
-      exit 1
+      throw "Tracked process \$trackedProcessId could not be terminated."
     }
   }
 
