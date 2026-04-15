@@ -4,6 +4,38 @@ import 'package:icarus/const/color_option.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
+const String kUpdateChannel = String.fromEnvironment(
+  'ICARUS_UPDATE_CHANNEL',
+  defaultValue: 'stable',
+);
+final String kResolvedUpdateChannel = normalizeUpdateChannel(kUpdateChannel);
+
+String normalizeUpdateChannel(String channel) {
+  switch (channel.trim().toLowerCase()) {
+    case 'prerelease':
+    case 'pre-release':
+    case 'pre_release':
+      return 'prerelease';
+    case 'stable':
+    default:
+      return 'stable';
+  }
+}
+
+String updateChannelLabel(String channel) {
+  return switch (normalizeUpdateChannel(channel)) {
+    'prerelease' => 'Pre-release',
+    _ => 'Stable',
+  };
+}
+
+Uri buildDesktopUpdaterArchiveUrl(String channel) {
+  final resolvedChannel = normalizeUpdateChannel(channel);
+  return Uri.parse(
+    "https://sunkenintime.github.io/icarus/updates/windows/$resolvedChannel/app-archive.json",
+  );
+}
+
 class Settings {
   static const double agentSize = 35;
   static const double agentSizeMin = 15;
@@ -50,11 +82,10 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 64;
-  static const String versionName = "4.2.1";
-  static final Uri desktopUpdaterArchiveUrl = Uri.parse(
-    "https://sunkenintime.github.io/icarus/updates/windows/stable/app-archive.json",
-  );
+  static const int versionNumber = 84;
+  static const String versionName = "4.3.0";
+  static final Uri desktopUpdaterArchiveUrl =
+      buildDesktopUpdaterArchiveUrl(kResolvedUpdateChannel);
 
   static const double sideBarContentWidth = 325;
   static const double sideBarPanelWidth = sideBarContentWidth + 20;

@@ -33,6 +33,7 @@ node_modules/
 .pub-cache/
 .pub/
 /build/
+/dist/
 release/out/
 
 # Symbolication related
@@ -48,3 +49,7 @@ app.*.map.json
 
 # FVM Version Cache
 .fvm/
+
+# Local environment files
+.env
+.env.local

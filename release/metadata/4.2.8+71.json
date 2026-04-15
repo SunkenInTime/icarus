@@ -1,20 +1,20 @@
 {
-    "version":  "4.2.1+64",
-    "shortVersion":  64,
-    "title":  "4.2.1 Release",
+    "version":  "4.2.8+71",
+    "shortVersion":  71,
+    "title":  "4.2.8 Release",
     "description":  "Desktop release metadata for Icarus.",
     "date":  "2026-04-13",
     "mandatory":  false,
     "channels":  [
                      "desktop",
-                     "stable"
+                     "prerelease"
                  ],
     "platforms":  [
                       "windows"
                   ],
     "changes":  [
                     {
-                        "message":  "Replace this with the desktop release summary.",
+                        "message":  "Local prerelease build for updater testing.",
                         "type":  "other"
                     }
                 ]

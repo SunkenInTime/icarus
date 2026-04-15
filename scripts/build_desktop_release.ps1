@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("stable")]
+    [ValidateSet("stable", "prerelease")]
     [string]$Channel = "stable",
     [switch]$Mandatory,
     [string]$ReleaseDate = (Get-Date -Format "yyyy-MM-dd"),
@@ -23,7 +23,14 @@ if (-not $SkipPubGet) {
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("flutter", "pub", "get")
 }
 
-Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("dart", "run", "desktop_updater:release", "windows", "--release")
+Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @(
+    "dart",
+    "run",
+    "desktop_updater:release",
+    "windows",
+    "--release",
+    "--dart-define=ICARUS_UPDATE_CHANNEL=$Channel"
+)
 Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("dart", "run", "desktop_updater:archive", "windows")
 Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @("-ExecutionPolicy", "Bypass", "-File", "installer/build_installer.ps1", "-Configuration", "Release")
 

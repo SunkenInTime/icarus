@@ -152,7 +152,7 @@ class _NoopLineUpProvider extends LineUpProvider {
   LineUpState build() => LineUpState(lineUps: const []);
 
   @override
-  void fromHive(List<LineUp> lineUps) {}
+  void fromHive(covariant List groups) {}
 }
 
 void main() {
