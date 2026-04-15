@@ -13,6 +13,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/custom_square_widget.da
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -192,7 +193,7 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: MaterialApp(
+        child: ShadApp(
           home: Stack(
             children: [
               PlacedAbilityWidget(

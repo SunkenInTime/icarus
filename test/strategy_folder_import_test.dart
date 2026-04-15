@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
@@ -23,6 +24,14 @@ bool _adaptersRegistered = false;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    appProviderContainer = ProviderContainer();
+  });
+
+  tearDownAll(() {
+    appProviderContainer.dispose();
+  });
 
   late Directory tempDir;
   late ProviderContainer container;
