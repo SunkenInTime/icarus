@@ -1,0 +1,440 @@
+{
+    "appName":  "Icarus",
+    "description":  "Desktop release metadata for Icarus.",
+    "items":  [
+                  {
+                      "version":  "4.3.0+84",
+                      "shortVersion":  84,
+                      "changes":  [
+                                      {
+                                          "message":  "Replace this with the desktop release summary.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-04-15",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.3.0%2B84-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.2.5+68",
+                      "shortVersion":  68,
+                      "changes":  [
+                                      {
+                                          "message":  "Replace this with the desktop release summary.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-04-10",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.2.5%2B68-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.2.0+63",
+                      "shortVersion":  63,
+                      "changes":  [
+                                      {
+                                          "message":  "Stack multiple lineup abilities in one place and pick them from a clearer menu, with improved styling and hover feedback.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Resize the pages bar, persist your height between sessions, and show two rows when there is room; tighter sidebar chrome and a clearer resize handle.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Export screenshots with options to show or hide the spawn barrier, region names, and ultimate orb markers.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Strategy tiles list agents in role order so compositions are quicker to scan.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Grouped lineup placement with migration from older saves; legacy lineup data is preserved for Hive compatibility.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "More reliable lineup editing: better migration change detection, scoped hover updates, cleaner stacked menu hitboxes, and tests around lineup item interactions.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Autosave uses safer deep copies and flushes before exit so you are less likely to lose work when closing the app.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Direct Windows updates verify downloads more reliably before applying an installer.",
+                                          "type":  "fix"
+                                      }
+                                  ],
+                      "date":  "2026-04-06",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.2.0%2B63-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.1.0+62",
+                      "shortVersion":  62,
+                      "changes":  [
+                                      {
+                                          "message":  "Stack multiple lineup abilities in one place and pick them from a clearer, easier-to-use menu.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Resize the pages bar and keep your height between sessions; the bar shows two rows when space allows.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Export screenshots with options to show or hide the spawn barrier, region names, and ultimate orb markers.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Strategy tiles list agents in role order so compositions are quicker to scan.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Smoother lineup editing: better migration for older saves, more reliable menus and hover feedback, and fewer stray hitbox issues.",
+                                          "type":  "fix"
+                                      }
+                                  ],
+                      "date":  "2026-04-04",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.1.0%2B62-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.0.6+60",
+                      "shortVersion":  60,
+                      "changes":  [
+                                      {
+                                          "message":  "Fixed the direct Windows updater so it verifies every required file before restart, preventing partial downloads from reopening the old version in a loop.",
+                                          "type":  "fix"
+                                      }
+                                  ],
+                      "date":  "2026-03-20",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.0.6%2B60-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.0.5+59",
+                      "shortVersion":  59,
+                      "changes":  [
+                                      {
+                                          "message":  "Restored the original desktop updater restart flow to avoid issues introduced by the recent custom restart path.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-03-20",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.0.5%2B59-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.0.4+58",
+                      "shortVersion":  58,
+                      "changes":  [
+                                      {
+                                          "message":  "Added an autosave setting so strategy edits can stay manual when you prefer explicit saves.",
+                                          "type":  "other"
+                                      },
+                                      {
+                                          "message":  "Leaving a dirty strategy now prompts to Save, Don\u0027t Save, or Cancel when returning to the library, switching strategies, or closing the app.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-03-20",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.0.4%2B58-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.0.3+57",
+                      "shortVersion":  57,
+                      "changes":  [
+                                      {
+                                          "message":  "Autosave now persists in-progress text drafts without committing live edits or resetting the text cursor.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-03-20",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.0.3%2B57-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.0.2+56",
+                      "shortVersion":  56,
+                      "changes":  [
+                                      {
+                                          "message":  "Placed text and images now use world-based sizing so they stay proportional to the map instead of using screen-only dimensions.",
+                                          "type":  "other"
+                                      },
+                                      {
+                                          "message":  "Text now scales with the coordinate system and uses a larger default font size for better readability.",
+                                          "type":  "other"
+                                      },
+                                      {
+                                          "message":  "Existing saved strategies automatically migrate legacy text and image sizes to the new sizing model.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-03-20",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.0.2%2B56-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.0.1+55",
+                      "shortVersion":  55,
+                      "changes":  [
+                                      {
+                                          "message":  "Map theme profile name fields use CustomTextField / text-editing shortcut overrides.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-03-19",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.0.1%2B55-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "4.0.0+54",
+                      "shortVersion":  54,
+                      "changes":  [
+                                      {
+                                          "message":  "Redesigned Settings: clearer scope layout, compact sheet, and tidier map theme headers",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Ability range and visual state: clearer rendering and context menu integration for placed abilities",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Marker sizes stay synchronized when you move between strategy pages",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Rotate placed abilities from the board",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Ellipse (circle) drawing tool alongside your existing map markup",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Drag role icons onto the map like other utilities",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Drag-to-attach agent shapes with full undo/redo support",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Import strategies by dropping a folder or ZIP; summaries show what was imported or skipped",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Archive manifest import and smoother strategy bundle handling",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Dead agent state is preserved and interpolated when changing pages",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Agent and ability sizing work together more consistently on the board",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Added Miks with abilities and updated vision cone labels",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "More reliable global shortcuts, delete/hover behavior, and lineup cleanup",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Undo/redo behaves correctly when edits go out of bounds",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Side switching keeps placements sensible; wall and barrier abilities respect the active side",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Improved error reporting and dependency updates",
+                                          "type":  "improvement"
+                                      }
+                                  ],
+                      "date":  "2026-03-19",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.0.0%2B54-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "3.3.7+53",
+                      "shortVersion":  53,
+                      "changes":  [
+                                      {
+                                          "message":  "Fixed performance issues with the app",
+                                          "type":  "fix"
+                                      }
+                                  ],
+                      "date":  "2026-03-12",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/3.3.7%2B53-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "3.3.6+52",
+                      "shortVersion":  52,
+                      "changes":  [
+                                      {
+                                          "message":  "Lotus spawn walls are now accurate",
+                                          "type":  "fix"
+                                      }
+                                  ],
+                      "date":  "2026-03-12",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/3.3.6%2B52-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "3.3.5+51",
+                      "shortVersion":  51,
+                      "changes":  [
+                                      {
+                                          "message":  "Added drag-and-drop import support for folders, nested folder zips, and standalone .ica files.",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Imported folder drops now preserve nested hierarchy, including chained subfolders and empty folders.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Drop import now keeps valid strategies when some files are unsupported or from a newer app version, and shows a single summary warning.",
+                                          "type":  "fix"
+                                      }
+                                  ],
+                      "date":  "2026-03-12",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/3.3.5%2B51-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "3.3.4+50",
+                      "shortVersion":  50,
+                      "changes":  [
+                                      {
+                                          "message":  "Replace this with the desktop release summary.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-03-12",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/3.3.4%2B50-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "3.3.3+49",
+                      "shortVersion":  49,
+                      "changes":  [
+                                      {
+                                          "message":  "Replace this with the desktop release summary.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-03-12",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/3.3.3%2B49-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "3.3.2+48",
+                      "shortVersion":  48,
+                      "changes":  [
+                                      {
+                                          "message":  "Direct Windows installs can now update in-app, while Microsoft Store installs continue updating through the Store.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Deleting and clearing items is faster and safer, with new hover targets, keyboard shortcuts, bulk clear actions, and undo support.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Custom circles and rectangles are easier to resize and now save more reliably in existing strategies.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Deadlock Barrier Mesh can now be edited directly, and wall-style abilities start with better default sizing.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Drawing tools now support per-element stroke thickness, smoother line workflows, and better drag and resize behavior.",
+                                          "type":  "feat"
+                                      },
+                                      {
+                                          "message":  "Text editing is more reliable, with drafts and in-progress changes preserved more consistently.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Older strategy files, screenshots, and saved data now load and migrate more safely.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Deleted line up items will rotate correctly when flipped when undone, post side(ATK/DEF) change.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Screenshot drawings now render correctly and are flipped properly across sides.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Wall-style abilities now start with better default sizing and are flipped properly across sides.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Ability rotations will now be correctly preserved when undone, post side(ATK/DEF) change.",
+                                          "type":  "fix"
+                                      },
+                                      {
+                                          "message":  "Release and update delivery has been cleaned up behind the scenes for both desktop and Microsoft Store builds.",
+                                          "type":  "feat"
+                                      }
+                                  ],
+                      "date":  "2026-03-11",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/3.3.2%2B48-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "3.3.2+48",
+                      "shortVersion":  48,
+                      "changes":  [
+                                      {
+                                          "message":  "Replace this with the desktop release summary.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-03-11",
+                      "mandatory":  true,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/3.3.2%2B48-windows",
+                      "platform":  "windows"
+                  },
+                  {
+                      "version":  "3.3.1+47",
+                      "shortVersion":  47,
+                      "changes":  [
+                                      {
+                                          "message":  "Replace this with the desktop release summary.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-03-11",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/3.3.1%2B47-windows",
+                      "platform":  "windows"
+                  }
+              ]
+}
