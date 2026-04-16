@@ -22,6 +22,11 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($remoteUrl)) {
     throw "Could not resolve git remote URL for '$Remote'."
 }
 
+$remoteUri = $null
+if ($remoteUrl -match '^https://') {
+    $remoteUri = [System.Uri]$remoteUrl
+}
+
 $versionInfo = Get-VersionInfo -RepoRoot $repoRoot
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-pages-" + [System.Guid]::NewGuid().ToString("N"))
 
@@ -30,6 +35,21 @@ New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 try {
     Invoke-RepoCommand -WorkingDirectory $tempRoot -Command "git" -Arguments @("init")
     Invoke-RepoCommand -WorkingDirectory $tempRoot -Command "git" -Arguments @("remote", "add", $Remote, $remoteUrl)
+
+    if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN) -and $null -ne $remoteUri) {
+        $tokenBytes = [System.Text.Encoding]::ASCII.GetBytes("x-access-token:$($env:GITHUB_TOKEN)")
+        $tokenHeader = "AUTHORIZATION: basic {0}" -f [System.Convert]::ToBase64String($tokenBytes)
+        Push-Location $tempRoot
+        try {
+            & git config ("http.https://{0}/.extraheader" -f $remoteUri.Host) $tokenHeader
+            if ($LASTEXITCODE -ne 0) {
+                throw "Failed to configure authenticated git access for $($remoteUri.Host)."
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
 
     $branchExists = $false
     $branchProbe = & git -C $repoRoot ls-remote --heads $Remote $Branch 2>$null
