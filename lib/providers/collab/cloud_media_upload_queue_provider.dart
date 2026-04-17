@@ -219,7 +219,10 @@ class CloudMediaUploadQueueNotifier
     }
 
     if (_readJobs().isNotEmpty) {
-      unawaited(_processNextJob(ignoreBackoff: ignoreBackoff));
+      // Only bypass backoff for the initial user-triggered kick. Follow-up
+      // attempts must honor retry timing so transient attach failures do not
+      // hammer Convex in a tight loop.
+      unawaited(_processNextJob(ignoreBackoff: false));
     }
   }
 

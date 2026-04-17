@@ -20,6 +20,7 @@ import type * as lib_opTypes from "../lib/opTypes.js";
 import type * as lineups from "../lineups.js";
 import type * as ops from "../ops.js";
 import type * as pages from "../pages.js";
+import type * as shares from "../shares.js";
 import type * as strategies from "../strategies.js";
 import type * as users from "../users.js";
 
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   lineups: typeof lineups;
   ops: typeof ops;
   pages: typeof pages;
+  shares: typeof shares;
   strategies: typeof strategies;
   users: typeof users;
 }>;

@@ -7,6 +7,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -62,6 +63,23 @@ class _FolderPillState extends ConsumerState<FolderPill>
       Folder.folderColorMap[widget.folder.color] ??
       Colors.grey;
 
+  bool get _isCloudWorkspace =>
+      ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
+
+  String? get _cloudRole {
+    if (!_isCloudWorkspace) {
+      return null;
+    }
+    final allFolders =
+        ref.read(cloudAllFoldersProvider).valueOrNull ?? const [];
+    return allFolders
+        .where((folder) => folder.publicId == widget.folder.id)
+        .map((folder) => folder.role)
+        .firstOrNull;
+  }
+
+  bool get _canManageCloudFolder => !_isCloudWorkspace || _cloudRole == 'owner';
+
   @override
   Widget build(BuildContext context) {
     return Draggable<GridItem>(
@@ -72,6 +90,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
         onWillAcceptWithDetails: (details) {
           final item = details.data;
           if (widget.isDemo) return false;
+          if (!_canManageCloudFolder) return false;
           if (item is FolderItem) {
             return item.folder.id != widget.folder.id &&
                 !_isParentFolder(item.folder.id);
@@ -83,18 +102,18 @@ class _FolderPillState extends ConsumerState<FolderPill>
           final item = details.data;
           if (item is StrategyItem) {
             ref.read(strategyProvider.notifier).moveToFolder(
-              strategyID: item.strategyId,
-              parentID: widget.folder.id,
-              source: item.strategy == null
-                  ? StrategySource.cloud
-                  : StrategySource.local,
-            );
+                  strategyID: item.strategyId,
+                  parentID: widget.folder.id,
+                  source: item.strategy == null
+                      ? StrategySource.cloud
+                      : StrategySource.local,
+                );
           } else if (item is FolderItem) {
             ref.read(folderProvider.notifier).moveToFolder(
-              folderID: item.folder.id,
-              parentID: widget.folder.id,
-              workspace: ref.read(libraryWorkspaceProvider),
-            );
+                  folderID: item.folder.id,
+                  parentID: widget.folder.id,
+                  workspace: ref.read(libraryWorkspaceProvider),
+                );
           }
         },
         builder: (context, candidateData, rejectedData) {
@@ -207,16 +226,33 @@ class _FolderPillState extends ConsumerState<FolderPill>
       ShadContextMenuItem(
         leading: const Icon(Icons.text_fields),
         child: const Text('Edit'),
-        onPressed: () async {
-          if (widget.isDemo) return;
-          await showDialog<String>(
-            context: context,
-            builder: (context) {
-              return FolderEditDialog(folder: widget.folder);
-            },
-          );
-        },
+        onPressed: !_canManageCloudFolder
+            ? null
+            : () async {
+                if (widget.isDemo) return;
+                await showDialog<String>(
+                  context: context,
+                  builder: (context) {
+                    return FolderEditDialog(folder: widget.folder);
+                  },
+                );
+              },
       ),
+      if (_isCloudWorkspace && _cloudRole == 'owner')
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.link2),
+          child: const Text('Share'),
+          onPressed: () async {
+            await showShadDialog<void>(
+              context: context,
+              builder: (_) => ShareLinksDialog(
+                targetType: 'folder',
+                targetPublicId: widget.folder.id,
+                title: widget.folder.name,
+              ),
+            );
+          },
+        ),
       ShadContextMenuItem(
         leading: const Icon(Icons.file_upload),
         child: const Text('Export'),
@@ -227,25 +263,27 @@ class _FolderPillState extends ConsumerState<FolderPill>
       ShadContextMenuItem(
         leading: const Icon(Icons.delete, color: Colors.redAccent),
         child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
-        onPressed: () async {
-          ConfirmAlertDialog.show(
-            context: context,
-            title:
-                "Are you sure you want to delete '${widget.folder.name}' folder?",
-            content:
-                "This will also delete all strategies and subfolders within it.",
-            confirmText: "Delete",
-            isDestructive: true,
-          ).then((confirmed) {
-            if (confirmed) {
-              if (widget.isDemo) return;
-              ref.read(folderProvider.notifier).deleteFolder(
-                    widget.folder.id,
-                    workspace: ref.read(libraryWorkspaceProvider),
-                  );
-            }
-          });
-        },
+        onPressed: !_canManageCloudFolder
+            ? null
+            : () async {
+                ConfirmAlertDialog.show(
+                  context: context,
+                  title:
+                      "Are you sure you want to delete '${widget.folder.name}' folder?",
+                  content:
+                      "This will also delete all strategies and subfolders within it.",
+                  confirmText: "Delete",
+                  isDestructive: true,
+                ).then((confirmed) {
+                  if (confirmed) {
+                    if (widget.isDemo) return;
+                    ref.read(folderProvider.notifier).deleteFolder(
+                          widget.folder.id,
+                          workspace: ref.read(libraryWorkspaceProvider),
+                        );
+                  }
+                });
+              },
       ),
     ];
   }
@@ -293,7 +331,9 @@ class _FolderPillState extends ConsumerState<FolderPill>
     while (currentParentId != null) {
       if (currentParentId == folderId) return true;
       final parentFolder = workspace == LibraryWorkspace.local
-          ? ref.read(folderProvider.notifier).findLocalFolderByID(currentParentId)
+          ? ref
+              .read(folderProvider.notifier)
+              .findLocalFolderByID(currentParentId)
           : ref.read(folderProvider.notifier).findCloudFolderByID(
                 currentParentId,
                 ref.read(cloudAllFoldersProvider).valueOrNull ?? const [],
@@ -302,4 +342,8 @@ class _FolderPillState extends ConsumerState<FolderPill>
     }
     return false;
   }
+}
+
+extension on Iterable<String?> {
+  String? get firstOrNull => isEmpty ? null : first;
 }

@@ -36,6 +36,8 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
   }
 
   void addAgent(PlacedAgentNode placedAgent) {
+    state = [...state, placedAgent];
+
     final action = UserAction(
       type: ActionType.addition,
       id: placedAgent.id,
@@ -46,7 +48,6 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     );
 
     ref.read(actionProvider.notifier).addAction(action);
-    state = [...state, placedAgent];
   }
 
   void removeAgent(String id) {

@@ -29,7 +29,8 @@ class FolderContent extends ConsumerWidget {
     return Hive.box<StrategyData>(HiveBoxNames.strategiesBox).listenable();
   });
 
-  static final foldersListenable = Provider<ValueListenable<Box<Folder>>>((ref) {
+  static final foldersListenable =
+      Provider<ValueListenable<Box<Folder>>>((ref) {
     return Hive.box<Folder>(HiveBoxNames.foldersBox).listenable();
   });
 
@@ -38,6 +39,7 @@ class FolderContent extends ConsumerWidget {
     final workspace = ref.watch(libraryWorkspaceProvider);
     final isCloud = workspace == LibraryWorkspace.cloud;
     if (isCloud) {
+      final cloudSection = ref.watch(cloudLibrarySectionProvider);
       final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
       if (!cloudAvailable) {
         return _buildCloudUnavailableState(context, ref);
@@ -54,6 +56,12 @@ class FolderContent extends ConsumerWidget {
         localStrategies: const [],
         cloudStrategies: _filterCloudStrategies(ref, strategies),
         isCloud: true,
+        emptyStateTitle: cloudSection == CloudLibrarySection.sharedWithMe
+            ? 'No shared items yet'
+            : 'No cloud strategies yet',
+        emptyStateSubtitle: cloudSection == CloudLibrarySection.sharedWithMe
+            ? 'Shared folders and strategies will appear here'
+            : 'Create a cloud strategy to start your online workspace',
       );
     }
 
@@ -78,6 +86,9 @@ class FolderContent extends ConsumerWidget {
               localStrategies: _filterLocalStrategies(ref, strategies),
               cloudStrategies: const [],
               isCloud: false,
+              emptyStateTitle: 'No strategies available',
+              emptyStateSubtitle:
+                  'Create a new strategy or drop strategies, folders, or .zip archives',
             );
           },
         );
@@ -111,8 +122,8 @@ class FolderContent extends ConsumerWidget {
     }
 
     Comparator<StrategyData> comparator = switch (filter.sortBy) {
-      SortBy.alphabetical =>
-        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      SortBy.alphabetical => (a, b) =>
+          a.name.toLowerCase().compareTo(b.name.toLowerCase()),
       SortBy.dateCreated => (a, b) => a.createdAt.compareTo(b.createdAt),
       SortBy.dateUpdated => (a, b) => a.lastEdited.compareTo(b.lastEdited),
     };
@@ -136,8 +147,8 @@ class FolderContent extends ConsumerWidget {
     }
 
     Comparator<CloudStrategySummary> comparator = switch (filter.sortBy) {
-      SortBy.alphabetical =>
-        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      SortBy.alphabetical => (a, b) =>
+          a.name.toLowerCase().compareTo(b.name.toLowerCase()),
       SortBy.dateCreated => (a, b) => a.createdAt.compareTo(b.createdAt),
       SortBy.dateUpdated => (a, b) => a.updatedAt.compareTo(b.updatedAt),
     };
@@ -154,18 +165,17 @@ class FolderContent extends ConsumerWidget {
     required List<StrategyData> localStrategies,
     required List<CloudStrategySummary> cloudStrategies,
     required bool isCloud,
+    required String emptyStateTitle,
+    required String emptyStateSubtitle,
   }) {
-    final hasStrategies = localStrategies.isNotEmpty || cloudStrategies.isNotEmpty;
+    final hasStrategies =
+        localStrategies.isNotEmpty || cloudStrategies.isNotEmpty;
     final Widget emptyState = Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(isCloud ? 'No cloud strategies yet' : 'No strategies available'),
-          Text(
-            isCloud
-                ? 'Create a cloud strategy to start your online workspace'
-                : 'Create a new strategy or drop strategies, folders, or .zip archives',
-          ),
+          Text(emptyStateTitle),
+          Text(emptyStateSubtitle),
         ],
       ),
     );
@@ -174,9 +184,9 @@ class FolderContent extends ConsumerWidget {
         const double minTileWidth = 250;
         const double spacing = 20;
         const double padding = 32;
-        int crossAxisCount =
-            ((constraints.maxWidth - padding + spacing) / (minTileWidth + spacing))
-                .floor();
+        int crossAxisCount = ((constraints.maxWidth - padding + spacing) /
+                (minTileWidth + spacing))
+            .floor();
         crossAxisCount = crossAxisCount.clamp(1, double.infinity).toInt();
 
         return CustomScrollView(
@@ -243,8 +253,7 @@ class FolderContent extends ConsumerWidget {
         );
       },
     );
-    final wrappedContent =
-        isCloud ? content : IcaDropTarget(child: content);
+    final wrappedContent = isCloud ? content : IcaDropTarget(child: content);
 
     return Stack(
       children: [
@@ -300,9 +309,7 @@ class FolderContent extends ConsumerWidget {
               ),
               Expanded(
                 child: (folders.isEmpty && !hasStrategies)
-                    ? (isCloud
-                        ? emptyState
-                        : IcaDropTarget(child: emptyState))
+                    ? (isCloud ? emptyState : IcaDropTarget(child: emptyState))
                     : wrappedContent,
               ),
             ],

@@ -52,19 +52,22 @@ class ConvexStrategyRepository {
   }
 
   Future<List<CloudFolderSummary>> listFoldersForParent(
-    String? parentFolderPublicId,
-  ) async {
+    String? parentFolderPublicId, {
+    String scope = 'owned',
+  }) async {
     final response = await _client.query('folders:listForParent', {
       if (parentFolderPublicId != null)
         'parentFolderPublicId': parentFolderPublicId,
+      'scope': scope,
     });
     return _decodeObjectList(response)
         .map(CloudFolderSummary.fromJson)
         .toList(growable: false);
   }
 
-  Future<List<CloudFolderSummary>> listAllFolders() async {
-    final response = await _client.query('folders:listAll', {});
+  Future<List<CloudFolderSummary>> listAllFolders(
+      {String scope = 'all'}) async {
+    final response = await _client.query('folders:listAll', {'scope': scope});
     return _decodeObjectList(response)
         .map(CloudFolderSummary.fromJson)
         .toList(growable: false);
@@ -83,7 +86,7 @@ class ConvexStrategyRepository {
 
       subscription = await _client.subscribe(
         name: 'folders:listAll',
-        args: const {},
+        args: const {'scope': 'all'},
         onUpdate: (value) {
           try {
             final mapped = _decodeObjectList(value)
@@ -111,25 +114,36 @@ class ConvexStrategyRepository {
   }
 
   Future<List<CloudStrategySummary>> listStrategiesForFolder(
-    String? folderPublicId,
-  ) async {
+    String? folderPublicId, {
+    String scope = 'owned',
+  }) async {
     final response = await _client.query('strategies:listForFolder', {
       if (folderPublicId != null) 'folderPublicId': folderPublicId,
+      'scope': scope,
     });
     return _decodeObjectList(response)
         .map(CloudStrategySummary.fromJson)
         .toList(growable: false);
   }
 
+  Future<List<CloudStrategySummary>> listSharedStrategies() async {
+    final response = await _client.query('strategies:listSharedWithMe', {});
+    return _decodeObjectList(response)
+        .map(CloudStrategySummary.fromJson)
+        .toList(growable: false);
+  }
+
   Stream<List<CloudFolderSummary>> watchFoldersForParent(
-    String? parentFolderPublicId,
-  ) {
+    String? parentFolderPublicId, {
+    String scope = 'owned',
+  }) {
     final controller = StreamController<List<CloudFolderSummary>>.broadcast();
     dynamic subscription;
 
     Future<void> start() async {
       try {
-        controller.add(await listFoldersForParent(parentFolderPublicId));
+        controller.add(
+            await listFoldersForParent(parentFolderPublicId, scope: scope));
       } catch (error, stackTrace) {
         controller.addError(error, stackTrace);
       }
@@ -139,6 +153,7 @@ class ConvexStrategyRepository {
         args: {
           if (parentFolderPublicId != null)
             'parentFolderPublicId': parentFolderPublicId,
+          'scope': scope,
         },
         onUpdate: (value) {
           try {
@@ -168,14 +183,16 @@ class ConvexStrategyRepository {
   }
 
   Stream<List<CloudStrategySummary>> watchStrategiesForFolder(
-    String? folderPublicId,
-  ) {
+    String? folderPublicId, {
+    String scope = 'owned',
+  }) {
     final controller = StreamController<List<CloudStrategySummary>>.broadcast();
     dynamic subscription;
 
     Future<void> start() async {
       try {
-        controller.add(await listStrategiesForFolder(folderPublicId));
+        controller
+            .add(await listStrategiesForFolder(folderPublicId, scope: scope));
       } catch (error, stackTrace) {
         controller.addError(error, stackTrace);
       }
@@ -184,6 +201,7 @@ class ConvexStrategyRepository {
         name: 'strategies:listForFolder',
         args: {
           if (folderPublicId != null) 'folderPublicId': folderPublicId,
+          'scope': scope,
         },
         onUpdate: (value) {
           try {
@@ -198,6 +216,48 @@ class ConvexStrategyRepository {
         onError: (message, value) {
           controller
               .addError(Exception('strategies:listForFolder error: $message'));
+        },
+      );
+    }
+
+    start();
+
+    controller.onCancel = () {
+      try {
+        subscription?.cancel();
+      } catch (_) {}
+    };
+
+    return controller.stream;
+  }
+
+  Stream<List<CloudStrategySummary>> watchSharedStrategies() {
+    final controller = StreamController<List<CloudStrategySummary>>.broadcast();
+    dynamic subscription;
+
+    Future<void> start() async {
+      try {
+        controller.add(await listSharedStrategies());
+      } catch (error, stackTrace) {
+        controller.addError(error, stackTrace);
+      }
+
+      subscription = await _client.subscribe(
+        name: 'strategies:listSharedWithMe',
+        args: const {},
+        onUpdate: (value) {
+          try {
+            final mapped = _decodeObjectList(value)
+                .map(CloudStrategySummary.fromJson)
+                .toList(growable: false);
+            controller.add(mapped);
+          } catch (error, stackTrace) {
+            controller.addError(error, stackTrace);
+          }
+        },
+        onError: (message, value) {
+          controller.addError(
+              Exception('strategies:listSharedWithMe error: $message'));
         },
       );
     }
@@ -422,5 +482,58 @@ class ConvexStrategyRepository {
           'themeOverridePalette': themeOverridePalette,
       },
     );
+  }
+
+  Future<List<ShareLinkSummary>> listShareLinks({
+    required String targetType,
+    required String targetPublicId,
+  }) async {
+    final response = await _client.query('shares:list', {
+      'targetType': targetType,
+      'targetPublicId': targetPublicId,
+    });
+    return _decodeObjectList(response)
+        .map(ShareLinkSummary.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<void> createShareLink({
+    required String targetType,
+    required String targetPublicId,
+    required String token,
+    required String role,
+  }) async {
+    await _client.mutation(
+      name: 'shares:create',
+      args: {
+        'targetType': targetType,
+        'targetPublicId': targetPublicId,
+        'token': token,
+        'role': role,
+      },
+    );
+  }
+
+  Future<void> revokeShareLink({
+    required String targetType,
+    required String targetPublicId,
+    required String token,
+  }) async {
+    await _client.mutation(
+      name: 'shares:revoke',
+      args: {
+        'targetType': targetType,
+        'targetPublicId': targetPublicId,
+        'token': token,
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> redeemShareLink(String token) async {
+    final response = await _client.mutation(
+      name: 'shares:redeem',
+      args: {'token': token},
+    );
+    return _decodeObject(response);
   }
 }

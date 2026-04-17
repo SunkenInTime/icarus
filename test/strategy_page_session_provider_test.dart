@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
@@ -16,6 +17,8 @@ import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -376,6 +379,108 @@ void main() {
     expect(container.read(textProvider).single.text, 'after');
   });
 
+  test('cloud agent addition queues an add op immediately', () async {
+    const strategyId = 'cloud-strategy';
+    final snapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0),
+      ],
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(snapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    container.read(agentProvider.notifier).addAgent(
+          PlacedAgent(
+            id: 'agent-1',
+            type: AgentType.jett,
+            position: const Offset(120, 160),
+          ),
+        );
+    await _settle();
+
+    final pending = container.read(strategyOpQueueProvider).pending;
+    expect(
+      pending.any(
+        (entry) =>
+            entry.op.kind == StrategyOpKind.add &&
+            entry.op.entityType == StrategyOpEntityType.element &&
+            entry.op.entityPublicId == 'agent-1' &&
+            entry.op.pagePublicId == 'page-1',
+      ),
+      isTrue,
+    );
+  });
+
+  test('cloud map change queues a strategy patch op', () async {
+    const strategyId = 'cloud-strategy';
+    final snapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0),
+      ],
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(snapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    container.read(mapProvider.notifier).updateMap(MapValue.bind);
+    await _settle();
+
+    final pending = container.read(strategyOpQueueProvider).pending;
+    final strategyPatch = pending
+        .map((entry) => entry.op)
+        .where(
+          (op) =>
+              op.entityType == StrategyOpEntityType.strategy &&
+              op.kind == StrategyOpKind.patch,
+        )
+        .single;
+    expect(
+      jsonDecode(strategyPatch.payload!) as Map<String, dynamic>,
+      containsPair('mapData', Maps.mapNames[MapValue.bind]),
+    );
+  });
+
   test('projected active-page merge prefers local overlay for touched entities',
       () async {
     const strategyId = 'cloud-strategy';
@@ -428,7 +533,8 @@ void main() {
     await container.read(remoteStrategySnapshotProvider.future);
 
     final localTextPayload = Map<String, dynamic>.from(
-      (PlacedText(id: 'text-1', position: const Offset(10, 20))..text = 'local-a')
+      (PlacedText(id: 'text-1', position: const Offset(10, 20))
+            ..text = 'local-a')
           .toJson(),
     )..putIfAbsent('elementType', () => 'text');
     container.read(activePageLiveSyncProvider.notifier).setStateForTest(
@@ -463,7 +569,8 @@ void main() {
     expect(textsById['text-2'], 'remote-b-updated');
   });
 
-  test('reject refresh preserves local state and queues follow-up sync', () async {
+  test('reject refresh preserves local state and queues follow-up sync',
+      () async {
     const strategyId = 'cloud-strategy';
     final pageOne =
         _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);
@@ -778,7 +885,8 @@ void main() {
     expect(container.read(textProvider).single.text, 'before');
   });
 
-  test('pending cloud sync does not block projected active-page rehydrate', () async {
+  test('pending cloud sync does not block projected active-page rehydrate',
+      () async {
     const strategyId = 'cloud-strategy';
     final pageOne =
         _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);

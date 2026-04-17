@@ -16,6 +16,7 @@ class CurrentPathBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final workspace = ref.watch(libraryWorkspaceProvider);
     final isCloud = workspace == LibraryWorkspace.cloud;
+    final cloudSection = ref.watch(cloudLibrarySectionProvider);
     final currentFolderId = ref.watch(folderProvider);
     final cloudFolders = isCloud
         ? (ref.watch(cloudAllFoldersProvider).valueOrNull ?? const [])
@@ -51,8 +52,11 @@ class CurrentPathBar extends ConsumerWidget {
               children: [
                 FolderTab(
                   folder: null,
-                  isActive: currentFolder == null,
+                  isActive: currentFolder == null &&
+                      cloudSection != CloudLibrarySection.sharedWithMe,
                 ),
+                if (isCloud && cloudSection == CloudLibrarySection.sharedWithMe)
+                  const _StaticBreadcrumbLink(label: 'Shared with Me'),
                 for (int i = 0; i < pathFolders.length; i++)
                   FolderTab(
                     folder: pathFolders[i],
@@ -126,8 +130,35 @@ class FolderTab extends ConsumerWidget {
         },
       ),
       onPressed: () {
+        if (ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud) {
+          final targetSection = folder == null
+              ? CloudLibrarySection.home
+              : ref.read(cloudLibrarySectionProvider);
+          ref
+              .read(cloudLibrarySectionProvider.notifier)
+              .select(targetSection);
+        }
         ref.read(folderProvider.notifier).updateID(folder?.id);
       },
+    );
+  }
+}
+
+class _StaticBreadcrumbLink extends StatelessWidget {
+  const _StaticBreadcrumbLink({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return ShadBreadcrumbLink(
+      textStyle: ShadTheme.of(context).textTheme.lead,
+      normalColor: Settings.tacticalVioletTheme.foreground,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Text(label),
+      ),
+      onPressed: () {},
     );
   }
 }
