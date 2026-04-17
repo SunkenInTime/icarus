@@ -1,7 +1,5 @@
 import 'dart:convert';
 
-import 'package:icarus/collab/cloud_media_models.dart';
-
 enum StrategyOpKind { add, move, patch, delete, reorder }
 
 enum StrategyOpEntityType { strategy, page, element, lineup }
@@ -295,25 +293,17 @@ class RemoteLineup {
 class RemoteImageAsset {
   const RemoteImageAsset({
     required this.publicId,
-    required this.strategyPublicId,
-    required this.pagePublicId,
-    required this.ownerType,
-    required this.ownerPublicId,
     required this.fileExtension,
-    required this.mimeType,
     required this.width,
     required this.height,
     required this.url,
     required this.legacyStoragePath,
+    this.mimeType,
   });
 
   final String publicId;
-  final String strategyPublicId;
-  final String pagePublicId;
-  final CloudMediaOwnerType ownerType;
-  final String ownerPublicId;
   final String fileExtension;
-  final String mimeType;
+  final String? mimeType;
   final int? width;
   final int? height;
   final String? url;
@@ -322,14 +312,8 @@ class RemoteImageAsset {
   factory RemoteImageAsset.fromJson(Map<String, dynamic> json) {
     return RemoteImageAsset(
       publicId: json['publicId'] as String,
-      strategyPublicId: json['strategyPublicId'] as String,
-      pagePublicId: json['pagePublicId'] as String,
-      ownerType: (json['ownerType'] as String?) == 'lineup'
-          ? CloudMediaOwnerType.lineup
-          : CloudMediaOwnerType.element,
-      ownerPublicId: json['ownerPublicId'] as String,
       fileExtension: json['fileExtension'] as String? ?? '',
-      mimeType: json['mimeType'] as String,
+      mimeType: json['mimeType'] as String?,
       width: (json['width'] as num?)?.toInt(),
       height: (json['height'] as num?)?.toInt(),
       url: json['url'] as String?,

@@ -1,7 +1,6 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
-import { deleteImageAssetsForPage } from "./images";
 import { assertStrategyRole } from "./lib/auth";
 import {
   getElementByPublicId,
@@ -231,7 +230,6 @@ export const applyBatch = mutation({
                 await ctx.db.delete(lineup._id);
               }
 
-              await deleteImageAssetsForPage(ctx, page._id);
               await ctx.db.delete(page._id);
               appliedRevision = page.revision + 1;
               strategy = await incrementSequence(ctx, strategy);
@@ -513,4 +511,3 @@ export const applyBatch = mutation({
     };
   },
 });
-

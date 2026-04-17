@@ -1,6 +1,5 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { deleteImageAssetsForPage } from "./images";
 import { assertStrategyRole } from "./lib/auth";
 import {
   getPageByPublicId,
@@ -175,8 +174,6 @@ export const deletePage = mutation({
     for (const lineup of lineups) {
       await ctx.db.delete(lineup._id);
     }
-
-    await deleteImageAssetsForPage(ctx, page._id);
 
     await ctx.db.delete(page._id);
 

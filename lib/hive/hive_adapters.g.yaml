@@ -585,14 +585,6 @@ types:
         index: 4
       showInnerFill:
         index: 5
-  CloudMediaOwnerType:
-    typeId: 33
-    nextIndex: 2
-    fields:
-      element:
-        index: 0
-      lineup:
-        index: 1
   CloudMediaJobState:
     typeId: 34
     nextIndex: 3
@@ -611,12 +603,6 @@ types:
         index: 0
       strategyPublicId:
         index: 1
-      pagePublicId:
-        index: 2
-      ownerType:
-        index: 3
-      ownerPublicId:
-        index: 4
       assetPublicId:
         index: 5
       fileExtension:

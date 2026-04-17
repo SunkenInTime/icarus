@@ -1,39 +1,10 @@
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Doc } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { ConvexError, v } from "convex/values";
-import { assertStrategyRole, requireCurrentUser } from "./lib/auth";
-import {
-  getElementByPublicId,
-  getLineupByPublicId,
-  getPageByPublicId,
-  getStrategyByPublicId,
-} from "./lib/entities";
+import { v } from "convex/values";
+import { assertStrategyRole } from "./lib/auth";
+import { getStrategyByPublicId } from "./lib/entities";
 
 type AnyCtx = MutationCtx | QueryCtx;
-type ImageAssetOwnerType = "element" | "lineup";
-
-function normalizeOwnerType(
-  asset: Pick<Doc<"imageAssets">, "ownerType">,
-): ImageAssetOwnerType {
-  return asset.ownerType ?? "element";
-}
-
-function ownerNotFoundError(
-  ownerType: ImageAssetOwnerType,
-  ownerPublicId: string,
-): ConvexError<{
-  code: "OWNER_NOT_FOUND";
-  message: "owner_not_found";
-  ownerType: ImageAssetOwnerType;
-  ownerPublicId: string;
-}> {
-  return new ConvexError({
-    code: "OWNER_NOT_FOUND",
-    message: "owner_not_found",
-    ownerType,
-    ownerPublicId,
-  });
-}
 
 async function getImageAssetByPublicId(
   ctx: AnyCtx,
@@ -57,103 +28,113 @@ function inferFileExtension(
   return match?.[1]?.toLowerCase() ?? "";
 }
 
-async function resolveOwnerAttachment(
-  ctx: MutationCtx,
-  args: {
-    strategyId: Id<"strategies">;
-    pageId: Id<"pages">;
-    ownerType: ImageAssetOwnerType;
-    ownerPublicId: string;
-  },
-): Promise<{
-  elementId: Id<"elements"> | undefined;
-  lineupId: Id<"lineups"> | undefined;
-}> {
-  if (args.ownerType === "element") {
-    try {
-      const element = await getElementByPublicId(ctx, args.ownerPublicId);
-      if (element.strategyId !== args.strategyId || element.pageId !== args.pageId) {
-        throw new Error("Element context mismatch");
-      }
-      return {
-        elementId: element._id,
-        lineupId: undefined,
-      };
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith("Element not found:")) {
-        throw ownerNotFoundError(args.ownerType, args.ownerPublicId);
-      }
-      throw error;
+function decodeObject(payload: string): Record<string, unknown> | null {
+  try {
+    const decoded = JSON.parse(payload);
+    if (typeof decoded === "object" && decoded !== null) {
+      return decoded as Record<string, unknown>;
+    }
+  } catch (_) {
+    // Ignore malformed payloads while gathering asset references.
+  }
+  return null;
+}
+
+function collectAssetIdFromElementPayload(payload: string): string | null {
+  const decoded = decodeObject(payload);
+  if (decoded === null) {
+    return null;
+  }
+  return typeof decoded.id === "string" ? decoded.id : null;
+}
+
+function collectAssetIdsFromLineupPayload(payload: string): Set<string> {
+  const assetIds = new Set<string>();
+  const decoded = decodeObject(payload);
+  if (decoded === null) {
+    return assetIds;
+  }
+
+  const rawImages = decoded.images;
+  if (!Array.isArray(rawImages)) {
+    return assetIds;
+  }
+
+  for (const image of rawImages) {
+    if (typeof image === "object" && image !== null && typeof image.id === "string") {
+      assetIds.add(image.id);
+    }
+  }
+  return assetIds;
+}
+
+async function collectReferencedAssetIdsForStrategy(
+  ctx: AnyCtx,
+  strategyId: Doc<"strategies">["_id"],
+): Promise<Set<string>> {
+  const assetIds = new Set<string>();
+
+  const elements = await ctx.db
+    .query("elements")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
+    .collect();
+  for (const element of elements) {
+    if (element.deleted || element.elementType !== "image") {
+      continue;
+    }
+
+    const assetId = collectAssetIdFromElementPayload(element.payload);
+    if (assetId !== null) {
+      assetIds.add(assetId);
     }
   }
 
-  try {
-    const lineup = await getLineupByPublicId(ctx, args.ownerPublicId);
-    if (lineup.strategyId !== args.strategyId || lineup.pageId !== args.pageId) {
-      throw new Error("Lineup context mismatch");
+  const lineups = await ctx.db
+    .query("lineups")
+    .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId))
+    .collect();
+  for (const lineup of lineups) {
+    if (lineup.deleted) {
+      continue;
     }
-    return {
-      elementId: undefined,
-      lineupId: lineup._id,
-    };
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith("Lineup not found:")) {
-      throw ownerNotFoundError(args.ownerType, args.ownerPublicId);
+
+    for (const assetId of collectAssetIdsFromLineupPayload(lineup.payload)) {
+      assetIds.add(assetId);
     }
-    throw error;
   }
+
+  return assetIds;
+}
+
+async function strategyReferencesAsset(
+  ctx: AnyCtx,
+  strategyId: Doc<"strategies">["_id"],
+  assetPublicId: string,
+): Promise<boolean> {
+  const referencedAssetIds = await collectReferencedAssetIdsForStrategy(ctx, strategyId);
+  return referencedAssetIds.has(assetPublicId);
 }
 
 async function serializeAssetForViewer(
   ctx: QueryCtx,
-  strategyPublicId: string,
   asset: Doc<"imageAssets">,
 ): Promise<{
   publicId: string;
-  strategyPublicId: string;
-  pagePublicId: string;
-  ownerType: ImageAssetOwnerType;
-  ownerPublicId: string;
   fileExtension: string;
-  mimeType: string;
+  mimeType: string | null;
   width: number | null;
   height: number | null;
   url: string | null;
   legacyStoragePath: string | null;
-} | null> {
-  const page = await ctx.db.get(asset.pageId);
-  if (page === null) {
-    return null;
-  }
-
-  const ownerType = normalizeOwnerType(asset);
-  const ownerDoc = ownerType === "lineup"
-    ? asset.lineupId === undefined
-      ? null
-      : await ctx.db.get(asset.lineupId)
-    : asset.elementId === undefined
-      ? null
-      : await ctx.db.get(asset.elementId);
-
-  if (ownerDoc === null) {
-    return null;
-  }
-
-  const url = asset.storageId === undefined
-    ? null
-    : await ctx.storage.getUrl(asset.storageId);
-
+}> {
   return {
     publicId: asset.publicId,
-    strategyPublicId,
-    pagePublicId: page.publicId,
-    ownerType,
-    ownerPublicId: ownerDoc.publicId,
     fileExtension: inferFileExtension(asset),
-    mimeType: asset.mimeType,
+    mimeType: asset.mimeType ?? null,
     width: asset.width ?? null,
     height: asset.height ?? null,
-    url,
+    url:
+      asset.storageId === undefined ? null : await ctx.storage.getUrl(asset.storageId),
     legacyStoragePath: asset.storagePath ?? null,
   };
 }
@@ -166,20 +147,6 @@ export async function deleteImageAsset(
     await ctx.storage.delete(asset.storageId);
   }
   await ctx.db.delete(asset._id);
-}
-
-export async function deleteImageAssetsForPage(
-  ctx: MutationCtx,
-  pageId: Id<"pages">,
-): Promise<void> {
-  const assets = await ctx.db
-    .query("imageAssets")
-    .withIndex("by_pageId", (q) => q.eq("pageId", pageId))
-    .collect();
-
-  for (const asset of assets) {
-    await deleteImageAsset(ctx, asset);
-  }
 }
 
 export const generateUploadUrl = mutation({
@@ -199,62 +166,33 @@ export const generateUploadUrl = mutation({
 export const completeUpload = mutation({
   args: {
     strategyPublicId: v.string(),
-    pagePublicId: v.string(),
     assetPublicId: v.string(),
-    ownerType: v.union(v.literal("element"), v.literal("lineup")),
-    ownerPublicId: v.string(),
     storageId: v.id("_storage"),
-    mimeType: v.string(),
-    fileExtension: v.string(),
+    mimeType: v.optional(v.string()),
+    fileExtension: v.optional(v.string()),
     width: v.optional(v.number()),
     height: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    const { user } = await assertStrategyRole(ctx, strategy, "editor");
-    const page = await getPageByPublicId(ctx, args.pagePublicId);
+    await assertStrategyRole(ctx, strategy, "editor");
 
-    if (page.strategyId !== strategy._id) {
-      throw new Error("Page strategy mismatch");
-    }
-
-    const { elementId, lineupId } = await resolveOwnerAttachment(ctx, {
-      strategyId: strategy._id,
-      pageId: page._id,
-      ownerType: args.ownerType,
-      ownerPublicId: args.ownerPublicId,
-    });
     const existing = await getImageAssetByPublicId(ctx, args.assetPublicId);
     const now = Date.now();
 
     if (existing === null) {
       await ctx.db.insert("imageAssets", {
         publicId: args.assetPublicId,
-        strategyId: strategy._id,
-        pageId: page._id,
-        ownerType: args.ownerType,
-        elementId,
-        lineupId,
         storageId: args.storageId,
         fileExtension: args.fileExtension,
         mimeType: args.mimeType,
         width: args.width,
         height: args.height,
-        createdByUserId: user._id,
         createdAt: now,
         updatedAt: now,
       });
     } else {
-      if (existing.strategyId !== strategy._id) {
-        throw new Error("Asset strategy mismatch");
-      }
-
       await ctx.db.patch(existing._id, {
-        strategyId: strategy._id,
-        pageId: page._id,
-        ownerType: args.ownerType,
-        elementId,
-        lineupId,
         storageId: args.storageId,
         fileExtension: args.fileExtension,
         mimeType: args.mimeType,
@@ -276,16 +214,20 @@ export const listForStrategy = query({
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");
 
-    const assets = await ctx.db
-      .query("imageAssets")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
-
-    const serialized = await Promise.all(
-      assets.map((asset) => serializeAssetForViewer(ctx, strategy.publicId, asset)),
+    const referencedAssetIds = await collectReferencedAssetIdsForStrategy(ctx, strategy._id);
+    const assets = await Promise.all(
+      [...referencedAssetIds].map((assetPublicId) =>
+        getImageAssetByPublicId(ctx, assetPublicId),
+      ),
     );
 
-    return serialized.filter((asset) => asset !== null);
+    const serialized = await Promise.all(
+      assets
+        .filter((asset): asset is Doc<"imageAssets"> => asset !== null)
+        .map((asset) => serializeAssetForViewer(ctx, asset)),
+    );
+
+    return serialized;
   },
 });
 
@@ -299,7 +241,10 @@ export const getAssetUrl = query({
     await assertStrategyRole(ctx, strategy, "viewer");
 
     const asset = await getImageAssetByPublicId(ctx, args.assetPublicId);
-    if (asset === null || asset.strategyId !== strategy._id) {
+    if (
+      asset === null ||
+      !(await strategyReferencesAsset(ctx, strategy._id, args.assetPublicId))
+    ) {
       throw new Error("Asset not found");
     }
 
@@ -320,8 +265,10 @@ export const deleteAssetRef = mutation({
     await assertStrategyRole(ctx, strategy, "editor");
 
     const asset = await getImageAssetByPublicId(ctx, args.assetPublicId);
-
-    if (asset === null || asset.strategyId !== strategy._id) {
+    if (
+      asset === null ||
+      !(await strategyReferencesAsset(ctx, strategy._id, args.assetPublicId))
+    ) {
       throw new Error("Asset not found");
     }
 
@@ -335,21 +282,8 @@ export const listPotentiallyStale = query({
     strategyPublicId: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await requireCurrentUser(ctx);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
-
-    const assets = await ctx.db
-      .query("imageAssets")
-      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
-      .collect();
-
-    const serialized = await Promise.all(
-      assets
-        .filter((asset) => asset.createdByUserId === user._id)
-        .map((asset) => serializeAssetForViewer(ctx, strategy.publicId, asset)),
-    );
-
-    return serialized.filter((asset) => asset !== null);
+    return [];
   },
 });

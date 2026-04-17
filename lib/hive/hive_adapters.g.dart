@@ -1709,43 +1709,6 @@ class AbilityVisualStateAdapter extends TypeAdapter<AbilityVisualState> {
           typeId == other.typeId;
 }
 
-class CloudMediaOwnerTypeAdapter extends TypeAdapter<CloudMediaOwnerType> {
-  @override
-  final typeId = 33;
-
-  @override
-  CloudMediaOwnerType read(BinaryReader reader) {
-    switch (reader.readByte()) {
-      case 0:
-        return CloudMediaOwnerType.element;
-      case 1:
-        return CloudMediaOwnerType.lineup;
-      default:
-        return CloudMediaOwnerType.element;
-    }
-  }
-
-  @override
-  void write(BinaryWriter writer, CloudMediaOwnerType obj) {
-    switch (obj) {
-      case CloudMediaOwnerType.element:
-        writer.writeByte(0);
-      case CloudMediaOwnerType.lineup:
-        writer.writeByte(1);
-    }
-  }
-
-  @override
-  int get hashCode => typeId.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is CloudMediaOwnerTypeAdapter &&
-          runtimeType == other.runtimeType &&
-          typeId == other.typeId;
-}
-
 class CloudMediaJobStateAdapter extends TypeAdapter<CloudMediaJobState> {
   @override
   final typeId = 34;
@@ -1800,9 +1763,6 @@ class CloudMediaUploadJobAdapter extends TypeAdapter<CloudMediaUploadJob> {
     return CloudMediaUploadJob(
       jobId: fields[0] as String,
       strategyPublicId: fields[1] as String,
-      pagePublicId: fields[2] as String,
-      ownerType: fields[3] as CloudMediaOwnerType,
-      ownerPublicId: fields[4] as String,
       assetPublicId: fields[5] as String,
       fileExtension: fields[6] as String,
       mimeType: fields[7] as String,
@@ -1819,17 +1779,11 @@ class CloudMediaUploadJobAdapter extends TypeAdapter<CloudMediaUploadJob> {
   @override
   void write(BinaryWriter writer, CloudMediaUploadJob obj) {
     writer
-      ..writeByte(15)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.jobId)
       ..writeByte(1)
       ..write(obj.strategyPublicId)
-      ..writeByte(2)
-      ..write(obj.pagePublicId)
-      ..writeByte(3)
-      ..write(obj.ownerType)
-      ..writeByte(4)
-      ..write(obj.ownerPublicId)
       ..writeByte(5)
       ..write(obj.assetPublicId)
       ..writeByte(6)

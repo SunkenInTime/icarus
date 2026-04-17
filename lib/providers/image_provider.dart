@@ -14,7 +14,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -166,8 +165,9 @@ class PlacedImageProvider extends Notifier<ImageState> {
       group: ActionGroup.image,
       objectDelta: ObjectHistoryDelta(
         after: ActionObjectState.image(placedImage),
-        afterImageSizes:
-            ref.read(imageWidgetSizeProvider.notifier).takeSnapshotForIds([imageID]),
+        afterImageSizes: ref
+            .read(imageWidgetSizeProvider.notifier)
+            .takeSnapshotForIds([imageID]),
       ),
     );
 
@@ -175,15 +175,11 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
     state = state.copyWith(images: [...state.images, placedImage]);
 
-    final pagePublicId = ref.read(strategyPageSessionProvider).activePageId;
-    if (strategySource == StrategySource.cloud &&
-        strategyId != null &&
-        pagePublicId != null) {
+    if (strategySource == StrategySource.cloud && strategyId != null) {
       await ref
           .read(cloudMediaUploadQueueProvider.notifier)
           .enqueuePlacedImageUpload(
             strategyPublicId: strategyId,
-            pagePublicId: pagePublicId,
             imagePublicId: placedImage.id,
             fileExtension: fileExtension,
             width: null,
@@ -485,11 +481,8 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   Future<void> saveSecureImage(
-    Uint8List imageBytes,
-    String imageID,
-    String fileExtenstion,
-    {required String? strategyId}
-  ) async {
+      Uint8List imageBytes, String imageID, String fileExtenstion,
+      {required String? strategyId}) async {
     if (strategyId == null) return;
     await writeImageBytes(
       imageBytes: imageBytes,

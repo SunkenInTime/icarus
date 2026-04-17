@@ -1,6 +1,5 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { deleteImageAssetsForPage } from "./images";
 import { assertStrategyRole, requireCurrentUser } from "./lib/auth";
 import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
 
@@ -275,8 +274,6 @@ export const deleteStrategy = mutation({
         await ctx.db.delete(lineup._id);
       }
 
-      await deleteImageAssetsForPage(ctx, page._id);
-
       await ctx.db.delete(page._id);
     }
 
@@ -302,6 +299,5 @@ export const deleteStrategy = mutation({
 });
 
 export { deleteStrategy as delete };
-
 
 
