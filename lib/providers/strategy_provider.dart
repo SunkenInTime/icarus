@@ -49,13 +49,14 @@ final strategyProvider =
 class StrategyProvider extends Notifier<StrategyState> {
   @override
   StrategyState build() {
+    _registerPersistenceTrackingListeners();
     ref.listen<AppAuthState>(authProvider, (previous, next) {
       final strategyId = state.strategyId;
       if (state.source != StrategySource.cloud || strategyId == null) {
         return;
       }
-      final becameReady = !(previous?.isConvexUserReady ?? false) &&
-          next.isConvexUserReady;
+      final becameReady =
+          !(previous?.isConvexUserReady ?? false) && next.isConvexUserReady;
       if (!becameReady) {
         return;
       }
@@ -79,6 +80,61 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   bool _saveInProgress = false;
   bool _pendingSave = false;
+  bool _cloudMutationSyncScheduled = false;
+  int _persistenceTrackingSuspensionCount = 0;
+
+  void _registerPersistenceTrackingListeners() {
+    _listenForPersistedEditorState(agentProvider);
+    _listenForPersistedEditorState(abilityProvider);
+    _listenForPersistedEditorState(
+      drawingProvider.select((drawing) => drawing.elements),
+    );
+    _listenForPersistedEditorState(textProvider);
+    _listenForPersistedEditorState(
+      placedImageProvider.select((images) => images.images),
+    );
+    _listenForPersistedEditorState(utilityProvider);
+    _listenForPersistedEditorState(
+      lineUpProvider.select((lineups) => lineups.lineUps),
+    );
+    _listenForPersistedEditorState(strategySettingsProvider);
+    _listenForPersistedEditorState(
+      mapProvider.select(
+        (map) => (
+          currentMap: map.currentMap,
+          isAttack: map.isAttack,
+        ),
+      ),
+    );
+  }
+
+  void _listenForPersistedEditorState<T>(ProviderListenable<T> provider) {
+    ref.listen<T>(provider, (_, __) {
+      if (!_shouldTrackPersistedEditorMutation()) {
+        return;
+      }
+      setUnsaved();
+    });
+  }
+
+  bool _shouldTrackPersistedEditorMutation() {
+    if (_persistenceTrackingSuspensionCount > 0) {
+      return false;
+    }
+    if (!state.isOpen || state.strategyId == null || state.source == null) {
+      return false;
+    }
+    return !ref.read(strategyPageSessionProvider).isApplyingPage;
+  }
+
+  T _withoutPersistenceTracking<T>(T Function() callback) {
+    _persistenceTrackingSuspensionCount += 1;
+    try {
+      return callback();
+    } finally {
+      _persistenceTrackingSuspensionCount -= 1;
+    }
+  }
 
   //Used For Images
   void setFromState(StrategyState newState) {
@@ -167,8 +223,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    final storageDirectory =
-        kIsWeb ? null : (await setStorageDirectory(snapshot.header.publicId)).path;
+    final storageDirectory = kIsWeb
+        ? null
+        : (await setStorageDirectory(snapshot.header.publicId)).path;
     state = state.copyWith(
       strategyId: snapshot.header.publicId,
       strategyName: snapshot.header.name,
@@ -218,6 +275,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> notifyCloudMutation({bool flushImmediately = false}) async {
+    _cloudMutationSyncScheduled = false;
     if (!_currentStrategyIsCloud()) {
       return;
     }
@@ -231,7 +289,23 @@ class StrategyProvider extends Notifier<StrategyState> {
         .flushCurrentPage(flushImmediately: flushImmediately);
   }
 
-  void setUnsaved() async {
+  void _scheduleCloudMutationSync() {
+    if (_cloudMutationSyncScheduled) {
+      return;
+    }
+    _cloudMutationSyncScheduled = true;
+    scheduleMicrotask(() async {
+      if (!_cloudMutationSyncScheduled) {
+        return;
+      }
+      await notifyCloudMutation(flushImmediately: false);
+    });
+  }
+
+  void setUnsaved() {
+    if (!state.isOpen || state.strategyId == null || state.source == null) {
+      return;
+    }
     if (ref.read(strategyPageSessionProvider).isApplyingPage) {
       return;
     }
@@ -241,7 +315,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         ..markDirty()
         ..setPendingCloudSync(true)
         ..setCloudSyncError(null);
-      unawaited(notifyCloudMutation(flushImmediately: false));
+      _scheduleCloudMutationSync();
       return;
     }
 
@@ -629,7 +703,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (newStrat == null) {
       return;
     }
-    ref.read(actionProvider.notifier).resetActionState();
+    _withoutPersistenceTracking(() {
+      ref.read(actionProvider.notifier).resetActionState();
+    });
 
     List<PlacedImage> pageImageData = [];
     for (final page in newStrat.pages) {

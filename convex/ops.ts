@@ -1,5 +1,6 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
+import type { Id } from "./_generated/dataModel";
 import { deleteImageAssetsForPage } from "./images";
 import { assertStrategyRole } from "./lib/auth";
 import {
@@ -82,6 +83,7 @@ export const applyBatch = mutation({
       let appliedRevision: number | undefined;
       let latestRevision: number | undefined;
       let latestPayload: string | undefined;
+      let eventPageId: Id<"pages"> | undefined;
 
       try {
         if (
@@ -137,6 +139,7 @@ export const applyBatch = mutation({
               if (existingPage.strategyId !== strategy._id) {
                 throw new Error("Page strategy mismatch");
               }
+              eventPageId = existingPage._id;
 
               await ctx.db.patch(existingPage._id, {
                 name:
@@ -157,7 +160,7 @@ export const applyBatch = mutation({
               });
               appliedRevision = existingPage.revision + 1;
             } else {
-              await ctx.db.insert("pages", {
+              const insertedPageId = await ctx.db.insert("pages", {
                 publicId: pagePublicId,
                 strategyId: strategy._id,
                 name: typeof payload.name === "string" ? payload.name : "Page",
@@ -171,6 +174,7 @@ export const applyBatch = mutation({
                 createdAt: now,
                 updatedAt: now,
               });
+              eventPageId = insertedPageId;
               appliedRevision = 1;
             }
 
@@ -184,6 +188,7 @@ export const applyBatch = mutation({
             if (page.strategyId !== strategy._id) {
               throw new Error("Page strategy mismatch");
             }
+            eventPageId = page._id;
 
             latestRevision = page.revision;
 
@@ -253,6 +258,7 @@ export const applyBatch = mutation({
             if (page.strategyId !== strategy._id) {
               throw new Error("Page strategy mismatch");
             }
+            eventPageId = page._id;
             const payload = parsePayload(op.payload);
             const elementType =
               typeof payload.elementType === "string"
@@ -302,6 +308,7 @@ export const applyBatch = mutation({
             if (element.strategyId !== strategy._id) {
               throw new Error("Element strategy mismatch");
             }
+            eventPageId = element.pageId;
 
             latestRevision = element.revision;
             latestPayload = element.payload;
@@ -337,6 +344,7 @@ export const applyBatch = mutation({
                   throw new Error("Page strategy mismatch");
                 }
                 patch.pageId = page._id;
+                eventPageId = page._id;
               }
 
               await ctx.db.patch(element._id, patch);
@@ -365,6 +373,7 @@ export const applyBatch = mutation({
             if (page.strategyId !== strategy._id) {
               throw new Error("Page strategy mismatch");
             }
+            eventPageId = page._id;
             const now = Date.now();
             const existingLineup = await ctx.db
               .query("lineups")
@@ -407,6 +416,7 @@ export const applyBatch = mutation({
             if (lineup.strategyId !== strategy._id) {
               throw new Error("Lineup strategy mismatch");
             }
+            eventPageId = lineup.pageId;
 
             latestRevision = lineup.revision;
             latestPayload = lineup.payload;
@@ -442,6 +452,7 @@ export const applyBatch = mutation({
                   throw new Error("Page strategy mismatch");
                 }
                 patch.pageId = page._id;
+                eventPageId = page._id;
               }
               await ctx.db.patch(lineup._id, patch);
               appliedRevision = lineup.revision + 1;
@@ -468,7 +479,7 @@ export const applyBatch = mutation({
 
       await ctx.db.insert("operationEvents", {
         strategyId: strategy._id,
-        pageId: undefined,
+        pageId: eventPageId,
         clientId: args.clientId,
         opId: op.opId,
         opType: `${op.entityType}.${op.kind}`,
@@ -502,5 +513,4 @@ export const applyBatch = mutation({
     };
   },
 });
-
 
