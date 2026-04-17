@@ -245,12 +245,10 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   @override
   Widget build(BuildContext context) {
     final currentStrategy = ref.watch(strategyProvider);
-    assert(
-      currentStrategy.strategyId != null,
-      'StrategyQuickSwitcher requires an active strategy with a non-null '
-      'strategyId.',
-    );
-    final currentStrategyId = currentStrategy.strategyId!;
+    final currentStrategyId = currentStrategy.strategyId;
+    if (currentStrategyId == null) {
+      return const SizedBox.shrink();
+    }
     final strategyName = currentStrategy.strategyName ?? 'Untitled Strategy';
     final strategiesBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 

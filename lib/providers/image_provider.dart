@@ -15,7 +15,6 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -134,15 +133,20 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
   Future<void> addImage(
       {required Uint8List imageBytes,
+      required String? strategyId,
+      required StrategySource? strategySource,
       required String fileExtension,
       Offset? position,
       double? aspectRatio,
       int? tagColorValue}) async {
     final imageID = const Uuid().v4();
 
-    await ref
-        .read(placedImageProvider.notifier)
-        .saveSecureImage(imageBytes, imageID, fileExtension);
+    await saveSecureImage(
+      imageBytes,
+      imageID,
+      fileExtension,
+      strategyId: strategyId,
+    );
 
     final effectiveAspectRatio =
         aspectRatio ?? await getImageAspectRatio(imageBytes);
@@ -171,15 +175,14 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
     state = state.copyWith(images: [...state.images, placedImage]);
 
-    final strategyState = ref.read(strategyProvider);
     final pagePublicId = ref.read(strategyPageSessionProvider).activePageId;
-    if (strategyState.source == StrategySource.cloud &&
-        strategyState.strategyId != null &&
+    if (strategySource == StrategySource.cloud &&
+        strategyId != null &&
         pagePublicId != null) {
       await ref
           .read(cloudMediaUploadQueueProvider.notifier)
           .enqueuePlacedImageUpload(
-            strategyPublicId: strategyState.strategyId!,
+            strategyPublicId: strategyId,
             pagePublicId: pagePublicId,
             imagePublicId: placedImage.id,
             fileExtension: fileExtension,
@@ -485,12 +488,12 @@ class PlacedImageProvider extends Notifier<ImageState> {
     Uint8List imageBytes,
     String imageID,
     String fileExtenstion,
+    {required String? strategyId}
   ) async {
-    final strategyID = ref.read(strategyProvider).strategyId;
-    if (strategyID == null) return;
+    if (strategyId == null) return;
     await writeImageBytes(
       imageBytes: imageBytes,
-      strategyID: strategyID,
+      strategyID: strategyId,
       imageID: imageID,
       fileExtension: fileExtenstion,
     );

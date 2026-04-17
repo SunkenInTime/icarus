@@ -176,13 +176,19 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
               final String fileExtension = path.extension(imageFile.path);
               final Uint8List imageBytes = await imageFile.readAsBytes();
               final id = const Uuid().v4();
+              final strategyId = ref.read(strategyProvider).strategyId;
 
               final SimpleImageData imageData =
                   SimpleImageData(id: id, fileExtension: fileExtension);
 
               await ref
                   .read(placedImageProvider.notifier)
-                  .saveSecureImage(imageBytes, id, fileExtension);
+                  .saveSecureImage(
+                    imageBytes,
+                    id,
+                    fileExtension,
+                    strategyId: strategyId,
+                  );
 
               setState(() {
                 _imagePaths.add(imageData);
@@ -211,12 +217,18 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
               }
 
               final id = const Uuid().v4();
+              final strategyId = ref.read(strategyProvider).strategyId;
               final SimpleImageData imageData =
                   SimpleImageData(id: id, fileExtension: fileExtension);
 
               await ref
                   .read(placedImageProvider.notifier)
-                  .saveSecureImage(bytes, id, fileExtension);
+                  .saveSecureImage(
+                    bytes,
+                    id,
+                    fileExtension,
+                    strategyId: strategyId,
+                  );
 
               setState(() {
                 _imagePaths.add(imageData);

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 
 class ImageDropTarget extends ConsumerStatefulWidget {
   const ImageDropTarget({super.key, required this.child});
@@ -47,8 +48,11 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
           if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp']
               .contains(rawExtension)) {
             final fileExtension = '.$rawExtension';
+            final strategyState = ref.read(strategyProvider);
             await ref.read(placedImageProvider.notifier).addImage(
                   imageBytes: await file.readAsBytes(),
+                  strategyId: strategyState.strategyId,
+                  strategySource: strategyState.source,
                   fileExtension: fileExtension,
                 );
           }
