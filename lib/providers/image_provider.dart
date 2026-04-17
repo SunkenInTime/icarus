@@ -1,19 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
+import 'dart:async' show Completer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/providers/image_widget_size_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:image/image.dart' as img;
-import 'dart:ui' as ui;
-import 'dart:async' show Completer;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -131,15 +132,20 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
   Future<void> addImage(
       {required Uint8List imageBytes,
+      required String? strategyId,
+      required StrategySource? strategySource,
       required String fileExtension,
       Offset? position,
       double? aspectRatio,
       int? tagColorValue}) async {
     final imageID = const Uuid().v4();
 
-    await ref
-        .read(placedImageProvider.notifier)
-        .saveSecureImage(imageBytes, imageID, fileExtension);
+    await saveSecureImage(
+      imageBytes,
+      imageID,
+      fileExtension,
+      strategyId: strategyId,
+    );
 
     final effectiveAspectRatio =
         aspectRatio ?? await getImageAspectRatio(imageBytes);
@@ -159,14 +165,27 @@ class PlacedImageProvider extends Notifier<ImageState> {
       group: ActionGroup.image,
       objectDelta: ObjectHistoryDelta(
         after: ActionObjectState.image(placedImage),
-        afterImageSizes:
-            ref.read(imageWidgetSizeProvider.notifier).takeSnapshotForIds([imageID]),
+        afterImageSizes: ref
+            .read(imageWidgetSizeProvider.notifier)
+            .takeSnapshotForIds([imageID]),
       ),
     );
 
     ref.read(actionProvider.notifier).addAction(action);
 
     state = state.copyWith(images: [...state.images, placedImage]);
+
+    if (strategySource == StrategySource.cloud && strategyId != null) {
+      await ref
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .enqueuePlacedImageUpload(
+            strategyPublicId: strategyId,
+            imagePublicId: placedImage.id,
+            fileExtension: fileExtension,
+            width: null,
+            height: null,
+          );
+    }
   }
 
   void removeImageAsAction(String id) {
@@ -372,6 +391,41 @@ class PlacedImageProvider extends Notifier<ImageState> {
     return imagesDirectory;
   }
 
+  static String buildImageFilePath(
+    String imagesDirectoryPath,
+    String imageID,
+    String fileExtension,
+  ) {
+    return path.join(imagesDirectoryPath, '$imageID$fileExtension');
+  }
+
+  static Future<File> getImageFile({
+    required String strategyID,
+    required String imageID,
+    required String fileExtension,
+  }) async {
+    final imageFolder = await getImageFolder(strategyID);
+    return File(buildImageFilePath(imageFolder.path, imageID, fileExtension));
+  }
+
+  static Future<void> writeImageBytes({
+    required Uint8List imageBytes,
+    required String strategyID,
+    required String imageID,
+    required String fileExtension,
+  }) async {
+    if (kIsWeb) return;
+    final file = await getImageFile(
+      strategyID: strategyID,
+      imageID: imageID,
+      fileExtension: fileExtension,
+    );
+    if (!await file.parent.exists()) {
+      await file.parent.create(recursive: true);
+    }
+    await file.writeAsBytes(imageBytes);
+  }
+
   Future<String> toJson(String strategyID) async {
     // Asynchronously convert each image using the custom serializer.
     final List<Map<String, dynamic>> jsonList =
@@ -427,39 +481,15 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   Future<void> saveSecureImage(
-    Uint8List imageBytes,
-    String imageID,
-    String fileExtenstion,
-  ) async {
-    final strategyID = ref.read(strategyProvider).strategyId;
-    // Get the system's application support directory.
-    if (kIsWeb) return;
-    final directory = await getApplicationSupportDirectory();
-
-    // Create a custom directory inside the application support directory.
-
-    final customDirectory = Directory(path.join(directory.path, strategyID));
-
-    if (!await customDirectory.exists()) {
-      await customDirectory.create(recursive: true);
-    }
-
-    // Now create the full file path.
-    final filePath = path.join(
-      customDirectory.path,
-      'images',
-      '$imageID$fileExtenstion',
+      Uint8List imageBytes, String imageID, String fileExtenstion,
+      {required String? strategyId}) async {
+    if (strategyId == null) return;
+    await writeImageBytes(
+      imageBytes: imageBytes,
+      strategyID: strategyId,
+      imageID: imageID,
+      fileExtension: fileExtenstion,
     );
-
-    // Ensure the images subdirectory exists.
-    final imagesDir = Directory(path.join(customDirectory.path, 'images'));
-    if (!await imagesDir.exists()) {
-      await imagesDir.create(recursive: true);
-    }
-
-    // Write the file.
-    final file = File(filePath);
-    await file.writeAsBytes(imageBytes);
   }
 
   static List<PlacedImage> deepCopyWith(List<PlacedImage> images) {

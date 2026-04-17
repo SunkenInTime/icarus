@@ -290,18 +290,52 @@ class RemoteLineup {
   }
 }
 
+class RemoteImageAsset {
+  const RemoteImageAsset({
+    required this.publicId,
+    required this.fileExtension,
+    required this.width,
+    required this.height,
+    required this.url,
+    required this.legacyStoragePath,
+    this.mimeType,
+  });
+
+  final String publicId;
+  final String fileExtension;
+  final String? mimeType;
+  final int? width;
+  final int? height;
+  final String? url;
+  final String? legacyStoragePath;
+
+  factory RemoteImageAsset.fromJson(Map<String, dynamic> json) {
+    return RemoteImageAsset(
+      publicId: json['publicId'] as String,
+      fileExtension: json['fileExtension'] as String? ?? '',
+      mimeType: json['mimeType'] as String?,
+      width: (json['width'] as num?)?.toInt(),
+      height: (json['height'] as num?)?.toInt(),
+      url: json['url'] as String?,
+      legacyStoragePath: json['legacyStoragePath'] as String?,
+    );
+  }
+}
+
 class RemoteStrategySnapshot {
   const RemoteStrategySnapshot({
     required this.header,
     required this.pages,
     required this.elementsByPage,
     required this.lineupsByPage,
+    required this.assetsById,
   });
 
   final RemoteStrategyHeader header;
   final List<RemotePage> pages;
   final Map<String, List<RemoteElement>> elementsByPage;
   final Map<String, List<RemoteLineup>> lineupsByPage;
+  final Map<String, RemoteImageAsset> assetsById;
 }
 
 class CloudStrategySummary {

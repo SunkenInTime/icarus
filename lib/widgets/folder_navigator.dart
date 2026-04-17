@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:desktop_updater/desktop_updater.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -10,6 +10,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -47,6 +48,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   final ShadPopoverController _importExportPopoverController =
       ShadPopoverController();
 
+  bool get _isWindowsDesktop =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
   @override
   void dispose() {
     _importExportPopoverController.dispose();
@@ -72,7 +76,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
   void _warnWebView() async {
     if (kIsWeb) return;
-    if (!Platform.isWindows) return;
+    if (!_isWindowsDesktop) return;
     await warmUpWebViewEnvironment();
     if (!mounted) return;
     if (isWebViewInitialized) return;
@@ -194,7 +198,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         }
 
         final bool isDirectWindowsInstall =
-            !kIsWeb && Platform.isWindows && !result.isSupported;
+            _isWindowsDesktop && !result.isSupported;
         if (isDirectWindowsInstall && _desktopUpdaterController == null) {
           _desktopUpdaterController = WindowsDesktopUpdateController(
             appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
@@ -236,7 +240,14 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
     final currentFolderId = ref.watch(folderProvider);
     final currentFolder = currentFolderId != null
-        ? ref.read(folderProvider.notifier).findLocalFolderByID(currentFolderId)
+        ? isCloudWorkspace
+            ? ref.read(folderProvider.notifier).findCloudFolderByID(
+                  currentFolderId,
+                  ref.watch(cloudAllFoldersProvider).valueOrNull ?? const [],
+                )
+            : ref
+                .read(folderProvider.notifier)
+                .findLocalFolderByID(currentFolderId)
         : null;
     final authState = ref.watch(authProvider);
     Future<void> navigateWithLoading(
@@ -307,8 +318,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                   ),
                 );
               },
-                    ),
-                  );
+            ),
+          );
         } else {
           await navigateWithLoading(context, strategyId);
         }
@@ -352,7 +363,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                       ],
                       onChanged: (value) {
                         if (value == null) return;
-                        ref.read(libraryWorkspaceProvider.notifier).select(value);
+                        ref
+                            .read(libraryWorkspaceProvider.notifier)
+                            .select(value);
                       },
                     ),
                   ShadButton.secondary(
@@ -360,7 +373,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                         ? null
                         : () {
                             if (authState.isAuthenticated) {
-                              unawaited(ref.read(authProvider.notifier).signOut());
+                              unawaited(
+                                  ref.read(authProvider.notifier).signOut());
                             } else {
                               showDialog<void>(
                                 context: context,
@@ -427,7 +441,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                     },
                     child: ShadButton.secondary(
                       key: _importExportButtonKey,
-                      onPressed: isCloudWorkspace ? null : _toggleImportExportPopover,
+                      onPressed:
+                          isCloudWorkspace ? null : _toggleImportExportPopover,
                       leading: const Icon(Icons.import_export),
                       trailing: const Icon(Icons.keyboard_arrow_down),
                       child: const Text('Import / Export'),
@@ -449,7 +464,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                     onPressed: showCreateDialog,
                     leading: const Icon(Icons.add),
                     child: Text(
-                      isCloudWorkspace ? 'Create Cloud Strategy' : 'Create Strategy',
+                      isCloudWorkspace
+                          ? 'Create Cloud Strategy'
+                          : 'Create Strategy',
                     ),
                   ),
                 ],
@@ -480,8 +497,7 @@ class StrategyItem extends GridItem {
   final String strategyId;
   final StrategyData? strategy;
 
-  StrategyItem.local(this.strategy)
-      : strategyId = strategy!.id;
+  StrategyItem.local(this.strategy) : strategyId = strategy!.id;
 
   StrategyItem.cloud(this.strategyId) : strategy = null;
 }

@@ -1,46 +1,97 @@
+import type { Doc, Id } from "./_generated/dataModel";
+import type { QueryCtx, MutationCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { requireCurrentUser } from "./lib/auth";
+import {
+  assertFolderRole,
+  getEffectiveFolderRoleForUser,
+  requireCurrentUser,
+} from "./lib/auth";
 import { getFolderByPublicId } from "./lib/entities";
+
+type FolderScope = "owned" | "shared" | "all";
+type AnyCtx = QueryCtx | MutationCtx;
+
+function matchesScope(
+  ownerId: string,
+  userId: string,
+  scope: FolderScope,
+): boolean {
+  if (scope === "all") {
+    return true;
+  }
+  if (scope === "owned") {
+    return ownerId === userId;
+  }
+  return ownerId !== userId;
+}
+
+async function listAccessibleFoldersForScope(
+  ctx: AnyCtx,
+  userId: Id<"users">,
+  scope: FolderScope,
+) : Promise<Array<{ folder: Doc<"folders">; role: "owner" | "editor" | "viewer" }>> {
+  const folders = await ctx.db.query("folders").collect();
+  const results: Array<{
+    folder: Doc<"folders">;
+    role: "owner" | "editor" | "viewer";
+  }> = [];
+
+  for (const folder of folders) {
+    const role = await getEffectiveFolderRoleForUser(ctx, folder, userId);
+    if (role === null) {
+      continue;
+    }
+    if (!matchesScope(folder.ownerId, userId, scope)) {
+      continue;
+    }
+    results.push({ folder, role });
+  }
+
+  return results;
+}
+
+const folderScopeValidator = v.optional(
+  v.union(v.literal("owned"), v.literal("shared"), v.literal("all")),
+);
 
 export const listForParent = query({
   args: {
     parentFolderPublicId: v.optional(v.string()),
+    scope: folderScopeValidator,
   },
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
+    const scope = args.scope ?? "owned";
 
-    let parentFolderId;
+    let parentFolderId: Id<"folders"> | undefined;
     if (args.parentFolderPublicId !== undefined) {
       const parent = await getFolderByPublicId(ctx, args.parentFolderPublicId);
-      if (parent.ownerId !== user._id) {
-        throw new Error("Forbidden");
-      }
+      await assertFolderRole(ctx, parent, "viewer");
       parentFolderId = parent._id;
     }
 
-    const folders = await ctx.db
-      .query("folders")
-      .withIndex("by_ownerId", (q) => q.eq("ownerId", user._id))
-      .collect();
+    const accessible = await listAccessibleFoldersForScope(ctx, user._id, scope);
+    const folderLookup = new Map(accessible.map(({ folder }) => [folder._id, folder]));
 
-    return folders
-      .filter((f) => f.parentFolderId === parentFolderId)
-      .sort((a, b) => a.createdAt - b.createdAt)
-      .map((f) => ({
-        publicId: f.publicId,
-        name: f.name,
-        iconCodePoint: f.iconCodePoint ?? null,
-        iconFontFamily: f.iconFontFamily ?? null,
-        iconFontPackage: f.iconFontPackage ?? null,
-        color: f.color ?? null,
-        customColorValue: f.customColorValue ?? null,
+    return accessible
+      .filter(({ folder }) => folder.parentFolderId === parentFolderId)
+      .sort((a, b) => a.folder.createdAt - b.folder.createdAt)
+      .map(({ folder, role }) => ({
+        publicId: folder.publicId,
+        name: folder.name,
+        iconCodePoint: folder.iconCodePoint ?? null,
+        iconFontFamily: folder.iconFontFamily ?? null,
+        iconFontPackage: folder.iconFontPackage ?? null,
+        color: folder.color ?? null,
+        customColorValue: folder.customColorValue ?? null,
         parentFolderPublicId:
-          f.parentFolderId === undefined
+          folder.parentFolderId === undefined
             ? null
-            : folders.find((p) => p._id === f.parentFolderId)?.publicId ?? null,
-        createdAt: f.createdAt,
-        updatedAt: f.updatedAt,
+            : folderLookup.get(folder.parentFolderId)?.publicId ?? null,
+        createdAt: folder.createdAt,
+        updatedAt: folder.updatedAt,
+        role,
       }));
   },
 });
@@ -60,10 +111,11 @@ export const create = mutation({
     const user = await requireCurrentUser(ctx);
     const now = Date.now();
 
-    let parentFolderId;
+    let parentFolderId: Id<"folders"> | undefined;
     if (args.parentFolderPublicId !== undefined) {
       const parent = await getFolderByPublicId(ctx, args.parentFolderPublicId);
-      if (parent.ownerId !== user._id) {
+      const { role } = await assertFolderRole(ctx, parent, "owner");
+      if (role !== "owner") {
         throw new Error("Forbidden");
       }
       parentFolderId = parent._id;
@@ -113,10 +165,10 @@ export const update = mutation({
     clearCustomColorValue: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const user = await requireCurrentUser(ctx);
     const folder = await getFolderByPublicId(ctx, args.folderPublicId);
+    const { role } = await assertFolderRole(ctx, folder, "owner");
 
-    if (folder.ownerId !== user._id) {
+    if (role !== "owner") {
       throw new Error("Forbidden");
     }
 
@@ -163,30 +215,32 @@ export const update = mutation({
 });
 
 export const listAll = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    scope: folderScopeValidator,
+  },
+  handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
-    const folders = await ctx.db
-      .query("folders")
-      .withIndex("by_ownerId", (q) => q.eq("ownerId", user._id))
-      .collect();
+    const scope = args.scope ?? "all";
+    const accessible = await listAccessibleFoldersForScope(ctx, user._id, scope);
+    const folderLookup = new Map(accessible.map(({ folder }) => [folder._id, folder]));
 
-    return folders
-      .sort((a, b) => a.createdAt - b.createdAt)
-      .map((f) => ({
-        publicId: f.publicId,
-        name: f.name,
-        iconCodePoint: f.iconCodePoint ?? null,
-        iconFontFamily: f.iconFontFamily ?? null,
-        iconFontPackage: f.iconFontPackage ?? null,
-        color: f.color ?? null,
-        customColorValue: f.customColorValue ?? null,
+    return accessible
+      .sort((a, b) => a.folder.createdAt - b.folder.createdAt)
+      .map(({ folder, role }) => ({
+        publicId: folder.publicId,
+        name: folder.name,
+        iconCodePoint: folder.iconCodePoint ?? null,
+        iconFontFamily: folder.iconFontFamily ?? null,
+        iconFontPackage: folder.iconFontPackage ?? null,
+        color: folder.color ?? null,
+        customColorValue: folder.customColorValue ?? null,
         parentFolderPublicId:
-          f.parentFolderId === undefined
+          folder.parentFolderId === undefined
             ? null
-            : folders.find((p) => p._id === f.parentFolderId)?.publicId ?? null,
-        createdAt: f.createdAt,
-        updatedAt: f.updatedAt,
+            : folderLookup.get(folder.parentFolderId)?.publicId ?? null,
+        createdAt: folder.createdAt,
+        updatedAt: folder.updatedAt,
+        role,
       }));
   },
 });
@@ -197,17 +251,18 @@ export const move = mutation({
     parentFolderPublicId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await requireCurrentUser(ctx);
     const folder = await getFolderByPublicId(ctx, args.folderPublicId);
+    const { role } = await assertFolderRole(ctx, folder, "owner");
 
-    if (folder.ownerId !== user._id) {
+    if (role !== "owner") {
       throw new Error("Forbidden");
     }
 
-    let parentFolderId;
+    let parentFolderId: Id<"folders"> | undefined;
     if (args.parentFolderPublicId !== undefined) {
       const parent = await getFolderByPublicId(ctx, args.parentFolderPublicId);
-      if (parent.ownerId !== user._id) {
+      const parentAccess = await assertFolderRole(ctx, parent, "owner");
+      if (parentAccess.role !== "owner" || parent.ownerId !== folder.ownerId) {
         throw new Error("Forbidden");
       }
       parentFolderId = parent._id;
@@ -227,10 +282,10 @@ export const deleteFolder = mutation({
     folderPublicId: v.string(),
   },
   handler: async (ctx, args) => {
-    const user = await requireCurrentUser(ctx);
     const folder = await getFolderByPublicId(ctx, args.folderPublicId);
+    const { role } = await assertFolderRole(ctx, folder, "owner");
 
-    if (folder.ownerId !== user._id) {
+    if (role !== "owner") {
       throw new Error("Forbidden");
     }
 
@@ -248,6 +303,22 @@ export const deleteFolder = mutation({
       .collect();
     if (strategies.length > 0) {
       throw new Error("Folder has strategies");
+    }
+
+    const collaborators = await ctx.db
+      .query("folderCollaborators")
+      .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
+      .collect();
+    for (const collaborator of collaborators) {
+      await ctx.db.delete(collaborator._id);
+    }
+
+    const links = await ctx.db
+      .query("shareLinks")
+      .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
+      .collect();
+    for (const link of links) {
+      await ctx.db.delete(link._id);
     }
 
     await ctx.db.delete(folder._id);

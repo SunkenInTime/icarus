@@ -109,20 +109,17 @@ export default defineSchema({
     .index("by_strategyId", ["strategyId"]),
   imageAssets: defineTable({
     publicId: v.string(),
-    strategyId: v.id("strategies"),
-    pageId: v.id("pages"),
-    elementId: v.optional(v.id("elements")),
-    storagePath: v.string(),
-    mimeType: v.string(),
+    storageId: v.optional(v.id("_storage")),
+    fileExtension: v.optional(v.string()),
+    mimeType: v.optional(v.string()),
     width: v.optional(v.number()),
     height: v.optional(v.number()),
-    createdByUserId: v.id("users"),
-    createdAt: v.number(),
-    updatedAt: v.number(),
+    createdAt: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
+    // Legacy rows may still have a storagePath that can help infer the extension.
+    storagePath: v.optional(v.string()),
   })
-    .index("by_publicId", ["publicId"])
-    .index("by_strategyId", ["strategyId"])
-    .index("by_pageId", ["pageId"]),
+    .index("by_publicId", ["publicId"]),
   operationEvents: defineTable({
     strategyId: v.id("strategies"),
     pageId: v.optional(v.id("pages")),
@@ -140,5 +137,4 @@ export default defineSchema({
     .index("by_strategyId", ["strategyId"])
     .index("by_strategyId_clientId_opId", ["strategyId", "clientId", "opId"]),
 });
-
 

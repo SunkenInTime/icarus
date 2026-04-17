@@ -33,6 +33,7 @@ import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -45,9 +46,51 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 final strategyProvider =
     NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
 
+void _logStrategyProviderDebug({
+  required String runId,
+  required String hypothesisId,
+  required String location,
+  required String message,
+  Map<String, Object?> data = const {},
+}) {
+  unawaited(
+    File(r'E:\Projects\icarus-cloud\debug-16ee23.log').writeAsString(
+      '${jsonEncode({
+        'sessionId': '16ee23',
+        'runId': runId,
+        'hypothesisId': hypothesisId,
+        'location': location,
+        'message': message,
+        'data': data,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      })}\n',
+      mode: FileMode.append,
+      flush: true,
+    ),
+  );
+}
+
 class StrategyProvider extends Notifier<StrategyState> {
   @override
   StrategyState build() {
+    _registerPersistenceTrackingListeners();
+    ref.listen<AppAuthState>(authProvider, (previous, next) {
+      final strategyId = state.strategyId;
+      if (state.source != StrategySource.cloud || strategyId == null) {
+        return;
+      }
+      final becameReady =
+          !(previous?.isConvexUserReady ?? false) && next.isConvexUserReady;
+      if (!becameReady) {
+        return;
+      }
+      unawaited(
+        ref.read(cloudMediaUploadQueueProvider.notifier).retryNow(
+              ignoreBackoff: true,
+            ),
+      );
+    });
+
     return const StrategyState(
       strategyId: null,
       strategyName: null,
@@ -61,6 +104,67 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   bool _saveInProgress = false;
   bool _pendingSave = false;
+  bool _cloudMutationSyncScheduled = false;
+  bool _cloudStrategyMutationSyncScheduled = false;
+  int _persistenceTrackingSuspensionCount = 0;
+
+  void _registerPersistenceTrackingListeners() {
+    _listenForPageBackedState(agentProvider);
+    _listenForPageBackedState(abilityProvider);
+    _listenForPageBackedState(
+      drawingProvider.select((drawing) => drawing.elements),
+    );
+    _listenForPageBackedState(textProvider);
+    _listenForPageBackedState(
+      placedImageProvider.select((images) => images.images),
+    );
+    _listenForPageBackedState(utilityProvider);
+    _listenForPageBackedState(
+      lineUpProvider.select((lineups) => lineups.lineUps),
+    );
+    _listenForPageBackedState(strategySettingsProvider);
+    _listenForPageBackedState(mapProvider.select((map) => map.isAttack));
+
+    _listenForStrategyBackedState(mapProvider.select((map) => map.currentMap));
+    _listenForStrategyBackedState(strategyThemeProvider);
+  }
+
+  void _listenForPageBackedState<T>(ProviderListenable<T> provider) {
+    ref.listen<T>(provider, (_, __) {
+      if (!_shouldTrackPersistedEditorMutation()) {
+        return;
+      }
+      setUnsaved();
+    });
+  }
+
+  void _listenForStrategyBackedState<T>(ProviderListenable<T> provider) {
+    ref.listen<T>(provider, (_, __) {
+      if (!_shouldTrackPersistedEditorMutation()) {
+        return;
+      }
+      _markStrategyBackedStateUnsaved();
+    });
+  }
+
+  bool _shouldTrackPersistedEditorMutation() {
+    if (_persistenceTrackingSuspensionCount > 0) {
+      return false;
+    }
+    if (!state.isOpen || state.strategyId == null || state.source == null) {
+      return false;
+    }
+    return !ref.read(strategyPageSessionProvider).isApplyingPage;
+  }
+
+  T _withoutPersistenceTracking<T>(T Function() callback) {
+    _persistenceTrackingSuspensionCount += 1;
+    try {
+      return callback();
+    } finally {
+      _persistenceTrackingSuspensionCount -= 1;
+    }
+  }
 
   //Used For Images
   void setFromState(StrategyState newState) {
@@ -149,11 +253,14 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
+    final storageDirectory = kIsWeb
+        ? null
+        : (await setStorageDirectory(snapshot.header.publicId)).path;
     state = state.copyWith(
       strategyId: snapshot.header.publicId,
       strategyName: snapshot.header.name,
       source: StrategySource.cloud,
-      storageDirectory: null,
+      storageDirectory: storageDirectory,
       isOpen: true,
     );
 
@@ -162,6 +269,11 @@ class StrategyProvider extends Notifier<StrategyState> {
           source: StrategySource.cloud,
           selectFirstPageIfNeeded: true,
         );
+    unawaited(
+      ref.read(cloudMediaUploadQueueProvider.notifier).setActiveStrategy(
+            snapshot.header.publicId,
+          ),
+    );
   }
 
   Future<void> switchPage(String pageID) async {
@@ -193,6 +305,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> notifyCloudMutation({bool flushImmediately = false}) async {
+    _cloudMutationSyncScheduled = false;
     if (!_currentStrategyIsCloud()) {
       return;
     }
@@ -206,7 +319,60 @@ class StrategyProvider extends Notifier<StrategyState> {
         .flushCurrentPage(flushImmediately: flushImmediately);
   }
 
-  void setUnsaved() async {
+  Future<void> notifyCloudStrategyMutation({
+    bool flushImmediately = false,
+  }) async {
+    _cloudStrategyMutationSyncScheduled = false;
+    if (!_currentStrategyIsCloud()) {
+      return;
+    }
+
+    ref.read(strategySaveStateProvider.notifier)
+      ..markDirty()
+      ..setPendingCloudSync(true)
+      ..setCloudSyncError(null);
+
+    final desiredOp = _buildDesiredStrategySyncOp();
+    ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
+          entityKey: 'strategy',
+          desiredOp: desiredOp,
+          flushImmediately: flushImmediately,
+        );
+    if (flushImmediately) {
+      await ref.read(strategyOpQueueProvider.notifier).flushNow();
+    }
+  }
+
+  void _scheduleCloudMutationSync() {
+    if (_cloudMutationSyncScheduled) {
+      return;
+    }
+    _cloudMutationSyncScheduled = true;
+    scheduleMicrotask(() async {
+      if (!_cloudMutationSyncScheduled) {
+        return;
+      }
+      await notifyCloudMutation(flushImmediately: false);
+    });
+  }
+
+  void _scheduleCloudStrategySync() {
+    if (_cloudStrategyMutationSyncScheduled) {
+      return;
+    }
+    _cloudStrategyMutationSyncScheduled = true;
+    scheduleMicrotask(() async {
+      if (!_cloudStrategyMutationSyncScheduled) {
+        return;
+      }
+      await notifyCloudStrategyMutation(flushImmediately: false);
+    });
+  }
+
+  void _markStrategyBackedStateUnsaved() {
+    if (!state.isOpen || state.strategyId == null || state.source == null) {
+      return;
+    }
     if (ref.read(strategyPageSessionProvider).isApplyingPage) {
       return;
     }
@@ -216,7 +382,69 @@ class StrategyProvider extends Notifier<StrategyState> {
         ..markDirty()
         ..setPendingCloudSync(true)
         ..setCloudSyncError(null);
-      unawaited(notifyCloudMutation(flushImmediately: false));
+      _scheduleCloudStrategySync();
+      return;
+    }
+
+    ref.read(strategySaveStateProvider.notifier).markDirty();
+    refreshAutosaveScheduling();
+  }
+
+  StrategyOp? _buildDesiredStrategySyncOp() {
+    final strategyId = state.strategyId;
+    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+    if (strategyId == null ||
+        snapshot == null ||
+        snapshot.header.publicId != strategyId) {
+      return null;
+    }
+
+    final strategyTheme = ref.read(strategyThemeProvider);
+    final localMapData = Maps.mapNames[ref.read(mapProvider).currentMap] ??
+        snapshot.header.mapData;
+    final localThemeProfileId = strategyTheme.profileId;
+    final localThemeOverridePalette = strategyTheme.overridePalette == null
+        ? null
+        : jsonEncode(strategyTheme.overridePalette!.toJson());
+
+    final matchesRemote = snapshot.header.mapData == localMapData &&
+        snapshot.header.themeProfileId == localThemeProfileId &&
+        snapshot.header.themeOverridePalette == localThemeOverridePalette;
+    if (matchesRemote) {
+      return null;
+    }
+
+    return StrategyOp(
+      opId: const Uuid().v4(),
+      kind: StrategyOpKind.patch,
+      entityType: StrategyOpEntityType.strategy,
+      entityPublicId: strategyId,
+      payload: jsonEncode({
+        'mapData': localMapData,
+        if (localThemeProfileId != null) 'themeProfileId': localThemeProfileId,
+        if (localThemeProfileId == null) 'clearThemeProfileId': true,
+        if (localThemeOverridePalette != null)
+          'themeOverridePalette': localThemeOverridePalette,
+        if (localThemeOverridePalette == null)
+          'clearThemeOverridePalette': true,
+      }),
+    );
+  }
+
+  void setUnsaved() {
+    if (!state.isOpen || state.strategyId == null || state.source == null) {
+      return;
+    }
+    if (ref.read(strategyPageSessionProvider).isApplyingPage) {
+      return;
+    }
+
+    if (_currentStrategyIsCloud()) {
+      ref.read(strategySaveStateProvider.notifier)
+        ..markDirty()
+        ..setPendingCloudSync(true)
+        ..setCloudSyncError(null);
+      _scheduleCloudMutationSync();
       return;
     }
 
@@ -246,6 +474,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       ref.read(autoSaveProvider.notifier).ping(); // UI: Saving...
       ref.read(strategySaveStateProvider.notifier).markSaving(true);
       if (_currentStrategyIsCloud()) {
+        await notifyCloudStrategyMutation(flushImmediately: true);
         await ref
             .read(strategyPageSessionProvider.notifier)
             .flushCurrentPage(flushImmediately: true);
@@ -283,6 +512,19 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> clearCurrentStrategy() async {
+    // #region agent log
+    _logStrategyProviderDebug(
+      runId: 'pre-fix',
+      hypothesisId: 'H2',
+      location: 'strategy_provider.dart:311',
+      message: 'clearCurrentStrategy start',
+      data: {
+        'previousStrategyId': state.strategyId,
+        'previousSource': state.source?.name,
+        'previousIsOpen': state.isOpen,
+      },
+    );
+    // #endregion
     cancelPendingSave();
     ref.read(strategyThemeProvider.notifier).fromStrategy();
     ref.read(strategySaveStateProvider.notifier).reset();
@@ -294,7 +536,23 @@ class StrategyProvider extends Notifier<StrategyState> {
       storageDirectory: state.storageDirectory,
       isOpen: false,
     );
+    // #region agent log
+    _logStrategyProviderDebug(
+      runId: 'pre-fix',
+      hypothesisId: 'H2',
+      location: 'strategy_provider.dart:323',
+      message: 'clearCurrentStrategy state cleared',
+      data: {
+        'strategyId': state.strategyId,
+        'source': state.source?.name,
+        'isOpen': state.isOpen,
+      },
+    );
+    // #endregion
     ref.read(remoteStrategySnapshotProvider.notifier).clear();
+    unawaited(
+      ref.read(cloudMediaUploadQueueProvider.notifier).setActiveStrategy(null),
+    );
   }
 
   // Switch active page: flush old page first, then hydrate new
@@ -601,7 +859,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (newStrat == null) {
       return;
     }
-    ref.read(actionProvider.notifier).resetActionState();
+    _withoutPersistenceTracking(() {
+      ref.read(actionProvider.notifier).resetActionState();
+    });
 
     List<PlacedImage> pageImageData = [];
     for (final page in newStrat.pages) {
@@ -727,17 +987,14 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   void setThemeProfileForCurrentStrategy(String profileId) {
     ref.read(strategyThemeProvider.notifier).setProfile(profileId);
-    setUnsaved();
   }
 
   void setThemeOverrideForCurrentStrategy(MapThemePalette palette) {
     ref.read(strategyThemeProvider.notifier).setOverride(palette);
-    setUnsaved();
   }
 
   void clearThemeOverrideForCurrentStrategy() {
     ref.read(strategyThemeProvider.notifier).clearOverride();
-    setUnsaved();
   }
 
   Future<void> renameStrategy(

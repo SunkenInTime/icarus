@@ -19,6 +19,7 @@ class RemoteStrategySnapshotNotifier
   String? _activeStrategyPublicId;
   dynamic _headerSubscription;
   dynamic _pagesSubscription;
+  dynamic _assetsSubscription;
   final Map<String, dynamic> _elementSubscriptions = {};
   final Map<String, dynamic> _lineupSubscriptions = {};
   Timer? _refreshDebounce;
@@ -124,6 +125,16 @@ class RemoteStrategySnapshotNotifier
       },
       onError: (message, _) => _handleSubscriptionError(
         source: 'remote_snapshot:pages_subscription',
+        message: message,
+      ),
+    );
+
+    _assetsSubscription = await ConvexClient.instance.subscribe(
+      name: 'images:listForStrategy',
+      args: {'strategyPublicId': strategyPublicId},
+      onUpdate: (_) => _scheduleRefresh(),
+      onError: (message, _) => _handleSubscriptionError(
+        source: 'remote_snapshot:assets_subscription',
         message: message,
       ),
     );
@@ -264,6 +275,9 @@ class RemoteStrategySnapshotNotifier
 
     _cancelSubscription(_pagesSubscription);
     _pagesSubscription = null;
+
+    _cancelSubscription(_assetsSubscription);
+    _assetsSubscription = null;
 
     for (final subscription in _elementSubscriptions.values) {
       _cancelSubscription(subscription);

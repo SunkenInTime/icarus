@@ -69,10 +69,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             .read(agentFilterProvider.notifier)
             .updateFilterState(FilterState.all);
         ref.read(deleteMenuProvider.notifier).requestClose();
-        await ref.read(strategyProvider.notifier).clearCurrentStrategy();
         if (mounted) {
           Navigator.pop(context);
         }
+        await ref.read(strategyProvider.notifier).clearCurrentStrategy();
       },
     );
   }
