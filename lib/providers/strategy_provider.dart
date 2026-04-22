@@ -800,7 +800,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               return Line(
                 lineStart: shift(element.lineStart),
                 lineEnd: shift(element.lineEnd),
-                color: element.color,
+                colorValue: element.colorValue,
                 thickness: element.thickness,
                 boundingBox: shiftBoundingBox(element.boundingBox),
                 isDotted: element.isDotted,
@@ -816,7 +816,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
               return FreeDrawing(
                 listOfPoints: shiftedPoints,
-                color: element.color,
+                colorValue: element.colorValue,
                 thickness: element.thickness,
                 boundingBox: shiftBoundingBox(element.boundingBox),
                 isDotted: element.isDotted,
@@ -830,7 +830,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               return RectangleDrawing(
                 start: shift(element.start),
                 end: shift(element.end),
-                color: element.color,
+                colorValue: element.colorValue,
                 thickness: element.thickness,
                 boundingBox: shiftBoundingBox(element.boundingBox),
                 isDotted: element.isDotted,

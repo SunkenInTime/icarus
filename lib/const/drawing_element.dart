@@ -10,8 +10,12 @@ import 'package:json_annotation/json_annotation.dart';
 part "drawing_element.g.dart";
 
 abstract class DrawingElement {
-  @ColorConverter()
-  final Color color;
+  @JsonKey(
+    readValue: _readDrawingColorJsonValue,
+    fromJson: _drawingColorValueFromJson,
+    toJson: _drawingColorValueToJson,
+  )
+  final int colorValue;
   @JsonKey(defaultValue: Settings.defaultStrokeThickness)
   final double thickness;
   final bool isDotted;
@@ -19,8 +23,11 @@ abstract class DrawingElement {
   final String id;
   BoundingBox? boundingBox;
 
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  Color get color => Color(colorValue);
+
   DrawingElement({
-    required this.color,
+    required this.colorValue,
     this.thickness = Settings.defaultStrokeThickness,
     this.boundingBox,
     required this.isDotted,
@@ -35,6 +42,21 @@ abstract class DrawingElement {
   }
 }
 
+Object? _readDrawingColorJsonValue(Map<dynamic, dynamic> json, String key) {
+  return json[key] ?? json['color'];
+}
+
+int _drawingColorValueFromJson(Object? json) {
+  if (json is int) return json;
+  if (json is num) return json.toInt();
+  if (json is String) {
+    return const ColorConverter().fromJson(json).toARGB32();
+  }
+  throw ArgumentError.value(json, 'json', 'Unsupported drawing color value');
+}
+
+int _drawingColorValueToJson(int colorValue) => colorValue;
+
 class Line extends DrawingElement with HiveObjectMixin {
   final Offset lineStart;
   Offset lineEnd;
@@ -44,7 +66,8 @@ class Line extends DrawingElement with HiveObjectMixin {
   Line({
     required this.lineStart,
     required this.lineEnd,
-    required super.color,
+    Color? color,
+    int? colorValue,
     super.thickness = Settings.defaultStrokeThickness,
     super.boundingBox,
     required super.isDotted,
@@ -52,7 +75,11 @@ class Line extends DrawingElement with HiveObjectMixin {
     required super.id,
     this.showTraversalTime = false,
     this.traversalSpeedProfile = TraversalSpeed.defaultProfile,
-  });
+  })  : assert(
+          color != null || colorValue != null,
+          'Either color or colorValue is required.',
+        ),
+        super(colorValue: colorValue ?? color!.toARGB32());
 
   void updateEndPoint(Offset endPoint) {
     lineEnd = endPoint;
@@ -62,6 +89,7 @@ class Line extends DrawingElement with HiveObjectMixin {
     Offset? lineStart,
     Offset? lineEnd,
     Color? color,
+    int? colorValue,
     double? thickness,
     BoundingBox? boundingBox,
     bool? isDotted,
@@ -73,7 +101,7 @@ class Line extends DrawingElement with HiveObjectMixin {
     return Line(
       lineStart: lineStart ?? this.lineStart,
       lineEnd: lineEnd ?? this.lineEnd,
-      color: color ?? this.color,
+      colorValue: colorValue ?? color?.toARGB32() ?? this.colorValue,
       thickness: thickness ?? this.thickness,
       boundingBox: boundingBox ?? this.boundingBox,
       isDotted: isDotted ?? this.isDotted,
@@ -93,13 +121,18 @@ class RectangleDrawing extends DrawingElement with HiveObjectMixin {
   RectangleDrawing({
     required this.start,
     required this.end,
-    required super.color,
+    Color? color,
+    int? colorValue,
     super.thickness = Settings.defaultStrokeThickness,
     super.boundingBox,
     required super.isDotted,
     required super.hasArrow,
     required super.id,
-  });
+  })  : assert(
+          color != null || colorValue != null,
+          'Either color or colorValue is required.',
+        ),
+        super(colorValue: colorValue ?? color!.toARGB32());
 
   void updateEndPoint(Offset endPoint) {
     end = endPoint;
@@ -120,13 +153,18 @@ class EllipseDrawing extends DrawingElement with HiveObjectMixin {
   EllipseDrawing({
     required this.start,
     required this.end,
-    required super.color,
+    Color? color,
+    int? colorValue,
     super.thickness = Settings.defaultStrokeThickness,
     super.boundingBox,
     required super.isDotted,
     required super.hasArrow,
     required super.id,
-  });
+  })  : assert(
+          color != null || colorValue != null,
+          'Either color or colorValue is required.',
+        ),
+        super(colorValue: colorValue ?? color!.toARGB32());
 
   void updateEndPoint(Offset endPoint) {
     end = endPoint;
@@ -145,7 +183,8 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
   FreeDrawing({
     List<Offset>? listOfPoints,
     Path? path,
-    required super.color,
+    Color? color,
+    int? colorValue,
     super.thickness = Settings.defaultStrokeThickness,
     super.boundingBox,
     required super.isDotted,
@@ -155,9 +194,14 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
     this.traversalSpeedProfile = TraversalSpeed.defaultProfile,
     double? cachedPolylineLengthUnits,
   })  : listOfPoints = listOfPoints ?? [],
+        assert(
+          color != null || colorValue != null,
+          'Either color or colorValue is required.',
+        ),
         _path = path ?? Path(),
         cachedPolylineLengthUnits = cachedPolylineLengthUnits ??
-            _computePolylineLength(listOfPoints ?? []);
+            _computePolylineLength(listOfPoints ?? []),
+        super(colorValue: colorValue ?? color!.toARGB32());
 
   @OffsetListConverter()
   List<Offset> listOfPoints = [];
@@ -263,6 +307,7 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
     List<Offset>? listOfPoints,
     Path? path,
     Color? color,
+    int? colorValue,
     double? thickness,
     BoundingBox? boundingBox,
     bool? isDotted,
@@ -273,7 +318,7 @@ class FreeDrawing extends DrawingElement with HiveObjectMixin {
     double? cachedPolylineLengthUnits,
   }) {
     return FreeDrawing(
-      color: color ?? this.color,
+      colorValue: colorValue ?? color?.toARGB32() ?? this.colorValue,
       thickness: thickness ?? this.thickness,
       listOfPoints: listOfPoints ?? this.listOfPoints,
       path: path ?? _path,
