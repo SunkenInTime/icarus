@@ -14,11 +14,8 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(AgentTypeAdapter());
     registerAdapter(AppPreferencesAdapter());
     registerAdapter(BoundingBoxAdapter());
-    registerAdapter(EllipseDrawingAdapter());
     registerAdapter(FolderColorAdapter());
-    registerAdapter(FreeDrawingAdapter());
     registerAdapter(IconDataAdapter());
-    registerAdapter(LineAdapter());
     registerAdapter(LineUpAdapter());
     registerAdapter(LineUpGroupAdapter());
     registerAdapter(LineUpItemAdapter());
@@ -34,7 +31,6 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(PlacedUtilityAdapter());
     registerAdapter(PlacedViewConeAgentAdapter());
     registerAdapter(PlacedWidgetAdapter());
-    registerAdapter(RectangleDrawingAdapter());
     registerAdapter(SimpleImageDataAdapter());
     registerAdapter(StrategyDataAdapter());
     registerAdapter(StrategyPageAdapter());
@@ -52,11 +48,8 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(AgentTypeAdapter());
     registerAdapter(AppPreferencesAdapter());
     registerAdapter(BoundingBoxAdapter());
-    registerAdapter(EllipseDrawingAdapter());
     registerAdapter(FolderColorAdapter());
-    registerAdapter(FreeDrawingAdapter());
     registerAdapter(IconDataAdapter());
-    registerAdapter(LineAdapter());
     registerAdapter(LineUpAdapter());
     registerAdapter(LineUpGroupAdapter());
     registerAdapter(LineUpItemAdapter());
@@ -72,7 +65,6 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(PlacedUtilityAdapter());
     registerAdapter(PlacedViewConeAgentAdapter());
     registerAdapter(PlacedWidgetAdapter());
-    registerAdapter(RectangleDrawingAdapter());
     registerAdapter(SimpleImageDataAdapter());
     registerAdapter(StrategyDataAdapter());
     registerAdapter(StrategyPageAdapter());
