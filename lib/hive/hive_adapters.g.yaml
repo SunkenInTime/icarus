@@ -237,7 +237,7 @@ types:
         index: 1
   FreeDrawing:
     typeId: 11
-    nextIndex: 12
+    nextIndex: 13
     fields:
       listOfPoints:
         index: 0
@@ -259,9 +259,11 @@ types:
         index: 10
       thickness:
         index: 11
+      colorValue:
+        index: 12
   Line:
     typeId: 12
-    nextIndex: 10
+    nextIndex: 11
     fields:
       lineStart:
         index: 0
@@ -283,6 +285,8 @@ types:
         index: 8
       thickness:
         index: 9
+      colorValue:
+        index: 10
   BoundingBox:
     typeId: 13
     nextIndex: 2
@@ -449,7 +453,7 @@ types:
         index: 1
   RectangleDrawing:
     typeId: 24
-    nextIndex: 8
+    nextIndex: 9
     fields:
       start:
         index: 0
@@ -467,6 +471,8 @@ types:
         index: 6
       thickness:
         index: 7
+      colorValue:
+        index: 8
   TraversalSpeedProfile:
     typeId: 25
     nextIndex: 4
@@ -559,7 +565,7 @@ types:
         index: 8
   EllipseDrawing:
     typeId: 31
-    nextIndex: 8
+    nextIndex: 9
     fields:
       start:
         index: 0
@@ -577,6 +583,8 @@ types:
         index: 6
       boundingBox:
         index: 7
+      colorValue:
+        index: 8
   AbilityVisualState:
     typeId: 32
     nextIndex: 6

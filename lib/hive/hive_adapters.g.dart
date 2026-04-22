@@ -6,6 +6,15 @@ part of 'hive_adapters.dart';
 // AdaptersGenerator
 // **************************************************************************
 
+int _readLegacyDrawingHiveColorValue(Object? value) {
+  return switch (value) {
+    final int colorValue => colorValue,
+    final num colorValue => colorValue.toInt(),
+    final Color color => color.toARGB32(),
+    _ => 0xFFFFFFFF,
+  };
+}
+
 class StrategyDataAdapter extends TypeAdapter<StrategyData> {
   @override
   final typeId = 0;
@@ -641,7 +650,7 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
     };
     return FreeDrawing(
       listOfPoints: (fields[0] as List?)?.cast<Offset>(),
-      color: fields[2] as Color,
+      colorValue: _readLegacyDrawingHiveColorValue(fields[12] ?? fields[2]),
       thickness: fields[11] == null
           ? Settings.defaultStrokeThickness
           : (fields[11] as num).toDouble(),
@@ -664,7 +673,7 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       ..writeByte(0)
       ..write(obj.listOfPoints)
       ..writeByte(2)
-      ..write(obj.color)
+      ..write(obj.colorValue)
       ..writeByte(3)
       ..write(obj.isDotted)
       ..writeByte(4)
@@ -707,7 +716,7 @@ class LineAdapter extends TypeAdapter<Line> {
     return Line(
       lineStart: fields[0] as Offset,
       lineEnd: fields[1] as Offset,
-      color: fields[2] as Color,
+      colorValue: _readLegacyDrawingHiveColorValue(fields[10] ?? fields[2]),
       thickness: fields[9] == null
           ? Settings.defaultStrokeThickness
           : (fields[9] as num).toDouble(),
@@ -731,7 +740,7 @@ class LineAdapter extends TypeAdapter<Line> {
       ..writeByte(1)
       ..write(obj.lineEnd)
       ..writeByte(2)
-      ..write(obj.color)
+      ..write(obj.colorValue)
       ..writeByte(3)
       ..write(obj.isDotted)
       ..writeByte(4)
@@ -1288,7 +1297,7 @@ class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
     return RectangleDrawing(
       start: fields[0] as Offset,
       end: fields[1] as Offset,
-      color: fields[2] as Color,
+      colorValue: _readLegacyDrawingHiveColorValue(fields[8] ?? fields[2]),
       thickness: fields[7] == null
           ? Settings.defaultStrokeThickness
           : (fields[7] as num).toDouble(),
@@ -1308,7 +1317,7 @@ class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
       ..writeByte(1)
       ..write(obj.end)
       ..writeByte(2)
-      ..write(obj.color)
+      ..write(obj.colorValue)
       ..writeByte(3)
       ..write(obj.isDotted)
       ..writeByte(4)
@@ -1631,7 +1640,7 @@ class EllipseDrawingAdapter extends TypeAdapter<EllipseDrawing> {
     return EllipseDrawing(
       start: fields[0] as Offset,
       end: fields[1] as Offset,
-      color: fields[2] as Color,
+      colorValue: _readLegacyDrawingHiveColorValue(fields[8] ?? fields[2]),
       thickness: fields[3] == null
           ? Settings.defaultStrokeThickness
           : (fields[3] as num).toDouble(),
@@ -1651,7 +1660,7 @@ class EllipseDrawingAdapter extends TypeAdapter<EllipseDrawing> {
       ..writeByte(1)
       ..write(obj.end)
       ..writeByte(2)
-      ..write(obj.color)
+      ..write(obj.colorValue)
       ..writeByte(3)
       ..write(obj.thickness)
       ..writeByte(4)
