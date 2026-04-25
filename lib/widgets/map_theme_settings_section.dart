@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/widgets/better_color_picker.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
+import 'package:icarus/widgets/icarus_color_picker_style.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -777,15 +778,20 @@ Future<Color?> _showColorPickerDialog({
               color: Colors.transparent,
               child: SizedBox(
                 width: 320,
-                child: ColorPicker(
-                  portraitOnly: true,
-                  pickerColor: workingColor,
-                  onColorChanged: (color) {
+                child: BetterColorPicker(
+                  value: workingColor,
+                  initialMode: BetterColorPickerMode.hsv,
+                  style: icarusColorPickerStyle,
+                  onChanging: (color) {
                     setState(() {
                       workingColor = color;
                     });
                   },
-                  pickerAreaHeightPercent: 0.8,
+                  onChanged: (color) {
+                    setState(() {
+                      workingColor = color;
+                    });
+                  },
                 ),
               ),
             ),
