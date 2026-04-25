@@ -14,7 +14,7 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
 import 'package:icarus/widgets/numeric_drag_input.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
-import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
+import 'package:icarus/widgets/sidebar_widgets/color_library.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -36,14 +36,6 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
   static const int _defaultOpacityPercent = 30;
   static const int _defaultColorValue = 0xFF22C55E;
 
-  static const List<Color> _colorOptions = [
-    Color(0xFF22C55E),
-    Color(0xFF3B82F6),
-    Color(0xFFF59E0B),
-    Color(0xFFEF4444),
-    Color(0xFFA855F7),
-  ];
-
   _CustomShapeKind _shape = _CustomShapeKind.circle;
   double _diameterMeters = _defaultCircleDiameterMeters;
   double _rectWidthMeters = _defaultRectangleWidthMeters;
@@ -53,7 +45,8 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
 
   @override
   Widget build(BuildContext context) {
-    final currentMap = ref.watch(mapProvider.select((state) => state.currentMap));
+    final currentMap =
+        ref.watch(mapProvider.select((state) => state.currentMap));
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final draggableData = _buildToolData(mapScale);
 
@@ -233,20 +226,12 @@ class _CustomShapeToolsState extends ConsumerState<CustomShapeTools> {
   }
 
   Widget _buildColorPicker() {
-    return Row(
-      children: [
-        for (final color in _colorOptions)
-          Padding(
-            padding: const EdgeInsets.all(4.0),
-            child: ColorButtons(
-              height: 26,
-              width: 26,
-              color: color,
-              isSelected: _selectedColor == color,
-              onTap: () => setState(() => _selectedColor = color),
-            ),
-          ),
-      ],
+    return ColorLibrary(
+      selectedColorValue: _selectedColor.toARGB32(),
+      onSelected: (colorValue) {
+        if (colorValue == null) return;
+        setState(() => _selectedColor = Color(colorValue));
+      },
     );
   }
 

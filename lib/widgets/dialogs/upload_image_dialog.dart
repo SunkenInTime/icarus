@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/services/clipboard_service.dart';
-import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
+import 'package:icarus/widgets/sidebar_widgets/color_library.dart';
 
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -36,13 +36,6 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
   Uint8List? _selectedBytes;
   String? _selectedName;
   int? _selectedTagColorValue;
-  static const List<Color> _colorOptions = [
-    Color(0xFF22C55E),
-    Color(0xFF3B82F6),
-    Color(0xFFF59E0B),
-    Color(0xFFEF4444),
-    Color(0xFFA855F7),
-  ];
 
   @override
   void initState() {
@@ -215,33 +208,12 @@ class _UploadImageDialogState extends ConsumerState<UploadImageDialog> {
               const SizedBox(height: 12),
               const Text('Tag color'),
               const SizedBox(height: 6),
-              Wrap(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(4.0),
-                    child: ColorButtons(
-                      height: 24,
-                      width: 24,
-                      color: const Color(0xFFC5C5C5),
-                      isSelected: _selectedTagColorValue == null,
-                      onTap: () =>
-                          setState(() => _selectedTagColorValue = null),
-                    ),
-                  ),
-                  for (final color in _colorOptions)
-                    Padding(
-                      padding: const EdgeInsets.all(4.0),
-                      child: ColorButtons(
-                        height: 24,
-                        width: 24,
-                        color: color,
-                        isSelected:
-                            _selectedTagColorValue == color.toARGB32(),
-                        onTap: () => setState(
-                            () => _selectedTagColorValue = color.toARGB32()),
-                      ),
-                    ),
-                ],
+              ColorLibrary(
+                includeEmpty: true,
+                selectedColorValue: _selectedTagColorValue,
+                onSelected: (colorValue) => setState(
+                  () => _selectedTagColorValue = colorValue,
+                ),
               ),
             ],
           ),

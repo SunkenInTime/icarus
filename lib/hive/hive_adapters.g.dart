@@ -1291,19 +1291,22 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       autosaveEnabled: fields[1] == null ? true : fields[1] as bool,
       pagesBarExpandedHeight:
           fields[2] == null ? 310.0 : (fields[2] as num).toDouble(),
+      customColorValues: (fields[3] as List?)?.cast<int>(),
     );
   }
 
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(3)
+      ..writeByte(4)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
       ..write(obj.autosaveEnabled)
       ..writeByte(2)
-      ..write(obj.pagesBarExpandedHeight);
+      ..write(obj.pagesBarExpandedHeight)
+      ..writeByte(3)
+      ..write(obj.customColorValues);
   }
 
   @override

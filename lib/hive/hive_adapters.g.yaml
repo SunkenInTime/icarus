@@ -437,7 +437,7 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 3
+    nextIndex: 4
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0
@@ -445,6 +445,8 @@ types:
         index: 1
       pagesBarExpandedHeight:
         index: 2
+      customColorValues:
+        index: 3
   PlacedViewConeAgent:
     typeId: 29
     nextIndex: 9
