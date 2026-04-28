@@ -112,17 +112,20 @@ class AppPreferences extends HiveObject {
   final String defaultThemeProfileIdForNewStrategies;
   final bool autosaveEnabled;
   final double pagesBarExpandedHeight;
+  final List<int> customColorValues;
 
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
     this.autosaveEnabled = true,
     this.pagesBarExpandedHeight = 310.0,
-  });
+    List<int>? customColorValues,
+  }) : customColorValues = List.unmodifiable(customColorValues ?? const []);
 
   AppPreferences copyWith({
     String? defaultThemeProfileIdForNewStrategies,
     bool? autosaveEnabled,
     double? pagesBarExpandedHeight,
+    List<int>? customColorValues,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -131,6 +134,7 @@ class AppPreferences extends HiveObject {
       autosaveEnabled: autosaveEnabled ?? this.autosaveEnabled,
       pagesBarExpandedHeight:
           pagesBarExpandedHeight ?? this.pagesBarExpandedHeight,
+      customColorValues: customColorValues ?? this.customColorValues,
     );
   }
 }
@@ -495,6 +499,17 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
 
   Future<void> setPagesBarExpandedHeight(double height) async {
     final updated = _readFromHive().copyWith(pagesBarExpandedHeight: height);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setCustomColorValues(List<int> colorValues) async {
+    final updated = _readFromHive().copyWith(
+      customColorValues: colorValues.take(15).toList(growable: false),
+    );
     await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,
       updated,

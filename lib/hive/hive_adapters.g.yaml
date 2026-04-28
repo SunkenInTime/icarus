@@ -235,54 +235,6 @@ types:
         index: 0
       dy:
         index: 1
-  FreeDrawing:
-    typeId: 11
-    nextIndex: 12
-    fields:
-      listOfPoints:
-        index: 0
-      color:
-        index: 2
-      isDotted:
-        index: 3
-      hasArrow:
-        index: 4
-      id:
-        index: 5
-      boundingBox:
-        index: 6
-      showTraversalTime:
-        index: 8
-      traversalSpeedProfile:
-        index: 9
-      cachedPolylineLengthUnits:
-        index: 10
-      thickness:
-        index: 11
-  Line:
-    typeId: 12
-    nextIndex: 10
-    fields:
-      lineStart:
-        index: 0
-      lineEnd:
-        index: 1
-      color:
-        index: 2
-      isDotted:
-        index: 3
-      hasArrow:
-        index: 4
-      id:
-        index: 5
-      boundingBox:
-        index: 6
-      showTraversalTime:
-        index: 7
-      traversalSpeedProfile:
-        index: 8
-      thickness:
-        index: 9
   BoundingBox:
     typeId: 13
     nextIndex: 2
@@ -447,26 +399,6 @@ types:
         index: 0
       none:
         index: 1
-  RectangleDrawing:
-    typeId: 24
-    nextIndex: 8
-    fields:
-      start:
-        index: 0
-      end:
-        index: 1
-      color:
-        index: 2
-      isDotted:
-        index: 3
-      hasArrow:
-        index: 4
-      id:
-        index: 5
-      boundingBox:
-        index: 6
-      thickness:
-        index: 7
   TraversalSpeedProfile:
     typeId: 25
     nextIndex: 4
@@ -505,7 +437,7 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 3
+    nextIndex: 4
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0
@@ -513,6 +445,8 @@ types:
         index: 1
       pagesBarExpandedHeight:
         index: 2
+      customColorValues:
+        index: 3
   PlacedViewConeAgent:
     typeId: 29
     nextIndex: 9
@@ -557,26 +491,6 @@ types:
         index: 7
       position:
         index: 8
-  EllipseDrawing:
-    typeId: 31
-    nextIndex: 8
-    fields:
-      start:
-        index: 0
-      end:
-        index: 1
-      color:
-        index: 2
-      thickness:
-        index: 3
-      isDotted:
-        index: 4
-      hasArrow:
-        index: 5
-      id:
-        index: 6
-      boundingBox:
-        index: 7
   AbilityVisualState:
     typeId: 32
     nextIndex: 6
