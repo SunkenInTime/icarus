@@ -12,6 +12,7 @@ import 'package:icarus/main.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_rail_hover_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -481,14 +482,17 @@ class LibraryNavigationRail extends ConsumerStatefulWidget {
 class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
   static const _closeDelay = Duration(milliseconds: 120);
   static const _detailsDelay = Duration(milliseconds: 190);
+  static const _routeArrivalHoverDelay = Duration(seconds: 2);
 
   bool _expanded = false;
   bool _showExpandedContent = false;
   Timer? _closeTimer;
+  Timer? _routeArrivalHoverTimer;
 
   @override
   void dispose() {
     _closeTimer?.cancel();
+    _routeArrivalHoverTimer?.cancel();
     super.dispose();
   }
 
@@ -538,6 +542,16 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
 
     return MouseRegion(
       onEnter: (_) {
+        if (ref.read(suppressLibraryRailHoverProvider)) {
+          _routeArrivalHoverTimer?.cancel();
+          _routeArrivalHoverTimer = Timer(_routeArrivalHoverDelay, () {
+            if (!mounted) {
+              return;
+            }
+            ref.read(suppressLibraryRailHoverProvider.notifier).state = false;
+          });
+          return;
+        }
         _closeTimer?.cancel();
         setState(() => _expanded = true);
         Future.delayed(_detailsDelay, () {
@@ -548,6 +562,10 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
         });
       },
       onExit: (_) {
+        _routeArrivalHoverTimer?.cancel();
+        if (ref.read(suppressLibraryRailHoverProvider)) {
+          ref.read(suppressLibraryRailHoverProvider.notifier).state = false;
+        }
         _closeTimer?.cancel();
         _closeTimer = Timer(_closeDelay, () {
           if (!mounted) {
