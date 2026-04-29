@@ -17,10 +17,14 @@ final cloudFoldersProvider =
     return;
   }
 
+  final section = ref.watch(cloudLibrarySectionProvider);
   final parentFolderId = ref.watch(folderProvider);
   final repo = ref.watch(convexStrategyRepositoryProvider);
   try {
-    await for (final folders in repo.watchFoldersForParent(parentFolderId)) {
+    await for (final folders in repo.watchFoldersForParent(
+      parentFolderId,
+      scope: section == CloudLibrarySection.sharedWithMe ? 'shared' : 'owned',
+    )) {
       yield folders;
     }
   } catch (error, stackTrace) {
@@ -55,14 +59,21 @@ final cloudStrategiesProvider =
     return;
   }
 
+  final section = ref.watch(cloudLibrarySectionProvider);
   final folderId = ref.watch(folderProvider);
   final repo = ref.watch(convexStrategyRepositoryProvider);
   try {
-    await for (final strategies in repo.watchStrategiesForFolder(folderId)) {
+    final stream = section == CloudLibrarySection.sharedWithMe
+        ? (folderId == null
+            ? repo.watchSharedStrategies()
+            : repo.watchStrategiesForFolder(folderId, scope: 'shared'))
+        : repo.watchStrategiesForFolder(folderId, scope: 'owned');
+    await for (final strategies in stream) {
       yield strategies;
     }
   } catch (error, stackTrace) {
-    if (_isInvalidFolderError(error)) {
+    if (section != CloudLibrarySection.sharedWithMe &&
+        _isInvalidFolderError(error)) {
       ref
           .read(folderProvider.notifier)
           .updateWorkspaceFolderId(LibraryWorkspace.cloud, null);

@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/services/deep_link_registrar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -24,6 +25,9 @@ import 'package:icarus/const/second_instance_args.dart';
 import 'package:icarus/const/settings.dart' show Settings;
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
@@ -134,6 +138,7 @@ Future<void> main(List<String> args) async {
 
       await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
       await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+      await Hive.openBox<CloudMediaUploadJob>(HiveBoxNames.mediaUploadJobsBox);
       await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
       await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
@@ -347,17 +352,25 @@ class _MyAppState extends ConsumerState<MyApp> {
         .read(inAppDebugProvider.notifier)
         .bulkAddLogs(<String>['Deep link [$source]: $uriText']);
 
-    unawaited(
-      ref
+    unawaited(() async {
+      final handledAuth = await ref
           .read(authProvider.notifier)
-          .handleAuthCallbackUri(uri, source: source),
-    );
+          .handleAuthCallbackUri(uri, source: source);
+      if (handledAuth) {
+        return;
+      }
+      await ref
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(uri, source: source);
+    }());
   }
 
   @override
   void initState() {
     super.initState();
     ref.read(authProvider);
+    ref.read(cloudMediaUploadQueueProvider);
+    ref.read(cloudMediaCacheProvider);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(warmUpWebViewEnvironment());
@@ -408,6 +421,16 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(authProvider, (_, next) {
+      if (next.isAuthenticated && next.isConvexUserReady) {
+        unawaited(
+          ref
+              .read(shareLinkControllerProvider.notifier)
+              .redeemPendingIfPossible(),
+        );
+      }
+    });
+
     return ToastificationWrapper(
       config: const ToastificationConfig(
         alignment: Alignment.bottomCenter,

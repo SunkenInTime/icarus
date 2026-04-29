@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:uuid/uuid.dart';
@@ -51,7 +52,7 @@ void appendMigratedPageOps(
 
   for (final image in page.imageData) {
     final elementId = nextUniqueMigrationId(image.id, usedElementIds);
-    final payload = Map<String, dynamic>.from(image.toJson())
+    final payload = cloudImagePayloadFromPlacedImage(image)
       ..putIfAbsent('elementType', () => 'image')
       ..['id'] = elementId;
     ops.add(buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
@@ -68,7 +69,7 @@ void appendMigratedPageOps(
   var lineupOrder = 0;
   for (final lineup in page.lineUps) {
     final lineupId = nextUniqueMigrationId(lineup.id, usedLineupIds);
-    final lineupPayload = Map<String, dynamic>.from(lineup.toJson())
+    final lineupPayload = cloudLineupPayload(lineup)
       ..['id'] = lineupId;
     ops.add(
       StrategyOp(

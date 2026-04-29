@@ -175,14 +175,6 @@ export const deletePage = mutation({
       await ctx.db.delete(lineup._id);
     }
 
-    const assets = await ctx.db
-      .query("imageAssets")
-      .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-      .collect();
-    for (const asset of assets) {
-      await ctx.db.delete(asset._id);
-    }
-
     await ctx.db.delete(page._id);
 
     const ordered = sortByNumberField(

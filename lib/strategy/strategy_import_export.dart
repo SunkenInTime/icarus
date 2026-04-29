@@ -22,6 +22,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
@@ -2359,9 +2360,61 @@ class StrategyImportExportService {
     return outPath;
   }
 
+  Future<void> _ensureRemoteAssetsCached(
+    RemoteStrategySnapshot snapshot,
+  ) async {
+    final strategyId = snapshot.header.publicId;
+    final assetIds = <String>{};
+    for (final page in snapshot.pages) {
+      for (final element in snapshot.elementsByPage[page.publicId] ?? const []) {
+        if (element.deleted || element.elementType != 'image') {
+          continue;
+        }
+        assetIds.add(element.publicId);
+      }
+
+      for (final lineup in snapshot.lineupsByPage[page.publicId] ?? const []) {
+        if (lineup.deleted) {
+          continue;
+        }
+        try {
+          final decoded = jsonDecode(lineup.payload);
+          final mapped = decoded is Map<String, dynamic>
+              ? decoded
+              : decoded is Map
+                  ? Map<String, dynamic>.from(decoded)
+                  : null;
+          if (mapped == null) {
+            continue;
+          }
+          final parsed = LineUp.fromJson(mapped);
+          for (final image in parsed.images) {
+            assetIds.add(image.id);
+          }
+        } catch (_) {
+          continue;
+        }
+      }
+    }
+
+    final cacheNotifier = ref.read(cloudMediaCacheProvider.notifier);
+    final cached = await cacheNotifier.ensureAssetIdsCached(
+      strategyId: strategyId,
+      strategyPublicId: strategyId,
+      assetsById: snapshot.assetsById,
+      assetIds: assetIds,
+    );
+    if (!cached) {
+      throw StateError(
+        'Unable to cache all remote images for export. Reconnect and retry.',
+      );
+    }
+  }
+
   Future<void> exportCloudStrategy(String strategyId) async {
     final snapshot =
         await ref.read(convexStrategyRepositoryProvider).fetchSnapshot(strategyId);
+    await _ensureRemoteAssetsCached(snapshot);
     final strategy = _strategyDataFromRemoteSnapshot(snapshot);
     final outputFile = await FilePicker.platform.saveFile(
       type: FileType.custom,

@@ -1,6 +1,6 @@
 ---
 name: convex-create-component
-description: Designs and builds Convex components with isolated tables, clear boundaries, and app-facing wrappers. Use this skill when creating a new Convex component, extracting reusable backend logic into a component, building a third-party integration that owns its own tables, packaging Convex functionality for reuse, or when the user mentions defineComponent, app.use, ComponentApi, ctx.runQuery/runMutation across component boundaries, or wants to separate concerns into isolated Convex modules.
+description: Builds reusable Convex components with isolated tables and app-facing APIs. Use for new components, reusable backend modules, integrations, or component boundary work.
 ---
 
 # Convex Create Component
@@ -42,12 +42,12 @@ Create reusable Convex components with clear boundaries and a small app-facing A
 
 Ask the user, then pick one path:
 
-| Goal | Shape | Reference |
-|------|-------|-----------|
-| Component for this app only | Local | `references/local-components.md` |
-| Publish or share across apps | Packaged | `references/packaged-components.md` |
-| User explicitly needs local + shared library code | Hybrid | `references/hybrid-components.md` |
-| Not sure | Default to local | `references/local-components.md` |
+| Goal                                              | Shape            | Reference                           |
+| ------------------------------------------------- | ---------------- | ----------------------------------- |
+| Component for this app only                       | Local            | `references/local-components.md`    |
+| Publish or share across apps                      | Packaged         | `references/packaged-components.md` |
+| User explicitly needs local + shared library code | Hybrid           | `references/hybrid-components.md`   |
+| Not sure                                          | Default to local | `references/local-components.md`    |
 
 Read exactly one reference file before proceeding.
 
@@ -111,7 +111,7 @@ export const listUnread = query({
       userId: v.string(),
       message: v.string(),
       read: v.boolean(),
-    })
+    }),
   ),
   handler: async (ctx, args) => {
     return await ctx.db
@@ -234,12 +234,16 @@ export const sendNotification = mutation({
 
 ```ts
 // Bad: parent app table IDs are not valid component validators
-args: { userId: v.id("users") }
+args: {
+  userId: v.id("users");
+}
 ```
 
 ```ts
 // Good: treat parent-owned IDs as strings at the boundary
-args: { userId: v.string() }
+args: {
+  userId: v.string();
+}
 ```
 
 ### Advanced Patterns
