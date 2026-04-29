@@ -94,6 +94,31 @@ export default defineSchema({
     .index("by_strategyId", ["strategyId"])
     .index("by_userId", ["userId"])
     .index("by_strategyId_userId", ["strategyId", "userId"]),
+  folderCollaborators: defineTable({
+    folderId: v.id("folders"),
+    userId: v.id("users"),
+    role: v.union(v.literal("editor"), v.literal("viewer")),
+    invitedByUserId: v.optional(v.id("users")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_folderId", ["folderId"])
+    .index("by_userId", ["userId"])
+    .index("by_folderId_userId", ["folderId", "userId"]),
+  shareLinks: defineTable({
+    token: v.string(),
+    targetType: v.union(v.literal("strategy"), v.literal("folder")),
+    strategyId: v.optional(v.id("strategies")),
+    folderId: v.optional(v.id("folders")),
+    role: v.union(v.literal("editor"), v.literal("viewer")),
+    createdByUserId: v.id("users"),
+    revokedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_strategyId", ["strategyId"])
+    .index("by_folderId", ["folderId"]),
   inviteTokens: defineTable({
     token: v.string(),
     strategyId: v.id("strategies"),

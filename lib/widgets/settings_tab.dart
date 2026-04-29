@@ -11,7 +11,6 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
-import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -93,47 +92,6 @@ class SettingsTab extends ConsumerWidget {
                                 ),
                               ),
                             ],
-                          ),
-                          const SizedBox(height: 10),
-                          SizedBox(
-                            width: double.infinity,
-                            child: authState.isAuthenticated
-                                ? ShadButton.secondary(
-                                    onPressed: authState.isLoading
-                                        ? null
-                                        : () => ref
-                                            .read(authProvider.notifier)
-                                            .signOut(),
-                                    child: authState.isLoading
-                                        ? const SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                        : const Text('Sign out'),
-                                  )
-                                : ShadButton(
-                                    onPressed: authState.isLoading
-                                        ? null
-                                        : () {
-                                            showDialog<void>(
-                                              context: context,
-                                              builder: (_) =>
-                                                  const AuthDialog(),
-                                            );
-                                          },
-                                    child: authState.isLoading
-                                        ? const SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                        : const Text('Sign in / sign up'),
-                                  ),
                           ),
                           if (authState.errorMessage != null) ...[
                             const SizedBox(height: 8),

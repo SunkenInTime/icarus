@@ -4,6 +4,7 @@ import 'package:icarus/providers/auth_provider.dart';
 enum LibraryWorkspace {
   local,
   cloud,
+  community,
 }
 
 enum CloudLibrarySection {

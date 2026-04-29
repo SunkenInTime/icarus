@@ -37,6 +37,10 @@ class FolderContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final workspace = ref.watch(libraryWorkspaceProvider);
+    if (workspace == LibraryWorkspace.community) {
+      return _buildCommunityPlaceholder(context, ref);
+    }
+
     final isCloud = workspace == LibraryWorkspace.cloud;
     if (isCloud) {
       final cloudSection = ref.watch(cloudLibrarySectionProvider);
@@ -340,6 +344,57 @@ class FolderContent extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildCommunityPlaceholder(BuildContext context, WidgetRef ref) {
+    return Stack(
+      children: [
+        const Positioned.fill(
+          child: Padding(
+            padding: EdgeInsets.all(4.0),
+            child: DotGrid(),
+          ),
+        ),
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.public,
+                  size: 38,
+                  color: Settings.tacticalVioletTheme.primary,
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Community strats are coming soon',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'This space is reserved for public lineups, team executes, and discoverable strategy packs.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Settings.tacticalVioletTheme.mutedForeground,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                ShadButton.secondary(
+                  onPressed: () {
+                    ref
+                        .read(libraryWorkspaceProvider.notifier)
+                        .select(LibraryWorkspace.local);
+                  },
+                  child: const Text('Back to Local'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -416,16 +418,20 @@ class _FolderSidebarItem extends ConsumerStatefulWidget {
 }
 
 class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
+  static const _hoverExitDelay = Duration(milliseconds: 500);
+
   final ShadContextMenuController _menuButtonController =
       ShadContextMenuController();
   final ShadContextMenuController _rightClickMenuController =
       ShadContextMenuController();
   bool _hovered = false;
+  Timer? _hoverExitTimer;
 
   Folder get folder => widget.node.folder;
 
   @override
   void dispose() {
+    _hoverExitTimer?.cancel();
     _menuButtonController.dispose();
     _rightClickMenuController.dispose();
     super.dispose();
@@ -472,8 +478,19 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
             return Padding(
               padding: EdgeInsets.only(left: widget.depth * 16.0),
               child: MouseRegion(
-                onEnter: (_) => setState(() => _hovered = true),
-                onExit: (_) => setState(() => _hovered = false),
+                onEnter: (_) {
+                  _hoverExitTimer?.cancel();
+                  setState(() => _hovered = true);
+                },
+                onExit: (_) {
+                  _hoverExitTimer?.cancel();
+                  _hoverExitTimer = Timer(_hoverExitDelay, () {
+                    if (!mounted) {
+                      return;
+                    }
+                    setState(() => _hovered = false);
+                  });
+                },
                 child: ShadContextMenuRegion(
                   controller: _rightClickMenuController,
                   items: _buildMenuItems(),
