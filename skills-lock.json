@@ -4,32 +4,38 @@
     "convex": {
       "source": "get-convex/agent-skills",
       "sourceType": "github",
-      "computedHash": "613ee9955985085d0fca8f96e1fc6d7cfd204dffa203499a1d508b8def76577b"
+      "skillPath": "skills/convex/SKILL.md",
+      "computedHash": "1515307c00539d299b2b2ac7084d39a12d6abbc86f665eec585f7de04220328e"
     },
     "convex-create-component": {
       "source": "get-convex/agent-skills",
       "sourceType": "github",
-      "computedHash": "d110fca7f65b4919367e6fc63a93bf54abea2cf5e4e097234c947559ffa6e527"
+      "skillPath": "skills/convex-create-component/SKILL.md",
+      "computedHash": "d46d3f80f9701612651a087c4cd37b03ec2bba7f53ac2e661efb2838b0c18f29"
     },
     "convex-migration-helper": {
       "source": "get-convex/agent-skills",
       "sourceType": "github",
-      "computedHash": "46d1ac354eefbed05e1367d828e893816c13302276080bfaf6bcd828281be486"
+      "skillPath": "skills/convex-migration-helper/SKILL.md",
+      "computedHash": "8e839a8a51ac6fa5c341bf1bb57d8e5af229395467f1e606c51a8ddde42136d6"
     },
     "convex-performance-audit": {
       "source": "get-convex/agent-skills",
       "sourceType": "github",
-      "computedHash": "30ea0d3c259df011e44ea9b70502ab272f5ac3bd1fb3672ae18489ba99b2c4ae"
+      "skillPath": "skills/convex-performance-audit/SKILL.md",
+      "computedHash": "c150925d80d8b003b25dd80a52da016bce2451ebb9da5b4adc75cbf6b6ff37c9"
     },
     "convex-quickstart": {
       "source": "get-convex/agent-skills",
       "sourceType": "github",
-      "computedHash": "8ae9e1b02f526ea65e7895fac82af74142cd8e70e364d9dae9dbf79a296fb5ef"
+      "skillPath": "skills/convex-quickstart/SKILL.md",
+      "computedHash": "60bb7707dc0a87a51f17cfeb004e3fd403346e56694076f30a746ad285a5a7cc"
     },
     "convex-setup-auth": {
       "source": "get-convex/agent-skills",
       "sourceType": "github",
-      "computedHash": "e719d31d1ab0d19ca7b942d1154d3ff436b5c156900eea9866c2aaeb910a1388"
+      "skillPath": "skills/convex-setup-auth/SKILL.md",
+      "computedHash": "152289aa8150432c2c843e5861b554a46aa5992eb44a67041c333a8679d6c5f8"
     }
   }
 }

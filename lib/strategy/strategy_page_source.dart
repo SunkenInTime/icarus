@@ -332,7 +332,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
         header.themeOverridePalette == desiredThemeOverride;
 
     if (mapMatches && themeProfileMatches && themeOverrideMatches) {
-      ref.read(strategyOpQueueProvider.notifier).syncDesiredOp(
+      ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
             entityKey: 'strategy',
             desiredOp: null,
             flushImmediately: false,
@@ -352,7 +352,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
         'clearThemeOverridePalette': true,
     };
 
-    ref.read(strategyOpQueueProvider.notifier).syncDesiredOp(
+    ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
           entityKey: 'strategy',
           desiredOp: StrategyOp(
             opId: const Uuid().v4(),

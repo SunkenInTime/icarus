@@ -1,26 +1,62 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
-import { assertStrategyRole, requireCurrentUser } from "./lib/auth";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { QueryCtx } from "./_generated/server";
+import {
+  assertFolderRole,
+  assertStrategyRole,
+  getEffectiveStrategyRoleForUser,
+  requireCurrentUser,
+} from "./lib/auth";
 import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
 
-async function listAccessibleStrategies(ctx: any, userId: any) {
+type StrategyScope = "owned" | "shared" | "all";
+
+const strategyScopeValidator = v.optional(
+  v.union(v.literal("owned"), v.literal("shared"), v.literal("all")),
+);
+
+function matchesScope(
+  ownerId: Id<"users">,
+  userId: Id<"users">,
+  scope: StrategyScope,
+): boolean {
+  if (scope === "all") {
+    return true;
+  }
+  if (scope === "owned") {
+    return ownerId === userId;
+  }
+  return ownerId !== userId;
+}
+
+async function listAccessibleStrategies(
+  ctx: QueryCtx,
+  userId: Id<"users">,
+  scope: StrategyScope,
+) {
   const owned = await ctx.db
     .query("strategies")
-    .withIndex("by_ownerId", (q: any) => q.eq("ownerId", userId))
+    .withIndex("by_ownerId", (q) => q.eq("ownerId", userId))
     .collect();
 
   const memberships = await ctx.db
     .query("strategyCollaborators")
-    .withIndex("by_userId", (q: any) => q.eq("userId", userId))
+    .withIndex("by_userId", (q) => q.eq("userId", userId))
     .collect();
 
   const fromMembership = await Promise.all(
-    memberships.map((m: any) => ctx.db.get(m.strategyId)),
+    memberships.map((m) => ctx.db.get(m.strategyId)),
   );
 
-  const dedup = new Map<any, any>();
-  for (const strategy of [...owned, ...fromMembership]) {
-    if (strategy !== null) {
+  const strategies = await ctx.db.query("strategies").collect();
+  const dedup = new Map<Id<"strategies">, Doc<"strategies">>();
+  for (const strategy of [...owned, ...fromMembership, ...strategies]) {
+    if (
+      strategy !== null &&
+      matchesScope(strategy.ownerId, userId, scope) &&
+      (await getEffectiveStrategyRoleForUser(ctx, strategy, userId)) !== null
+    ) {
       dedup.set(strategy._id, strategy);
     }
   }
@@ -31,21 +67,21 @@ async function listAccessibleStrategies(ctx: any, userId: any) {
 export const listForFolder = query({
   args: {
     folderPublicId: v.optional(v.string()),
+    scope: strategyScopeValidator,
   },
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
-    const all = await listAccessibleStrategies(ctx as any, user._id);
+    const scope = args.scope ?? "owned";
+    const all = await listAccessibleStrategies(ctx, user._id, scope);
     const memberships = await ctx.db
       .query("strategyCollaborators")
       .withIndex("by_userId", (q) => q.eq("userId", user._id))
       .collect();
 
-    let folderId;
+    let folderId: Id<"folders"> | undefined;
     if (args.folderPublicId !== undefined) {
       const folder = await getFolderByPublicId(ctx, args.folderPublicId);
-      if (folder.ownerId !== user._id) {
-        throw new Error("Forbidden");
-      }
+      await assertFolderRole(ctx, folder, "viewer");
       folderId = folder._id;
     }
 
@@ -73,7 +109,7 @@ export const listForFolder = query({
           .collect();
         let attackLabel = "Unknown";
         if (pages.length > 0) {
-          const first = pages[0].isAttack;
+          const first = pages[0]!.isAttack;
           const mixed = pages.some((page) => page.isAttack !== first);
           attackLabel = mixed ? "Mixed" : first ? "Attack" : "Defend";
         }
