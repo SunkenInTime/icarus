@@ -1302,6 +1302,7 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
           fields[4] == null ? false : fields[4] as bool,
       pagesBarExpandedHeight:
           fields[2] == null ? 310.0 : (fields[2] as num).toDouble(),
+      pagesBarWidth: fields[7] == null ? 224.0 : (fields[7] as num).toDouble(),
       customColorValues: (fields[3] as List?)?.cast<int>(),
     );
   }
@@ -1309,7 +1310,7 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1323,7 +1324,9 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(5)
       ..write(obj.defaultAgentSizeForNewStrategies)
       ..writeByte(6)
-      ..write(obj.defaultAbilitySizeForNewStrategies);
+      ..write(obj.defaultAbilitySizeForNewStrategies)
+      ..writeByte(7)
+      ..write(obj.pagesBarWidth);
   }
 
   @override

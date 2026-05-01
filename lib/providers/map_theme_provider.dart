@@ -116,6 +116,7 @@ class AppPreferences extends HiveObject {
   final double defaultAbilitySizeForNewStrategies;
   final bool defaultNeutralTeamColorsForNewStrategies;
   final double pagesBarExpandedHeight;
+  final double pagesBarWidth;
   final List<int> customColorValues;
 
   AppPreferences({
@@ -125,6 +126,7 @@ class AppPreferences extends HiveObject {
     this.defaultAbilitySizeForNewStrategies = Settings.abilitySize,
     this.defaultNeutralTeamColorsForNewStrategies = false,
     this.pagesBarExpandedHeight = 310.0,
+    this.pagesBarWidth = 224.0,
     List<int>? customColorValues,
   }) : customColorValues = List.unmodifiable(customColorValues ?? const []);
 
@@ -135,6 +137,7 @@ class AppPreferences extends HiveObject {
     double? defaultAbilitySizeForNewStrategies,
     bool? defaultNeutralTeamColorsForNewStrategies,
     double? pagesBarExpandedHeight,
+    double? pagesBarWidth,
     List<int>? customColorValues,
   }) {
     return AppPreferences(
@@ -151,6 +154,7 @@ class AppPreferences extends HiveObject {
               this.defaultNeutralTeamColorsForNewStrategies,
       pagesBarExpandedHeight:
           pagesBarExpandedHeight ?? this.pagesBarExpandedHeight,
+      pagesBarWidth: pagesBarWidth ?? this.pagesBarWidth,
       customColorValues: customColorValues ?? this.customColorValues,
     );
   }
@@ -547,6 +551,15 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
 
   Future<void> setPagesBarExpandedHeight(double height) async {
     final updated = _readFromHive().copyWith(pagesBarExpandedHeight: height);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setPagesBarWidth(double width) async {
+    final updated = _readFromHive().copyWith(pagesBarWidth: width);
     await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,
       updated,

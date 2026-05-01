@@ -19,6 +19,10 @@ class PagesBar extends ConsumerStatefulWidget {
 
 class _PagesBarState extends ConsumerState<PagesBar> {
   static const double _defaultExpandedHeight = 310;
+  static const double _defaultWidth = 224;
+  static const double _minWidth = 224;
+  static const double _maxWidth = 420;
+  static const double _widthResizeHandleWidth = 8;
   static const double _barRadius = 12;
   static final double _minExpandedHeight =
       _ExpandedPanel.minHeightForVisibleRows(
@@ -27,10 +31,14 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   static const double _maxExpandedHeight = 520;
 
   bool _expanded = false;
-  bool _isResizing = false;
+  bool _isHeightResizing = false;
+  bool _isWidthResizing = false;
   double? _liveExpandedHeight;
+  double? _liveWidth;
   double? _persistedExpandedHeightCache;
+  double? _persistedWidthCache;
   final GlobalKey _expandedPanelKey = GlobalKey();
+  final GlobalKey _barKey = GlobalKey();
 
   StrategyData? _strategy(Box<StrategyData> box, String id) => box.get(id);
 
@@ -38,14 +46,24 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     return height.clamp(_minExpandedHeight, _maxExpandedHeight).toDouble();
   }
 
+  double _clampWidth(double width) {
+    return width.clamp(_minWidth, _maxWidth).toDouble();
+  }
+
   double _effectiveExpandedHeight(double persistedHeight) {
     final baseHeight = _persistedExpandedHeightCache ?? persistedHeight;
     return _clampExpandedHeight(
-      _isResizing ? (_liveExpandedHeight ?? baseHeight) : baseHeight,
+      _isHeightResizing ? (_liveExpandedHeight ?? baseHeight) : baseHeight,
     );
   }
 
-  void _startResize() {
+  double _effectiveWidth(double persistedWidth) {
+    final baseWidth = _persistedWidthCache ?? persistedWidth;
+    return _clampWidth(
+        _isWidthResizing ? (_liveWidth ?? baseWidth) : baseWidth);
+  }
+
+  void _startHeightResize() {
     final context = _expandedPanelKey.currentContext;
     final renderBox = context?.findRenderObject() as RenderBox?;
     final renderedHeight = renderBox != null && renderBox.hasSize
@@ -53,12 +71,12 @@ class _PagesBarState extends ConsumerState<PagesBar> {
         : (_persistedExpandedHeightCache ?? _defaultExpandedHeight);
 
     setState(() {
-      _isResizing = true;
+      _isHeightResizing = true;
       _liveExpandedHeight = _clampExpandedHeight(renderedHeight);
     });
   }
 
-  void _updateResize(Offset globalPosition) {
+  void _updateHeightResize(Offset globalPosition) {
     final context = _expandedPanelKey.currentContext;
     if (context == null) return;
 
@@ -78,8 +96,8 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     });
   }
 
-  Future<void> _endResize() async {
-    if (!_isResizing) return;
+  Future<void> _endHeightResize() async {
+    if (!_isHeightResizing) return;
 
     final height = _clampExpandedHeight(
       _liveExpandedHeight ??
@@ -88,7 +106,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     );
 
     setState(() {
-      _isResizing = false;
+      _isHeightResizing = false;
       _liveExpandedHeight = null;
       _persistedExpandedHeightCache = height;
     });
@@ -103,9 +121,64 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     });
   }
 
+  void _startWidthResize() {
+    final context = _barKey.currentContext;
+    final renderBox = context?.findRenderObject() as RenderBox?;
+    final renderedWidth = renderBox != null && renderBox.hasSize
+        ? renderBox.size.width
+        : (_persistedWidthCache ?? _defaultWidth);
+
+    setState(() {
+      _isWidthResizing = true;
+      _liveWidth = _clampWidth(renderedWidth);
+    });
+  }
+
+  void _updateWidthResize(Offset globalPosition) {
+    final context = _barKey.currentContext;
+    if (context == null) return;
+
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) return;
+
+    final localPosition = renderBox.globalToLocal(globalPosition);
+    final nextWidth = _clampWidth(localPosition.dx);
+    final currentWidth = _liveWidth;
+    if (currentWidth != null && (nextWidth - currentWidth).abs() < 0.5) {
+      return;
+    }
+
+    setState(() {
+      _liveWidth = nextWidth;
+    });
+  }
+
+  Future<void> _endWidthResize() async {
+    if (!_isWidthResizing) return;
+
+    final width =
+        _clampWidth(_liveWidth ?? _persistedWidthCache ?? _defaultWidth);
+
+    setState(() {
+      _isWidthResizing = false;
+      _liveWidth = null;
+      _persistedWidthCache = width;
+    });
+
+    await ref.read(appPreferencesProvider.notifier).setPagesBarWidth(width);
+
+    if (!mounted) return;
+    setState(() {
+      _persistedWidthCache = null;
+    });
+  }
+
   Future<void> _collapsePanel() async {
-    if (_isResizing) {
-      await _endResize();
+    if (_isHeightResizing) {
+      await _endHeightResize();
+    }
+    if (_isWidthResizing) {
+      await _endWidthResize();
     }
     if (!mounted) return;
     setState(() => _expanded = false);
@@ -205,6 +278,9 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     final persistedExpandedHeight = ref.watch(
       appPreferencesProvider.select((prefs) => prefs.pagesBarExpandedHeight),
     );
+    final persistedWidth = ref.watch(
+      appPreferencesProvider.select((prefs) => prefs.pagesBarWidth),
+    );
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
     return ValueListenableBuilder(
@@ -224,38 +300,63 @@ class _PagesBarState extends ConsumerState<PagesBar> {
             )
             .name;
 
-        return Container(
-          decoration: BoxDecoration(
-            color: Settings.tacticalVioletTheme.card,
-            borderRadius: BorderRadius.circular(_barRadius),
-            border: Border.all(
-              color: Settings.tacticalVioletTheme.border,
-              width: 2,
-            ),
-          ),
-          width: 224,
-          padding: EdgeInsets.zero,
-          child: _expanded
-              ? _ExpandedPanel(
-                  pages: pages,
-                  activePageId: activePageId,
-                  height: _effectiveExpandedHeight(persistedExpandedHeight),
-                  panelKey: _expandedPanelKey,
-                  onSelect: _selectPage,
-                  onRename: (p) => _renamePage(strat, p),
-                  onDelete: (p) => _deletePage(strat, p),
-                  onAdd: _addPage,
-                  onCollapse: _collapsePanel,
-                  onResizeStart: _startResize,
-                  onResizeUpdate: _updateResize,
-                  onResizeEnd: _endResize,
-                  isResizeActive: _isResizing,
-                )
-              : _CollapsedPill(
-                  activeName: activeName,
-                  onAdd: _addPage,
-                  onToggle: () => setState(() => _expanded = true),
+        final width = _effectiveWidth(persistedWidth);
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              key: _barKey,
+              decoration: BoxDecoration(
+                color: Settings.tacticalVioletTheme.card,
+                borderRadius: BorderRadius.circular(_barRadius),
+                border: Border.all(
+                  color: Settings.tacticalVioletTheme.border,
+                  width: 2,
                 ),
+              ),
+              width: width,
+              padding: EdgeInsets.zero,
+              child: Padding(
+                padding: const EdgeInsets.only(right: _widthResizeHandleWidth),
+                child: _expanded
+                    ? _ExpandedPanel(
+                        pages: pages,
+                        activePageId: activePageId,
+                        height:
+                            _effectiveExpandedHeight(persistedExpandedHeight),
+                        panelKey: _expandedPanelKey,
+                        onSelect: _selectPage,
+                        onRename: (p) => _renamePage(strat, p),
+                        onDelete: (p) => _deletePage(strat, p),
+                        onAdd: _addPage,
+                        onCollapse: _collapsePanel,
+                        onResizeStart: _startHeightResize,
+                        onResizeUpdate: _updateHeightResize,
+                        onResizeEnd: _endHeightResize,
+                        isResizeActive: _isHeightResizing,
+                      )
+                    : _CollapsedPill(
+                        activeName: activeName,
+                        onAdd: _addPage,
+                        onToggle: () => setState(() => _expanded = true),
+                      ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              right: 2,
+              bottom: 0,
+              child: _ResizeHandle(
+                width: _widthResizeHandleWidth,
+                axis: Axis.horizontal,
+                onResizeStart: _startWidthResize,
+                onResizeUpdate: _updateWidthResize,
+                onResizeEnd: _endWidthResize,
+                isActive: _isWidthResizing,
+              ),
+            ),
+          ],
         );
       },
     );
@@ -394,6 +495,7 @@ class _ExpandedPanel extends ConsumerWidget {
         children: [
           _ResizeHandle(
             height: _resizeHandleHeight,
+            axis: Axis.vertical,
             onResizeStart: onResizeStart,
             onResizeUpdate: onResizeUpdate,
             onResizeEnd: onResizeEnd,
@@ -408,7 +510,7 @@ class _ExpandedPanel extends ConsumerWidget {
                       .read(strategyProvider.notifier)
                       .reorderPage(oldIndex, newIndex);
                 },
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                padding: const EdgeInsets.fromLTRB(8, 0, 0, 8),
                 shrinkWrap: false,
                 physics:
                     needsScroll ? null : const NeverScrollableScrollPhysics(),
@@ -492,14 +594,18 @@ class _ExpandedPanel extends ConsumerWidget {
 
 class _ResizeHandle extends StatelessWidget {
   const _ResizeHandle({
-    required this.height,
+    this.height,
+    this.width,
+    required this.axis,
     required this.onResizeStart,
     required this.onResizeUpdate,
     required this.onResizeEnd,
     required this.isActive,
   });
 
-  final double height;
+  final double? height;
+  final double? width;
+  final Axis axis;
   final VoidCallback onResizeStart;
   final ValueChanged<Offset> onResizeUpdate;
   final Future<void> Function() onResizeEnd;
@@ -509,6 +615,8 @@ class _ResizeHandle extends StatelessWidget {
   Widget build(BuildContext context) {
     return _ResizeHandleStateful(
       height: height,
+      width: width,
+      axis: axis,
       onResizeStart: onResizeStart,
       onResizeUpdate: onResizeUpdate,
       onResizeEnd: onResizeEnd,
@@ -519,14 +627,18 @@ class _ResizeHandle extends StatelessWidget {
 
 class _ResizeHandleStateful extends StatefulWidget {
   const _ResizeHandleStateful({
-    required this.height,
+    this.height,
+    this.width,
+    required this.axis,
     required this.onResizeStart,
     required this.onResizeUpdate,
     required this.onResizeEnd,
     required this.isActive,
   });
 
-  final double height;
+  final double? height;
+  final double? width;
+  final Axis axis;
   final VoidCallback onResizeStart;
   final ValueChanged<Offset> onResizeUpdate;
   final Future<void> Function() onResizeEnd;
@@ -544,31 +656,33 @@ class _ResizeHandleStatefulState extends State<_ResizeHandleStateful> {
     final isHighlighted = widget.isActive || _isHovered;
     final handleColor = isHighlighted
         ? Settings.tacticalVioletTheme.primary
-        : Settings.tacticalVioletTheme.mutedForeground.withValues(alpha: 0.5);
+        : Colors.transparent;
+    final isHorizontalResize = widget.axis == Axis.horizontal;
 
     return MouseRegion(
-      cursor: SystemMouseCursors.resizeUpDown,
+      cursor: isHorizontalResize
+          ? SystemMouseCursors.resizeLeftRight
+          : SystemMouseCursors.resizeUpDown,
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onVerticalDragStart: (_) => widget.onResizeStart(),
-        onVerticalDragUpdate: (details) =>
-            widget.onResizeUpdate(details.globalPosition),
-        onVerticalDragEnd: (_) {
+        onPanStart: (_) => widget.onResizeStart(),
+        onPanUpdate: (details) => widget.onResizeUpdate(details.globalPosition),
+        onPanEnd: (_) {
           widget.onResizeEnd();
         },
-        onVerticalDragCancel: () {
+        onPanCancel: () {
           widget.onResizeEnd();
         },
         child: SizedBox(
-          height: widget.height,
-          width: double.infinity,
+          height: widget.height ?? double.infinity,
+          width: widget.width ?? double.infinity,
           child: Center(
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 120),
-              width: 36,
-              height: 2,
+              width: isHorizontalResize ? 2 : 36,
+              height: isHorizontalResize ? 36 : 2,
               decoration: BoxDecoration(
                 color: handleColor,
                 borderRadius: BorderRadius.circular(999),
