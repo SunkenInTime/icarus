@@ -11,6 +11,9 @@ import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+const double _pagesBarCornerRadius = 12;
+const double _pagesBarInnerButtonRadius = 6;
+
 class PagesBar extends ConsumerStatefulWidget {
   const PagesBar({super.key});
 
@@ -24,7 +27,6 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   static const double _minWidth = 224;
   static const double _maxWidth = 420;
   static const double _widthResizeHandleWidth = 8;
-  static const double _barRadius = 12;
   static final double _minExpandedHeight =
       _ExpandedPanel.minHeightForVisibleRows(
     2,
@@ -310,7 +312,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
               key: _barKey,
               decoration: BoxDecoration(
                 color: Settings.tacticalVioletTheme.card,
-                borderRadius: BorderRadius.circular(_barRadius),
+                borderRadius: BorderRadius.circular(_pagesBarCornerRadius),
                 border: Border.all(
                   color: Settings.tacticalVioletTheme.border,
                   width: 2,
@@ -407,7 +409,6 @@ class _CollapsedPill extends StatelessWidget {
             onPressed: onToggle,
             icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
           ),
-          const SizedBox(width: 4),
         ],
       ),
     );
@@ -506,63 +507,67 @@ class _ExpandedPanel extends ConsumerWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(top: _topPadding),
-              child: ReorderableListView.builder(
-                onReorder: (oldIndex, newIndex) {
-                  ref
-                      .read(strategyProvider.notifier)
-                      .reorderPage(oldIndex, newIndex);
-                },
-                padding: const EdgeInsets.fromLTRB(8, 0, 0, 8),
-                shrinkWrap: false,
-                physics:
-                    needsScroll ? null : const NeverScrollableScrollPhysics(),
-                itemCount: pages.length,
-                buildDefaultDragHandles: false,
-                proxyDecorator: proxyDecorator,
-                itemBuilder: (ctx, i) {
-                  bool showForwardIndicator = false;
-                  bool showBackwardIndicator = false;
-                  final p = pages[i];
+              child: ScrollConfiguration(
+                behavior:
+                    ScrollConfiguration.of(context).copyWith(scrollbars: false),
+                child: ReorderableListView.builder(
+                  onReorder: (oldIndex, newIndex) {
+                    ref
+                        .read(strategyProvider.notifier)
+                        .reorderPage(oldIndex, newIndex);
+                  },
+                  padding: const EdgeInsets.fromLTRB(8, 0, 0, 8),
+                  shrinkWrap: false,
+                  physics:
+                      needsScroll ? null : const NeverScrollableScrollPhysics(),
+                  itemCount: pages.length,
+                  buildDefaultDragHandles: false,
+                  proxyDecorator: proxyDecorator,
+                  itemBuilder: (ctx, i) {
+                    bool showForwardIndicator = false;
+                    bool showBackwardIndicator = false;
+                    final p = pages[i];
 
-                  if (pages.length != 1) {
-                    if (pages.length == 2) {
-                      if (activeIndex == 0 && activeIndex != i) {
-                        showForwardIndicator = true;
-                      } else if (activeIndex == 1 && activeIndex != i) {
-                        showBackwardIndicator = true;
-                      }
-                    } else {
-                      if (forwardIndex != null && i == forwardIndex) {
-                        showForwardIndicator = true;
-                      }
-                      if (backwardIndex != null &&
-                          i == backwardIndex &&
-                          forwardIndex != backwardIndex) {
-                        showBackwardIndicator = true;
+                    if (pages.length != 1) {
+                      if (pages.length == 2) {
+                        if (activeIndex == 0 && activeIndex != i) {
+                          showForwardIndicator = true;
+                        } else if (activeIndex == 1 && activeIndex != i) {
+                          showBackwardIndicator = true;
+                        }
+                      } else {
+                        if (forwardIndex != null && i == forwardIndex) {
+                          showForwardIndicator = true;
+                        }
+                        if (backwardIndex != null &&
+                            i == backwardIndex &&
+                            forwardIndex != backwardIndex) {
+                          showBackwardIndicator = true;
+                        }
                       }
                     }
-                  }
 
-                  return ReorderableDragStartListener(
-                    key: ValueKey(p.id),
-                    index: i,
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _PageRow(
-                        page: p,
-                        active: p.id == activePageId,
-                        showBackwardIndicator: showBackwardIndicator,
-                        showForwardIndicator: showForwardIndicator,
-                        transitionProgress:
-                            _rowTransitionProgress(transitionState, p.id),
-                        onSelect: onSelect,
-                        onRename: onRename,
-                        onDelete: onDelete,
-                        disableDelete: pages.length == 1,
+                    return ReorderableDragStartListener(
+                      key: ValueKey(p.id),
+                      index: i,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: _PageRow(
+                          page: p,
+                          active: p.id == activePageId,
+                          showBackwardIndicator: showBackwardIndicator,
+                          showForwardIndicator: showForwardIndicator,
+                          transitionProgress:
+                              _rowTransitionProgress(transitionState, p.id),
+                          onSelect: onSelect,
+                          onRename: onRename,
+                          onDelete: onDelete,
+                          disableDelete: pages.length == 1,
+                        ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -586,7 +591,6 @@ class _ExpandedPanel extends ConsumerWidget {
                   icon:
                       const Icon(Icons.keyboard_arrow_up, color: Colors.white),
                 ),
-                const SizedBox(width: 4),
               ],
             ),
           ),
@@ -709,7 +713,7 @@ class _ResizeHandleStatefulState extends State<_ResizeHandleStateful> {
   }
 }
 
-class _PageRow extends StatelessWidget {
+class _PageRow extends StatefulWidget {
   const _PageRow({
     required this.page,
     required this.active,
@@ -736,114 +740,135 @@ class _PageRow extends StatelessWidget {
   static const double _rowRadius = 6;
 
   @override
+  State<_PageRow> createState() => _PageRowState();
+}
+
+class _PageRowState extends State<_PageRow> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final fillProgress = transitionProgress?.clamp(0.0, 1.0);
-    final bg = active && fillProgress == null
+    final fillProgress = widget.transitionProgress?.clamp(0.0, 1.0);
+    final showActions =
+        _hovered || widget.active || widget.transitionProgress != null;
+    final bg = widget.active && fillProgress == null
         ? Settings.tacticalVioletTheme.primary
         : Settings.tacticalVioletTheme.card;
-    return Material(
-      // color: bg,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(_rowRadius),
-      ),
-      child: InkWell(
-        mouseCursor: SystemMouseCursors.click,
-        borderRadius: BorderRadius.circular(_rowRadius),
-        onTap: () => onSelect(page.id),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(_rowRadius),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(_rowRadius),
-              border: Border.all(
-                color: Settings.tacticalVioletTheme.border,
-                width: 1,
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Material(
+        // color: bg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(_PageRow._rowRadius),
+        ),
+        child: InkWell(
+          mouseCursor: SystemMouseCursors.click,
+          borderRadius: BorderRadius.circular(_PageRow._rowRadius),
+          onTap: () => widget.onSelect(widget.page.id),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(_PageRow._rowRadius),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(_PageRow._rowRadius),
+                border: Border.all(
+                  color: Settings.tacticalVioletTheme.border,
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                      color: Settings.tacticalVioletTheme.card
+                          .withValues(alpha: 0.2),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4))
+                ],
+                color: bg,
               ),
-              boxShadow: [
-                BoxShadow(
-                    color: Settings.tacticalVioletTheme.card
-                        .withValues(alpha: 0.2),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4))
-              ],
-              color: bg,
-            ),
-            height: _rowHeight,
-            child: Stack(
-              children: [
-                if (fillProgress != null)
-                  Positioned.fill(
-                    child: FractionallySizedBox(
-                      widthFactor: fillProgress,
-                      alignment: Alignment.centerLeft,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: Settings.tacticalVioletTheme.primary,
+              height: _PageRow._rowHeight,
+              child: Stack(
+                children: [
+                  if (fillProgress != null)
+                    Positioned.fill(
+                      child: FractionallySizedBox(
+                        widthFactor: fillProgress,
+                        alignment: Alignment.centerLeft,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Settings.tacticalVioletTheme.primary,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          page.name,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: Colors.white,
-                            fontWeight:
-                                active ? FontWeight.w600 : FontWeight.w500,
-                            fontSize: 14,
+                  Positioned.fill(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 12, right: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              widget.page.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: widget.active
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                fontSize: 14,
+                              ),
+                            ),
                           ),
-                        ),
+                          if (widget.showBackwardIndicator ||
+                              widget.showForwardIndicator) ...[
+                            const SizedBox(width: 6),
+                            if (widget.showBackwardIndicator)
+                              const _KeybindBadge(label: "A"),
+                            if (widget.showBackwardIndicator &&
+                                widget.showForwardIndicator)
+                              const SizedBox(width: 4),
+                            if (widget.showForwardIndicator)
+                              const _KeybindBadge(label: "D"),
+                            const SizedBox(width: 2),
+                          ],
+                          if (showActions) ...[
+                            ShadTooltip(
+                              builder: (context) => const Text("Rename"),
+                              child: ShadIconButton.ghost(
+                                width: 24,
+                                hoverBackgroundColor: Colors.transparent,
+                                foregroundColor: Colors.white,
+                                icon: const Icon(LucideIcons.pen,
+                                    size: 18, color: Colors.white),
+                                onPressed: () => widget.onRename(widget.page),
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            ShadTooltip(
+                              builder: (context) => const Text("Delete"),
+                              child: ShadIconButton.ghost(
+                                width: 24,
+                                hoverForegroundColor:
+                                    Settings.tacticalVioletTheme.destructive,
+                                hoverBackgroundColor: Colors.transparent,
+                                foregroundColor: widget.disableDelete
+                                    ? Colors.white24
+                                    : Colors.white,
+                                icon: const Icon(
+                                  LucideIcons.trash,
+                                  size: 18,
+                                ),
+                                onPressed: widget.disableDelete
+                                    ? null
+                                    : () => widget.onDelete(widget.page),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                      if (showBackwardIndicator || showForwardIndicator) ...[
-                        const SizedBox(width: 6),
-                        if (showBackwardIndicator)
-                          const _KeybindBadge(label: "A"),
-                        if (showBackwardIndicator && showForwardIndicator)
-                          const SizedBox(width: 4),
-                        if (showForwardIndicator)
-                          const _KeybindBadge(label: "D"),
-                        const SizedBox(width: 2),
-                      ],
-                      ShadTooltip(
-                        builder: (context) => const Text("Rename"),
-                        child: ShadIconButton.ghost(
-                          width: 24,
-                          hoverBackgroundColor: Colors.transparent,
-                          foregroundColor: Colors.white,
-                          icon: const Icon(LucideIcons.pen,
-                              size: 18, color: Colors.white),
-                          onPressed: () => onRename(page),
-                        ),
-                      ),
-                      const SizedBox(width: 2),
-                      ShadTooltip(
-                        builder: (context) => const Text("Delete"),
-                        child: ShadIconButton.ghost(
-                          width: 24,
-                          hoverForegroundColor:
-                              Settings.tacticalVioletTheme.destructive,
-                          hoverBackgroundColor: Colors.transparent,
-                          foregroundColor:
-                              disableDelete ? Colors.white24 : Colors.white,
-                          icon: const Icon(
-                            LucideIcons.trash,
-                            size: 18,
-                          ),
-                          onPressed:
-                              disableDelete ? null : () => onDelete(page),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -915,7 +940,7 @@ class _SquareIconButton extends StatelessWidget {
         onPressed: onTap,
         decoration: ShadDecoration(
           border: ShadBorder(
-            radius: BorderRadius.circular(12),
+            radius: BorderRadius.circular(_pagesBarInnerButtonRadius),
           ),
         ),
       ),
