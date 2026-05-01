@@ -13,6 +13,7 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/canvas_resize_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -901,6 +902,7 @@ class _LineUpAgents extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(canvasResizeProvider);
     final groups = ref.watch(lineUpProvider).groups;
 
     return Stack(
@@ -917,6 +919,7 @@ class _LineUpAbilities extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(canvasResizeProvider);
     final groups = ref.watch(lineUpProvider).groups;
 
     return Stack(
