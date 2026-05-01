@@ -19,7 +19,9 @@ class PagesBar extends ConsumerStatefulWidget {
 
 class _PagesBarState extends ConsumerState<PagesBar> {
   static const double _defaultExpandedHeight = 310;
-  static final double _minExpandedHeight = _ExpandedPanel.minHeightForVisibleRows(
+  static const double _barRadius = 12;
+  static final double _minExpandedHeight =
+      _ExpandedPanel.minHeightForVisibleRows(
     2,
   );
   static const double _maxExpandedHeight = 520;
@@ -225,7 +227,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
         return Container(
           decoration: BoxDecoration(
             color: Settings.tacticalVioletTheme.card,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(_barRadius),
             border: Border.all(
               color: Settings.tacticalVioletTheme.border,
               width: 2,
@@ -344,9 +346,9 @@ class _ExpandedPanel extends ConsumerWidget {
 
   static const double _rowHeight = 40; // each page tile height
   static const double _verticalSpacing = 10; // separator height
-  static const double _resizeHandleHeight = 6;
+  static const double _resizeHandleHeight = 8;
   static const double _headerFooterHeight = 48 + 1; // bottom bar + divider
-  static const double _topPadding = 6; // handle + gap should match side inset
+  static const double _topPadding = 0; // handle + gap should match side inset
   static const double _bottomPadding = 0; // list bottom padding inside Expanded
 
   static double minHeightForVisibleRows(int visibleRows) {
@@ -601,6 +603,7 @@ class _PageRow extends StatelessWidget {
   final bool disableDelete;
 
   static const double _rowHeight = 40;
+  static const double _rowRadius = 6;
 
   @override
   Widget build(BuildContext context) {
@@ -611,15 +614,15 @@ class _PageRow extends StatelessWidget {
     return Material(
       // color: bg,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(_rowRadius),
       ),
       child: InkWell(
         mouseCursor: SystemMouseCursors.click,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(_rowRadius),
         onTap: () => onSelect(page.id),
         child: Container(
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(_rowRadius),
             border: Border.all(
               color: Settings.tacticalVioletTheme.border,
               width: 1,
@@ -660,27 +663,32 @@ class _PageRow extends StatelessWidget {
                 ShadTooltip(
                   builder: (context) => const Text("Rename"),
                   child: ShadIconButton.ghost(
+                    width: 24,
                     hoverBackgroundColor: Colors.transparent,
                     foregroundColor: Colors.white,
-                    icon: const Icon(Icons.edit, size: 18, color: Colors.white),
+                    icon: const Icon(LucideIcons.pen,
+                        size: 18, color: Colors.white),
                     onPressed: () => onRename(page),
                   ),
                 ),
+                const SizedBox(width: 2),
                 ShadTooltip(
                   builder: (context) => const Text("Delete"),
                   child: ShadIconButton.ghost(
+                    width: 24,
                     hoverForegroundColor:
                         Settings.tacticalVioletTheme.destructive,
                     hoverBackgroundColor: Colors.transparent,
                     foregroundColor:
                         disableDelete ? Colors.white24 : Colors.white,
                     icon: const Icon(
-                      Icons.delete,
+                      LucideIcons.trash,
                       size: 18,
                     ),
                     onPressed: disableDelete ? null : () => onDelete(page),
                   ),
                 ),
+                const SizedBox(width: 4),
               ],
             ),
           ),
