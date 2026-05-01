@@ -44,18 +44,23 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       constraints: const BoxConstraints(
         maxWidth: SettingsTab._settingsPanelContentWidth + 48,
       ),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
       // Avoid nested scroll views; the outer ShadDialog scroll shows a desktop bar.
       scrollable: false,
-      title: Row(
-        children: [
-          Expanded(
-            child: Text("Settings", style: ShadTheme.of(context).textTheme.h3),
-          ),
-          _SettingsModeSwitcher(
-            mode: _mode,
-            onChanged: (mode) => setState(() => _mode = mode),
-          ),
-        ],
+      title: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child:
+                  Text("Settings", style: ShadTheme.of(context).textTheme.h3),
+            ),
+            _SettingsModeSwitcher(
+              mode: _mode,
+              onChanged: (mode) => setState(() => _mode = mode),
+            ),
+          ],
+        ),
       ),
       child: SizedBox(
         width: SettingsTab._settingsPanelContentWidth,
@@ -304,24 +309,20 @@ class _SettingsModeSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 210,
-      child: CustomSegmentedTabs<_SettingsMode>(
-        value: mode,
-        onChanged: onChanged,
-        compactness: 0.8,
-        indicatorBehavior: SegmentedIndicatorBehavior.staticFill,
-        items: const [
-          SegmentedTabItem<_SettingsMode>(
-            value: _SettingsMode.strategy,
-            child: Text('Strategy'),
-          ),
-          SegmentedTabItem<_SettingsMode>(
-            value: _SettingsMode.global,
-            child: Text('Global'),
-          ),
-        ],
-      ),
+    return CustomSegmentedTabs<_SettingsMode>(
+      value: mode,
+      onChanged: onChanged,
+      compactness: 0.8,
+      items: const [
+        SegmentedTabItem<_SettingsMode>(
+          value: _SettingsMode.strategy,
+          child: Text('Strategy'),
+        ),
+        SegmentedTabItem<_SettingsMode>(
+          value: _SettingsMode.global,
+          child: Text('Global'),
+        ),
+      ],
     );
   }
 }

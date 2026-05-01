@@ -68,6 +68,9 @@ class CustomSegmentedTabs<T> extends StatefulWidget {
 }
 
 class _CustomSegmentedTabsState<T> extends State<CustomSegmentedTabs<T>> {
+  static const double _containerRadius = 6;
+  static const double _segmentRadius = 5;
+
   final GlobalKey _stackKey = GlobalKey();
   late List<GlobalKey> _tabKeys;
   late List<double> _segmentLefts;
@@ -179,7 +182,7 @@ class _CustomSegmentedTabsState<T> extends State<CustomSegmentedTabs<T>> {
       padding: widget.padding,
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.secondary,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(_containerRadius),
         border: Border.all(
           color: Settings.tacticalVioletTheme.border,
           width: 1,
@@ -205,15 +208,8 @@ class _CustomSegmentedTabsState<T> extends State<CustomSegmentedTabs<T>> {
                 bottom: 0,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(100),
-                        blurRadius: 2,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
                     color: Settings.tacticalVioletTheme.primary,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(_segmentRadius),
                   ),
                 ),
               ),
@@ -231,6 +227,7 @@ class _CustomSegmentedTabsState<T> extends State<CustomSegmentedTabs<T>> {
                     animationCurve: widget.animationCurve,
                     horizontalPadding: itemHorizontalPadding,
                     verticalPadding: itemVerticalPadding,
+                    borderRadius: _segmentRadius,
                   ),
                   if (index < widget.items.length - 1) SizedBox(width: itemGap),
                 ],
@@ -263,6 +260,7 @@ class _TabButton<T> extends StatelessWidget {
     required this.animationCurve,
     required this.horizontalPadding,
     required this.verticalPadding,
+    required this.borderRadius,
   });
 
   final SegmentedTabItem<T> item;
@@ -273,6 +271,7 @@ class _TabButton<T> extends StatelessWidget {
   final Curve animationCurve;
   final double horizontalPadding;
   final double verticalPadding;
+  final double borderRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -287,7 +286,7 @@ class _TabButton<T> extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         mouseCursor: SystemMouseCursors.click,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(borderRadius),
         onTap: onTap,
         child: AnimatedContainer(
           duration: animationDuration,
@@ -298,7 +297,7 @@ class _TabButton<T> extends StatelessWidget {
             vertical: verticalPadding,
           ),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(borderRadius),
             color: showStaticFill && isSelected
                 ? Settings.tacticalVioletTheme.primary
                 : Colors.transparent,
