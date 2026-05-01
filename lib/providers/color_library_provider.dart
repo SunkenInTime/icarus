@@ -25,8 +25,8 @@ final defaultColorLibraryProvider = Provider<List<Color>>((ref) {
 });
 
 final customColorLibraryProvider = Provider<List<Color>>((ref) {
-  final prefs = ref.watch(appPreferencesProvider);
-  return prefs.customColorValues.map(Color.new).toList(growable: false);
+  final colorValues = ref.watch(colorLibraryControllerProvider);
+  return colorValues.map(Color.new).toList(growable: false);
 });
 
 final colorLibraryProvider = Provider<List<ColorLibraryEntry>>((ref) {
@@ -45,7 +45,7 @@ class ColorLibraryController extends Notifier<List<int>> {
 
   @override
   List<int> build() {
-    return ref.watch(appPreferencesProvider).customColorValues;
+    return ref.read(appPreferencesProvider).customColorValues;
   }
 
   bool get canAddColor => state.length < customColorLimit;
@@ -69,6 +69,7 @@ class ColorLibraryController extends Notifier<List<int>> {
   }
 
   Future<void> _save(List<int> colorValues) async {
+    state = colorValues;
     await ref
         .read(appPreferencesProvider.notifier)
         .setCustomColorValues(colorValues);
