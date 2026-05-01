@@ -6,6 +6,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -477,6 +478,7 @@ class _ExpandedPanel extends ConsumerWidget {
     final activeIndex = activePageId == null
         ? -1
         : pages.indexWhere((p) => p.id == activePageId);
+    final transitionState = ref.watch(transitionProvider);
 
     int? backwardIndex;
     int? forwardIndex;
@@ -551,6 +553,8 @@ class _ExpandedPanel extends ConsumerWidget {
                         active: p.id == activePageId,
                         showBackwardIndicator: showBackwardIndicator,
                         showForwardIndicator: showForwardIndicator,
+                        transitionProgress:
+                            _rowTransitionProgress(transitionState, p.id),
                         onSelect: onSelect,
                         onRename: onRename,
                         onDelete: onDelete,
@@ -589,6 +593,16 @@ class _ExpandedPanel extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  double? _rowTransitionProgress(PageTransitionState state, String pageId) {
+    if (state.phase != PageTransitionPhase.preparing &&
+        state.phase != PageTransitionPhase.animating) {
+      return null;
+    }
+    if (state.sourcePageId == pageId) return 1 - state.progress;
+    if (state.targetPageId == pageId) return state.progress;
+    return null;
   }
 }
 
@@ -701,6 +715,7 @@ class _PageRow extends StatelessWidget {
     required this.active,
     required this.showBackwardIndicator,
     required this.showForwardIndicator,
+    required this.transitionProgress,
     required this.onSelect,
     required this.onRename,
     required this.onDelete,
@@ -711,6 +726,7 @@ class _PageRow extends StatelessWidget {
   final bool active;
   final bool showBackwardIndicator;
   final bool showForwardIndicator;
+  final double? transitionProgress;
   final ValueChanged<String> onSelect;
   final ValueChanged<StrategyPage> onRename;
   final ValueChanged<StrategyPage> onDelete;
@@ -722,7 +738,8 @@ class _PageRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bg = active
+    final fillProgress = transitionProgress?.clamp(0.0, 1.0);
+    final bg = active && fillProgress == null
         ? Settings.tacticalVioletTheme.primary
         : Settings.tacticalVioletTheme.card;
     return Material(
@@ -734,75 +751,98 @@ class _PageRow extends StatelessWidget {
         mouseCursor: SystemMouseCursors.click,
         borderRadius: BorderRadius.circular(_rowRadius),
         onTap: () => onSelect(page.id),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(_rowRadius),
-            border: Border.all(
-              color: Settings.tacticalVioletTheme.border,
-              width: 1,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(_rowRadius),
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(_rowRadius),
+              border: Border.all(
+                color: Settings.tacticalVioletTheme.border,
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                    color: Settings.tacticalVioletTheme.card
+                        .withValues(alpha: 0.2),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4))
+              ],
+              color: bg,
             ),
-            boxShadow: [
-              BoxShadow(
-                  color:
-                      Settings.tacticalVioletTheme.card.withValues(alpha: 0.2),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4))
-            ],
-            color: bg,
-          ),
-          height: _rowHeight,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 12),
-            child: Row(
+            height: _rowHeight,
+            child: Stack(
               children: [
-                Expanded(
-                  child: Text(
-                    page.name,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                      fontSize: 14,
+                if (fillProgress != null)
+                  Positioned.fill(
+                    child: FractionallySizedBox(
+                      widthFactor: fillProgress,
+                      alignment: Alignment.centerLeft,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Settings.tacticalVioletTheme.primary,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-                if (showBackwardIndicator || showForwardIndicator) ...[
-                  const SizedBox(width: 6),
-                  if (showBackwardIndicator) const _KeybindBadge(label: "A"),
-                  if (showBackwardIndicator && showForwardIndicator)
-                    const SizedBox(width: 4),
-                  if (showForwardIndicator) const _KeybindBadge(label: "D"),
-                  const SizedBox(width: 2),
-                ],
-                ShadTooltip(
-                  builder: (context) => const Text("Rename"),
-                  child: ShadIconButton.ghost(
-                    width: 24,
-                    hoverBackgroundColor: Colors.transparent,
-                    foregroundColor: Colors.white,
-                    icon: const Icon(LucideIcons.pen,
-                        size: 18, color: Colors.white),
-                    onPressed: () => onRename(page),
+                Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          page.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: Colors.white,
+                            fontWeight:
+                                active ? FontWeight.w600 : FontWeight.w500,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      if (showBackwardIndicator || showForwardIndicator) ...[
+                        const SizedBox(width: 6),
+                        if (showBackwardIndicator)
+                          const _KeybindBadge(label: "A"),
+                        if (showBackwardIndicator && showForwardIndicator)
+                          const SizedBox(width: 4),
+                        if (showForwardIndicator)
+                          const _KeybindBadge(label: "D"),
+                        const SizedBox(width: 2),
+                      ],
+                      ShadTooltip(
+                        builder: (context) => const Text("Rename"),
+                        child: ShadIconButton.ghost(
+                          width: 24,
+                          hoverBackgroundColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          icon: const Icon(LucideIcons.pen,
+                              size: 18, color: Colors.white),
+                          onPressed: () => onRename(page),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      ShadTooltip(
+                        builder: (context) => const Text("Delete"),
+                        child: ShadIconButton.ghost(
+                          width: 24,
+                          hoverForegroundColor:
+                              Settings.tacticalVioletTheme.destructive,
+                          hoverBackgroundColor: Colors.transparent,
+                          foregroundColor:
+                              disableDelete ? Colors.white24 : Colors.white,
+                          icon: const Icon(
+                            LucideIcons.trash,
+                            size: 18,
+                          ),
+                          onPressed:
+                              disableDelete ? null : () => onDelete(page),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 2),
-                ShadTooltip(
-                  builder: (context) => const Text("Delete"),
-                  child: ShadIconButton.ghost(
-                    width: 24,
-                    hoverForegroundColor:
-                        Settings.tacticalVioletTheme.destructive,
-                    hoverBackgroundColor: Colors.transparent,
-                    foregroundColor:
-                        disableDelete ? Colors.white24 : Colors.white,
-                    icon: const Icon(
-                      LucideIcons.trash,
-                      size: 18,
-                    ),
-                    onPressed: disableDelete ? null : () => onDelete(page),
-                  ),
-                ),
-                const SizedBox(width: 4),
               ],
             ),
           ),

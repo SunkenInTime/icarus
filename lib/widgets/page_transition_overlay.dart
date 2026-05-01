@@ -69,7 +69,9 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     if (_controller == null) {
       _controller = AnimationController(vsync: this, duration: duration)
         ..addListener(() {
-          // ref.read(transitionProvider.notifier).setProgress(_controller!.value);
+          ref.read(transitionProvider.notifier).setProgress(
+                Curves.easeInOutCubic.transform(_controller!.value),
+              );
           setState(() {});
         })
         ..addStatusListener((status) {

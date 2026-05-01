@@ -1045,13 +1045,17 @@ class StrategyProvider extends Notifier<StrategyState> {
       ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
     final resolvedDirection =
         direction ?? _resolveDirectionForPage(pageID, orderedPages);
+    final sourcePageId = activePageID;
+    final targetPageId = pageID;
     final startSettings = ref.read(strategySettingsProvider);
 
     final prev = _snapshotAllPlaced();
     transitionNotifier.prepare(prev.values.toList(),
         direction: resolvedDirection,
         startAgentSize: startSettings.agentSize,
-        startAbilitySize: startSettings.abilitySize);
+        startAbilitySize: startSettings.abilitySize,
+        sourcePageId: sourcePageId,
+        targetPageId: targetPageId);
 
     // Load target page (hydrates providers)
     await setActivePage(pageID);
@@ -1070,6 +1074,8 @@ class StrategyProvider extends Notifier<StrategyState> {
           endAgentSize: endSettings.agentSize,
           startAbilitySize: startSettings.abilitySize,
           endAbilitySize: endSettings.abilitySize,
+          sourcePageId: sourcePageId,
+          targetPageId: targetPageId,
         );
       } else {
         transitionNotifier.complete();
