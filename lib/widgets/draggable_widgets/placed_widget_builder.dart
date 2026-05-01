@@ -151,16 +151,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                       abilitySize: abilitySize,
                       mapScale: mapScale,
                     ),
-                    const Positioned.fill(
-                      child: LineUpLinePainter(),
-                    ),
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        _LineUpAgents(),
-                        _LineUpAbilities(),
-                      ],
-                    ),
+                    const LineUpOverlay(),
                   ],
                 ),
               ),
@@ -200,7 +191,9 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref.read(lineUpProvider.notifier).setCurrentAbility(placedAbility);
+                ref
+                    .read(lineUpProvider.notifier)
+                    .setCurrentAbility(placedAbility);
                 return;
               }
 
@@ -880,6 +873,24 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                     },
                   ),
           ),
+      ],
+    );
+  }
+}
+
+class LineUpOverlay extends StatelessWidget {
+  const LineUpOverlay({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: const [
+        Positioned.fill(
+          child: LineUpLinePainter(),
+        ),
+        _LineUpAgents(),
+        _LineUpAbilities(),
       ],
     );
   }
