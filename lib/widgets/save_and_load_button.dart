@@ -149,6 +149,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                                 utilities: activePage.utilityData,
                                 strategySettings: activePage.settings,
                                 strategyState: ref.read(strategyProvider),
+                                pageName: activePage.name,
                                 lineUpGroups: activePage.lineUpGroups,
                                 themeProfileId: newStrat.themeProfileId,
                                 themeOverridePalette:

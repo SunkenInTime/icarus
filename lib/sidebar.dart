@@ -21,7 +21,7 @@ class SideBarUI extends ConsumerStatefulWidget {
 
 class _SideBarUIState extends ConsumerState<SideBarUI> {
   static const BorderRadius _panelBorderRadius = BorderRadius.all(
-    Radius.circular(20),
+    Radius.circular(12),
   );
 
   ScrollController gridScrollController = ScrollController();

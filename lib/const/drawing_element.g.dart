@@ -9,7 +9,8 @@ part of 'drawing_element.dart';
 FreeDrawing _$FreeDrawingFromJson(Map<String, dynamic> json) => FreeDrawing(
       listOfPoints: _$JsonConverterFromJson<List<dynamic>, List<Offset>>(
           json['listOfPoints'], const OffsetListConverter().fromJson),
-      color: const ColorConverter().fromJson(json['color'] as String),
+      colorValue: _drawingColorValueFromJson(
+          _readDrawingColorJsonValue(json, 'colorValue')),
       thickness: (json['thickness'] as num?)?.toDouble() ?? 5.0,
       boundingBox: json['boundingBox'] == null
           ? null
@@ -25,7 +26,7 @@ FreeDrawing _$FreeDrawingFromJson(Map<String, dynamic> json) => FreeDrawing(
 
 Map<String, dynamic> _$FreeDrawingToJson(FreeDrawing instance) =>
     <String, dynamic>{
-      'color': const ColorConverter().toJson(instance.color),
+      'colorValue': _drawingColorValueToJson(instance.colorValue),
       'thickness': instance.thickness,
       'isDotted': instance.isDotted,
       'hasArrow': instance.hasArrow,

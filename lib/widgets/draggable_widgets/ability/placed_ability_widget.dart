@@ -8,6 +8,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -43,7 +44,7 @@ bool _shouldShowRotatableHandle(
 
 class PlacedAbilityWidget extends ConsumerStatefulWidget {
   final PlacedAbility ability;
-  final Function(DraggableDetails details) onDragEnd;
+  final void Function(DraggableDetails details, String draggedId) onDragEnd;
   final String id;
   final PlacedWidget data;
   final double rotation;
@@ -74,6 +75,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
   double? localRotation;
   double? localLength;
   bool isDragging = false;
+  String? _activeDragId;
 
   double _resolvedLengthFor(PlacedAbility ability, double rawLength) {
     final abilityData = ability.data.abilityData;
@@ -174,7 +176,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             ),
           ),
           childWhenDragging: const SizedBox.shrink(),
-          onDragEnd: widget.onDragEnd,
+          onDragEnd: (details) => widget.onDragEnd(details, widget.id),
           child: widget.ability.data.abilityData!.createWidget(
             id: widget.id,
             isAlly: isAlly,
@@ -342,15 +344,26 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             ),
             childWhenDragging: const SizedBox.shrink(),
             onDragStarted: () {
+              final shouldDuplicate =
+                  !widget.isLineUp && ref.read(duplicateDragModifierProvider);
+              final duplicateId = shouldDuplicate
+                  ? ref.read(abilityProvider.notifier).duplicateAbilityAt(
+                        sourceId: abilityRef.id,
+                        position: abilityRef.position,
+                      )
+                  : null;
               setState(() {
                 isDragging = true;
+                _activeDragId = duplicateId ?? abilityRef.id;
               });
             },
             onDragEnd: (DraggableDetails details) {
+              final dragId = _activeDragId ?? abilityRef.id;
               setState(() {
                 isDragging = false;
+                _activeDragId = null;
               });
-              widget.onDragEnd(details);
+              widget.onDragEnd(details, dragId);
             },
             // dragAnchorStrategy: pointDragAnchorStrategy,
             child: abilityData.createWidget(
@@ -392,7 +405,26 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           )),
         ),
         childWhenDragging: const SizedBox.shrink(),
-        onDragEnd: widget.onDragEnd,
+        onDragStarted: () {
+          final shouldDuplicate =
+              !widget.isLineUp && ref.read(duplicateDragModifierProvider);
+          final duplicateId = shouldDuplicate
+              ? ref.read(abilityProvider.notifier).duplicateAbilityAt(
+                    sourceId: abilityRef.id,
+                    position: abilityRef.position,
+                  )
+              : null;
+          setState(() {
+            _activeDragId = duplicateId ?? abilityRef.id;
+          });
+        },
+        onDragEnd: (details) {
+          final dragId = _activeDragId ?? abilityRef.id;
+          setState(() {
+            _activeDragId = null;
+          });
+          widget.onDragEnd(details, dragId);
+        },
         child: widget.ability.data.abilityData!.createWidget(
           id: widget.id,
           isAlly: isAlly,

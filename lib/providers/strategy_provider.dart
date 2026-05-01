@@ -800,7 +800,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               return Line(
                 lineStart: shift(element.lineStart),
                 lineEnd: shift(element.lineEnd),
-                color: element.color,
+                colorValue: element.colorValue,
                 thickness: element.thickness,
                 boundingBox: shiftBoundingBox(element.boundingBox),
                 isDotted: element.isDotted,
@@ -816,7 +816,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
               return FreeDrawing(
                 listOfPoints: shiftedPoints,
-                color: element.color,
+                colorValue: element.colorValue,
                 thickness: element.thickness,
                 boundingBox: shiftBoundingBox(element.boundingBox),
                 isDotted: element.isDotted,
@@ -830,7 +830,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               return RectangleDrawing(
                 start: shift(element.start),
                 end: shift(element.end),
-                color: element.color,
+                colorValue: element.colorValue,
                 thickness: element.thickness,
                 boundingBox: shiftBoundingBox(element.boundingBox),
                 isDotted: element.isDotted,
@@ -1045,13 +1045,17 @@ class StrategyProvider extends Notifier<StrategyState> {
       ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
     final resolvedDirection =
         direction ?? _resolveDirectionForPage(pageID, orderedPages);
+    final sourcePageId = activePageID;
+    final targetPageId = pageID;
     final startSettings = ref.read(strategySettingsProvider);
 
     final prev = _snapshotAllPlaced();
     transitionNotifier.prepare(prev.values.toList(),
         direction: resolvedDirection,
         startAgentSize: startSettings.agentSize,
-        startAbilitySize: startSettings.abilitySize);
+        startAbilitySize: startSettings.abilitySize,
+        sourcePageId: sourcePageId,
+        targetPageId: targetPageId);
 
     // Load target page (hydrates providers)
     await setActivePage(pageID);
@@ -1070,6 +1074,8 @@ class StrategyProvider extends Notifier<StrategyState> {
           endAgentSize: endSettings.agentSize,
           startAbilitySize: startSettings.abilitySize,
           endAbilitySize: endSettings.abilitySize,
+          sourcePageId: sourcePageId,
+          targetPageId: targetPageId,
         );
       } else {
         transitionNotifier.complete();
@@ -3025,6 +3031,13 @@ class StrategyProvider extends Notifier<StrategyState> {
     final pageID = const Uuid().v4();
     final defaultThemeProfileId =
         ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies;
+    final appPreferences = ref.read(appPreferencesProvider);
+    final defaultSettings = StrategySettings(
+      agentSize: appPreferences.defaultAgentSizeForNewStrategies,
+      abilitySize: appPreferences.defaultAbilitySizeForNewStrategies,
+      useNeutralTeamColors:
+          appPreferences.defaultNeutralTeamColorsForNewStrategies,
+    );
     final newStrategy = StrategyData(
       mapData: MapValue.ascent,
       versionNumber: Settings.versionNumber,
@@ -3043,13 +3056,13 @@ class StrategyProvider extends Notifier<StrategyState> {
           lineUpGroups: [],
           sortIndex: 0,
           isAttack: true,
-          settings: StrategySettings(),
+          settings: defaultSettings,
         )
       ],
       lastEdited: DateTime.now(),
 
       // ignore: deprecated_member_use_from_same_package
-      strategySettings: StrategySettings(),
+      strategySettings: defaultSettings,
       folderID: ref.read(folderProvider),
       themeProfileId: defaultThemeProfileId,
     );
@@ -3648,6 +3661,36 @@ class StrategyProvider extends Notifier<StrategyState> {
             agentSize: target.agentSize,
             abilitySize: target.abilitySize,
           ),
+        ),
+    ];
+
+    final strategyTheme = ref.read(strategyThemeProvider);
+    final updated = strat.copyWith(
+      pages: newPages,
+      mapData: ref.read(mapProvider).currentMap,
+      themeProfileId: strategyTheme.profileId,
+      clearThemeProfileId: strategyTheme.profileId == null,
+      themeOverridePalette: strategyTheme.overridePalette,
+      clearThemeOverridePalette: strategyTheme.overridePalette == null,
+      lastEdited: DateTime.now(),
+    );
+    await box.put(updated.id, updated);
+    setUnsaved();
+  }
+
+  Future<void> applyNeutralTeamColorsToAllPages(bool value) async {
+    if (state.stratName == null) return;
+
+    await _syncCurrentPageToHive();
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(state.id);
+    if (strat == null || strat.pages.isEmpty) return;
+
+    final newPages = [
+      for (final page in strat.pages)
+        page.copyWith(
+          settings: page.settings.copyWith(useNeutralTeamColors: value),
         ),
     ];
 

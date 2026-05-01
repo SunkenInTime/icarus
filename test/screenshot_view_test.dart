@@ -168,6 +168,7 @@ void main() {
     bool showSpawnBarrier = false,
     bool showRegionNames = false,
     bool showUltOrbs = false,
+    String? pageName,
   }) {
     final strategyState = StrategyState(
       isSaved: true,
@@ -217,6 +218,7 @@ void main() {
             strategySettings: StrategySettings(),
             isAttack: isAttack,
             strategyState: strategyState,
+            pageName: pageName,
             lineUps: const <LineUp>[],
             themeProfileId: null,
             themeOverridePalette: null,
@@ -347,5 +349,25 @@ void main() {
     expect(barrierTransform.transform.storage[5], -1);
     expect(ultOrbTransform.transform.storage[0], -1);
     expect(ultOrbTransform.transform.storage[5], -1);
+  });
+
+  testWidgets('page name is shown in the lower-left screenshot corner',
+      (tester) async {
+    await tester.pumpWidget(
+      buildHarness(
+        isAttack: true,
+        pageName: 'A Execute',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final labelFinder = find.text('A Execute');
+
+    expect(labelFinder, findsOneWidget);
+    expect(tester.getBottomLeft(labelFinder).dx, 28);
+    expect(
+      tester.getBottomLeft(labelFinder).dy,
+      lessThan(CoordinateSystem.screenShotSize.height),
+    );
   });
 }

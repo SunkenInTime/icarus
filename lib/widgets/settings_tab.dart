@@ -8,15 +8,30 @@ import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/custom_segmented_tabs.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
-class SettingsTab extends ConsumerWidget {
+enum _SettingsMode {
+  strategy,
+  global,
+}
+
+class SettingsTab extends ConsumerStatefulWidget {
   const SettingsTab({super.key});
 
+  static const double _settingsPanelContentWidth = 490;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<SettingsTab> createState() => _SettingsTabState();
+}
+
+class _SettingsTabState extends ConsumerState<SettingsTab> {
+  _SettingsMode _mode = _SettingsMode.strategy;
+
+  @override
+  Widget build(BuildContext context) {
     final activeStrategyName = ref.watch(strategyProvider).stratName;
     final strategySettings = ref.watch(strategySettingsProvider);
     final mapState = ref.watch(mapProvider);
@@ -27,43 +42,44 @@ class SettingsTab extends ConsumerWidget {
     // match the sidebar panel (content + ShadDialog's default horizontal padding).
     return ShadSheet(
       constraints: const BoxConstraints(
-        maxWidth: Settings.sideBarPanelWidth + 48,
+        maxWidth: SettingsTab._settingsPanelContentWidth + 48,
       ),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
       // Avoid nested scroll views; the outer ShadDialog scroll shows a desktop bar.
       scrollable: false,
-      title: Row(
-        children: [
-          Icon(
-            LucideIcons.pencil,
-            size: 18,
-            color: Settings.tacticalVioletTheme.primary,
-          ),
-          const SizedBox(width: 8),
-          Text("Settings", style: ShadTheme.of(context).textTheme.h3),
-        ],
+      title: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child:
+                  Text("Settings", style: ShadTheme.of(context).textTheme.h3),
+            ),
+            _SettingsModeSwitcher(
+              mode: _mode,
+              onChanged: (mode) => setState(() => _mode = mode),
+            ),
+          ],
+        ),
       ),
-      description: const Text(
-        "Adjust strategy sizing and workspace visibility from one place.",
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: SizedBox(
-          width: Settings.sideBarContentWidth,
-          child: Material(
-            color: Colors.transparent,
-            child: ScrollConfiguration(
-              behavior:
-                  ScrollConfiguration.of(context).copyWith(scrollbars: false),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+      child: SizedBox(
+        width: SettingsTab._settingsPanelContentWidth,
+        child: Material(
+          color: Colors.transparent,
+          child: ScrollConfiguration(
+            behavior:
+                ScrollConfiguration.of(context).copyWith(scrollbars: false),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (_mode == _SettingsMode.strategy) ...[
                     SettingsScopeCard(
                       scope: SettingsScope.strategy,
-                      title: "Page object sizing",
+                      title: "Strategy object styling",
                       description: activeStrategyName == null
-                          ? "Resize placed objects for the current strategy page."
-                          : "Resize placed objects for \"$activeStrategyName\".",
+                          ? "Customize placed objects for the current strategy."
+                          : "Customize placed objects for \"$activeStrategyName\".",
                       child: Column(
                         children: [
                           _SettingsSliderTile(
@@ -99,7 +115,91 @@ class SettingsTab extends ConsumerWidget {
                                   .updateAbilitySize(value);
                             },
                           ),
+                          const _SettingsItemDivider(),
+                          _SettingsToggleTile(
+                            icon: Icons.contrast_outlined,
+                            title: "Neutral team marker colors",
+                            description:
+                                "Render ally and enemy marker accents as matching-brightness greys.",
+                            value: strategySettings.useNeutralTeamColors,
+                            onChanged: (value) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!context.mounted) return;
+                                ref
+                                    .read(strategySettingsProvider.notifier)
+                                    .updateNeutralTeamColors(value);
+                                ref
+                                    .read(strategyProvider.notifier)
+                                    .applyNeutralTeamColorsToAllPages(value);
+                              });
+                            },
+                          ),
                           const _PageMarkerSizesSyncBanner(),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    SettingsScopeCard(
+                      scope: SettingsScope.workspace,
+                      title: "Strategy defaults",
+                      description:
+                          "Set the starting values used when creating new strategies.",
+                      child: Column(
+                        children: [
+                          _SettingsSliderTile(
+                            icon: Icons.person_pin_circle_outlined,
+                            title: "Default agent markers",
+                            description:
+                                "Default size for agent markers in new strategies.",
+                            value:
+                                appPreferences.defaultAgentSizeForNewStrategies,
+                            min: Settings.agentSizeMin,
+                            max: Settings.agentSizeMax,
+                            divisions: 15,
+                            accentColor: Settings.tacticalVioletTheme.primary,
+                            onChanged: (value) {
+                              ref
+                                  .read(appPreferencesProvider.notifier)
+                                  .setDefaultAgentSizeForNewStrategies(value);
+                            },
+                          ),
+                          const _SettingsItemDivider(),
+                          _SettingsSliderTile(
+                            icon: Icons.auto_awesome_outlined,
+                            title: "Default ability markers",
+                            description:
+                                "Default size for ability markers in new strategies.",
+                            value: appPreferences
+                                .defaultAbilitySizeForNewStrategies,
+                            min: Settings.abilitySizeMin,
+                            max: Settings.abilitySizeMax,
+                            divisions: 15,
+                            accentColor: Settings.tacticalVioletTheme.primary,
+                            onChanged: (value) {
+                              ref
+                                  .read(appPreferencesProvider.notifier)
+                                  .setDefaultAbilitySizeForNewStrategies(value);
+                            },
+                          ),
+                          const _SettingsItemDivider(),
+                          _SettingsToggleTile(
+                            icon: Icons.contrast_outlined,
+                            title: "Neutral marker colors by default",
+                            description:
+                                "Use grey ally and enemy accents for new strategies.",
+                            value: appPreferences
+                                .defaultNeutralTeamColorsForNewStrategies,
+                            onChanged: (value) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (!context.mounted) return;
+                                ref
+                                    .read(appPreferencesProvider.notifier)
+                                    .setDefaultNeutralTeamColorsForNewStrategies(
+                                      value,
+                                    );
+                              });
+                            },
+                          ),
                         ],
                       ),
                     ),
@@ -186,14 +286,43 @@ class SettingsTab extends ConsumerWidget {
                     const _SectionDivider(),
                     const SizedBox(height: 20),
                     const MapThemeSettingsSection(),
-                    const SizedBox(height: 4),
                   ],
-                ),
+                  const SizedBox(height: 4),
+                ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SettingsModeSwitcher extends StatelessWidget {
+  const _SettingsModeSwitcher({
+    required this.mode,
+    required this.onChanged,
+  });
+
+  final _SettingsMode mode;
+  final ValueChanged<_SettingsMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomSegmentedTabs<_SettingsMode>(
+      value: mode,
+      onChanged: onChanged,
+      compactness: 0.8,
+      items: const [
+        SegmentedTabItem<_SettingsMode>(
+          value: _SettingsMode.strategy,
+          child: Text('Strategy'),
+        ),
+        SegmentedTabItem<_SettingsMode>(
+          value: _SettingsMode.global,
+          child: Text('Global'),
+        ),
+      ],
     );
   }
 }

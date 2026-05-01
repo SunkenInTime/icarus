@@ -60,6 +60,7 @@ class ScreenshotView extends ConsumerWidget {
     required this.strategySettings,
     required this.isAttack,
     required this.strategyState,
+    this.pageName,
     List<LineUpGroup> lineUpGroups = const [],
     @Deprecated('Use lineUpGroups instead') List<LineUp> lineUps = const [],
     required this.themeProfileId,
@@ -80,6 +81,7 @@ class ScreenshotView extends ConsumerWidget {
   final List<PlacedUtility> utilities;
   final StrategySettings strategySettings;
   final bool isAttack;
+  final String? pageName;
   final List<LineUpGroup> lineUpGroups;
   final String? themeProfileId;
   final MapThemePalette? themeOverridePalette;
@@ -219,7 +221,32 @@ class ScreenshotView extends ConsumerWidget {
               ),
             ),
           ),
-          // Add any other widgets you want to include in the screenshot
+          if (pageName?.trim().isNotEmpty ?? false)
+            Positioned(
+              left: 28,
+              bottom: 22,
+              child: SizedBox(
+                width: CoordinateSystem.screenShotSize.width - 56,
+                child: Text(
+                  pageName!.trim(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xffb8b8c2),
+                    decoration: TextDecoration.none,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w600,
+                    shadows: [
+                      Shadow(
+                        color: Color(0xaa000000),
+                        offset: Offset(0, 1),
+                        blurRadius: 4,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
