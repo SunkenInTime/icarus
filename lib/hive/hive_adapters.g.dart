@@ -683,17 +683,20 @@ class StrategySettingsAdapter extends TypeAdapter<StrategySettings> {
       abilitySize: fields[1] == null
           ? Settings.abilitySize
           : (fields[1] as num).toDouble(),
+      useNeutralTeamColors: fields[2] == null ? false : fields[2] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, StrategySettings obj) {
     writer
-      ..writeByte(2)
+      ..writeByte(3)
       ..writeByte(0)
       ..write(obj.agentSize)
       ..writeByte(1)
-      ..write(obj.abilitySize);
+      ..write(obj.abilitySize)
+      ..writeByte(2)
+      ..write(obj.useNeutralTeamColors);
   }
 
   @override
@@ -1289,6 +1292,14 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies: fields[0] as String,
       autosaveEnabled: fields[1] == null ? true : fields[1] as bool,
+      defaultAgentSizeForNewStrategies: fields[5] == null
+          ? Settings.agentSize
+          : (fields[5] as num).toDouble(),
+      defaultAbilitySizeForNewStrategies: fields[6] == null
+          ? Settings.abilitySize
+          : (fields[6] as num).toDouble(),
+      defaultNeutralTeamColorsForNewStrategies:
+          fields[4] == null ? false : fields[4] as bool,
       pagesBarExpandedHeight:
           fields[2] == null ? 310.0 : (fields[2] as num).toDouble(),
       customColorValues: (fields[3] as List?)?.cast<int>(),
@@ -1298,7 +1309,7 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(7)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1306,7 +1317,13 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(2)
       ..write(obj.pagesBarExpandedHeight)
       ..writeByte(3)
-      ..write(obj.customColorValues);
+      ..write(obj.customColorValues)
+      ..writeByte(4)
+      ..write(obj.defaultNeutralTeamColorsForNewStrategies)
+      ..writeByte(5)
+      ..write(obj.defaultAgentSizeForNewStrategies)
+      ..writeByte(6)
+      ..write(obj.defaultAbilitySizeForNewStrategies);
   }
 
   @override

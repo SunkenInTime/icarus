@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:uuid/uuid.dart';
 
 class MapThemePalette extends HiveObject {
@@ -111,12 +112,18 @@ class MapThemeProfile extends HiveObject {
 class AppPreferences extends HiveObject {
   final String defaultThemeProfileIdForNewStrategies;
   final bool autosaveEnabled;
+  final double defaultAgentSizeForNewStrategies;
+  final double defaultAbilitySizeForNewStrategies;
+  final bool defaultNeutralTeamColorsForNewStrategies;
   final double pagesBarExpandedHeight;
   final List<int> customColorValues;
 
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
     this.autosaveEnabled = true,
+    this.defaultAgentSizeForNewStrategies = Settings.agentSize,
+    this.defaultAbilitySizeForNewStrategies = Settings.abilitySize,
+    this.defaultNeutralTeamColorsForNewStrategies = false,
     this.pagesBarExpandedHeight = 310.0,
     List<int>? customColorValues,
   }) : customColorValues = List.unmodifiable(customColorValues ?? const []);
@@ -124,6 +131,9 @@ class AppPreferences extends HiveObject {
   AppPreferences copyWith({
     String? defaultThemeProfileIdForNewStrategies,
     bool? autosaveEnabled,
+    double? defaultAgentSizeForNewStrategies,
+    double? defaultAbilitySizeForNewStrategies,
+    bool? defaultNeutralTeamColorsForNewStrategies,
     double? pagesBarExpandedHeight,
     List<int>? customColorValues,
   }) {
@@ -132,6 +142,13 @@ class AppPreferences extends HiveObject {
           defaultThemeProfileIdForNewStrategies ??
               this.defaultThemeProfileIdForNewStrategies,
       autosaveEnabled: autosaveEnabled ?? this.autosaveEnabled,
+      defaultAgentSizeForNewStrategies: defaultAgentSizeForNewStrategies ??
+          this.defaultAgentSizeForNewStrategies,
+      defaultAbilitySizeForNewStrategies: defaultAbilitySizeForNewStrategies ??
+          this.defaultAbilitySizeForNewStrategies,
+      defaultNeutralTeamColorsForNewStrategies:
+          defaultNeutralTeamColorsForNewStrategies ??
+              this.defaultNeutralTeamColorsForNewStrategies,
       pagesBarExpandedHeight:
           pagesBarExpandedHeight ?? this.pagesBarExpandedHeight,
       customColorValues: customColorValues ?? this.customColorValues,
@@ -490,6 +507,37 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
 
   Future<void> setAutosaveEnabled(bool enabled) async {
     final updated = _readFromHive().copyWith(autosaveEnabled: enabled);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setDefaultNeutralTeamColorsForNewStrategies(bool enabled) async {
+    final updated = _readFromHive().copyWith(
+      defaultNeutralTeamColorsForNewStrategies: enabled,
+    );
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setDefaultAgentSizeForNewStrategies(double size) async {
+    final updated =
+        _readFromHive().copyWith(defaultAgentSizeForNewStrategies: size);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setDefaultAbilitySizeForNewStrategies(double size) async {
+    final updated =
+        _readFromHive().copyWith(defaultAbilitySizeForNewStrategies: size);
     await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,
       updated,

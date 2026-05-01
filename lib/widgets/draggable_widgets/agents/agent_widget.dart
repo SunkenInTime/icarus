@@ -93,6 +93,8 @@ class AgentWidget extends ConsumerWidget {
     final coordinateSystem = CoordinateSystem.instance;
     final agentSize =
         forcedAgentSize ?? ref.watch(strategySettingsProvider).agentSize;
+    final useNeutralTeamColors =
+        ref.watch(strategySettingsProvider).useNeutralTeamColors;
     final isScreenshot = ref.watch(screenshotProvider);
     final deadProgress =
         (deadStateProgress ?? (state == AgentState.dead ? 1.0 : 0.0))
@@ -105,9 +107,9 @@ class AgentWidget extends ConsumerWidget {
     final agentImage = RepaintBoundary(child: Image.asset(agent.iconPath));
 
     // Determine background color
-    Color bgColor = Settings.enemyBGColor;
-    if (isAlly) {
-      bgColor = Settings.allyBGColor;
+    Color bgColor = isAlly ? Settings.allyBGColor : Settings.enemyBGColor;
+    if (useNeutralTeamColors) {
+      bgColor = ShadTheme.of(context).colorScheme.secondary;
     }
 
     final deadBgColor = isAlly ? _mutedAllyBGColor : _mutedEnemyBGColor;
@@ -118,9 +120,10 @@ class AgentWidget extends ConsumerWidget {
     }
 
     // Determine outline color
-    Color outlineColor = Settings.enemyOutlineColor;
-    if (isAlly) {
-      outlineColor = Settings.allyOutlineColor;
+    Color outlineColor =
+        isAlly ? Settings.allyOutlineColor : Settings.enemyOutlineColor;
+    if (useNeutralTeamColors) {
+      outlineColor = Settings.neutralTeamShade(outlineColor);
     }
 
     final deadOutlineColor =

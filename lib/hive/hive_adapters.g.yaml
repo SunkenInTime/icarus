@@ -245,12 +245,14 @@ types:
         index: 1
   StrategySettings:
     typeId: 14
-    nextIndex: 2
+    nextIndex: 3
     fields:
       agentSize:
         index: 0
       abilitySize:
         index: 1
+      useNeutralTeamColors:
+        index: 2
   PlacedUtility:
     typeId: 15
     nextIndex: 15
@@ -437,7 +439,7 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 4
+    nextIndex: 7
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0
@@ -447,6 +449,12 @@ types:
         index: 2
       customColorValues:
         index: 3
+      defaultNeutralTeamColorsForNewStrategies:
+        index: 4
+      defaultAgentSizeForNewStrategies:
+        index: 5
+      defaultAbilitySizeForNewStrategies:
+        index: 6
   PlacedViewConeAgent:
     typeId: 29
     nextIndex: 9
