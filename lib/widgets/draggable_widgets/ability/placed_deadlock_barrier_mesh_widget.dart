@@ -12,6 +12,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
@@ -33,7 +34,7 @@ class PlacedDeadlockBarrierMeshWidget extends ConsumerStatefulWidget {
   });
 
   final PlacedAbility ability;
-  final void Function(DraggableDetails details) onDragEnd;
+  final void Function(DraggableDetails details, String draggedId) onDragEnd;
   final String id;
   final PlacedWidget data;
   final bool isLineUp;
@@ -56,6 +57,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
   bool _isDragging = false;
   bool _isRotating = false;
   bool _isRotationHandleHovered = false;
+  String? _activeDragId;
   Offset _rotationOriginGlobal = Offset.zero;
   late final AnimationController _animationController;
   late final Animation<double> _scaleAnimation;
@@ -206,14 +208,25 @@ class _PlacedDeadlockBarrierMeshWidgetState
               ),
               childWhenDragging: const SizedBox.shrink(),
               onDragStarted: () {
+                final shouldDuplicate =
+                    !widget.isLineUp && ref.read(duplicateDragModifierProvider);
+                final duplicateId = shouldDuplicate
+                    ? ref.read(abilityProvider.notifier).duplicateAbilityAt(
+                          sourceId: abilityRef.id,
+                          position: abilityRef.position,
+                        )
+                    : null;
                 setState(() {
                   _isDragging = true;
+                  _activeDragId = duplicateId ?? abilityRef.id;
                 });
               },
               onDragEnd: (details) {
-                widget.onDragEnd(details);
+                final dragId = _activeDragId ?? abilityRef.id;
+                widget.onDragEnd(details, dragId);
                 setState(() {
                   _isDragging = false;
+                  _activeDragId = null;
                 });
               },
               child: AbilityWidget(

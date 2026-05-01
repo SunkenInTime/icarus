@@ -369,7 +369,7 @@ class _AbilityList extends ConsumerWidget {
             ability: ability,
             id: ability.id,
             length: ability.length,
-            onDragEnd: (details) {
+            onDragEnd: (details, draggedId) {
               final renderBox = context.findRenderObject() as RenderBox;
               final localOffset = renderBox.globalToLocal(details.offset);
               final virtualOffset =
@@ -381,13 +381,13 @@ class _AbilityList extends ConsumerWidget {
                   virtualOffset.translate(safeArea.dx, safeArea.dy))) {
                 ref
                     .read(abilityProvider.notifier)
-                    .removeAbilityAsAction(ability.id);
+                    .removeAbilityAsAction(draggedId);
                 return;
               }
 
               ref
                   .read(abilityProvider.notifier)
-                  .updatePosition(virtualOffset, ability.id);
+                  .updatePosition(virtualOffset, draggedId);
             },
           ),
       ],
