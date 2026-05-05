@@ -57,9 +57,10 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     final strategySettings = ref.watch(strategySettingsProvider);
     final mapState = ref.watch(mapProvider);
     final appPreferences = ref.watch(appPreferencesProvider);
-    final headerTitle =
-        _mode == _SettingsMode.strategy ? 'Strategy settings' : 'App settings';
-    final headerDescription = _headerDescription(activeStrategyName);
+    final scopeLabel =
+        _mode == _SettingsMode.strategy ? 'Current strategy' : 'App-wide';
+    final scopeValue =
+        _mode == _SettingsMode.strategy ? activeStrategyName : 'Defaults';
 
     return ShadDialog(
       constraints: const BoxConstraints(
@@ -95,29 +96,12 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                     children: [
                       Padding(
                         padding: const EdgeInsets.only(right: 36),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              headerTitle,
-                              style: ShadTheme.of(context).textTheme.h3,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              headerDescription,
-                              style: ShadTheme.of(context)
-                                  .textTheme
-                                  .small
-                                  .copyWith(
-                                    color: Settings
-                                        .tacticalVioletTheme.mutedForeground,
-                                    height: 1.3,
-                                  ),
-                            ),
-                          ],
+                        child: _SettingsScopeHeader(
+                          label: scopeLabel,
+                          value: scopeValue,
                         ),
                       ),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 14),
                       Expanded(
                         child: ScrollConfiguration(
                           behavior: ScrollConfiguration.of(context)
@@ -191,14 +175,58 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
         return _SettingsMode.global;
     }
   }
+}
 
-  String _headerDescription(String? activeStrategyName) {
-    if (_mode == _SettingsMode.strategy) {
-      return activeStrategyName == null
-          ? 'Changes apply to the open strategy.'
-          : 'Changes apply to "$activeStrategyName".';
-    }
-    return 'Defaults affect new strategies. Workspace controls affect this app.';
+class _SettingsScopeHeader extends StatelessWidget {
+  const _SettingsScopeHeader({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String? value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final displayValue = value ?? 'Open strategy';
+
+    return Row(
+      children: [
+        Text(
+          label.toUpperCase(),
+          style: theme.textTheme.small.copyWith(
+            color: Settings.tacticalVioletTheme.mutedForeground,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.45,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: Settings.tacticalVioletTheme.secondary
+                  .withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color:
+                    Settings.tacticalVioletTheme.border.withValues(alpha: 0.9),
+              ),
+            ),
+            child: Text(
+              displayValue,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.small.copyWith(
+                color: Settings.tacticalVioletTheme.foreground,
+                fontWeight: FontWeight.w700,
+                height: 1.1,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -225,8 +253,8 @@ class _StrategySettingsSections extends ConsumerWidget {
           key: sectionKeys[_SettingsSection.strategyObjects],
           title: "Strategy object styling",
           description: activeStrategyName == null
-              ? "Customize placed objects for the current strategy."
-              : "Customize placed objects for \"$activeStrategyName\".",
+              ? "Resize markers and control how placed objects render."
+              : "Changes apply to \"$activeStrategyName\".",
           child: Column(
             children: [
               _SettingsSliderTile(
