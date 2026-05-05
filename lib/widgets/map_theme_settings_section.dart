@@ -9,20 +9,37 @@ import 'package:icarus/widgets/icarus_color_picker_style.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+enum MapThemeSettingsScope {
+  strategy,
+  global,
+}
+
 class MapThemeSettingsSection extends StatelessWidget {
-  const MapThemeSettingsSection({super.key});
+  const MapThemeSettingsSection({
+    super.key,
+    required this.scope,
+    this.onManageProfiles,
+  });
+
+  final MapThemeSettingsScope scope;
+  final VoidCallback? onManageProfiles;
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    final isStrategyScope = scope == MapThemeSettingsScope.strategy;
+
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SettingsScopeCard(
-          scope: SettingsScope.strategy,
-          title: "Map theme profiles",
-          description:
-              "Choose the active theme here. You can also set the default profile for new strategies.",
-          child: _ThemeProfilesSection(),
+          title: isStrategyScope ? "Strategy map theme" : "Theme profiles",
+          description: isStrategyScope
+              ? "Choose the color profile for this strategy."
+              : "Manage saved map color profiles and choose the default.",
+          child: _ThemeProfilesSection(
+            scope: scope,
+            onManageProfiles: onManageProfiles,
+          ),
         ),
       ],
     );
@@ -30,16 +47,29 @@ class MapThemeSettingsSection extends StatelessWidget {
 }
 
 class _ThemeProfilesSection extends StatelessWidget {
-  const _ThemeProfilesSection();
+  const _ThemeProfilesSection({
+    required this.scope,
+    this.onManageProfiles,
+  });
+
+  final MapThemeSettingsScope scope;
+  final VoidCallback? onManageProfiles;
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
+    final isStrategyScope = scope == MapThemeSettingsScope.strategy;
+
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _ActiveThemeCard(),
-        SizedBox(height: 12),
-        _ProfileLibrarySection(),
+        if (isStrategyScope) ...[
+          const _ActiveThemeCard(),
+          const SizedBox(height: 12),
+        ],
+        _ProfileLibrarySection(
+          scope: scope,
+          onManageProfiles: onManageProfiles,
+        ),
       ],
     );
   }
@@ -95,7 +125,7 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Current assignment",
+            "Current strategy theme",
             style: ShadTheme.of(context).textTheme.small.copyWith(
                   color: Settings.tacticalVioletTheme.mutedForeground,
                   letterSpacing: 0.3,
@@ -143,45 +173,29 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
           Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(profile.name),
-                    const SizedBox(height: 2),
-                    Text(
-                      profile.isBuiltIn ? "Built-in profile" : "Custom profile",
-                      style: ShadTheme.of(context).textTheme.small.copyWith(
-                            color: Settings.tacticalVioletTheme.mutedForeground,
-                          ),
-                    ),
-                  ],
+                child: Text(
+                  profile.name,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
+              const SizedBox(width: 10),
               _PaletteSwatches(palette: profile.palette),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerRight,
-            child: ShadButton(
-              onPressed: () {
-                _profileIdBeforeCustomize =
-                    ref.read(strategyThemeProvider).profileId ??
-                        MapThemeProfilesProvider.immutableDefaultProfileId;
-                ref
-                    .read(strategyProvider.notifier)
-                    .setThemeOverrideForCurrentStrategy(
-                        ref.read(effectiveMapThemePaletteProvider));
-              },
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.edit_outlined, size: 14),
-                  SizedBox(width: 6),
-                  Text("Customize"),
-                ],
+              const SizedBox(width: 10),
+              ShadButton.secondary(
+                size: ShadButtonSize.sm,
+                leading: const Icon(Icons.edit_outlined, size: 14),
+                onPressed: () {
+                  _profileIdBeforeCustomize =
+                      ref.read(strategyThemeProvider).profileId ??
+                          MapThemeProfilesProvider.immutableDefaultProfileId;
+                  ref
+                      .read(strategyProvider.notifier)
+                      .setThemeOverrideForCurrentStrategy(
+                          ref.read(effectiveMapThemePaletteProvider));
+                },
+                child: const Text("Customize"),
               ),
-            ),
+            ],
           ),
         ],
       ),
@@ -203,7 +217,7 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              "CUSTOM OVERRIDE",
+              "STRATEGY OVERRIDE",
               style: ShadTheme.of(context).textTheme.small.copyWith(
                     color: Settings.tacticalVioletTheme.primary,
                     fontSize: 10,
@@ -239,7 +253,7 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
                     _showSaveForm = false;
                   });
                 },
-                child: const Text("Reset"),
+                child: const Text("Revert to profile"),
               ),
               const SizedBox(width: 4),
               ShadButton(
@@ -299,23 +313,27 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
             child: ShadButton(
               onPressed: () async {
                 final trimmedName = _saveNameController.text.trim();
-                final didCreate = await ref
+                final createdProfile = await ref
                     .read(mapThemeProfilesProvider.notifier)
                     .createProfile(name: trimmedName, palette: palette);
-                if (!didCreate) {
+                if (createdProfile == null) {
                   Settings.showToast(
                     message: "Profile limit reached or invalid name.",
                     backgroundColor: Settings.tacticalVioletTheme.destructive,
                   );
                   return;
                 }
+                ref
+                    .read(strategyProvider.notifier)
+                    .setThemeProfileForCurrentStrategy(createdProfile.id);
                 if (!mounted) return;
                 Settings.showToast(
-                  message: "Profile saved.",
+                  message: "Profile saved and applied.",
                   backgroundColor: Settings.tacticalVioletTheme.primary,
                 );
                 setState(() {
                   _showSaveForm = false;
+                  _profileIdBeforeCustomize = null;
                 });
               },
               child: const Text("Save"),
@@ -330,7 +348,13 @@ class _ActiveThemeCardState extends ConsumerState<_ActiveThemeCard> {
 // ─── Zone 2: Profile Library (Global Preferences) ─────────────
 
 class _ProfileLibrarySection extends ConsumerStatefulWidget {
-  const _ProfileLibrarySection();
+  const _ProfileLibrarySection({
+    required this.scope,
+    this.onManageProfiles,
+  });
+
+  final MapThemeSettingsScope scope;
+  final VoidCallback? onManageProfiles;
 
   @override
   ConsumerState<_ProfileLibrarySection> createState() =>
@@ -344,6 +368,7 @@ class _ProfileLibrarySectionState
     final profilesState = ref.watch(mapThemeProfilesProvider);
     final strategyTheme = ref.watch(strategyThemeProvider);
     final hasActiveStrategy = ref.watch(strategyProvider).stratName != null;
+    final isStrategyScope = widget.scope == MapThemeSettingsScope.strategy;
 
     final activeProfileId = strategyTheme.overridePalette == null
         ? (strategyTheme.profileId ??
@@ -360,7 +385,7 @@ class _ProfileLibrarySectionState
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              "Profiles",
+              isStrategyScope ? "Choose a profile" : "Saved profiles",
               style: ShadTheme.of(context).textTheme.small.copyWith(
                     color: Settings.tacticalVioletTheme.mutedForeground,
                     letterSpacing: 0.3,
@@ -375,21 +400,36 @@ class _ProfileLibrarySectionState
           ],
         ),
         const SizedBox(height: 8),
+        if (isStrategyScope && widget.onManageProfiles != null) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: ShadButton.ghost(
+              size: ShadButtonSize.sm,
+              leading: const Icon(LucideIcons.arrowRight),
+              onPressed: widget.onManageProfiles!,
+              child: const Text("Manage profiles in App settings"),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
         for (final profile in profilesState.profiles) ...[
           _ProfileListRow(
             title: profile.name,
             palette: profile.palette,
-            isSelected: activeProfileId == profile.id,
-            isDefault:
+            isSelected: isStrategyScope && activeProfileId == profile.id,
+            isDefault: !isStrategyScope &&
                 profile.id == profilesState.defaultProfileIdForNewStrategies,
-            onTap: hasActiveStrategy
+            onTap: isStrategyScope && hasActiveStrategy
                 ? () {
                     ref
                         .read(strategyProvider.notifier)
                         .setThemeProfileForCurrentStrategy(profile.id);
                   }
                 : null,
-            trailing: profile.isBuiltIn
+            trailing: isStrategyScope ||
+                    (profile.isBuiltIn &&
+                        profile.id ==
+                            profilesState.defaultProfileIdForNewStrategies)
                 ? null
                 : _ProfileContextMenuButton(
                     profile: profile,
@@ -451,29 +491,37 @@ class _ProfileContextMenuButtonState
 
   List<ShadContextMenuItem> _buildMenuItems() {
     return [
-      ShadContextMenuItem(
-        leading: const Icon(LucideIcons.pencil, size: 16),
-        onPressed: _renameProfile,
-        child: const Text("Rename"),
-      ),
       if (!widget.isDefault)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.star, size: 16),
           onPressed: _setAsDefault,
           child: const Text("Set as Default"),
         ),
-      ShadContextMenuItem(
-        leading: Icon(
-          LucideIcons.trash2,
-          size: 16,
-          color: Settings.tacticalVioletTheme.destructive,
+      if (!widget.profile.isBuiltIn)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.pencil, size: 16),
+          onPressed: _renameProfile,
+          child: const Text("Rename"),
         ),
-        onPressed: _deleteProfile,
-        child: Text(
-          "Delete",
-          style: TextStyle(color: Settings.tacticalVioletTheme.destructive),
+      if (!widget.profile.isBuiltIn)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.palette, size: 16),
+          onPressed: _editProfilePalette,
+          child: const Text("Edit colors"),
         ),
-      ),
+      if (!widget.profile.isBuiltIn)
+        ShadContextMenuItem(
+          leading: Icon(
+            LucideIcons.trash2,
+            size: 16,
+            color: Settings.tacticalVioletTheme.destructive,
+          ),
+          onPressed: _deleteProfile,
+          child: Text(
+            "Delete",
+            style: TextStyle(color: Settings.tacticalVioletTheme.destructive),
+          ),
+        ),
     ];
   }
 
@@ -487,6 +535,25 @@ class _ProfileContextMenuButtonState
     await ref
         .read(mapThemeProfilesProvider.notifier)
         .renameProfile(profileId: widget.profile.id, newName: newName);
+  }
+
+  Future<void> _editProfilePalette() async {
+    final nextPalette = await _showProfilePaletteDialog(
+      context: context,
+      profile: widget.profile,
+    );
+    if (nextPalette == null) return;
+
+    await ref.read(mapThemeProfilesProvider.notifier).updateProfilePalette(
+          profileId: widget.profile.id,
+          palette: nextPalette,
+        );
+    if (!mounted) return;
+
+    Settings.showToast(
+      message: "Profile colors updated.",
+      backgroundColor: Settings.tacticalVioletTheme.primary,
+    );
   }
 
   Future<void> _setAsDefault() async {
@@ -536,7 +603,8 @@ class _ProfileListRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      mouseCursor: SystemMouseCursors.click,
+      mouseCursor:
+          onTap == null ? SystemMouseCursors.basic : SystemMouseCursors.click,
       borderRadius: BorderRadius.circular(10),
       onTap: onTap,
       child: AnimatedContainer(
@@ -790,6 +858,54 @@ Future<Color?> _showColorPickerDialog({
                   onChanged: (color) {
                     setState(() {
                       workingColor = color;
+                    });
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+Future<MapThemePalette?> _showProfilePaletteDialog({
+  required BuildContext context,
+  required MapThemeProfile profile,
+}) async {
+  var workingPalette = profile.palette;
+  return showShadDialog<MapThemePalette>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return ShadDialog(
+            title: Text("Edit ${profile.name}"),
+            description: const Text(
+              "Changes apply anywhere this profile is used.",
+            ),
+            actions: [
+              ShadButton.secondary(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text("Cancel"),
+              ),
+              ShadButton(
+                onPressed: () =>
+                    Navigator.of(dialogContext).pop(workingPalette),
+                child: const Text("Save colors"),
+              ),
+            ],
+            child: Material(
+              color: Colors.transparent,
+              child: SizedBox(
+                width: 360,
+                child: _PaletteEditor(
+                  label: "",
+                  palette: workingPalette,
+                  onChanged: (nextPalette) {
+                    setState(() {
+                      workingPalette = nextPalette;
                     });
                   },
                 ),

@@ -322,16 +322,16 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     state = build();
   }
 
-  Future<bool> createProfile({
+  Future<MapThemeProfile?> createProfile({
     required String name,
     required MapThemePalette palette,
   }) async {
     if (customProfilesAtCap) {
-      return false;
+      return null;
     }
     final trimmedName = name.trim();
     if (trimmedName.isEmpty) {
-      return false;
+      return null;
     }
     final profile = MapThemeProfile(
       id: const Uuid().v4(),
@@ -342,7 +342,7 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     await Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
         .put(profile.id, profile);
     await refreshFromHive();
-    return true;
+    return profile;
   }
 
   Future<void> renameProfile({

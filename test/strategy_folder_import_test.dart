@@ -235,7 +235,9 @@ void main() {
     expect(result.issues.single.path, zipFile.path);
     expect(_folderByName('Manifest Root').parentID, currentFolder.id);
     expect(
-      Hive.box<Folder>(HiveBoxNames.foldersBox).values.map((folder) => folder.name),
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .map((folder) => folder.name),
       containsAll(['Current', 'Manifest Root']),
     );
     expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, hasLength(2));
@@ -287,7 +289,9 @@ void main() {
     expect(result.issues.single.path, sourceRoot.path);
     expect(_folderByName('Manifest Root').parentID, currentFolder.id);
     expect(
-      Hive.box<Folder>(HiveBoxNames.foldersBox).values.map((folder) => folder.name),
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .map((folder) => folder.name),
       containsAll(['Current', 'Manifest Root']),
     );
     expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, hasLength(2));
@@ -332,7 +336,8 @@ void main() {
         .buildFolderExportDirectoryForTest(rootFolder.id);
 
     try {
-      final exportedRoot = exportDirectory.listSync().whereType<Directory>().single;
+      final exportedRoot =
+          exportDirectory.listSync().whereType<Directory>().single;
       final manifestFile =
           File(path.join(exportedRoot.path, archiveMetadataFileName));
       expect(await manifestFile.exists(), isTrue);
@@ -378,21 +383,20 @@ void main() {
     }
   });
 
-  test('library backup restores global state and theme profile links', () async {
+  test('library backup restores global state and theme profile links',
+      () async {
     final themeProvider = container.read(mapThemeProfilesProvider.notifier);
     final palette = MapThemePalette(
       baseColorValue: 0xFF0F172A,
       detailColorValue: 0xFF38BDF8,
       highlightColorValue: 0xFFF97316,
     );
-    expect(
-      await themeProvider.createProfile(name: 'Tournament', palette: palette),
-      isTrue,
+    final customProfile = await themeProvider.createProfile(
+      name: 'Tournament',
+      palette: palette,
     );
-    final customProfile = Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
-        .values
-        .firstWhere((profile) => profile.name == 'Tournament');
-    await themeProvider.setDefaultProfileForNewStrategies(customProfile.id);
+    expect(customProfile, isNotNull);
+    await themeProvider.setDefaultProfileForNewStrategies(customProfile!.id);
     await container
         .read(favoriteAgentsProvider.notifier)
         .toggleFavorite(AgentType.jett);

@@ -8,7 +8,6 @@ import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
-import 'package:icarus/widgets/custom_segmented_tabs.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -18,10 +17,21 @@ enum _SettingsMode {
   global,
 }
 
+enum _SettingsSection {
+  strategyObjects,
+  strategyMapTheme,
+  globalDefaults,
+  globalSaving,
+  globalMapVisibility,
+  globalMapProfiles,
+}
+
 class SettingsTab extends ConsumerStatefulWidget {
   const SettingsTab({super.key});
 
-  static const double _settingsPanelContentWidth = 490;
+  static const double _dialogWidth = 860;
+  static const double _dialogHeight = 640;
+  static const double _navigationWidth = 196;
 
   @override
   ConsumerState<SettingsTab> createState() => _SettingsTabState();
@@ -29,6 +39,17 @@ class SettingsTab extends ConsumerStatefulWidget {
 
 class _SettingsTabState extends ConsumerState<SettingsTab> {
   _SettingsMode _mode = _SettingsMode.strategy;
+  _SettingsSection _selectedSection = _SettingsSection.strategyObjects;
+  final ScrollController _scrollController = ScrollController();
+  final Map<_SettingsSection, GlobalKey> _sectionKeys = {
+    for (final section in _SettingsSection.values) section: GlobalKey(),
+  };
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,293 +57,610 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     final strategySettings = ref.watch(strategySettingsProvider);
     final mapState = ref.watch(mapProvider);
     final appPreferences = ref.watch(appPreferencesProvider);
+    final headerTitle =
+        _mode == _SettingsMode.strategy ? 'Strategy settings' : 'App settings';
+    final headerDescription = _headerDescription(activeStrategyName);
 
-    // Left/right sheets default to expandCrossSide + minHeight only, so width
-    // stays unbounded and the panel stretches to the full overlay. Cap width to
-    // match the sidebar panel (content + ShadDialog's default horizontal padding).
-    return ShadSheet(
+    return ShadDialog(
       constraints: const BoxConstraints(
-        maxWidth: SettingsTab._settingsPanelContentWidth + 48,
+        maxWidth: SettingsTab._dialogWidth,
+        maxHeight: SettingsTab._dialogHeight,
       ),
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
-      // Avoid nested scroll views; the outer ShadDialog scroll shows a desktop bar.
+      padding: EdgeInsets.zero,
       scrollable: false,
-      title: Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: Row(
-          children: [
-            Expanded(
-              child:
-                  Text("Settings", style: ShadTheme.of(context).textTheme.h3),
-            ),
-            _SettingsModeSwitcher(
-              mode: _mode,
-              onChanged: (mode) => setState(() => _mode = mode),
-            ),
-          ],
+      closeIconPosition: const ShadPosition(top: 18, right: 18),
+      child: Material(
+        color: Colors.transparent,
+        child: SizedBox(
+          width: SettingsTab._dialogWidth,
+          height: SettingsTab._dialogHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _SettingsNavigationRail(
+                mode: _mode,
+                selectedSection: _selectedSection,
+                onSectionSelected: _selectSection,
+              ),
+              Container(
+                width: 1,
+                color:
+                    Settings.tacticalVioletTheme.border.withValues(alpha: 0.9),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(right: 36),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              headerTitle,
+                              style: ShadTheme.of(context).textTheme.h3,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              headerDescription,
+                              style: ShadTheme.of(context)
+                                  .textTheme
+                                  .small
+                                  .copyWith(
+                                    color: Settings
+                                        .tacticalVioletTheme.mutedForeground,
+                                    height: 1.3,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Expanded(
+                        child: ScrollConfiguration(
+                          behavior: ScrollConfiguration.of(context)
+                              .copyWith(scrollbars: false),
+                          child: SingleChildScrollView(
+                            controller: _scrollController,
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              switchInCurve: Curves.easeOutCubic,
+                              switchOutCurve: Curves.easeInCubic,
+                              child: _mode == _SettingsMode.strategy
+                                  ? _StrategySettingsSections(
+                                      key: const ValueKey('strategy-settings'),
+                                      sectionKeys: _sectionKeys,
+                                      activeStrategyName: activeStrategyName,
+                                      strategySettings: strategySettings,
+                                      onManageThemeProfiles: () =>
+                                          _selectSection(
+                                        _SettingsSection.globalMapProfiles,
+                                      ),
+                                    )
+                                  : _GlobalSettingsSections(
+                                      key: const ValueKey('global-settings'),
+                                      sectionKeys: _sectionKeys,
+                                      appPreferences: appPreferences,
+                                      mapState: mapState,
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-      child: SizedBox(
-        width: SettingsTab._settingsPanelContentWidth,
-        child: Material(
-          color: Colors.transparent,
-          child: ScrollConfiguration(
-            behavior:
-                ScrollConfiguration.of(context).copyWith(scrollbars: false),
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (_mode == _SettingsMode.strategy) ...[
-                    SettingsScopeCard(
-                      scope: SettingsScope.strategy,
-                      title: "Strategy object styling",
-                      description: activeStrategyName == null
-                          ? "Customize placed objects for the current strategy."
-                          : "Customize placed objects for \"$activeStrategyName\".",
-                      child: Column(
-                        children: [
-                          _SettingsSliderTile(
-                            icon: Icons.person_pin_circle_outlined,
-                            title: "Agent markers",
-                            description:
-                                "Resize placed agents and view tools for this strategy.",
-                            value: strategySettings.agentSize,
-                            min: Settings.agentSizeMin,
-                            max: Settings.agentSizeMax,
-                            divisions: 15,
-                            accentColor: Settings.tacticalVioletTheme.primary,
-                            onChanged: (value) {
-                              ref
-                                  .read(strategySettingsProvider.notifier)
-                                  .updateAgentSize(value);
-                            },
-                          ),
-                          const _SettingsItemDivider(),
-                          _SettingsSliderTile(
-                            icon: Icons.auto_awesome_outlined,
-                            title: "Ability markers",
-                            description:
-                                "Resize utility icons and placement helpers for this strategy.",
-                            value: strategySettings.abilitySize,
-                            min: Settings.abilitySizeMin,
-                            max: Settings.abilitySizeMax,
-                            divisions: 15,
-                            accentColor: Settings.tacticalVioletTheme.primary,
-                            onChanged: (value) {
-                              ref
-                                  .read(strategySettingsProvider.notifier)
-                                  .updateAbilitySize(value);
-                            },
-                          ),
-                          const _SettingsItemDivider(),
-                          _SettingsToggleTile(
-                            icon: Icons.contrast_outlined,
-                            title: "Neutral team marker colors",
-                            description:
-                                "Render ally and enemy marker accents as matching-brightness greys.",
-                            value: strategySettings.useNeutralTeamColors,
-                            onChanged: (value) {
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (!context.mounted) return;
-                                ref
-                                    .read(strategySettingsProvider.notifier)
-                                    .updateNeutralTeamColors(value);
-                                ref
-                                    .read(strategyProvider.notifier)
-                                    .applyNeutralTeamColorsToAllPages(value);
-                              });
-                            },
-                          ),
-                          const _PageMarkerSizesSyncBanner(),
-                        ],
-                      ),
-                    ),
-                  ] else ...[
-                    SettingsScopeCard(
-                      scope: SettingsScope.workspace,
-                      title: "Strategy defaults",
-                      description:
-                          "Set the starting values used when creating new strategies.",
-                      child: Column(
-                        children: [
-                          _SettingsSliderTile(
-                            icon: Icons.person_pin_circle_outlined,
-                            title: "Default agent markers",
-                            description:
-                                "Default size for agent markers in new strategies.",
-                            value:
-                                appPreferences.defaultAgentSizeForNewStrategies,
-                            min: Settings.agentSizeMin,
-                            max: Settings.agentSizeMax,
-                            divisions: 15,
-                            accentColor: Settings.tacticalVioletTheme.primary,
-                            onChanged: (value) {
-                              ref
-                                  .read(appPreferencesProvider.notifier)
-                                  .setDefaultAgentSizeForNewStrategies(value);
-                            },
-                          ),
-                          const _SettingsItemDivider(),
-                          _SettingsSliderTile(
-                            icon: Icons.auto_awesome_outlined,
-                            title: "Default ability markers",
-                            description:
-                                "Default size for ability markers in new strategies.",
-                            value: appPreferences
-                                .defaultAbilitySizeForNewStrategies,
-                            min: Settings.abilitySizeMin,
-                            max: Settings.abilitySizeMax,
-                            divisions: 15,
-                            accentColor: Settings.tacticalVioletTheme.primary,
-                            onChanged: (value) {
-                              ref
-                                  .read(appPreferencesProvider.notifier)
-                                  .setDefaultAbilitySizeForNewStrategies(value);
-                            },
-                          ),
-                          const _SettingsItemDivider(),
-                          _SettingsToggleTile(
-                            icon: Icons.contrast_outlined,
-                            title: "Neutral marker colors by default",
-                            description:
-                                "Use grey ally and enemy accents for new strategies.",
-                            value: appPreferences
-                                .defaultNeutralTeamColorsForNewStrategies,
-                            onChanged: (value) {
-                              WidgetsBinding.instance.addPostFrameCallback((_) {
-                                if (!context.mounted) return;
-                                ref
-                                    .read(appPreferencesProvider.notifier)
-                                    .setDefaultNeutralTeamColorsForNewStrategies(
-                                      value,
-                                    );
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const _SectionDivider(),
-                    const SizedBox(height: 20),
-                    SettingsScopeCard(
-                      scope: SettingsScope.workspace,
-                      title: "Saving",
-                      description:
-                          "Control how Icarus persists strategy edits while you work.",
-                      child: Column(
-                        children: [
-                          _SettingsToggleTile(
-                            icon: Icons.save_outlined,
-                            title: "Autosave",
-                            description:
-                                "Automatically save the current strategy after 15 seconds of inactivity. When off, Icarus will ask before you leave unsaved work.",
-                            value: appPreferences.autosaveEnabled,
-                            onChanged: (value) async {
-                              await ref
-                                  .read(appPreferencesProvider.notifier)
-                                  .setAutosaveEnabled(value);
-                              ref
-                                  .read(strategyProvider.notifier)
-                                  .refreshAutosaveScheduling();
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const _SectionDivider(),
-                    const SizedBox(height: 20),
-                    SettingsScopeCard(
-                      scope: SettingsScope.workspace,
-                      title: "Map visibility helpers",
-                      description:
-                          "Show or hide map reference layers while you work.",
-                      child: Column(
-                        children: [
-                          _SettingsToggleTile(
-                            icon: Icons.grid_on_rounded,
-                            title: "Spawn barriers",
-                            description:
-                                "Keep round-start barrier guides visible on the map.",
-                            value: mapState.showSpawnBarrier,
-                            onChanged: (value) {
-                              ref
-                                  .read(mapProvider.notifier)
-                                  .updateSpawnBarrier(value);
-                            },
-                          ),
-                          const _SettingsItemDivider(),
-                          _SettingsToggleTile(
-                            icon: Icons.location_on_outlined,
-                            title: "Region names",
-                            description:
-                                "Show map callout names directly on the canvas.",
-                            value: mapState.showRegionNames,
-                            onChanged: (value) {
-                              ref
-                                  .read(mapProvider.notifier)
-                                  .updateRegionNames(value);
-                            },
-                          ),
-                          const _SettingsItemDivider(),
-                          _SettingsToggleTile(
-                            icon: Icons.radio_button_checked_outlined,
-                            title: "Ultimate orbs",
-                            description:
-                                "Display orb pickup markers on supported maps.",
-                            value: mapState.showUltOrbs,
-                            onChanged: (value) {
-                              ref
-                                  .read(mapProvider.notifier)
-                                  .updateUltOrbs(value);
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const _SectionDivider(),
-                    const SizedBox(height: 20),
-                    const MapThemeSettingsSection(),
-                  ],
-                  const SizedBox(height: 4),
-                ],
+    );
+  }
+
+  void _selectSection(_SettingsSection section) {
+    final nextMode = _modeForSection(section);
+    setState(() {
+      _mode = nextMode;
+      _selectedSection = section;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _sectionKeys[section]?.currentContext;
+      if (context == null || !mounted) return;
+      Scrollable.ensureVisible(
+        context,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        alignment: 0,
+      );
+    });
+  }
+
+  _SettingsMode _modeForSection(_SettingsSection section) {
+    switch (section) {
+      case _SettingsSection.strategyObjects:
+      case _SettingsSection.strategyMapTheme:
+        return _SettingsMode.strategy;
+      case _SettingsSection.globalDefaults:
+      case _SettingsSection.globalSaving:
+      case _SettingsSection.globalMapVisibility:
+      case _SettingsSection.globalMapProfiles:
+        return _SettingsMode.global;
+    }
+  }
+
+  String _headerDescription(String? activeStrategyName) {
+    if (_mode == _SettingsMode.strategy) {
+      return activeStrategyName == null
+          ? 'Changes apply to the open strategy.'
+          : 'Changes apply to "$activeStrategyName".';
+    }
+    return 'Defaults affect new strategies. Workspace controls affect this app.';
+  }
+}
+
+class _StrategySettingsSections extends ConsumerWidget {
+  const _StrategySettingsSections({
+    super.key,
+    required this.sectionKeys,
+    required this.activeStrategyName,
+    required this.strategySettings,
+    required this.onManageThemeProfiles,
+  });
+
+  final Map<_SettingsSection, GlobalKey> sectionKeys;
+  final String? activeStrategyName;
+  final StrategySettings strategySettings;
+  final VoidCallback onManageThemeProfiles;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SettingsScopeCard(
+          key: sectionKeys[_SettingsSection.strategyObjects],
+          title: "Strategy object styling",
+          description: activeStrategyName == null
+              ? "Customize placed objects for the current strategy."
+              : "Customize placed objects for \"$activeStrategyName\".",
+          child: Column(
+            children: [
+              _SettingsSliderTile(
+                icon: Icons.person_pin_circle_outlined,
+                title: "Agent markers",
+                description:
+                    "Resize placed agents and view tools for this strategy.",
+                value: strategySettings.agentSize,
+                min: Settings.agentSizeMin,
+                max: Settings.agentSizeMax,
+                divisions: 15,
+                accentColor: Settings.tacticalVioletTheme.primary,
+                onChanged: (value) {
+                  ref
+                      .read(strategySettingsProvider.notifier)
+                      .updateAgentSize(value);
+                },
+              ),
+              const _SettingsItemDivider(),
+              _SettingsSliderTile(
+                icon: Icons.auto_awesome_outlined,
+                title: "Ability markers",
+                description:
+                    "Resize utility icons and placement helpers for this strategy.",
+                value: strategySettings.abilitySize,
+                min: Settings.abilitySizeMin,
+                max: Settings.abilitySizeMax,
+                divisions: 15,
+                accentColor: Settings.tacticalVioletTheme.primary,
+                onChanged: (value) {
+                  ref
+                      .read(strategySettingsProvider.notifier)
+                      .updateAbilitySize(value);
+                },
+              ),
+              const _SettingsItemDivider(),
+              _SettingsToggleTile(
+                icon: Icons.contrast_outlined,
+                title: "Neutral team marker colors",
+                description:
+                    "Render ally and enemy marker accents as matching-brightness greys.",
+                value: strategySettings.useNeutralTeamColors,
+                onChanged: (value) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!context.mounted) return;
+                    ref
+                        .read(strategySettingsProvider.notifier)
+                        .updateNeutralTeamColors(value);
+                    ref
+                        .read(strategyProvider.notifier)
+                        .applyNeutralTeamColorsToAllPages(value);
+                  });
+                },
+              ),
+              const _PageMarkerSizesSyncBanner(),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const _SectionDivider(),
+        const SizedBox(height: 20),
+        KeyedSubtree(
+          key: sectionKeys[_SettingsSection.strategyMapTheme],
+          child: MapThemeSettingsSection(
+            scope: MapThemeSettingsScope.strategy,
+            onManageProfiles: onManageThemeProfiles,
+          ),
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+}
+
+class _GlobalSettingsSections extends ConsumerWidget {
+  const _GlobalSettingsSections({
+    super.key,
+    required this.sectionKeys,
+    required this.appPreferences,
+    required this.mapState,
+  });
+
+  final Map<_SettingsSection, GlobalKey> sectionKeys;
+  final AppPreferences appPreferences;
+  final MapState mapState;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SettingsScopeCard(
+          key: sectionKeys[_SettingsSection.globalDefaults],
+          title: "New strategy defaults",
+          description: "Set the marker styling each new strategy starts with.",
+          child: Column(
+            children: [
+              _SettingsSliderTile(
+                icon: Icons.person_pin_circle_outlined,
+                title: "Default agent markers",
+                description:
+                    "Default size for agent markers in new strategies.",
+                value: appPreferences.defaultAgentSizeForNewStrategies,
+                min: Settings.agentSizeMin,
+                max: Settings.agentSizeMax,
+                divisions: 15,
+                accentColor: Settings.tacticalVioletTheme.primary,
+                onChanged: (value) {
+                  ref
+                      .read(appPreferencesProvider.notifier)
+                      .setDefaultAgentSizeForNewStrategies(value);
+                },
+              ),
+              const _SettingsItemDivider(),
+              _SettingsSliderTile(
+                icon: Icons.auto_awesome_outlined,
+                title: "Default ability markers",
+                description:
+                    "Default size for ability markers in new strategies.",
+                value: appPreferences.defaultAbilitySizeForNewStrategies,
+                min: Settings.abilitySizeMin,
+                max: Settings.abilitySizeMax,
+                divisions: 15,
+                accentColor: Settings.tacticalVioletTheme.primary,
+                onChanged: (value) {
+                  ref
+                      .read(appPreferencesProvider.notifier)
+                      .setDefaultAbilitySizeForNewStrategies(value);
+                },
+              ),
+              const _SettingsItemDivider(),
+              _SettingsToggleTile(
+                icon: Icons.contrast_outlined,
+                title: "Neutral marker colors by default",
+                description:
+                    "Use grey ally and enemy accents for new strategies.",
+                value: appPreferences.defaultNeutralTeamColorsForNewStrategies,
+                onChanged: (value) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!context.mounted) return;
+                    ref
+                        .read(appPreferencesProvider.notifier)
+                        .setDefaultNeutralTeamColorsForNewStrategies(value);
+                  });
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const _SectionDivider(),
+        const SizedBox(height: 20),
+        SettingsScopeCard(
+          key: sectionKeys[_SettingsSection.globalSaving],
+          title: "Workspace behavior",
+          description:
+              "Control how Icarus persists strategy edits while you work.",
+          child: Column(
+            children: [
+              _SettingsToggleTile(
+                icon: Icons.save_outlined,
+                title: "Autosave",
+                description:
+                    "Automatically save the current strategy after 15 seconds of inactivity. When off, Icarus will ask before you leave unsaved work.",
+                value: appPreferences.autosaveEnabled,
+                onChanged: (value) async {
+                  await ref
+                      .read(appPreferencesProvider.notifier)
+                      .setAutosaveEnabled(value);
+                  ref
+                      .read(strategyProvider.notifier)
+                      .refreshAutosaveScheduling();
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const _SectionDivider(),
+        const SizedBox(height: 20),
+        SettingsScopeCard(
+          key: sectionKeys[_SettingsSection.globalMapVisibility],
+          title: "Workspace map visibility",
+          description: "Show or hide map reference layers while you work.",
+          child: Column(
+            children: [
+              _SettingsToggleTile(
+                icon: Icons.grid_on_rounded,
+                title: "Spawn barriers",
+                description:
+                    "Keep round-start barrier guides visible on the map.",
+                value: mapState.showSpawnBarrier,
+                onChanged: (value) {
+                  ref.read(mapProvider.notifier).updateSpawnBarrier(value);
+                },
+              ),
+              const _SettingsItemDivider(),
+              _SettingsToggleTile(
+                icon: Icons.location_on_outlined,
+                title: "Region names",
+                description: "Show map callout names directly on the canvas.",
+                value: mapState.showRegionNames,
+                onChanged: (value) {
+                  ref.read(mapProvider.notifier).updateRegionNames(value);
+                },
+              ),
+              const _SettingsItemDivider(),
+              _SettingsToggleTile(
+                icon: Icons.radio_button_checked_outlined,
+                title: "Ultimate orbs",
+                description: "Display orb pickup markers on supported maps.",
+                value: mapState.showUltOrbs,
+                onChanged: (value) {
+                  ref.read(mapProvider.notifier).updateUltOrbs(value);
+                },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const _SectionDivider(),
+        const SizedBox(height: 20),
+        KeyedSubtree(
+          key: sectionKeys[_SettingsSection.globalMapProfiles],
+          child: const MapThemeSettingsSection(
+            scope: MapThemeSettingsScope.global,
+          ),
+        ),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+}
+
+class _SettingsNavigationRail extends StatelessWidget {
+  const _SettingsNavigationRail({
+    required this.mode,
+    required this.selectedSection,
+    required this.onSectionSelected,
+  });
+
+  final _SettingsMode mode;
+  final _SettingsSection selectedSection;
+  final ValueChanged<_SettingsSection> onSectionSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: SettingsTab._navigationWidth,
+      color: Settings.tacticalVioletTheme.card.withValues(alpha: 0.72),
+      padding: const EdgeInsets.fromLTRB(14, 18, 12, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Settings",
+            style: ShadTheme.of(context).textTheme.h4.copyWith(
+                  color: Settings.tacticalVioletTheme.foreground,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+          const SizedBox(height: 18),
+          _SettingsNavHeader(
+            label: "Current strategy",
+            isActive: mode == _SettingsMode.strategy,
+            onTap: () => onSectionSelected(_SettingsSection.strategyObjects),
+          ),
+          const SizedBox(height: 4),
+          _SettingsNavItem(
+            icon: Icons.tune_outlined,
+            label: "Object styling",
+            isSelected: selectedSection == _SettingsSection.strategyObjects,
+            onTap: () => onSectionSelected(_SettingsSection.strategyObjects),
+          ),
+          _SettingsNavItem(
+            icon: Icons.palette_outlined,
+            label: "Map theme",
+            isSelected: selectedSection == _SettingsSection.strategyMapTheme,
+            onTap: () => onSectionSelected(_SettingsSection.strategyMapTheme),
+          ),
+          const SizedBox(height: 16),
+          _SettingsNavHeader(
+            label: "App-wide",
+            isActive: mode == _SettingsMode.global,
+            onTap: () => onSectionSelected(_SettingsSection.globalDefaults),
+          ),
+          const SizedBox(height: 4),
+          _SettingsNavItem(
+            icon: Icons.auto_fix_high_outlined,
+            label: "Defaults",
+            isSelected: selectedSection == _SettingsSection.globalDefaults,
+            onTap: () => onSectionSelected(_SettingsSection.globalDefaults),
+          ),
+          _SettingsNavItem(
+            icon: Icons.save_outlined,
+            label: "Autosave",
+            isSelected: selectedSection == _SettingsSection.globalSaving,
+            onTap: () => onSectionSelected(_SettingsSection.globalSaving),
+          ),
+          _SettingsNavItem(
+            icon: Icons.map_outlined,
+            label: "Map layers",
+            isSelected: selectedSection == _SettingsSection.globalMapVisibility,
+            onTap: () =>
+                onSectionSelected(_SettingsSection.globalMapVisibility),
+          ),
+          _SettingsNavItem(
+            icon: Icons.format_color_fill_outlined,
+            label: "Theme profiles",
+            isSelected: selectedSection == _SettingsSection.globalMapProfiles,
+            onTap: () => onSectionSelected(_SettingsSection.globalMapProfiles),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsNavHeader extends StatelessWidget {
+  const _SettingsNavHeader({
+    required this.label,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isActive
+        ? Settings.tacticalVioletTheme.foreground
+        : Settings.tacticalVioletTheme.mutedForeground;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOutCubic,
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                color: isActive
+                    ? Settings.tacticalVioletTheme.primary
+                    : Settings.tacticalVioletTheme.mutedForeground
+                        .withValues(alpha: 0.36),
+                shape: BoxShape.circle,
               ),
             ),
-          ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: ShadTheme.of(context).textTheme.small.copyWith(
+                    color: color,
+                    fontWeight: isActive ? FontWeight.w800 : FontWeight.w700,
+                    letterSpacing: 0.25,
+                  ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _SettingsModeSwitcher extends StatelessWidget {
-  const _SettingsModeSwitcher({
-    required this.mode,
-    required this.onChanged,
+class _SettingsNavItem extends StatelessWidget {
+  const _SettingsNavItem({
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
   });
 
-  final _SettingsMode mode;
-  final ValueChanged<_SettingsMode> onChanged;
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return CustomSegmentedTabs<_SettingsMode>(
-      value: mode,
-      onChanged: onChanged,
-      compactness: 0.8,
-      items: const [
-        SegmentedTabItem<_SettingsMode>(
-          value: _SettingsMode.strategy,
-          child: Text('Strategy'),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.14)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected
+                  ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.24)
+                  : Colors.transparent,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected
+                    ? Settings.tacticalVioletTheme.foreground
+                    : Settings.tacticalVioletTheme.mutedForeground,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: ShadTheme.of(context).textTheme.small.copyWith(
+                        color: isSelected
+                            ? Settings.tacticalVioletTheme.foreground
+                            : Settings.tacticalVioletTheme.mutedForeground,
+                        fontWeight:
+                            isSelected ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                ),
+              ),
+            ],
+          ),
         ),
-        SegmentedTabItem<_SettingsMode>(
-          value: _SettingsMode.global,
-          child: Text('Global'),
-        ),
-      ],
+      ),
     );
   }
 }

@@ -40,8 +40,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
             child: ShadIconButton.ghost(
               foregroundColor: Colors.white,
               onPressed: () async {
-                showShadSheet(
-                  side: ShadSheetSide.left,
+                showShadDialog(
                   context: context,
                   builder: (context) => const SettingsTab(),
                 );
