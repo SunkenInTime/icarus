@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:path/path.dart' as path;
 
 const String archiveMetadataFileName = 'icarus-metadata.json';

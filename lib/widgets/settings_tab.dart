@@ -6,7 +6,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';

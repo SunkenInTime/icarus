@@ -15,7 +15,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';

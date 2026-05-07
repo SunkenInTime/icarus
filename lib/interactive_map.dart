@@ -9,7 +9,7 @@ import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/canvas_resize_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';

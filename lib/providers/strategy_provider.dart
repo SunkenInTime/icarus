@@ -29,7 +29,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';

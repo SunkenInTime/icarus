@@ -10,7 +10,7 @@ import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';

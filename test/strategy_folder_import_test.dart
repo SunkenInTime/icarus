@@ -15,7 +15,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:path/path.dart' as path;
