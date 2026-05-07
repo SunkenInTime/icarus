@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
@@ -10,11 +12,13 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
+import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 enum _SettingsMode {
   strategy,
   global,
+  shortcuts,
 }
 
 enum _SettingsSection {
@@ -24,6 +28,7 @@ enum _SettingsSection {
   globalSaving,
   globalMapVisibility,
   globalMapProfiles,
+  shortcuts,
 }
 
 class SettingsTab extends ConsumerStatefulWidget {
@@ -57,10 +62,16 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     final strategySettings = ref.watch(strategySettingsProvider);
     final mapState = ref.watch(mapProvider);
     final appPreferences = ref.watch(appPreferencesProvider);
-    final scopeLabel =
-        _mode == _SettingsMode.strategy ? 'Current strategy' : 'App-wide';
-    final scopeValue =
-        _mode == _SettingsMode.strategy ? activeStrategyName : 'Defaults';
+    final scopeLabel = switch (_mode) {
+      _SettingsMode.strategy => 'Current strategy',
+      _SettingsMode.global => 'App-wide',
+      _SettingsMode.shortcuts => 'App-wide',
+    };
+    final scopeValue = switch (_mode) {
+      _SettingsMode.strategy => activeStrategyName,
+      _SettingsMode.global => 'Defaults',
+      _SettingsMode.shortcuts => 'Keybinds',
+    };
 
     return ShadDialog(
       constraints: const BoxConstraints(
@@ -112,23 +123,29 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                               duration: const Duration(milliseconds: 180),
                               switchInCurve: Curves.easeOutCubic,
                               switchOutCurve: Curves.easeInCubic,
-                              child: _mode == _SettingsMode.strategy
-                                  ? _StrategySettingsSections(
-                                      key: const ValueKey('strategy-settings'),
-                                      sectionKeys: _sectionKeys,
-                                      activeStrategyName: activeStrategyName,
-                                      strategySettings: strategySettings,
-                                      onManageThemeProfiles: () =>
-                                          _selectSection(
-                                        _SettingsSection.globalMapProfiles,
-                                      ),
-                                    )
-                                  : _GlobalSettingsSections(
-                                      key: const ValueKey('global-settings'),
-                                      sectionKeys: _sectionKeys,
-                                      appPreferences: appPreferences,
-                                      mapState: mapState,
+                              child: switch (_mode) {
+                                _SettingsMode.strategy =>
+                                  _StrategySettingsSections(
+                                    key: const ValueKey('strategy-settings'),
+                                    sectionKeys: _sectionKeys,
+                                    activeStrategyName: activeStrategyName,
+                                    strategySettings: strategySettings,
+                                    onManageThemeProfiles: () => _selectSection(
+                                      _SettingsSection.globalMapProfiles,
                                     ),
+                                  ),
+                                _SettingsMode.global => _GlobalSettingsSections(
+                                    key: const ValueKey('global-settings'),
+                                    sectionKeys: _sectionKeys,
+                                    appPreferences: appPreferences,
+                                    mapState: mapState,
+                                  ),
+                                _SettingsMode.shortcuts =>
+                                  _ShortcutSettingsSection(
+                                    key: _sectionKeys[
+                                        _SettingsSection.shortcuts],
+                                  ),
+                              },
                             ),
                           ),
                         ),
@@ -173,6 +190,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       case _SettingsSection.globalMapVisibility:
       case _SettingsSection.globalMapProfiles:
         return _SettingsMode.global;
+      case _SettingsSection.shortcuts:
+        return _SettingsMode.shortcuts;
     }
   }
 }
@@ -489,6 +508,566 @@ class _GlobalSettingsSections extends ConsumerWidget {
   }
 }
 
+class _ShortcutSettingsSection extends ConsumerStatefulWidget {
+  const _ShortcutSettingsSection({super.key});
+
+  @override
+  ConsumerState<_ShortcutSettingsSection> createState() =>
+      _ShortcutSettingsSectionState();
+}
+
+class _ShortcutSettingsSectionState
+    extends ConsumerState<_ShortcutSettingsSection> {
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+  String? _editingShortcutId;
+  String? _duplicateMessage;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final customBindings = ref.watch(
+      appPreferencesProvider.select((prefs) => prefs.customShortcutBindings),
+    );
+    final visibleDefinitions = ShortcutInfo.editableShortcuts
+        .where(
+          (definition) => ShortcutInfo.matchesSearch(
+            definition,
+            _query,
+            customBindings,
+          ),
+        )
+        .toList(growable: false);
+
+    return SettingsScopeCard(
+      title: "Keybinds",
+      description:
+          "Edit app-wide keybinds. Search accepts action names or keys.",
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _ShortcutSearchField(
+                  controller: _searchController,
+                  onChanged: (value) => setState(() => _query = value),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ShadButton.secondary(
+                size: ShadButtonSize.sm,
+                leading: const Icon(Icons.restart_alt_outlined, size: 15),
+                onPressed: customBindings.isEmpty
+                    ? null
+                    : () {
+                        setState(() {
+                          _editingShortcutId = null;
+                          _duplicateMessage = null;
+                        });
+                        ref
+                            .read(appPreferencesProvider.notifier)
+                            .resetAllCustomShortcutBindings();
+                      },
+                child: const Text("Restore Defaults"),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const _ShortcutTableHeader(),
+          const SizedBox(height: 4),
+          if (visibleDefinitions.isEmpty)
+            const _ShortcutEmptySearch()
+          else
+            for (final definition in visibleDefinitions) ...[
+              _ShortcutBindingRow(
+                definition: definition,
+                customBindings: customBindings,
+                isEditing: _editingShortcutId == definition.id,
+                duplicateMessage: _editingShortcutId == definition.id
+                    ? _duplicateMessage
+                    : null,
+                onEdit: () {
+                  setState(() {
+                    _editingShortcutId = definition.id;
+                    _duplicateMessage = null;
+                  });
+                },
+                onCancel: () {
+                  setState(() {
+                    _editingShortcutId = null;
+                    _duplicateMessage = null;
+                  });
+                },
+                onReset: ShortcutInfo.isDefaultBinding(
+                  definition.id,
+                  customBindings,
+                )
+                    ? null
+                    : () {
+                        setState(() {
+                          _editingShortcutId = null;
+                          _duplicateMessage = null;
+                        });
+                        ref
+                            .read(appPreferencesProvider.notifier)
+                            .resetCustomShortcutBinding(definition.id);
+                      },
+                onCaptured: (binding, triggerShake) {
+                  final duplicate = ShortcutInfo.findDuplicateBinding(
+                    editingShortcutId: definition.id,
+                    binding: binding,
+                    customBindings: customBindings,
+                  );
+                  if (duplicate != null) {
+                    triggerShake();
+                    setState(() {
+                      _duplicateMessage =
+                          "${binding.displayLabel()} is already bound to ${duplicate.title}.";
+                    });
+                    return;
+                  }
+                  ref
+                      .read(appPreferencesProvider.notifier)
+                      .setCustomShortcutBinding(
+                        definition.id,
+                        binding.serialize(),
+                      );
+                  setState(() {
+                    _editingShortcutId = null;
+                    _duplicateMessage = null;
+                  });
+                },
+              ),
+              const _SettingsItemDivider(),
+            ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ShortcutSearchField extends StatelessWidget {
+  const _ShortcutSearchField({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 38,
+      child: TextEditingShortcutScope(
+        child: TextField(
+          controller: controller,
+          onChanged: onChanged,
+          style: TextStyle(
+            color: Settings.tacticalVioletTheme.foreground,
+            fontSize: 13,
+          ),
+          cursorColor: Settings.tacticalVioletTheme.primary,
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: "Search actions or keys...",
+            hintStyle: TextStyle(
+              color: Settings.tacticalVioletTheme.mutedForeground,
+              fontSize: 13,
+            ),
+            prefixIcon: Icon(
+              Icons.search,
+              size: 17,
+              color: Settings.tacticalVioletTheme.mutedForeground,
+            ),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            filled: true,
+            fillColor: Settings.tacticalVioletTheme.card,
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: Settings.tacticalVioletTheme.border,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(
+                color: Settings.tacticalVioletTheme.primary,
+                width: 1.4,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShortcutTableHeader extends StatelessWidget {
+  const _ShortcutTableHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              "Action",
+              style: theme.textTheme.small.copyWith(
+                color: Settings.tacticalVioletTheme.mutedForeground,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.35,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 132,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                "Binding",
+                style: theme.textTheme.small.copyWith(
+                  color: Settings.tacticalVioletTheme.mutedForeground,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.35,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShortcutBindingRow extends StatelessWidget {
+  const _ShortcutBindingRow({
+    required this.definition,
+    required this.customBindings,
+    required this.isEditing,
+    required this.onEdit,
+    required this.onCancel,
+    required this.onCaptured,
+    this.duplicateMessage,
+    this.onReset,
+  });
+
+  final IcarusShortcutDefinition definition;
+  final Map<String, String> customBindings;
+  final bool isEditing;
+  final String? duplicateMessage;
+  final VoidCallback onEdit;
+  final VoidCallback onCancel;
+  final VoidCallback? onReset;
+  final void Function(IcarusKeyBinding binding, VoidCallback triggerShake)
+      onCaptured;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final binding = ShortcutInfo.effectiveBindingFor(
+      definition.id,
+      customBindings,
+    );
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOutCubic,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      color: isEditing
+          ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.06)
+          : Colors.transparent,
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  definition.title,
+                  style: theme.textTheme.p.copyWith(
+                    color: Settings.tacticalVioletTheme.foreground,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              if (onReset != null)
+                ShadTooltip(
+                  builder: (_) => const Text("Reset to default"),
+                  child: ShadIconButton.ghost(
+                    icon: const Icon(Icons.undo_outlined, size: 15),
+                    onPressed: onReset,
+                  ),
+                )
+              else
+                const SizedBox(width: 32),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 132,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: onEdit,
+                    child: _ShortcutBindingPill(
+                      label: binding.displayLabel(),
+                      isEditing: isEditing,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            child: isEditing
+                ? Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: _ShortcutCaptureField(
+                      duplicateMessage: duplicateMessage,
+                      onCancel: onCancel,
+                      onCaptured: onCaptured,
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShortcutBindingPill extends StatelessWidget {
+  const _ShortcutBindingPill({
+    required this.label,
+    required this.isEditing,
+  });
+
+  final String label;
+  final bool isEditing;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOutCubic,
+      constraints: const BoxConstraints(minWidth: 56),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: isEditing
+            ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.16)
+            : Settings.tacticalVioletTheme.secondary.withValues(alpha: 0.76),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isEditing
+              ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.34)
+              : Settings.tacticalVioletTheme.border.withValues(alpha: 0.9),
+        ),
+      ),
+      child: Text(
+        label,
+        textAlign: TextAlign.center,
+        overflow: TextOverflow.ellipsis,
+        style: ShadTheme.of(context).textTheme.small.copyWith(
+              color: Settings.tacticalVioletTheme.foreground,
+              fontWeight: FontWeight.w800,
+              height: 1.1,
+            ),
+      ),
+    );
+  }
+}
+
+class _ShortcutCaptureField extends StatefulWidget {
+  const _ShortcutCaptureField({
+    required this.onCaptured,
+    required this.onCancel,
+    this.duplicateMessage,
+  });
+
+  final void Function(IcarusKeyBinding binding, VoidCallback triggerShake)
+      onCaptured;
+  final VoidCallback onCancel;
+  final String? duplicateMessage;
+
+  @override
+  State<_ShortcutCaptureField> createState() => _ShortcutCaptureFieldState();
+}
+
+class _ShortcutCaptureFieldState extends State<_ShortcutCaptureField>
+    with SingleTickerProviderStateMixin {
+  late final FocusNode _focusNode;
+  late final AnimationController _shakeController;
+  late final Animation<double> _shakeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode = FocusNode();
+    _shakeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    );
+    _shakeAnimation = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0, end: -7), weight: 1),
+      TweenSequenceItem(tween: Tween(begin: -7, end: 7), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 7, end: -4), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: -4, end: 0), weight: 1),
+    ]).animate(
+      CurvedAnimation(parent: _shakeController, curve: Curves.easeOutCubic),
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _focusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    _shakeController.dispose();
+    super.dispose();
+  }
+
+  void _triggerShake() {
+    _shakeController
+      ..reset()
+      ..forward();
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (event.logicalKey == LogicalKeyboardKey.escape) {
+      widget.onCancel();
+      return KeyEventResult.handled;
+    }
+
+    final binding = IcarusKeyBinding.fromPressedKeys(
+      HardwareKeyboard.instance.logicalKeysPressed,
+    );
+    if (!binding.isComplete) return KeyEventResult.handled;
+    widget.onCaptured(binding, _triggerShake);
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasDuplicate = widget.duplicateMessage != null;
+    return Focus(
+      focusNode: _focusNode,
+      onKeyEvent: _handleKeyEvent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AnimatedBuilder(
+            animation: _shakeAnimation,
+            builder: (context, child) {
+              return Transform.translate(
+                offset: Offset(_shakeAnimation.value, 0),
+                child: child,
+              );
+            },
+            child: Container(
+              height: 38,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Settings.tacticalVioletTheme.card,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: hasDuplicate
+                      ? Settings.tacticalVioletTheme.destructive
+                      : Settings.tacticalVioletTheme.primary
+                          .withValues(alpha: 0.65),
+                  width: hasDuplicate ? 1.4 : 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.keyboard_alt_outlined,
+                    size: 17,
+                    color: hasDuplicate
+                        ? Settings.tacticalVioletTheme.destructive
+                        : Settings.tacticalVioletTheme.primary,
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      "Press new shortcut...",
+                      style: ShadTheme.of(context).textTheme.small.copyWith(
+                            color: Settings.tacticalVioletTheme.foreground,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                  ShadButton.ghost(
+                    size: ShadButtonSize.sm,
+                    onPressed: widget.onCancel,
+                    child: const Text("Cancel"),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 160),
+            child: hasDuplicate
+                ? Padding(
+                    key: ValueKey(widget.duplicateMessage),
+                    padding: const EdgeInsets.only(top: 7),
+                    child: Text(
+                      widget.duplicateMessage!,
+                      style: ShadTheme.of(context).textTheme.small.copyWith(
+                            color: Settings.tacticalVioletTheme.destructive,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.only(top: 7),
+                    child: Text(
+                      "Escape cancels. Ctrl and Cmd are saved as one platform-aware Primary modifier.",
+                      style: ShadTheme.of(context).textTheme.small.copyWith(
+                            color: Settings.tacticalVioletTheme.mutedForeground,
+                          ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShortcutEmptySearch extends StatelessWidget {
+  const _ShortcutEmptySearch();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 28),
+      child: Center(
+        child: Text(
+          "No shortcuts match that search.",
+          style: ShadTheme.of(context).textTheme.small.copyWith(
+                color: Settings.tacticalVioletTheme.mutedForeground,
+                fontWeight: FontWeight.w600,
+              ),
+        ),
+      ),
+    );
+  }
+}
+
 class _SettingsNavigationRail extends StatelessWidget {
   const _SettingsNavigationRail({
     required this.mode,
@@ -566,6 +1145,12 @@ class _SettingsNavigationRail extends StatelessWidget {
             label: "Theme profiles",
             isSelected: selectedSection == _SettingsSection.globalMapProfiles,
             onTap: () => onSectionSelected(_SettingsSection.globalMapProfiles),
+          ),
+          _SettingsNavItem(
+            icon: Icons.keyboard_alt_outlined,
+            label: "Keybinds",
+            isSelected: selectedSection == _SettingsSection.shortcuts,
+            onTap: () => onSectionSelected(_SettingsSection.shortcuts),
           ),
         ],
       ),

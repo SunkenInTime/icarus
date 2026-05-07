@@ -3,6 +3,7 @@ import 'dart:ui' show FontFeature;
 
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/services.dart';
+import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 enum BetterColorPickerMode { rgb, hsl, hsv, hex }
@@ -1136,35 +1137,37 @@ class _ValueFieldState extends material.State<_ValueField> {
           _focused = focused;
         });
       },
-      child: material.TextField(
-        controller: _controller,
-        onChanged: widget.onChanged == null
-            ? null
-            : (value) {
-                if (_focused) {
-                  widget.onChanged!(value);
-                }
-              },
-        keyboardType: widget.keyboardType,
-        inputFormatters: widget.inputFormatters,
-        maxLines: 1,
-        textAlignVertical: material.TextAlignVertical.center,
-        style: _monoTextStyle(
-          context,
-          widget.style,
-        ).copyWith(color: palette.foreground),
-        decoration: material.InputDecoration(
-          isDense: true,
-          border: material.InputBorder.none,
-          contentPadding: const material.EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 10,
-          ),
-          hintText: widget.placeholder,
-          hintStyle: _textStyle(
+      child: TextEditingShortcutScope(
+        child: material.TextField(
+          controller: _controller,
+          onChanged: widget.onChanged == null
+              ? null
+              : (value) {
+                  if (_focused) {
+                    widget.onChanged!(value);
+                  }
+                },
+          keyboardType: widget.keyboardType,
+          inputFormatters: widget.inputFormatters,
+          maxLines: 1,
+          textAlignVertical: material.TextAlignVertical.center,
+          style: _monoTextStyle(
             context,
             widget.style,
-          ).copyWith(color: palette.mutedForeground),
+          ).copyWith(color: palette.foreground),
+          decoration: material.InputDecoration(
+            isDense: true,
+            border: material.InputBorder.none,
+            contentPadding: const material.EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
+            ),
+            hintText: widget.placeholder,
+            hintStyle: _textStyle(
+              context,
+              widget.style,
+            ).copyWith(color: palette.mutedForeground),
+          ),
         ),
       ),
     );

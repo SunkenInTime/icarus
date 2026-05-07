@@ -118,6 +118,7 @@ class AppPreferences extends HiveObject {
   final double pagesBarExpandedHeight;
   final double pagesBarWidth;
   final List<int> customColorValues;
+  final Map<String, String> customShortcutBindings;
 
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
@@ -128,7 +129,10 @@ class AppPreferences extends HiveObject {
     this.pagesBarExpandedHeight = 310.0,
     this.pagesBarWidth = 224.0,
     List<int>? customColorValues,
-  }) : customColorValues = List.unmodifiable(customColorValues ?? const []);
+    Map<String, String>? customShortcutBindings,
+  })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
+        customShortcutBindings =
+            Map.unmodifiable(customShortcutBindings ?? const {});
 
   AppPreferences copyWith({
     String? defaultThemeProfileIdForNewStrategies,
@@ -139,6 +143,7 @@ class AppPreferences extends HiveObject {
     double? pagesBarExpandedHeight,
     double? pagesBarWidth,
     List<int>? customColorValues,
+    Map<String, String>? customShortcutBindings,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -156,6 +161,8 @@ class AppPreferences extends HiveObject {
           pagesBarExpandedHeight ?? this.pagesBarExpandedHeight,
       pagesBarWidth: pagesBarWidth ?? this.pagesBarWidth,
       customColorValues: customColorValues ?? this.customColorValues,
+      customShortcutBindings:
+          customShortcutBindings ?? this.customShortcutBindings,
     );
   }
 }
@@ -570,6 +577,46 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
   Future<void> setCustomColorValues(List<int> colorValues) async {
     final updated = _readFromHive().copyWith(
       customColorValues: colorValues.take(15).toList(growable: false),
+    );
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setCustomShortcutBinding(
+    String shortcutId,
+    String serializedBinding,
+  ) async {
+    final current = _readFromHive();
+    final updatedBindings = {
+      ...current.customShortcutBindings,
+      shortcutId: serializedBinding,
+    };
+    final updated = current.copyWith(customShortcutBindings: updatedBindings);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> resetCustomShortcutBinding(String shortcutId) async {
+    final current = _readFromHive();
+    final updatedBindings = {...current.customShortcutBindings}
+      ..remove(shortcutId);
+    final updated = current.copyWith(customShortcutBindings: updatedBindings);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> resetAllCustomShortcutBindings() async {
+    final updated = _readFromHive().copyWith(
+      customShortcutBindings: const {},
     );
     await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,

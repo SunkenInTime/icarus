@@ -10,6 +10,7 @@ import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -64,7 +65,9 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
       autofocus: true,
       // canRequestFocus: true,
       child: Shortcuts(
-        shortcuts: ShortcutInfo.globalShortcuts,
+        shortcuts: ShortcutInfo.globalShortcutsFor(
+          ref.watch(appPreferencesProvider).customShortcutBindings,
+        ),
         child: Actions(
           actions: {
             NavigationActionIntent: CallbackAction<NavigationActionIntent>(
