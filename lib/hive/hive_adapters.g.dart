@@ -1300,6 +1300,9 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
           : (fields[6] as num).toDouble(),
       defaultNeutralTeamColorsForNewStrategies:
           fields[4] == null ? false : fields[4] as bool,
+      showSpawnBarrier: fields[9] == null ? false : fields[9] as bool,
+      showUltOrbs: fields[10] == null ? false : fields[10] as bool,
+      showRegionNames: fields[11] == null ? false : fields[11] as bool,
       pagesBarExpandedHeight:
           fields[2] == null ? 310.0 : (fields[2] as num).toDouble(),
       pagesBarWidth: fields[7] == null ? 224.0 : (fields[7] as num).toDouble(),
@@ -1311,7 +1314,7 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1329,7 +1332,13 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(7)
       ..write(obj.pagesBarWidth)
       ..writeByte(8)
-      ..write(obj.customShortcutBindings);
+      ..write(obj.customShortcutBindings)
+      ..writeByte(9)
+      ..write(obj.showSpawnBarrier)
+      ..writeByte(10)
+      ..write(obj.showUltOrbs)
+      ..writeByte(11)
+      ..write(obj.showRegionNames);
   }
 
   @override

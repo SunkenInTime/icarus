@@ -115,6 +115,9 @@ class AppPreferences extends HiveObject {
   final double defaultAgentSizeForNewStrategies;
   final double defaultAbilitySizeForNewStrategies;
   final bool defaultNeutralTeamColorsForNewStrategies;
+  final bool showSpawnBarrier;
+  final bool showUltOrbs;
+  final bool showRegionNames;
   final double pagesBarExpandedHeight;
   final double pagesBarWidth;
   final List<int> customColorValues;
@@ -126,6 +129,9 @@ class AppPreferences extends HiveObject {
     this.defaultAgentSizeForNewStrategies = Settings.agentSize,
     this.defaultAbilitySizeForNewStrategies = Settings.abilitySize,
     this.defaultNeutralTeamColorsForNewStrategies = false,
+    this.showSpawnBarrier = false,
+    this.showUltOrbs = false,
+    this.showRegionNames = false,
     this.pagesBarExpandedHeight = 310.0,
     this.pagesBarWidth = 224.0,
     List<int>? customColorValues,
@@ -140,6 +146,9 @@ class AppPreferences extends HiveObject {
     double? defaultAgentSizeForNewStrategies,
     double? defaultAbilitySizeForNewStrategies,
     bool? defaultNeutralTeamColorsForNewStrategies,
+    bool? showSpawnBarrier,
+    bool? showUltOrbs,
+    bool? showRegionNames,
     double? pagesBarExpandedHeight,
     double? pagesBarWidth,
     List<int>? customColorValues,
@@ -157,6 +166,9 @@ class AppPreferences extends HiveObject {
       defaultNeutralTeamColorsForNewStrategies:
           defaultNeutralTeamColorsForNewStrategies ??
               this.defaultNeutralTeamColorsForNewStrategies,
+      showSpawnBarrier: showSpawnBarrier ?? this.showSpawnBarrier,
+      showUltOrbs: showUltOrbs ?? this.showUltOrbs,
+      showRegionNames: showRegionNames ?? this.showRegionNames,
       pagesBarExpandedHeight:
           pagesBarExpandedHeight ?? this.pagesBarExpandedHeight,
       pagesBarWidth: pagesBarWidth ?? this.pagesBarWidth,
@@ -518,6 +530,33 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
 
   Future<void> setAutosaveEnabled(bool enabled) async {
     final updated = _readFromHive().copyWith(autosaveEnabled: enabled);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setShowSpawnBarrier(bool visible) async {
+    final updated = _readFromHive().copyWith(showSpawnBarrier: visible);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setShowUltOrbs(bool visible) async {
+    final updated = _readFromHive().copyWith(showUltOrbs: visible);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setShowRegionNames(bool visible) async {
+    final updated = _readFromHive().copyWith(showRegionNames: visible);
     await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,
       updated,

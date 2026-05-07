@@ -2810,6 +2810,9 @@ class StrategyProvider extends Notifier<StrategyState> {
               ))
           .copyWith(
         defaultThemeProfileIdForNewStrategies: resolvedDefaultProfileId,
+        showSpawnBarrier: globals.showSpawnBarrier,
+        showUltOrbs: globals.showUltOrbs,
+        showRegionNames: globals.showRegionNames,
       ),
     );
 
@@ -2820,6 +2823,9 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     await ref.read(mapThemeProfilesProvider.notifier).refreshFromHive();
     await ref.read(appPreferencesProvider.notifier).refreshFromHive();
+    ref
+        .read(mapProvider.notifier)
+        .syncVisibilityFromPreferences(ref.read(appPreferencesProvider));
     ref.invalidate(favoriteAgentsProvider);
 
     return _GlobalImportResult(
@@ -3384,6 +3390,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       themeProfiles: profiles,
       defaultThemeProfileIdForNewStrategies:
           appPreferences?.defaultThemeProfileIdForNewStrategies,
+      showSpawnBarrier: appPreferences?.showSpawnBarrier,
+      showUltOrbs: appPreferences?.showUltOrbs,
+      showRegionNames: appPreferences?.showRegionNames,
       favoriteAgents: favoriteAgents,
     );
   }
