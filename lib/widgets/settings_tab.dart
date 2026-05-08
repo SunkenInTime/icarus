@@ -1553,7 +1553,7 @@ class _PageMarkerSizesSyncBannerState
                     ),
               ),
               const SizedBox(height: 8),
-              ShadButton.outline(
+              ShadButton(
                 size: ShadButtonSize.sm,
                 onPressed: _busy
                     ? null

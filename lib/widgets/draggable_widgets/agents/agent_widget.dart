@@ -3,14 +3,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/team_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -91,6 +96,7 @@ class AgentWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
+    final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1.0;
     final agentSize =
         forcedAgentSize ?? ref.watch(strategySettingsProvider).agentSize;
     final useNeutralTeamColors =
@@ -195,6 +201,18 @@ class AgentWidget extends ConsumerWidget {
         : null;
 
     final contextMenuItems = <ShadContextMenuItem>[
+      if (!isScreenshot)
+        ShadContextMenuItem(
+          height: 44,
+          closeOnTap: false,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          backgroundColor: Colors.transparent,
+          selectedBackgroundColor: Colors.transparent,
+          child: _AgentAbilityContextMenuRow(
+            agent: agent,
+            mapScale: mapScale,
+          ),
+        ),
       if (lineUpId != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.plus),
@@ -274,6 +292,133 @@ class AgentWidget extends ConsumerWidget {
       deleteTarget: deleteTarget,
       contextMenuItems: contextMenuItems.isEmpty ? null : contextMenuItems,
       child: agentCard,
+    );
+  }
+}
+
+class _AgentAbilityContextMenuRow extends ConsumerWidget {
+  const _AgentAbilityContextMenuRow({
+    required this.agent,
+    required this.mapScale,
+  });
+
+  final AgentData agent;
+  final double mapScale;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final ability in agent.abilities)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: _AgentAbilityContextMenuButton(
+              ability: ability,
+              mapScale: mapScale,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _AgentAbilityContextMenuButton extends ConsumerStatefulWidget {
+  const _AgentAbilityContextMenuButton({
+    required this.ability,
+    required this.mapScale,
+  });
+
+  final AbilityInfo ability;
+  final double mapScale;
+
+  @override
+  ConsumerState<_AgentAbilityContextMenuButton> createState() =>
+      _AgentAbilityContextMenuButtonState();
+}
+
+class _AgentAbilityContextMenuButtonState
+    extends ConsumerState<_AgentAbilityContextMenuButton> {
+  bool _isHovered = false;
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final ability = widget.ability;
+    final background = _isHovered || _isPressed
+        ? theme.colorScheme.accent
+        : theme.colorScheme.secondary;
+    final borderColor = _isHovered || _isPressed
+        ? theme.colorScheme.ring
+        : theme.colorScheme.border;
+
+    return Draggable<AbilityInfo>(
+      data: ability,
+      onDragStarted: () {
+        setState(() => _isPressed = false);
+        final interactionState = ref.read(interactionStateProvider);
+        if (interactionState == InteractionState.drawing ||
+            interactionState == InteractionState.erasing) {
+          ref
+              .read(interactionStateProvider.notifier)
+              .update(InteractionState.navigation);
+        }
+      },
+      dragAnchorStrategy: (draggable, context, position) {
+        final info = draggable.data as AbilityInfo;
+        final scaleFactor =
+            CoordinateSystem.instance.scaleFactor * ref.read(screenZoomProvider);
+        final abilitySize = ref.read(strategySettingsProvider).abilitySize;
+
+        return info.abilityData!
+            .getAnchorPoint(
+              mapScale: widget.mapScale,
+              abilitySize: abilitySize,
+            )
+            .scale(scaleFactor, scaleFactor);
+      },
+      feedback: Opacity(
+        opacity: Settings.feedbackOpacity,
+        child: ZoomTransform(
+          child: ability.abilityData!.createWidget(
+            id: null,
+            isAlly: ref.watch(teamProvider),
+            mapScale: widget.mapScale,
+          ),
+        ),
+      ),
+      child: Tooltip(
+        message: ability.name,
+        waitDuration: const Duration(milliseconds: 350),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.grab,
+          onEnter: (_) => setState(() => _isHovered = true),
+          onExit: (_) => setState(() {
+            _isHovered = false;
+            _isPressed = false;
+          }),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: (_) => setState(() => _isPressed = true),
+            onTapCancel: () => setState(() => _isPressed = false),
+            onTapUp: (_) => setState(() => _isPressed = false),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOutCubic,
+              width: 36,
+              height: 36,
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: background,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: borderColor),
+              ),
+              child: Image.asset(ability.iconPath),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
