@@ -202,10 +202,12 @@ class AgentWidget extends ConsumerWidget {
 
     final contextMenuItems = <ShadContextMenuItem>[
       if (!isScreenshot)
-        ShadContextMenuItem(
-          height: 44,
+        ShadContextMenuItem.raw(
+          variant: ShadContextMenuItemVariant.primary,
+          height: 36,
           closeOnTap: false,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.only(bottom: 4),
+          insetPadding: const EdgeInsets.only(left: 4, right: 4),
           backgroundColor: Colors.transparent,
           selectedBackgroundColor: Colors.transparent,
           child: _AgentAbilityContextMenuRow(
@@ -308,15 +310,16 @@ class _AgentAbilityContextMenuRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Row(
-      mainAxisSize: MainAxisSize.min,
+      spacing: 4,
+      // crossAxisAlignment: CrossAxisAlignment.start,
+      //
+      mainAxisSize: MainAxisSize.max,
+      // mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         for (final ability in agent.abilities)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: _AgentAbilityContextMenuButton(
-              ability: ability,
-              mapScale: mapScale,
-            ),
+          _AgentAbilityContextMenuButton(
+            ability: ability,
+            mapScale: mapScale,
           ),
       ],
     );
@@ -367,8 +370,8 @@ class _AgentAbilityContextMenuButtonState
       },
       dragAnchorStrategy: (draggable, context, position) {
         final info = draggable.data as AbilityInfo;
-        final scaleFactor =
-            CoordinateSystem.instance.scaleFactor * ref.read(screenZoomProvider);
+        final scaleFactor = CoordinateSystem.instance.scaleFactor *
+            ref.read(screenZoomProvider);
         final abilitySize = ref.read(strategySettingsProvider).abilitySize;
 
         return info.abilityData!
@@ -388,34 +391,30 @@ class _AgentAbilityContextMenuButtonState
           ),
         ),
       ),
-      child: Tooltip(
-        message: ability.name,
-        waitDuration: const Duration(milliseconds: 350),
-        child: MouseRegion(
-          cursor: SystemMouseCursors.grab,
-          onEnter: (_) => setState(() => _isHovered = true),
-          onExit: (_) => setState(() {
-            _isHovered = false;
-            _isPressed = false;
-          }),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapDown: (_) => setState(() => _isPressed = true),
-            onTapCancel: () => setState(() => _isPressed = false),
-            onTapUp: (_) => setState(() => _isPressed = false),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              curve: Curves.easeOutCubic,
-              width: 36,
-              height: 36,
-              padding: const EdgeInsets.all(5),
-              decoration: BoxDecoration(
-                color: background,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: borderColor),
-              ),
-              child: Image.asset(ability.iconPath),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.grab,
+        onEnter: (_) => setState(() => _isHovered = true),
+        onExit: (_) => setState(() {
+          _isHovered = false;
+          _isPressed = false;
+        }),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (_) => setState(() => _isPressed = true),
+          onTapCancel: () => setState(() => _isPressed = false),
+          onTapUp: (_) => setState(() => _isPressed = false),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            curve: Curves.easeOutCubic,
+            width: 36,
+            height: 36,
+            padding: const EdgeInsets.all(5),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: borderColor),
             ),
+            child: Image.asset(ability.iconPath),
           ),
         ),
       ),
