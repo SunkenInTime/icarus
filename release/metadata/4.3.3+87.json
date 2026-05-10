@@ -1,0 +1,61 @@
+{
+    "version":  "4.3.3+87",
+    "shortVersion":  87,
+    "title":  "4.3.3 Release",
+    "description":  "Desktop release metadata for Icarus.",
+    "date":  "2026-05-10",
+    "mandatory":  false,
+    "channels":  [
+                     "desktop",
+                     "prerelease"
+                 ],
+    "platforms":  [
+                      "windows"
+                  ],
+    "changes":  [
+                    {
+                        "message":  "Custom colors.",
+                        "type":  "feature"
+                    },
+                    {
+                        "message":  "New UI for selecting abilities easily.",
+                        "type":  "feature"
+                    },
+                    {
+                        "message":  "Ctrl-drag now duplicates abilities.",
+                        "type":  "feature"
+                    },
+                    {
+                        "message":  "Redesigned pages bar to better reflect current page status.",
+                        "type":  "improvement"
+                    },
+                    {
+                        "message":  "Made the pages bar resizable.",
+                        "type":  "improvement"
+                    },
+                    {
+                        "message":  "Revamped settings page.",
+                        "type":  "improvement"
+                    },
+                    {
+                        "message":  "Custom keybind shortcuts.",
+                        "type":  "feature"
+                    },
+                    {
+                        "message":  "Can now turn off agent background color.",
+                        "type":  "feature"
+                    },
+                    {
+                        "message":  "Screenshots now show the page title.",
+                        "type":  "improvement"
+                    },
+                    {
+                        "message":  "Everything looks cleaner and better.",
+                        "type":  "improvement"
+                    },
+                    {
+                        "message":  "Online is coming soon\u2122.",
+                        "type":  "other"
+                    }
+                ]
+}
