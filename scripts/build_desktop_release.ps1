@@ -65,6 +65,18 @@ if (-not (Test-Path $metadataPath)) {
     $metadata | ConvertTo-Json -Depth 6 | Set-Content -Path $metadataPath
     Write-Host "Created release metadata at $metadataPath"
 }
+else {
+    $metadata = Get-Content $metadataPath -Raw | ConvertFrom-Json
+    $channels = @($metadata.channels)
+    $requiredChannels = @("desktop", $Channel)
+    $missingChannels = @($requiredChannels | Where-Object { $channels -notcontains $_ })
+
+    if ($missingChannels.Count -gt 0) {
+        $metadata.channels = @($channels + $missingChannels)
+        $metadata | ConvertTo-Json -Depth 6 | Set-Content -Path $metadataPath
+        Write-Host ("Updated release metadata channels at {0}: {1}" -f $metadataPath, ($metadata.channels -join ", "))
+    }
+}
 
 $channelRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("{0}\updates\windows\{1}" -f $PagesStageRoot, $Channel)
 New-Item -ItemType Directory -Force -Path $channelRoot | Out-Null
