@@ -3,6 +3,60 @@
     "description":  "Desktop release metadata for Icarus.",
     "items":  [
                   {
+                      "version":  "4.3.3+87",
+                      "shortVersion":  87,
+                      "changes":  [
+                                      {
+                                          "message":  "Custom colors.",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "New UI for selecting abilities easily.",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Ctrl-drag now duplicates abilities.",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Redesigned pages bar to better reflect current page status.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Made the pages bar resizable.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Revamped settings page.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Custom keybind shortcuts.",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Can now turn off agent background color.",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Screenshots now show the page title.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Everything looks cleaner and better.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Online is coming soon™.",
+                                          "type":  "other"
+                                      }
+                                  ],
+                      "date":  "2026-05-10",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.3.3%2B87-windows",
+                      "platform":  "windows"
+                  },
+                  {
                       "version":  "4.3.0+84",
                       "shortVersion":  84,
                       "changes":  [
