@@ -6,6 +6,18 @@ const int _folderAdapterTypeId = 17;
 
 void registerIcarusAdapters(HiveInterface hive) {
   hive.registerAdapters();
+  if (!hive.isAdapterRegistered(freeDrawingAdapterTypeId)) {
+    hive.registerAdapter(FreeDrawingAdapter());
+  }
+  if (!hive.isAdapterRegistered(lineAdapterTypeId)) {
+    hive.registerAdapter(LineAdapter());
+  }
+  if (!hive.isAdapterRegistered(rectangleDrawingAdapterTypeId)) {
+    hive.registerAdapter(RectangleDrawingAdapter());
+  }
+  if (!hive.isAdapterRegistered(ellipseDrawingAdapterTypeId)) {
+    hive.registerAdapter(EllipseDrawingAdapter());
+  }
   if (!hive.isAdapterRegistered(_folderAdapterTypeId)) {
     hive.registerAdapter(FolderAdapter());
   }
@@ -13,6 +25,18 @@ void registerIcarusAdapters(HiveInterface hive) {
 
 void registerIcarusIsolatedAdapters(IsolatedHiveInterface hive) {
   hive.registerAdapters();
+  if (!hive.isAdapterRegistered(freeDrawingAdapterTypeId)) {
+    hive.registerAdapter(FreeDrawingAdapter());
+  }
+  if (!hive.isAdapterRegistered(lineAdapterTypeId)) {
+    hive.registerAdapter(LineAdapter());
+  }
+  if (!hive.isAdapterRegistered(rectangleDrawingAdapterTypeId)) {
+    hive.registerAdapter(RectangleDrawingAdapter());
+  }
+  if (!hive.isAdapterRegistered(ellipseDrawingAdapterTypeId)) {
+    hive.registerAdapter(EllipseDrawingAdapter());
+  }
   if (!hive.isAdapterRegistered(_folderAdapterTypeId)) {
     hive.registerAdapter(FolderAdapter());
   }

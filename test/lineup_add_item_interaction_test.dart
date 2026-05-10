@@ -13,6 +13,7 @@ import 'package:icarus/providers/canvas_resize_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -319,6 +320,59 @@ void main() {
         CoordinateSystem.instance.coordinateToScreen(group.agent.position);
     expect(resizedAgentTopLeft.dx, closeTo(expectedAgentTopLeft.dx, 0.001));
     expect(resizedAgentTopLeft.dy, closeTo(expectedAgentTopLeft.dy, 0.001));
+  });
+
+  testWidgets('persistent lineup overlay repositions and rescales on resize',
+      (tester) async {
+    final container = _createContainer();
+    final group = _breachGroup();
+    container.read(lineUpProvider.notifier).addGroup(group);
+
+    CoordinateSystem(playAreaSize: const Size(900, 600));
+    await _pumpHarness(
+      tester,
+      container: container,
+      child: const SizedBox(
+        width: 900,
+        height: 600,
+        child: LineUpOverlay(),
+      ),
+    );
+
+    final agentFinder = find.byType(AgentWidget);
+    final initialAgentTopLeft = tester.getTopLeft(agentFinder);
+    final initialAgentSize = tester.getSize(agentFinder);
+    final initialAbilityTopLeft = tester
+        .getTopLeft(find.byKey(const ValueKey('lineup-ability-breach-item')));
+    final initialAbilitySize = tester
+        .getSize(find.byKey(const ValueKey('lineup-ability-breach-item')));
+
+    CoordinateSystem(playAreaSize: const Size(1200, 800));
+    container.read(canvasResizeProvider.notifier).increment();
+    await tester.pump();
+
+    final resizedAgentTopLeft = tester.getTopLeft(agentFinder);
+    final resizedAgentSize = tester.getSize(agentFinder);
+    final resizedAbilityTopLeft = tester
+        .getTopLeft(find.byKey(const ValueKey('lineup-ability-breach-item')));
+    final resizedAbilitySize = tester
+        .getSize(find.byKey(const ValueKey('lineup-ability-breach-item')));
+
+    expect(resizedAgentTopLeft, isNot(initialAgentTopLeft));
+    expect(resizedAbilityTopLeft, isNot(initialAbilityTopLeft));
+    expect(resizedAgentSize, isNot(initialAgentSize));
+    expect(resizedAbilitySize, isNot(initialAbilitySize));
+
+    final coordinateSystem = CoordinateSystem.instance;
+    final expectedAgentTopLeft =
+        coordinateSystem.coordinateToScreen(group.agent.position);
+    final expectedAbilityTopLeft = coordinateSystem
+        .coordinateToScreen(group.items.single.ability.position);
+
+    expect(resizedAgentTopLeft.dx, closeTo(expectedAgentTopLeft.dx, 0.001));
+    expect(resizedAgentTopLeft.dy, closeTo(expectedAgentTopLeft.dy, 0.001));
+    expect(resizedAbilityTopLeft.dx, closeTo(expectedAbilityTopLeft.dx, 0.001));
+    expect(resizedAbilityTopLeft.dy, closeTo(expectedAbilityTopLeft.dy, 0.001));
   });
 
   testWidgets('locked add-item mode rejects dragging a different agent',

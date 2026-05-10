@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
-import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
+import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 
 class TextWidget extends ConsumerWidget {
   const TextWidget({
@@ -157,8 +157,7 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Shortcuts(
-      shortcuts: ShortcutInfo.textEditingOverrides,
+    return TextEditingShortcutScope(
       child: NotificationListener<SizeChangedLayoutNotification>(
         onNotification: (notification) {
           WidgetsBinding.instance.addPostFrameCallback((_) {

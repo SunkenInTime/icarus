@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 
@@ -32,13 +33,6 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
   double? localScale; // Make localScale nullable to check if it's initialized
   bool isPanning = false;
   bool isDragging = false;
-  static const List<Color> _tagPalette = [
-    Color(0xFF22C55E),
-    Color(0xFF3B82F6),
-    Color(0xFFF59E0B),
-    Color(0xFFEF4444),
-    Color(0xFFA855F7),
-  ];
 
   @override
   void initState() {
@@ -58,8 +52,8 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
 
       if (ref.watch(placedImageProvider).images[index].scale != localScale &&
           !isPanning) {
-        localScale =
-            ImageScalePolicy.clamp(ref.read(placedImageProvider).images[index].scale);
+        localScale = ImageScalePolicy.clamp(
+            ref.read(placedImageProvider).images[index].scale);
       }
 
       return ImageScaleController(
@@ -156,40 +150,32 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
               .updateTagColor(widget.placedImage.id, null);
         },
       ),
-      ..._tagPalette.map(
-        (color) => ShadContextMenuItem(
-          leading: Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
+      ...ref.watch(colorLibraryProvider).map(
+            (entry) => ShadContextMenuItem(
+              leading: Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: entry.color,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              child: Text(_labelForColor(entry)),
+              onPressed: () {
+                ref.read(placedImageProvider.notifier).updateTagColor(
+                    widget.placedImage.id, entry.color.toARGB32());
+              },
             ),
           ),
-          child: Text(_labelForColor(color)),
-          onPressed: () {
-            ref
-                .read(placedImageProvider.notifier)
-                .updateTagColor(widget.placedImage.id, color.toARGB32());
-          },
-        ),
-      ),
     ];
   }
 
-  String _labelForColor(Color color) {
-    if (color.toARGB32() == const Color(0xFF22C55E).toARGB32()) {
-      return 'Green tag';
-    }
-    if (color.toARGB32() == const Color(0xFF3B82F6).toARGB32()) {
-      return 'Blue tag';
-    }
-    if (color.toARGB32() == const Color(0xFFF59E0B).toARGB32()) {
-      return 'Amber tag';
-    }
-    if (color.toARGB32() == const Color(0xFFEF4444).toARGB32()) {
-      return 'Red tag';
-    }
-    return 'Purple tag';
+  String _labelForColor(ColorLibraryEntry entry) {
+    final kind = entry.isCustom ? 'custom' : 'default';
+    final hex = (entry.color.toARGB32() & 0x00FFFFFF)
+        .toRadixString(16)
+        .padLeft(6, '0')
+        .toUpperCase();
+    return '#$hex $kind tag';
   }
 }

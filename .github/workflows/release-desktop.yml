@@ -72,6 +72,8 @@ jobs:
       - name: Run Desktop Release Script
         shell: pwsh
         env:
+          CHANGE_MESSAGE: ${{ inputs.change_message }}
+          RELEASE_TITLE: ${{ inputs.release_title }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $args = @(
@@ -79,7 +81,7 @@ jobs:
             "-File", "scripts/release_desktop.ps1",
             "-VersionBump", "${{ inputs.version_bump }}",
             "-Channel", "${{ inputs.channel }}",
-            "-ChangeMessage", "${{ inputs.change_message }}"
+            "-ChangeMessage", $env:CHANGE_MESSAGE
           )
 
           if ("${{ inputs.publish_pages }}" -eq "true") {
@@ -90,8 +92,8 @@ jobs:
             $args += "-Mandatory"
           }
 
-          if (-not [string]::IsNullOrWhiteSpace("${{ inputs.release_title }}")) {
-            $args += @("-ReleaseTitle", "${{ inputs.release_title }}")
+          if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_TITLE)) {
+            $args += @("-ReleaseTitle", $env:RELEASE_TITLE)
           }
 
           & powershell @args

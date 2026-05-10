@@ -82,7 +82,7 @@ void main() {
             children: [
               PlacedAbilityWidget(
                 ability: ability,
-                onDragEnd: (_) {},
+                onDragEnd: (_, __) {},
                 id: ability.id,
                 data: ability,
                 rotation: ability.rotation,
@@ -237,7 +237,7 @@ void main() {
             children: [
               PlacedAbilityWidget(
                 ability: ability,
-                onDragEnd: (_) {},
+                onDragEnd: (_, __) {},
                 id: ability.id,
                 data: ability,
                 rotation: ability.rotation,
@@ -292,7 +292,7 @@ void main() {
             children: [
               PlacedAbilityWidget(
                 ability: ability,
-                onDragEnd: (_) {},
+                onDragEnd: (_, __) {},
                 id: ability.id,
                 data: ability,
                 rotation: ability.rotation,
@@ -420,7 +420,7 @@ void main() {
             children: [
               PlacedAbilityWidget(
                 ability: sectorAbility,
-                onDragEnd: (_) {},
+                onDragEnd: (_, __) {},
                 id: sectorAbility.id,
                 data: sectorAbility,
                 rotation: sectorAbility.rotation,
@@ -1163,7 +1163,7 @@ Future<void> _pumpPlacedAbility(
         children: [
           PlacedAbilityWidget(
             ability: ability,
-            onDragEnd: (_) {},
+            onDragEnd: (_, __) {},
             id: ability.id,
             data: ability,
             rotation: ability.rotation,
@@ -1193,6 +1193,8 @@ ProviderContainer _createLineUpContainer() {
     ],
   );
 }
+
+
 
 Future<void> _pumpLineUpAbilities(
   WidgetTester tester, {
@@ -1280,5 +1282,3 @@ AbilityInfo _sectorAbilityInfo() {
     ),
   );
 }
-
-

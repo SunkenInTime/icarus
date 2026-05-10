@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 
 class FramedAbilityIconShell extends ConsumerWidget {
   const FramedAbilityIconShell({
@@ -27,6 +28,10 @@ class FramedAbilityIconShell extends ConsumerWidget {
     final isLineUpHovered = lineUpId != null &&
         lineUpItemId != null &&
         (hoverTarget?.matchesAbility(lineUpId!, lineUpItemId!) ?? false);
+    final useNeutralTeamColors =
+        ref.watch(strategySettingsProvider).useNeutralTeamColors;
+    final outlineColor =
+        isAlly ? Settings.allyOutlineColor : Settings.enemyOutlineColor;
 
     return Container(
       width: coordinateSystem.scale(size),
@@ -38,9 +43,9 @@ class FramedAbilityIconShell extends ConsumerWidget {
         border: Border.all(
           color: isLineUpHovered
               ? Colors.deepPurpleAccent
-              : isAlly
-                  ? Settings.allyOutlineColor
-                  : Settings.enemyOutlineColor,
+              : useNeutralTeamColors
+                  ? Settings.neutralTeamShade(outlineColor)
+                  : outlineColor,
         ),
       ),
       child: ClipRRect(

@@ -198,7 +198,7 @@ void main() {
             children: [
               PlacedAbilityWidget(
                 ability: placedAbility,
-                onDragEnd: (_) {},
+                onDragEnd: (_, __) {},
                 id: placedAbility.id,
                 data: placedAbility,
                 rotation: placedAbility.rotation,
