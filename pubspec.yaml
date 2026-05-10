@@ -30,7 +30,6 @@ dependencies:
   image: ^4.5.4
   http: ^1.6.0
   screenshot: ^3.0.0
-  flutter_colorpicker: ^1.1.0
   archive: ^4.0.7
   flutter_portal: ^1.1.4
   shadcn_ui: ^0.40.3

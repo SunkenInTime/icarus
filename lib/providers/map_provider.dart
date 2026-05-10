@@ -8,6 +8,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 
 final mapProvider = NotifierProvider<MapProvider, MapState>(MapProvider.new);
 
@@ -46,7 +47,14 @@ class MapState {
 class MapProvider extends Notifier<MapState> {
   @override
   MapState build() {
-    return MapState(currentMap: MapValue.ascent, isAttack: true);
+    final preferences = ref.read(appPreferencesProvider);
+    return MapState(
+      currentMap: MapValue.ascent,
+      isAttack: true,
+      showSpawnBarrier: preferences.showSpawnBarrier,
+      showUltOrbs: preferences.showUltOrbs,
+      showRegionNames: preferences.showRegionNames,
+    );
   }
 
   void updateMap(MapValue map) => state = state.copyWith(currentMap: map);
@@ -55,16 +63,27 @@ class MapProvider extends Notifier<MapState> {
     state = state.copyWith(currentMap: map, isAttack: isAttack);
   }
 
-  void updateSpawnBarrier(bool value) {
+  void syncVisibilityFromPreferences(AppPreferences preferences) {
+    state = state.copyWith(
+      showSpawnBarrier: preferences.showSpawnBarrier,
+      showUltOrbs: preferences.showUltOrbs,
+      showRegionNames: preferences.showRegionNames,
+    );
+  }
+
+  Future<void> updateSpawnBarrier(bool value) async {
     state = state.copyWith(showSpawnBarrier: value);
+    await ref.read(appPreferencesProvider.notifier).setShowSpawnBarrier(value);
   }
 
-  void updateUltOrbs(bool value) {
+  Future<void> updateUltOrbs(bool value) async {
     state = state.copyWith(showUltOrbs: value);
+    await ref.read(appPreferencesProvider.notifier).setShowUltOrbs(value);
   }
 
-  void updateRegionNames(bool value) {
+  Future<void> updateRegionNames(bool value) async {
     state = state.copyWith(showRegionNames: value);
+    await ref.read(appPreferencesProvider.notifier).setShowRegionNames(value);
   }
 
   void switchSide() {

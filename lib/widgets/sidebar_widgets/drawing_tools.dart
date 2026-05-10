@@ -6,7 +6,7 @@ import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/widgets/custom_segmented_tabs.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
-import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
+import 'package:icarus/widgets/sidebar_widgets/color_library.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DrawingTools extends ConsumerWidget {
@@ -30,26 +30,16 @@ class DrawingTools extends ConsumerWidget {
         children: [
           const Text("Color"),
           // const SizedBox(height: 10),
-          Row(
-            children: [
-              for (final (index, colorOption) in ref
-                  .watch(penProvider.select(
-                    (state) => state.listOfColors,
-                  ))
-                  .indexed)
-                Padding(
-                  padding: const EdgeInsets.all(4.0),
-                  child: ColorButtons(
-                    height: 26,
-                    width: 26,
-                    color: colorOption.color,
-                    isSelected: colorOption.isSelected,
-                    onTap: () {
-                      ref.read(penProvider.notifier).setColor(index);
-                    },
-                  ),
-                ),
-            ],
+          ColorLibrary(
+            selectedColorValue: ref.watch(
+              penProvider.select((state) => state.color.toARGB32()),
+            ),
+            onSelected: (colorValue) async {
+              if (colorValue == null) return;
+              final notifier = ref.read(penProvider.notifier);
+              notifier.updateValue(color: Color(colorValue));
+              await notifier.buildCursors();
+            },
           ),
           const SizedBox(height: 4),
           Row(

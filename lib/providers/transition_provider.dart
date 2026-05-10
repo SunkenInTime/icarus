@@ -21,6 +21,8 @@ class PageTransitionState {
     required this.endAgentSize,
     required this.startAbilitySize,
     required this.endAbilitySize,
+    this.sourcePageId,
+    this.targetPageId,
   });
   final bool hideView;
   final bool active;
@@ -35,6 +37,8 @@ class PageTransitionState {
   final double endAgentSize;
   final double startAbilitySize;
   final double endAbilitySize;
+  final String? sourcePageId;
+  final String? targetPageId;
 
   PageTransitionState copyWith({
     bool? active,
@@ -50,6 +54,9 @@ class PageTransitionState {
     double? endAgentSize,
     double? startAbilitySize,
     double? endAbilitySize,
+    String? sourcePageId,
+    String? targetPageId,
+    bool clearPageIds = false,
   }) =>
       PageTransitionState(
         hideView: hideView ?? this.hideView,
@@ -65,6 +72,8 @@ class PageTransitionState {
         endAgentSize: endAgentSize ?? this.endAgentSize,
         startAbilitySize: startAbilitySize ?? this.startAbilitySize,
         endAbilitySize: endAbilitySize ?? this.endAbilitySize,
+        sourcePageId: clearPageIds ? null : (sourcePageId ?? this.sourcePageId),
+        targetPageId: clearPageIds ? null : (targetPageId ?? this.targetPageId),
       );
 
   static const idle = PageTransitionState(
@@ -80,7 +89,9 @@ class PageTransitionState {
       startAgentSize: 0,
       endAgentSize: 0,
       startAbilitySize: 0,
-      endAbilitySize: 0);
+      endAbilitySize: 0,
+      sourcePageId: null,
+      targetPageId: null);
 }
 
 final transitionProvider =
@@ -103,7 +114,9 @@ class TransitionProvider extends Notifier<PageTransitionState> {
   void prepare(List<PlacedWidget> widgets,
       {PageTransitionDirection direction = PageTransitionDirection.forward,
       required double startAgentSize,
-      required double startAbilitySize}) {
+      required double startAbilitySize,
+      String? sourcePageId,
+      String? targetPageId}) {
     state = state.copyWith(
       allWidgets: widgets,
       hideView: true,
@@ -116,6 +129,8 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       endAgentSize: startAgentSize,
       startAbilitySize: startAbilitySize,
       endAbilitySize: startAbilitySize,
+      sourcePageId: sourcePageId,
+      targetPageId: targetPageId,
     );
   }
 
@@ -125,7 +140,9 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       required double startAgentSize,
       required double endAgentSize,
       required double startAbilitySize,
-      required double endAbilitySize}) {
+      required double endAbilitySize,
+      String? sourcePageId,
+      String? targetPageId}) {
     state = state.copyWith(
       hideView: true,
       active: true,
@@ -139,6 +156,8 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       endAgentSize: endAgentSize,
       startAbilitySize: startAbilitySize,
       endAbilitySize: endAbilitySize,
+      sourcePageId: sourcePageId,
+      targetPageId: targetPageId,
     );
   }
 
@@ -158,6 +177,7 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       entries: const [],
       allWidgets: const [],
       phase: PageTransitionPhase.idle,
+      clearPageIds: true,
     );
   }
 }

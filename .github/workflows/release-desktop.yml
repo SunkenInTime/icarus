@@ -74,6 +74,7 @@ jobs:
         env:
           CHANGE_MESSAGE: ${{ inputs.change_message }}
           RELEASE_TITLE: ${{ inputs.release_title }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $args = @(
             "-ExecutionPolicy", "Bypass",
