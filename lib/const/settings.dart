@@ -86,8 +86,8 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 84;
-  static const String versionName = "4.3.0";
+  static const int versionNumber = 86;
+  static const String versionName = "4.3.2";
   static final Uri desktopUpdaterArchiveUrl =
       buildDesktopUpdaterArchiveUrl(kResolvedUpdateChannel);
 
