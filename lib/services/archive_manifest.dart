@@ -191,6 +191,7 @@ class ArchiveGlobals {
     required this.showSpawnBarrier,
     required this.showUltOrbs,
     required this.showRegionNames,
+    required this.customColorValues,
     required this.favoriteAgents,
   });
 
@@ -199,6 +200,7 @@ class ArchiveGlobals {
   final bool? showSpawnBarrier;
   final bool? showUltOrbs;
   final bool? showRegionNames;
+  final List<int> customColorValues;
   final List<String> favoriteAgents;
 
   Map<String, dynamic> toJson() {
@@ -211,6 +213,7 @@ class ArchiveGlobals {
         'showSpawnBarrier': showSpawnBarrier,
         'showUltOrbs': showUltOrbs,
         'showRegionNames': showRegionNames,
+        'customColorValues': customColorValues,
       },
       'favoriteAgents': favoriteAgents,
     };
@@ -242,6 +245,11 @@ class ArchiveGlobals {
       showRegionNames: appPreferencesMap == null
           ? null
           : _readNullableBool(appPreferencesMap, 'showRegionNames'),
+      customColorValues: appPreferencesMap == null
+          ? const []
+          : _readOptionalList(appPreferencesMap, 'customColorValues')
+              .map(_readIntValue)
+              .toList(growable: false),
       favoriteAgents: _readRequiredList(json, 'favoriteAgents')
           .map((entry) => entry.toString())
           .toList(growable: false),
@@ -368,6 +376,15 @@ int? _readNullableInt(Map<String, dynamic> json, String key) {
   return _readRequiredInt(json, key);
 }
 
+int _readIntValue(dynamic value) {
+  if (value is int) return value;
+  if (value is String) {
+    final parsed = int.tryParse(value);
+    if (parsed != null) return parsed;
+  }
+  throw const FormatException('Expected int value');
+}
+
 String _readRequiredString(Map<String, dynamic> json, String key) {
   final value = json[key];
   if (value is String && value.isNotEmpty) {
@@ -428,4 +445,11 @@ List<dynamic> _readRequiredList(Map<String, dynamic> json, String key) {
     return value;
   }
   throw FormatException('Expected list for $key');
+}
+
+List<dynamic> _readOptionalList(Map<String, dynamic> json, String key) {
+  if (!json.containsKey(key) || json[key] == null) {
+    return const [];
+  }
+  return _readRequiredList(json, key);
 }

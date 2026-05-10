@@ -398,6 +398,9 @@ void main() {
     expect(customProfile, isNotNull);
     await themeProvider.setDefaultProfileForNewStrategies(customProfile!.id);
     await container
+        .read(appPreferencesProvider.notifier)
+        .setCustomColorValues(const [0xFF22C55E, 0xFF38BDF8]);
+    await container
         .read(favoriteAgentsProvider.notifier)
         .toggleFavorite(AgentType.jett);
 
@@ -465,6 +468,12 @@ void main() {
             .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
             ?.defaultThemeProfileIdForNewStrategies,
         restoredProfile.id,
+      );
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
+            ?.customColorValues,
+        const [0xFF22C55E, 0xFF38BDF8],
       );
       expect(
         Hive.box<bool>(HiveBoxNames.favoriteAgentsBox).containsKey('jett'),

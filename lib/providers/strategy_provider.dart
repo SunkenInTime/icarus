@@ -2813,6 +2813,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         showSpawnBarrier: globals.showSpawnBarrier,
         showUltOrbs: globals.showUltOrbs,
         showRegionNames: globals.showRegionNames,
+        customColorValues: globals.customColorValues,
       ),
     );
 
@@ -3393,6 +3394,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       showSpawnBarrier: appPreferences?.showSpawnBarrier,
       showUltOrbs: appPreferences?.showUltOrbs,
       showRegionNames: appPreferences?.showRegionNames,
+      customColorValues: appPreferences?.customColorValues ?? const [],
       favoriteAgents: favoriteAgents,
     );
   }

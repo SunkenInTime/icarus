@@ -24,6 +24,45 @@ void main() {
     expect(duplicate?.action, IcarusShortcutAction.forwardPage);
   });
 
+  test('duplicate lookup rejects reserved undo and redo bindings', () {
+    final undoDuplicate = ShortcutInfo.findDuplicateBinding(
+      editingShortcutId: IcarusShortcutAction.draw.name,
+      binding: const IcarusKeyBinding(
+        trigger: LogicalKeyboardKey.keyZ,
+        primary: true,
+      ),
+      customBindings: const {},
+    );
+    final redoDuplicate = ShortcutInfo.findDuplicateBinding(
+      editingShortcutId: IcarusShortcutAction.draw.name,
+      binding: const IcarusKeyBinding(
+        trigger: LogicalKeyboardKey.keyZ,
+        primary: true,
+        shift: true,
+      ),
+      customBindings: const {},
+    );
+
+    expect(undoDuplicate?.title, 'Undo');
+    expect(redoDuplicate?.title, 'Redo');
+  });
+
+  test('effective bindings ignore custom bindings reserved for undo and redo',
+      () {
+    const reservedUndoBinding = IcarusKeyBinding(
+      trigger: LogicalKeyboardKey.keyZ,
+      primary: true,
+    );
+    final binding = ShortcutInfo.effectiveBindingFor(
+      IcarusShortcutAction.draw.name,
+      {
+        IcarusShortcutAction.draw.name: reservedUndoBinding.serialize(),
+      },
+    );
+
+    expect(binding, const IcarusKeyBinding(trigger: LogicalKeyboardKey.keyQ));
+  });
+
   test('search matches both action title and key chord', () {
     const bindings = <String, String>{};
     final saveDefinition =

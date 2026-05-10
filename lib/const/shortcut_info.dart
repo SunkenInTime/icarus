@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 enum IcarusShortcutAction {
+  undo,
+  redo,
   draw,
   erase,
   addText,
@@ -186,6 +188,32 @@ class IcarusShortcutDefinition {
 class ShortcutInfo {
   static const LogicalKeyboardKey openDeleteMenuKey = LogicalKeyboardKey.keyE;
 
+  static const reservedShortcuts = [
+    IcarusShortcutDefinition(
+      action: IcarusShortcutAction.undo,
+      title: 'Undo',
+      defaultBinding: IcarusKeyBinding(
+        trigger: LogicalKeyboardKey.keyZ,
+        primary: true,
+      ),
+      intent: UndoActionIntent(),
+    ),
+    IcarusShortcutDefinition(
+      action: IcarusShortcutAction.redo,
+      title: 'Redo',
+      defaultBinding: IcarusKeyBinding(
+        trigger: LogicalKeyboardKey.keyZ,
+        primary: true,
+        shift: true,
+      ),
+      intent: RedoActionIntent(),
+    ),
+  ];
+
+  static final _reservedBindings = {
+    for (final definition in reservedShortcuts) definition.defaultBinding,
+  };
+
   static const editableShortcuts = [
     IcarusShortcutDefinition(
       action: IcarusShortcutAction.draw,
@@ -342,7 +370,11 @@ class ShortcutInfo {
       return const IcarusKeyBinding(trigger: IcarusKeyBinding.emptyTrigger);
     }
     if (custom == null) return definition.defaultBinding;
-    return IcarusKeyBinding.tryParse(custom) ?? definition.defaultBinding;
+    final parsed = IcarusKeyBinding.tryParse(custom);
+    if (parsed == null || _reservedBindings.contains(parsed)) {
+      return definition.defaultBinding;
+    }
+    return parsed;
   }
 
   static String displayLabelFor(
@@ -359,6 +391,9 @@ class ShortcutInfo {
     required IcarusKeyBinding binding,
     required Map<String, String> customBindings,
   }) {
+    for (final definition in reservedShortcuts) {
+      if (definition.defaultBinding == binding) return definition;
+    }
     for (final definition in editableShortcuts) {
       if (definition.id == editingShortcutId) continue;
       final existing = effectiveBindingFor(definition.id, customBindings);

@@ -14,7 +14,6 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
-import 'package:icarus/providers/team_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -212,6 +211,7 @@ class AgentWidget extends ConsumerWidget {
           selectedBackgroundColor: Colors.transparent,
           child: _AgentAbilityContextMenuRow(
             agent: agent,
+            isAlly: isAlly,
             mapScale: mapScale,
           ),
         ),
@@ -301,10 +301,12 @@ class AgentWidget extends ConsumerWidget {
 class _AgentAbilityContextMenuRow extends ConsumerWidget {
   const _AgentAbilityContextMenuRow({
     required this.agent,
+    required this.isAlly,
     required this.mapScale,
   });
 
   final AgentData agent;
+  final bool isAlly;
   final double mapScale;
 
   @override
@@ -319,6 +321,7 @@ class _AgentAbilityContextMenuRow extends ConsumerWidget {
         for (final ability in agent.abilities)
           _AgentAbilityContextMenuButton(
             ability: ability,
+            isAlly: isAlly,
             mapScale: mapScale,
           ),
       ],
@@ -329,10 +332,12 @@ class _AgentAbilityContextMenuRow extends ConsumerWidget {
 class _AgentAbilityContextMenuButton extends ConsumerStatefulWidget {
   const _AgentAbilityContextMenuButton({
     required this.ability,
+    required this.isAlly,
     required this.mapScale,
   });
 
   final AbilityInfo ability;
+  final bool isAlly;
   final double mapScale;
 
   @override
@@ -356,8 +361,11 @@ class _AgentAbilityContextMenuButtonState
         ? theme.colorScheme.ring
         : theme.colorScheme.border;
 
-    return Draggable<AbilityInfo>(
-      data: ability,
+    return Draggable<DraggedAbilityData>(
+      data: DraggedAbilityData(
+        ability: ability,
+        isAlly: widget.isAlly,
+      ),
       onDragStarted: () {
         setState(() => _isPressed = false);
         final interactionState = ref.read(interactionStateProvider);
@@ -369,7 +377,7 @@ class _AgentAbilityContextMenuButtonState
         }
       },
       dragAnchorStrategy: (draggable, context, position) {
-        final info = draggable.data as AbilityInfo;
+        final info = (draggable.data as DraggedAbilityData).ability;
         final scaleFactor = CoordinateSystem.instance.scaleFactor *
             ref.read(screenZoomProvider);
         final abilitySize = ref.read(strategySettingsProvider).abilitySize;
@@ -386,7 +394,7 @@ class _AgentAbilityContextMenuButtonState
         child: ZoomTransform(
           child: ability.abilityData!.createWidget(
             id: null,
-            isAlly: ref.watch(teamProvider),
+            isAlly: widget.isAlly,
             mapScale: widget.mapScale,
           ),
         ),

@@ -182,6 +182,24 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
               ref
                   .read(abilityBarProvider.notifier)
                   .updateData(AgentData.agents[placedAgent.type]!);
+            } else if (details.data is DraggedAbilityData) {
+              final abilityData = details.data as DraggedAbilityData;
+              PlacedAbility placedAbility = PlacedAbility(
+                id: uuid.v4(),
+                data: abilityData.ability,
+                position: normalizedPosition,
+                isAlly: abilityData.isAlly,
+              );
+
+              if (ref.read(interactionStateProvider) ==
+                  InteractionState.lineUpPlacing) {
+                ref
+                    .read(lineUpProvider.notifier)
+                    .setCurrentAbility(placedAbility);
+                return;
+              }
+
+              ref.read(abilityProvider.notifier).addAbility(placedAbility);
             } else if (details.data is AbilityInfo) {
               PlacedAbility placedAbility = PlacedAbility(
                 id: uuid.v4(),
