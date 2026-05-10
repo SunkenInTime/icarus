@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/widgets/better_color_picker.dart';
 import 'package:icarus/widgets/color_picker_button.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_pill.dart';
+import 'package:icarus/widgets/icarus_color_picker_style.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -185,20 +186,28 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                               ),
                             ],
                             child: Material(
+                              color: Colors.transparent,
                               child: SizedBox(
                                 width: 300,
-                                child: ColorPicker(
-                                  portraitOnly: true,
-                                  pickerColor:
-                                      Folder.folderColorMap[_selectedColor] ??
-                                          _customColor!,
-                                  onColorChanged: (color) {
+                                child: BetterColorPicker(
+                                  value: Folder
+                                          .folderColorMap[_selectedColor] ??
+                                      _customColor ??
+                                      Folder.folderColorMap[FolderColor.red]!,
+                                  initialMode: BetterColorPickerMode.hsv,
+                                  style: icarusColorPickerStyle,
+                                  onChanging: (color) {
                                     setState(() {
                                       _selectedColor = FolderColor.custom;
                                       _customColor = color;
                                     });
                                   },
-                                  pickerAreaHeightPercent: 0.8,
+                                  onChanged: (color) {
+                                    setState(() {
+                                      _selectedColor = FolderColor.custom;
+                                      _customColor = color;
+                                    });
+                                  },
                                 ),
                               ),
                             ),

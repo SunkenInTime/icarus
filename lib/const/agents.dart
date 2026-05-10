@@ -108,6 +108,16 @@ class AbilityInfo extends HiveObject implements DraggableData {
   }
 }
 
+class DraggedAbilityData implements DraggableData {
+  const DraggedAbilityData({
+    required this.ability,
+    required this.isAlly,
+  });
+
+  final AbilityInfo ability;
+  final bool isAlly;
+}
+
 // This is the custom Hive adapter for AbilityInfo.
 // It only stores the AgentType and index.
 class AbilityInfoAdapter extends TypeAdapter<AbilityInfo> {
@@ -985,5 +995,3 @@ class AgentData implements DraggableData {
     })(),
   };
 }
-
-

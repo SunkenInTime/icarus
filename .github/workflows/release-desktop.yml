@@ -71,6 +71,8 @@ jobs:
 
       - name: Run Desktop Release Script
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $args = @(
             "-ExecutionPolicy", "Bypass",

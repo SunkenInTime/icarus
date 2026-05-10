@@ -66,6 +66,10 @@ void main() {
       final decodedJson = jsonDecode(encoded) as List<dynamic>;
 
       expect(decodedJson.single, containsPair('type', 'lineDrawing'));
+      expect(
+        decodedJson.single,
+        containsPair('colorValue', Colors.red.toARGB32()),
+      );
       expect(decodedJson.single, containsPair('isDotted', true));
       expect(decodedJson.single, containsPair('hasArrow', true));
       expect(decodedJson.single, containsPair('showTraversalTime', true));
@@ -77,6 +81,7 @@ void main() {
       final decoded = DrawingProvider.fromJson(encoded).single as Line;
       expect(decoded.lineStart, const Offset(10, 20));
       expect(decoded.lineEnd, const Offset(30, 40));
+      expect(decoded.colorValue, Colors.red.toARGB32());
       expect(decoded.boundingBox!.min, const Offset(10, 20));
       expect(decoded.boundingBox!.max, const Offset(30, 40));
       expect(decoded.isDotted, isTrue);
@@ -103,6 +108,10 @@ void main() {
       final decodedJson = jsonDecode(encoded) as List<dynamic>;
 
       expect(decodedJson.single, containsPair('type', 'ellipseDrawing'));
+      expect(
+        decodedJson.single,
+        containsPair('colorValue', Colors.purple.toARGB32()),
+      );
       expect(decodedJson.single, containsPair('isDotted', true));
       expect(decodedJson.single, containsPair('hasArrow', false));
 
@@ -110,6 +119,7 @@ void main() {
           DrawingProvider.fromJson(encoded).single as EllipseDrawing;
       expect(decoded.start, const Offset(10, 20));
       expect(decoded.end, const Offset(40, 70));
+      expect(decoded.colorValue, Colors.purple.toARGB32());
       expect(decoded.boundingBox!.min, const Offset(10, 20));
       expect(decoded.boundingBox!.max, const Offset(40, 70));
       expect(decoded.isDotted, isTrue);

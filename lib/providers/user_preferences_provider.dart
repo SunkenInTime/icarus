@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:uuid/uuid.dart';
 
 class MapThemePalette extends HiveObject {
@@ -111,26 +112,69 @@ class MapThemeProfile extends HiveObject {
 class AppPreferences extends HiveObject {
   final String defaultThemeProfileIdForNewStrategies;
   final bool autosaveEnabled;
+  final double defaultAgentSizeForNewStrategies;
+  final double defaultAbilitySizeForNewStrategies;
+  final bool defaultNeutralTeamColorsForNewStrategies;
+  final bool showSpawnBarrier;
+  final bool showUltOrbs;
+  final bool showRegionNames;
   final double pagesBarExpandedHeight;
+  final double pagesBarWidth;
+  final List<int> customColorValues;
+  final Map<String, String> customShortcutBindings;
 
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
     this.autosaveEnabled = true,
+    this.defaultAgentSizeForNewStrategies = Settings.agentSize,
+    this.defaultAbilitySizeForNewStrategies = Settings.abilitySize,
+    this.defaultNeutralTeamColorsForNewStrategies = false,
+    this.showSpawnBarrier = false,
+    this.showUltOrbs = false,
+    this.showRegionNames = false,
     this.pagesBarExpandedHeight = 310.0,
-  });
+    this.pagesBarWidth = 224.0,
+    List<int>? customColorValues,
+    Map<String, String>? customShortcutBindings,
+  })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
+        customShortcutBindings =
+            Map.unmodifiable(customShortcutBindings ?? const {});
 
   AppPreferences copyWith({
     String? defaultThemeProfileIdForNewStrategies,
     bool? autosaveEnabled,
+    double? defaultAgentSizeForNewStrategies,
+    double? defaultAbilitySizeForNewStrategies,
+    bool? defaultNeutralTeamColorsForNewStrategies,
+    bool? showSpawnBarrier,
+    bool? showUltOrbs,
+    bool? showRegionNames,
     double? pagesBarExpandedHeight,
+    double? pagesBarWidth,
+    List<int>? customColorValues,
+    Map<String, String>? customShortcutBindings,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
           defaultThemeProfileIdForNewStrategies ??
               this.defaultThemeProfileIdForNewStrategies,
       autosaveEnabled: autosaveEnabled ?? this.autosaveEnabled,
+      defaultAgentSizeForNewStrategies: defaultAgentSizeForNewStrategies ??
+          this.defaultAgentSizeForNewStrategies,
+      defaultAbilitySizeForNewStrategies: defaultAbilitySizeForNewStrategies ??
+          this.defaultAbilitySizeForNewStrategies,
+      defaultNeutralTeamColorsForNewStrategies:
+          defaultNeutralTeamColorsForNewStrategies ??
+              this.defaultNeutralTeamColorsForNewStrategies,
+      showSpawnBarrier: showSpawnBarrier ?? this.showSpawnBarrier,
+      showUltOrbs: showUltOrbs ?? this.showUltOrbs,
+      showRegionNames: showRegionNames ?? this.showRegionNames,
       pagesBarExpandedHeight:
           pagesBarExpandedHeight ?? this.pagesBarExpandedHeight,
+      pagesBarWidth: pagesBarWidth ?? this.pagesBarWidth,
+      customColorValues: customColorValues ?? this.customColorValues,
+      customShortcutBindings:
+          customShortcutBindings ?? this.customShortcutBindings,
     );
   }
 }
@@ -297,16 +341,16 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     state = build();
   }
 
-  Future<bool> createProfile({
+  Future<MapThemeProfile?> createProfile({
     required String name,
     required MapThemePalette palette,
   }) async {
     if (customProfilesAtCap) {
-      return false;
+      return null;
     }
     final trimmedName = name.trim();
     if (trimmedName.isEmpty) {
-      return false;
+      return null;
     }
     final profile = MapThemeProfile(
       id: const Uuid().v4(),
@@ -317,7 +361,7 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     await Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
         .put(profile.id, profile);
     await refreshFromHive();
-    return true;
+    return profile;
   }
 
   Future<void> renameProfile({
@@ -493,8 +537,126 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
     state = updated;
   }
 
+  Future<void> setShowSpawnBarrier(bool visible) async {
+    final updated = _readFromHive().copyWith(showSpawnBarrier: visible);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setShowUltOrbs(bool visible) async {
+    final updated = _readFromHive().copyWith(showUltOrbs: visible);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setShowRegionNames(bool visible) async {
+    final updated = _readFromHive().copyWith(showRegionNames: visible);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setDefaultNeutralTeamColorsForNewStrategies(bool enabled) async {
+    final updated = _readFromHive().copyWith(
+      defaultNeutralTeamColorsForNewStrategies: enabled,
+    );
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setDefaultAgentSizeForNewStrategies(double size) async {
+    final updated =
+        _readFromHive().copyWith(defaultAgentSizeForNewStrategies: size);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setDefaultAbilitySizeForNewStrategies(double size) async {
+    final updated =
+        _readFromHive().copyWith(defaultAbilitySizeForNewStrategies: size);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
   Future<void> setPagesBarExpandedHeight(double height) async {
     final updated = _readFromHive().copyWith(pagesBarExpandedHeight: height);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setPagesBarWidth(double width) async {
+    final updated = _readFromHive().copyWith(pagesBarWidth: width);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setCustomColorValues(List<int> colorValues) async {
+    final updated = _readFromHive().copyWith(
+      customColorValues: colorValues.take(15).toList(growable: false),
+    );
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> setCustomShortcutBinding(
+    String shortcutId,
+    String serializedBinding,
+  ) async {
+    final current = _readFromHive();
+    final updatedBindings = {
+      ...current.customShortcutBindings,
+      shortcutId: serializedBinding,
+    };
+    final updated = current.copyWith(customShortcutBindings: updatedBindings);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> resetCustomShortcutBinding(String shortcutId) async {
+    final current = _readFromHive();
+    final updatedBindings = {...current.customShortcutBindings}
+      ..remove(shortcutId);
+    final updated = current.copyWith(customShortcutBindings: updatedBindings);
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+    state = updated;
+  }
+
+  Future<void> resetAllCustomShortcutBindings() async {
+    final updated = _readFromHive().copyWith(
+      customShortcutBindings: const {},
+    );
     await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,
       updated,

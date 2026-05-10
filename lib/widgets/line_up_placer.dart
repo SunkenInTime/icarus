@@ -75,7 +75,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                   id: lineUp.currentAbility!.id,
                   length: lineUp.currentAbility!.length,
                   isLineUp: true,
-                  onDragEnd: (details) {
+                  onDragEnd: (details, _) {
                     RenderBox renderBox =
                         context.findRenderObject() as RenderBox;
                     Offset localOffset =
