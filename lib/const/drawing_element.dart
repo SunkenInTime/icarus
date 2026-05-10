@@ -52,7 +52,7 @@ int _drawingColorValueFromJson(Object? json) {
   if (json is String) {
     return const ColorConverter().fromJson(json).toARGB32();
   }
-  throw ArgumentError.value(json, 'json', 'Unsupported drawing color value');
+  return 0xFFFFFFFF;
 }
 
 int _drawingColorValueToJson(int colorValue) => colorValue;

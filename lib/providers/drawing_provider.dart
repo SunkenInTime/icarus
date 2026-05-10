@@ -922,7 +922,7 @@ int _readDrawingColorValue(Map<String, dynamic> json) {
   if (value is String) {
     return const ColorConverter().fromJson(value).toARGB32();
   }
-  throw UnsupportedError('Unsupported drawing color payload: $value');
+  return 0xFFFFFFFF;
 }
 
 BoundingBox _boundingBoxForPoints(Offset a, Offset b) {

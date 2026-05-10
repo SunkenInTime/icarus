@@ -168,6 +168,21 @@ void main() {
       expect((decoded[0] as Line).colorValue, 0xFF22C55E);
       expect((decoded[1] as FreeDrawing).colorValue, 0xFFEF4444);
     });
+
+    test('malformed drawing color payloads fall back to white', () {
+      final decoded = DrawingProvider.fromJson(jsonEncode([
+        {
+          'type': 'lineDrawing',
+          'id': 'line-corrupt',
+          'isDotted': false,
+          'hasArrow': false,
+          'lineStart': {'dx': 1.0, 'dy': 2.0},
+          'lineEnd': {'dx': 3.0, 'dy': 4.0},
+        },
+      ]));
+
+      expect((decoded.single as Line).colorValue, 0xFFFFFFFF);
+    });
   });
 
   group('Hive color persistence', () {
