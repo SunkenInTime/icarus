@@ -62,7 +62,7 @@ if (-not (Test-Path $metadataPath)) {
         )
     }
 
-    $metadata | ConvertTo-Json -Depth 6 | Set-Content -Path $metadataPath
+    Write-JsonFileUtf8 -Value $metadata -Path $metadataPath -Depth 6
     Write-Host "Created release metadata at $metadataPath"
 }
 else {
@@ -73,7 +73,7 @@ else {
 
     if ($missingChannels.Count -gt 0) {
         $metadata.channels = @($channels + $missingChannels)
-        $metadata | ConvertTo-Json -Depth 6 | Set-Content -Path $metadataPath
+        Write-JsonFileUtf8 -Value $metadata -Path $metadataPath -Depth 6
         Write-Host ("Updated release metadata channels at {0}: {1}" -f $metadataPath, ($metadata.channels -join ", "))
     }
 }

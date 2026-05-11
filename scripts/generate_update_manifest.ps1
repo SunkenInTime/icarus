@@ -97,5 +97,5 @@ $manifest = [ordered]@{
     items = @($sortedItems)
 }
 
-$manifest | ConvertTo-Json -Depth 8 | Set-Content -Path $OutputPath
+Write-JsonFileUtf8 -Value $manifest -Path $OutputPath -Depth 8
 Write-Host "Generated desktop updater manifest at $OutputPath" -ForegroundColor Green

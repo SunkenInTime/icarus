@@ -94,6 +94,13 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
       );
 
       if (versionResponse == null) {
+        _reportInfoSafely(
+          'No desktop update detected.',
+          source: 'WindowsDesktopUpdateController.checkVersion',
+          error: <String, Object?>{
+            'appArchiveUrl': _appArchiveUrl.toString(),
+          },
+        );
         return;
       }
 
@@ -119,7 +126,16 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
         },
       );
       notifyListeners();
-    } catch (_) {
+    } catch (error, stackTrace) {
+      _reportInfoSafely(
+        'Desktop update check failed.',
+        source: 'WindowsDesktopUpdateController.checkVersion',
+        error: <String, Object?>{
+          'appArchiveUrl': _appArchiveUrl.toString(),
+          'error': error.toString(),
+          'stackTrace': stackTrace.toString(),
+        },
+      );
       // Leave the direct installer updater silent if the remote metadata fails.
     }
   }
