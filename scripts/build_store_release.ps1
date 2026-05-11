@@ -43,6 +43,6 @@ $packageInfo = [ordered]@{
     sourcePath = $primaryPackage.FullName
 }
 
-$packageInfo | ConvertTo-Json -Depth 4 | Set-Content -Path (Join-Path $outputRoot "package-info.json")
+Write-JsonFileUtf8 -Value $packageInfo -Path (Join-Path $outputRoot "package-info.json") -Depth 4
 
 Write-Host "Store package staged at $stagedPackagePath" -ForegroundColor Green
