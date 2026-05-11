@@ -4,6 +4,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_scale_controller.dart';
@@ -90,6 +91,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           isDragging = false;
         });
         ref.read(textProvider.notifier).updateSize(index, localSize!);
+        ref.read(strategyProvider.notifier).setUnsaved();
       },
       child: Draggable<PlacedText>(
         data: widget.placedText,
@@ -153,6 +155,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           ref
               .read(textProvider.notifier)
               .updateTagColor(widget.placedText.id, null);
+          ref.read(strategyProvider.notifier).setUnsaved();
         },
       ),
       ..._tagPalette.map(
@@ -170,6 +173,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
             ref
                 .read(textProvider.notifier)
                 .updateTagColor(widget.placedText.id, color.toARGB32());
+            ref.read(strategyProvider.notifier).setUnsaved();
           },
         ),
       ),

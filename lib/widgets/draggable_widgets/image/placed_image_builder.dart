@@ -8,6 +8,7 @@ import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/scalable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -83,6 +84,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
           ref
               .read(placedImageProvider.notifier)
               .updateScale(index, localScale!);
+          ref.read(strategyProvider.notifier).setUnsaved();
 
           setState(() {
             isPanning = false;
@@ -148,6 +150,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
           ref
               .read(placedImageProvider.notifier)
               .updateTagColor(widget.placedImage.id, null);
+          ref.read(strategyProvider.notifier).setUnsaved();
         },
       ),
       ...ref.watch(colorLibraryProvider).map(
@@ -164,6 +167,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
               onPressed: () {
                 ref.read(placedImageProvider.notifier).updateTagColor(
                     widget.placedImage.id, entry.color.toARGB32());
+                ref.read(strategyProvider.notifier).setUnsaved();
               },
             ),
           ),

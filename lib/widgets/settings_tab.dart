@@ -290,6 +290,7 @@ class _StrategySettingsSections extends ConsumerWidget {
                   ref
                       .read(strategySettingsProvider.notifier)
                       .updateAgentSize(value);
+                  ref.read(strategyProvider.notifier).setUnsaved();
                 },
               ),
               const _SettingsItemDivider(),
@@ -307,6 +308,7 @@ class _StrategySettingsSections extends ConsumerWidget {
                   ref
                       .read(strategySettingsProvider.notifier)
                       .updateAbilitySize(value);
+                  ref.read(strategyProvider.notifier).setUnsaved();
                 },
               ),
               const _SettingsItemDivider(),
