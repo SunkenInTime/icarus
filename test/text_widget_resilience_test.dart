@@ -18,6 +18,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
@@ -322,5 +323,63 @@ void main() {
 
     expect(feedbackSize.width, editableSize.width);
     expect(feedbackSize.height, editableSize.height);
+  });
+
+  testWidgets('side switch mirrors text like a bounded widget when unmeasured',
+      (tester) async {
+    final container = createContainer();
+    final placedText = PlacedText(
+      id: 'text-1',
+      position: const Offset(10, 20),
+      size: 220,
+      fontSize: 16,
+      sizeVersion: worldSizedMediaVersion,
+    )..text = 'same text\nsecond line';
+
+    container.read(textProvider.notifier).fromHive([placedText]);
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.pump();
+
+    final renderedSize = tester.getSize(find.byType(TextWidget));
+    container.read(textWidgetHeightProvider.notifier).clearEntries(['text-1']);
+
+    container.read(textProvider.notifier).switchSides();
+
+    expect(
+      container.read(textProvider).single.position,
+      getFlippedPosition(
+        position: placedText.position,
+        scaledSize: Offset(renderedSize.width, renderedSize.height),
+      ),
+    );
+  });
+
+  testWidgets(
+      'side switch uses the measured rendered text height for vertical placement',
+      (tester) async {
+    final container = createContainer();
+    final placedText = PlacedText(
+      id: 'text-1',
+      position: const Offset(10, 20),
+      size: 220,
+      fontSize: 16,
+      sizeVersion: worldSizedMediaVersion,
+    )..text = 'one line';
+
+    container.read(textProvider.notifier).fromHive([placedText]);
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.pump();
+
+    final renderedSize = tester.getSize(find.byType(TextWidget));
+
+    container.read(textProvider.notifier).switchSides();
+
+    expect(
+      container.read(textProvider).single.position,
+      getFlippedPosition(
+        position: placedText.position,
+        scaledSize: Offset(renderedSize.width, renderedSize.height),
+      ),
+    );
   });
 }

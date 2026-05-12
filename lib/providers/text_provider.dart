@@ -26,6 +26,9 @@ class TextProvider extends Notifier<List<PlacedText>> {
       (1000.0 * (16 / 9)) / CoordinateSystem.screenShotSize.width;
   static final double _legacyFontToWorldFactor =
       1000.0 / CoordinateSystem.screenShotSize.height;
+  static const double _textWidgetHorizontalChrome = 18.0;
+  static const double _textWidgetVerticalChrome = 34.0;
+  static const double _textWidgetMinHeight = 48.0;
 
   List<PlacedText> poppedText = [];
 
@@ -51,8 +54,9 @@ class TextProvider extends Notifier<List<PlacedText>> {
       group: ActionGroup.text,
       objectDelta: ObjectHistoryDelta(
         after: ActionObjectState.text(text),
-        afterTextHeights:
-            ref.read(textWidgetHeightProvider.notifier).takeSnapshotForIds([text.id]),
+        afterTextHeights: ref
+            .read(textWidgetHeightProvider.notifier)
+            .takeSnapshotForIds([text.id]),
       ),
     );
 
@@ -101,10 +105,12 @@ class TextProvider extends Notifier<List<PlacedText>> {
       objectDelta: ObjectHistoryDelta(
         before: before,
         after: ActionObjectState.text(temp),
-        beforeTextHeights:
-            ref.read(textWidgetHeightProvider.notifier).takeSnapshotForIds([id]),
-        afterTextHeights:
-            ref.read(textWidgetHeightProvider.notifier).takeSnapshotForIds([id]),
+        beforeTextHeights: ref
+            .read(textWidgetHeightProvider.notifier)
+            .takeSnapshotForIds([id]),
+        afterTextHeights: ref
+            .read(textWidgetHeightProvider.notifier)
+            .takeSnapshotForIds([id]),
       ),
     );
     ref.read(actionProvider.notifier).addAction(action);
@@ -115,16 +121,45 @@ class TextProvider extends Notifier<List<PlacedText>> {
   void switchSides() {
     final newState = [...state];
     for (final text in newState) {
-      text.switchSides(
-          ref.read(textWidgetHeightProvider.notifier).getOffset(text.id));
+      text.switchSides(_switchSizeForText(text));
     }
 
     for (final text in poppedText) {
-      text.switchSides(
-          ref.read(textWidgetHeightProvider.notifier).getOffset(text.id));
+      text.switchSides(_switchSizeForText(text));
     }
 
     state = newState;
+  }
+
+  Offset _switchSizeForText(PlacedText text) {
+    final measuredSize =
+        ref.read(textWidgetHeightProvider.notifier).getOffset(text.id);
+    if (measuredSize != Offset.zero) return measuredSize;
+
+    final coordinateSystem = CoordinateSystem.instance;
+    final totalWidth = measuredSize.dx > 0
+        ? measuredSize.dx
+        : coordinateSystem.worldWidthToScreen(text.size);
+    final fontSize = coordinateSystem.worldHeightToScreen(text.fontSize);
+    final contentWidth =
+        (totalWidth - _textWidgetHorizontalChrome).clamp(1.0, double.infinity);
+    final displayText =
+        ref.read(textDraftProvider.notifier).draftFor(text.id) ?? text.text;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: displayText.isEmpty ? 'Write here...' : displayText,
+        style: TextStyle(fontSize: fontSize),
+      ),
+      maxLines: null,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: contentWidth);
+    final totalHeight = (painter.height + _textWidgetVerticalChrome)
+        .clamp(_textWidgetMinHeight, double.infinity);
+    return Offset(totalWidth, totalHeight);
+  }
+
+  Offset switchSizeForText(PlacedText text) {
+    return _switchSizeForText(text);
   }
 
   void commitText(String id, String nextText) {
@@ -341,7 +376,8 @@ class TextProvider extends Notifier<List<PlacedText>> {
 
   void restoreSnapshot(TextProviderSnapshot snapshot) {
     ref.read(textDraftProvider.notifier).clearAllDrafts();
-    poppedText = snapshot.poppedText.map((text) => clonePlacedText(text)).toList();
+    poppedText =
+        snapshot.poppedText.map((text) => clonePlacedText(text)).toList();
     state = snapshot.texts.map((text) => clonePlacedText(text)).toList();
   }
 

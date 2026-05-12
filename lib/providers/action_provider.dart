@@ -535,12 +535,18 @@ class ActionProvider extends Notifier<List<UserAction>> {
 
   void switchSides() {
     final mapState = ref.read(mapProvider);
+    final textSizes =
+        Map<String, Offset>.from(ref.read(textWidgetHeightProvider));
+    final textNotifier = ref.read(textProvider.notifier);
+    for (final text in ref.read(textProvider)) {
+      textSizes[text.id] = textNotifier.switchSizeForText(text);
+    }
     final context = ActionHistoryTransformContext(
       agentSize: ref.read(strategySettingsProvider).agentSize,
       abilitySize: ref.read(strategySettingsProvider).abilitySize,
       mapScale: Maps.mapScale[mapState.currentMap] ?? 1.0,
       imageSizes: Map<String, Offset>.from(ref.read(imageWidgetSizeProvider)),
-      textHeights: Map<String, Offset>.from(ref.read(textWidgetHeightProvider)),
+      textHeights: textSizes,
     );
     state = state.map((action) => action.switchSides(context)).toList();
     poppedItems =
