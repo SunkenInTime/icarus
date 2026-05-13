@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
-import 'package:icarus/providers/text_widget_height_provider.dart';
 
 final textProvider =
     NotifierProvider<TextProvider, List<PlacedText>>(TextProvider.new);
@@ -26,9 +26,6 @@ class TextProvider extends Notifier<List<PlacedText>> {
       (1000.0 * (16 / 9)) / CoordinateSystem.screenShotSize.width;
   static final double _legacyFontToWorldFactor =
       1000.0 / CoordinateSystem.screenShotSize.height;
-  static const double _textWidgetHorizontalChrome = 18.0;
-  static const double _textWidgetVerticalChrome = 34.0;
-  static const double _textWidgetMinHeight = 48.0;
 
   List<PlacedText> poppedText = [];
 
@@ -54,9 +51,6 @@ class TextProvider extends Notifier<List<PlacedText>> {
       group: ActionGroup.text,
       objectDelta: ObjectHistoryDelta(
         after: ActionObjectState.text(text),
-        afterTextHeights: ref
-            .read(textWidgetHeightProvider.notifier)
-            .takeSnapshotForIds([text.id]),
       ),
     );
 
@@ -76,9 +70,6 @@ class TextProvider extends Notifier<List<PlacedText>> {
             group: ActionGroup.text,
             objectDelta: ObjectHistoryDelta(
               before: ActionObjectState.text(state[index]),
-              beforeTextHeights: ref
-                  .read(textWidgetHeightProvider.notifier)
-                  .takeSnapshotForIds([id]),
             ),
           ),
         );
@@ -105,12 +96,6 @@ class TextProvider extends Notifier<List<PlacedText>> {
       objectDelta: ObjectHistoryDelta(
         before: before,
         after: ActionObjectState.text(temp),
-        beforeTextHeights: ref
-            .read(textWidgetHeightProvider.notifier)
-            .takeSnapshotForIds([id]),
-        afterTextHeights: ref
-            .read(textWidgetHeightProvider.notifier)
-            .takeSnapshotForIds([id]),
       ),
     );
     ref.read(actionProvider.notifier).addAction(action);
@@ -132,30 +117,14 @@ class TextProvider extends Notifier<List<PlacedText>> {
   }
 
   Offset _switchSizeForText(PlacedText text) {
-    final measuredSize =
-        ref.read(textWidgetHeightProvider.notifier).getOffset(text.id);
-    if (measuredSize != Offset.zero) return measuredSize;
+    final size = PlacedTextDimensions.screenSize(
+      coordinateSystem: CoordinateSystem.instance,
+      widthWorld: text.size,
+      fontSizeWorld: text.fontSize,
+      text: text.text,
+    );
 
-    final coordinateSystem = CoordinateSystem.instance;
-    final totalWidth = measuredSize.dx > 0
-        ? measuredSize.dx
-        : coordinateSystem.worldWidthToScreen(text.size);
-    final fontSize = coordinateSystem.worldHeightToScreen(text.fontSize);
-    final contentWidth =
-        (totalWidth - _textWidgetHorizontalChrome).clamp(1.0, double.infinity);
-    final displayText =
-        ref.read(textDraftProvider.notifier).draftFor(text.id) ?? text.text;
-    final painter = TextPainter(
-      text: TextSpan(
-        text: displayText.isEmpty ? 'Write here...' : displayText,
-        style: TextStyle(fontSize: fontSize),
-      ),
-      maxLines: null,
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: contentWidth);
-    final totalHeight = (painter.height + _textWidgetVerticalChrome)
-        .clamp(_textWidgetMinHeight, double.infinity);
-    return Offset(totalWidth, totalHeight);
+    return Offset(size.width, size.height);
   }
 
   Offset switchSizeForText(PlacedText text) {
@@ -179,12 +148,6 @@ class TextProvider extends Notifier<List<PlacedText>> {
             objectDelta: ObjectHistoryDelta(
               before: before,
               after: ActionObjectState.text(newState[index]),
-              beforeTextHeights: ref
-                  .read(textWidgetHeightProvider.notifier)
-                  .takeSnapshotForIds([id]),
-              afterTextHeights: ref
-                  .read(textWidgetHeightProvider.notifier)
-                  .takeSnapshotForIds([id]),
             ),
           ),
         );
@@ -225,21 +188,18 @@ class TextProvider extends Notifier<List<PlacedText>> {
     }
     switch (action.type) {
       case ActionType.addition:
-        _clearTextHeights(delta.afterTextHeights.keys);
         removeText(action.id);
         return;
       case ActionType.deletion:
         final before = delta.before?.text;
         if (before == null) return;
         _upsertText(clonePlacedText(before));
-        _restoreTextHeights(delta.beforeTextHeights);
         return;
 
       case ActionType.edit:
         final before = delta.before?.text;
         if (before == null) return;
         _upsertText(clonePlacedText(before));
-        _restoreTextHeights(delta.beforeTextHeights);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -275,17 +235,14 @@ class TextProvider extends Notifier<List<PlacedText>> {
         final after = delta.after?.text;
         if (after == null) return;
         _upsertText(clonePlacedText(after));
-        _restoreTextHeights(delta.afterTextHeights);
         return;
       case ActionType.deletion:
-        _clearTextHeights(delta.beforeTextHeights.keys);
         removeText(action.id);
         return;
       case ActionType.edit:
         final after = delta.after?.text;
         if (after == null) return;
         _upsertText(clonePlacedText(after));
-        _restoreTextHeights(delta.afterTextHeights);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -390,15 +347,5 @@ class TextProvider extends Notifier<List<PlacedText>> {
       newState[index] = text;
     }
     state = newState;
-  }
-
-  void _restoreTextHeights(Map<String, Offset> snapshot) {
-    if (snapshot.isEmpty) return;
-    ref.read(textWidgetHeightProvider.notifier).restoreSnapshot(snapshot);
-  }
-
-  void _clearTextHeights(Iterable<String> ids) {
-    if (ids.isEmpty) return;
-    ref.read(textWidgetHeightProvider.notifier).clearEntries(ids);
   }
 }

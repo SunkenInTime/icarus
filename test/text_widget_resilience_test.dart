@@ -18,7 +18,6 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
@@ -312,6 +311,15 @@ void main() {
     expect(container.read(textDraftProvider), {'text-1': 'before edited'});
     expect(savedStrategy, isNotNull);
     expect(savedStrategy!.pages.single.textData.single.text, 'before edited');
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SizedBox.shrink()),
+      ),
+    );
+    await tester.pump();
+    container.read(strategyProvider.notifier).cancelPendingSave();
   });
 
   testWidgets('feedback widget matches editable widget size', (tester) async {
@@ -325,7 +333,7 @@ void main() {
     expect(feedbackSize.height, editableSize.height);
   });
 
-  testWidgets('side switch mirrors text like a bounded widget when unmeasured',
+  testWidgets('side switch mirrors text with deterministic widget bounds',
       (tester) async {
     final container = createContainer();
     final placedText = PlacedText(
@@ -341,7 +349,6 @@ void main() {
     await tester.pump();
 
     final renderedSize = tester.getSize(find.byType(TextWidget));
-    container.read(textWidgetHeightProvider.notifier).clearEntries(['text-1']);
 
     container.read(textProvider.notifier).switchSides();
 
@@ -355,7 +362,7 @@ void main() {
   });
 
   testWidgets(
-      'side switch uses the measured rendered text height for vertical placement',
+      'side switch uses deterministic rendered text height for vertical placement',
       (tester) async {
     final container = createContainer();
     final placedText = PlacedText(

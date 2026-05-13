@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
-import 'package:icarus/providers/image_widget_size_provider.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:image/image.dart' as img;
@@ -165,9 +165,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
       group: ActionGroup.image,
       objectDelta: ObjectHistoryDelta(
         after: ActionObjectState.image(placedImage),
-        afterImageSizes: ref
-            .read(imageWidgetSizeProvider.notifier)
-            .takeSnapshotForIds([imageID]),
       ),
     );
 
@@ -199,9 +196,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
             group: ActionGroup.image,
             objectDelta: ObjectHistoryDelta(
               before: ActionObjectState.image(state.images[index]),
-              beforeImageSizes: ref
-                  .read(imageWidgetSizeProvider.notifier)
-                  .takeSnapshotForIds([id]),
             ),
           ),
         );
@@ -237,10 +231,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
       objectDelta: ObjectHistoryDelta(
         before: before,
         after: ActionObjectState.image(temp),
-        beforeImageSizes:
-            ref.read(imageWidgetSizeProvider.notifier).takeSnapshotForIds([id]),
-        afterImageSizes:
-            ref.read(imageWidgetSizeProvider.notifier).takeSnapshotForIds([id]),
       ),
     );
     ref.read(actionProvider.notifier).addAction(action);
@@ -260,14 +250,22 @@ class PlacedImageProvider extends Notifier<ImageState> {
   void switchSides() {
     final newImages = [...state.images];
     for (final image in newImages) {
-      image.switchSides(
-          ref.read(imageWidgetSizeProvider.notifier).getSize(image.id));
+      image.switchSides(_switchSizeForImage(image));
     }
     for (final image in poppedImages) {
-      image.switchSides(
-          ref.read(imageWidgetSizeProvider.notifier).getSize(image.id));
+      image.switchSides(_switchSizeForImage(image));
     }
     state = state.copyWith(images: newImages);
+  }
+
+  Offset _switchSizeForImage(PlacedImage image) {
+    final size = PlacedImageDimensions.screenSize(
+      coordinateSystem: CoordinateSystem.instance,
+      scale: image.scale,
+      aspectRatio: image.aspectRatio,
+    );
+
+    return Offset(size.width, size.height);
   }
 
   void undoAction(UserAction action) {
@@ -295,7 +293,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
     }
     switch (action.type) {
       case ActionType.addition:
-        _clearImageSizes(delta.afterImageSizes.keys);
         removeImage(action.id);
         return;
       case ActionType.deletion:
@@ -304,13 +301,11 @@ class PlacedImageProvider extends Notifier<ImageState> {
           return;
         }
         _upsertImage(clonePlacedImage(before));
-        _restoreImageSizes(delta.beforeImageSizes);
         return;
       case ActionType.edit:
         final before = delta.before?.image;
         if (before == null) return;
         _upsertImage(clonePlacedImage(before));
-        _restoreImageSizes(delta.beforeImageSizes);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -346,17 +341,14 @@ class PlacedImageProvider extends Notifier<ImageState> {
         final after = delta.after?.image;
         if (after == null) return;
         _upsertImage(clonePlacedImage(after));
-        _restoreImageSizes(delta.afterImageSizes);
         return;
       case ActionType.deletion:
-        _clearImageSizes(delta.beforeImageSizes.keys);
         removeImage(action.id);
         return;
       case ActionType.edit:
         final after = delta.after?.image;
         if (after == null) return;
         _upsertImage(clonePlacedImage(after));
-        _restoreImageSizes(delta.afterImageSizes);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -533,16 +525,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
       newImages[index] = image;
     }
     state = state.copyWith(images: newImages);
-  }
-
-  void _restoreImageSizes(Map<String, Offset> snapshot) {
-    if (snapshot.isEmpty) return;
-    ref.read(imageWidgetSizeProvider.notifier).restoreSnapshot(snapshot);
-  }
-
-  void _clearImageSizes(Iterable<String> ids) {
-    if (ids.isEmpty) return;
-    ref.read(imageWidgetSizeProvider.notifier).clearEntries(ids);
   }
 }
 

@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -10,11 +8,9 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:uuid/uuid.dart';
@@ -77,8 +73,6 @@ class BulkActionSnapshot {
   final PlacedImageProviderSnapshot? imageSnapshot;
   final UtilityProviderSnapshot? utilitySnapshot;
   final LineUpProviderSnapshot? lineUpSnapshot;
-  final Map<String, Offset> imageSizeSnapshot;
-  final Map<String, Offset> textHeightSnapshot;
 
   const BulkActionSnapshot({
     required this.targetGroups,
@@ -91,8 +85,6 @@ class BulkActionSnapshot {
     this.imageSnapshot,
     this.utilitySnapshot,
     this.lineUpSnapshot,
-    this.imageSizeSnapshot = const {},
-    this.textHeightSnapshot = const {},
   });
 
   BulkActionSnapshot copy() {
@@ -178,8 +170,6 @@ class BulkActionSnapshot {
                   .map((lineUp) => cloneLineUp(lineUp))
                   .toList(),
             ),
-      imageSizeSnapshot: Map<String, Offset>.from(imageSizeSnapshot),
-      textHeightSnapshot: Map<String, Offset>.from(textHeightSnapshot),
     );
   }
 
@@ -252,18 +242,14 @@ class BulkActionSnapshot {
           : TextProviderSnapshot(
               texts: textSnapshot!.texts
                   .map(
-                    (text) => clonePlacedText(text)
-                      ..switchSides(
-                        context.textHeights[text.id] ?? Offset.zero,
-                      ),
+                    (text) =>
+                        ActionObjectState.text(text).switchSides(context).text!,
                   )
                   .toList(),
               poppedText: textSnapshot!.poppedText
                   .map(
-                    (text) => clonePlacedText(text)
-                      ..switchSides(
-                        context.textHeights[text.id] ?? Offset.zero,
-                      ),
+                    (text) =>
+                        ActionObjectState.text(text).switchSides(context).text!,
                   )
                   .toList(),
             ),
@@ -272,16 +258,16 @@ class BulkActionSnapshot {
           : PlacedImageProviderSnapshot(
               images: imageSnapshot!.images
                   .map(
-                    (image) => clonePlacedImage(image)
-                      ..switchSides(
-                          context.imageSizes[image.id] ?? Offset.zero),
+                    (image) => ActionObjectState.image(image)
+                        .switchSides(context)
+                        .image!,
                   )
                   .toList(),
               poppedImages: imageSnapshot!.poppedImages
                   .map(
-                    (image) => clonePlacedImage(image)
-                      ..switchSides(
-                          context.imageSizes[image.id] ?? Offset.zero),
+                    (image) => ActionObjectState.image(image)
+                        .switchSides(context)
+                        .image!,
                   )
                   .toList(),
             ),
@@ -333,8 +319,6 @@ class BulkActionSnapshot {
                   )
                   .toList(),
             ),
-      imageSizeSnapshot: Map<String, Offset>.from(imageSizeSnapshot),
-      textHeightSnapshot: Map<String, Offset>.from(textHeightSnapshot),
     );
   }
 }
@@ -518,8 +502,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
     ref.read(utilityProvider.notifier).clearAll();
     ref.read(lineUpProvider.notifier).clearAll();
 
-    ref.read(imageWidgetSizeProvider.notifier).clearAll();
-    ref.read(textWidgetHeightProvider.notifier).clearAll();
     state = [];
   }
 
@@ -535,18 +517,10 @@ class ActionProvider extends Notifier<List<UserAction>> {
 
   void switchSides() {
     final mapState = ref.read(mapProvider);
-    final textSizes =
-        Map<String, Offset>.from(ref.read(textWidgetHeightProvider));
-    final textNotifier = ref.read(textProvider.notifier);
-    for (final text in ref.read(textProvider)) {
-      textSizes[text.id] = textNotifier.switchSizeForText(text);
-    }
     final context = ActionHistoryTransformContext(
       agentSize: ref.read(strategySettingsProvider).agentSize,
       abilitySize: ref.read(strategySettingsProvider).abilitySize,
       mapScale: Maps.mapScale[mapState.currentMap] ?? 1.0,
-      imageSizes: Map<String, Offset>.from(ref.read(imageWidgetSizeProvider)),
-      textHeights: textSizes,
     );
     state = state.map((action) => action.switchSides(context)).toList();
     poppedItems =
@@ -620,7 +594,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
     );
 
     _clearProvidersForGroups(targetGroups);
-    _clearAncillaryState(snapshot);
 
     state = filteredActions;
     addAction(
@@ -658,13 +631,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
   }
 
   BulkActionSnapshot _captureBulkSnapshot(List<ActionGroup> groups) {
-    final imageIds = groups.contains(ActionGroup.image)
-        ? ref.read(placedImageProvider).images.map((image) => image.id)
-        : const <String>[];
-    final textIds = groups.contains(ActionGroup.text)
-        ? ref.read(textProvider).map((text) => text.id)
-        : const <String>[];
-
     return BulkActionSnapshot(
       targetGroups: [...groups],
       actionStateBefore: state.map((action) => action.copy()).toList(),
@@ -690,12 +656,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
       lineUpSnapshot: groups.contains(ActionGroup.lineUp)
           ? ref.read(lineUpProvider.notifier).takeSnapshot()
           : null,
-      imageSizeSnapshot: ref
-          .read(imageWidgetSizeProvider.notifier)
-          .takeSnapshotForIds(imageIds),
-      textHeightSnapshot: ref
-          .read(textWidgetHeightProvider.notifier)
-          .takeSnapshotForIds(textIds),
     );
   }
 
@@ -750,19 +710,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
     }
   }
 
-  void _clearAncillaryState(BulkActionSnapshot snapshot) {
-    if (snapshot.imageSizeSnapshot.isNotEmpty) {
-      ref
-          .read(imageWidgetSizeProvider.notifier)
-          .clearEntries(snapshot.imageSizeSnapshot.keys);
-    }
-    if (snapshot.textHeightSnapshot.isNotEmpty) {
-      ref
-          .read(textWidgetHeightProvider.notifier)
-          .clearEntries(snapshot.textHeightSnapshot.keys);
-    }
-  }
-
   void _restoreBulkSnapshot(BulkActionSnapshot snapshot) {
     if (snapshot.agentSnapshot != null) {
       ref.read(agentProvider.notifier).restoreSnapshot(snapshot.agentSnapshot!);
@@ -795,17 +742,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
           .read(lineUpProvider.notifier)
           .restoreSnapshot(snapshot.lineUpSnapshot!);
     }
-
-    if (snapshot.imageSizeSnapshot.isNotEmpty) {
-      ref
-          .read(imageWidgetSizeProvider.notifier)
-          .restoreSnapshot(snapshot.imageSizeSnapshot);
-    }
-    if (snapshot.textHeightSnapshot.isNotEmpty) {
-      ref
-          .read(textWidgetHeightProvider.notifier)
-          .restoreSnapshot(snapshot.textHeightSnapshot);
-    }
   }
 
   void _undoBulkAction(UserAction action) {
@@ -822,7 +758,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
     if (snapshot == null) return;
 
     _clearProvidersForGroups(snapshot.targetGroups);
-    _clearAncillaryState(snapshot);
 
     final newState = _filterActionsForGroups(state, snapshot.targetGroups)
       ..add(poppedItems.removeLast());

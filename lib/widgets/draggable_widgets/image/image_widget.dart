@@ -4,9 +4,8 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
-import 'package:icarus/const/image_scale_policy.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -151,32 +150,20 @@ class ImageWidget extends ConsumerStatefulWidget {
 
 class _ImageWidgetState extends ConsumerState<ImageWidget> {
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-      if (widget.isFeedback) return;
-      RenderObject? renderObject = context.findRenderObject();
-      RenderBox? renderBox = renderObject as RenderBox;
-      // if (renderBox == null) return;
-      double height = renderBox.size.height;
-      double width = renderBox.size.width;
-
-      Offset offset = Offset(width, height);
-
-      ref.read(imageWidgetSizeProvider.notifier).updateSize(widget.id, offset);
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     final coordinateSystem = CoordinateSystem.instance;
-    final clampedScale = ImageScalePolicy.clamp(widget.scale);
-    const leftChromeWidth = 12.0; // left bar (10) + spacer (2)
+    final metrics = PlacedImageDimensions.screenSize(
+      coordinateSystem: coordinateSystem,
+      scale: widget.scale,
+      aspectRatio: widget.aspectRatio,
+    );
     final safeAspectRatio = widget.aspectRatio <= 0 ? 1.0 : widget.aspectRatio;
-    final totalWidth = coordinateSystem.worldWidthToScreen(clampedScale);
-    final cardWidth =
-        (totalWidth - leftChromeWidth).clamp(1.0, double.infinity);
-    final cardHeight = (cardWidth - 10) / safeAspectRatio + 10;
+    final cardWidth = (metrics.width -
+            PlacedImageDimensions.tagWidth -
+            PlacedImageDimensions.tagGap)
+        .clamp(1.0, double.infinity);
+    final contentWidth = (cardWidth - (PlacedImageDimensions.imagePadding * 2))
+        .clamp(1.0, double.infinity);
     final file = File(path.join(
       ref.watch(strategyProvider).storageDirectory!,
       'images',
@@ -207,71 +194,53 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
           aspectRatio: widget.aspectRatio,
         );
       },
-      child: NotificationListener<SizeChangedLayoutNotification>(
-        onNotification: (notification) {
-          if (widget.isFeedback) return true;
-          RenderObject? renderObject = context.findRenderObject();
-          RenderBox? renderBox = renderObject as RenderBox;
-          double height = renderBox.size.height;
-          double width = renderBox.size.width;
-
-          Offset offset = Offset(width, height);
-          WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-            ref
-                .read(imageWidgetSizeProvider.notifier)
-                .updateSize(widget.id, offset);
-          });
-          return true;
-        },
-        child: SizeChangedLayoutNotifier(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: totalWidth, minWidth: 0),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  //Tag container
-                  width: 10,
-                  height: cardHeight.toDouble(),
-                  decoration: BoxDecoration(
-                    color: Color(widget.tagColorValue ?? 0xFFC5C5C5),
-                    borderRadius: BorderRadius.circular(3),
-                  ),
+      child: SizedBox(
+        width: metrics.width,
+        height: metrics.height,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              //Tag container
+              width: PlacedImageDimensions.tagWidth,
+              decoration: BoxDecoration(
+                color: Color(widget.tagColorValue ?? 0xFFC5C5C5),
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            const SizedBox(width: PlacedImageDimensions.tagGap),
+            Expanded(
+              child: Card(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(3),
                 ),
-                const SizedBox(width: 2),
-                Card(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(3),
+                margin: EdgeInsets.zero,
+                color: Colors.black,
+                child: Padding(
+                  padding: const EdgeInsets.all(
+                    PlacedImageDimensions.imagePadding,
                   ),
-                  margin: EdgeInsets.zero,
-                  color: Colors.black,
                   child: SizedBox(
-                    width: cardWidth.toDouble(),
-                    child: Padding(
-                      padding: const EdgeInsets.all(5),
-                      child: AspectRatio(
-                        aspectRatio: safeAspectRatio,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: const Color.fromARGB(255, 20, 20, 20),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(3),
-                            child: Hero(
-                              tag: 'image_${widget.id}',
-                              child: buildThumb(),
-                            ),
-                          ),
+                    width: contentWidth,
+                    height: contentWidth / safeAspectRatio,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color.fromARGB(255, 20, 20, 20),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: Hero(
+                          tag: 'image_${widget.id}',
+                          child: buildThumb(),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
