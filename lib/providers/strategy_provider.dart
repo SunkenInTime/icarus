@@ -27,6 +27,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/auto_save_notifier.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -3561,6 +3562,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> deleteStrategy(String strategyID) async {
+    await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(strategyID);
 
     final directory = await getApplicationSupportDirectory();
