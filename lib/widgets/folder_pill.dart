@@ -5,6 +5,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderPill extends ConsumerStatefulWidget {
@@ -191,7 +192,17 @@ class _FolderPillState extends ConsumerState<FolderPill>
   }
 
   List<ShadContextMenuItem> _buildMenuItems() {
+    final isPinned =
+        ref.watch(pinnedItemsProvider).containsKey(widget.folder.id);
     return [
+      ShadContextMenuItem(
+        leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+        child: Text(isPinned ? 'Unpin' : 'Pin'),
+        onPressed: () {
+          if (widget.isDemo) return;
+          ref.read(pinnedItemsProvider.notifier).togglePin(widget.folder.id);
+        },
+      ),
       ShadContextMenuItem(
         leading: const Icon(Icons.text_fields),
         child: const Text('Edit'),
