@@ -244,15 +244,29 @@ class FolderContent extends ConsumerWidget {
                               slivers: [
                                 if (pinnedFolders.isNotEmpty ||
                                     pinnedStrategies.isNotEmpty) ...[
-                                  const SliverToBoxAdapter(
+                                  SliverToBoxAdapter(
                                     child: Padding(
-                                      padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-                                      child: Text(
-                                        'Pinned',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
+                                      padding: const EdgeInsets.fromLTRB(
+                                          16, 16, 16, 4),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.push_pin,
+                                            size: 18,
+                                            color: Settings
+                                                .tacticalVioletTheme.primary,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            'Pinned',
+                                            style: TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.w700,
+                                              color: Settings
+                                                  .tacticalVioletTheme.primary,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -294,6 +308,25 @@ class FolderContent extends ConsumerWidget {
                                   const SliverToBoxAdapter(
                                     child: Divider(indent: 16, endIndent: 16),
                                   ),
+                                  // Header for the normal (un-pinned) section,
+                                  // shown only alongside the Pinned section so
+                                  // the two read as distinct groups.
+                                  if (folders.isNotEmpty || strategies.isNotEmpty)
+                                    SliverToBoxAdapter(
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                            16, 8, 16, 4),
+                                        child: Text(
+                                          'All',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w700,
+                                            color: Settings
+                                                .tacticalVioletTheme.foreground,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                 ],
                                 // Folder pills section (wrap row)
                                 if (folders.isNotEmpty)
