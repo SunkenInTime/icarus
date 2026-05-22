@@ -172,25 +172,25 @@ class FolderContent extends ConsumerWidget {
                         folders.sort(
                             (a, b) => a.dateCreated.compareTo(b.dateCreated));
 
-                        // Pinned section is only shown at the home/root screen.
+                        // At the home/root screen (and only when not searching),
+                        // pinned items — which may live in any folder — float to
+                        // the top of the normal lists. They render exactly like
+                        // every other tile/pill, just ordered first.
                         final isRoot = folder == null;
                         final pinned = ref.watch(pinnedItemsProvider);
-                        final pinnedIds = ref
-                            .read(pinnedItemsProvider.notifier)
-                            .pinnedIdsByRecency();
-
-                        List<StrategyData> pinnedStrategies = [];
-                        List<Folder> pinnedFolders = [];
-                        if (isRoot && pinned.isNotEmpty) {
-                          final allStrategies = strategyBox.values.toList();
-                          final allFolders = folderBox.values.toList();
+                        if (isRoot && pinned.isNotEmpty && search.isEmpty) {
+                          final pinnedIds = ref
+                              .read(pinnedItemsProvider.notifier)
+                              .pinnedIdsByRecency();
                           final strategyById = {
-                            for (final s in allStrategies) s.id: s
+                            for (final s in strategyBox.values) s.id: s
                           };
                           final folderById = {
-                            for (final f in allFolders) f.id: f
+                            for (final f in folderBox.values) f.id: f
                           };
 
+                          final pinnedStrategies = <StrategyData>[];
+                          final pinnedFolders = <Folder>[];
                           for (final id in pinnedIds) {
                             final s = strategyById[id];
                             if (s != null) {
@@ -201,15 +201,16 @@ class FolderContent extends ConsumerWidget {
                             if (f != null) pinnedFolders.add(f);
                           }
 
+                          // Remove pinned items from their normal position, then
+                          // re-insert at the front so they sort to the top.
                           strategies.removeWhere((s) => pinned.containsKey(s.id));
                           folders.removeWhere((f) => pinned.containsKey(f.id));
+                          strategies.insertAll(0, pinnedStrategies);
+                          folders.insertAll(0, pinnedFolders);
                         }
 
                         // Check if both folders and strategies are empty
-                        if (folders.isEmpty &&
-                            strategies.isEmpty &&
-                            pinnedFolders.isEmpty &&
-                            pinnedStrategies.isEmpty) {
+                        if (folders.isEmpty && strategies.isEmpty) {
                           return const IcaDropTarget(
                             child: Center(
                               child: Column(
@@ -242,92 +243,6 @@ class FolderContent extends ConsumerWidget {
 
                             return CustomScrollView(
                               slivers: [
-                                if (pinnedFolders.isNotEmpty ||
-                                    pinnedStrategies.isNotEmpty) ...[
-                                  SliverToBoxAdapter(
-                                    child: Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                          16, 16, 16, 4),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.push_pin,
-                                            size: 18,
-                                            color: Settings
-                                                .tacticalVioletTheme.primary,
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            'Pinned',
-                                            style: TextStyle(
-                                              fontSize: 18,
-                                              fontWeight: FontWeight.w700,
-                                              color: Settings
-                                                  .tacticalVioletTheme.primary,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  if (pinnedFolders.isNotEmpty)
-                                    SliverToBoxAdapter(
-                                      child: Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                            16, 4, 16, 8),
-                                        child: Wrap(
-                                          spacing: 10,
-                                          runSpacing: 10,
-                                          children: pinnedFolders
-                                              .map((f) => FolderPill(folder: f))
-                                              .toList(),
-                                        ),
-                                      ),
-                                    ),
-                                  if (pinnedStrategies.isNotEmpty)
-                                    SliverPadding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                          16, 4, 16, 8),
-                                      sliver: SliverGrid(
-                                        gridDelegate:
-                                            SliverGridDelegateWithFixedCrossAxisCount(
-                                          crossAxisCount: crossAxisCount,
-                                          mainAxisExtent: 250,
-                                          crossAxisSpacing: 20,
-                                          mainAxisSpacing: 20,
-                                        ),
-                                        delegate: SliverChildBuilderDelegate(
-                                          (context, index) => StrategyTile(
-                                            strategyData:
-                                                pinnedStrategies[index],
-                                          ),
-                                          childCount: pinnedStrategies.length,
-                                        ),
-                                      ),
-                                    ),
-                                  const SliverToBoxAdapter(
-                                    child: Divider(indent: 16, endIndent: 16),
-                                  ),
-                                  // Header for the normal (un-pinned) section,
-                                  // shown only alongside the Pinned section so
-                                  // the two read as distinct groups.
-                                  if (folders.isNotEmpty || strategies.isNotEmpty)
-                                    SliverToBoxAdapter(
-                                      child: Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                            16, 8, 16, 4),
-                                        child: Text(
-                                          'All',
-                                          style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w700,
-                                            color: Settings
-                                                .tacticalVioletTheme.foreground,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                ],
                                 // Folder pills section (wrap row)
                                 if (folders.isNotEmpty)
                                   SliverToBoxAdapter(
