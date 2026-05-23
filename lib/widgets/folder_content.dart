@@ -14,7 +14,7 @@ import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_pill.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-// ... your existing imports
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderContent extends ConsumerWidget {
   FolderContent({super.key, this.folder});
