@@ -13,6 +13,7 @@ A Flutter desktop app for creating interactive Valorant game strategies. See `RE
 ### Key caveats
 
 - **FVM is required.** Flutter is pinned to `3.38.4` via `.fvmrc`. Always prefix Flutter/Dart commands with `fvm` (e.g. `fvm flutter run`, `fvm dart run`).
+- **Cloud is still dev-build only.** The cloud backend has not shipped publicly yet, so backwards compatibility with existing dev cloud data is not automatically required. If a change breaks cloud data/API compatibility, explicitly tell the user first and let them decide whether to wipe/migrate the dev database or take another action.
 - **`xdg-user-dirs` must be initialized.** The `path_provider` plugin needs XDG user directories. Run `sudo apt-get install -y xdg-user-dirs && xdg-user-dirs-update` if the app crashes with `MissingPlatformDirectoryException`.
 - **Linux build deps.** `clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-14-dev` must be installed for Linux desktop builds.
 - **Code generation.** After changing Hive models, Riverpod providers, or JSON-serializable classes, regenerate with: `fvm flutter pub run build_runner build --delete-conflicting-outputs`.

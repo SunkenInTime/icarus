@@ -5,6 +5,7 @@ import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/app_navigator.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 final authProvider =
@@ -47,6 +48,50 @@ bool isConvexUnauthenticatedError(Object error) {
   }
 
   return isConvexUnauthenticatedMessage(error.toString());
+}
+
+String redactAuthUri(Uri uri) {
+  const sensitiveKeys = {
+    'access_token',
+    'refresh_token',
+    'provider_token',
+    'provider_refresh_token',
+    'code',
+    'code_verifier',
+  };
+
+  String redactFragment(String fragment) {
+    if (fragment.isEmpty) {
+      return fragment;
+    }
+
+    final params = Uri.splitQueryString(fragment);
+    if (params.isEmpty) {
+      return '<redacted>';
+    }
+
+    return params.entries.map((entry) {
+      final value = sensitiveKeys.contains(entry.key.toLowerCase())
+          ? '<redacted>'
+          : entry.value;
+      return '${Uri.encodeQueryComponent(entry.key)}='
+          '${Uri.encodeQueryComponent(value)}';
+    }).join('&');
+  }
+
+  final queryParameters = <String, String>{};
+  for (final entry in uri.queryParameters.entries) {
+    queryParameters[entry.key] = sensitiveKeys.contains(entry.key.toLowerCase())
+        ? '<redacted>'
+        : entry.value;
+  }
+
+  return uri
+      .replace(
+        queryParameters: queryParameters.isEmpty ? null : queryParameters,
+        fragment: redactFragment(uri.fragment),
+      )
+      .toString();
 }
 
 class AppAuthState {
@@ -628,8 +673,17 @@ class AuthProvider extends Notifier<AppAuthState> {
 
   Future<bool> handleAuthCallbackUri(Uri uri, {required String source}) async {
     if (!isAuthCallbackUri(uri)) {
+      AppErrorReporter.reportInfo(
+        'Deep link was not an auth callback [$source]: ${redactAuthUri(uri)}',
+        source: 'auth',
+      );
       return false;
     }
+
+    AppErrorReporter.reportInfo(
+      'Handling auth callback [$source]: ${redactAuthUri(uri)}',
+      source: 'auth',
+    );
 
     state = state.copyWith(
       isLoading: true,
@@ -641,12 +695,25 @@ class AuthProvider extends Notifier<AppAuthState> {
     try {
       await _supabaseApi.getSessionFromUrl(uri);
       state = state.copyWith(isLoading: false);
-      log('Handled auth callback [$source]: $uri', name: 'auth');
+      log(
+        'Handled auth callback [$source]: ${redactAuthUri(uri)}',
+        name: 'auth',
+      );
+      AppErrorReporter.reportInfo(
+        'Handled auth callback [$source]',
+        source: 'auth',
+      );
       return true;
     } catch (error, stackTrace) {
       log(
         'Failed auth callback [$source]: $error',
         name: 'auth',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      AppErrorReporter.reportError(
+        'Failed auth callback [$source]: ${redactAuthUri(uri)}',
+        source: 'auth',
         error: error,
         stackTrace: stackTrace,
       );

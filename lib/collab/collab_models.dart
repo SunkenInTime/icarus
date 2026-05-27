@@ -336,6 +336,81 @@ class RemoteStrategySnapshot {
   final Map<String, List<RemoteElement>> elementsByPage;
   final Map<String, List<RemoteLineup>> lineupsByPage;
   final Map<String, RemoteImageAsset> assetsById;
+
+  RemoteStrategySnapshot copyWith({
+    RemoteStrategyHeader? header,
+    List<RemotePage>? pages,
+    Map<String, List<RemoteElement>>? elementsByPage,
+    Map<String, List<RemoteLineup>>? lineupsByPage,
+    Map<String, RemoteImageAsset>? assetsById,
+  }) {
+    return RemoteStrategySnapshot(
+      header: header ?? this.header,
+      pages: pages ?? this.pages,
+      elementsByPage: elementsByPage ?? this.elementsByPage,
+      lineupsByPage: lineupsByPage ?? this.lineupsByPage,
+      assetsById: assetsById ?? this.assetsById,
+    );
+  }
+
+  RemoteStrategySnapshot replaceHeader(RemoteStrategyHeader next) {
+    return copyWith(header: next);
+  }
+
+  RemoteStrategySnapshot replacePages(List<RemotePage> next) {
+    final pageIds = next.map((page) => page.publicId).toSet();
+    return copyWith(
+      pages: next,
+      elementsByPage: Map<String, List<RemoteElement>>.fromEntries(
+        elementsByPage.entries.where((entry) => pageIds.contains(entry.key)),
+      ),
+      lineupsByPage: Map<String, List<RemoteLineup>>.fromEntries(
+        lineupsByPage.entries.where((entry) => pageIds.contains(entry.key)),
+      ),
+    );
+  }
+
+  RemoteStrategySnapshot replaceAssets(List<RemoteImageAsset> next) {
+    return copyWith(
+      assetsById: {
+        for (final asset in next) asset.publicId: asset,
+      },
+    );
+  }
+
+  RemoteStrategySnapshot replaceElements(List<RemoteElement> next) {
+    return copyWith(elementsByPage: groupElementsByPage(next));
+  }
+
+  RemoteStrategySnapshot replaceLineups(List<RemoteLineup> next) {
+    return copyWith(lineupsByPage: groupLineupsByPage(next));
+  }
+
+  static Map<String, List<RemoteElement>> groupElementsByPage(
+    Iterable<RemoteElement> elements,
+  ) {
+    final grouped = <String, List<RemoteElement>>{};
+    for (final element in elements) {
+      (grouped[element.pagePublicId] ??= <RemoteElement>[]).add(element);
+    }
+    for (final elements in grouped.values) {
+      elements.sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    }
+    return grouped;
+  }
+
+  static Map<String, List<RemoteLineup>> groupLineupsByPage(
+    Iterable<RemoteLineup> lineups,
+  ) {
+    final grouped = <String, List<RemoteLineup>>{};
+    for (final lineup in lineups) {
+      (grouped[lineup.pagePublicId] ??= <RemoteLineup>[]).add(lineup);
+    }
+    for (final lineups in grouped.values) {
+      lineups.sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    }
+    return grouped;
+  }
 }
 
 class CloudStrategySummary {

@@ -70,15 +70,22 @@ void main() {
     expect(size.width, CoordinateSystem.instance.worldWidthToScreen(220));
   });
 
-  test('text helper uses minimum height for empty text', () {
-    final size = PlacedTextDimensions.screenSize(
+  test('text helper uses one-line height for empty text', () {
+    final empty = PlacedTextDimensions.screenSize(
       coordinateSystem: CoordinateSystem.instance,
       widthWorld: 220,
       fontSizeWorld: 16,
       text: '',
     );
+    final singleLine = PlacedTextDimensions.screenSize(
+      coordinateSystem: CoordinateSystem.instance,
+      widthWorld: 220,
+      fontSizeWorld: 16,
+      text: 'one line',
+    );
 
-    expect(size.height, greaterThanOrEqualTo(PlacedTextDimensions.minHeight));
+    expect(empty.height, singleLine.height);
+    expect(empty.height, lessThan(64));
   });
 
   test('text helper height increases for wrapped text', () {

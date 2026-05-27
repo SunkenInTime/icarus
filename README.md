@@ -35,6 +35,22 @@ flutter pub get
 flutter run
 ```
 
+### Windows dev OAuth callbacks
+Discord OAuth redirects back into the desktop app through the `icarus://auth/callback`
+protocol. On Windows, the installed app normally owns that protocol handler, so a
+dev build may not receive the browser callback.
+
+For a temporary dev session, run the Windows build with the force protocol
+registration flag:
+
+```powershell
+fvm flutter run -d windows --dart-define=ICARUS_FORCE_PROTOCOL_REGISTER=true
+```
+
+This rewrites the current user's `icarus://` handler to the debug executable.
+After testing OAuth, launch the installed Icarus app once to restore the handler
+back to the installed build.
+
 ## Build
 ```bash
 flutter build <platform>

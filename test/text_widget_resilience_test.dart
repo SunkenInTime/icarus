@@ -333,6 +333,49 @@ void main() {
     expect(feedbackSize.height, editableSize.height);
   });
 
+  testWidgets('text widget starts single-line and grows instead of scrolling',
+      (tester) async {
+    final container = createContainer();
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(
+        id: 'text-1',
+        position: const Offset(10, 20),
+        size: 80,
+        fontSize: 16,
+        sizeVersion: worldSizedMediaVersion,
+      )..text = 'ew',
+    ]);
+
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.pump();
+
+    final initialSize = tester.getSize(find.byType(TextWidget));
+    expect(initialSize.height, lessThan(64));
+
+    await tester.enterText(
+      find.byType(TextField),
+      'this text is long enough to wrap across several lines in the editor',
+    );
+    await tester.pump();
+
+    final wrappedSize = tester.getSize(find.byType(TextWidget));
+    expect(wrappedSize.height, greaterThan(initialSize.height));
+
+    final scrollableFinder = find.descendant(
+      of: find.byType(TextField),
+      matching: find.byType(Scrollable),
+    );
+    final scrollableState =
+        tester.state<ScrollableState>(scrollableFinder.first);
+    final scrollable = tester.widget<Scrollable>(scrollableFinder.first);
+    expect(scrollable.axisDirection, AxisDirection.down);
+    expect(
+      scrollableState.position.maxScrollExtent,
+      0,
+      reason: 'wrappedSize=$wrappedSize',
+    );
+  });
+
   testWidgets('side switch mirrors text with deterministic widget bounds',
       (tester) async {
     final container = createContainer();

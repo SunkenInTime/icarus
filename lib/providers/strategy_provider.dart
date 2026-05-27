@@ -56,14 +56,14 @@ void _logStrategyProviderDebug({
   unawaited(
     File(r'E:\Projects\icarus-cloud\debug-16ee23.log').writeAsString(
       '${jsonEncode({
-        'sessionId': '16ee23',
-        'runId': runId,
-        'hypothesisId': hypothesisId,
-        'location': location,
-        'message': message,
-        'data': data,
-        'timestamp': DateTime.now().millisecondsSinceEpoch,
-      })}\n',
+            'sessionId': '16ee23',
+            'runId': runId,
+            'hypothesisId': hypothesisId,
+            'location': location,
+            'message': message,
+            'data': data,
+            'timestamp': DateTime.now().millisecondsSinceEpoch,
+          })}\n',
       mode: FileMode.append,
       flush: true,
     ),
@@ -915,21 +915,18 @@ class StrategyProvider extends Notifier<StrategyState> {
       final defaultThemeProfileId =
           ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies;
       try {
-        await ref.read(convexStrategyRepositoryProvider).createStrategy(
+        await ref
+            .read(convexStrategyRepositoryProvider)
+            .createStrategyWithInitialPage(
               publicId: newID,
               name: name,
               mapData: Maps.mapNames[MapValue.ascent] ?? "ascent",
+              initialPagePublicId: pageID,
+              initialPageName: "Page 1",
+              initialPageIsAttack: true,
               folderPublicId: ref.read(folderProvider),
               themeProfileId: defaultThemeProfileId,
             );
-        await ConvexClient.instance.mutation(name: "pages:add", args: {
-          "strategyPublicId": newID,
-          "pagePublicId": pageID,
-          "name": "Page 1",
-          "sortIndex": 0,
-          "isAttack": true,
-          "settings": ref.read(strategySettingsProvider.notifier).toJson(),
-        });
       } catch (error, stackTrace) {
         final handled = await _reportCloudUnauthenticated(
           source: 'strategy:create_new',
@@ -1052,20 +1049,31 @@ class StrategyProvider extends Notifier<StrategyState> {
             .read(convexStrategyRepositoryProvider)
             .fetchSnapshot(strategyID);
         final newStrategyID = const Uuid().v4();
-        await ref.read(convexStrategyRepositoryProvider).createStrategy(
+        final pages = [...snapshot.pages]
+          ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+        final firstPage = pages.isNotEmpty ? pages.first : null;
+        final firstPageId = const Uuid().v4();
+        await ref
+            .read(convexStrategyRepositoryProvider)
+            .createStrategyWithInitialPage(
               publicId: newStrategyID,
               name: "${snapshot.header.name} (Copy)",
               mapData: snapshot.header.mapData,
+              initialPagePublicId: firstPageId,
+              initialPageName: firstPage?.name ?? "Page 1",
+              initialPageIsAttack: firstPage?.isAttack ?? true,
+              initialPageSettings: firstPage?.settings,
               folderPublicId: ref.read(folderProvider),
               themeProfileId: snapshot.header.themeProfileId,
               themeOverridePalette: snapshot.header.themeOverridePalette,
             );
 
-        final pages = [...snapshot.pages]
-          ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-
         final pageIdMap = <String, String>{};
-        for (final page in pages) {
+        if (firstPage != null) {
+          pageIdMap[firstPage.publicId] = firstPageId;
+        }
+        for (var i = firstPage == null ? 0 : 1; i < pages.length; i++) {
+          final page = pages[i];
           final newPageId = const Uuid().v4();
           pageIdMap[page.publicId] = newPageId;
           await ConvexClient.instance.mutation(name: "pages:add", args: {

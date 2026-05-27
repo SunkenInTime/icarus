@@ -884,7 +884,6 @@ class _AccountRailItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final showExpandedLayout = expanded && showDetails;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -892,7 +891,7 @@ class _AccountRailItem extends StatelessWidget {
         mouseCursor: onAuthAction == null
             ? SystemMouseCursors.basic
             : SystemMouseCursors.click,
-        onTap: showExpandedLayout ? null : onAuthAction,
+        onTap: onAuthAction,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
           curve: Curves.easeOutCubic,

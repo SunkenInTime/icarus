@@ -29,7 +29,6 @@ import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -86,7 +85,13 @@ Future<void> _initializeDeepLinkHandling() async {
 }
 
 void _publishDeepLink(Uri uri, {required String source}) {
-  developer.log('Deep link received [$source]: $uri', name: 'deep_link');
+  final redactedUri = redactAuthUri(uri);
+  developer.log('Deep link received [$source]: $redactedUri',
+      name: 'deep_link');
+  AppErrorReporter.reportInfo(
+    'Deep link received [$source]: $redactedUri',
+    source: 'deep_link',
+  );
   if (!_hasDeepLinkListener) {
     _bufferedDeepLinks.add(uri);
     return;
@@ -341,16 +346,19 @@ class _MyAppState extends ConsumerState<MyApp> {
     final uriText = uri.toString();
     if (!_processedDeepLinks.add(uriText)) {
       developer.log(
-        'Ignoring duplicate deep link [$source]: $uriText',
+        'Ignoring duplicate deep link [$source]: ${redactAuthUri(uri)}',
         name: 'deep_link',
       );
       return;
     }
 
-    developer.log('Handling deep link [$source]: $uriText', name: 'deep_link');
-    ref
-        .read(inAppDebugProvider.notifier)
-        .bulkAddLogs(<String>['Deep link [$source]: $uriText']);
+    final redactedUri = redactAuthUri(uri);
+    developer.log('Handling deep link [$source]: $redactedUri',
+        name: 'deep_link');
+    AppErrorReporter.reportInfo(
+      'Handling deep link [$source]: $redactedUri',
+      source: 'deep_link',
+    );
 
     unawaited(() async {
       final handledAuth = await ref

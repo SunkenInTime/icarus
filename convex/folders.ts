@@ -30,14 +30,55 @@ async function listAccessibleFoldersForScope(
   ctx: AnyCtx,
   userId: Id<"users">,
   scope: FolderScope,
-) : Promise<Array<{ folder: Doc<"folders">; role: "owner" | "editor" | "viewer" }>> {
-  const folders = await ctx.db.query("folders").collect();
+): Promise<
+  Array<{ folder: Doc<"folders">; role: "owner" | "editor" | "viewer" }>
+> {
+  const candidates = new Map<Id<"folders">, Doc<"folders">>();
+
+  if (scope === "owned" || scope === "all") {
+    const owned = await ctx.db
+      .query("folders")
+      .withIndex("by_ownerId", (q) => q.eq("ownerId", userId))
+      .collect();
+    for (const folder of owned) {
+      candidates.set(folder._id, folder);
+    }
+  }
+
+  if (scope === "shared" || scope === "all") {
+    const directShares = await ctx.db
+      .query("folderCollaborators")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const queue = (
+      await Promise.all(directShares.map((share) => ctx.db.get(share.folderId)))
+    ).filter(
+      (folder): folder is Doc<"folders"> =>
+        folder !== null && folder.ownerId !== userId,
+    );
+
+    while (queue.length > 0) {
+      const folder = queue.shift()!;
+      if (candidates.has(folder._id)) {
+        continue;
+      }
+      candidates.set(folder._id, folder);
+      const children = await ctx.db
+        .query("folders")
+        .withIndex("by_parentFolderId", (q) =>
+          q.eq("parentFolderId", folder._id),
+        )
+        .collect();
+      queue.push(...children.filter((child) => child.ownerId !== userId));
+    }
+  }
+
   const results: Array<{
     folder: Doc<"folders">;
     role: "owner" | "editor" | "viewer";
   }> = [];
 
-  for (const folder of folders) {
+  for (const folder of candidates.values()) {
     const role = await getEffectiveFolderRoleForUser(ctx, folder, userId);
     if (role === null) {
       continue;
@@ -71,8 +112,14 @@ export const listForParent = query({
       parentFolderId = parent._id;
     }
 
-    const accessible = await listAccessibleFoldersForScope(ctx, user._id, scope);
-    const folderLookup = new Map(accessible.map(({ folder }) => [folder._id, folder]));
+    const accessible = await listAccessibleFoldersForScope(
+      ctx,
+      user._id,
+      scope,
+    );
+    const folderLookup = new Map(
+      accessible.map(({ folder }) => [folder._id, folder]),
+    );
 
     return accessible
       .filter(({ folder }) => folder.parentFolderId === parentFolderId)
@@ -88,7 +135,7 @@ export const listForParent = query({
         parentFolderPublicId:
           folder.parentFolderId === undefined
             ? null
-            : folderLookup.get(folder.parentFolderId)?.publicId ?? null,
+            : (folderLookup.get(folder.parentFolderId)?.publicId ?? null),
         createdAt: folder.createdAt,
         updatedAt: folder.updatedAt,
         role,
@@ -221,8 +268,14 @@ export const listAll = query({
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     const scope = args.scope ?? "all";
-    const accessible = await listAccessibleFoldersForScope(ctx, user._id, scope);
-    const folderLookup = new Map(accessible.map(({ folder }) => [folder._id, folder]));
+    const accessible = await listAccessibleFoldersForScope(
+      ctx,
+      user._id,
+      scope,
+    );
+    const folderLookup = new Map(
+      accessible.map(({ folder }) => [folder._id, folder]),
+    );
 
     return accessible
       .sort((a, b) => a.folder.createdAt - b.folder.createdAt)
@@ -237,7 +290,7 @@ export const listAll = query({
         parentFolderPublicId:
           folder.parentFolderId === undefined
             ? null
-            : folderLookup.get(folder.parentFolderId)?.publicId ?? null,
+            : (folderLookup.get(folder.parentFolderId)?.publicId ?? null),
         createdAt: folder.createdAt,
         updatedAt: folder.updatedAt,
         role,

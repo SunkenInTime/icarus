@@ -30,7 +30,6 @@ abstract final class PlacedTextDimensions {
   static const double tagGap = 2.0;
   static const double cardHorizontalPadding = 5.0;
   static const double cardVerticalPadding = 6.0;
-  static const double minHeight = 64.0;
   static const String emptyTextPlaceholder = 'Write here...';
 
   static Size screenSize({
@@ -45,8 +44,8 @@ abstract final class PlacedTextDimensions {
       widthWorld: widthWorld,
     );
 
-    final displayText = text.isEmpty ? emptyTextPlaceholder : text;
-    final fontSizePx = PlacedTextDimensions.fontSizePx(
+    final displayText = text.isEmpty ? ' ' : _withBreakOpportunities(text);
+    final style = textStyle(
       coordinateSystem: coordinateSystem,
       fontSizeWorld: fontSizeWorld,
     );
@@ -54,15 +53,21 @@ abstract final class PlacedTextDimensions {
     final painter = TextPainter(
       text: TextSpan(
         text: displayText,
-        style: TextStyle(fontSize: fontSizePx),
+        style: style,
       ),
       maxLines: null,
       textDirection: TextDirection.ltr,
       textScaler: TextScaler.noScaling,
-    )..layout(maxWidth: maxContentWidth);
+    )..layout(minWidth: maxContentWidth, maxWidth: maxContentWidth);
 
-    final totalHeight = (painter.height + (cardVerticalPadding * 2))
-        .clamp(minHeight, double.infinity);
+    final lineMetrics = painter.computeLineMetrics();
+    // EditableText can keep one extra wrapped line in its scroll extent.
+    final wrappedTextSlack = lineMetrics.length > 1 && lineMetrics.isNotEmpty
+        ? lineMetrics.last.height.ceilToDouble()
+        : 0.0;
+    final totalHeight = painter.height.ceilToDouble() +
+        wrappedTextSlack +
+        (cardVerticalPadding * 2);
     return Size(totalWidth, totalHeight);
   }
 
@@ -80,5 +85,26 @@ abstract final class PlacedTextDimensions {
     required double fontSizeWorld,
   }) {
     return coordinateSystem.worldHeightToScreen(fontSizeWorld);
+  }
+
+  static TextStyle textStyle({
+    required CoordinateSystem coordinateSystem,
+    required double fontSizeWorld,
+  }) {
+    final fontSizePx = PlacedTextDimensions.fontSizePx(
+      coordinateSystem: coordinateSystem,
+      fontSizeWorld: fontSizeWorld,
+    );
+    return TextStyle(fontSize: fontSizePx, height: 1.0);
+  }
+
+  static String _withBreakOpportunities(String text) {
+    final buffer = StringBuffer();
+    for (final rune in text.runes) {
+      buffer
+        ..writeCharCode(rune)
+        ..write('\u200B');
+    }
+    return buffer.toString();
   }
 }

@@ -1,7 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
   assertFolderRole,
   assertStrategyRole,
@@ -11,6 +11,30 @@ import {
 import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
 
 type StrategyScope = "owned" | "shared" | "all";
+
+type StrategyCreateInput = {
+  publicId: string;
+  name: string;
+  mapData: string;
+  folderPublicId?: string;
+  themeProfileId?: string;
+  themeOverridePalette?: string;
+};
+
+type InitialPageInput = {
+  publicId: string;
+  name: string;
+  isAttack: boolean;
+  settings?: string;
+};
+
+function createPublicId(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const random = Math.floor(Math.random() * 16);
+    const value = char === "x" ? random : (random & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
 
 const strategyScopeValidator = v.optional(
   v.union(v.literal("owned"), v.literal("shared"), v.literal("all")),
@@ -30,79 +54,33 @@ function matchesScope(
   return ownerId !== userId;
 }
 
-async function listAccessibleStrategies(
+async function summarizeStrategies(
   ctx: QueryCtx,
+  strategies: Doc<"strategies">[],
   userId: Id<"users">,
-  scope: StrategyScope,
 ) {
-  const owned = await ctx.db
-    .query("strategies")
-    .withIndex("by_ownerId", (q) => q.eq("ownerId", userId))
-    .collect();
-
   const memberships = await ctx.db
     .query("strategyCollaborators")
     .withIndex("by_userId", (q) => q.eq("userId", userId))
     .collect();
 
-  const fromMembership = await Promise.all(
-    memberships.map((m) => ctx.db.get(m.strategyId)),
-  );
-
-  const strategies = await ctx.db.query("strategies").collect();
-  const dedup = new Map<Id<"strategies">, Doc<"strategies">>();
-  for (const strategy of [...owned, ...fromMembership, ...strategies]) {
+  const folderIdToPublicId = new Map<Id<"folders">, string>();
+  for (const strategy of strategies) {
     if (
-      strategy !== null &&
-      matchesScope(strategy.ownerId, userId, scope) &&
-      (await getEffectiveStrategyRoleForUser(ctx, strategy, userId)) !== null
+      strategy.folderId !== undefined &&
+      !folderIdToPublicId.has(strategy.folderId)
     ) {
-      dedup.set(strategy._id, strategy);
+      const folder = await ctx.db.get(strategy.folderId);
+      if (folder !== null) {
+        folderIdToPublicId.set(strategy.folderId, folder.publicId);
+      }
     }
   }
 
-  return Array.from(dedup.values());
-}
-
-export const listForFolder = query({
-  args: {
-    folderPublicId: v.optional(v.string()),
-    scope: strategyScopeValidator,
-  },
-  handler: async (ctx, args) => {
-    const user = await requireCurrentUser(ctx);
-    const scope = args.scope ?? "owned";
-    const all = await listAccessibleStrategies(ctx, user._id, scope);
-    const memberships = await ctx.db
-      .query("strategyCollaborators")
-      .withIndex("by_userId", (q) => q.eq("userId", user._id))
-      .collect();
-
-    let folderId: Id<"folders"> | undefined;
-    if (args.folderPublicId !== undefined) {
-      const folder = await getFolderByPublicId(ctx, args.folderPublicId);
-      await assertFolderRole(ctx, folder, "viewer");
-      folderId = folder._id;
-    }
-
-    const folderIdToPublicId = new Map<any, string>();
-    for (const strategy of all) {
-      if (
-        strategy.folderId !== undefined &&
-        !folderIdToPublicId.has(strategy.folderId)
-      ) {
-        const strategyFolder = await ctx.db.get(strategy.folderId);
-        if (strategyFolder !== null) {
-          folderIdToPublicId.set(strategy.folderId, strategyFolder.publicId);
-        }
-      }
-    }
-
-    return await Promise.all(
-      all
-        .filter((s) => s.folderId === folderId)
-        .sort((a, b) => b.updatedAt - a.updatedAt)
-        .map(async (s) => {
+  return await Promise.all(
+    strategies
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map(async (s) => {
         const pages = await ctx.db
           .query("pages")
           .withIndex("by_strategyId", (q) => q.eq("strategyId", s._id))
@@ -113,9 +91,12 @@ export const listForFolder = query({
           const mixed = pages.some((page) => page.isAttack !== first);
           attackLabel = mixed ? "Mixed" : first ? "Attack" : "Defend";
         }
-        const role = s.ownerId === user._id
-          ? "owner"
-          : memberships.find((m: any) => m.strategyId === s._id)?.role ?? "viewer";
+        const role =
+          s.ownerId === userId
+            ? "owner"
+            : ((await getEffectiveStrategyRoleForUser(ctx, s, userId)) ??
+              memberships.find((m: any) => m.strategyId === s._id)?.role ??
+              "viewer");
 
         return {
           publicId: s.publicId,
@@ -127,12 +108,241 @@ export const listForFolder = query({
           role,
           attackLabel,
           folderPublicId:
-            s.folderId === undefined ? null : folderIdToPublicId.get(s.folderId) ?? null,
+            s.folderId === undefined
+              ? null
+              : (folderIdToPublicId.get(s.folderId) ?? null),
           themeProfileId: s.themeProfileId ?? null,
           themeOverridePalette: s.themeOverridePalette ?? null,
         };
-        }),
+      }),
+  );
+}
+
+async function listStrategiesInFolder(
+  ctx: QueryCtx,
+  folderId: Id<"folders"> | undefined,
+  userId: Id<"users">,
+  scope: StrategyScope,
+) {
+  let candidates: Doc<"strategies">[];
+  if (folderId !== undefined) {
+    candidates = await ctx.db
+      .query("strategies")
+      .withIndex("by_folderId", (q) => q.eq("folderId", folderId))
+      .collect();
+  } else if (scope === "shared") {
+    const memberships = await ctx.db
+      .query("strategyCollaborators")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
+      .collect();
+    const shared = await Promise.all(
+      memberships.map((membership) => ctx.db.get(membership.strategyId)),
     );
+    candidates = shared.filter(
+      (strategy): strategy is Doc<"strategies"> =>
+        strategy !== null &&
+        strategy.ownerId !== userId &&
+        strategy.folderId === undefined,
+    );
+  } else {
+    candidates = await ctx.db
+      .query("strategies")
+      .withIndex("by_ownerId", (q) => q.eq("ownerId", userId))
+      .collect();
+    candidates = candidates.filter(
+      (strategy) => strategy.folderId === undefined,
+    );
+
+    if (scope === "all") {
+      const memberships = await ctx.db
+        .query("strategyCollaborators")
+        .withIndex("by_userId", (q) => q.eq("userId", userId))
+        .collect();
+      const shared = await Promise.all(
+        memberships.map((membership) => ctx.db.get(membership.strategyId)),
+      );
+      candidates.push(
+        ...shared.filter(
+          (strategy): strategy is Doc<"strategies"> =>
+            strategy !== null &&
+            strategy.ownerId !== userId &&
+            strategy.folderId === undefined,
+        ),
+      );
+    }
+  }
+
+  const dedup = new Map<Id<"strategies">, Doc<"strategies">>();
+  for (const strategy of candidates) {
+    if (
+      matchesScope(strategy.ownerId, userId, scope) &&
+      (await getEffectiveStrategyRoleForUser(ctx, strategy, userId)) !== null
+    ) {
+      dedup.set(strategy._id, strategy);
+    }
+  }
+  return Array.from(dedup.values());
+}
+
+async function resolveOwnedFolderId(
+  ctx: MutationCtx,
+  folderPublicId: string | undefined,
+  userId: Id<"users">,
+) {
+  if (folderPublicId === undefined) {
+    return undefined;
+  }
+  const folder = await getFolderByPublicId(ctx, folderPublicId);
+  if (folder.ownerId !== userId) {
+    throw new Error("Forbidden");
+  }
+  return folder._id;
+}
+
+async function assertInitialPagePublicIdAvailable(
+  ctx: MutationCtx,
+  pagePublicId: string,
+  allowedStrategyId?: Id<"strategies">,
+) {
+  const existingPage = await ctx.db
+    .query("pages")
+    .withIndex("by_publicId", (q) => q.eq("publicId", pagePublicId))
+    .first();
+  if (
+    existingPage !== null &&
+    (allowedStrategyId === undefined ||
+      existingPage.strategyId !== allowedStrategyId)
+  ) {
+    throw new Error(`Page publicId already exists: ${pagePublicId}`);
+  }
+}
+
+async function insertInitialPage(
+  ctx: MutationCtx,
+  args: {
+    strategyId: Id<"strategies">;
+    initialPage: InitialPageInput;
+    now: number;
+  },
+) {
+  await ctx.db.insert("pages", {
+    publicId: args.initialPage.publicId,
+    strategyId: args.strategyId,
+    name: args.initialPage.name,
+    sortIndex: 0,
+    isAttack: args.initialPage.isAttack,
+    settings: args.initialPage.settings,
+    revision: 1,
+    createdAt: args.now,
+    updatedAt: args.now,
+  });
+}
+
+async function createStrategyWithInitialPageRecord(
+  ctx: MutationCtx,
+  args: StrategyCreateInput,
+  userId: Id<"users">,
+  initialPage: InitialPageInput,
+) {
+  const now = Date.now();
+  const folderId = await resolveOwnedFolderId(ctx, args.folderPublicId, userId);
+
+  const existing = await ctx.db
+    .query("strategies")
+    .withIndex("by_publicId", (q) => q.eq("publicId", args.publicId))
+    .collect();
+  const existingOwned = existing.find((item) => item.ownerId === userId);
+  if (existingOwned !== undefined) {
+    const pages = await ctx.db
+      .query("pages")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", existingOwned._id))
+      .collect();
+    if (pages.length === 0) {
+      await assertInitialPagePublicIdAvailable(
+        ctx,
+        initialPage.publicId,
+        existingOwned._id,
+      );
+      await insertInitialPage(ctx, {
+        strategyId: existingOwned._id,
+        initialPage,
+        now,
+      });
+    }
+    return { ok: true, reused: true };
+  }
+  if (existing.length > 0) {
+    throw new Error(`Strategy publicId already exists: ${args.publicId}`);
+  }
+
+  await assertInitialPagePublicIdAvailable(ctx, initialPage.publicId);
+
+  const strategyId = await ctx.db.insert("strategies", {
+    publicId: args.publicId,
+    ownerId: userId,
+    folderId,
+    name: args.name,
+    mapData: args.mapData,
+    sequence: 0,
+    themeProfileId: args.themeProfileId,
+    themeOverridePalette: args.themeOverridePalette,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await insertInitialPage(ctx, {
+    strategyId,
+    initialPage,
+    now,
+  });
+
+  return { ok: true };
+}
+
+export const listForFolder = query({
+  args: {
+    folderPublicId: v.optional(v.string()),
+    scope: strategyScopeValidator,
+  },
+  handler: async (ctx, args) => {
+    const user = await requireCurrentUser(ctx);
+    const scope = args.scope ?? "owned";
+
+    let folderId: Id<"folders"> | undefined;
+    if (args.folderPublicId !== undefined) {
+      const folder = await getFolderByPublicId(ctx, args.folderPublicId);
+      await assertFolderRole(ctx, folder, "viewer");
+      folderId = folder._id;
+    }
+
+    const strategies = await listStrategiesInFolder(
+      ctx,
+      folderId,
+      user._id,
+      scope,
+    );
+    return await summarizeStrategies(ctx, strategies, user._id);
+  },
+});
+
+export const listSharedWithMe = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireCurrentUser(ctx);
+    const memberships = await ctx.db
+      .query("strategyCollaborators")
+      .withIndex("by_userId", (q) => q.eq("userId", user._id))
+      .collect();
+    const shared = await Promise.all(
+      memberships.map((membership) => ctx.db.get(membership.strategyId)),
+    );
+    const strategies = shared.filter(
+      (strategy): strategy is Doc<"strategies"> =>
+        strategy !== null &&
+        strategy.ownerId !== user._id &&
+        strategy.folderId === undefined,
+    );
+    return await summarizeStrategies(ctx, strategies, user._id);
   },
 });
 
@@ -169,43 +379,35 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
-    const now = Date.now();
-
-    let folderId;
-    if (args.folderPublicId !== undefined) {
-      const folder = await getFolderByPublicId(ctx, args.folderPublicId);
-      if (folder.ownerId !== user._id) {
-        throw new Error("Forbidden");
-      }
-      folderId = folder._id;
-    }
-
-    const existing = await ctx.db
-      .query("strategies")
-      .withIndex("by_publicId", (q) => q.eq("publicId", args.publicId))
-      .collect();
-    const existingOwned = existing.find((item) => item.ownerId === user._id);
-    if (existingOwned !== undefined) {
-      return { ok: true, reused: true };
-    }
-    if (existing.length > 0) {
-      throw new Error(`Strategy publicId already exists: ${args.publicId}`);
-    }
-
-    await ctx.db.insert("strategies", {
-      publicId: args.publicId,
-      ownerId: user._id,
-      folderId,
-      name: args.name,
-      mapData: args.mapData,
-      sequence: 0,
-      themeProfileId: args.themeProfileId,
-      themeOverridePalette: args.themeOverridePalette,
-      createdAt: now,
-      updatedAt: now,
+    return await createStrategyWithInitialPageRecord(ctx, args, user._id, {
+      publicId: createPublicId(),
+      name: "Page 1",
+      isAttack: true,
     });
+  },
+});
 
-    return { ok: true };
+export const createWithInitialPage = mutation({
+  args: {
+    publicId: v.string(),
+    name: v.string(),
+    mapData: v.string(),
+    initialPagePublicId: v.string(),
+    initialPageName: v.string(),
+    initialPageIsAttack: v.boolean(),
+    initialPageSettings: v.optional(v.string()),
+    folderPublicId: v.optional(v.string()),
+    themeProfileId: v.optional(v.string()),
+    themeOverridePalette: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireCurrentUser(ctx);
+    return await createStrategyWithInitialPageRecord(ctx, args, user._id, {
+      publicId: args.initialPagePublicId,
+      name: args.initialPageName,
+      isAttack: args.initialPageIsAttack,
+      settings: args.initialPageSettings,
+    });
   },
 });
 
@@ -335,5 +537,3 @@ export const deleteStrategy = mutation({
 });
 
 export { deleteStrategy as delete };
-
-

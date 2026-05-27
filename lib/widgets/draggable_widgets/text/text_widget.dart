@@ -47,6 +47,7 @@ class TextWidget extends ConsumerWidget {
 const _textFieldDecoration = InputDecoration(
   hintText: PlacedTextDimensions.emptyTextPlaceholder,
   hintStyle: TextStyle(color: Colors.grey),
+  hintMaxLines: 1,
   border: InputBorder.none,
   isCollapsed: true,
   contentPadding: EdgeInsets.zero,
@@ -271,14 +272,16 @@ class _SharedTextField extends StatelessWidget {
         readOnly: readOnly,
         enableInteractiveSelection: enableInteractiveSelection,
         showCursor: showCursor,
-        style: TextStyle(
-          fontSize: coordinateSystem.worldHeightToScreen(fontSize),
+        style: PlacedTextDimensions.textStyle(
+          coordinateSystem: coordinateSystem,
+          fontSizeWorld: fontSize,
         ),
         decoration: _textFieldDecoration,
         maxLines: null,
         minLines: 1,
         expands: false,
         scrollPhysics: const NeverScrollableScrollPhysics(),
+        scrollPadding: EdgeInsets.zero,
         textAlignVertical: TextAlignVertical.top,
         keyboardType: TextInputType.multiline,
         onChanged: onChanged,

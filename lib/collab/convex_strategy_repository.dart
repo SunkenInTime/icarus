@@ -305,60 +305,147 @@ class ConvexStrategyRepository {
     return controller.stream;
   }
 
+  Future<List<RemotePage>> listPagesForStrategy(String strategyPublicId) async {
+    final response = await _client.query('pages:listForStrategy', {
+      'strategyPublicId': strategyPublicId,
+    });
+    return _decodeObjectList(response)
+        .map(RemotePage.fromJson)
+        .toList(growable: false)
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+  }
+
+  Future<List<RemoteImageAsset>> listImageAssetsForStrategy(
+    String strategyPublicId,
+  ) async {
+    final response = await _client.query('images:listForStrategy', {
+      'strategyPublicId': strategyPublicId,
+    });
+    return _decodeObjectList(response)
+        .map(RemoteImageAsset.fromJson)
+        .toList(growable: false);
+  }
+
+  Future<List<RemoteElement>> listElementsForStrategy(
+    String strategyPublicId,
+  ) async {
+    final response = await _client.query('elements:listForStrategy', {
+      'strategyPublicId': strategyPublicId,
+    });
+    return _decodeObjectList(response)
+        .map(RemoteElement.fromJson)
+        .toList(growable: false)
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+  }
+
+  Future<List<RemoteLineup>> listLineupsForStrategy(
+    String strategyPublicId,
+  ) async {
+    final response = await _client.query('lineups:listForStrategy', {
+      'strategyPublicId': strategyPublicId,
+    });
+    return _decodeObjectList(response)
+        .map(RemoteLineup.fromJson)
+        .toList(growable: false)
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+  }
+
+  Stream<List<T>> _watchList<T>({
+    required String name,
+    required Map<String, dynamic> args,
+    required T Function(Map<String, dynamic>) fromJson,
+  }) {
+    final controller = StreamController<List<T>>.broadcast();
+    dynamic subscription;
+
+    Future<void> start() async {
+      subscription = await _client.subscribe(
+        name: name,
+        args: args,
+        onUpdate: (value) {
+          try {
+            final mapped =
+                _decodeObjectList(value).map(fromJson).toList(growable: false);
+            controller.add(mapped);
+          } catch (error, stackTrace) {
+            controller.addError(error, stackTrace);
+          }
+        },
+        onError: (message, value) {
+          controller.addError(Exception('$name error: $message'));
+        },
+      );
+    }
+
+    start();
+    controller.onCancel = () {
+      try {
+        subscription?.cancel();
+      } catch (_) {}
+    };
+
+    return controller.stream;
+  }
+
+  Stream<List<RemotePage>> watchPagesForStrategy(String strategyPublicId) {
+    return _watchList(
+      name: 'pages:listForStrategy',
+      args: {'strategyPublicId': strategyPublicId},
+      fromJson: RemotePage.fromJson,
+    ).map((pages) => pages..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)));
+  }
+
+  Stream<List<RemoteImageAsset>> watchImageAssetsForStrategy(
+    String strategyPublicId,
+  ) {
+    return _watchList(
+      name: 'images:listForStrategy',
+      args: {'strategyPublicId': strategyPublicId},
+      fromJson: RemoteImageAsset.fromJson,
+    );
+  }
+
+  Stream<List<RemoteElement>> watchElementsForStrategy(
+    String strategyPublicId,
+  ) {
+    return _watchList(
+      name: 'elements:listForStrategy',
+      args: {'strategyPublicId': strategyPublicId},
+      fromJson: RemoteElement.fromJson,
+    ).map((elements) =>
+        elements..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)));
+  }
+
+  Stream<List<RemoteLineup>> watchLineupsForStrategy(
+    String strategyPublicId,
+  ) {
+    return _watchList(
+      name: 'lineups:listForStrategy',
+      args: {'strategyPublicId': strategyPublicId},
+      fromJson: RemoteLineup.fromJson,
+    ).map((lineups) =>
+        lineups..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)));
+  }
+
   Future<RemoteStrategySnapshot> fetchSnapshot(String strategyPublicId) async {
     final headerRaw = await _client.query('strategies:getHeader', {
       'strategyPublicId': strategyPublicId,
     });
     final header = RemoteStrategyHeader.fromJson(_decodeObject(headerRaw));
 
-    final pagesRaw = await _client.query('pages:listForStrategy', {
-      'strategyPublicId': strategyPublicId,
-    });
-
-    final pages = _decodeObjectList(pagesRaw)
-        .map(RemotePage.fromJson)
-        .toList(growable: false)
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-
-    final elementsByPage = <String, List<RemoteElement>>{};
-    final lineupsByPage = <String, List<RemoteLineup>>{};
-    final assetsRaw = await _client.query('images:listForStrategy', {
-      'strategyPublicId': strategyPublicId,
-    });
-    final assets = _decodeObjectList(assetsRaw)
-        .map(RemoteImageAsset.fromJson)
-        .toList(growable: false);
+    final pages = await listPagesForStrategy(strategyPublicId);
+    final assets = await listImageAssetsForStrategy(strategyPublicId);
+    final elements = await listElementsForStrategy(strategyPublicId);
+    final lineups = await listLineupsForStrategy(strategyPublicId);
     final assetsById = <String, RemoteImageAsset>{
       for (final asset in assets) asset.publicId: asset,
     };
 
-    for (final page in pages) {
-      final elementsRaw = await _client.query('elements:listForPage', {
-        'strategyPublicId': strategyPublicId,
-        'pagePublicId': page.publicId,
-      });
-      final elements = _decodeObjectList(elementsRaw)
-          .map(RemoteElement.fromJson)
-          .toList(growable: false)
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-      elementsByPage[page.publicId] = elements;
-
-      final lineupsRaw = await _client.query('lineups:listForPage', {
-        'strategyPublicId': strategyPublicId,
-        'pagePublicId': page.publicId,
-      });
-      final lineups = _decodeObjectList(lineupsRaw)
-          .map(RemoteLineup.fromJson)
-          .toList(growable: false)
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-      lineupsByPage[page.publicId] = lineups;
-    }
-
     return RemoteStrategySnapshot(
       header: header,
       pages: pages,
-      elementsByPage: elementsByPage,
-      lineupsByPage: lineupsByPage,
+      elementsByPage: RemoteStrategySnapshot.groupElementsByPage(elements),
+      lineupsByPage: RemoteStrategySnapshot.groupLineupsByPage(lineups),
       assetsById: assetsById,
     );
   }
@@ -480,6 +567,37 @@ class ConvexStrategyRepository {
         if (themeProfileId != null) 'themeProfileId': themeProfileId,
         if (themeOverridePalette != null)
           'themeOverridePalette': themeOverridePalette,
+      },
+    );
+  }
+
+  Future<void> createStrategyWithInitialPage({
+    required String publicId,
+    required String name,
+    required String mapData,
+    required String initialPagePublicId,
+    required String initialPageName,
+    required bool initialPageIsAttack,
+    String? folderPublicId,
+    String? themeProfileId,
+    String? themeOverridePalette,
+    String? initialPageSettings,
+  }) async {
+    await _client.mutation(
+      name: 'strategies:createWithInitialPage',
+      args: {
+        'publicId': publicId,
+        'name': name,
+        'mapData': mapData,
+        'initialPagePublicId': initialPagePublicId,
+        'initialPageName': initialPageName,
+        'initialPageIsAttack': initialPageIsAttack,
+        if (folderPublicId != null) 'folderPublicId': folderPublicId,
+        if (themeProfileId != null) 'themeProfileId': themeProfileId,
+        if (themeOverridePalette != null)
+          'themeOverridePalette': themeOverridePalette,
+        if (initialPageSettings != null)
+          'initialPageSettings': initialPageSettings,
       },
     );
   }
