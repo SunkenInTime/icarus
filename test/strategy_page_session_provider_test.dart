@@ -6,8 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -16,6 +18,8 @@ import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -170,6 +174,7 @@ RemoteStrategySnapshot _cloudSnapshot({
   required int sequence,
   required List<RemotePage> pages,
   Map<String, List<RemoteElement>> elementsByPage = const {},
+  Map<String, List<RemoteLineup>> lineupsByPage = const {},
 }) {
   final now = DateTime.utc(2026, 1, 1);
   return RemoteStrategySnapshot(
@@ -183,7 +188,8 @@ RemoteStrategySnapshot _cloudSnapshot({
     ),
     pages: pages,
     elementsByPage: elementsByPage,
-    lineupsByPage: const {},
+    lineupsByPage: lineupsByPage,
+    assetsById: const {},
   );
 }
 
@@ -221,6 +227,40 @@ RemoteElement _remoteText({
     pagePublicId: pageId,
     elementType: 'text',
     payload: jsonEncode(payload),
+    sortIndex: sortIndex,
+    revision: 1,
+    deleted: false,
+  );
+}
+
+RemoteLineup _remoteLineup({
+  required String strategyId,
+  required String pageId,
+  required String lineupId,
+  required String notes,
+  int sortIndex = 0,
+}) {
+  final lineup = LineUp(
+    id: lineupId,
+    agent: PlacedAgent(
+      id: '$lineupId-agent',
+      type: AgentType.jett,
+      position: const Offset(10, 20),
+    ),
+    ability: PlacedAbility(
+      id: '$lineupId-ability',
+      data: AgentData.agents[AgentType.jett]!.abilities.first,
+      position: const Offset(30, 40),
+    ),
+    youtubeLink: '',
+    images: const [],
+    notes: notes,
+  );
+  return RemoteLineup(
+    publicId: lineupId,
+    strategyPublicId: strategyId,
+    pagePublicId: pageId,
+    payload: jsonEncode(lineup.toJson()),
     sortIndex: sortIndex,
     revision: 1,
     deleted: false,
@@ -375,6 +415,537 @@ void main() {
     expect(container.read(textProvider).single.text, 'after');
   });
 
+  test('late active-page elements rehydrate after header sequence advance',
+      () async {
+    const strategyId = 'cloud-strategy';
+    final pageOne =
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);
+    final beforeSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [pageOne],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'before',
+          ),
+        ],
+      },
+    );
+    final headerFirstSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 2,
+      pages: [pageOne],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'before',
+          ),
+        ],
+      },
+    );
+    final elementsArrivedSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 2,
+      pages: [pageOne],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'after',
+          ),
+        ],
+      },
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(beforeSnapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    remoteNotifier.setSnapshot(headerFirstSnapshot);
+    await _settle();
+    expect(container.read(textProvider).single.text, 'before');
+
+    remoteNotifier.setSnapshot(elementsArrivedSnapshot);
+    await _settle();
+
+    expect(container.read(textProvider).single.text, 'after');
+    expect(queueNotifier.enqueueAllCount, 0);
+    expect(queueNotifier.flushNowCount, 0);
+  });
+
+  test('late active-page lineups rehydrate after header sequence advance',
+      () async {
+    const strategyId = 'cloud-strategy';
+    final pageOne =
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);
+    final beforeSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [pageOne],
+      lineupsByPage: {
+        'page-1': [
+          _remoteLineup(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            lineupId: 'lineup-1',
+            notes: 'before',
+          ),
+        ],
+      },
+    );
+    final headerFirstSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 2,
+      pages: [pageOne],
+      lineupsByPage: {
+        'page-1': [
+          _remoteLineup(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            lineupId: 'lineup-1',
+            notes: 'before',
+          ),
+        ],
+      },
+    );
+    final lineupsArrivedSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 2,
+      pages: [pageOne],
+      lineupsByPage: {
+        'page-1': [
+          _remoteLineup(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            lineupId: 'lineup-1',
+            notes: 'after',
+          ),
+        ],
+      },
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(beforeSnapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    remoteNotifier.setSnapshot(headerFirstSnapshot);
+    await _settle();
+    expect(container.read(lineUpProvider).lineUps.single.notes, 'before');
+
+    remoteNotifier.setSnapshot(lineupsArrivedSnapshot);
+    await _settle();
+
+    expect(container.read(lineUpProvider).lineUps.single.notes, 'after');
+    expect(queueNotifier.enqueueAllCount, 0);
+    expect(queueNotifier.flushNowCount, 0);
+  });
+
+  test('active-page elements wait for header sequence before rehydrate',
+      () async {
+    const strategyId = 'cloud-strategy';
+    final pageOne =
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);
+    final beforeSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [pageOne],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'before',
+          ),
+        ],
+      },
+    );
+    final elementsFirstSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [pageOne],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'after',
+          ),
+        ],
+      },
+    );
+    final headerArrivedSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 2,
+      pages: [pageOne],
+      elementsByPage: elementsFirstSnapshot.elementsByPage,
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(beforeSnapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    remoteNotifier.setSnapshot(elementsFirstSnapshot);
+    await _settle();
+    expect(container.read(textProvider).single.text, 'before');
+
+    remoteNotifier.setSnapshot(headerArrivedSnapshot);
+    await _settle();
+
+    expect(container.read(textProvider).single.text, 'after');
+    expect(queueNotifier.enqueueAllCount, 0);
+    expect(queueNotifier.flushNowCount, 0);
+  });
+
+  test('unchanged same-sequence section payload does not rehydrate', () async {
+    const strategyId = 'cloud-strategy';
+    final pageOne =
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);
+    final beforeSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [pageOne],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'before',
+          ),
+        ],
+      },
+    );
+    final updatedSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 2,
+      pages: [pageOne],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'after',
+          ),
+        ],
+      },
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(beforeSnapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    remoteNotifier.setSnapshot(updatedSnapshot);
+    await _settle();
+    expect(container.read(textProvider).single.text, 'after');
+
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'local-text', position: const Offset(50, 60))
+        ..text = 'local-only',
+    ]);
+    remoteNotifier.setSnapshot(updatedSnapshot);
+    await _settle();
+
+    expect(container.read(textProvider).single.text, 'local-only');
+    expect(queueNotifier.flushNowCount, 0);
+  });
+
+  test('late same-sequence section rehydrate preserves local overlay',
+      () async {
+    const strategyId = 'cloud-strategy';
+    final pageOne =
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);
+    final beforeSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [pageOne],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'remote-a',
+            sortIndex: 0,
+          ),
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-2',
+            text: 'remote-b',
+            sortIndex: 1,
+          ),
+        ],
+      },
+    );
+    final headerFirstSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 2,
+      pages: [pageOne],
+      elementsByPage: beforeSnapshot.elementsByPage,
+    );
+    final elementsArrivedSnapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 2,
+      pages: [pageOne],
+      elementsByPage: {
+        'page-1': [
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-1',
+            text: 'remote-a-server',
+            sortIndex: 0,
+          ),
+          _remoteText(
+            strategyId: strategyId,
+            pageId: 'page-1',
+            elementId: 'text-2',
+            text: 'remote-b-updated',
+            sortIndex: 1,
+          ),
+        ],
+      },
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(beforeSnapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    final localTextPayload = Map<String, dynamic>.from(
+      (PlacedText(id: 'text-1', position: const Offset(10, 20))
+            ..text = 'local-a')
+          .toJson(),
+    )..putIfAbsent('elementType', () => 'text');
+    container.read(activePageLiveSyncProvider.notifier).setStateForTest(
+          ActivePageLiveSyncState(
+            strategyPublicId: strategyId,
+            activePageId: 'page-1',
+            overlayByEntityKey: {
+              elementEntityKey('page-1', 'text-1'): ActivePageOverlayEntry(
+                entityKey: elementEntityKey('page-1', 'text-1'),
+                entityType: ActivePageOverlayEntityType.element,
+                desiredPayload: jsonEncode(localTextPayload),
+                desiredSortIndex: 0,
+                deletion: false,
+                baseRevision: 1,
+                dirtyAt: DateTime.now(),
+              ),
+            },
+          ),
+        );
+
+    remoteNotifier.setSnapshot(headerFirstSnapshot);
+    await _settle();
+    remoteNotifier.setSnapshot(elementsArrivedSnapshot);
+    await _settle();
+
+    final textsById = {
+      for (final text in container.read(textProvider)) text.id: text.text,
+    };
+    expect(textsById['text-1'], 'local-a');
+    expect(textsById['text-2'], 'remote-b-updated');
+    expect(queueNotifier.flushNowCount, 0);
+  });
+
+  test('cloud agent addition queues an add op immediately', () async {
+    const strategyId = 'cloud-strategy';
+    final snapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0),
+      ],
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(snapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    container.read(agentProvider.notifier).addAgent(
+          PlacedAgent(
+            id: 'agent-1',
+            type: AgentType.jett,
+            position: const Offset(120, 160),
+          ),
+        );
+    await _settle();
+
+    final pending = container.read(strategyOpQueueProvider).pending;
+    expect(
+      pending.any(
+        (entry) =>
+            entry.op.kind == StrategyOpKind.add &&
+            entry.op.entityType == StrategyOpEntityType.element &&
+            entry.op.entityPublicId == 'agent-1' &&
+            entry.op.pagePublicId == 'page-1',
+      ),
+      isTrue,
+    );
+  });
+
+  test('cloud map change queues a strategy patch op', () async {
+    const strategyId = 'cloud-strategy';
+    final snapshot = _cloudSnapshot(
+      strategyId: strategyId,
+      sequence: 1,
+      pages: [
+        _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0),
+      ],
+    );
+
+    final remoteNotifier = _FakeRemoteStrategySnapshotNotifier(snapshot);
+    final queueNotifier = _FakeStrategyOpQueueNotifier(strategyId);
+    final container = await _cloudContainer(
+      strategyState: const StrategyState(
+        strategyId: strategyId,
+        strategyName: 'Cloud Strategy',
+        source: StrategySource.cloud,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+      remoteNotifier: remoteNotifier,
+      queueNotifier: queueNotifier,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    container.read(mapProvider.notifier).updateMap(MapValue.bind);
+    await _settle();
+
+    final pending = container.read(strategyOpQueueProvider).pending;
+    final strategyPatch = pending
+        .map((entry) => entry.op)
+        .where(
+          (op) =>
+              op.entityType == StrategyOpEntityType.strategy &&
+              op.kind == StrategyOpKind.patch,
+        )
+        .single;
+    expect(
+      jsonDecode(strategyPatch.payload!) as Map<String, dynamic>,
+      containsPair('mapData', Maps.mapNames[MapValue.bind]),
+    );
+  });
+
   test('projected active-page merge prefers local overlay for touched entities',
       () async {
     const strategyId = 'cloud-strategy';
@@ -427,7 +998,8 @@ void main() {
     await container.read(remoteStrategySnapshotProvider.future);
 
     final localTextPayload = Map<String, dynamic>.from(
-      (PlacedText(id: 'text-1', position: const Offset(10, 20))..text = 'local-a')
+      (PlacedText(id: 'text-1', position: const Offset(10, 20))
+            ..text = 'local-a')
           .toJson(),
     )..putIfAbsent('elementType', () => 'text');
     container.read(activePageLiveSyncProvider.notifier).setStateForTest(
@@ -462,7 +1034,8 @@ void main() {
     expect(textsById['text-2'], 'remote-b-updated');
   });
 
-  test('reject refresh preserves local state and queues follow-up sync', () async {
+  test('reject refresh preserves local state and queues follow-up sync',
+      () async {
     const strategyId = 'cloud-strategy';
     final pageOne =
         _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);
@@ -777,7 +1350,8 @@ void main() {
     expect(container.read(textProvider).single.text, 'before');
   });
 
-  test('pending cloud sync does not block projected active-page rehydrate', () async {
+  test('pending cloud sync does not block projected active-page rehydrate',
+      () async {
     const strategyId = 'cloud-strategy';
     final pageOne =
         _remotePage(strategyId: strategyId, pageId: 'page-1', sortIndex: 0);

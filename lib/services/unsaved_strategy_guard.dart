@@ -113,9 +113,11 @@ Future<bool> _waitForCloudSync(
     final saveState = ref.read(strategySaveStateProvider);
     final queueState = ref.read(strategyOpQueueProvider);
     if (!saveState.hasPendingCloudSync &&
+        !saveState.hasPendingMediaSync &&
         queueState.pending.isEmpty &&
         !queueState.isFlushing &&
-        saveState.cloudSyncError == null) {
+        saveState.cloudSyncError == null &&
+        saveState.mediaSyncErrorCount == 0) {
       return true;
     }
     await Future<void>.delayed(pollInterval);
@@ -134,8 +136,9 @@ Future<bool> _guardCloudStrategyExit({
     final queueState = ref.read(strategyOpQueueProvider);
     final authState = ref.read(authProvider);
 
-    final hasPendingSync =
-        saveState.hasPendingCloudSync || queueState.pending.isNotEmpty;
+    final hasPendingSync = saveState.hasPendingCloudSync ||
+        saveState.hasPendingMediaSync ||
+        queueState.pending.isNotEmpty;
     final cloudError = saveState.cloudSyncError ?? queueState.lastError;
     if (!hasPendingSync && cloudError == null) {
       if (!context.mounted) {
@@ -159,7 +162,9 @@ Future<bool> _guardCloudStrategyExit({
     final decision = await _showCloudSyncBlockedDialog(
       context,
       message: cloudError ??
-          'Icarus is still syncing cloud edits. Stay on this screen until sync completes.',
+          (saveState.mediaSyncErrorCount > 0
+              ? 'Some media uploads failed. Retry sync or stay here until the queue clears.'
+              : 'Icarus is still syncing cloud edits and media. Stay on this screen until sync completes.'),
       showRetryAuth: authState.hasActiveAuthIncident,
     );
 

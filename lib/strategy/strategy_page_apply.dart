@@ -6,12 +6,10 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -30,8 +28,6 @@ Future<void> applyStrategyEditorPageData(
   ref.read(placedImageProvider.notifier).clearAll();
   ref.read(utilityProvider.notifier).clearAll();
   ref.read(lineUpProvider.notifier).clearAll();
-  ref.read(imageWidgetSizeProvider.notifier).clearAll();
-  ref.read(textWidgetHeightProvider.notifier).clearAll();
   if (!preserveHistory) {
     ref.read(actionProvider.notifier).clearActionHistory();
   }

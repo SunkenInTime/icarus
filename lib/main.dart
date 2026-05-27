@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/services/deep_link_registrar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -24,8 +25,10 @@ import 'package:icarus/const/second_instance_args.dart';
 import 'package:icarus/const/settings.dart' show Settings;
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -82,7 +85,13 @@ Future<void> _initializeDeepLinkHandling() async {
 }
 
 void _publishDeepLink(Uri uri, {required String source}) {
-  developer.log('Deep link received [$source]: $uri', name: 'deep_link');
+  final redactedUri = redactAuthUri(uri);
+  developer.log('Deep link received [$source]: $redactedUri',
+      name: 'deep_link');
+  AppErrorReporter.reportInfo(
+    'Deep link received [$source]: $redactedUri',
+    source: 'deep_link',
+  );
   if (!_hasDeepLinkListener) {
     _bufferedDeepLinks.add(uri);
     return;
@@ -134,6 +143,7 @@ Future<void> main(List<String> args) async {
 
       await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
       await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+      await Hive.openBox<CloudMediaUploadJob>(HiveBoxNames.mediaUploadJobsBox);
       await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
       await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
@@ -336,28 +346,39 @@ class _MyAppState extends ConsumerState<MyApp> {
     final uriText = uri.toString();
     if (!_processedDeepLinks.add(uriText)) {
       developer.log(
-        'Ignoring duplicate deep link [$source]: $uriText',
+        'Ignoring duplicate deep link [$source]: ${redactAuthUri(uri)}',
         name: 'deep_link',
       );
       return;
     }
 
-    developer.log('Handling deep link [$source]: $uriText', name: 'deep_link');
-    ref
-        .read(inAppDebugProvider.notifier)
-        .bulkAddLogs(<String>['Deep link [$source]: $uriText']);
-
-    unawaited(
-      ref
-          .read(authProvider.notifier)
-          .handleAuthCallbackUri(uri, source: source),
+    final redactedUri = redactAuthUri(uri);
+    developer.log('Handling deep link [$source]: $redactedUri',
+        name: 'deep_link');
+    AppErrorReporter.reportInfo(
+      'Handling deep link [$source]: $redactedUri',
+      source: 'deep_link',
     );
+
+    unawaited(() async {
+      final handledAuth = await ref
+          .read(authProvider.notifier)
+          .handleAuthCallbackUri(uri, source: source);
+      if (handledAuth) {
+        return;
+      }
+      await ref
+          .read(shareLinkControllerProvider.notifier)
+          .handleIncomingUri(uri, source: source);
+    }());
   }
 
   @override
   void initState() {
     super.initState();
     ref.read(authProvider);
+    ref.read(cloudMediaUploadQueueProvider);
+    ref.read(cloudMediaCacheProvider);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(warmUpWebViewEnvironment());
@@ -408,6 +429,16 @@ class _MyAppState extends ConsumerState<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(authProvider, (_, next) {
+      if (next.isAuthenticated && next.isConvexUserReady) {
+        unawaited(
+          ref
+              .read(shareLinkControllerProvider.notifier)
+              .redeemPendingIfPossible(),
+        );
+      }
+    });
+
     return ToastificationWrapper(
       config: const ToastificationConfig(
         alignment: Alignment.bottomCenter,

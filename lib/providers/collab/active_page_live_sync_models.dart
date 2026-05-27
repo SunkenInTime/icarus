@@ -4,20 +4,25 @@ typedef EntitySyncKey = String;
 
 enum ActivePageOverlayEntityType { pageSettings, element, lineup }
 
-EntitySyncKey pageSettingsEntityKey(String pageId) => 'page:$pageId:settings';
+String _encodeEntityKeyPart(String value) => Uri.encodeComponent(value);
+
+String _decodeEntityKeyPart(String value) => Uri.decodeComponent(value);
+
+EntitySyncKey pageSettingsEntityKey(String pageId) =>
+    'page:${_encodeEntityKeyPart(pageId)}:settings';
 
 EntitySyncKey elementEntityKey(String pageId, String elementId) =>
-    'element:$pageId:$elementId';
+    'element:${_encodeEntityKeyPart(pageId)}:${_encodeEntityKeyPart(elementId)}';
 
 EntitySyncKey lineupEntityKey(String pageId, String lineupId) =>
-    'lineup:$pageId:$lineupId';
+    'lineup:${_encodeEntityKeyPart(pageId)}:${_encodeEntityKeyPart(lineupId)}';
 
 String? pageIdForEntityKey(EntitySyncKey entityKey) {
   final parts = entityKey.split(':');
   if (parts.length < 2) {
     return null;
   }
-  return parts[1];
+  return _decodeEntityKeyPart(parts[1]);
 }
 
 String? entityIdForEntityKey(EntitySyncKey entityKey) {
@@ -25,7 +30,7 @@ String? entityIdForEntityKey(EntitySyncKey entityKey) {
   if (parts.length < 3) {
     return null;
   }
-  return parts[2];
+  return _decodeEntityKeyPart(parts[2]);
 }
 
 ActivePageOverlayEntityType? overlayEntityTypeForKey(EntitySyncKey entityKey) {

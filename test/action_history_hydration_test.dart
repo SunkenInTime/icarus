@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
-import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -16,7 +15,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 class _NoopStrategyProvider extends StrategyProvider {
   @override
   StrategyState build() {
-    return StrategyState(
+    return const StrategyState(
       strategyId: 'test-strategy',
       strategyName: 'Test Strategy',
       source: StrategySource.local,
@@ -56,7 +55,8 @@ void main() {
     CoordinateSystem(playAreaSize: const Size(1920, 1080));
   });
 
-  test('preserveHistory keeps text undo/redo working across hydration', () async {
+  test('preserveHistory keeps text undo/redo working across hydration',
+      () async {
     final container = _createContainer();
     final notifier = container.read(textProvider.notifier);
 
@@ -138,5 +138,23 @@ void main() {
     expect(flippedLive.lineEnd, _flipPoint(const Offset(130, 160)));
     expect(flippedDeleted.lineStart, _flipPoint(const Offset(10, 20)));
     expect(flippedDeleted.lineEnd, _flipPoint(const Offset(40, 50)));
+  });
+
+  test('switchSide mirrors text width when measurement is missing', () {
+    final container = _createContainer();
+    final text = PlacedText(
+      id: 'text-1',
+      position: const Offset(10, 20),
+      size: 100,
+      fontSize: 20,
+      sizeVersion: worldSizedMediaVersion,
+    )..text = 'One line';
+
+    container.read(textProvider.notifier).fromHive([text]);
+    container.read(mapProvider.notifier).switchSide();
+
+    final flipped = container.read(textProvider).single.position;
+
+    expect(flipped.dx, lessThan(_flipPoint(text.position).dx));
   });
 }

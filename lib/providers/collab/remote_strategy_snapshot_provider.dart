@@ -1,8 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer';
 
-import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
@@ -17,10 +15,11 @@ final remoteStrategySnapshotProvider = AsyncNotifierProvider<
 class RemoteStrategySnapshotNotifier
     extends AsyncNotifier<RemoteStrategySnapshot?> {
   String? _activeStrategyPublicId;
-  dynamic _headerSubscription;
-  dynamic _pagesSubscription;
-  final Map<String, dynamic> _elementSubscriptions = {};
-  final Map<String, dynamic> _lineupSubscriptions = {};
+  StreamSubscription<RemoteStrategyHeader>? _headerSubscription;
+  StreamSubscription<List<RemotePage>>? _pagesSubscription;
+  StreamSubscription<List<RemoteImageAsset>>? _assetsSubscription;
+  StreamSubscription<List<RemoteElement>>? _elementsSubscription;
+  StreamSubscription<List<RemoteLineup>>? _lineupsSubscription;
   Timer? _refreshDebounce;
 
   @override
@@ -33,7 +32,9 @@ class RemoteStrategySnapshotNotifier
 
   Future<void> openStrategy(String strategyPublicId) async {
     _activeStrategyPublicId = strategyPublicId;
-    ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(strategyPublicId);
+    ref
+        .read(strategyOpQueueProvider.notifier)
+        .setActiveStrategy(strategyPublicId);
     state = const AsyncLoading();
 
     await _refreshFromServer();
@@ -71,7 +72,6 @@ class RemoteStrategySnapshotNotifier
           .read(convexStrategyRepositoryProvider)
           .fetchSnapshot(strategyPublicId);
       state = AsyncData(snapshot);
-      await _syncPageSubscriptions(snapshot);
     } catch (error, stackTrace) {
       if (isConvexUnauthenticatedError(error)) {
         unawaited(
@@ -93,150 +93,109 @@ class RemoteStrategySnapshotNotifier
 
   Future<void> _startSubscriptions(String strategyPublicId) async {
     _disposeSubscriptions();
+    final repository = ref.read(convexStrategyRepositoryProvider);
 
-    _headerSubscription = await ConvexClient.instance.subscribe(
-      name: 'strategies:getHeader',
-      args: {'strategyPublicId': strategyPublicId},
-      onUpdate: (_) => _scheduleRefresh(),
-      onError: (message, _) => _handleSubscriptionError(
-        source: 'remote_snapshot:header_subscription',
-        message: message,
-      ),
-    );
-
-    _pagesSubscription = await ConvexClient.instance.subscribe(
-      name: 'pages:listForStrategy',
-      args: {'strategyPublicId': strategyPublicId},
-      onUpdate: (value) {
-        try {
-          final pageIds = _decodePageIds(value);
-          _syncPageWatchersFromIds(strategyPublicId, pageIds);
-          _scheduleRefresh();
-        } catch (error, stackTrace) {
-          log(
-            'Failed to decode pages subscription payload: $error',
-            name: 'remote_snapshot',
+    _headerSubscription = repository
+        .watchStrategyHeader(strategyPublicId)
+        .listen(
+          (header) =>
+              _replaceSnapshot((snapshot) => snapshot.replaceHeader(header)),
+          onError: (error, stackTrace) => _handleSubscriptionError(
+            source: 'remote_snapshot:header_subscription',
             error: error,
             stackTrace: stackTrace,
-          );
-          _scheduleRefresh();
-        }
-      },
-      onError: (message, _) => _handleSubscriptionError(
-        source: 'remote_snapshot:pages_subscription',
-        message: message,
-      ),
-    );
+          ),
+        );
+
+    _pagesSubscription =
+        repository.watchPagesForStrategy(strategyPublicId).listen(
+              (pages) =>
+                  _replaceSnapshot((snapshot) => snapshot.replacePages(pages)),
+              onError: (error, stackTrace) => _handleSubscriptionError(
+                source: 'remote_snapshot:pages_subscription',
+                error: error,
+                stackTrace: stackTrace,
+              ),
+            );
+
+    _assetsSubscription =
+        repository.watchImageAssetsForStrategy(strategyPublicId).listen(
+              (assets) => _replaceSnapshot(
+                (snapshot) => snapshot.replaceAssets(assets),
+              ),
+              onError: (error, stackTrace) => _handleSubscriptionError(
+                source: 'remote_snapshot:assets_subscription',
+                error: error,
+                stackTrace: stackTrace,
+              ),
+            );
+
+    _elementsSubscription =
+        repository.watchElementsForStrategy(strategyPublicId).listen(
+              (elements) => _replaceSnapshot(
+                (snapshot) => snapshot.replaceElements(elements),
+              ),
+              onError: (error, stackTrace) => _handleSubscriptionError(
+                source: 'remote_snapshot:elements_subscription',
+                error: error,
+                stackTrace: stackTrace,
+              ),
+            );
+
+    _lineupsSubscription =
+        repository.watchLineupsForStrategy(strategyPublicId).listen(
+              (lineups) => _replaceSnapshot(
+                (snapshot) => snapshot.replaceLineups(lineups),
+              ),
+              onError: (error, stackTrace) => _handleSubscriptionError(
+                source: 'remote_snapshot:lineups_subscription',
+                error: error,
+                stackTrace: stackTrace,
+              ),
+            );
   }
 
-  Set<String> _decodePageIds(dynamic value) {
-    final decoded = value is String ? jsonDecode(value) : value;
-    if (decoded is! List) {
-      throw FormatException(
-        'Expected list payload for pages subscription, got ${decoded.runtimeType}',
-      );
+  void _replaceSnapshot(
+    RemoteStrategySnapshot Function(RemoteStrategySnapshot snapshot) replace,
+  ) {
+    if (_activeStrategyPublicId == null) {
+      return;
     }
-
-    return decoded
-        .map((item) => item is String ? jsonDecode(item) : item)
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .map((item) => item['publicId'] as String?)
-        .whereType<String>()
-        .toSet();
-  }
-
-  Future<void> _syncPageSubscriptions(RemoteStrategySnapshot snapshot) async {
-    final strategyPublicId = _activeStrategyPublicId;
-    if (strategyPublicId == null) {
+    if (ref.read(authProvider).hasActiveAuthIncident) {
       return;
     }
 
-    final pageIds = snapshot.pages.map((page) => page.publicId).toSet();
-    _syncPageWatchersFromIds(strategyPublicId, pageIds);
-  }
-
-  void _syncPageWatchersFromIds(
-    String strategyPublicId,
-    Set<String> pageIds,
-  ) {
-    final existingElementPageIds = _elementSubscriptions.keys.toSet();
-    final existingLineupPageIds = _lineupSubscriptions.keys.toSet();
-
-    for (final pageId in existingElementPageIds.difference(pageIds)) {
-      _cancelSubscription(_elementSubscriptions.remove(pageId));
+    final current = state.valueOrNull;
+    if (current == null) {
+      _scheduleRefresh();
+      return;
     }
-    for (final pageId in existingLineupPageIds.difference(pageIds)) {
-      _cancelSubscription(_lineupSubscriptions.remove(pageId));
-    }
-
-    for (final pageId in pageIds) {
-      if (!_elementSubscriptions.containsKey(pageId)) {
-        _elementSubscriptions[pageId] = true;
-        ConvexClient.instance
-            .subscribe(
-          name: 'elements:listForPage',
-          args: {
-            'strategyPublicId': strategyPublicId,
-            'pagePublicId': pageId,
-          },
-          onUpdate: (_) => _scheduleRefresh(),
-          onError: (message, _) => _handleSubscriptionError(
-            source: 'remote_snapshot:elements_subscription',
-            message: message,
-          ),
-        )
-            .then((subscription) {
-          final current = _elementSubscriptions[pageId];
-          if (current == null) {
-            _cancelSubscription(subscription);
-            return;
-          }
-          _elementSubscriptions[pageId] = subscription;
-        });
-      }
-
-      if (!_lineupSubscriptions.containsKey(pageId)) {
-        _lineupSubscriptions[pageId] = true;
-        ConvexClient.instance
-            .subscribe(
-          name: 'lineups:listForPage',
-          args: {
-            'strategyPublicId': strategyPublicId,
-            'pagePublicId': pageId,
-          },
-          onUpdate: (_) => _scheduleRefresh(),
-          onError: (message, _) => _handleSubscriptionError(
-            source: 'remote_snapshot:lineups_subscription',
-            message: message,
-          ),
-        )
-            .then((subscription) {
-          final current = _lineupSubscriptions[pageId];
-          if (current == null) {
-            _cancelSubscription(subscription);
-            return;
-          }
-          _lineupSubscriptions[pageId] = subscription;
-        });
-      }
-    }
+    state = AsyncData(replace(current));
   }
 
   void _handleSubscriptionError({
     required String source,
-    required String message,
+    required Object error,
+    StackTrace? stackTrace,
   }) {
+    final message = error.toString();
     if (isConvexUnauthenticatedMessage(message)) {
       unawaited(
         ref.read(authProvider.notifier).reportConvexUnauthenticated(
               source: source,
-              error: Exception(message),
+              error: error,
+              stackTrace: stackTrace,
             ),
       );
       return;
     }
 
+    log(
+      'Remote snapshot subscription failed: $message',
+      name: 'remote_snapshot',
+      error: error,
+      stackTrace: stackTrace,
+    );
     _scheduleRefresh();
   }
 
@@ -259,28 +218,19 @@ class RemoteStrategySnapshotNotifier
     _refreshDebounce?.cancel();
     _refreshDebounce = null;
 
-    _cancelSubscription(_headerSubscription);
+    unawaited(_headerSubscription?.cancel());
     _headerSubscription = null;
 
-    _cancelSubscription(_pagesSubscription);
+    unawaited(_pagesSubscription?.cancel());
     _pagesSubscription = null;
 
-    for (final subscription in _elementSubscriptions.values) {
-      _cancelSubscription(subscription);
-    }
-    _elementSubscriptions.clear();
+    unawaited(_assetsSubscription?.cancel());
+    _assetsSubscription = null;
 
-    for (final subscription in _lineupSubscriptions.values) {
-      _cancelSubscription(subscription);
-    }
-    _lineupSubscriptions.clear();
-  }
+    unawaited(_elementsSubscription?.cancel());
+    _elementsSubscription = null;
 
-  void _cancelSubscription(dynamic subscription) {
-    try {
-      subscription?.cancel();
-    } catch (_) {
-      // Best-effort cleanup.
-    }
+    unawaited(_lineupsSubscription?.cancel());
+    _lineupsSubscription = null;
   }
 }

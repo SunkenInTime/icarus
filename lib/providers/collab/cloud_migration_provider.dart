@@ -50,11 +50,21 @@ class CloudMigrationNotifier extends Notifier<bool> {
     }
 
     for (final strategy in strategies) {
+      final pages = [...strategy.pages]
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+      final firstPage = pages.isNotEmpty ? pages.first : null;
+      final fallbackPageId = const Uuid().v4();
       try {
-        await repo.createStrategy(
+        await repo.createStrategyWithInitialPage(
           publicId: strategy.id,
           name: strategy.name,
           mapData: Maps.mapNames[strategy.mapData] ?? 'ascent',
+          initialPagePublicId: firstPage?.id ?? fallbackPageId,
+          initialPageName: firstPage?.name ?? 'Page 1',
+          initialPageIsAttack: firstPage?.isAttack ?? true,
+          initialPageSettings: firstPage == null
+              ? ref.read(strategySettingsProvider.notifier).toJson()
+              : StrategySettingsProvider.objectToJson(firstPage.settings),
           folderPublicId: strategy.folderID,
           themeProfileId: strategy.themeProfileId,
           themeOverridePalette: strategy.themeOverridePalette == null
@@ -69,13 +79,20 @@ class CloudMigrationNotifier extends Notifier<bool> {
         );
       }
 
-      final pages = [...strategy.pages]
-        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-
       final allOps = <StrategyOp>[];
       final usedElementIds = <String>{};
       final usedLineupIds = <String>{};
-      for (final page in pages) {
+      for (var i = 0; i < pages.length; i++) {
+        final page = pages[i];
+        if (i == 0) {
+          appendMigratedPageOps(
+            allOps,
+            page,
+            usedElementIds: usedElementIds,
+            usedLineupIds: usedLineupIds,
+          );
+          continue;
+        }
         try {
           await ConvexClient.instance.mutation(name: 'pages:add', args: {
             'strategyPublicId': strategy.id,

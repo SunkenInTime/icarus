@@ -163,8 +163,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         );
         continue;
       }
-      opsByPage.putIfAbsent(pageId, () => <EntitySyncKey, StrategyOp>{})[entityKey] =
-          op;
+      opsByPage.putIfAbsent(
+          pageId, () => <EntitySyncKey, StrategyOp>{})[entityKey] = op;
     }
 
     if (!mapEquals(genericQueued, state.queuedByEntityKey)) {
@@ -182,6 +182,75 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         flushImmediately: false,
       );
     }
+    _scheduleFlush(flushImmediately: flushImmediately);
+  }
+
+  void syncDesiredGenericOp({
+    required EntitySyncKey entityKey,
+    required StrategyOp? desiredOp,
+    bool flushImmediately = false,
+  }) {
+    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.queuedByEntityKey,
+    );
+    final existingQueued = queued[entityKey];
+    final inFlight = state.inFlightByEntityKey[entityKey]?.pending.op;
+
+    if (desiredOp == null) {
+      if (queued.remove(entityKey) == null) {
+        return;
+      }
+      state = state.copyWith(
+        queuedByEntityKey: queued,
+        clearError: true,
+      );
+      return;
+    }
+
+    if (inFlight != null && _sameIntent(desiredOp, inFlight)) {
+      if (queued.remove(entityKey) == null) {
+        return;
+      }
+      state = state.copyWith(
+        queuedByEntityKey: queued,
+        clearError: true,
+      );
+      return;
+    }
+
+    if (existingQueued != null &&
+        _sameIntent(existingQueued.pending.op, desiredOp)) {
+      return;
+    }
+
+    final mergedDesired = existingQueued == null
+        ? desiredOp
+        : _mergeQueuedIntent(existingQueued.pending.op, desiredOp);
+    if (mergedDesired == null) {
+      if (queued.remove(entityKey) == null) {
+        return;
+      }
+      state = state.copyWith(
+        queuedByEntityKey: queued,
+        clearError: true,
+      );
+      return;
+    }
+
+    queued[entityKey] = QueuedEntityIntent(
+      entityKey: entityKey,
+      pending: PendingOp(
+        op: mergedDesired,
+        clientId: state.clientId ?? const Uuid().v4(),
+        attempts: existingQueued?.pending.attempts ?? 0,
+        lastAttemptAt: existingQueued?.pending.lastAttemptAt,
+      ),
+    );
+
+    state = state.copyWith(
+      queuedByEntityKey: queued,
+      clearError: true,
+    );
     _scheduleFlush(flushImmediately: flushImmediately);
   }
 
@@ -223,7 +292,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         continue;
       }
 
-      if (existingQueued != null && _sameIntent(existingQueued.pending.op, desired)) {
+      if (existingQueued != null &&
+          _sameIntent(existingQueued.pending.op, desired)) {
         continue;
       }
 
@@ -307,12 +377,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 ? 'Cloud user setup is not ready.'
                 : 'Cloud connection is offline.'),
       );
-      _scheduleRetry(incremented.values.map((intent) => intent.pending).toList());
+      _scheduleRetry(
+          incremented.values.map((intent) => intent.pending).toList());
       return;
     }
 
     final batch = state.queuedByEntityKey.values
-        .where((intent) => !state.inFlightByEntityKey.containsKey(intent.entityKey))
+        .where((intent) =>
+            !state.inFlightByEntityKey.containsKey(intent.entityKey))
         .take(_maxBatchSize)
         .toList(growable: false);
     if (batch.isEmpty) {
@@ -335,7 +407,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         sentAt: sentAt,
       );
       batchByOpId[intent.pending.op.opId] = intent;
-      _debugLog('inflight.send ${intent.entityKey} op=${intent.pending.op.opId}');
+      _debugLog(
+          'inflight.send ${intent.entityKey} op=${intent.pending.op.opId}');
     }
 
     state = state.copyWith(
@@ -500,7 +573,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       return null;
     }
 
-    if (existing.kind == StrategyOpKind.add && desired.kind == StrategyOpKind.patch) {
+    if (existing.kind == StrategyOpKind.add &&
+        desired.kind == StrategyOpKind.patch) {
       return StrategyOp(
         opId: existing.opId,
         kind: StrategyOpKind.add,

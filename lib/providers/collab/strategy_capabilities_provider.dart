@@ -67,15 +67,16 @@ class StrategyCapabilities {
       canRenamePage: canEdit,
       canDeletePage: canEdit,
       canReorderPages: canEdit,
-      canCreateFolder: true,
-      canEditFolder: true,
-      canDeleteFolder: true,
-      canMoveFolder: true,
+      canCreateFolder: isOwner,
+      canEditFolder: isOwner,
+      canDeleteFolder: isOwner,
+      canMoveFolder: isOwner,
     );
   }
 }
 
-final currentStrategyCapabilitiesProvider = Provider<StrategyCapabilities>((ref) {
+final currentStrategyCapabilitiesProvider =
+    Provider<StrategyCapabilities>((ref) {
   final strategySource =
       ref.watch(strategyProvider.select((value) => value.source));
   if (strategySource != StrategySource.cloud ||
@@ -86,4 +87,3 @@ final currentStrategyCapabilitiesProvider = Provider<StrategyCapabilities>((ref)
       ref.watch(remoteStrategySnapshotProvider).valueOrNull?.header.role;
   return StrategyCapabilities.fromCloudRole(role);
 });
-

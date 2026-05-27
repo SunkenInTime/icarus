@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
-import 'package:icarus/providers/text_widget_height_provider.dart';
 
 class TextWidget extends ConsumerWidget {
   const TextWidget({
@@ -45,9 +45,12 @@ class TextWidget extends ConsumerWidget {
 }
 
 const _textFieldDecoration = InputDecoration(
-  hintText: "Write here...",
+  hintText: PlacedTextDimensions.emptyTextPlaceholder,
   hintStyle: TextStyle(color: Colors.grey),
+  hintMaxLines: 1,
   border: InputBorder.none,
+  isCollapsed: true,
+  contentPadding: EdgeInsets.zero,
 );
 
 class _EditableTextWidget extends ConsumerStatefulWidget {
@@ -86,10 +89,6 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
       textDraftProvider,
       (_, __) => _syncControllerWithExternalState(),
     );
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _updateMeasuredSize();
-    });
   }
 
   @override
@@ -145,43 +144,30 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
     );
   }
 
-  void _updateMeasuredSize() {
-    if (!mounted) return;
-
-    final renderObject = context.findRenderObject();
-    if (renderObject is! RenderBox) return;
-
-    final offset = Offset(renderObject.size.width, renderObject.size.height);
-    ref.read(textWidgetHeightProvider.notifier).updateHeight(widget.id, offset);
-  }
-
   @override
   Widget build(BuildContext context) {
+    final metrics = PlacedTextDimensions.screenSize(
+      coordinateSystem: CoordinateSystem.instance,
+      widthWorld: widget.size,
+      fontSizeWorld: widget.fontSize,
+      text: _controller.text,
+    );
     return Shortcuts(
       shortcuts: ShortcutInfo.textEditingOverrides,
-      child: NotificationListener<SizeChangedLayoutNotification>(
-        onNotification: (notification) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _updateMeasuredSize();
-          });
-          return true;
-        },
-        child: SizeChangedLayoutNotifier(
-          child: _TextBoxFrame(
-            size: widget.size,
-            tagColorValue: widget.tagColorValue,
-            child: _SharedTextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              fontSize: widget.fontSize,
-              onChanged: (value) {
-                _draftNotifier.setDraft(widget.id, value);
-              },
-              onTapOutside: (_) {
-                _focusNode.unfocus();
-              },
-            ),
-          ),
+      child: _TextBoxFrame(
+        metrics: metrics,
+        tagColorValue: widget.tagColorValue,
+        child: _SharedTextField(
+          controller: _controller,
+          focusNode: _focusNode,
+          fontSize: widget.fontSize,
+          onChanged: (value) {
+            _draftNotifier.setDraft(widget.id, value);
+            setState(() {});
+          },
+          onTapOutside: (_) {
+            _focusNode.unfocus();
+          },
         ),
       ),
     );
@@ -232,8 +218,14 @@ class _FeedbackTextWidgetState extends State<_FeedbackTextWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final metrics = PlacedTextDimensions.screenSize(
+      coordinateSystem: CoordinateSystem.instance,
+      widthWorld: widget.size,
+      fontSizeWorld: widget.fontSize,
+      text: _controller.text,
+    );
     return _TextBoxFrame(
-      size: widget.size,
+      metrics: metrics,
       tagColorValue: widget.tagColorValue,
       child: IgnorePointer(
         child: _SharedTextField(
@@ -272,69 +264,77 @@ class _SharedTextField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final coordinateSystem = CoordinateSystem.instance;
-    return TextField(
-      focusNode: focusNode,
-      controller: controller,
-      readOnly: readOnly,
-      enableInteractiveSelection: enableInteractiveSelection,
-      showCursor: showCursor,
-      style: TextStyle(
-        fontSize: coordinateSystem.worldHeightToScreen(fontSize),
+    return MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
+      child: TextField(
+        focusNode: focusNode,
+        controller: controller,
+        readOnly: readOnly,
+        enableInteractiveSelection: enableInteractiveSelection,
+        showCursor: showCursor,
+        style: PlacedTextDimensions.textStyle(
+          coordinateSystem: coordinateSystem,
+          fontSizeWorld: fontSize,
+        ),
+        decoration: _textFieldDecoration,
+        maxLines: null,
+        minLines: 1,
+        expands: false,
+        scrollPhysics: const NeverScrollableScrollPhysics(),
+        scrollPadding: EdgeInsets.zero,
+        textAlignVertical: TextAlignVertical.top,
+        keyboardType: TextInputType.multiline,
+        onChanged: onChanged,
+        onTapOutside: onTapOutside,
       ),
-      decoration: _textFieldDecoration,
-      maxLines: null,
-      minLines: null,
-      expands: true,
-      onChanged: onChanged,
-      onTapOutside: onTapOutside,
     );
   }
 }
 
 class _TextBoxFrame extends StatelessWidget {
   const _TextBoxFrame({
-    required this.size,
+    required this.metrics,
     required this.child,
     this.tagColorValue,
   });
 
-  final double size;
+  final Size metrics;
   final Widget child;
   final int? tagColorValue;
 
   @override
   Widget build(BuildContext context) {
-    final coordinateSystem = CoordinateSystem.instance;
     return SizedBox(
-      width: coordinateSystem.worldWidthToScreen(size),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.all(Radius.circular(2)),
-              child: Container(
-                width: 6,
-                color: Color(tagColorValue ?? 0xFFC5C5C5),
+      width: metrics.width,
+      height: metrics.height,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.all(Radius.circular(2)),
+            child: Container(
+              width: 6,
+              color: Color(tagColorValue ?? 0xFFC5C5C5),
+            ),
+          ),
+          const SizedBox(width: 2),
+          Expanded(
+            child: Card(
+              shape: const RoundedRectangleBorder(
+                borderRadius: BorderRadius.all(Radius.circular(3)),
+              ),
+              margin: const EdgeInsets.all(0),
+              color: Colors.black,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: PlacedTextDimensions.cardHorizontalPadding,
+                  vertical: PlacedTextDimensions.cardVerticalPadding,
+                ),
+                child: child,
               ),
             ),
-            const SizedBox(width: 2),
-            Expanded(
-              child: Card(
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(3)),
-                ),
-                margin: const EdgeInsets.all(0),
-                color: Colors.black,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                  ),
-                  child: child,
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

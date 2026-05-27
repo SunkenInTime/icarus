@@ -208,7 +208,8 @@ class FolderProvider extends Notifier<String?> {
       }
     }
 
-    await Hive.box<Folder>(HiveBoxNames.foldersBox).put(newFolder.id, newFolder);
+    await Hive.box<Folder>(HiveBoxNames.foldersBox)
+        .put(newFolder.id, newFolder);
     return newFolder;
   }
 
@@ -342,7 +343,8 @@ class FolderProvider extends Notifier<String?> {
             'customColorValue': newCustomColor.toARGB32(),
           if (newCustomColor == null) 'clearCustomColorValue': true,
         };
-        await ConvexClient.instance.mutation(name: 'folders:update', args: args);
+        await ConvexClient.instance
+            .mutation(name: 'folders:update', args: args);
         ref.invalidate(cloudFoldersProvider);
         ref.invalidate(cloudAllFoldersProvider);
       } catch (error, stackTrace) {
@@ -398,12 +400,16 @@ class FolderProvider extends Notifier<String?> {
     return switch (workspace) {
       LibraryWorkspace.local => _localCurrentFolderId,
       LibraryWorkspace.cloud => _cloudCurrentFolderId,
+      LibraryWorkspace.community => null,
     };
   }
 
   void _setFolderIdForWorkspace(LibraryWorkspace workspace, String? id) {
     if (workspace == LibraryWorkspace.local) {
       _localCurrentFolderId = id;
+      return;
+    }
+    if (workspace == LibraryWorkspace.community) {
       return;
     }
     _cloudCurrentFolderId = id;

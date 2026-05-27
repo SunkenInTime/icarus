@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -9,6 +10,8 @@ class StrategySaveState {
     required this.isSaving,
     required this.hasPendingCloudSync,
     required this.cloudSyncError,
+    required this.hasPendingMediaSync,
+    required this.mediaSyncErrorCount,
     required this.lastPersistedAt,
   });
 
@@ -16,16 +19,25 @@ class StrategySaveState {
   final bool isSaving;
   final bool hasPendingCloudSync;
   final String? cloudSyncError;
+  final bool hasPendingMediaSync;
+  final int mediaSyncErrorCount;
   final DateTime? lastPersistedAt;
 
   bool get canLeaveSafely =>
-      !isDirty && !isSaving && !hasPendingCloudSync && cloudSyncError == null;
+      !isDirty &&
+      !isSaving &&
+      !hasPendingCloudSync &&
+      !hasPendingMediaSync &&
+      cloudSyncError == null &&
+      mediaSyncErrorCount == 0;
 
   StrategySaveState copyWith({
     bool? isDirty,
     bool? isSaving,
     bool? hasPendingCloudSync,
     String? cloudSyncError,
+    bool? hasPendingMediaSync,
+    int? mediaSyncErrorCount,
     bool clearCloudSyncError = false,
     DateTime? lastPersistedAt,
   }) {
@@ -35,6 +47,8 @@ class StrategySaveState {
       hasPendingCloudSync: hasPendingCloudSync ?? this.hasPendingCloudSync,
       cloudSyncError:
           clearCloudSyncError ? null : (cloudSyncError ?? this.cloudSyncError),
+      hasPendingMediaSync: hasPendingMediaSync ?? this.hasPendingMediaSync,
+      mediaSyncErrorCount: mediaSyncErrorCount ?? this.mediaSyncErrorCount,
       lastPersistedAt: lastPersistedAt ?? this.lastPersistedAt,
     );
   }
@@ -71,11 +85,41 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
       }
     });
 
+    ref.listen<CloudMediaUploadQueueState>(cloudMediaUploadQueueProvider, (
+      previous,
+      next,
+    ) {
+      final source = ref.read(strategyProvider).source;
+      if (source != StrategySource.cloud) {
+        return;
+      }
+
+      final failedJobs = next.jobs.where((job) => job.isFailed).length;
+      final hasPendingMedia = next.jobs.isNotEmpty;
+      final hasPendingCloudSync = state.hasPendingCloudSync || hasPendingMedia;
+      state = state.copyWith(
+        hasPendingMediaSync: hasPendingMedia,
+        mediaSyncErrorCount: failedJobs,
+        isDirty: hasPendingCloudSync ? true : state.isDirty,
+      );
+
+      if (!hasPendingCloudSync &&
+          state.cloudSyncError == null &&
+          failedJobs == 0) {
+        state = state.copyWith(
+          isDirty: false,
+          lastPersistedAt: DateTime.now(),
+        );
+      }
+    });
+
     return const StrategySaveState(
       isDirty: false,
       isSaving: false,
       hasPendingCloudSync: false,
       cloudSyncError: null,
+      hasPendingMediaSync: false,
+      mediaSyncErrorCount: 0,
       lastPersistedAt: null,
     );
   }
@@ -86,6 +130,8 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
       isSaving: false,
       hasPendingCloudSync: false,
       cloudSyncError: null,
+      hasPendingMediaSync: false,
+      mediaSyncErrorCount: 0,
       lastPersistedAt: null,
     );
   }
@@ -117,6 +163,8 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
       isDirty: false,
       isSaving: false,
       hasPendingCloudSync: false,
+      hasPendingMediaSync: false,
+      mediaSyncErrorCount: 0,
       clearCloudSyncError: true,
       lastPersistedAt: DateTime.now(),
     );

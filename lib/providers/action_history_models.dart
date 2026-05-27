@@ -5,20 +5,17 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
 
 class ActionHistoryTransformContext {
   final double agentSize;
   final double abilitySize;
   final double mapScale;
-  final Map<String, Offset> imageSizes;
-  final Map<String, Offset> textHeights;
 
   const ActionHistoryTransformContext({
     required this.agentSize,
     required this.abilitySize,
     required this.mapScale,
-    required this.imageSizes,
-    required this.textHeights,
   });
 }
 
@@ -51,8 +48,7 @@ class ActionObjectState {
         agent: clonePlacedAgentNode(value),
       );
 
-  factory ActionObjectState.ability(PlacedAbility value) =>
-      ActionObjectState._(
+  factory ActionObjectState.ability(PlacedAbility value) => ActionObjectState._(
         id: value.id,
         kind: ActionObjectKind.ability,
         ability: clonePlacedAbility(value),
@@ -116,14 +112,8 @@ class ActionObjectState {
       ActionObjectKind.drawing => ActionObjectState.drawing(
           switchDrawingElementSides(cloneDrawingElement(drawing!)),
         ),
-      ActionObjectKind.text => ActionObjectState.text(
-          clonePlacedText(text!)
-            ..switchSides(context.textHeights[text!.id] ?? Offset.zero),
-        ),
-      ActionObjectKind.image => ActionObjectState.image(
-          clonePlacedImage(image!)
-            ..switchSides(context.imageSizes[image!.id] ?? Offset.zero),
-        ),
+      ActionObjectKind.text => _switchTextSides(),
+      ActionObjectKind.image => _switchImageSides(),
       ActionObjectKind.utility => ActionObjectState.utility(
           clonePlacedUtility(utility!)
             ..switchSides(
@@ -142,6 +132,33 @@ class ActionObjectState {
         ),
     };
   }
+
+  ActionObjectState _switchTextSides() {
+    final value = clonePlacedText(text!);
+    final size = PlacedTextDimensions.screenSize(
+      coordinateSystem: CoordinateSystem.instance,
+      widthWorld: value.size,
+      fontSizeWorld: value.fontSize,
+      text: value.text,
+    );
+
+    return ActionObjectState.text(
+      value..switchSides(Offset(size.width, size.height)),
+    );
+  }
+
+  ActionObjectState _switchImageSides() {
+    final value = clonePlacedImage(image!);
+    final size = PlacedImageDimensions.screenSize(
+      coordinateSystem: CoordinateSystem.instance,
+      scale: value.scale,
+      aspectRatio: value.aspectRatio,
+    );
+
+    return ActionObjectState.image(
+      value..switchSides(Offset(size.width, size.height)),
+    );
+  }
 }
 
 enum ActionObjectKind {
@@ -157,18 +174,10 @@ enum ActionObjectKind {
 class ObjectHistoryDelta {
   final ActionObjectState? before;
   final ActionObjectState? after;
-  final Map<String, Offset> beforeImageSizes;
-  final Map<String, Offset> afterImageSizes;
-  final Map<String, Offset> beforeTextHeights;
-  final Map<String, Offset> afterTextHeights;
 
   const ObjectHistoryDelta({
     this.before,
     this.after,
-    this.beforeImageSizes = const {},
-    this.afterImageSizes = const {},
-    this.beforeTextHeights = const {},
-    this.afterTextHeights = const {},
   });
 
   String get id => after?.id ?? before!.id;
@@ -177,10 +186,6 @@ class ObjectHistoryDelta {
     return ObjectHistoryDelta(
       before: before?.clone(),
       after: after?.clone(),
-      beforeImageSizes: Map<String, Offset>.from(beforeImageSizes),
-      afterImageSizes: Map<String, Offset>.from(afterImageSizes),
-      beforeTextHeights: Map<String, Offset>.from(beforeTextHeights),
-      afterTextHeights: Map<String, Offset>.from(afterTextHeights),
     );
   }
 
@@ -188,10 +193,6 @@ class ObjectHistoryDelta {
     return ObjectHistoryDelta(
       before: before?.switchSides(context),
       after: after?.switchSides(context),
-      beforeImageSizes: Map<String, Offset>.from(beforeImageSizes),
-      afterImageSizes: Map<String, Offset>.from(afterImageSizes),
-      beforeTextHeights: Map<String, Offset>.from(beforeTextHeights),
-      afterTextHeights: Map<String, Offset>.from(afterTextHeights),
     );
   }
 }

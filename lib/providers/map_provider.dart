@@ -9,8 +9,8 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 
 final mapProvider = NotifierProvider<MapProvider, MapState>(MapProvider.new);
 
@@ -54,7 +54,6 @@ class MapProvider extends Notifier<MapState> {
 
   void updateMap(MapValue map) {
     state = state.copyWith(currentMap: map);
-    ref.read(strategyProvider.notifier).setUnsaved();
   }
 
   void fromHive(MapValue map, bool isAttack) {
@@ -74,6 +73,8 @@ class MapProvider extends Notifier<MapState> {
   }
 
   void switchSide() {
+    ref.read(textDraftProvider.notifier).commitAllDrafts();
+
     // Flip all placed agents to mirror positions before toggling the side
     ref.read(agentProvider.notifier).switchSides();
     ref.read(abilityProvider.notifier).switchSides();
@@ -84,12 +85,10 @@ class MapProvider extends Notifier<MapState> {
     ref.read(placedImageProvider.notifier).switchSides();
     ref.read(actionProvider.notifier).switchSides();
     state = state.copyWith(isAttack: !state.isAttack);
-    ref.read(strategyProvider.notifier).setUnsaved();
   }
 
   void setAttack(bool isAttack) {
     state = state.copyWith(isAttack: isAttack);
-    ref.read(strategyProvider.notifier).setUnsaved();
   }
 
   String toJson() {
@@ -105,5 +104,3 @@ class MapProvider extends Notifier<MapState> {
     return mapValue;
   }
 }
-
-

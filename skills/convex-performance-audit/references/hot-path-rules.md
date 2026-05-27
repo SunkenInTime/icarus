@@ -121,13 +121,15 @@ Indexes like `by_foo` and `by_foo_and_bar` are usually redundant. You only need 
 // Bad: two indexes where one would do
 defineTable({ team: v.id("teams"), user: v.id("users") })
   .index("by_team", ["team"])
-  .index("by_team_and_user", ["team", "user"])
+  .index("by_team_and_user", ["team", "user"]);
 ```
 
 ```ts
 // Good: single compound index serves both query patterns
-defineTable({ team: v.id("teams"), user: v.id("users") })
-  .index("by_team_and_user", ["team", "user"])
+defineTable({ team: v.id("teams"), user: v.id("users") }).index(
+  "by_team_and_user",
+  ["team", "user"],
+);
 ```
 
 Exception: `.index("by_foo", ["foo"])` is really an index on `foo` + `_creationTime`, while `.index("by_foo_and_bar", ["foo", "bar"])` is on `foo` + `bar` + `_creationTime`. If you need results sorted by `foo` then `_creationTime`, you need the single-field index because the compound one would sort by `bar` first.
@@ -170,9 +172,7 @@ const ownerName = project.ownerName ?? "Unknown owner";
 ```ts
 // Good: denormalized data is an optimization, not the only source of truth
 const ownerName =
-  project.ownerName ??
-  (await ctx.db.get(project.ownerId))?.name ??
-  null;
+  project.ownerName ?? (await ctx.db.get(project.ownerId))?.name ?? null;
 ```
 
 Bad lookup map pattern:
@@ -241,35 +241,33 @@ const projects = await ctx.db
   .take(20);
 ```
 
-## 4. Skip No-Op Writes
+## 4. Isolate Frequently-Updated Fields
 
-No-op writes still cost work in Convex:
+Convex already no-ops unchanged writes. The invalidation problem here is real writes hitting documents that many queries subscribe to.
 
-- invalidation
-- replication
-- trigger execution
-- downstream sync
+Move high-churn fields like `lastSeen`, counters, presence, or ephemeral status off widely-read documents when most readers do not need them.
 
-Before `patch` or `replace`, compare against the existing document and skip the write if nothing changed.
-
-Apply this across sibling writers too. One careful writer does not help much if three other mutations still patch unconditionally.
+Apply this across sibling writers too. Splitting one write path does not help much if three other mutations still update the same widely-read document.
 
 ```ts
-// Bad: patching unchanged values still triggers invalidation and downstream work
-await ctx.db.patch(settings._id, {
-  theme: args.theme,
-  locale: args.locale,
+// Bad: every presence heartbeat invalidates subscribers to the whole profile
+await ctx.db.patch(user._id, {
+  name: args.name,
+  avatarUrl: args.avatarUrl,
+  lastSeen: Date.now(),
 });
 ```
 
 ```ts
-// Good: only write when something actually changed
-if (settings.theme !== args.theme || settings.locale !== args.locale) {
-  await ctx.db.patch(settings._id, {
-    theme: args.theme,
-    locale: args.locale,
-  });
-}
+// Good: keep profile reads stable, move heartbeat updates to a separate document
+await ctx.db.patch(user._id, {
+  name: args.name,
+  avatarUrl: args.avatarUrl,
+});
+
+await ctx.db.patch(presence._id, {
+  lastSeen: Date.now(),
+});
 ```
 
 ## 5. Match Consistency To Read Patterns

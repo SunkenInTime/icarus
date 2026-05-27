@@ -1,6 +1,6 @@
 ---
 name: convex-migration-helper
-description: Plans and executes safe Convex schema and data migrations using the widen-migrate-narrow workflow and the @convex-dev/migrations component. Use this skill when a deployment fails schema validation, existing documents need backfilling, fields need adding or removing or changing type, tables need splitting or merging, or a zero-downtime migration strategy is needed. Also use when the user mentions breaking schema changes, multi-deploy rollouts, or data transformations on existing Convex tables.
+description: Plans Convex schema and data migrations with widen-migrate-narrow and @convex-dev/migrations. Use for breaking schema changes, backfills, table reshaping, or zero-downtime rollouts.
 ---
 
 # Convex Migration Helper
@@ -55,13 +55,13 @@ Unless you are certain, prefer deprecating fields over deleting them. Mark the f
 // Before
 users: defineTable({
   name: v.string(),
-})
+});
 
 // After - safe, new field is optional
 users: defineTable({
   name: v.string(),
   bio: v.optional(v.string()),
-})
+});
 ```
 
 ### Adding New Table
@@ -70,7 +70,7 @@ users: defineTable({
 posts: defineTable({
   userId: v.id("users"),
   title: v.string(),
-}).index("by_user", ["userId"])
+}).index("by_user", ["userId"]);
 ```
 
 ### Adding Index
@@ -79,8 +79,7 @@ posts: defineTable({
 users: defineTable({
   name: v.string(),
   email: v.string(),
-})
-  .index("by_email", ["email"])
+}).index("by_email", ["email"]);
 ```
 
 ## Breaking Changes: The Deployment Workflow

@@ -12,6 +12,7 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/dialogs/upload_image_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -220,6 +221,7 @@ class ToolGrid extends ConsumerWidget {
                     final aspectRatio = await ref
                         .read(placedImageProvider.notifier)
                         .getImageAspectRatio(imageBytes);
+                    final strategyState = ref.read(strategyProvider);
                     final placementCenter = ref.read(placementCenterProvider);
                     final imageHeight = _defaultImageSpawnWidth / aspectRatio;
                     final centeredTopLeft =
@@ -231,6 +233,8 @@ class ToolGrid extends ConsumerWidget {
 
                     ref.read(placedImageProvider.notifier).addImage(
                           imageBytes: imageBytes,
+                          strategyId: strategyState.strategyId,
+                          strategySource: strategyState.source,
                           fileExtension: fileExtension,
                           aspectRatio: aspectRatio,
                           position: centeredTopLeft,

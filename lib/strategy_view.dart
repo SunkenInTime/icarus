@@ -7,6 +7,7 @@ import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/library_rail_hover_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
@@ -69,10 +70,11 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             .read(agentFilterProvider.notifier)
             .updateFilterState(FilterState.all);
         ref.read(deleteMenuProvider.notifier).requestClose();
-        await ref.read(strategyProvider.notifier).clearCurrentStrategy();
         if (mounted) {
+          ref.read(suppressLibraryRailHoverProvider.notifier).state = true;
           Navigator.pop(context);
         }
+        await ref.read(strategyProvider.notifier).clearCurrentStrategy();
       },
     );
   }

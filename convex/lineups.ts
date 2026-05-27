@@ -37,3 +37,40 @@ export const listForPage = query({
       }));
   },
 });
+
+export const listForStrategy = query({
+  args: {
+    strategyPublicId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
+    await assertStrategyRole(ctx, strategy, "viewer");
+
+    const pages = await ctx.db
+      .query("pages")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+      .collect();
+    const pagePublicIds = new Map(
+      pages.map((page) => [page._id, page.publicId]),
+    );
+
+    const lineups = await ctx.db
+      .query("lineups")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+      .collect();
+
+    return lineups
+      .sort((a, b) => a.sortIndex - b.sortIndex)
+      .map((lineup) => ({
+        publicId: lineup.publicId,
+        strategyPublicId: strategy.publicId,
+        pagePublicId: pagePublicIds.get(lineup.pageId) ?? "",
+        payload: lineup.payload,
+        sortIndex: lineup.sortIndex,
+        revision: lineup.revision,
+        deleted: lineup.deleted,
+        createdAt: lineup.createdAt,
+        updatedAt: lineup.updatedAt,
+      }));
+  },
+});

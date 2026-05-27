@@ -12,6 +12,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
@@ -24,6 +25,7 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:uuid/uuid.dart';
 
 abstract class StrategyPageSource {
   Future<List<String>> listPageIds();
@@ -168,13 +170,16 @@ class CloudStrategyPageSource implements StrategyPageSource {
       orElse: () => pages.first,
     );
 
-    final projected = ref.read(activePageLiveSyncProvider.notifier).projectPageState(
-          strategyPublicId: strategyId,
-          pageId: page.publicId,
-        );
+    final projected =
+        ref.read(activePageLiveSyncProvider.notifier).projectPageState(
+              strategyPublicId: strategyId,
+              pageId: page.publicId,
+            );
     if (projected != null &&
         (page.publicId == activePageId() ||
-            ref.read(activePageLiveSyncProvider.notifier).hasOverlayForPage(page.publicId))) {
+            ref
+                .read(activePageLiveSyncProvider.notifier)
+                .hasOverlayForPage(page.publicId))) {
       return _hydrateProjectedPage(snapshot, page, projected);
     }
 
@@ -211,7 +216,17 @@ class CloudStrategyPageSource implements StrategyPageSource {
             texts.add(PlacedText.fromJson(payload));
             break;
           case 'image':
-            images.add(PlacedImage.fromJson(payload));
+            final hydrated = PlacedImage.fromJson(payload);
+            final remoteAsset = snapshot.assetsById[hydrated.id];
+            hydrated.link = remoteAsset?.url ?? '';
+            images.add(hydrated);
+            if (remoteAsset != null) {
+              ref.read(cloudMediaCacheProvider.notifier).ensureAssetCached(
+                    strategyId: strategyId,
+                    strategyPublicId: strategyId,
+                    asset: remoteAsset,
+                  );
+            }
             break;
           case 'utility':
             utilities.add(PlacedUtility.fromJson(payload));
@@ -232,7 +247,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
         if (decoded is Map<String, dynamic>) {
           parsedLineups.add(LineUp.fromJson(decoded));
         } else if (decoded is Map) {
-          parsedLineups.add(LineUp.fromJson(Map<String, dynamic>.from(decoded)));
+          parsedLineups
+              .add(LineUp.fromJson(Map<String, dynamic>.from(decoded)));
         }
       } catch (_) {
         // Ignore malformed payloads during hydration.
@@ -247,8 +263,9 @@ class CloudStrategyPageSource implements StrategyPageSource {
     StrategySettings pageSettings = StrategySettings();
     if (page.settings != null && page.settings!.isNotEmpty) {
       try {
-        pageSettings =
-            ref.read(strategySettingsProvider.notifier).fromJson(page.settings!);
+        pageSettings = ref
+            .read(strategySettingsProvider.notifier)
+            .fromJson(page.settings!);
       } catch (_) {
         pageSettings = StrategySettings();
       }
@@ -277,6 +294,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
       return;
     }
 
+    _syncStrategyMetadata();
+
     final desiredOpsByEntityKey =
         ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
               strategyPublicId: strategyId,
@@ -285,6 +304,63 @@ class CloudStrategyPageSource implements StrategyPageSource {
     ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
           pageId: pageId,
           desiredOpsByEntityKey: desiredOpsByEntityKey,
+          flushImmediately: false,
+        );
+  }
+
+  void _syncStrategyMetadata() {
+    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+    if (snapshot == null) {
+      return;
+    }
+
+    final currentMapData = Maps.mapNames[ref.read(mapProvider).currentMap];
+    if (currentMapData == null) {
+      return;
+    }
+
+    final strategyTheme = ref.read(strategyThemeProvider);
+    final desiredThemeOverride = strategyTheme.overridePalette == null
+        ? null
+        : jsonEncode(strategyTheme.overridePalette!.toJson());
+    final header = snapshot.header;
+
+    final mapMatches = header.mapData == currentMapData;
+    final themeProfileMatches =
+        header.themeProfileId == strategyTheme.profileId;
+    final themeOverrideMatches =
+        header.themeOverridePalette == desiredThemeOverride;
+
+    if (mapMatches && themeProfileMatches && themeOverrideMatches) {
+      ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
+            entityKey: 'strategy',
+            desiredOp: null,
+            flushImmediately: false,
+          );
+      return;
+    }
+
+    final payload = <String, dynamic>{
+      'mapData': currentMapData,
+      if (strategyTheme.profileId != null)
+        'themeProfileId': strategyTheme.profileId
+      else
+        'clearThemeProfileId': true,
+      if (desiredThemeOverride != null)
+        'themeOverridePalette': desiredThemeOverride
+      else
+        'clearThemeOverridePalette': true,
+    };
+
+    ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
+          entityKey: 'strategy',
+          desiredOp: StrategyOp(
+            opId: const Uuid().v4(),
+            kind: StrategyOpKind.patch,
+            entityType: StrategyOpEntityType.strategy,
+            payload: jsonEncode(payload),
+            expectedSequence: header.sequence,
+          ),
           flushImmediately: false,
         );
   }
@@ -321,7 +397,17 @@ class CloudStrategyPageSource implements StrategyPageSource {
             texts.add(PlacedText.fromJson(payload));
             break;
           case 'image':
-            images.add(PlacedImage.fromJson(payload));
+            final hydrated = PlacedImage.fromJson(payload);
+            final remoteAsset = snapshot.assetsById[hydrated.id];
+            hydrated.link = remoteAsset?.url ?? '';
+            images.add(hydrated);
+            if (remoteAsset != null) {
+              ref.read(cloudMediaCacheProvider.notifier).ensureAssetCached(
+                    strategyId: strategyId,
+                    strategyPublicId: strategyId,
+                    asset: remoteAsset,
+                  );
+            }
             break;
           case 'utility':
             utilities.add(PlacedUtility.fromJson(payload));
@@ -339,7 +425,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
         if (decoded is Map<String, dynamic>) {
           parsedLineups.add(LineUp.fromJson(decoded));
         } else if (decoded is Map) {
-          parsedLineups.add(LineUp.fromJson(Map<String, dynamic>.from(decoded)));
+          parsedLineups
+              .add(LineUp.fromJson(Map<String, dynamic>.from(decoded)));
         }
       } catch (_) {
         // Ignore malformed payloads during hydration.
@@ -394,5 +481,4 @@ class CloudStrategyPageSource implements StrategyPageSource {
     }
     return <String, dynamic>{};
   }
-
 }

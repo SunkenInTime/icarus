@@ -1,19 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
+import 'dart:async' show Completer;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
-import 'package:icarus/providers/image_widget_size_provider.dart';
+import 'package:icarus/const/placed_media_dimensions.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:image/image.dart' as img;
-import 'dart:ui' as ui;
-import 'dart:async' show Completer;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -131,15 +132,20 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
   Future<void> addImage(
       {required Uint8List imageBytes,
+      required String? strategyId,
+      required StrategySource? strategySource,
       required String fileExtension,
       Offset? position,
       double? aspectRatio,
       int? tagColorValue}) async {
     final imageID = const Uuid().v4();
 
-    await ref
-        .read(placedImageProvider.notifier)
-        .saveSecureImage(imageBytes, imageID, fileExtension);
+    await saveSecureImage(
+      imageBytes,
+      imageID,
+      fileExtension,
+      strategyId: strategyId,
+    );
 
     final effectiveAspectRatio =
         aspectRatio ?? await getImageAspectRatio(imageBytes);
@@ -159,14 +165,24 @@ class PlacedImageProvider extends Notifier<ImageState> {
       group: ActionGroup.image,
       objectDelta: ObjectHistoryDelta(
         after: ActionObjectState.image(placedImage),
-        afterImageSizes:
-            ref.read(imageWidgetSizeProvider.notifier).takeSnapshotForIds([imageID]),
       ),
     );
 
     ref.read(actionProvider.notifier).addAction(action);
 
     state = state.copyWith(images: [...state.images, placedImage]);
+
+    if (strategySource == StrategySource.cloud && strategyId != null) {
+      await ref
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .enqueuePlacedImageUpload(
+            strategyPublicId: strategyId,
+            imagePublicId: placedImage.id,
+            fileExtension: fileExtension,
+            width: null,
+            height: null,
+          );
+    }
   }
 
   void removeImageAsAction(String id) {
@@ -180,9 +196,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
             group: ActionGroup.image,
             objectDelta: ObjectHistoryDelta(
               before: ActionObjectState.image(state.images[index]),
-              beforeImageSizes: ref
-                  .read(imageWidgetSizeProvider.notifier)
-                  .takeSnapshotForIds([id]),
             ),
           ),
         );
@@ -218,10 +231,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
       objectDelta: ObjectHistoryDelta(
         before: before,
         after: ActionObjectState.image(temp),
-        beforeImageSizes:
-            ref.read(imageWidgetSizeProvider.notifier).takeSnapshotForIds([id]),
-        afterImageSizes:
-            ref.read(imageWidgetSizeProvider.notifier).takeSnapshotForIds([id]),
       ),
     );
     ref.read(actionProvider.notifier).addAction(action);
@@ -241,14 +250,22 @@ class PlacedImageProvider extends Notifier<ImageState> {
   void switchSides() {
     final newImages = [...state.images];
     for (final image in newImages) {
-      image.switchSides(
-          ref.read(imageWidgetSizeProvider.notifier).getSize(image.id));
+      image.switchSides(_switchSizeForImage(image));
     }
     for (final image in poppedImages) {
-      image.switchSides(
-          ref.read(imageWidgetSizeProvider.notifier).getSize(image.id));
+      image.switchSides(_switchSizeForImage(image));
     }
     state = state.copyWith(images: newImages);
+  }
+
+  Offset _switchSizeForImage(PlacedImage image) {
+    final size = PlacedImageDimensions.screenSize(
+      coordinateSystem: CoordinateSystem.instance,
+      scale: image.scale,
+      aspectRatio: image.aspectRatio,
+    );
+
+    return Offset(size.width, size.height);
   }
 
   void undoAction(UserAction action) {
@@ -276,7 +293,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
     }
     switch (action.type) {
       case ActionType.addition:
-        _clearImageSizes(delta.afterImageSizes.keys);
         removeImage(action.id);
         return;
       case ActionType.deletion:
@@ -285,13 +301,11 @@ class PlacedImageProvider extends Notifier<ImageState> {
           return;
         }
         _upsertImage(clonePlacedImage(before));
-        _restoreImageSizes(delta.beforeImageSizes);
         return;
       case ActionType.edit:
         final before = delta.before?.image;
         if (before == null) return;
         _upsertImage(clonePlacedImage(before));
-        _restoreImageSizes(delta.beforeImageSizes);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -327,17 +341,14 @@ class PlacedImageProvider extends Notifier<ImageState> {
         final after = delta.after?.image;
         if (after == null) return;
         _upsertImage(clonePlacedImage(after));
-        _restoreImageSizes(delta.afterImageSizes);
         return;
       case ActionType.deletion:
-        _clearImageSizes(delta.beforeImageSizes.keys);
         removeImage(action.id);
         return;
       case ActionType.edit:
         final after = delta.after?.image;
         if (after == null) return;
         _upsertImage(clonePlacedImage(after));
-        _restoreImageSizes(delta.afterImageSizes);
         return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
@@ -370,6 +381,41 @@ class PlacedImageProvider extends Notifier<ImageState> {
     }
 
     return imagesDirectory;
+  }
+
+  static String buildImageFilePath(
+    String imagesDirectoryPath,
+    String imageID,
+    String fileExtension,
+  ) {
+    return path.join(imagesDirectoryPath, '$imageID$fileExtension');
+  }
+
+  static Future<File> getImageFile({
+    required String strategyID,
+    required String imageID,
+    required String fileExtension,
+  }) async {
+    final imageFolder = await getImageFolder(strategyID);
+    return File(buildImageFilePath(imageFolder.path, imageID, fileExtension));
+  }
+
+  static Future<void> writeImageBytes({
+    required Uint8List imageBytes,
+    required String strategyID,
+    required String imageID,
+    required String fileExtension,
+  }) async {
+    if (kIsWeb) return;
+    final file = await getImageFile(
+      strategyID: strategyID,
+      imageID: imageID,
+      fileExtension: fileExtension,
+    );
+    if (!await file.parent.exists()) {
+      await file.parent.create(recursive: true);
+    }
+    await file.writeAsBytes(imageBytes);
   }
 
   Future<String> toJson(String strategyID) async {
@@ -427,39 +473,15 @@ class PlacedImageProvider extends Notifier<ImageState> {
   }
 
   Future<void> saveSecureImage(
-    Uint8List imageBytes,
-    String imageID,
-    String fileExtenstion,
-  ) async {
-    final strategyID = ref.read(strategyProvider).strategyId;
-    // Get the system's application support directory.
-    if (kIsWeb) return;
-    final directory = await getApplicationSupportDirectory();
-
-    // Create a custom directory inside the application support directory.
-
-    final customDirectory = Directory(path.join(directory.path, strategyID));
-
-    if (!await customDirectory.exists()) {
-      await customDirectory.create(recursive: true);
-    }
-
-    // Now create the full file path.
-    final filePath = path.join(
-      customDirectory.path,
-      'images',
-      '$imageID$fileExtenstion',
+      Uint8List imageBytes, String imageID, String fileExtenstion,
+      {required String? strategyId}) async {
+    if (strategyId == null) return;
+    await writeImageBytes(
+      imageBytes: imageBytes,
+      strategyID: strategyId,
+      imageID: imageID,
+      fileExtension: fileExtenstion,
     );
-
-    // Ensure the images subdirectory exists.
-    final imagesDir = Directory(path.join(customDirectory.path, 'images'));
-    if (!await imagesDir.exists()) {
-      await imagesDir.create(recursive: true);
-    }
-
-    // Write the file.
-    final file = File(filePath);
-    await file.writeAsBytes(imageBytes);
   }
 
   static List<PlacedImage> deepCopyWith(List<PlacedImage> images) {
@@ -503,16 +525,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
       newImages[index] = image;
     }
     state = state.copyWith(images: newImages);
-  }
-
-  void _restoreImageSizes(Map<String, Offset> snapshot) {
-    if (snapshot.isEmpty) return;
-    ref.read(imageWidgetSizeProvider.notifier).restoreSnapshot(snapshot);
-  }
-
-  void _clearImageSizes(Iterable<String> ids) {
-    if (ids.isEmpty) return;
-    ref.read(imageWidgetSizeProvider.notifier).clearEntries(ids);
   }
 }
 
