@@ -5,6 +5,7 @@ import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/app_navigator.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 final authProvider =
@@ -47,6 +48,50 @@ bool isConvexUnauthenticatedError(Object error) {
   }
 
   return isConvexUnauthenticatedMessage(error.toString());
+}
+
+String redactAuthUri(Uri uri) {
+  const sensitiveKeys = {
+    'access_token',
+    'refresh_token',
+    'provider_token',
+    'provider_refresh_token',
+    'code',
+    'code_verifier',
+  };
+
+  String redactFragment(String fragment) {
+    if (fragment.isEmpty) {
+      return fragment;
+    }
+
+    final params = Uri.splitQueryString(fragment);
+    if (params.isEmpty) {
+      return '<redacted>';
+    }
+
+    return params.entries.map((entry) {
+      final value = sensitiveKeys.contains(entry.key.toLowerCase())
+          ? '<redacted>'
+          : entry.value;
+      return '${Uri.encodeQueryComponent(entry.key)}='
+          '${Uri.encodeQueryComponent(value)}';
+    }).join('&');
+  }
+
+  final queryParameters = <String, String>{};
+  for (final entry in uri.queryParameters.entries) {
+    queryParameters[entry.key] = sensitiveKeys.contains(entry.key.toLowerCase())
+        ? '<redacted>'
+        : entry.value;
+  }
+
+  return uri
+      .replace(
+        queryParameters: queryParameters.isEmpty ? null : queryParameters,
+        fragment: redactFragment(uri.fragment),
+      )
+      .toString();
 }
 
 class AppAuthState {
@@ -157,6 +202,156 @@ enum _AuthIncidentAction {
   dismiss,
 }
 
+abstract class AuthProviderAuthHandle {
+  void dispose();
+}
+
+abstract class AuthProviderConvexApi {
+  Future<AuthProviderAuthHandle> setAuthWithRefresh({
+    required Future<String?> Function() fetchToken,
+    void Function(bool isAuthenticated)? onAuthChange,
+  });
+
+  Stream<bool> get authState;
+  bool get isAuthenticated;
+  String? get currentConnectionStateLabel;
+  Future<void> clearAuth();
+  Future<bool> reconnect();
+  Future<String> mutation({
+    required String name,
+    required Map<String, dynamic> args,
+  });
+}
+
+abstract class AuthProviderSupabaseApi {
+  Session? get currentSession;
+  Stream<AuthState> get onAuthStateChange;
+
+  Future<bool> signInWithOAuth(
+    OAuthProvider provider, {
+    required String redirectTo,
+    required LaunchMode authScreenLaunchMode,
+    required String scopes,
+  });
+
+  Future<AuthResponse> signInWithPassword({
+    required String email,
+    required String password,
+  });
+
+  Future<AuthResponse> signUp({
+    required String email,
+    required String password,
+  });
+
+  Future<void> signOut();
+  Future<void> getSessionFromUrl(Uri uri);
+  Future<AuthResponse> refreshSession();
+}
+
+class _DefaultAuthProviderAuthHandle implements AuthProviderAuthHandle {
+  _DefaultAuthProviderAuthHandle(this._inner);
+
+  final AuthHandleWrapper _inner;
+
+  @override
+  void dispose() => _inner.dispose();
+}
+
+class _DefaultAuthProviderConvexApi implements AuthProviderConvexApi {
+  const _DefaultAuthProviderConvexApi();
+
+  ConvexClient get _client => ConvexClient.instance;
+
+  @override
+  Future<AuthProviderAuthHandle> setAuthWithRefresh({
+    required Future<String?> Function() fetchToken,
+    void Function(bool p1)? onAuthChange,
+  }) async {
+    final handle = await _client.setAuthWithRefresh(
+      fetchToken: fetchToken,
+      onAuthChange: onAuthChange,
+    );
+    return _DefaultAuthProviderAuthHandle(handle);
+  }
+
+  @override
+  Stream<bool> get authState => _client.authState;
+
+  @override
+  bool get isAuthenticated => _client.isAuthenticated;
+
+  @override
+  String? get currentConnectionStateLabel =>
+      _client.currentConnectionState.name;
+
+  @override
+  Future<void> clearAuth() => _client.clearAuth();
+
+  @override
+  Future<bool> reconnect() => _client.reconnect();
+
+  @override
+  Future<String> mutation({
+    required String name,
+    required Map<String, dynamic> args,
+  }) =>
+      _client.mutation(name: name, args: args);
+}
+
+class _DefaultAuthProviderSupabaseApi implements AuthProviderSupabaseApi {
+  const _DefaultAuthProviderSupabaseApi();
+
+  SupabaseClient get _client => Supabase.instance.client;
+
+  @override
+  Session? get currentSession => _client.auth.currentSession;
+
+  @override
+  Stream<AuthState> get onAuthStateChange => _client.auth.onAuthStateChange;
+
+  @override
+  Future<bool> signInWithOAuth(
+    OAuthProvider provider, {
+    required String redirectTo,
+    required LaunchMode authScreenLaunchMode,
+    required String scopes,
+  }) {
+    return _client.auth.signInWithOAuth(
+      provider,
+      redirectTo: redirectTo,
+      authScreenLaunchMode: authScreenLaunchMode,
+      scopes: scopes,
+    );
+  }
+
+  @override
+  Future<AuthResponse> signInWithPassword({
+    required String email,
+    required String password,
+  }) {
+    return _client.auth.signInWithPassword(email: email, password: password);
+  }
+
+  @override
+  Future<AuthResponse> signUp({
+    required String email,
+    required String password,
+  }) {
+    return _client.auth.signUp(email: email, password: password);
+  }
+
+  @override
+  Future<void> signOut() => _client.auth.signOut();
+
+  @override
+  Future<void> getSessionFromUrl(Uri uri) =>
+      _client.auth.getSessionFromUrl(uri);
+
+  @override
+  Future<AuthResponse> refreshSession() => _client.auth.refreshSession();
+}
+
 class AuthProvider extends Notifier<AppAuthState> {
   static final Uri _discordRedirectUri = Uri(
     scheme: 'icarus',
@@ -165,51 +360,64 @@ class AuthProvider extends Notifier<AppAuthState> {
   );
 
   StreamSubscription<AuthState>? _supabaseAuthSub;
-  AuthHandleWrapper? _convexAuthHandle;
+  AuthProviderAuthHandle? _convexAuthHandle;
   Future<void>? _inFlightConvexSetup;
   bool _queuedConvexSetup = false;
+  String? _queuedConvexTrigger;
   bool _showingIncidentPrompt = false;
   int _incidentCounter = 0;
+  int _authGeneration = 0;
 
-  SupabaseClient get _supabase => Supabase.instance.client;
-  ConvexClient get _convex => ConvexClient.instance;
+  @visibleForTesting
+  static AuthProviderSupabaseApi? debugSupabaseApi;
+
+  @visibleForTesting
+  static AuthProviderConvexApi? debugConvexApi;
+
+  @visibleForTesting
+  static Duration? debugConvexAuthReadyTimeout;
+
+  late final AuthProviderSupabaseApi _supabaseApi;
+  late final AuthProviderConvexApi _convexApi;
+
+  @visibleForTesting
+  static void resetTestOverrides() {
+    debugSupabaseApi = null;
+    debugConvexApi = null;
+    debugConvexAuthReadyTimeout = null;
+  }
+
+  int _advanceAuthGeneration() {
+    _authGeneration += 1;
+    return _authGeneration;
+  }
+
+  String _sessionFingerprint(Session? session) {
+    if (session == null) {
+      return 'signed_out';
+    }
+
+    return '${session.user.id}:${session.accessToken}';
+  }
+
+  bool _isAuthContextCurrent({
+    required int generation,
+    required String sessionFingerprint,
+  }) {
+    return generation == _authGeneration &&
+        _sessionFingerprint(_supabaseApi.currentSession) == sessionFingerprint;
+  }
 
   @override
   AppAuthState build() {
-    final session = _supabase.auth.currentSession;
+    _supabaseApi = debugSupabaseApi ?? const _DefaultAuthProviderSupabaseApi();
+    _convexApi = debugConvexApi ?? const _DefaultAuthProviderConvexApi();
+    final session = _supabaseApi.currentSession;
+    final initialGeneration = _advanceAuthGeneration();
 
-    _supabaseAuthSub ??= _supabase.auth.onAuthStateChange.listen(
-      (event) {
-        final currentSession = event.session;
-        state = AppAuthState.fromSession(
-          currentSession,
-          isLoading: false,
-          isConvexUserReady: false,
-          convexAuthStatus: currentSession == null
-              ? ConvexAuthStatus.signedOut
-              : ConvexAuthStatus.configuring,
-        );
-
-        if (currentSession == null) {
-          _clearAuthIncident();
-        }
-
-        unawaited(_configureConvexAuth(trigger: 'supabase:${event.event}'));
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        log(
-          'Supabase auth state stream error: $error',
-          name: 'auth',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        state = state.copyWith(
-          isLoading: false,
-          isConvexUserReady: false,
-          convexAuthStatus: ConvexAuthStatus.incident,
-          errorMessage: 'Auth stream error: $error',
-        );
-      },
+    _supabaseAuthSub ??= _supabaseApi.onAuthStateChange.listen(
+      _handleSupabaseAuthStateChange,
+      onError: _handleSupabaseAuthStreamError,
     );
 
     ref.onDispose(() {
@@ -217,20 +425,68 @@ class AuthProvider extends Notifier<AppAuthState> {
       _convexAuthHandle?.dispose();
     });
 
-    unawaited(_configureConvexAuth(trigger: 'build'));
+    Future<void>.microtask(() async {
+      await _configureConvexAuth(
+        trigger: 'build',
+        generation: initialGeneration,
+        sessionFingerprint: _sessionFingerprint(session),
+      );
+    });
 
     return AppAuthState.fromSession(
       session,
       isConvexUserReady: false,
-      convexAuthStatus:
-          session == null ? ConvexAuthStatus.signedOut : ConvexAuthStatus.configuring,
+      convexAuthStatus: session == null
+          ? ConvexAuthStatus.signedOut
+          : ConvexAuthStatus.configuring,
+    );
+  }
+
+  void _handleSupabaseAuthStateChange(AuthState event) {
+    final currentSession = event.session;
+    final generation = _advanceAuthGeneration();
+    state = AppAuthState.fromSession(
+      currentSession,
+      isLoading: false,
+      isConvexUserReady: false,
+      convexAuthStatus: currentSession == null
+          ? ConvexAuthStatus.signedOut
+          : ConvexAuthStatus.configuring,
+    );
+
+    if (currentSession == null) {
+      _clearAuthIncident();
+    }
+
+    unawaited(
+      _configureConvexAuth(
+        trigger: 'supabase:${event.event}',
+        generation: generation,
+        sessionFingerprint: _sessionFingerprint(currentSession),
+      ),
+    );
+  }
+
+  void _handleSupabaseAuthStreamError(Object error, StackTrace stackTrace) {
+    log(
+      'Supabase auth state stream error: $error',
+      name: 'auth',
+      error: error,
+      stackTrace: stackTrace,
+    );
+
+    state = state.copyWith(
+      isLoading: false,
+      isConvexUserReady: false,
+      convexAuthStatus: ConvexAuthStatus.incident,
+      errorMessage: 'Auth stream error: $error',
     );
   }
 
   bool isAuthCallbackUri(Uri uri) {
     final isIcarusScheme = uri.scheme.toLowerCase() == 'icarus';
-    final isAuthCallback =
-        uri.host.toLowerCase() == 'auth' && uri.path.toLowerCase() == '/callback';
+    final isAuthCallback = uri.host.toLowerCase() == 'auth' &&
+        uri.path.toLowerCase() == '/callback';
     if (!isIcarusScheme || !isAuthCallback) {
       return false;
     }
@@ -251,7 +507,7 @@ class AuthProvider extends Notifier<AppAuthState> {
     );
 
     try {
-      final launched = await _supabase.auth.signInWithOAuth(
+      final launched = await _supabaseApi.signInWithOAuth(
         OAuthProvider.discord,
         redirectTo: _discordRedirectUri.toString(),
         authScreenLaunchMode: LaunchMode.externalApplication,
@@ -292,7 +548,7 @@ class AuthProvider extends Notifier<AppAuthState> {
     );
 
     try {
-      final response = await _supabase.auth.signInWithPassword(
+      final response = await _supabaseApi.signInWithPassword(
         email: email,
         password: password,
       );
@@ -308,7 +564,6 @@ class AuthProvider extends Notifier<AppAuthState> {
         return message;
       }
 
-      await _configureConvexAuth(trigger: 'email_password_sign_in');
       state = state.copyWith(isLoading: false);
       return null;
     } catch (error, stackTrace) {
@@ -341,7 +596,7 @@ class AuthProvider extends Notifier<AppAuthState> {
     );
 
     try {
-      final response = await _supabase.auth.signUp(
+      final response = await _supabaseApi.signUp(
         email: email,
         password: password,
       );
@@ -358,7 +613,6 @@ class AuthProvider extends Notifier<AppAuthState> {
         return message;
       }
 
-      await _configureConvexAuth(trigger: 'email_password_sign_up');
       state = state.copyWith(isLoading: false);
       return null;
     } catch (error, stackTrace) {
@@ -391,10 +645,10 @@ class AuthProvider extends Notifier<AppAuthState> {
     );
 
     try {
-      await _supabase.auth.signOut();
+      await _supabaseApi.signOut();
       _convexAuthHandle?.dispose();
       _convexAuthHandle = null;
-      await _convex.clearAuth();
+      await _convexApi.clearAuth();
       state = AppAuthState.fromSession(
         null,
         isLoading: false,
@@ -419,8 +673,17 @@ class AuthProvider extends Notifier<AppAuthState> {
 
   Future<bool> handleAuthCallbackUri(Uri uri, {required String source}) async {
     if (!isAuthCallbackUri(uri)) {
+      AppErrorReporter.reportInfo(
+        'Deep link was not an auth callback [$source]: ${redactAuthUri(uri)}',
+        source: 'auth',
+      );
       return false;
     }
+
+    AppErrorReporter.reportInfo(
+      'Handling auth callback [$source]: ${redactAuthUri(uri)}',
+      source: 'auth',
+    );
 
     state = state.copyWith(
       isLoading: true,
@@ -430,15 +693,27 @@ class AuthProvider extends Notifier<AppAuthState> {
     );
 
     try {
-      await _supabase.auth.getSessionFromUrl(uri);
-      await _configureConvexAuth(trigger: 'callback:$source');
+      await _supabaseApi.getSessionFromUrl(uri);
       state = state.copyWith(isLoading: false);
-      log('Handled auth callback [$source]: $uri', name: 'auth');
+      log(
+        'Handled auth callback [$source]: ${redactAuthUri(uri)}',
+        name: 'auth',
+      );
+      AppErrorReporter.reportInfo(
+        'Handled auth callback [$source]',
+        source: 'auth',
+      );
       return true;
     } catch (error, stackTrace) {
       log(
         'Failed auth callback [$source]: $error',
         name: 'auth',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      AppErrorReporter.reportError(
+        'Failed auth callback [$source]: ${redactAuthUri(uri)}',
+        source: 'auth',
         error: error,
         stackTrace: stackTrace,
       );
@@ -454,8 +729,14 @@ class AuthProvider extends Notifier<AppAuthState> {
 
   Future<String?> _fetchSupabaseAccessToken() async {
     try {
-      final session = _supabase.auth.currentSession;
-      if (session == null) return null;
+      final session = _supabaseApi.currentSession;
+      if (session == null) {
+        log(
+          'Convex token fetch skipped: no active Supabase session.',
+          name: 'auth',
+        );
+        return null;
+      }
 
       final expiresAt = session.expiresAt;
       if (expiresAt != null) {
@@ -468,9 +749,13 @@ class AuthProvider extends Notifier<AppAuthState> {
 
         if (shouldRefresh) {
           try {
-            final refreshed = await _supabase.auth.refreshSession();
+            final refreshed = await _supabaseApi.refreshSession();
             final refreshedToken = refreshed.session?.accessToken;
             if (refreshedToken != null && refreshedToken.isNotEmpty) {
+              log(
+                'Convex token fetch returning refreshed Supabase token.',
+                name: 'auth',
+              );
               return refreshedToken;
             }
           } catch (error, stackTrace) {
@@ -484,6 +769,11 @@ class AuthProvider extends Notifier<AppAuthState> {
         }
       }
 
+      log(
+        'Convex token fetch returning current Supabase token '
+        '(nonEmpty: ${session.accessToken.isNotEmpty}).',
+        name: 'auth',
+      );
       return session.accessToken;
     } catch (error, stackTrace) {
       log(
@@ -509,7 +799,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       return;
     }
 
-    if (_supabase.auth.currentSession == null) {
+    if (_supabaseApi.currentSession == null) {
       return;
     }
 
@@ -537,9 +827,20 @@ class AuthProvider extends Notifier<AppAuthState> {
     unawaited(_showAuthIncidentPrompt(incidentId));
   }
 
-  Future<void> _configureConvexAuth({required String trigger}) async {
+  Future<void> _configureConvexAuth({
+    required String trigger,
+    int? generation,
+    String? sessionFingerprint,
+  }) async {
+    await Future<void>.value();
+
+    final targetGeneration = generation ?? _authGeneration;
+    final targetFingerprint =
+        sessionFingerprint ?? _sessionFingerprint(_supabaseApi.currentSession);
+
     if (_inFlightConvexSetup != null) {
       _queuedConvexSetup = true;
+      _queuedConvexTrigger = trigger;
       await _inFlightConvexSetup;
       return;
     }
@@ -548,24 +849,88 @@ class AuthProvider extends Notifier<AppAuthState> {
     _inFlightConvexSetup = completer.future;
 
     try {
-      await _runConvexAuthSetup(trigger: trigger);
+      await _runConvexAuthSetup(
+        trigger: trigger,
+        generation: targetGeneration,
+        sessionFingerprint: targetFingerprint,
+      );
     } finally {
       completer.complete();
       _inFlightConvexSetup = null;
 
       if (_queuedConvexSetup) {
         _queuedConvexSetup = false;
-        unawaited(_configureConvexAuth(trigger: 'queued'));
+        final queuedTrigger = _queuedConvexTrigger ?? 'queued';
+        _queuedConvexTrigger = null;
+        unawaited(_configureConvexAuth(trigger: queuedTrigger));
       }
     }
   }
 
-  Future<void> _runConvexAuthSetup({required String trigger}) async {
-    final session = _supabase.auth.currentSession;
+  Duration get _convexAuthReadyTimeout =>
+      debugConvexAuthReadyTimeout ?? const Duration(seconds: 5);
+
+  Future<String> _waitForConvexAuthenticated({
+    required String trigger,
+    required bool? reconnectResult,
+  }) async {
+    if (_convexApi.isAuthenticated) {
+      return 'immediate';
+    }
+
+    final authenticated = await _convexApi.authState
+        .firstWhere(
+      (isAuthenticated) => isAuthenticated,
+    )
+        .timeout(
+      _convexAuthReadyTimeout,
+      onTimeout: () {
+        final connectionState = _convexApi.currentConnectionStateLabel;
+        throw TimeoutException(
+          'Convex auth did not become ready within '
+          '${_convexAuthReadyTimeout.inSeconds} seconds '
+          'for trigger "$trigger" '
+          '(reconnectResult: ${reconnectResult?.toString() ?? 'unknown'}, '
+          'isAuthenticated: ${_convexApi.isAuthenticated}, '
+          'connectionState: ${connectionState ?? 'unavailable'}).',
+        );
+      },
+    );
+
+    if (!authenticated) {
+      throw StateError('Convex auth stream completed without authentication.');
+    }
+
+    return 'stream';
+  }
+
+  Future<void> _runConvexAuthSetup({
+    required String trigger,
+    required int generation,
+    required String sessionFingerprint,
+  }) async {
+    final session = _supabaseApi.currentSession;
+    if (!_isAuthContextCurrent(
+      generation: generation,
+      sessionFingerprint: sessionFingerprint,
+    )) {
+      return;
+    }
+
+    log(
+      'Starting Convex auth setup [$trigger] (hasSession: ${session != null})',
+      name: 'auth',
+    );
     if (session == null) {
       _convexAuthHandle?.dispose();
       _convexAuthHandle = null;
-      await _convex.clearAuth();
+      await _convexApi.clearAuth();
+      if (!_isAuthContextCurrent(
+        generation: generation,
+        sessionFingerprint: sessionFingerprint,
+      )) {
+        return;
+      }
       _clearAuthIncident();
       state = AppAuthState.fromSession(
         null,
@@ -586,13 +951,21 @@ class AuthProvider extends Notifier<AppAuthState> {
 
     try {
       _convexAuthHandle?.dispose();
-      _convexAuthHandle = await _convex.setAuthWithRefresh(
+      final wasAuthenticatedBeforeSetup = _convexApi.isAuthenticated;
+      bool? reconnectResult;
+      final authHandle = await _convexApi.setAuthWithRefresh(
         fetchToken: _fetchSupabaseAccessToken,
         onAuthChange: (isAuthenticated) {
+          if (!_isAuthContextCurrent(
+            generation: generation,
+            sessionFingerprint: sessionFingerprint,
+          )) {
+            return;
+          }
           if (isAuthenticated) {
             return;
           }
-          if (_supabase.auth.currentSession == null) {
+          if (_supabaseApi.currentSession == null) {
             return;
           }
           if (state.convexAuthStatus == ConvexAuthStatus.configuring) {
@@ -607,9 +980,74 @@ class AuthProvider extends Notifier<AppAuthState> {
           );
         },
       );
+      _convexAuthHandle = authHandle;
 
-      await _convex.reconnect();
-      await _convex.mutation(name: 'users:ensureCurrentUser', args: {});
+      if (!_isAuthContextCurrent(
+        generation: generation,
+        sessionFingerprint: sessionFingerprint,
+      )) {
+        authHandle.dispose();
+        if (identical(_convexAuthHandle, authHandle)) {
+          _convexAuthHandle = null;
+        }
+        return;
+      }
+
+      log(
+        'Convex auth handle configured [$trigger] (wasAuthenticatedBeforeSetup: '
+        '$wasAuthenticatedBeforeSetup, isAuthenticatedNow: ${_convexApi.isAuthenticated})',
+        name: 'auth',
+      );
+      try {
+        reconnectResult = await _convexApi.reconnect();
+        log(
+          'Convex reconnect attempted [$trigger] (result: $reconnectResult, '
+          'isAuthenticatedAfterReconnect: ${_convexApi.isAuthenticated}, '
+          'connectionState: '
+          '${_convexApi.currentConnectionStateLabel ?? 'unavailable'})',
+          name: 'auth',
+        );
+      } catch (error, stackTrace) {
+        log(
+          'Convex reconnect threw [$trigger]: $error',
+          name: 'auth',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      final readinessSource = await _waitForConvexAuthenticated(
+        trigger: trigger,
+        reconnectResult: reconnectResult,
+      );
+      if (!_isAuthContextCurrent(
+        generation: generation,
+        sessionFingerprint: sessionFingerprint,
+      )) {
+        authHandle.dispose();
+        if (identical(_convexAuthHandle, authHandle)) {
+          _convexAuthHandle = null;
+        }
+        return;
+      }
+      log(
+        'Convex auth ready [$trigger] via $readinessSource',
+        name: 'auth',
+      );
+      await _convexApi.mutation(name: 'users:ensureCurrentUser', args: {});
+      if (!_isAuthContextCurrent(
+        generation: generation,
+        sessionFingerprint: sessionFingerprint,
+      )) {
+        authHandle.dispose();
+        if (identical(_convexAuthHandle, authHandle)) {
+          _convexAuthHandle = null;
+        }
+        return;
+      }
+      log(
+        'Convex current user ensured [$trigger]',
+        name: 'auth',
+      );
 
       _clearAuthIncident();
       state = state.copyWith(
@@ -618,6 +1056,13 @@ class AuthProvider extends Notifier<AppAuthState> {
         clearError: true,
       );
     } catch (error, stackTrace) {
+      if (!_isAuthContextCurrent(
+        generation: generation,
+        sessionFingerprint: sessionFingerprint,
+      )) {
+        return;
+      }
+
       log(
         'Failed configuring Convex auth [$trigger]: $error',
         name: 'auth',
@@ -632,6 +1077,22 @@ class AuthProvider extends Notifier<AppAuthState> {
           stackTrace: stackTrace,
         );
         return;
+      }
+
+      if (error is TimeoutException) {
+        log(
+          'Convex auth readiness timed out [$trigger]: $error',
+          name: 'auth',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      } else {
+        log(
+          'Convex auth setup failed after readiness or mutation [$trigger]: $error',
+          name: 'auth',
+          error: error,
+          stackTrace: stackTrace,
+        );
       }
 
       state = state.copyWith(

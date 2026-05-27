@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -153,7 +151,6 @@ class TransitionProvider extends Notifier<PageTransitionState> {
   }
 
   void complete() {
-    log("Transition Complete Called");
     state = state.copyWith(
       active: false,
       progress: 1,

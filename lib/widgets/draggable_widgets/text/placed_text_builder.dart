@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_scale_controller.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class PlacedTextBuilder extends ConsumerStatefulWidget {
@@ -24,7 +28,7 @@ class PlacedTextBuilder extends ConsumerStatefulWidget {
 }
 
 class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
-  static const double minSize = 100;
+  static const double minSize = 60;
   static const List<Color> _tagPalette = [
     Color(0xFF22C55E),
     Color(0xFF3B82F6),
@@ -43,14 +47,21 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
 
   @override
   Widget build(BuildContext context) {
-    final index = PlacedWidget.getIndexByID(
-        widget.placedText.id, ref.watch(textProvider));
+    final texts = ref.watch(textProvider);
+    final index = PlacedWidget.getIndexByID(widget.placedText.id, texts);
+    final draftText = ref.watch(
+      textDraftProvider.select((drafts) => drafts[widget.placedText.id]),
+    );
     if (localSize == null) {
       return const SizedBox.shrink();
     }
 
-    if (ref.watch(textProvider)[index].size != localSize && !isPanning) {
-      localSize = ref.read(textProvider)[index].size;
+    if (index < 0) {
+      return const SizedBox.shrink();
+    }
+
+    if (texts[index].size != localSize && !isPanning) {
+      localSize = texts[index].size;
     }
     return TextScaleController(
       isDragging: isDragging,
@@ -63,10 +74,12 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         final widthInScreenPixels =
             details.globalPosition.dx - leftEdgeGlobal.dx;
         final widthInContentSpace = widthInScreenPixels / scale;
+        final widthInWorldSpace =
+            CoordinateSystem.instance.screenWidthToWorld(widthInContentSpace);
 
         setState(() {
           isPanning = true;
-          localSize = widthInContentSpace.clamp(minSize, double.infinity);
+          localSize = widthInWorldSpace.clamp(minSize, double.infinity);
         });
       },
       onPanEnd: (details) {
@@ -85,8 +98,9 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           child: ZoomTransform(
             child: TextWidget(
               id: widget.placedText.id,
-              text: widget.placedText.text,
+              text: draftText ?? widget.placedText.text,
               size: localSize!,
+              fontSize: widget.placedText.fontSize,
               tagColorValue: widget.placedText.tagColorValue,
               isFeedback: true,
             ),
@@ -96,6 +110,9 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         dragAnchorStrategy:
             ref.read(screenZoomProvider.notifier).zoomDragAnchorStrategy,
         onDragStarted: () {
+          ref
+              .read(textDraftProvider.notifier)
+              .commitDraft(widget.placedText.id);
           setState(() {
             isDragging = true;
           });
@@ -108,12 +125,20 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
         },
         child: ShadContextMenuRegion(
           items: _buildTagColorItems(),
-          child: TextWidget(
-            id: widget.placedText.id,
-            text: widget.placedText.text,
-            size: localSize!,
-            tagColorValue: widget.placedText.tagColorValue,
-            isFeedback: false,
+          child: MouseWatch(
+            cursor: SystemMouseCursors.click,
+            deleteTarget: HoveredDeleteTarget.text(
+              id: widget.placedText.id,
+              ownerToken: Object(),
+            ),
+            child: TextWidget(
+              id: widget.placedText.id,
+              text: widget.placedText.text,
+              size: localSize!,
+              fontSize: widget.placedText.fontSize,
+              tagColorValue: widget.placedText.tagColorValue,
+              isFeedback: false,
+            ),
           ),
         ),
       ),
@@ -125,7 +150,9 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
       ShadContextMenuItem(
         child: const Text('Reset tag to gray'),
         onPressed: () {
-          ref.read(textProvider.notifier).updateTagColor(widget.placedText.id, null);
+          ref
+              .read(textProvider.notifier)
+              .updateTagColor(widget.placedText.id, null);
         },
       ),
       ..._tagPalette.map(

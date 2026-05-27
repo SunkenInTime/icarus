@@ -1,8 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
-import 'package:icarus/providers/ability_provider.dart';
-import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
 class RotatableImageWidget extends ConsumerWidget {
@@ -22,18 +21,16 @@ class RotatableImageWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
+    final deleteTarget = lineUpId != null
+        ? HoveredDeleteTarget.lineup(id: lineUpId!, ownerToken: Object())
+        : (id?.isNotEmpty ?? false)
+            ? HoveredDeleteTarget.ability(id: id!, ownerToken: Object())
+            : null;
 
     return MouseWatch(
       lineUpId: lineUpId,
       cursor: SystemMouseCursors.click,
-      onDeleteKeyPressed: () {
-        if (id == null) return;
-        final action = UserAction(
-            type: ActionType.deletion, id: id!, group: ActionGroup.ability);
-
-        ref.read(actionProvider.notifier).addAction(action);
-        ref.read(abilityProvider.notifier).removeAbility(id!);
-      },
+      deleteTarget: deleteTarget,
       child: Column(
         children: [
           SizedBox(

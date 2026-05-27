@@ -13,6 +13,8 @@ import 'package:json_annotation/json_annotation.dart';
 
 part "placed_classes.g.dart";
 
+const int worldSizedMediaVersion = 1;
+
 Offset getFlippedPosition({
   required Offset position,
   required Offset scaledSize,
@@ -40,20 +42,15 @@ Offset getFlippedPosition({
   return Offset(flippedX, flippedY);
 }
 
-/// Converter for [Offset] to and from JSON.
-class BaseOffsetConverter {
-  const BaseOffsetConverter();
-
-  Offset fromJson(Map<String, dynamic> json) {
-    return Offset(
-      (json['dx'] as num).toDouble(),
-      (json['dy'] as num).toDouble(),
-    );
+AbilityVisualState _abilityVisualStateFromJson(Map<String, dynamic>? json) {
+  if (json == null) {
+    return const AbilityVisualState();
   }
+  return AbilityVisualState.fromJson(json);
+}
 
-  Map<String, dynamic> toJson(Offset offset) {
-    return {'dx': offset.dx, 'dy': offset.dy};
-  }
+Map<String, dynamic> _abilityVisualStateToJson(AbilityVisualState visualState) {
+  return visualState.toJson();
 }
 
 @JsonSerializable()
@@ -129,23 +126,111 @@ class PlacedWidget extends HiveObject {
 
 @JsonSerializable()
 class PlacedText extends PlacedWidget {
+  static const double defaultWidth = 185;
+  static const double defaultFontSize = 16;
+  static const int currentSizeVersion = worldSizedMediaVersion;
+
   PlacedText({
     required super.position,
     required super.id,
-    this.size = 200,
+    this.size = 185,
+    this.fontSize = 16,
+    this.sizeVersion,
     this.tagColorValue,
   });
 
   String text = "";
+
+  @JsonKey(defaultValue: 185.0)
   double size;
+
+  @JsonKey(defaultValue: defaultFontSize)
+  double fontSize;
+
+  @JsonKey(defaultValue: null)
+  int? sizeVersion;
 
   @JsonKey(defaultValue: null)
   int? tagColorValue;
+
+  bool get usesWorldSize => (sizeVersion ?? 0) >= currentSizeVersion;
+
+  void markSizeAsWorld() {
+    sizeVersion = currentSizeVersion;
+  }
+
+  void commitText(String nextText) {
+    final action = TextContentAction(text: text);
+    _actionHistory.add(action);
+    _poppedAction.clear();
+    text = nextText;
+  }
+
+  void _undoText() {
+    final action = TextContentAction(text: text);
+
+    _poppedAction.add(action);
+    text = (_actionHistory.last as TextContentAction).text;
+    _actionHistory.removeLast();
+  }
+
+  void _redoText() {
+    final action = TextContentAction(text: text);
+
+    _actionHistory.add(action);
+    text = (_poppedAction.last as TextContentAction).text;
+    _poppedAction.removeLast();
+  }
+
+  @override
+  void undoAction() {
+    if (_actionHistory.isEmpty) return;
+
+    if (_actionHistory.last is PositionAction) {
+      _undoPosition();
+    } else if (_actionHistory.last is TextContentAction) {
+      _undoText();
+    }
+  }
+
+  @override
+  void redoAction() {
+    if (_poppedAction.isEmpty) return;
+
+    if (_poppedAction.last is PositionAction) {
+      _redoPosition();
+    } else if (_poppedAction.last is TextContentAction) {
+      _redoText();
+    }
+  }
 
   factory PlacedText.fromJson(Map<String, dynamic> json) =>
       _$PlacedTextFromJson(json);
   @override
   Map<String, dynamic> toJson() => _$PlacedTextToJson(this);
+
+  PlacedText copyWith({
+    Offset? position,
+    String? id,
+    double? size,
+    double? fontSize,
+    int? sizeVersion,
+    int? tagColorValue,
+    String? text,
+    bool? isDeleted,
+  }) {
+    final copied = PlacedText(
+      position: position ?? this.position,
+      id: id ?? this.id,
+      size: size ?? this.size,
+      fontSize: fontSize ?? this.fontSize,
+      sizeVersion: sizeVersion ?? this.sizeVersion,
+      tagColorValue: tagColorValue ?? this.tagColorValue,
+    );
+    copied.text = text ?? this.text;
+    copied.isDeleted = isDeleted ?? this.isDeleted;
+    return copied;
+  }
 
   void switchSides(Offset size) {
     position = getFlippedPosition(position: position, scaledSize: size);
@@ -169,12 +254,15 @@ class PlacedText extends PlacedWidget {
 
 @JsonSerializable()
 class PlacedImage extends PlacedWidget {
+  static const int currentSizeVersion = worldSizedMediaVersion;
+
   PlacedImage({
     required super.position,
     required super.id,
     required this.aspectRatio,
     required this.scale,
     required this.fileExtension,
+    this.sizeVersion,
     this.tagColorValue,
   });
 
@@ -184,9 +272,18 @@ class PlacedImage extends PlacedWidget {
   double scale;
 
   @JsonKey(defaultValue: null)
+  int? sizeVersion;
+
+  @JsonKey(defaultValue: null)
   int? tagColorValue;
 
   String link = "";
+
+  bool get usesWorldSize => (sizeVersion ?? 0) >= currentSizeVersion;
+
+  void markSizeAsWorld() {
+    sizeVersion = currentSizeVersion;
+  }
 
   void updateLink(String link) {
     this.link = link;
@@ -227,6 +324,7 @@ class PlacedImage extends PlacedWidget {
     double? aspectRatio,
     double? scale,
     String? fileExtension,
+    int? sizeVersion,
     int? tagColorValue,
     bool? isDeleted,
     String? link,
@@ -237,12 +335,13 @@ class PlacedImage extends PlacedWidget {
       aspectRatio: aspectRatio ?? this.aspectRatio,
       scale: scale ?? this.scale,
       fileExtension: fileExtension ?? this.fileExtension,
+      sizeVersion: sizeVersion ?? this.sizeVersion,
       tagColorValue: tagColorValue ?? this.tagColorValue,
     );
     // Base class field
     // cloned.isDeleted = isDeleted ?? this.isDeleted;
     // Mutable field specific to PlacedImage
-    cloned.link = this.link;
+    cloned.link = link ?? this.link;
     return cloned;
   }
 
@@ -265,56 +364,116 @@ class Uint8ListConverter {
   }
 }
 
-@JsonSerializable()
-class PlacedAgent extends PlacedWidget {
+sealed class PlacedAgentNode extends PlacedWidget {
+  static const String plainKind = 'plain';
+  static const String viewConeKind = 'viewCone';
+  static const String circleKind = 'circle';
+
+  @AgentTypeCompatConverter()
   final AgentType type;
 
   @JsonKey(defaultValue: true)
   bool isAlly;
 
+  @AgentStateCompatConverter()
   @JsonKey(defaultValue: AgentState.none)
   AgentState state;
 
-  final String? lineUpID;
-
-  PlacedAgent({
+  PlacedAgentNode({
     required this.type,
     required super.position,
     required super.id,
-    this.isAlly = true, // Default parameter value
-    this.lineUpID,
+    this.isAlly = true,
     this.state = AgentState.none,
   });
 
-  factory PlacedAgent.fromJson(Map<String, dynamic> json) =>
-      _$PlacedAgentFromJson(json);
-  @override
-  Map<String, dynamic> toJson() => _$PlacedAgentToJson(this);
+  String get kind;
 
   void switchSides(double agentSize) {
     final coordinateSystem = CoordinateSystem.instance;
     final agentScreenPx = coordinateSystem.scale(agentSize);
+    final scaledSize = Offset(agentScreenPx, agentScreenPx);
 
-    position = getFlippedPosition(
-        position: position, scaledSize: Offset(agentScreenPx, agentScreenPx));
+    position = getFlippedPosition(position: position, scaledSize: scaledSize);
+    _flipSharedPositionHistory(scaledSize);
+  }
 
+  void _flipSharedPositionHistory(Offset scaledSize) {
     for (final (index, action) in _actionHistory.indexed) {
       if (action is PositionAction) {
         _actionHistory[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position,
-                scaledSize: Offset(agentScreenPx, agentScreenPx)));
+          position: getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledSize,
+          ),
+        );
       }
     }
     for (final (index, action) in _poppedAction.indexed) {
       if (action is PositionAction) {
         _poppedAction[index] = action.copyWith(
-            position: getFlippedPosition(
-                position: action.position,
-                scaledSize: Offset(agentScreenPx, agentScreenPx)));
+          position: getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledSize,
+          ),
+        );
       }
     }
   }
+
+  factory PlacedAgentNode.fromJson(Map<String, dynamic> json) {
+    final kind = json['kind'] as String? ?? plainKind;
+    switch (kind) {
+      case viewConeKind:
+        return PlacedViewConeAgent.fromJson(json);
+      case circleKind:
+        return PlacedCircleAgent.fromJson(json);
+      case plainKind:
+      default:
+        return PlacedAgent.fromJson(json);
+    }
+  }
+}
+
+class PlacedAgentNodeConverter
+    implements JsonConverter<PlacedAgentNode, Map<String, dynamic>> {
+  const PlacedAgentNodeConverter();
+
+  @override
+  PlacedAgentNode fromJson(Map<String, dynamic> json) {
+    return PlacedAgentNode.fromJson(json);
+  }
+
+  @override
+  Map<String, dynamic> toJson(PlacedAgentNode object) {
+    return object.toJson();
+  }
+}
+
+@JsonSerializable()
+class PlacedAgent extends PlacedAgentNode {
+  final String? lineUpID;
+
+  PlacedAgent({
+    required super.type,
+    required super.position,
+    required super.id,
+    super.isAlly = true,
+    this.lineUpID,
+    super.state = AgentState.none,
+  });
+
+  @override
+  String get kind => PlacedAgentNode.plainKind;
+
+  factory PlacedAgent.fromJson(Map<String, dynamic> json) =>
+      _$PlacedAgentFromJson(json);
+
+  @override
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'kind': kind,
+        ..._$PlacedAgentToJson(this),
+      };
 
   PlacedAgent copyWith({
     AgentType? type,
@@ -324,7 +483,7 @@ class PlacedAgent extends PlacedWidget {
     String? lineUpID,
     AgentState? state,
   }) {
-    return PlacedAgent(
+    final copied = PlacedAgent(
       type: type ?? this.type,
       position: position ?? this.position,
       id: id ?? this.id,
@@ -332,6 +491,297 @@ class PlacedAgent extends PlacedWidget {
       lineUpID: lineUpID ?? this.lineUpID,
       state: state ?? this.state,
     );
+    copied.isDeleted = isDeleted;
+    return copied;
+  }
+}
+
+class ViewConeAgentGeometryAction extends WidgetAction {
+  final double rotation;
+  final double length;
+
+  ViewConeAgentGeometryAction({
+    required this.rotation,
+    required this.length,
+  });
+
+  ViewConeAgentGeometryAction copyWith({
+    double? rotation,
+    double? length,
+  }) {
+    return ViewConeAgentGeometryAction(
+      rotation: rotation ?? this.rotation,
+      length: length ?? this.length,
+    );
+  }
+}
+
+class CircleAgentGeometryAction extends WidgetAction {
+  final double diameterMeters;
+  final int colorValue;
+  final int opacityPercent;
+
+  CircleAgentGeometryAction({
+    required this.diameterMeters,
+    required this.colorValue,
+    required this.opacityPercent,
+  });
+}
+
+@JsonSerializable()
+class PlacedViewConeAgent extends PlacedAgentNode {
+  @UtilityTypeCompatConverter()
+  final UtilityType presetType;
+  double rotation;
+  double length;
+
+  PlacedViewConeAgent({
+    required super.type,
+    required super.position,
+    required super.id,
+    required this.presetType,
+    this.rotation = 0,
+    this.length = 0,
+    super.isAlly = true,
+    super.state = AgentState.none,
+  }) : assert(
+          UtilityData.isViewConePresetType(presetType),
+          'presetType must be a view cone preset.',
+        );
+
+  @override
+  String get kind => PlacedAgentNode.viewConeKind;
+
+  factory PlacedViewConeAgent.fromJson(Map<String, dynamic> json) =>
+      _$PlacedViewConeAgentFromJson(json);
+
+  @override
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'kind': kind,
+        ..._$PlacedViewConeAgentToJson(this),
+      };
+
+  void updateGeometryHistory() {
+    _actionHistory.add(
+      ViewConeAgentGeometryAction(rotation: rotation, length: length),
+    );
+  }
+
+  void updateGeometry({
+    required double newRotation,
+    required double newLength,
+  }) {
+    rotation = newRotation;
+    length = newLength;
+  }
+
+  void _undoGeometry() {
+    final action =
+        ViewConeAgentGeometryAction(rotation: rotation, length: length);
+    _poppedAction.add(action);
+    final previous = _actionHistory.last as ViewConeAgentGeometryAction;
+    rotation = previous.rotation;
+    length = previous.length;
+    _actionHistory.removeLast();
+  }
+
+  void _redoGeometry() {
+    final action =
+        ViewConeAgentGeometryAction(rotation: rotation, length: length);
+    _actionHistory.add(action);
+    final next = _poppedAction.last as ViewConeAgentGeometryAction;
+    rotation = next.rotation;
+    length = next.length;
+    _poppedAction.removeLast();
+  }
+
+  @override
+  void undoAction() {
+    if (_actionHistory.isEmpty) return;
+    if (_actionHistory.last is PositionAction) {
+      _undoPosition();
+    } else if (_actionHistory.last is ViewConeAgentGeometryAction) {
+      _undoGeometry();
+    }
+  }
+
+  @override
+  void redoAction() {
+    if (_poppedAction.isEmpty) return;
+    if (_poppedAction.last is PositionAction) {
+      _redoPosition();
+    } else if (_poppedAction.last is ViewConeAgentGeometryAction) {
+      _redoGeometry();
+    }
+  }
+
+  @override
+  void switchSides(double agentSize) {
+    super.switchSides(agentSize);
+    rotation = rotation + math.pi;
+
+    for (final (index, action) in _actionHistory.indexed) {
+      if (action is ViewConeAgentGeometryAction) {
+        _actionHistory[index] = action.copyWith(
+          rotation: action.rotation + math.pi,
+        );
+      }
+    }
+    for (final (index, action) in _poppedAction.indexed) {
+      if (action is ViewConeAgentGeometryAction) {
+        _poppedAction[index] = action.copyWith(
+          rotation: action.rotation + math.pi,
+        );
+      }
+    }
+  }
+
+  PlacedViewConeAgent copyWith({
+    AgentType? type,
+    Offset? position,
+    String? id,
+    bool? isAlly,
+    AgentState? state,
+    UtilityType? presetType,
+    double? rotation,
+    double? length,
+  }) {
+    final copied = PlacedViewConeAgent(
+      type: type ?? this.type,
+      position: position ?? this.position,
+      id: id ?? this.id,
+      isAlly: isAlly ?? this.isAlly,
+      state: state ?? this.state,
+      presetType: presetType ?? this.presetType,
+      rotation: rotation ?? this.rotation,
+      length: length ?? this.length,
+    );
+    copied.isDeleted = isDeleted;
+    return copied;
+  }
+}
+
+@JsonSerializable()
+class PlacedCircleAgent extends PlacedAgentNode {
+  double diameterMeters;
+  int colorValue;
+  int opacityPercent;
+
+  PlacedCircleAgent({
+    required super.type,
+    required super.position,
+    required super.id,
+    this.diameterMeters = 0,
+    this.colorValue = 0xFFFFFFFF,
+    this.opacityPercent = 100,
+    super.isAlly = true,
+    super.state = AgentState.none,
+  });
+
+  @override
+  String get kind => PlacedAgentNode.circleKind;
+
+  factory PlacedCircleAgent.fromJson(Map<String, dynamic> json) =>
+      _$PlacedCircleAgentFromJson(json);
+
+  @override
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'kind': kind,
+        ..._$PlacedCircleAgentToJson(this),
+      };
+
+  void updateGeometry({
+    required double newDiameterMeters,
+    required int newColorValue,
+    required int newOpacityPercent,
+  }) {
+    diameterMeters = newDiameterMeters;
+    colorValue = newColorValue;
+    opacityPercent = newOpacityPercent;
+  }
+
+  void updateGeometryHistory() {
+    _actionHistory.add(
+      CircleAgentGeometryAction(
+        diameterMeters: diameterMeters,
+        colorValue: colorValue,
+        opacityPercent: opacityPercent,
+      ),
+    );
+  }
+
+  void _undoGeometry() {
+    _poppedAction.add(
+      CircleAgentGeometryAction(
+        diameterMeters: diameterMeters,
+        colorValue: colorValue,
+        opacityPercent: opacityPercent,
+      ),
+    );
+    final previous = _actionHistory.last as CircleAgentGeometryAction;
+    diameterMeters = previous.diameterMeters;
+    colorValue = previous.colorValue;
+    opacityPercent = previous.opacityPercent;
+    _actionHistory.removeLast();
+  }
+
+  void _redoGeometry() {
+    _actionHistory.add(
+      CircleAgentGeometryAction(
+        diameterMeters: diameterMeters,
+        colorValue: colorValue,
+        opacityPercent: opacityPercent,
+      ),
+    );
+    final next = _poppedAction.last as CircleAgentGeometryAction;
+    diameterMeters = next.diameterMeters;
+    colorValue = next.colorValue;
+    opacityPercent = next.opacityPercent;
+    _poppedAction.removeLast();
+  }
+
+  @override
+  void undoAction() {
+    if (_actionHistory.isEmpty) return;
+    if (_actionHistory.last is PositionAction) {
+      _undoPosition();
+    } else if (_actionHistory.last is CircleAgentGeometryAction) {
+      _undoGeometry();
+    }
+  }
+
+  @override
+  void redoAction() {
+    if (_poppedAction.isEmpty) return;
+    if (_poppedAction.last is PositionAction) {
+      _redoPosition();
+    } else if (_poppedAction.last is CircleAgentGeometryAction) {
+      _redoGeometry();
+    }
+  }
+
+  PlacedCircleAgent copyWith({
+    AgentType? type,
+    Offset? position,
+    String? id,
+    bool? isAlly,
+    AgentState? state,
+    double? diameterMeters,
+    int? colorValue,
+    int? opacityPercent,
+  }) {
+    final copied = PlacedCircleAgent(
+      type: type ?? this.type,
+      position: position ?? this.position,
+      id: id ?? this.id,
+      isAlly: isAlly ?? this.isAlly,
+      state: state ?? this.state,
+      diameterMeters: diameterMeters ?? this.diameterMeters,
+      colorValue: colorValue ?? this.colorValue,
+      opacityPercent: opacityPercent ?? this.opacityPercent,
+    );
+    copied.isDeleted = isDeleted;
+    return copied;
   }
 }
 
@@ -345,7 +795,11 @@ class PlacedAbility extends PlacedWidget {
     this.length = 0,
     this.lineUpID,
     this.rotation = 0,
-  });
+    this.visualState = const AbilityVisualState(),
+    List<double>? armLengthsMeters,
+  }) : armLengthsMeters = DeadlockBarrierMeshAbility.normalizeArmLengths(
+          armLengthsMeters,
+        );
 
   @AbilityInfoConverter()
   final AbilityInfo data;
@@ -359,39 +813,96 @@ class PlacedAbility extends PlacedWidget {
 
   final String? lineUpID;
 
+  @JsonKey(
+    fromJson: _abilityVisualStateFromJson,
+    toJson: _abilityVisualStateToJson,
+  )
+  AbilityVisualState visualState;
+
+  @JsonKey(defaultValue: <double>[10.0, 10.0, 10.0, 10.0])
+  List<double> armLengthsMeters;
+
   void updateRotation(double newRotation, double newLength) {
-    rotation = newRotation;
-    length = newLength;
+    updateGeometry(newRotation: newRotation, newLength: newLength);
+  }
+
+  void updateGeometry({
+    double? newRotation,
+    double? newLength,
+    List<double>? newArmLengthsMeters,
+  }) {
+    rotation = newRotation ?? rotation;
+    length = newLength ?? length;
+    armLengthsMeters = DeadlockBarrierMeshAbility.normalizeArmLengths(
+      newArmLengthsMeters ?? armLengthsMeters,
+    );
+  }
+
+  void updateArmLengths(List<double> newArmLengthsMeters) {
+    updateGeometry(newArmLengthsMeters: newArmLengthsMeters);
+  }
+
+  void updateVisualState(AbilityVisualState newVisualState) {
+    visualState = newVisualState;
   }
 
   void updateRotationHistory() {
-    final action = RotationAction(rotation: rotation, length: length);
+    updateGeometryHistory();
+  }
+
+  void updateGeometryHistory() {
+    final action = AbilityGeometryAction(
+      rotation: rotation,
+      length: length,
+      visualState: visualState,
+      armLengthsMeters: armLengthsMeters,
+    );
     _actionHistory.add(action);
   }
 
-  void _undoRotation() {
-    final action = RotationAction(rotation: rotation, length: length);
+  void _undoGeometry() {
+    final action = AbilityGeometryAction(
+      rotation: rotation,
+      length: length,
+      visualState: visualState,
+      armLengthsMeters: armLengthsMeters,
+    );
 
     _poppedAction.add(action);
-    rotation = (_actionHistory.last as RotationAction).rotation;
-    length = (_actionHistory.last as RotationAction).length;
+    final previous = _actionHistory.last as AbilityGeometryAction;
+    rotation = previous.rotation;
+    length = previous.length;
+    visualState = previous.visualState;
+    armLengthsMeters = List<double>.from(previous.armLengthsMeters);
     _actionHistory.removeLast();
   }
 
-  void _redoRotation() {
+  void _redoGeometry() {
     if (_poppedAction.isEmpty) return;
 
-    final action = RotationAction(rotation: rotation, length: length);
+    final action = AbilityGeometryAction(
+      rotation: rotation,
+      length: length,
+      visualState: visualState,
+      armLengthsMeters: armLengthsMeters,
+    );
 
     _actionHistory.add(action);
-    rotation = (_poppedAction.last as RotationAction).rotation;
-    length = (_poppedAction.last as RotationAction).length;
+    final next = _poppedAction.last as AbilityGeometryAction;
+    rotation = next.rotation;
+    length = next.length;
+    visualState = next.visualState;
+    armLengthsMeters = List<double>.from(next.armLengthsMeters);
     _poppedAction.removeLast();
   }
 
   void switchSides({required double mapScale, required double abilitySize}) {
     final fullAbilityWidgetSize =
         data.abilityData!.getSize(mapScale: mapScale, abilitySize: abilitySize);
+    final abilityData = data.abilityData!;
+    final shouldRotate = isRotatable(abilityData);
+    final shouldUseRotatableFlipCompensation =
+        shouldRotate && abilityData is! DeadlockBarrierMeshAbility;
 
     final scaledAbilitySize = fullAbilityWidgetSize.scale(
         CoordinateSystem.instance.scaleFactor,
@@ -400,10 +911,10 @@ class PlacedAbility extends PlacedWidget {
     Offset flippedPosition = getFlippedPosition(
         position: position,
         scaledSize: scaledAbilitySize,
-        isRotatable: isRotatable(data.abilityData!));
+        isRotatable: shouldUseRotatableFlipCompensation);
     position = flippedPosition;
 
-    if (isRotatable(data.abilityData!)) {
+    if (shouldRotate) {
       rotation = rotation + math.pi;
     }
 
@@ -413,10 +924,11 @@ class PlacedAbility extends PlacedWidget {
             position: getFlippedPosition(
                 position: action.position,
                 scaledSize: scaledAbilitySize,
-                isRotatable: isRotatable(data.abilityData!)));
-      } else if (action is RotationAction) {
+                isRotatable: shouldUseRotatableFlipCompensation));
+      } else if (action is AbilityGeometryAction) {
         _actionHistory[index] = action.copyWith(
-            rotation: action.rotation + math.pi, length: action.length);
+          rotation: shouldRotate ? action.rotation + math.pi : action.rotation,
+        );
       }
     }
 
@@ -426,10 +938,11 @@ class PlacedAbility extends PlacedWidget {
             position: getFlippedPosition(
                 position: action.position,
                 scaledSize: scaledAbilitySize,
-                isRotatable: isRotatable(data.abilityData!)));
-      } else if (action is RotationAction) {
+                isRotatable: shouldUseRotatableFlipCompensation));
+      } else if (action is AbilityGeometryAction) {
         _poppedAction[index] = action.copyWith(
-            rotation: action.rotation + math.pi, length: action.length);
+          rotation: shouldRotate ? action.rotation + math.pi : action.rotation,
+        );
       }
     }
   }
@@ -440,8 +953,8 @@ class PlacedAbility extends PlacedWidget {
 
     if (_actionHistory.last is PositionAction) {
       _undoPosition();
-    } else if (_actionHistory.last is RotationAction) {
-      _undoRotation();
+    } else if (_actionHistory.last is AbilityGeometryAction) {
+      _undoGeometry();
     }
   }
 
@@ -451,8 +964,8 @@ class PlacedAbility extends PlacedWidget {
 
     if (_poppedAction.last is PositionAction) {
       _redoPosition();
-    } else if (_poppedAction.last is RotationAction) {
-      _redoRotation();
+    } else if (_poppedAction.last is AbilityGeometryAction) {
+      _redoGeometry();
     }
   }
 
@@ -461,6 +974,8 @@ class PlacedAbility extends PlacedWidget {
     Offset? position,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? id,
     bool? isAlly,
     String? lineUpID,
@@ -473,6 +988,10 @@ class PlacedAbility extends PlacedWidget {
       lineUpID: lineUpID ?? this.lineUpID,
       length: length ?? this.length,
       rotation: rotation ?? this.rotation,
+      visualState: visualState ?? this.visualState,
+      armLengthsMeters: List<double>.from(
+        armLengthsMeters ?? this.armLengthsMeters,
+      ),
     );
   }
 
@@ -483,6 +1002,75 @@ class PlacedAbility extends PlacedWidget {
 }
 
 abstract class WidgetAction {}
+
+@JsonSerializable()
+class AbilityVisualState {
+  const AbilityVisualState({
+    this.showRangeOutline = true,
+    this.showRangeFill = true,
+    this.showInnerOutline = true,
+    this.showInnerFill = true,
+  });
+
+  @JsonKey(defaultValue: true)
+  final bool showRangeOutline;
+
+  @JsonKey(defaultValue: true)
+  final bool showRangeFill;
+
+  @JsonKey(defaultValue: true)
+  final bool showInnerOutline;
+
+  @JsonKey(defaultValue: true)
+  final bool showInnerFill;
+
+  AbilityVisualState copyWith({
+    bool? showRangeOutline,
+    bool? showRangeFill,
+    bool? showInnerOutline,
+    bool? showInnerFill,
+  }) {
+    return AbilityVisualState(
+      showRangeOutline: showRangeOutline ?? this.showRangeOutline,
+      showRangeFill: showRangeFill ?? this.showRangeFill,
+      showInnerOutline: showInnerOutline ?? this.showInnerOutline,
+      showInnerFill: showInnerFill ?? this.showInnerFill,
+    );
+  }
+
+  factory AbilityVisualState.fromJson(Map<String, dynamic> json) =>
+      _$AbilityVisualStateFromJson(json);
+
+  Map<String, dynamic> toJson() => _$AbilityVisualStateToJson(this);
+}
+
+class AbilityGeometryAction extends WidgetAction {
+  final double rotation;
+  final double length;
+  final AbilityVisualState visualState;
+  final List<double> armLengthsMeters;
+
+  AbilityGeometryAction({
+    required this.rotation,
+    required this.length,
+    required this.visualState,
+    required List<double> armLengthsMeters,
+  }) : armLengthsMeters = List<double>.from(armLengthsMeters);
+
+  AbilityGeometryAction copyWith({
+    double? rotation,
+    double? length,
+    AbilityVisualState? visualState,
+    List<double>? armLengthsMeters,
+  }) {
+    return AbilityGeometryAction(
+      rotation: rotation ?? this.rotation,
+      length: length ?? this.length,
+      visualState: visualState ?? this.visualState,
+      armLengthsMeters: armLengthsMeters ?? this.armLengthsMeters,
+    );
+  }
+}
 
 class RotationAction extends WidgetAction {
   final double rotation;
@@ -506,8 +1094,43 @@ class PositionAction extends WidgetAction {
   }
 }
 
+class CustomShapeGeometryAction extends WidgetAction {
+  final Offset position;
+  final double? customDiameter;
+  final double? customWidth;
+  final double? customLength;
+
+  CustomShapeGeometryAction({
+    required this.position,
+    required this.customDiameter,
+    required this.customWidth,
+    required this.customLength,
+  });
+
+  CustomShapeGeometryAction copyWith({
+    Offset? position,
+    double? customDiameter,
+    double? customWidth,
+    double? customLength,
+  }) {
+    return CustomShapeGeometryAction(
+      position: position ?? this.position,
+      customDiameter: customDiameter ?? this.customDiameter,
+      customWidth: customWidth ?? this.customWidth,
+      customLength: customLength ?? this.customLength,
+    );
+  }
+}
+
+class TextContentAction extends WidgetAction {
+  final String text;
+
+  TextContentAction({required this.text});
+}
+
 @JsonSerializable()
 class PlacedUtility extends PlacedWidget {
+  @UtilityTypeCompatConverter()
   final UtilityType type;
 
   double rotation = 0;
@@ -522,7 +1145,11 @@ class PlacedUtility extends PlacedWidget {
     return UtilityData.isViewCone(type);
   }
 
-  Offset _getEffectiveUtilitySize({required double mapScale}) {
+  Offset _getEffectiveUtilitySize({
+    required double mapScale,
+    required double agentSize,
+    required double abilitySize,
+  }) {
     final utility = UtilityData.utilityWidgets[type]!;
     if (type == UtilityType.customCircle) {
       assert(customDiameter != null,
@@ -545,14 +1172,24 @@ class PlacedUtility extends PlacedWidget {
         mapScale: mapScale,
       );
     }
-    return utility.getSize();
+    if (UtilityData.isRoleIcon(type)) {
+      return utility.getSize(agentSize: agentSize);
+    }
+    return utility.getSize(abilitySize: abilitySize);
   }
 
-  void switchSides({required double mapScale}) {
-    final size = _getEffectiveUtilitySize(mapScale: mapScale);
+  void switchSides({
+    required double mapScale,
+    required double agentSize,
+    required double abilitySize,
+  }) {
+    final size = _getEffectiveUtilitySize(
+      mapScale: mapScale,
+      agentSize: agentSize,
+      abilitySize: abilitySize,
+    );
     final scaledSize = size.scale(CoordinateSystem.instance.scaleFactor,
         CoordinateSystem.instance.scaleFactor);
-
     final flippedPosition = getFlippedPosition(
         position: position,
         scaledSize: scaledSize,
@@ -576,6 +1213,13 @@ class PlacedUtility extends PlacedWidget {
       } else if (action is RotationAction) {
         _actionHistory[index] =
             action.copyWith(rotation: action.rotation + math.pi);
+      } else if (action is CustomShapeGeometryAction) {
+        final actionFlippedPosition = getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledSize,
+            isRotatable: _getIsRotationUtility(type));
+        _actionHistory[index] =
+            action.copyWith(position: actionFlippedPosition);
       }
     }
     for (final (index, action) in _poppedAction.indexed) {
@@ -589,6 +1233,12 @@ class PlacedUtility extends PlacedWidget {
       } else if (action is RotationAction) {
         _poppedAction[index] =
             action.copyWith(rotation: action.rotation + math.pi);
+      } else if (action is CustomShapeGeometryAction) {
+        final actionFlippedPosition = getFlippedPosition(
+            position: action.position,
+            scaledSize: scaledSize,
+            isRotatable: _getIsRotationUtility(type));
+        _poppedAction[index] = action.copyWith(position: actionFlippedPosition);
       }
     }
   }
@@ -618,6 +1268,73 @@ class PlacedUtility extends PlacedWidget {
     _poppedAction.removeLast();
   }
 
+  void updateCustomShapeGeometry({
+    Offset? newPosition,
+    double? newDiameter,
+    double? newWidth,
+    double? newLength,
+  }) {
+    final action = CustomShapeGeometryAction(
+      position: position,
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+    );
+    _actionHistory.add(action);
+    position = newPosition ?? position;
+    customDiameter = newDiameter ?? customDiameter;
+    customWidth = newWidth ?? customWidth;
+    customLength = newLength ?? customLength;
+  }
+
+  void updateCustomShapeSize({
+    double? newDiameter,
+    double? newWidth,
+    double? newLength,
+  }) {
+    updateCustomShapeGeometry(
+      newDiameter: newDiameter,
+      newWidth: newWidth,
+      newLength: newLength,
+    );
+  }
+
+  void _undoCustomShapeGeometry() {
+    final action = CustomShapeGeometryAction(
+      position: position,
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+    );
+
+    _poppedAction.add(action);
+    final previous = _actionHistory.last as CustomShapeGeometryAction;
+    position = previous.position;
+    customDiameter = previous.customDiameter;
+    customWidth = previous.customWidth;
+    customLength = previous.customLength;
+    _actionHistory.removeLast();
+  }
+
+  void _redoCustomShapeGeometry() {
+    if (_poppedAction.isEmpty) return;
+
+    final action = CustomShapeGeometryAction(
+      position: position,
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+    );
+
+    _actionHistory.add(action);
+    final next = _poppedAction.last as CustomShapeGeometryAction;
+    position = next.position;
+    customDiameter = next.customDiameter;
+    customWidth = next.customWidth;
+    customLength = next.customLength;
+    _poppedAction.removeLast();
+  }
+
   @override
   void undoAction() {
     if (_actionHistory.isEmpty) return;
@@ -626,6 +1343,8 @@ class PlacedUtility extends PlacedWidget {
       _undoPosition();
     } else if (_actionHistory.last is RotationAction) {
       _undoRotation();
+    } else if (_actionHistory.last is CustomShapeGeometryAction) {
+      _undoCustomShapeGeometry();
     }
   }
 
@@ -637,14 +1356,13 @@ class PlacedUtility extends PlacedWidget {
       _redoPosition();
     } else if (_poppedAction.last is RotationAction) {
       _redoRotation();
+    } else if (_poppedAction.last is CustomShapeGeometryAction) {
+      _redoCustomShapeGeometry();
     }
   }
 
   @JsonKey(defaultValue: 0.0)
   double angle;
-
-  @JsonKey(defaultValue: null)
-  String? attachedAgentId;
 
   @JsonKey(defaultValue: null)
   double? customDiameter;
@@ -661,12 +1379,15 @@ class PlacedUtility extends PlacedWidget {
   @JsonKey(defaultValue: null)
   int? customOpacityPercent;
 
+  @JsonKey(defaultValue: true)
+  final bool isAlly;
+
   PlacedUtility({
     required this.type,
     required super.position,
     required super.id,
+    this.isAlly = true,
     this.angle = 0.0,
-    this.attachedAgentId,
     this.customDiameter,
     this.customWidth,
     this.customLength,
@@ -678,6 +1399,51 @@ class PlacedUtility extends PlacedWidget {
       _$PlacedUtilityFromJson(json);
   @override
   Map<String, dynamic> toJson() => _$PlacedUtilityToJson(this);
+
+  static const Object _noChange = Object();
+
+  PlacedUtility copyWith({
+    UtilityType? type,
+    Offset? position,
+    String? id,
+    double? angle,
+    Object? customDiameter = _noChange,
+    Object? customWidth = _noChange,
+    Object? customLength = _noChange,
+    Object? customColorValue = _noChange,
+    Object? customOpacityPercent = _noChange,
+    double? rotation,
+    double? length,
+    bool? isAlly,
+    bool? isDeleted,
+  }) {
+    final copied = PlacedUtility(
+      type: type ?? this.type,
+      position: position ?? this.position,
+      id: id ?? this.id,
+      isAlly: isAlly ?? this.isAlly,
+      angle: angle ?? this.angle,
+      customDiameter: identical(customDiameter, _noChange)
+          ? this.customDiameter
+          : customDiameter as double?,
+      customWidth: identical(customWidth, _noChange)
+          ? this.customWidth
+          : customWidth as double?,
+      customLength: identical(customLength, _noChange)
+          ? this.customLength
+          : customLength as double?,
+      customColorValue: identical(customColorValue, _noChange)
+          ? this.customColorValue
+          : customColorValue as int?,
+      customOpacityPercent: identical(customOpacityPercent, _noChange)
+          ? this.customOpacityPercent
+          : customOpacityPercent as int?,
+    );
+    copied.rotation = rotation ?? this.rotation;
+    copied.length = length ?? this.length;
+    copied.isDeleted = isDeleted ?? this.isDeleted;
+    return copied;
+  }
 }
 // ...existing code...
 
@@ -690,6 +1456,10 @@ extension PlacedWidgetCopy on PlacedWidget {
       return PlacedText.fromJson(json) as T;
     } else if (this is PlacedImage) {
       return PlacedImage.fromJson(json) as T;
+    } else if (this is PlacedViewConeAgent) {
+      return PlacedViewConeAgent.fromJson(json) as T;
+    } else if (this is PlacedCircleAgent) {
+      return PlacedCircleAgent.fromJson(json) as T;
     } else if (this is PlacedAgent) {
       return PlacedAgent.fromJson(json) as T;
     } else if (this is PlacedAbility) {
@@ -699,5 +1469,65 @@ extension PlacedWidgetCopy on PlacedWidget {
     } else {
       return PlacedWidget.fromJson(json) as T;
     }
+  }
+
+  /// Agent/utility bulk-delete and transaction snapshots need preserved
+  /// undo/redo stacks. `deepCopy()` intentionally drops that JSON-excluded
+  /// state, while the other providers still rely on shallow list snapshots.
+  T snapshotCopy<T extends PlacedWidget>() {
+    final copied = _snapshotCloneWidget();
+    _copyHistoryTo(copied);
+    return copied as T;
+  }
+
+  PlacedWidget _snapshotCloneWidget() {
+    if (this is PlacedAgent) {
+      return (this as PlacedAgent).copyWith();
+    } else if (this is PlacedViewConeAgent) {
+      return (this as PlacedViewConeAgent).copyWith();
+    } else if (this is PlacedCircleAgent) {
+      return (this as PlacedCircleAgent).copyWith();
+    } else if (this is PlacedUtility) {
+      return (this as PlacedUtility).copyWith();
+    }
+
+    throw UnsupportedError(
+      'Snapshot copy is only supported for agent and utility widgets.',
+    );
+  }
+
+  void _copyHistoryTo(PlacedWidget target) {
+    target._actionHistory.addAll(_actionHistory.map(_cloneWidgetAction));
+    target._poppedAction.addAll(_poppedAction.map(_cloneWidgetAction));
+  }
+
+  WidgetAction _cloneWidgetAction(WidgetAction action) {
+    if (action is PositionAction) {
+      return PositionAction(position: action.position);
+    } else if (action is ViewConeAgentGeometryAction) {
+      return ViewConeAgentGeometryAction(
+        rotation: action.rotation,
+        length: action.length,
+      );
+    } else if (action is CircleAgentGeometryAction) {
+      return CircleAgentGeometryAction(
+        diameterMeters: action.diameterMeters,
+        colorValue: action.colorValue,
+        opacityPercent: action.opacityPercent,
+      );
+    } else if (action is RotationAction) {
+      return RotationAction(rotation: action.rotation, length: action.length);
+    } else if (action is CustomShapeGeometryAction) {
+      return CustomShapeGeometryAction(
+        position: action.position,
+        customDiameter: action.customDiameter,
+        customWidth: action.customWidth,
+        customLength: action.customLength,
+      );
+    }
+
+    throw UnsupportedError(
+      'Unsupported action type ${action.runtimeType} for snapshot copying.',
+    );
   }
 }

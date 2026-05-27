@@ -17,6 +17,7 @@ import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/delete_area.dart';
+import 'package:icarus/widgets/lineup_control_buttons.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
@@ -62,6 +63,25 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   final controller = TransformationController();
   Size? _lastViewportSize;
   bool _placementCenterUpdateScheduled = false;
+  bool _zoomSyncScheduled = false;
+  double? _pendingZoom;
+
+  void _scheduleZoomSync() {
+    _pendingZoom = controller.value.getMaxScaleOnAxis();
+    if (_zoomSyncScheduled) return;
+    _zoomSyncScheduled = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _zoomSyncScheduled = false;
+      if (!mounted || _pendingZoom == null) return;
+
+      final nextZoom = _pendingZoom == 0 ? 1.0 : _pendingZoom!;
+      _pendingZoom = null;
+      final currentZoom = ref.read(screenZoomProvider);
+      if ((currentZoom - nextZoom).abs() < 0.0001) return;
+      ref.read(screenZoomProvider.notifier).updateZoom(nextZoom);
+    });
+  }
 
   Offset _clampToWorld(Offset value, CoordinateSystem coordinateSystem) {
     const double edgePadding = 10.0;
@@ -105,7 +125,14 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    controller.addListener(_scheduleZoomSync);
+  }
+
+  @override
   void dispose() {
+    controller.removeListener(_scheduleZoomSync);
     controller.dispose();
     super.dispose();
   }
@@ -131,7 +158,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double height = MediaQuery.sizeOf(context).height - 90;
+        final double height = constraints.maxHeight;
         final double worldWidth = height * (16 / 9);
         final Size playAreaSize = Size(worldWidth, height);
         CoordinateSystem(playAreaSize: playAreaSize);
@@ -146,8 +173,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
           final double centeredOffsetX =
               (viewportWidth - (worldWidth * safeScale)) / 2;
           final double centeredOffsetY = (height - (height * safeScale)) / 2;
-          final matrix =
-              Matrix4.identity()..scaleByDouble(safeScale, safeScale, safeScale, 1);
+          final matrix = Matrix4.identity()
+            ..scaleByDouble(safeScale, safeScale, safeScale, 1);
           matrix.translateByDouble(
               centeredOffsetX / safeScale, centeredOffsetY / safeScale, 0, 1);
           controller.value = matrix;
@@ -347,6 +374,10 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                         top: 0,
                         right: 0,
                         child: DeleteArea(),
+                      ),
+                      Align(
+                        alignment: Alignment.bottomRight,
+                        child: const LineupControlButtons(),
                       ),
                     ],
                   ),

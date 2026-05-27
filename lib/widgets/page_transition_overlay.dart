@@ -1,5 +1,3 @@
-import 'dart:developer' show log;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
@@ -13,8 +11,40 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/placed_circle_agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
+
+Offset _overlayScreenPosition({
+  required PlacedWidget widget,
+  required CoordinateSystem coordinateSystem,
+  required double agentSize,
+  required double mapScale,
+  Offset? coordinatePosition,
+}) {
+  final screen = screenPositionForWidget(
+    widget: widget,
+    coordinateSystem: coordinateSystem,
+    coordinatePosition: coordinatePosition,
+  );
+  if (widget is PlacedViewConeAgent) {
+    return screen -
+        viewConeAgentCompositeAgentOffsetScreen(
+          coordinateSystem: coordinateSystem,
+          agentSize: agentSize,
+        );
+  }
+  if (widget is PlacedCircleAgent) {
+    return screen -
+        circleAgentCompositeAgentOffsetScreen(
+          coordinateSystem: coordinateSystem,
+          agentSize: agentSize,
+          mapScale: mapScale,
+        );
+  }
+  return screen;
+}
 
 class PageTransitionOverlay extends ConsumerStatefulWidget {
   const PageTransitionOverlay({super.key});
@@ -43,18 +73,10 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           setState(() {});
         })
         ..addStatusListener((status) {
-          log("Status is${status.toString()}");
           if (status == AnimationStatus.completed) {
-            // Defer provider write until after the frame.
-            // log("Completed");
             final notifier = ref.read(transitionProvider.notifier);
-            log("Calling complete");
             Future.microtask(() {
-              try {
-                notifier.complete();
-              } catch (e, st) {
-                log('Error calling complete: $e\n$st');
-              }
+              notifier.complete();
             });
           }
         });
@@ -88,21 +110,27 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     });
   }
 
-  Offset _startScreenPosition(
-      PageTransitionEntry entry, CoordinateSystem coordinateSystem) {
-    return screenPositionForWidget(
+  Offset _startScreenPosition(PageTransitionEntry entry,
+      CoordinateSystem coordinateSystem, double agentSize) {
+    final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0;
+    return _overlayScreenPosition(
       widget: entry.from ?? entry.to!,
       coordinateSystem: coordinateSystem,
       coordinatePosition: entry.startPos,
+      agentSize: agentSize,
+      mapScale: mapScale,
     );
   }
 
-  Offset _endScreenPosition(
-      PageTransitionEntry entry, CoordinateSystem coordinateSystem) {
-    return screenPositionForWidget(
+  Offset _endScreenPosition(PageTransitionEntry entry,
+      CoordinateSystem coordinateSystem, double agentSize) {
+    final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0;
+    return _overlayScreenPosition(
       widget: entry.to ?? entry.from!,
       coordinateSystem: coordinateSystem,
       coordinatePosition: entry.endPos,
+      agentSize: agentSize,
+      mapScale: mapScale,
     );
   }
 
@@ -121,17 +149,26 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
         return _overlayItem(
           key: ValueKey('none_${entry.id}'),
           widget: entry.to!,
-          pos: _endScreenPosition(entry, coordinateSystem),
+          pos: _endScreenPosition(entry, coordinateSystem, agentSize),
           opacity: 1,
           length: entry.endLength,
+          armLengthsMeters: entry.endArmLengths,
           rotation: entry.endRotation,
           scale: entry.endScale,
           textSize: entry.endTextSize,
+          customDiameter: entry.endCustomDiameter,
+          customWidth: entry.endCustomWidth,
+          customLength: entry.endCustomLength,
+          deadStateProgress: _deadStateProgressForEntry(entry, 1),
           agentSize: agentSize,
           abilitySize: abilitySize,
         );
       case TransitionKind.disappear:
-        final start = _startScreenPosition(entry, coordinateSystem).translate(
+        final start = _startScreenPosition(
+          entry,
+          coordinateSystem,
+          agentSize,
+        ).translate(
           -directionSign * directionalOffset * t,
           0,
         );
@@ -141,29 +178,56 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           pos: start,
           opacity: 1 - t,
           length: entry.startLength,
+          armLengthsMeters: entry.startArmLengths,
           rotation: entry.startRotation,
           scale: entry.startScale,
           textSize: entry.startTextSize,
+          customDiameter: entry.startCustomDiameter,
+          customWidth: entry.startCustomWidth,
+          customLength: entry.startCustomLength,
+          deadStateProgress: _deadStateProgressForEntry(entry, 0),
           agentSize: agentSize,
           abilitySize: abilitySize,
         );
       case TransitionKind.move:
-        final start = _startScreenPosition(entry, coordinateSystem);
-        final end = _endScreenPosition(entry, coordinateSystem);
+        final start = _startScreenPosition(entry, coordinateSystem, agentSize);
+        final end = _endScreenPosition(entry, coordinateSystem, agentSize);
         return _overlayItem(
           key: ValueKey('move_${entry.id}'),
           widget: entry.to!,
           pos: Offset.lerp(start, end, t) ?? end,
           opacity: 1,
           length: _lerpLength(entry.startLength, entry.endLength, t),
+          armLengthsMeters:
+              _lerpArmLengths(entry.startArmLengths, entry.endArmLengths, t),
           rotation: _lerpAngle(entry.startRotation, entry.endRotation, t),
           scale: _lerpDouble(entry.startScale, entry.endScale, t),
           textSize: _lerpDouble(entry.startTextSize, entry.endTextSize, t),
+          customDiameter: _lerpDouble(
+            entry.startCustomDiameter,
+            entry.endCustomDiameter,
+            t,
+          ),
+          deadStateProgress: _deadStateProgressForEntry(entry, t),
+          customWidth: _lerpDouble(
+            entry.startCustomWidth,
+            entry.endCustomWidth,
+            t,
+          ),
+          customLength: _lerpDouble(
+            entry.startCustomLength,
+            entry.endCustomLength,
+            t,
+          ),
           agentSize: agentSize,
           abilitySize: abilitySize,
         );
       case TransitionKind.appear:
-        final end = _endScreenPosition(entry, coordinateSystem).translate(
+        final end = _endScreenPosition(
+          entry,
+          coordinateSystem,
+          agentSize,
+        ).translate(
           directionSign * directionalOffset * (1 - t),
           0,
         );
@@ -173,9 +237,14 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           pos: end,
           opacity: t,
           length: entry.endLength,
+          armLengthsMeters: entry.endArmLengths,
           rotation: entry.endRotation,
           scale: entry.endScale,
           textSize: entry.endTextSize,
+          customDiameter: entry.endCustomDiameter,
+          customWidth: entry.endCustomWidth,
+          customLength: entry.endCustomLength,
+          deadStateProgress: _deadStateProgressForEntry(entry, 1),
           agentSize: agentSize,
           abilitySize: abilitySize,
         );
@@ -234,7 +303,40 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     return a + (b - a) * t;
   }
 
+  List<double>? _lerpArmLengths(List<double>? a, List<double>? b, double t) {
+    if (a == null || b == null || a.length != b.length) {
+      return null;
+    }
+
+    return List<double>.generate(
+      a.length,
+      (index) => a[index] + (b[index] - a[index]) * t,
+    );
+  }
+
   double _lerpRequired(double a, double b, double t) => a + (b - a) * t;
+
+  double? _deadStateProgressForEntry(PageTransitionEntry entry, double t) {
+    final start = _agentDeadValue(entry.startAgentState);
+    final end = _agentDeadValue(entry.endAgentState);
+    if (start == null && end == null) {
+      return null;
+    }
+    if (start == null) {
+      return end;
+    }
+    if (end == null) {
+      return start;
+    }
+    return _lerpRequired(start, end, t);
+  }
+
+  double? _agentDeadValue(AgentState? state) {
+    if (state == null) {
+      return null;
+    }
+    return state == AgentState.dead ? 1.0 : 0.0;
+  }
 
   Widget _overlayItem({
     required Key key,
@@ -242,9 +344,14 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     required Offset pos,
     required double opacity,
     double? length,
+    List<double>? armLengthsMeters,
     double? rotation,
     double? scale,
     double? textSize,
+    double? customDiameter,
+    double? customWidth,
+    double? customLength,
+    double? deadStateProgress,
     required double agentSize,
     required double abilitySize,
   }) {
@@ -253,8 +360,14 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       widget,
       mapScale,
       length: length,
+      armLengthsMeters: armLengthsMeters,
+      rotation: rotation,
       scale: scale,
       textSize: textSize,
+      customDiameter: customDiameter,
+      customWidth: customWidth,
+      customLength: customLength,
+      deadStateProgress: deadStateProgress,
       agentSize: agentSize,
       abilitySize: abilitySize,
     ); // central factory (below)
@@ -312,8 +425,14 @@ class PlacedWidgetPreview {
     PlacedWidget w,
     double mapScale, {
     double? length,
+    List<double>? armLengthsMeters,
+    double? rotation,
     double? scale,
     double? textSize,
+    double? customDiameter,
+    double? customWidth,
+    double? customLength,
+    double? deadStateProgress,
     required double agentSize,
     required double abilitySize,
   }) {
@@ -322,6 +441,22 @@ class PlacedWidgetPreview {
         isAlly: w.isAlly,
         id: w.id,
         agent: AgentData.agents[w.type]!,
+        state: w.state,
+        deadStateProgress: deadStateProgress,
+        forcedAgentSize: agentSize,
+      );
+    }
+    if (w is PlacedViewConeAgent) {
+      return ViewConeAgentComposite(
+        agent: w,
+        rotation: rotation ?? w.rotation,
+        length: length ?? w.length,
+        forcedAgentSize: agentSize,
+      );
+    }
+    if (w is PlacedCircleAgent) {
+      return CircleAgentComposite(
+        agent: w.copyWith(diameterMeters: customDiameter ?? w.diameterMeters),
         forcedAgentSize: agentSize,
       );
     }
@@ -334,32 +469,68 @@ class PlacedWidgetPreview {
       switch (ability) {
         case BaseAbility():
           return ability.createWidget(
-              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              visualState: w.visualState,
+              watchMouse: false);
         case ImageAbility():
           return ability.createWidget(
-              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              visualState: w.visualState,
+              watchMouse: false);
         case CircleAbility():
           return ability.createWidget(
-              id: w.id, isAlly: w.isAlly, mapScale: mapScale);
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              visualState: w.visualState,
+              watchMouse: false);
+        case SectorCircleAbility():
+          return ability.createWidget(
+              id: w.id,
+              isAlly: w.isAlly,
+              mapScale: mapScale,
+              rotation: rotation ?? w.rotation,
+              visualState: w.visualState,
+              watchMouse: false);
+        case DeadlockBarrierMeshAbility():
+          return ability.createWidget(
+            id: w.id,
+            isAlly: w.isAlly,
+            mapScale: mapScale,
+            armLengthsMeters: armLengthsMeters ?? w.armLengthsMeters,
+            visualState: w.visualState,
+            watchMouse: false,
+          );
         case SquareAbility():
           return ability.createWidget(
               id: w.id,
               isAlly: w.isAlly,
               mapScale: mapScale,
-              rotation: w.rotation,
-              length: length ?? w.length);
+              rotation: rotation ?? w.rotation,
+              length: length ?? w.length,
+              visualState: w.visualState,
+              watchMouse: false);
         case CenterSquareAbility():
           return ability.createWidget(
               id: w.id,
               isAlly: w.isAlly,
               mapScale: mapScale,
-              length: length ?? w.length);
+              rotation: rotation ?? w.rotation,
+              length: length ?? w.length,
+              visualState: w.visualState,
+              watchMouse: false);
         case RotatableImageAbility():
           return ability.createWidget(
               id: w.id,
               isAlly: w.isAlly,
               mapScale: mapScale,
-              length: length ?? w.length);
+              length: length ?? w.length,
+              visualState: w.visualState,
+              watchMouse: false);
       }
     }
 
@@ -368,6 +539,7 @@ class PlacedWidgetPreview {
         text: w.text,
         id: w.id,
         size: textSize ?? w.size,
+        fontSize: w.fontSize,
         tagColorValue: w.tagColorValue,
       );
     }
@@ -385,12 +557,15 @@ class PlacedWidgetPreview {
     if (w is PlacedUtility) {
       return UtilityData.utilityWidgets[w.type]!.createWidget(
           id: w.id,
+          isAlly: w.isAlly,
           rotation: w.rotation,
           length: length ?? w.length,
           mapScale: mapScale,
-          diameterMeters: w.customDiameter,
-          widthMeters: w.customWidth,
-          rectLengthMeters: w.customLength,
+          agentSize: agentSize,
+          abilitySize: abilitySize,
+          diameterMeters: customDiameter ?? w.customDiameter,
+          widthMeters: customWidth ?? w.customWidth,
+          rectLengthMeters: customLength ?? w.customLength,
           colorValue: w.customColorValue,
           opacityPercent: w.customOpacityPercent);
     }
@@ -432,9 +607,11 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
       required double abilitySize,
       required double agentSize}) {
     final coord = CoordinateSystem.instance;
-    final scaledPosition = screenPositionForWidget(
+    final scaledPosition = _overlayScreenPosition(
       widget: widget,
       coordinateSystem: coord,
+      agentSize: agentSize,
+      mapScale: mapScale,
     );
 
     if (widget is PlacedUtility && widget.rotation != 0) {
@@ -475,6 +652,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
             widget,
             mapScale,
             length: widget.length,
+            armLengthsMeters: widget.armLengthsMeters,
             agentSize: agentSize,
             abilitySize: abilitySize,
           ),
@@ -487,6 +665,8 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
         child: PlacedWidgetPreview.build(
           widget,
           mapScale,
+          armLengthsMeters:
+              widget is PlacedAbility ? widget.armLengthsMeters : null,
           agentSize: agentSize,
           abilitySize: abilitySize,
         ),

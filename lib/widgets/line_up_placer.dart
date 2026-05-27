@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
@@ -9,14 +7,11 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
-
-import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/team_provider.dart';
 import 'package:icarus/widgets/current_line_up_painter.dart';
-import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -85,8 +80,8 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                         renderBox.globalToLocal(details.offset);
                     // Updating info
 
-                    final mapScale =
-                        Maps.mapScale[ref.read(mapProvider)] ?? 1.0;
+                    final mapState = ref.read(mapProvider);
+                    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
                     final abilitySize =
                         ref.read(strategySettingsProvider).abilitySize;
 
@@ -101,8 +96,6 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                       ref.read(lineUpProvider.notifier).removeCurrentAbility();
                       return;
                     }
-
-                    log(renderBox.size.toString());
 
                     ref.read(lineUpProvider.notifier).updateAbilityPosition(
                         coordinateSystem.screenToCoordinate(localOffset));
@@ -155,64 +148,6 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                     ),
                   ),
                 ),
-              Align(
-                alignment: Alignment.bottomRight,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ShadTooltip(
-                        builder: (_) => const Text("Cancel"),
-                        child: ShadIconButton.secondary(
-                          width: 40,
-                          height: 40,
-                          icon: const Icon(LucideIcons.x),
-                          onPressed: () {
-                            ref
-                                .read(interactionStateProvider.notifier)
-                                .update(InteractionState.navigation);
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Builder(
-                        builder: (context) {
-                          final hasAgent = lineUp.currentAgent != null;
-                          final hasAbility = lineUp.currentAbility != null;
-                          final isDisabled = !hasAgent || !hasAbility;
-                          final tooltipMessage = !hasAgent && !hasAbility
-                              ? "Place an agent and ability to continue"
-                              : !hasAgent
-                                  ? "Place an agent to continue"
-                                  : !hasAbility
-                                      ? "Place an ability to continue"
-                                      : "Finalize lineup details";
-
-                          return ShadTooltip(
-                            builder: (_) => Text(tooltipMessage),
-                            child: ShadGestureDetector(
-                              child: ShadButton(
-                                trailing: const Icon(LucideIcons.arrowRight),
-                                enabled: !isDisabled,
-                                onPressed: () {
-                                  showShadDialog(
-                                    context: context,
-                                    builder: (dialogContext) {
-                                      return const CreateLineupDialog();
-                                    },
-                                  );
-                                },
-                                child: const Text("Next"),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              )
             ],
           );
         },
@@ -246,9 +181,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
             ref.read(lineUpProvider.notifier).setAbility(placedAbility);
           }
         },
-        onLeave: (data) {
-          log("I have left");
-        },
+        onLeave: (data) {},
       );
     });
   }

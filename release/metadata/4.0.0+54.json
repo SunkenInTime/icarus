@@ -1,0 +1,81 @@
+{
+    "version": "4.0.0+54",
+    "shortVersion": 54,
+    "title": "4.0 Release",
+    "description": "Desktop release metadata for Icarus.",
+    "date": "2026-03-19",
+    "mandatory": false,
+    "channels": [
+        "desktop",
+        "stable"
+    ],
+    "platforms": [
+        "windows"
+    ],
+    "changes": [
+        {
+            "message": "Redesigned Settings: clearer scope layout, compact sheet, and tidier map theme headers",
+            "type": "feature"
+        },
+        {
+            "message": "Ability range and visual state: clearer rendering and context menu integration for placed abilities",
+            "type": "feature"
+        },
+        {
+            "message": "Marker sizes stay synchronized when you move between strategy pages",
+            "type": "feature"
+        },
+        {
+            "message": "Rotate placed abilities from the board",
+            "type": "feature"
+        },
+        {
+            "message": "Ellipse (circle) drawing tool alongside your existing map markup",
+            "type": "feature"
+        },
+        {
+            "message": "Drag role icons onto the map like other utilities",
+            "type": "feature"
+        },
+        {
+            "message": "Drag-to-attach agent shapes with full undo/redo support",
+            "type": "feature"
+        },
+        {
+            "message": "Import strategies by dropping a folder or ZIP; summaries show what was imported or skipped",
+            "type": "feature"
+        },
+        {
+            "message": "Archive manifest import and smoother strategy bundle handling",
+            "type": "feature"
+        },
+        {
+            "message": "Dead agent state is preserved and interpolated when changing pages",
+            "type": "improvement"
+        },
+        {
+            "message": "Agent and ability sizing work together more consistently on the board",
+            "type": "improvement"
+        },
+        {
+            "message": "Added Miks with abilities and updated vision cone labels",
+            "type": "feature"
+        },
+        {
+            "message": "More reliable global shortcuts, delete/hover behavior, and lineup cleanup",
+            "type": "fix"
+        },
+        {
+            "message": "Undo/redo behaves correctly when edits go out of bounds",
+            "type": "fix"
+        },
+        {
+            "message": "Side switching keeps placements sensible; wall and barrier abilities respect the active side",
+            "type": "fix"
+        },
+        {
+            "message": "Improved error reporting and dependency updates",
+            "type": "improvement"
+        }
+    ]
+}

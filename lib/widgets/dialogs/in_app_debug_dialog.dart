@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class InAppDebugDialog extends ConsumerWidget {
@@ -10,10 +12,16 @@ class InAppDebugDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final logs = ref.watch(inAppDebugProvider);
+    final supportDirectory =
+        AppErrorReporter.applicationSupportDirectoryPath ?? 'Unavailable';
+    final persistedLogPath = AppErrorReporter.persistedLogPath;
 
     return ShadDialog(
       title: const Text('In-App Debug Logs'),
-      constraints: const BoxConstraints(maxWidth: 600, maxHeight: 500),
+      description: const Text(
+        'Use Copy to send the latest debug report.',
+      ),
+      constraints: const BoxConstraints(maxWidth: 720, maxHeight: 620),
       actions: [
         ShadButton.outline(
           onPressed: () {
@@ -26,16 +34,12 @@ class InAppDebugDialog extends ConsumerWidget {
           onPressed: logs.isEmpty
               ? null
               : () async {
-                  final text = logs.join('\n');
+                  final text = AppErrorReporter.buildClipboardReport(logs);
                   await Clipboard.setData(ClipboardData(text: text));
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Logs copied to clipboard'),
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
-                  }
+                  Settings.showToast(
+                    message: 'Debug report copied to clipboard.',
+                    backgroundColor: Settings.tacticalVioletTheme.primary,
+                  );
                 },
           leading: const Icon(LucideIcons.copy, size: 16),
           child: const Text('Copy'),
@@ -46,41 +50,253 @@ class InAppDebugDialog extends ConsumerWidget {
         ),
       ],
       child: SizedBox(
-        width: 560,
-        height: 350,
-        child: logs.isEmpty
-            ? Center(
-                child: Text(
-                  'No logs yet.',
-                  style: ShadTheme.of(context).textTheme.muted,
-                ),
-              )
-            : Container(
-                decoration: BoxDecoration(
-                  color: ShadTheme.of(context)
-                      .colorScheme
-                      .muted
-                      .withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: logs.length,
-                  itemBuilder: (context, index) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: SelectableText(
-                        '${index + 1}. ${logs[index]}',
-                        style: const TextStyle(
-                          fontFamily: 'Consolas',
-                          fontSize: 12,
-                          height: 1.4,
-                        ),
+        width: 680,
+        height: 440,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _RuntimeInfoCard(
+              supportDirectory: supportDirectory,
+              persistedLogPath: persistedLogPath,
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: logs.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No logs yet.',
+                        style: ShadTheme.of(context).textTheme.muted,
                       ),
-                    );
-                  },
+                    )
+                  : Container(
+                      decoration: BoxDecoration(
+                        color: ShadTheme.of(context)
+                            .colorScheme
+                            .muted
+                            .withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ListView.separated(
+                        padding: const EdgeInsets.all(12),
+                        itemCount: logs.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 10),
+                        itemBuilder: (context, index) {
+                          return _DebugLogEntryCard(entry: logs[index]);
+                        },
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RuntimeInfoCard extends StatelessWidget {
+  const _RuntimeInfoCard({
+    required this.supportDirectory,
+    required this.persistedLogPath,
+  });
+
+  final String supportDirectory;
+  final String? persistedLogPath;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondary.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: theme.colorScheme.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Runtime Paths',
+            style: theme.textTheme.small.copyWith(
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.mutedForeground,
+            ),
+          ),
+          const SizedBox(height: 6),
+          SelectableText(
+            'Support directory: $supportDirectory',
+            style: const TextStyle(
+              fontFamily: 'Consolas',
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+          if (persistedLogPath != null) ...[
+            const SizedBox(height: 4),
+            SelectableText(
+              'Persisted debug log: $persistedLogPath',
+              style: const TextStyle(
+                fontFamily: 'Consolas',
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DebugLogEntryCard extends StatelessWidget {
+  const _DebugLogEntryCard({required this.entry});
+
+  final DebugLogEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _backgroundColor(theme, entry.level),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: _borderColor(theme, entry.level),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  entry.headline,
+                  style: theme.textTheme.small.copyWith(
+                    color: _headlineColor(theme, entry.level),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
+              if (entry.repeatCount > 1) ...[
+                const SizedBox(width: 12),
+                _RepeatBadge(entry: entry),
+              ],
+            ],
+          ),
+          if (entry.repeatCount > 1) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Latest occurrence: ${formatDebugLogTimestamp(entry.lastOccurredAt)}',
+              style: theme.textTheme.small.copyWith(
+                color: theme.colorScheme.mutedForeground,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          SelectableText(
+            entry.message,
+            style: const TextStyle(
+              fontFamily: 'Consolas',
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+          if (entry.errorText != null &&
+              entry.errorText!.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Error',
+              style: theme.textTheme.small.copyWith(
+                color: theme.colorScheme.mutedForeground,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            SelectableText(
+              entry.errorText!,
+              style: const TextStyle(
+                fontFamily: 'Consolas',
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ],
+          if (entry.stackTrace != null &&
+              entry.stackTrace!.trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Stack trace',
+              style: theme.textTheme.small.copyWith(
+                color: theme.colorScheme.mutedForeground,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            SelectableText(
+              entry.stackTrace!,
+              style: const TextStyle(
+                fontFamily: 'Consolas',
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Color _backgroundColor(ShadThemeData theme, DebugLogLevel level) {
+    return switch (level) {
+      DebugLogLevel.info => theme.colorScheme.secondary.withValues(alpha: 0.28),
+      DebugLogLevel.warning => const Color(0xff7c2d12).withValues(alpha: 0.35),
+      DebugLogLevel.error =>
+        theme.colorScheme.destructive.withValues(alpha: 0.18),
+    };
+  }
+
+  Color _borderColor(ShadThemeData theme, DebugLogLevel level) {
+    return switch (level) {
+      DebugLogLevel.info => theme.colorScheme.border,
+      DebugLogLevel.warning => const Color(0xfff59e0b).withValues(alpha: 0.5),
+      DebugLogLevel.error =>
+        theme.colorScheme.destructive.withValues(alpha: 0.45),
+    };
+  }
+
+  Color _headlineColor(ShadThemeData theme, DebugLogLevel level) {
+    return switch (level) {
+      DebugLogLevel.info => theme.colorScheme.foreground,
+      DebugLogLevel.warning => const Color(0xfffbbf24),
+      DebugLogLevel.error => theme.colorScheme.destructiveForeground,
+    };
+  }
+}
+
+class _RepeatBadge extends StatelessWidget {
+  const _RepeatBadge({required this.entry});
+
+  final DebugLogEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondary,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: theme.colorScheme.border),
+      ),
+      child: Text(
+        entry.repeatLabel,
+        style: theme.textTheme.small.copyWith(fontWeight: FontWeight.w600),
       ),
     );
   }

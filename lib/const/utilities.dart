@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/image_utility_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/role_icon_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 
 enum UtilityType {
@@ -12,6 +14,10 @@ enum UtilityType {
   viewCone40,
   customCircle,
   customRectangle,
+  controller,
+  duelist,
+  initiator,
+  sentinel,
 }
 
 class UtilityData {
@@ -26,6 +32,18 @@ class UtilityData {
     UtilityType.viewCone40: ViewConeUtility(angle: 20, defaultLength: 50),
     UtilityType.customCircle: CustomCircleUtility(),
     UtilityType.customRectangle: CustomRectangleUtility(),
+    UtilityType.controller: RoleIconUtility(
+      imagePath: 'assets/agents/controller.webp',
+    ),
+    UtilityType.duelist: RoleIconUtility(
+      imagePath: 'assets/agents/duelist.webp',
+    ),
+    UtilityType.initiator: RoleIconUtility(
+      imagePath: 'assets/agents/initiator.webp',
+    ),
+    UtilityType.sentinel: RoleIconUtility(
+      imagePath: 'assets/agents/sentinel.webp',
+    ),
   };
 
   /// Helper to check if a utility type is a view cone
@@ -54,6 +72,17 @@ class UtilityData {
   static bool isCustomShape(UtilityType type) {
     return type == UtilityType.customCircle ||
         type == UtilityType.customRectangle;
+  }
+
+  static bool isRoleIcon(UtilityType type) {
+    return type == UtilityType.controller ||
+        type == UtilityType.duelist ||
+        type == UtilityType.initiator ||
+        type == UtilityType.sentinel;
+  }
+
+  static bool isAgentAttachable(UtilityType type) {
+    return isViewCone(type) || type == UtilityType.customCircle;
   }
 
   static ViewConeUtility getViewConePreset(UtilityType type) {
@@ -145,10 +174,10 @@ class CustomShapeToolData implements DraggableData {
     required int colorValue,
     required int opacityPercent,
   }) {
-    final diameter = diameterMeters * AgentData.inGameMetersDiameter * mapScale;
+    final maxDiameter = CustomCircleUtility.maxDiameterInVirtual(mapScale);
     return CustomShapeToolData(
       type: UtilityType.customCircle,
-      centerPoint: Offset(diameter / 2, diameter / 2),
+      centerPoint: Offset(maxDiameter / 2, maxDiameter / 2),
       diameterMeters: diameterMeters,
       widthMeters: 0,
       rectLengthMeters: 0,
@@ -187,6 +216,38 @@ class CustomShapeToolData implements DraggableData {
   }
 }
 
+class RoleIconToolData implements DraggableData {
+  final UtilityType type;
+  final Offset centerPoint;
+
+  const RoleIconToolData({
+    required this.type,
+    required this.centerPoint,
+  });
+
+  factory RoleIconToolData.fromType({
+    required UtilityType type,
+    required double agentSize,
+  }) {
+    return RoleIconToolData(
+      type: type,
+      centerPoint: UtilityData.utilityWidgets[type]!.getAnchorPoint(
+        agentSize: agentSize,
+      ),
+    );
+  }
+
+  Offset getScaledCenterPoint({
+    required double scaleFactor,
+    required double screenZoom,
+  }) {
+    return centerPoint.scale(
+      scaleFactor * screenZoom,
+      scaleFactor * screenZoom,
+    );
+  }
+}
+
 class TextToolData implements DraggableData {
   final Offset centerPoint;
   final double width;
@@ -201,7 +262,7 @@ class TextToolData implements DraggableData {
   });
 
   factory TextToolData.defaults({int? tagColorValue}) {
-    const width = 200.0;
+    const width = 185.0;
     const height = 40.0;
     return TextToolData(
       centerPoint: const Offset(width / 2, height / 2),
@@ -215,8 +276,12 @@ class TextToolData implements DraggableData {
     required double scaleFactor,
     required double screenZoom,
   }) {
-    return centerPoint.scale(
-        scaleFactor * screenZoom, scaleFactor * screenZoom);
+    final coordinateSystem = CoordinateSystem.instance;
+    final scaledCenter = Offset(
+      coordinateSystem.worldWidthToScreen(centerPoint.dx),
+      coordinateSystem.worldHeightToScreen(centerPoint.dy),
+    );
+    return scaledCenter.scale(screenZoom, screenZoom);
   }
 }
 
@@ -226,24 +291,32 @@ sealed class Utilities {
       double? length,
       double? rotation,
       double? mapScale,
+      double? agentSize,
+      double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters});
 
   Widget createWidget(
       {String? id,
+      bool isAlly = true,
       double? rotation,
       double? length,
       double? mapScale,
+      double? agentSize,
+      double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      bool showCenterMarker = true,
       int? colorValue,
       int? opacityPercent});
   Offset getSize(
       {double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      double? agentSize,
+      double? abilitySize,
       double? mapScale});
 }
 
@@ -256,12 +329,16 @@ class ImageUtility extends Utilities {
   @override
   Widget createWidget(
       {String? id,
+      bool isAlly = true,
       double? rotation,
       double? length,
       double? mapScale,
+      double? agentSize,
+      double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      bool showCenterMarker = true,
       int? colorValue,
       int? opacityPercent}) {
     return ImageUtilityWidget(imagePath: imagePath, size: size, id: id);
@@ -273,6 +350,8 @@ class ImageUtility extends Utilities {
       double? length,
       double? rotation,
       double? mapScale,
+      double? agentSize,
+      double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters}) {
@@ -284,6 +363,8 @@ class ImageUtility extends Utilities {
       {double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      double? agentSize,
+      double? abilitySize,
       double? mapScale}) {
     return Offset(size, size);
   }
@@ -306,12 +387,16 @@ class ViewConeUtility extends Utilities {
   @override
   Widget createWidget(
       {String? id,
+      bool isAlly = true,
       double? rotation,
       double? length,
       double? mapScale,
+      double? agentSize,
+      double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      bool showCenterMarker = true,
       int? colorValue,
       int? opacityPercent}) {
     return ViewConeWidget(
@@ -319,6 +404,7 @@ class ViewConeUtility extends Utilities {
       angle: angle,
       rotation: rotation,
       length: length ?? defaultLength,
+      showCenterMarker: showCenterMarker,
     );
   }
 
@@ -330,15 +416,17 @@ class ViewConeUtility extends Utilities {
       double? length,
       double? rotation,
       double? mapScale,
+      double? agentSize,
+      double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters}) {
-    return const Offset(maxLength, maxLength + iconTopOffset);
+    return ViewConeWidget.anchorPointVirtual;
   }
 
   /// Center point of the eye icon used as canonical placement anchor.
   Offset getCenterPoint() {
-    return const Offset(maxLength, maxLength + iconTopOffset);
+    return getAnchorPoint();
   }
 
   /// Returns the drag anchor point in physical pixels.
@@ -355,8 +443,13 @@ class ViewConeUtility extends Utilities {
       {double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      double? agentSize,
+      double? abilitySize,
       double? mapScale}) {
-    return const Offset(maxLength * 2, maxLength + iconTopOffset);
+    return Offset(
+      ViewConeWidget.totalWidthVirtual,
+      ViewConeWidget.totalHeightVirtual,
+    );
   }
   // /// Get anchor point with length - bottom center of the view cone
   // /// Similar to how SquareAbility calculates its anchor
@@ -373,15 +466,35 @@ class ViewConeUtility extends Utilities {
 }
 
 class CustomCircleUtility extends Utilities {
+  static const double maxDiameterMeters = 40.0;
+
+  static double diameterInVirtual({
+    required double diameterMeters,
+    required double mapScale,
+  }) {
+    return diameterMeters * AgentData.inGameMetersDiameter * mapScale;
+  }
+
+  static double maxDiameterInVirtual(double mapScale) {
+    return diameterInVirtual(
+      diameterMeters: maxDiameterMeters,
+      mapScale: mapScale,
+    );
+  }
+
   @override
   Widget createWidget(
       {String? id,
+      bool isAlly = true,
       double? rotation,
       double? length,
       double? mapScale,
+      double? agentSize,
+      double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      bool showCenterMarker = true,
       int? colorValue,
       int? opacityPercent}) {
     assert(mapScale != null, 'mapScale must be provided');
@@ -394,6 +507,7 @@ class CustomCircleUtility extends Utilities {
       diameterMeters: diameterMeters,
       colorValue: colorValue,
       opacityPercent: opacityPercent,
+      showCenterMarker: showCenterMarker,
     );
   }
 
@@ -403,13 +517,13 @@ class CustomCircleUtility extends Utilities {
       double? length,
       double? rotation,
       double? mapScale,
+      double? agentSize,
+      double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters}) {
     assert(mapScale != null, 'mapScale must be provided');
-    assert(diameterMeters != null, 'diameterMeters must be provided');
-    final diameter =
-        diameterMeters! * AgentData.inGameMetersDiameter * mapScale!;
+    final diameter = maxDiameterInVirtual(mapScale!);
     return Offset(diameter / 2, diameter / 2);
   }
 
@@ -418,11 +532,11 @@ class CustomCircleUtility extends Utilities {
       {double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      double? agentSize,
+      double? abilitySize,
       double? mapScale}) {
-    assert(diameterMeters != null, 'diameterMeters must be provided');
     assert(mapScale != null, 'mapScale must be provided');
-    final diameter =
-        diameterMeters! * AgentData.inGameMetersDiameter * mapScale!;
+    final diameter = maxDiameterInVirtual(mapScale!);
     return Offset(diameter, diameter);
   }
 }
@@ -431,12 +545,16 @@ class CustomRectangleUtility extends Utilities {
   @override
   Widget createWidget(
       {String? id,
+      bool isAlly = true,
       double? rotation,
       double? length,
       double? mapScale,
+      double? agentSize,
+      double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      bool showCenterMarker = true,
       int? colorValue,
       int? opacityPercent}) {
     assert(mapScale != null, 'mapScale must be provided');
@@ -460,6 +578,8 @@ class CustomRectangleUtility extends Utilities {
       double? length,
       double? rotation,
       double? mapScale,
+      double? agentSize,
+      double? abilitySize,
       double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters}) {
@@ -477,6 +597,8 @@ class CustomRectangleUtility extends Utilities {
       {double? diameterMeters,
       double? widthMeters,
       double? rectLengthMeters,
+      double? agentSize,
+      double? abilitySize,
       double? mapScale}) {
     assert(widthMeters != null, 'widthMeters must be provided');
     assert(rectLengthMeters != null, 'rectLengthMeters must be provided');
@@ -485,5 +607,65 @@ class CustomRectangleUtility extends Utilities {
     final rectLength =
         rectLengthMeters! * AgentData.inGameMetersDiameter * mapScale;
     return Offset(rectLength, width);
+  }
+}
+
+class RoleIconUtility extends Utilities {
+  final String imagePath;
+
+  RoleIconUtility({required this.imagePath});
+
+  @override
+  Widget createWidget({
+    String? id,
+    bool isAlly = true,
+    double? rotation,
+    double? length,
+    double? mapScale,
+    double? agentSize,
+    double? abilitySize,
+    double? diameterMeters,
+    double? widthMeters,
+    double? rectLengthMeters,
+    bool showCenterMarker = true,
+    int? colorValue,
+    int? opacityPercent,
+  }) {
+    assert(agentSize != null, 'agentSize must be provided');
+    return RoleIconUtilityWidget(
+      imagePath: imagePath,
+      isAlly: isAlly,
+      size: agentSize!,
+      id: id,
+    );
+  }
+
+  @override
+  Offset getAnchorPoint({
+    String? id,
+    double? length,
+    double? rotation,
+    double? mapScale,
+    double? agentSize,
+    double? abilitySize,
+    double? diameterMeters,
+    double? widthMeters,
+    double? rectLengthMeters,
+  }) {
+    assert(agentSize != null, 'agentSize must be provided');
+    return Offset(agentSize! / 2, agentSize / 2);
+  }
+
+  @override
+  Offset getSize({
+    double? diameterMeters,
+    double? widthMeters,
+    double? rectLengthMeters,
+    double? agentSize,
+    double? abilitySize,
+    double? mapScale,
+  }) {
+    assert(agentSize != null, 'agentSize must be provided');
+    return Offset(agentSize!, agentSize);
   }
 }

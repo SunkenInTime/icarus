@@ -1,0 +1,21 @@
+{
+  "version": "4.0.6+60",
+  "shortVersion": 60,
+  "title": "4.0.6 Release",
+  "description": "Desktop release metadata for Icarus.",
+  "date": "2026-03-20",
+  "mandatory": false,
+  "channels": [
+    "desktop",
+    "stable"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "changes": [
+    {
+      "message": "Fixed the direct Windows updater so it verifies every required file before restart, preventing partial downloads from reopening the old version in a loop.",
+      "type": "fix"
+    }
+  ]
+}

@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
@@ -20,7 +18,6 @@ class AbiilityBar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     if (ref.watch(abilityBarProvider) == null) //
       return const SizedBox.shrink();
-    log("Building ability bar");
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1;
 
     AgentData activeAgent = ref.watch(abilityBarProvider)!;
@@ -91,8 +88,6 @@ class AbiilityBar extends ConsumerWidget {
 
                   double abilitySize =
                       ref.read(strategySettingsProvider).abilitySize;
-
-                  log("info.abilityData: $abilitySize");
                   return info.abilityData!
                       .getAnchorPoint(
                           mapScale: mapScale, abilitySize: abilitySize)

@@ -1,11 +1,22 @@
-{
-    "current_version": "3.2.2",
-    "current_version_number": "41",
-    "update_title": "3.2.2 Release: Icarus Villan Arc",
-    "release_notes": "This is the description of the update",
+﻿{
+    "current_version": "3.2.3",
+    "current_version_number": "42",
+    "update_title": "3.2.3 Release: Icarus Villain Arc",
+    "release_notes": "Microsoft Store update note: if the update fails, fully close Icarus and start the update again in the Store. The Store update is on Icarus's current version (3.2.3).",
     "list_of_features": [
-        "Feature 1",
-        "Feature 2",
-        "Feature 3"
+        "Custom shapes",
+        "Custom map colors with support for custom profiles",
+        "More accurate drawing (lines no longer change after you finish drawing)",
+        "Traversal speed for different abilities",
+        "Drawing squares is now possible",
+        "More reactive animations within pages",
+        "Agents are sorted alphabetically",
+        "Maps are sorted alphabetically",
+        "Improved size accuracy of all abilities",
+        "Improved accuracy of all maps",
+        "Added color-tagged notes/images",
+        "You can drag the spike now",
+        "Replaced the activity bar with a quick switcher for easier strategy switching",
+        "Added keybind indicators for many actions so behavior is more obvious"
     ]
 }

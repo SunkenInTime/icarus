@@ -1,10 +1,9 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -66,10 +65,20 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
       return ImageScaleController(
         isDragging: isDragging,
         onPanUpdate: (details) {
-          log("I'm being panned");
+          final renderBox = context.findRenderObject() as RenderBox?;
+          if (renderBox == null) return;
+
+          final topLeftGlobal = renderBox.localToGlobal(Offset.zero);
+          final screenZoom = ref.read(screenZoomProvider);
+          final widthInScreenPixels =
+              details.globalPosition.dx - topLeftGlobal.dx;
+          final widthInContentSpace = widthInScreenPixels / screenZoom;
+          final widthInWorldSpace =
+              CoordinateSystem.instance.screenWidthToWorld(widthInContentSpace);
+
           setState(() {
             isPanning = true;
-            localScale = ImageScalePolicy.clamp(details.delta.dx + localScale!);
+            localScale = ImageScalePolicy.clamp(widthInWorldSpace);
           });
         },
         onPanEnd: (details) {
@@ -118,14 +127,10 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
             items: _buildTagColorItems(ref),
             child: MouseWatch(
               cursor: SystemMouseCursors.click,
-              onDeleteKeyPressed: () {
-                final id = widget.placedImage.id;
-                final action = UserAction(
-                    type: ActionType.deletion, id: id, group: ActionGroup.image);
-
-                ref.read(actionProvider.notifier).addAction(action);
-                ref.read(placedImageProvider.notifier).removeImage(id);
-              },
+              deleteTarget: HoveredDeleteTarget.image(
+                id: widget.placedImage.id,
+                ownerToken: Object(),
+              ),
               child: ImageWidget(
                 fileExtension: widget.placedImage.fileExtension,
                 aspectRatio: widget.placedImage.aspectRatio,

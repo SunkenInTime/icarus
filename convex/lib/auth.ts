@@ -12,17 +12,58 @@ const roleRank: Record<StrategyRole, number> = {
   owner: 3,
 };
 
+export function getCanonicalExternalId(identity: {
+  tokenIdentifier: string;
+}): string {
+  return identity.tokenIdentifier;
+}
+
+export function getLegacyExternalId(identity: {
+  subject?: string | null;
+  tokenIdentifier: string;
+}): string | null {
+  const subject = identity.subject;
+  if (subject == null || subject == identity.tokenIdentifier) {
+    return null;
+  }
+  return subject;
+}
+
+export async function findUserByIdentity(
+  ctx: AnyCtx,
+  identity: {
+    subject?: string | null;
+    tokenIdentifier: string;
+  },
+): Promise<Doc<"users"> | null> {
+  const canonicalExternalId = getCanonicalExternalId(identity);
+  const canonicalUser = await ctx.db
+    .query("users")
+    .withIndex("by_externalId", (q) => q.eq("externalId", canonicalExternalId))
+    .first();
+
+  if (canonicalUser !== null) {
+    return canonicalUser;
+  }
+
+  const legacyExternalId = getLegacyExternalId(identity);
+  if (legacyExternalId == null) {
+    return null;
+  }
+
+  return await ctx.db
+    .query("users")
+    .withIndex("by_externalId", (q) => q.eq("externalId", legacyExternalId))
+    .first();
+}
+
 export async function requireCurrentUser(ctx: AnyCtx): Promise<Doc<"users">> {
   const identity = await ctx.auth.getUserIdentity();
   if (identity === null) {
     throw unauthenticatedError();
   }
 
-  const externalId = identity.subject ?? identity.tokenIdentifier;
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_externalId", (q) => q.eq("externalId", externalId))
-    .first();
+  const user = await findUserByIdentity(ctx, identity);
 
   if (user === null) {
     throw new Error("Missing user record. Call users:ensureCurrentUser before querying collaborative data.");
@@ -50,6 +91,77 @@ export async function getStrategyRoleForUser(
   return collaborator?.role ?? null;
 }
 
+export async function getFolderRoleForUser(
+  ctx: AnyCtx,
+  folder: Doc<"folders">,
+  userId: Id<"users">,
+): Promise<StrategyRole | null> {
+  if (folder.ownerId === userId) {
+    return "owner";
+  }
+
+  const collaborator = await ctx.db
+    .query("folderCollaborators")
+    .withIndex("by_folderId_userId", (q) =>
+      q.eq("folderId", folder._id).eq("userId", userId),
+    )
+    .first();
+
+  return collaborator?.role ?? null;
+}
+
+function higherRole(
+  left: StrategyRole | null,
+  right: StrategyRole | null,
+): StrategyRole | null {
+  if (left === null) return right;
+  if (right === null) return left;
+  return roleRank[left] >= roleRank[right] ? left : right;
+}
+
+export async function getEffectiveFolderRoleForUser(
+  ctx: AnyCtx,
+  folder: Doc<"folders">,
+  userId: Id<"users">,
+): Promise<StrategyRole | null> {
+  let current: Doc<"folders"> | null = folder;
+  let bestRole: StrategyRole | null = null;
+
+  while (current !== null) {
+    bestRole = higherRole(
+      bestRole,
+      await getFolderRoleForUser(ctx, current, userId),
+    );
+    const parentFolderId: Id<"folders"> | undefined = current.parentFolderId;
+    if (parentFolderId === undefined) {
+      break;
+    }
+    current = (await ctx.db.get(parentFolderId)) as Doc<"folders"> | null;
+  }
+
+  return bestRole;
+}
+
+export async function getEffectiveStrategyRoleForUser(
+  ctx: AnyCtx,
+  strategy: Doc<"strategies">,
+  userId: Id<"users">,
+): Promise<StrategyRole | null> {
+  let bestRole = await getStrategyRoleForUser(ctx, strategy, userId);
+
+  if (strategy.folderId !== undefined) {
+    const folder = await ctx.db.get(strategy.folderId);
+    if (folder !== null) {
+      bestRole = higherRole(
+        bestRole,
+        await getEffectiveFolderRoleForUser(ctx, folder, userId),
+      );
+    }
+  }
+
+  return bestRole;
+}
+
 export function hasRole(
   actual: StrategyRole | null,
   required: StrategyRole,
@@ -64,7 +176,22 @@ export async function assertStrategyRole(
   required: StrategyRole,
 ): Promise<{ user: Doc<"users">; role: StrategyRole }> {
   const user = await requireCurrentUser(ctx);
-  const role = await getStrategyRoleForUser(ctx, strategy, user._id);
+  const role = await getEffectiveStrategyRoleForUser(ctx, strategy, user._id);
+
+  if (!hasRole(role, required)) {
+    throw new Error("Forbidden");
+  }
+
+  return { user, role: role as StrategyRole };
+}
+
+export async function assertFolderRole(
+  ctx: AnyCtx,
+  folder: Doc<"folders">,
+  required: StrategyRole,
+): Promise<{ user: Doc<"users">; role: StrategyRole }> {
+  const user = await requireCurrentUser(ctx);
+  const role = await getEffectiveFolderRoleForUser(ctx, folder, user._id);
 
   if (!hasRole(role, required)) {
     throw new Error("Forbidden");

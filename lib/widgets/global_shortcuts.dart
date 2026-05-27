@@ -1,19 +1,21 @@
-import 'dart:developer';
-
-import 'package:flutter/widgets.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/app_navigator.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/providers/delete_menu_provider.dart';
+import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/widgets/dialogs/in_app_debug_dialog.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/widgets/delete_helpers.dart';
 import 'package:uuid/uuid.dart';
 
 class GlobalShortcuts extends ConsumerStatefulWidget {
@@ -24,8 +26,37 @@ class GlobalShortcuts extends ConsumerStatefulWidget {
   ConsumerState<GlobalShortcuts> createState() => _GlobalShortcutsState();
 }
 
-class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
-  bool _isDebugDialogOpen = false;
+class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
+    with WidgetsBindingObserver {
+  bool _handleModifierKeyEvent(KeyEvent event) {
+    ref.read(duplicateDragModifierProvider.notifier).handleKeyEvent(event);
+    return false;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    HardwareKeyboard.instance.addHandler(_handleModifierKeyEvent);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleModifierKeyEvent);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      ref.read(duplicateDragModifierProvider.notifier).clear();
+    }
+  }
+
+  void _dismissDeleteMenu() {
+    ref.read(deleteMenuProvider.notifier).requestClose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,27 +67,112 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
         shortcuts: ShortcutInfo.globalShortcuts,
         child: Actions(
           actions: {
+            NavigationActionIntent: CallbackAction<NavigationActionIntent>(
+              onInvoke: (intent) {
+                _dismissDeleteMenu();
+                ref
+                    .read(interactionStateProvider.notifier)
+                    .update(InteractionState.navigation);
+                return null;
+              },
+            ),
+            ToggleAgentFilterIntent: CallbackAction<ToggleAgentFilterIntent>(
+              onInvoke: (intent) {
+                _dismissDeleteMenu();
+                ref.read(agentFilterProvider.notifier).toggleAllOnMap();
+                return null;
+              },
+            ),
+            ForwardPageIntent: CallbackAction<ForwardPageIntent>(
+              onInvoke: (intent) async {
+                _dismissDeleteMenu();
+                await ref.read(strategyProvider.notifier).forwardPage();
+                return null;
+              },
+            ),
+            BackwardPageIntent: CallbackAction<BackwardPageIntent>(
+              onInvoke: (intent) async {
+                _dismissDeleteMenu();
+                await ref.read(strategyProvider.notifier).backwardPage();
+                return null;
+              },
+            ),
+            AddPageIntent: CallbackAction<AddPageIntent>(
+              onInvoke: (intent) async {
+                _dismissDeleteMenu();
+                await ref.read(strategyProvider.notifier).addPage();
+                return null;
+              },
+            ),
+            ToggleLineupIntent: CallbackAction<ToggleLineupIntent>(
+              onInvoke: (intent) {
+                _dismissDeleteMenu();
+                if (ref.read(interactionStateProvider) ==
+                    InteractionState.lineUpPlacing) {
+                  ref
+                      .read(interactionStateProvider.notifier)
+                      .update(InteractionState.navigation);
+                } else {
+                  ref
+                      .read(interactionStateProvider.notifier)
+                      .update(InteractionState.lineUpPlacing);
+                }
+                return null;
+              },
+            ),
+            OpenInAppDebugIntent: CallbackAction<OpenInAppDebugIntent>(
+              onInvoke: (intent) async {
+                _dismissDeleteMenu();
+                await AppErrorReporter.openDebugLog();
+                return null;
+              },
+            ),
+            ContextualDeleteIntent: CallbackAction<ContextualDeleteIntent>(
+              onInvoke: (intent) {
+                final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
+                if (hoveredTarget != null) {
+                  _dismissDeleteMenu();
+                  ref.read(hoveredDeleteTargetProvider.notifier).state = null;
+                  deleteHoveredTarget(ref, hoveredTarget);
+                  return null;
+                }
+
+                final deleteMenuState = ref.read(deleteMenuProvider);
+                if (deleteMenuState.isOpenRequested) {
+                  _dismissDeleteMenu();
+                  return null;
+                }
+
+                ref.read(deleteMenuProvider.notifier).requestOpen(
+                      reason: DeleteMenuOpenReason.keyboard,
+                    );
+                return null;
+              },
+            ),
             UndoActionIntent: CallbackAction<UndoActionIntent>(
               onInvoke: (intent) {
+                _dismissDeleteMenu();
                 ref.read(actionProvider.notifier).undoAction();
                 return null;
               },
             ),
             AddedTextIntent: CallbackAction<AddedTextIntent>(
               onInvoke: (intent) {
+                _dismissDeleteMenu();
                 const uuid = Uuid();
-                final coordinateSystem = CoordinateSystem.instance;
-                const screenPoint = Offset(200, 42);
-                final virtualPoint =
-                    coordinateSystem.screenToCoordinate(screenPoint);
                 final placementCenter = ref.read(placementCenterProvider);
+                const defaultTextWidth = 185.0;
+                const defaultTextHeight = 40.0;
                 final centeredTopLeft = placementCenter -
-                    Offset(virtualPoint.dx / 2, virtualPoint.dy / 2);
+                    const Offset(defaultTextWidth / 2, defaultTextHeight / 2);
 
                 ref.read(textProvider.notifier).addText(
                       PlacedText(
                         position: centeredTopLeft,
                         id: uuid.v4(),
+                        size: defaultTextWidth,
+                        fontSize: 16,
+                        sizeVersion: worldSizedMediaVersion,
                       ),
                     );
                 return null;
@@ -64,6 +180,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ),
             ToggleDrawingIntent: CallbackAction<ToggleDrawingIntent>(
               onInvoke: (intent) {
+                _dismissDeleteMenu();
                 if (ref.read(interactionStateProvider) ==
                     InteractionState.drawing) {
                   ref
@@ -79,6 +196,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ),
             ToggleErasingIntent: CallbackAction<ToggleErasingIntent>(
               onInvoke: (intent) async {
+                _dismissDeleteMenu();
                 if (ref.read(interactionStateProvider) ==
                     InteractionState.erasing) {
                   ref
@@ -95,54 +213,32 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts> {
             ),
             RedoActionIntent: CallbackAction<RedoActionIntent>(
               onInvoke: (intent) {
-                log("I triggered");
-
+                _dismissDeleteMenu();
                 ref.read(actionProvider.notifier).redoAction();
                 return null;
               },
             ),
-            NavigationActionIntent: CallbackAction<NavigationActionIntent>(
-              onInvoke: (intent) {
-                log("I triggered");
-
-                ref
-                    .read(interactionStateProvider.notifier)
-                    .update(InteractionState.navigation);
-                return null;
-              },
-            ),
-            ForwardPageIntent: CallbackAction<ForwardPageIntent>(
+            SaveStrategyIntent: CallbackAction<SaveStrategyIntent>(
               onInvoke: (intent) async {
-                log("I triggered");
-
-                await ref.read(strategyProvider.notifier).forwardPage();
-                return null;
-              },
-            ),
-            BackwardPageIntent: CallbackAction<BackwardPageIntent>(
-              onInvoke: (intent) async {
-                log("I triggered");
-
-                await ref.read(strategyProvider.notifier).backwardPage();
-                return null;
-              },
-            ),
-            OpenInAppDebugIntent: CallbackAction<OpenInAppDebugIntent>(
-              onInvoke: (intent) async {
-                if (_isDebugDialogOpen) return null;
-
-                final navCtx = appNavigatorKey.currentContext ??
-                    appNavigatorKey.currentState?.overlay?.context;
-                if (navCtx == null) return null;
-
-                _isDebugDialogOpen = true;
-
-                await showShadDialog<void>(
-                  context: navCtx,
-                  builder: (context) => const InAppDebugDialog(),
-                );
-
-                _isDebugDialogOpen = false;
+                _dismissDeleteMenu();
+                final strategyId = ref.read(strategyProvider).strategyId;
+                if (strategyId == null) return null;
+                try {
+                  await ref.read(strategyProvider.notifier).forceSaveNow(
+                        strategyId,
+                      );
+                  if (!mounted) return null;
+                  Settings.showToast(
+                    message: 'File saved',
+                    backgroundColor: Colors.green,
+                  );
+                } catch (_) {
+                  if (!mounted) return null;
+                  Settings.showToast(
+                    message: 'Save failed',
+                    backgroundColor: Colors.red,
+                  );
+                }
                 return null;
               },
             ),

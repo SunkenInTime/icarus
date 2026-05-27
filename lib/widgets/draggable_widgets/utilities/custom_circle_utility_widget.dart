@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/const/utilities.dart';
+import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
@@ -17,6 +16,7 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
     this.colorValue,
     this.opacityPercent,
     this.mapScale,
+    this.showCenterMarker = true,
   });
 
   final String? id;
@@ -24,6 +24,7 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
   final int? colorValue;
   final int? opacityPercent;
   final double? mapScale;
+  final bool showCenterMarker;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -31,10 +32,10 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
     final utility = _getUtility(ref);
     final effectiveMapScale = mapScale ?? 1.0;
 
-    final effectiveDiameterMeters = utility?.customDiameter ?? diameterMeters;
-    final effectiveColorValue = utility?.customColorValue ?? colorValue;
+    final effectiveDiameterMeters = diameterMeters ?? utility?.customDiameter;
+    final effectiveColorValue = colorValue ?? utility?.customColorValue;
     final effectiveOpacityPercent =
-        utility?.customOpacityPercent ?? opacityPercent;
+        opacityPercent ?? utility?.customOpacityPercent;
     final hasAllRequiredValues = effectiveDiameterMeters != null &&
         effectiveColorValue != null &&
         effectiveOpacityPercent != null;
@@ -43,62 +44,60 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
       'CustomCircleUtilityWidget requires explicit diameter/color/opacity values.',
     );
     if (!hasAllRequiredValues) {
-      if (kDebugMode) {
-        debugPrint(
-            'Skipping custom circle render due to missing explicit values (id: $id).');
-      }
       return const SizedBox.shrink();
     }
 
     final color = Color(effectiveColorValue);
     final fillOpacity = (effectiveOpacityPercent / 100).clamp(0.0, 1.0);
-    final diameterInVirtual = effectiveDiameterMeters *
-        AgentData.inGameMetersDiameter *
-        effectiveMapScale;
+    final diameterInVirtual = CustomCircleUtility.diameterInVirtual(
+      diameterMeters: effectiveDiameterMeters,
+      mapScale: effectiveMapScale,
+    );
+    final maxDiameterInVirtual =
+        CustomCircleUtility.maxDiameterInVirtual(effectiveMapScale);
     final scaledDiameter = coord.scale(diameterInVirtual);
+    final scaledMaxDiameter = coord.scale(maxDiameterInVirtual);
     final iconSize = coord.scale(Settings.utilityIconSize);
 
     return SizedBox(
-      width: scaledDiameter,
-      height: scaledDiameter,
+      width: scaledMaxDiameter,
+      height: scaledMaxDiameter,
       child: Stack(
         children: [
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: color.withValues(alpha: fillOpacity),
-                  border: Border.all(color: color, width: coord.scale(2)),
-                ),
-              ),
-            ),
-          ),
           Center(
-            child: MouseWatch(
-              cursor: SystemMouseCursors.click,
-              onDeleteKeyPressed: () {
-                if (id == null) return;
-                final action = UserAction(
-                  type: ActionType.deletion,
-                  id: id!,
-                  group: ActionGroup.utility,
-                );
-                ref.read(actionProvider.notifier).addAction(action);
-                ref.read(utilityProvider.notifier).removeUtility(id!);
-              },
-              child: Container(
-                width: iconSize * 0.8,
-                height: iconSize * 0.8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.9),
-                  border:
-                      Border.all(color: Colors.white, width: coord.scale(2)),
+            child: IgnorePointer(
+              child: SizedBox(
+                width: scaledDiameter,
+                height: scaledDiameter,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: color.withValues(alpha: fillOpacity),
+                    border: Border.all(color: color, width: coord.scale(2)),
+                  ),
                 ),
               ),
             ),
           ),
+          if (showCenterMarker)
+            Center(
+              child: MouseWatch(
+                cursor: SystemMouseCursors.click,
+                deleteTarget: (id?.isNotEmpty ?? false)
+                    ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
+                    : null,
+                child: Container(
+                  width: iconSize * 0.8,
+                  height: iconSize * 0.8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withValues(alpha: 0.9),
+                    border:
+                        Border.all(color: Colors.white, width: coord.scale(2)),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

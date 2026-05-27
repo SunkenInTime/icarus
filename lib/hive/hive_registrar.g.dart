@@ -9,11 +9,14 @@ import 'package:icarus/hive/hive_adapters.dart';
 extension HiveRegistrar on HiveInterface {
   void registerAdapters() {
     registerAdapter(AbilityInfoAdapter());
+    registerAdapter(AbilityVisualStateAdapter());
     registerAdapter(AgentStateAdapter());
     registerAdapter(AgentTypeAdapter());
     registerAdapter(AppPreferencesAdapter());
     registerAdapter(BoundingBoxAdapter());
-    registerAdapter(FolderAdapter());
+    registerAdapter(CloudMediaJobStateAdapter());
+    registerAdapter(CloudMediaUploadJobAdapter());
+    registerAdapter(EllipseDrawingAdapter());
     registerAdapter(FolderColorAdapter());
     registerAdapter(FreeDrawingAdapter());
     registerAdapter(IconDataAdapter());
@@ -25,9 +28,11 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(OffsetAdapter());
     registerAdapter(PlacedAbilityAdapter());
     registerAdapter(PlacedAgentAdapter());
+    registerAdapter(PlacedCircleAgentAdapter());
     registerAdapter(PlacedImageAdapter());
     registerAdapter(PlacedTextAdapter());
     registerAdapter(PlacedUtilityAdapter());
+    registerAdapter(PlacedViewConeAgentAdapter());
     registerAdapter(PlacedWidgetAdapter());
     registerAdapter(RectangleDrawingAdapter());
     registerAdapter(SimpleImageDataAdapter());
@@ -42,11 +47,14 @@ extension HiveRegistrar on HiveInterface {
 extension IsolatedHiveRegistrar on IsolatedHiveInterface {
   void registerAdapters() {
     registerAdapter(AbilityInfoAdapter());
+    registerAdapter(AbilityVisualStateAdapter());
     registerAdapter(AgentStateAdapter());
     registerAdapter(AgentTypeAdapter());
     registerAdapter(AppPreferencesAdapter());
     registerAdapter(BoundingBoxAdapter());
-    registerAdapter(FolderAdapter());
+    registerAdapter(CloudMediaJobStateAdapter());
+    registerAdapter(CloudMediaUploadJobAdapter());
+    registerAdapter(EllipseDrawingAdapter());
     registerAdapter(FolderColorAdapter());
     registerAdapter(FreeDrawingAdapter());
     registerAdapter(IconDataAdapter());
@@ -58,9 +66,11 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(OffsetAdapter());
     registerAdapter(PlacedAbilityAdapter());
     registerAdapter(PlacedAgentAdapter());
+    registerAdapter(PlacedCircleAgentAdapter());
     registerAdapter(PlacedImageAdapter());
     registerAdapter(PlacedTextAdapter());
     registerAdapter(PlacedUtilityAdapter());
+    registerAdapter(PlacedViewConeAgentAdapter());
     registerAdapter(PlacedWidgetAdapter());
     registerAdapter(RectangleDrawingAdapter());
     registerAdapter(SimpleImageDataAdapter());

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:path/path.dart' as path;
@@ -125,8 +126,12 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   }
 
   Widget _buildImageGrid() {
+    final strategyId = ref.read(strategyProvider).strategyId;
+    if (strategyId == null) {
+      return const SizedBox.shrink();
+    }
     return FutureBuilder(
-        future: _setImageDirectory(ref.read(strategyProvider).id),
+        future: _setImageDirectory(strategyId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -230,20 +235,37 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
   }
 
   Widget _buildImageTile(int index) {
-    final String fullImagePath = path.join(imageFolderPath!.path,
-        widget.images[index].id + widget.images[index].fileExtension);
+    final image = widget.images[index];
+    final String fullImagePath =
+        path.join(imageFolderPath!.path, image.id + image.fileExtension);
     final file = File(fullImagePath);
+    final snapshot = ref.watch(remoteStrategySnapshotProvider).valueOrNull;
+    final fallbackUrl = snapshot?.assetsById[image.id]?.url;
+
+    final ImageProvider<Object>? imageProvider = file.existsSync()
+        ? FileImage(file)
+        : (fallbackUrl != null && fallbackUrl.isNotEmpty
+            ? NetworkImage(fallbackUrl)
+            : null);
 
     return Stack(
       children: [
         Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(8),
-            image: DecorationImage(
-              image: FileImage(file), // Placeholder
-              fit: BoxFit.cover,
-            ),
+            color: Settings.tacticalVioletTheme.secondary,
+            image: imageProvider == null
+                ? null
+                : DecorationImage(
+                    image: imageProvider,
+                    fit: BoxFit.cover,
+                  ),
           ),
+          child: imageProvider == null
+              ? const Center(
+                  child: Icon(Icons.broken_image, color: Colors.white),
+                )
+              : null,
         ),
         Positioned(
           top: 4,

@@ -18,18 +18,18 @@ class Maps {
     MapValue.bind,
     MapValue.haven,
     MapValue.pearl,
-    MapValue.corrode,
     MapValue.split,
     MapValue.breeze,
-    MapValue.abyss,
+    MapValue.lotus,
+    MapValue.fracture,
   ];
 
   static List<MapValue> outofplayMaps = [
     MapValue.sunset,
     MapValue.ascent,
-    MapValue.lotus,
+    MapValue.abyss,
     MapValue.icebox,
-    MapValue.fracture,
+    MapValue.corrode,
   ];
 
   static Map<MapValue, String> mapNames = {

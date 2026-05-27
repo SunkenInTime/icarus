@@ -1,0 +1,25 @@
+{
+  "version": "4.0.4+58",
+  "shortVersion": 58,
+  "title": "4.0.4 Release",
+  "description": "Desktop release metadata for Icarus.",
+  "date": "2026-03-20",
+  "mandatory": false,
+  "channels": [
+    "desktop",
+    "stable"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "changes": [
+    {
+      "message": "Added an autosave setting so strategy edits can stay manual when you prefer explicit saves.",
+      "type": "other"
+    },
+    {
+      "message": "Leaving a dirty strategy now prompts to Save, Don't Save, or Cancel when returning to the library, switching strategies, or closing the app.",
+      "type": "other"
+    }
+  ]
+}

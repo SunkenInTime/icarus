@@ -290,18 +290,127 @@ class RemoteLineup {
   }
 }
 
+class RemoteImageAsset {
+  const RemoteImageAsset({
+    required this.publicId,
+    required this.fileExtension,
+    required this.width,
+    required this.height,
+    required this.url,
+    required this.legacyStoragePath,
+    this.mimeType,
+  });
+
+  final String publicId;
+  final String fileExtension;
+  final String? mimeType;
+  final int? width;
+  final int? height;
+  final String? url;
+  final String? legacyStoragePath;
+
+  factory RemoteImageAsset.fromJson(Map<String, dynamic> json) {
+    return RemoteImageAsset(
+      publicId: json['publicId'] as String,
+      fileExtension: json['fileExtension'] as String? ?? '',
+      mimeType: json['mimeType'] as String?,
+      width: (json['width'] as num?)?.toInt(),
+      height: (json['height'] as num?)?.toInt(),
+      url: json['url'] as String?,
+      legacyStoragePath: json['legacyStoragePath'] as String?,
+    );
+  }
+}
+
 class RemoteStrategySnapshot {
   const RemoteStrategySnapshot({
     required this.header,
     required this.pages,
     required this.elementsByPage,
     required this.lineupsByPage,
+    required this.assetsById,
   });
 
   final RemoteStrategyHeader header;
   final List<RemotePage> pages;
   final Map<String, List<RemoteElement>> elementsByPage;
   final Map<String, List<RemoteLineup>> lineupsByPage;
+  final Map<String, RemoteImageAsset> assetsById;
+
+  RemoteStrategySnapshot copyWith({
+    RemoteStrategyHeader? header,
+    List<RemotePage>? pages,
+    Map<String, List<RemoteElement>>? elementsByPage,
+    Map<String, List<RemoteLineup>>? lineupsByPage,
+    Map<String, RemoteImageAsset>? assetsById,
+  }) {
+    return RemoteStrategySnapshot(
+      header: header ?? this.header,
+      pages: pages ?? this.pages,
+      elementsByPage: elementsByPage ?? this.elementsByPage,
+      lineupsByPage: lineupsByPage ?? this.lineupsByPage,
+      assetsById: assetsById ?? this.assetsById,
+    );
+  }
+
+  RemoteStrategySnapshot replaceHeader(RemoteStrategyHeader next) {
+    return copyWith(header: next);
+  }
+
+  RemoteStrategySnapshot replacePages(List<RemotePage> next) {
+    final pageIds = next.map((page) => page.publicId).toSet();
+    return copyWith(
+      pages: next,
+      elementsByPage: Map<String, List<RemoteElement>>.fromEntries(
+        elementsByPage.entries.where((entry) => pageIds.contains(entry.key)),
+      ),
+      lineupsByPage: Map<String, List<RemoteLineup>>.fromEntries(
+        lineupsByPage.entries.where((entry) => pageIds.contains(entry.key)),
+      ),
+    );
+  }
+
+  RemoteStrategySnapshot replaceAssets(List<RemoteImageAsset> next) {
+    return copyWith(
+      assetsById: {
+        for (final asset in next) asset.publicId: asset,
+      },
+    );
+  }
+
+  RemoteStrategySnapshot replaceElements(List<RemoteElement> next) {
+    return copyWith(elementsByPage: groupElementsByPage(next));
+  }
+
+  RemoteStrategySnapshot replaceLineups(List<RemoteLineup> next) {
+    return copyWith(lineupsByPage: groupLineupsByPage(next));
+  }
+
+  static Map<String, List<RemoteElement>> groupElementsByPage(
+    Iterable<RemoteElement> elements,
+  ) {
+    final grouped = <String, List<RemoteElement>>{};
+    for (final element in elements) {
+      (grouped[element.pagePublicId] ??= <RemoteElement>[]).add(element);
+    }
+    for (final elements in grouped.values) {
+      elements.sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    }
+    return grouped;
+  }
+
+  static Map<String, List<RemoteLineup>> groupLineupsByPage(
+    Iterable<RemoteLineup> lineups,
+  ) {
+    final grouped = <String, List<RemoteLineup>>{};
+    for (final lineup in lineups) {
+      (grouped[lineup.pagePublicId] ??= <RemoteLineup>[]).add(lineup);
+    }
+    for (final lineups in grouped.values) {
+      lineups.sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    }
+    return grouped;
+  }
 }
 
 class CloudStrategySummary {
@@ -312,6 +421,8 @@ class CloudStrategySummary {
     required this.sequence,
     required this.createdAt,
     required this.updatedAt,
+    this.role,
+    this.attackLabel,
   });
 
   final String publicId;
@@ -320,6 +431,8 @@ class CloudStrategySummary {
   final int sequence;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? role;
+  final String? attackLabel;
 
   factory CloudStrategySummary.fromJson(Map<String, dynamic> json) {
     return CloudStrategySummary(
@@ -333,6 +446,8 @@ class CloudStrategySummary {
       updatedAt: DateTime.fromMillisecondsSinceEpoch(
         (json['updatedAt'] as num?)?.toInt() ?? 0,
       ),
+      role: json['role'] as String?,
+      attackLabel: json['attackLabel'] as String?,
     );
   }
 }
@@ -343,14 +458,26 @@ class CloudFolderSummary {
     required this.name,
     required this.createdAt,
     required this.updatedAt,
+    this.role,
     this.parentFolderPublicId,
+    this.iconCodePoint,
+    this.iconFontFamily,
+    this.iconFontPackage,
+    this.color,
+    this.customColorValue,
   });
 
   final String publicId;
   final String name;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? role;
   final String? parentFolderPublicId;
+  final int? iconCodePoint;
+  final String? iconFontFamily;
+  final String? iconFontPackage;
+  final String? color;
+  final int? customColorValue;
 
   factory CloudFolderSummary.fromJson(Map<String, dynamic> json) {
     return CloudFolderSummary(
@@ -362,7 +489,44 @@ class CloudFolderSummary {
       updatedAt: DateTime.fromMillisecondsSinceEpoch(
         (json['updatedAt'] as num?)?.toInt() ?? 0,
       ),
+      role: json['role'] as String?,
       parentFolderPublicId: json['parentFolderPublicId'] as String?,
+      iconCodePoint: (json['iconCodePoint'] as num?)?.toInt(),
+      iconFontFamily: json['iconFontFamily'] as String?,
+      iconFontPackage: json['iconFontPackage'] as String?,
+      color: json['color'] as String?,
+      customColorValue: (json['customColorValue'] as num?)?.toInt(),
+    );
+  }
+}
+
+class ShareLinkSummary {
+  const ShareLinkSummary({
+    required this.token,
+    required this.role,
+    required this.createdAt,
+    this.revokedAt,
+  });
+
+  final String token;
+  final String role;
+  final DateTime createdAt;
+  final DateTime? revokedAt;
+
+  bool get isRevoked => revokedAt != null;
+
+  factory ShareLinkSummary.fromJson(Map<String, dynamic> json) {
+    return ShareLinkSummary(
+      token: json['token'] as String,
+      role: json['role'] as String,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['createdAt'] as num?)?.toInt() ?? 0,
+      ),
+      revokedAt: json['revokedAt'] == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(
+              (json['revokedAt'] as num).toInt(),
+            ),
     );
   }
 }

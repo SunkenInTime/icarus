@@ -1,0 +1,21 @@
+{
+  "version": "4.0.5+59",
+  "shortVersion": 59,
+  "title": "4.0.5 Release",
+  "description": "Desktop release metadata for Icarus.",
+  "date": "2026-03-20",
+  "mandatory": false,
+  "channels": [
+    "desktop",
+    "stable"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "changes": [
+    {
+      "message": "Restored the original desktop updater restart flow to avoid issues introduced by the recent custom restart path.",
+      "type": "other"
+    }
+  ]
+}

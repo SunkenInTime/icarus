@@ -19,7 +19,7 @@ class StrategyPage extends HiveObject {
   final int sortIndex;
   final String name;
   final List<DrawingElement> drawingData;
-  final List<PlacedAgent> agentData;
+  final List<PlacedAgentNode> agentData;
   final List<PlacedAbility> abilityData;
   final List<PlacedText> textData;
   final List<PlacedImage> imageData;
@@ -48,7 +48,7 @@ class StrategyPage extends HiveObject {
     int? sortIndex,
     String? name,
     List<DrawingElement>? drawingData,
-    List<PlacedAgent>? agentData,
+    List<PlacedAgentNode>? agentData,
     List<PlacedAbility>? abilityData,
     List<PlacedText>? textData,
     List<PlacedImage>? imageData,

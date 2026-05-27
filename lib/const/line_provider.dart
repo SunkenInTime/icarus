@@ -1,12 +1,11 @@
 import 'dart:convert';
-import 'dart:developer';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'dart:ui';
@@ -133,6 +132,16 @@ class LineUpState {
   }
 }
 
+class LineUpProviderSnapshot {
+  final List<LineUp> lineUps;
+  final List<LineUp> poppedLineUps;
+
+  const LineUpProviderSnapshot({
+    required this.lineUps,
+    required this.poppedLineUps,
+  });
+}
+
 class LineUpProvider extends Notifier<LineUpState> {
   final List<LineUp> _poppedLineUps = [];
   @override
@@ -142,7 +151,13 @@ class LineUpProvider extends Notifier<LineUpState> {
 
   void addLineUp(LineUp lineUp) {
     final action = UserAction(
-        type: ActionType.addition, id: lineUp.id, group: ActionGroup.lineUp);
+      type: ActionType.addition,
+      id: lineUp.id,
+      group: ActionGroup.lineUp,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.lineUp(lineUp),
+      ),
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     state = state.copyWith(
@@ -179,13 +194,30 @@ class LineUpProvider extends Notifier<LineUpState> {
     final currentMap = ref.read(mapProvider).currentMap;
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final newState = [...state.lineUps];
+    final currentAgent = state.currentAgent;
+    final currentAbility = state.currentAbility;
 
     for (final lineUp in newState) {
       lineUp.switchSides(
           agentSize: agentSize, abilitySize: abilitySize, mapScale: mapScale);
     }
 
-    state = state.copyWith(lineUps: newState);
+    for (final lineUp in _poppedLineUps) {
+      lineUp.switchSides(
+          agentSize: agentSize, abilitySize: abilitySize, mapScale: mapScale);
+    }
+
+    currentAgent?.switchSides(agentSize);
+    currentAbility?.switchSides(
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
+
+    state = state.copyWith(
+      lineUps: newState,
+      currentAgent: currentAgent,
+      currentAbility: currentAbility,
+    );
   }
 
   void setSelectingPosition(bool isSelecting, {PlacingType? type}) {
@@ -223,13 +255,27 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void updateRotation(double rotation, double length) {
-    if (state.currentAbility != null) {
-      final updatedAbility =
-          state.currentAbility!.copyWith(rotation: rotation, length: length);
+    updateGeometry(rotation: rotation, length: length);
+  }
 
-      log("Updated ability: ${updatedAbility.rotation} ${updatedAbility.length}");
+  void updateGeometry({
+    double? rotation,
+    double? length,
+    List<double>? armLengthsMeters,
+  }) {
+    if (state.currentAbility != null) {
+      final updatedAbility = state.currentAbility!.copyWith(
+        rotation: rotation,
+        length: length,
+        armLengthsMeters: armLengthsMeters,
+      );
+
       state = state.copyWith(currentAbility: updatedAbility);
     }
+  }
+
+  void updateArmLengths(List<double> armLengthsMeters) {
+    updateGeometry(armLengthsMeters: armLengthsMeters);
   }
   //Have a hover glow on what agent is selectabel in the sidebar list
 
@@ -259,6 +305,22 @@ class LineUpProvider extends Notifier<LineUpState> {
     );
   }
 
+  void updateAbilityVisualState(
+    String lineUpId,
+    AbilityVisualState visualState,
+  ) {
+    final lineUp = getLineUpById(lineUpId);
+    if (lineUp == null) {
+      return;
+    }
+
+    updateLineUp(
+      lineUp.copyWith(
+        ability: lineUp.ability.copyWith(visualState: visualState),
+      ),
+    );
+  }
+
   int getIndexById(String id) {
     return state.lineUps.indexWhere((lineUp) => lineUp.id == id);
   }
@@ -274,10 +336,20 @@ class LineUpProvider extends Notifier<LineUpState> {
     //the right click menu, and not through the delete key.
 
     final action = UserAction(
-        type: ActionType.deletion, id: id, group: ActionGroup.lineUp);
+      type: ActionType.deletion,
+      id: id,
+      group: ActionGroup.lineUp,
+      objectDelta: ObjectHistoryDelta(
+        before: ActionObjectState.lineUp(
+          state.lineUps.firstWhere((lineUp) => lineUp.id == id),
+        ),
+      ),
+    );
     ref.read(actionProvider.notifier).addAction(action);
-
-    _poppedLineUps.add(state.lineUps.firstWhere((lineUp) => lineUp.id == id));
+    _poppedLineUps.removeWhere((lineUp) => lineUp.id == id);
+    _poppedLineUps.add(
+      cloneLineUp(state.lineUps.firstWhere((lineUp) => lineUp.id == id)),
+    );
 
     state = state.copyWith(
       lineUps: state.lineUps.where((lineUp) => lineUp.id != id).toList(),
@@ -285,45 +357,117 @@ class LineUpProvider extends Notifier<LineUpState> {
   }
 
   void undoAction(UserAction action) {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      switch (action.type) {
+        case ActionType.addition:
+          deleteLineUpById(action.id);
+          return;
+        case ActionType.deletion:
+          if (_poppedLineUps.isEmpty) return;
+          _upsertLineUp(cloneLineUp(_poppedLineUps.removeLast()));
+          return;
+        case ActionType.edit:
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          return;
+      }
+    }
     switch (action.type) {
       case ActionType.addition:
         deleteLineUpById(action.id);
+        return;
       case ActionType.deletion:
-        if (_poppedLineUps.isEmpty) return;
-        final newState = state.copyWith(
-          lineUps: [...state.lineUps, _poppedLineUps.removeLast()],
-        );
-        state = newState;
+        final before = delta.before?.lineUp;
+        if (before == null) return;
+        _upsertLineUp(cloneLineUp(before));
+        return;
       case ActionType.edit:
       //Do nothing
+      case ActionType.bulkDeletion:
+      case ActionType.transaction:
+        return;
     }
   }
 
   void redoAction(UserAction action) {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      switch (action.type) {
+        case ActionType.addition:
+          if (_poppedLineUps.isEmpty) return;
+          _upsertLineUp(cloneLineUp(_poppedLineUps.removeLast()));
+          return;
+        case ActionType.deletion:
+          final existing = state.lineUps.where((lineUp) => lineUp.id == action.id);
+          if (existing.isEmpty) return;
+          _poppedLineUps.removeWhere((lineUp) => lineUp.id == action.id);
+          _poppedLineUps.add(cloneLineUp(existing.first));
+          state = state.copyWith(
+            lineUps:
+                state.lineUps.where((lineUp) => lineUp.id != action.id).toList(),
+          );
+          return;
+        case ActionType.edit:
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          return;
+      }
+    }
     switch (action.type) {
       case ActionType.addition:
-        final index =
-            _poppedLineUps.indexWhere((lineUp) => lineUp.id == action.id);
-        state = state.copyWith(
-          lineUps: [...state.lineUps, _poppedLineUps.removeAt(index)],
-        );
+        final after = delta.after?.lineUp;
+        if (after == null) return;
+        _upsertLineUp(cloneLineUp(after));
+        return;
       case ActionType.deletion:
-        final newState = state.copyWith(
-          lineUps: [...state.lineUps],
+        final existing = state.lineUps.where((lineUp) => lineUp.id == action.id);
+        if (existing.isEmpty) return;
+        _poppedLineUps.removeWhere((lineUp) => lineUp.id == action.id);
+        _poppedLineUps.add(cloneLineUp(existing.first));
+        state = state.copyWith(
+          lineUps:
+              state.lineUps.where((lineUp) => lineUp.id != action.id).toList(),
         );
-        final index =
-            newState.lineUps.indexWhere((lineUp) => lineUp.id == action.id);
-        _poppedLineUps.add(newState.lineUps.removeAt(index));
-        state = newState;
+        return;
       case ActionType.edit:
       //Do nothing
+      case ActionType.bulkDeletion:
+      case ActionType.transaction:
+        return;
     }
   }
 
   void clearAll() {
-    log("Clearing all line ups");
     _poppedLineUps.clear();
     state = state.copyWith(lineUps: []);
+  }
+
+  LineUpProviderSnapshot takeSnapshot() {
+    return LineUpProviderSnapshot(
+      lineUps: state.lineUps.map((lineUp) => cloneLineUp(lineUp)).toList(),
+      poppedLineUps: _poppedLineUps.map((lineUp) => cloneLineUp(lineUp)).toList(),
+    );
+  }
+
+  void restoreSnapshot(LineUpProviderSnapshot snapshot) {
+    _poppedLineUps
+      ..clear()
+      ..addAll(snapshot.poppedLineUps.map((lineUp) => cloneLineUp(lineUp)));
+    state = state.copyWith(
+      lineUps: snapshot.lineUps.map((lineUp) => cloneLineUp(lineUp)).toList(),
+    );
+  }
+
+  void _upsertLineUp(LineUp lineUp) {
+    final newState = [...state.lineUps];
+    final index = newState.indexWhere((existing) => existing.id == lineUp.id);
+    if (index < 0) {
+      newState.add(lineUp);
+    } else {
+      newState[index] = lineUp;
+    }
+    state = state.copyWith(lineUps: newState);
   }
 }
 

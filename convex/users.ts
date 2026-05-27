@@ -1,4 +1,8 @@
 import { mutation, query } from "./_generated/server";
+import {
+  findUserByIdentity,
+  getCanonicalExternalId,
+} from "./lib/auth";
 import { unauthenticatedError } from "./lib/errors";
 
 export const ensureCurrentUser = mutation({
@@ -9,17 +13,15 @@ export const ensureCurrentUser = mutation({
       throw unauthenticatedError();
     }
 
-    const externalId = identity.subject ?? identity.tokenIdentifier;
+    const externalId = getCanonicalExternalId(identity);
     const displayName = identity.name ?? identity.nickname ?? "Discord user";
     const avatarUrl = identity.pictureUrl ?? undefined;
 
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_externalId", (query) => query.eq("externalId", externalId))
-      .first();
+    const existingUser = await findUserByIdentity(ctx, identity);
 
     if (existingUser !== null) {
       await ctx.db.patch(existingUser._id, {
+        externalId,
         displayName,
         avatarUrl,
         updatedAt: Date.now(),
@@ -45,11 +47,7 @@ export const me = query({
       return null;
     }
 
-    const externalId = identity.subject ?? identity.tokenIdentifier;
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_externalId", (query) => query.eq("externalId", externalId))
-      .first();
+    const user = await findUserByIdentity(ctx, identity);
 
     if (user === null) {
       return null;

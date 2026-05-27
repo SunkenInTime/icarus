@@ -27,7 +27,7 @@ class AgentFilterProvider extends Notifier<AgentFilterState> {
       _refreshAgentList();
     });
 
-    ref.listen<List<PlacedAgent>>(agentProvider, (_, __) {
+    ref.listen<List<PlacedAgentNode>>(agentProvider, (_, __) {
       if (state.currentFilter == FilterState.onMap) {
         _refreshAgentList();
       }
@@ -43,6 +43,13 @@ class AgentFilterProvider extends Notifier<AgentFilterState> {
 
   void updateFilterState(FilterState filterState) {
     _refreshAgentList(currentFilter: filterState);
+  }
+
+  void toggleAllOnMap() {
+    final nextFilter = state.currentFilter == FilterState.onMap
+        ? FilterState.all
+        : FilterState.onMap;
+    _refreshAgentList(currentFilter: nextFilter);
   }
 
   void updateRoleState(AgentRole currentRole) {

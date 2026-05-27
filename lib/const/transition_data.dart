@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -47,7 +48,7 @@ class PageLayering {
     if (widget is PlacedAbility) {
       return PageVisualLayer.ability;
     }
-    if (widget is PlacedAgent) {
+    if (widget is PlacedAgentNode) {
       return PageVisualLayer.agent;
     }
     if (widget is PlacedText) {
@@ -135,12 +136,21 @@ class PageTransitionEntry {
   static double? rotationOf(PlacedWidget w) {
     if (w is PlacedAbility) return w.rotation;
     if (w is PlacedUtility) return w.rotation;
+    if (w is PlacedViewConeAgent) return w.rotation;
     return null;
   }
 
   static double? lengthOf(PlacedWidget w) {
     if (w is PlacedAbility) return w.length;
     if (w is PlacedUtility) return w.length;
+    if (w is PlacedViewConeAgent) return w.length;
+    return null;
+  }
+
+  static List<double>? armLengthsOf(PlacedWidget w) {
+    if (w is PlacedAbility) {
+      return List<double>.from(w.armLengthsMeters);
+    }
     return null;
   }
 
@@ -154,15 +164,51 @@ class PageTransitionEntry {
     return null;
   }
 
+  static double? customDiameterOf(PlacedWidget w) {
+    if (w is PlacedUtility) return w.customDiameter;
+    if (w is PlacedCircleAgent) return w.diameterMeters;
+    return null;
+  }
+
+  static double? customWidthOf(PlacedWidget w) {
+    if (w is PlacedUtility) return w.customWidth;
+    return null;
+  }
+
+  static double? customLengthOf(PlacedWidget w) {
+    if (w is PlacedUtility) return w.customLength;
+    return null;
+  }
+
+  static AgentState? agentStateOf(PlacedWidget w) {
+    if (w is PlacedAgent) return w.state;
+    return null;
+  }
+
   double? get startRotation => from != null ? rotationOf(from!) : null;
   double? get endRotation => to != null ? rotationOf(to!) : null;
 
   double? get startLength => from != null ? lengthOf(from!) : null;
   double? get endLength => to != null ? lengthOf(to!) : null;
+  List<double>? get startArmLengths => from != null ? armLengthsOf(from!) : null;
+  List<double>? get endArmLengths => to != null ? armLengthsOf(to!) : null;
 
   double? get startScale => from != null ? scaleOf(from!) : null;
   double? get endScale => to != null ? scaleOf(to!) : null;
 
   double? get startTextSize => from != null ? textSizeOf(from!) : null;
   double? get endTextSize => to != null ? textSizeOf(to!) : null;
+
+  double? get startCustomDiameter =>
+      from != null ? customDiameterOf(from!) : null;
+  double? get endCustomDiameter => to != null ? customDiameterOf(to!) : null;
+
+  double? get startCustomWidth => from != null ? customWidthOf(from!) : null;
+  double? get endCustomWidth => to != null ? customWidthOf(to!) : null;
+
+  double? get startCustomLength => from != null ? customLengthOf(from!) : null;
+  double? get endCustomLength => to != null ? customLengthOf(to!) : null;
+
+  AgentState? get startAgentState => from != null ? agentStateOf(from!) : null;
+  AgentState? get endAgentState => to != null ? agentStateOf(to!) : null;
 }

@@ -12,12 +12,13 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/dialogs/upload_image_dialog.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/selectable_icon_button.dart';
+import 'package:icarus/widgets/sidebar_widgets/agent_role_icon_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/custom_shape_tools.dart';
-import 'package:icarus/widgets/sidebar_widgets/delete_options.dart';
 import 'package:icarus/widgets/sidebar_widgets/drawing_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/text_tools.dart';
 import 'package:icarus/widgets/sidebar_widgets/vision_cone_tools.dart';
@@ -26,10 +27,10 @@ import 'package:uuid/uuid.dart';
 
 enum _ContextBarMode {
   drawing,
-  deleting,
   visionCone,
   customShapes,
   textTools,
+  roleIcons,
   none
 }
 
@@ -44,10 +45,10 @@ class BottomContextBar extends ConsumerWidget {
 
     final mode = switch (interactionState) {
       InteractionState.drawing => _ContextBarMode.drawing,
-      InteractionState.deleting => _ContextBarMode.deleting,
       InteractionState.visionCone => _ContextBarMode.visionCone,
       InteractionState.customShapes => _ContextBarMode.customShapes,
       InteractionState.textTools => _ContextBarMode.textTools,
+      InteractionState.roleIcons => _ContextBarMode.roleIcons,
       _ => _ContextBarMode.none,
     };
 
@@ -80,8 +81,8 @@ class BottomContextBar extends ConsumerWidget {
       _ContextBarMode.customShapes =>
         const CustomShapeTools(key: ValueKey('customShapes')),
       _ContextBarMode.textTools => const TextTools(key: ValueKey('textTools')),
-      _ContextBarMode.deleting =>
-        const DeleteOptions(key: ValueKey('deleting')),
+      _ContextBarMode.roleIcons =>
+        const AgentRoleIconTools(key: ValueKey('roleIcons')),
       _ContextBarMode.none => const SizedBox.shrink(key: ValueKey('none')),
     };
   }
@@ -163,27 +164,6 @@ class ToolGrid extends ConsumerWidget {
                 isSelected: currentInteractionState == InteractionState.erasing,
               ),
               SelectableIconButton(
-                tooltip: "Delete",
-                shortcutLabel: 'E',
-                onPressed: () {
-                  switch (currentInteractionState) {
-                    case InteractionState.deleting:
-                      ref
-                          .read(interactionStateProvider.notifier)
-                          .update(InteractionState.navigation);
-                    default:
-                      ref
-                          .read(interactionStateProvider.notifier)
-                          .update(InteractionState.deleting);
-                  }
-                },
-                isSelected:
-                    currentInteractionState == InteractionState.deleting,
-                icon: const Icon(
-                  Icons.delete,
-                ),
-              ),
-              SelectableIconButton(
                 tooltip: "Add Text",
                 shortcutLabel: 'T',
                 onPressed: () {
@@ -241,6 +221,7 @@ class ToolGrid extends ConsumerWidget {
                     final aspectRatio = await ref
                         .read(placedImageProvider.notifier)
                         .getImageAspectRatio(imageBytes);
+                    final strategyState = ref.read(strategyProvider);
                     final placementCenter = ref.read(placementCenterProvider);
                     final imageHeight = _defaultImageSpawnWidth / aspectRatio;
                     final centeredTopLeft =
@@ -252,6 +233,8 @@ class ToolGrid extends ConsumerWidget {
 
                     ref.read(placedImageProvider.notifier).addImage(
                           imageBytes: imageBytes,
+                          strategyId: strategyState.strategyId,
+                          strategySource: strategyState.source,
                           fileExtension: fileExtension,
                           aspectRatio: aspectRatio,
                           position: centeredTopLeft,
@@ -263,6 +246,7 @@ class ToolGrid extends ConsumerWidget {
               ),
               SelectableIconButton(
                 tooltip: "Add Lineup",
+                shortcutLabel: 'G',
                 onPressed: () async {
                   if (kIsWeb) {
                     Settings.showToast(
@@ -323,6 +307,25 @@ class ToolGrid extends ConsumerWidget {
                 icon: const Icon(Icons.crop_square, size: 20),
                 isSelected:
                     currentInteractionState == InteractionState.customShapes,
+              ),
+              SelectableIconButton(
+                tooltip: "Agent Roles",
+                onPressed: () {
+                  switch (currentInteractionState) {
+                    case InteractionState.roleIcons:
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.navigation);
+                    default:
+                      ref
+                          .read(interactionStateProvider.notifier)
+                          .update(InteractionState.roleIcons);
+                  }
+                },
+                icon: Image.asset("assets/agents/duelist.webp",
+                    width: 20, height: 20),
+                isSelected:
+                    currentInteractionState == InteractionState.roleIcons,
               ),
               ShadTooltip(
                 builder: (context) => const Text("Spike"),

@@ -15,6 +15,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
@@ -63,7 +64,7 @@ class ScreenshotView extends ConsumerWidget {
   });
   final StrategyState strategyState;
   final MapValue mapValue;
-  final List<PlacedAgent> agents;
+  final List<PlacedAgentNode> agents;
   final List<PlacedAbility> abilities;
   final List<PlacedText> text;
   final List<PlacedImage> images;
@@ -149,8 +150,16 @@ class ScreenshotView extends ConsumerWidget {
           ),
 
           //Painting
-          const Positioned.fill(
-            child: InteractivePainter(),
+          Positioned.fill(
+            // Mirror the live map so defense-side screenshots flip drawings too.
+            child: Transform.flip(
+              flipX: !isAttack,
+              flipY: !isAttack,
+              child: InteractivePainter(
+                mapScaleOverride: Maps.mapScale[mapValue] ?? 1.0,
+                isAttackOverride: isAttack,
+              ),
+            ),
           ),
           // Add any other widgets you want to include in the screenshot
         ],

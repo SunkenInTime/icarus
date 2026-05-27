@@ -1,15 +1,17 @@
-import 'dart:developer';
-
 import 'package:flutter/widgets.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/center_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/custom_circle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/custom_square_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/deadlock_barrier_mesh_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_image_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/sector_circle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_icon_widget.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 bool isRotatable(Ability ability) {
   switch (ability) {
@@ -19,9 +21,30 @@ bool isRotatable(Ability ability) {
       return true;
     case RotatableImageAbility():
       return true;
+    case SectorCircleAbility():
+      return true;
+    case DeadlockBarrierMeshAbility():
+      return true;
     default:
       return false;
   }
+}
+
+double _squareRenderedWidth({
+  required bool isWall,
+  required double width,
+  required double mapScale,
+  required double abilitySize,
+}) {
+  return isWall ? abilitySize * 2 : width * mapScale;
+}
+
+double _squareRenderedHeight({
+  required double height,
+  required double distanceBetweenAOE,
+  required double mapScale,
+}) {
+  return (height * mapScale) + (distanceBetweenAOE * mapScale) + 7.5;
 }
 
 sealed class Ability {
@@ -34,7 +57,11 @@ sealed class Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   });
 }
 
@@ -50,13 +77,19 @@ class BaseAbility extends Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return AbilityWidget(
       isAlly: isAlly,
       iconPath: iconPath,
       id: id,
       lineUpId: lineUpId,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 
@@ -87,7 +120,11 @@ class ImageAbility extends Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return AgentIconWidget(
       lineUpId: lineUpId,
@@ -115,23 +152,29 @@ class CircleAbility extends Ability {
   CircleAbility({
     required this.iconPath,
     required size,
-    required this.outlineColor,
+    required this.rangeOutlineColor,
     this.hasCenterDot,
-    this.hasPerimeter,
-    this.fillColor,
+    this.rangeFillColor,
+    this.innerRangeColor,
     this.opacity,
-    this.perimeterSize,
-  }) : size = size * AgentData.inGameMetersDiameter;
+    this.innerRangeSize,
+  })  : assert(
+          innerRangeSize == null || innerRangeColor != null,
+          'innerRangeColor is required when innerRangeSize is set',
+        ),
+        size = size * AgentData.inGameMetersDiameter;
 
   final double size;
-  final Color outlineColor;
+  final Color rangeOutlineColor;
   final String iconPath;
 
-  final bool? hasPerimeter;
   final bool? hasCenterDot;
-  final Color? fillColor;
+  final Color? rangeFillColor;
+  final Color? innerRangeColor;
   final int? opacity;
-  final double? perimeterSize;
+  final double? innerRangeSize;
+
+  bool get hasInnerRange => innerRangeSize != null;
 
   @override
   Offset getAnchorPoint({
@@ -156,20 +199,115 @@ class CircleAbility extends Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return CustomCircleWidget(
       iconPath: iconPath,
       size: size * mapScale,
-      outlineColor: outlineColor,
+      rangeOutlineColor: rangeOutlineColor,
       hasCenterDot: hasCenterDot ?? true,
-      hasPerimeter: hasPerimeter ?? false,
       opacity: opacity,
-      fillColor: fillColor,
-      innerSize: perimeterSize != null ? perimeterSize! * mapScale : null,
+      rangeFillColor: rangeFillColor,
+      innerRangeColor: innerRangeColor,
+      innerRangeSize:
+          innerRangeSize != null ? innerRangeSize! * mapScale : null,
       id: id,
       isAlly: isAlly,
       lineUpId: lineUpId,
+      visualState: visualState,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
+    );
+  }
+}
+
+class SectorCircleAbility extends Ability {
+  SectorCircleAbility({
+    required this.iconPath,
+    required size,
+    required this.rangeOutlineColor,
+    required this.sweepAngleDegrees,
+    this.hasCenterDot = true,
+    this.rangeFillColor,
+    this.innerRangeColor,
+    this.opacity = 70,
+    this.innerRangeSize,
+  })  : assert(
+          innerRangeSize == null || innerRangeColor != null,
+          'innerRangeColor is required when innerRangeSize is set',
+        ),
+        size = size * AgentData.inGameMetersDiameter;
+
+  final double size;
+  final Color rangeOutlineColor;
+  final String iconPath;
+  final double sweepAngleDegrees;
+
+  final bool hasCenterDot;
+  final Color? rangeFillColor;
+  final Color? innerRangeColor;
+  final int? opacity;
+  final double? innerRangeSize;
+
+  bool get hasInnerRange => innerRangeSize != null;
+
+  @override
+  Offset getAnchorPoint({
+    double? mapScale,
+    double? abilitySize,
+  }) {
+    assert(mapScale != null, 'mapScale must be provided');
+    return Offset(
+      (size * mapScale!) / 2,
+      (size * mapScale) / 2 + SectorCircleWidget.handleTopInsetVirtual,
+    );
+  }
+
+  @override
+  Offset getSize({double? mapScale, double? abilitySize}) {
+    assert(abilitySize != null, 'abilitySize must be provided');
+    assert(mapScale != null, 'mapScale must be provided');
+    return Offset(
+      size * mapScale!,
+      size * mapScale + SectorCircleWidget.handleTopInsetVirtual,
+    );
+  }
+
+  @override
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
+    String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
+  }) {
+    return SectorCircleWidget(
+      iconPath: iconPath,
+      size: size * mapScale,
+      rangeOutlineColor: rangeOutlineColor,
+      sweepAngleDegrees: sweepAngleDegrees,
+      hasCenterDot: hasCenterDot,
+      opacity: opacity,
+      rangeFillColor: rangeFillColor,
+      innerRangeColor: innerRangeColor,
+      innerRangeSize:
+          innerRangeSize != null ? innerRangeSize! * mapScale : null,
+      id: id,
+      isAlly: isAlly,
+      lineUpId: lineUpId,
+      rotation: rotation,
+      visualState: visualState,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 }
@@ -204,16 +342,22 @@ class SquareAbility extends Ability {
     double? mapScale,
     double? abilitySize,
   }) {
-    if (abilitySize == null) {
-      log("Warning: abilitySize is null in SquareAbility.getAnchorPoint");
-      abilitySize = Settings.abilitySize;
-    }
+    assert(mapScale != null, 'mapScale must be provided');
+    abilitySize ??= Settings.abilitySize;
 
     return Offset(
-      (isWall ? abilitySize * 2 : width * mapScale!) / 2,
-      (height * mapScale!) +
-          (distanceBetweenAOE * mapScale) +
-          7.5, //This is the resize button offset
+      _squareRenderedWidth(
+            isWall: isWall,
+            width: width,
+            mapScale: mapScale!,
+            abilitySize: abilitySize,
+          ) /
+          2,
+      _squareRenderedHeight(
+        height: height,
+        distanceBetweenAOE: distanceBetweenAOE,
+        mapScale: mapScale,
+      ),
     );
   }
 
@@ -223,10 +367,17 @@ class SquareAbility extends Ability {
     assert(mapScale != null, 'mapScale must be provided');
 
     return Offset(
-      width * mapScale!,
-      (height * mapScale) +
-          (distanceBetweenAOE * mapScale) +
-          7.5,
+      _squareRenderedWidth(
+        isWall: isWall,
+        width: width,
+        mapScale: mapScale!,
+        abilitySize: abilitySize!,
+      ),
+      _squareRenderedHeight(
+        height: height,
+        distanceBetweenAOE: distanceBetweenAOE,
+        mapScale: mapScale,
+      ),
     );
   }
 
@@ -237,7 +388,11 @@ class SquareAbility extends Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return CustomSquareWidget(
       lineUpId: lineUpId,
@@ -253,6 +408,9 @@ class SquareAbility extends Ability {
       hasSideBorders: hasSideBorders,
       isWall: isWall,
       isTransparent: isTransparent,
+      visualState: visualState,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 }
@@ -293,7 +451,11 @@ class CenterSquareAbility extends Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return CenterSquareWidget(
       color: color,
@@ -304,6 +466,9 @@ class CenterSquareAbility extends Ability {
       id: id,
       isAlly: isAlly,
       lineUpId: lineUpId,
+      visualState: visualState,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 }
@@ -338,7 +503,11 @@ class RotatableImageAbility extends Ability {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return RotatableImageWidget(
       imagePath: imagePath,
@@ -352,6 +521,7 @@ class RotatableImageAbility extends Ability {
 //As much as I would love to extend square
 class ResizableSquareAbility extends SquareAbility {
   final double minLength;
+  final bool defaultToMaxLength;
 
   ResizableSquareAbility({
     required super.width,
@@ -365,7 +535,16 @@ class ResizableSquareAbility extends SquareAbility {
     super.isTransparent,
     super.minHeight,
     required this.minLength,
+    this.defaultToMaxLength = false,
   });
+
+  double resolveLength(double rawLength) {
+    if (rawLength <= 0) {
+      return defaultToMaxLength ? height : minLength;
+    }
+
+    return rawLength.clamp(minLength, height);
+  }
 
   @override
   Widget createWidget({
@@ -374,13 +553,17 @@ class ResizableSquareAbility extends SquareAbility {
     required double mapScale,
     double? rotation,
     double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
     String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return ResizableSquareWidget(
       isWall: isWall,
       color: color,
       width: width * mapScale,
-      length: (length ?? 0) * mapScale,
+      length: resolveLength(length ?? 0) * mapScale,
       maxLength: height * mapScale,
       minLength: minLength * mapScale,
       iconPath: iconPath,
@@ -391,12 +574,22 @@ class ResizableSquareAbility extends SquareAbility {
       hasSideBorders: hasSideBorders,
       isTransparent: isTransparent,
       lineUpId: lineUpId,
+      rotation: rotation,
+      visualState: visualState,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 
   Offset getLengthAnchor(double mapScale, double abilitySize) {
     return Offset(
-      (isWall ? abilitySize * 2 : width * mapScale) / 2,
+      _squareRenderedWidth(
+            isWall: isWall,
+            width: width,
+            mapScale: mapScale,
+            abilitySize: abilitySize,
+          ) /
+          2,
       (height * mapScale) + 7.5,
     );
   }
@@ -407,10 +600,105 @@ class ResizableSquareAbility extends SquareAbility {
     double? abilitySize,
   }) {
     return Offset(
-      (isWall ? abilitySize! * 2 : width * mapScale!) / 2,
-      (height * mapScale!) +
-          (distanceBetweenAOE * mapScale) +
-          7.5,
+      _squareRenderedWidth(
+            isWall: isWall,
+            width: width,
+            mapScale: mapScale!,
+            abilitySize: abilitySize!,
+          ) /
+          2,
+      _squareRenderedHeight(
+        height: height,
+        distanceBetweenAOE: distanceBetweenAOE,
+        mapScale: mapScale,
+      ),
+    );
+  }
+}
+
+class DeadlockBarrierMeshAbility extends Ability {
+  DeadlockBarrierMeshAbility({
+    required this.iconPath,
+    required this.color,
+  });
+
+  final String iconPath;
+  final Color color;
+
+  static const double minArmLengthMeters =
+      deadlockBarrierMeshMinArmLengthMeters;
+  static const double maxArmLengthMeters =
+      deadlockBarrierMeshMaxArmLengthMeters;
+  static const List<double> defaultArmLengthsMeters =
+      deadlockBarrierMeshDefaultArmLengthsMeters;
+
+  static List<double> normalizeArmLengths(List<double>? armLengthsMeters) {
+    return normalizeDeadlockBarrierMeshArmLengths(armLengthsMeters);
+  }
+
+  static List<double> reorderArmLengthsForSideSwitch(
+      List<double> armLengthsMeters) {
+    return reorderDeadlockBarrierMeshArmLengthsForSideSwitch(armLengthsMeters);
+  }
+
+  static double maxExtentVirtual({
+    required double mapScale,
+    required double abilitySize,
+  }) {
+    // Deadlock side-switch, anchor, and render bounds must all derive from the
+    // same outer extent to avoid mirrored placement drift.
+    return deadlockBarrierMeshMaxExtent(
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
+  }
+
+  @override
+  Offset getAnchorPoint({double? mapScale, double? abilitySize}) {
+    assert(mapScale != null, 'mapScale must be provided');
+    assert(abilitySize != null, 'abilitySize must be provided');
+    final extent = maxExtentVirtual(
+      mapScale: mapScale!,
+      abilitySize: abilitySize!,
+    );
+    return Offset(extent / 2, extent / 2);
+  }
+
+  @override
+  Offset getSize({double? mapScale, double? abilitySize}) {
+    assert(mapScale != null, 'mapScale must be provided');
+    assert(abilitySize != null, 'abilitySize must be provided');
+    final extent = maxExtentVirtual(
+      mapScale: mapScale!,
+      abilitySize: abilitySize!,
+    );
+    return Offset(extent, extent);
+  }
+
+  @override
+  Widget createWidget({
+    String? id,
+    required bool isAlly,
+    required double mapScale,
+    double? rotation,
+    double? length,
+    List<double>? armLengthsMeters,
+    AbilityVisualState? visualState,
+    String? lineUpId,
+    bool watchMouse = true,
+    List<ShadContextMenuItem>? contextMenuItems,
+  }) {
+    return DeadlockBarrierMeshWidget(
+      lineUpId: lineUpId,
+      iconPath: iconPath,
+      id: id,
+      isAlly: isAlly,
+      color: color,
+      mapScale: mapScale,
+      armLengthsMeters: normalizeArmLengths(armLengthsMeters),
+      visualState: visualState,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 }

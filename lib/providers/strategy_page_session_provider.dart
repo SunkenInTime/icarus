@@ -1,0 +1,851 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
+import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/transition_provider.dart';
+import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/strategy/strategy_page_apply.dart';
+import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/strategy/strategy_page_source.dart';
+
+enum PageTransitionState {
+  idle,
+  animatingForward,
+  animatingBackward,
+}
+
+enum PageSwitchDirection { next, previous }
+
+class StrategyPageSessionState {
+  const StrategyPageSessionState({
+    required this.activePageId,
+    required this.availablePageIds,
+    required this.transitionState,
+    required this.isApplyingPage,
+  });
+
+  final String? activePageId;
+  final List<String> availablePageIds;
+  final PageTransitionState transitionState;
+  final bool isApplyingPage;
+
+  StrategyPageSessionState copyWith({
+    String? activePageId,
+    bool clearActivePageId = false,
+    List<String>? availablePageIds,
+    PageTransitionState? transitionState,
+    bool? isApplyingPage,
+  }) {
+    return StrategyPageSessionState(
+      activePageId:
+          clearActivePageId ? null : (activePageId ?? this.activePageId),
+      availablePageIds: availablePageIds ?? this.availablePageIds,
+      transitionState: transitionState ?? this.transitionState,
+      isApplyingPage: isApplyingPage ?? this.isApplyingPage,
+    );
+  }
+}
+
+class _RemotePageHydrationKey {
+  const _RemotePageHydrationKey({
+    required this.strategyPublicId,
+    required this.sequence,
+    required this.pageId,
+    required this.fingerprint,
+  });
+
+  final String strategyPublicId;
+  final int sequence;
+  final String pageId;
+  final String fingerprint;
+
+  bool sameTargetAs(_RemotePageHydrationKey other) {
+    return strategyPublicId == other.strategyPublicId &&
+        sequence == other.sequence &&
+        pageId == other.pageId;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is _RemotePageHydrationKey &&
+        strategyPublicId == other.strategyPublicId &&
+        sequence == other.sequence &&
+        pageId == other.pageId &&
+        fingerprint == other.fingerprint;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        strategyPublicId,
+        sequence,
+        pageId,
+        fingerprint,
+      );
+}
+
+final strategyPageSessionProvider =
+    NotifierProvider<StrategyPageSessionNotifier, StrategyPageSessionState>(
+  StrategyPageSessionNotifier.new,
+);
+
+class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
+  _RemotePageHydrationKey? _lastHydratedRemotePageKey;
+  _RemotePageHydrationKey? _lastSequenceAdvancedHydrationKey;
+  bool _pendingRemoteReapply = false;
+  bool _pendingRemoteSequenceAdvanced = false;
+
+  @override
+  StrategyPageSessionState build() {
+    ref.listen<AsyncValue<RemoteStrategySnapshot?>>(
+      remoteStrategySnapshotProvider,
+      (previous, next) {
+        final strategyState = ref.read(strategyProvider);
+        if (strategyState.source != StrategySource.cloud ||
+            !strategyState.isOpen) {
+          return;
+        }
+
+        final snapshot = next.valueOrNull;
+        if (snapshot == null || snapshot.pages.isEmpty) {
+          return;
+        }
+
+        final pageIds = [...snapshot.pages]
+          ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+        final orderedIds =
+            pageIds.map((page) => page.publicId).toList(growable: false);
+        if (!listEquals(orderedIds, state.availablePageIds)) {
+          state = state.copyWith(availablePageIds: orderedIds);
+        }
+
+        final targetPageId = _resolveHydrationTargetPage(snapshot);
+        if (targetPageId == null) {
+          return;
+        }
+
+        final hydrationKey =
+            _buildRemotePageHydrationKey(snapshot, targetPageId);
+        if (hydrationKey == null) {
+          return;
+        }
+
+        final prevSequence = previous?.valueOrNull?.header.sequence;
+        final sequenceChanged =
+            prevSequence == null || prevSequence != snapshot.header.sequence;
+        final sequenceAdvanced =
+            prevSequence != null && prevSequence != snapshot.header.sequence;
+
+        if (sequenceChanged) {
+          if (_lastHydratedRemotePageKey == hydrationKey) {
+            return;
+          }
+          _requestRemoteRehydrate(
+            targetPageId,
+            hydrationKey: hydrationKey,
+            sequenceAdvanced: sequenceAdvanced,
+          );
+          return;
+        }
+
+        if (_shouldRehydrateLateSectionReplacement(hydrationKey)) {
+          _requestRemoteRehydrate(
+            targetPageId,
+            hydrationKey: hydrationKey,
+            sequenceAdvanced: false,
+          );
+        }
+      },
+    );
+
+    ref.listen<StrategySaveState>(strategySaveStateProvider, (_, __) {
+      _resumePendingRemoteReapplyIfPossible();
+    });
+
+    ref.listen<StrategyOpQueueState>(strategyOpQueueProvider, (previous, next) {
+      final previousAckBatch =
+          previous?.lastAckBatch ?? const <AckedEntityIntent>[];
+      if (next.lastAckBatch.isEmpty ||
+          identical(previousAckBatch, next.lastAckBatch)) {
+        return;
+      }
+      unawaited(_reconcileAcks(next.lastAcks, next.lastAckBatch));
+    });
+
+    return const StrategyPageSessionState(
+      activePageId: null,
+      availablePageIds: [],
+      transitionState: PageTransitionState.idle,
+      isApplyingPage: false,
+    );
+  }
+
+  String? get activePageId => state.activePageId;
+
+  Future<void> initializeForStrategy({
+    required String strategyId,
+    required StrategySource source,
+    required bool selectFirstPageIfNeeded,
+  }) async {
+    final pageSource = _resolvePageSource(strategyId, source);
+    final pageIds = await pageSource.listPageIds();
+    final initialPageId =
+        pageIds.contains(state.activePageId) ? state.activePageId : null;
+    final selected = initialPageId ??
+        (selectFirstPageIfNeeded && pageIds.isNotEmpty ? pageIds.first : null);
+
+    state = state.copyWith(
+      availablePageIds: pageIds,
+      activePageId: selected,
+      clearActivePageId: selected == null,
+      transitionState: PageTransitionState.idle,
+      isApplyingPage: false,
+    );
+    ref.read(activePageLiveSyncProvider.notifier).setContext(
+          strategyPublicId: strategyId,
+          activePageId: selected,
+        );
+
+    if (selected != null) {
+      await _rehydrateActivePageFromSource(selected);
+    }
+  }
+
+  Future<void> setActivePage(String pageId) async {
+    if (pageId == state.activePageId) {
+      return;
+    }
+    await _switchToPage(pageId, animated: false);
+  }
+
+  Future<void> setActivePageAnimated(
+    String pageId, {
+    required PageTransitionDirection direction,
+    Duration duration = kPageTransitionDuration,
+  }) async {
+    if (pageId == state.activePageId) {
+      return;
+    }
+
+    final transitionState = ref.read(transitionProvider);
+    final transitionNotifier = ref.read(transitionProvider.notifier);
+    if (transitionState.active ||
+        transitionState.phase == PageTransitionPhase.preparing) {
+      transitionNotifier.complete();
+    }
+
+    state = state.copyWith(
+      transitionState: direction == PageTransitionDirection.forward
+          ? PageTransitionState.animatingForward
+          : PageTransitionState.animatingBackward,
+    );
+
+    final startSettings = ref.read(strategySettingsProvider);
+    final previous = _snapshotAllPlaced();
+    transitionNotifier.prepare(
+      previous.values.toList(),
+      direction: direction,
+      startAgentSize: startSettings.agentSize,
+      startAbilitySize: startSettings.abilitySize,
+    );
+
+    await _switchToPage(
+      pageId,
+      animated: true,
+      direction: direction,
+    );
+    final endSettings = ref.read(strategySettingsProvider);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final next = _snapshotAllPlaced();
+      final entries = _diffToTransitions(previous, next);
+      if (entries.isNotEmpty) {
+        transitionNotifier.start(
+          entries,
+          duration: duration,
+          direction: direction,
+          startAgentSize: startSettings.agentSize,
+          endAgentSize: endSettings.agentSize,
+          startAbilitySize: startSettings.abilitySize,
+          endAbilitySize: endSettings.abilitySize,
+        );
+      } else {
+        transitionNotifier.complete();
+      }
+      state = state.copyWith(transitionState: PageTransitionState.idle);
+      _resumePendingRemoteReapplyIfPossible();
+    });
+  }
+
+  Future<void> switchRelativePage(PageSwitchDirection direction) async {
+    if (state.availablePageIds.isEmpty) {
+      return;
+    }
+
+    final active = state.activePageId ?? state.availablePageIds.first;
+    final currentIndex = state.availablePageIds.indexOf(active);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    final nextIndex = direction == PageSwitchDirection.next
+        ? (currentIndex + 1) % state.availablePageIds.length
+        : (currentIndex - 1 + state.availablePageIds.length) %
+            state.availablePageIds.length;
+    final nextPageId = state.availablePageIds[nextIndex];
+    await setActivePageAnimated(
+      nextPageId,
+      direction: direction == PageSwitchDirection.next
+          ? PageTransitionDirection.forward
+          : PageTransitionDirection.backward,
+    );
+  }
+
+  Future<void> flushCurrentPage({bool flushImmediately = false}) async {
+    final strategyState = ref.read(strategyProvider);
+    if (!strategyState.isOpen || strategyState.strategyId == null) {
+      return;
+    }
+
+    final source = _resolvePageSource(
+      strategyState.strategyId!,
+      strategyState.source ?? StrategySource.local,
+    );
+    await source.flushCurrentPage();
+    if (flushImmediately && strategyState.source == StrategySource.cloud) {
+      await ref.read(strategyOpQueueProvider.notifier).flushNow();
+    }
+  }
+
+  bool get isApplyingPage => state.isApplyingPage;
+
+  void setStateForTest(StrategyPageSessionState newState) {
+    state = newState;
+  }
+
+  void reset() {
+    state = const StrategyPageSessionState(
+      activePageId: null,
+      availablePageIds: [],
+      transitionState: PageTransitionState.idle,
+      isApplyingPage: false,
+    );
+    _lastHydratedRemotePageKey = null;
+    _lastSequenceAdvancedHydrationKey = null;
+    _pendingRemoteReapply = false;
+    _pendingRemoteSequenceAdvanced = false;
+    ref.read(activePageLiveSyncProvider.notifier).reset();
+  }
+
+  Future<void> _switchToPage(
+    String pageId, {
+    required bool animated,
+    PageTransitionDirection? direction,
+  }) async {
+    final strategyState = ref.read(strategyProvider);
+    final strategyId = strategyState.strategyId;
+    final source = strategyState.source;
+    if (strategyId == null || source == null) {
+      return;
+    }
+
+    final pageSource = _resolvePageSource(strategyId, source);
+    await pageSource.flushCurrentPage();
+    if (source == StrategySource.cloud) {
+      await ref.read(strategyOpQueueProvider.notifier).flushNow();
+      ref.read(activePageLiveSyncProvider.notifier).setContext(
+            strategyPublicId: strategyId,
+            activePageId: pageId,
+          );
+    }
+
+    final pageData = await pageSource.loadPage(pageId);
+    await _applyLoadedPageData(
+      pageData,
+      strategyId: strategyId,
+      source: source,
+    );
+
+    if (animated && direction != null) {
+      _updateHydrationBookkeeping(pageData.pageId);
+    }
+  }
+
+  Future<void> _rehydrateActivePageFromSource(
+    String pageId, {
+    _RemotePageHydrationKey? hydrationKey,
+    bool sequenceAdvanced = false,
+  }) async {
+    final strategyState = ref.read(strategyProvider);
+    final strategyId = strategyState.strategyId;
+    final source = strategyState.source;
+    if (strategyId == null || source == null) {
+      return;
+    }
+
+    ref.read(activePageLiveSyncProvider.notifier).setContext(
+          strategyPublicId: strategyId,
+          activePageId: pageId,
+        );
+    final pageData =
+        await _resolvePageSource(strategyId, source).loadPage(pageId);
+    await _applyLoadedPageData(
+      pageData,
+      strategyId: strategyId,
+      source: source,
+      hydrationKey: hydrationKey,
+      sequenceAdvanced: sequenceAdvanced,
+    );
+  }
+
+  Future<void> _applyLoadedPageData(
+    StrategyEditorPageData pageData, {
+    required String strategyId,
+    required StrategySource source,
+    _RemotePageHydrationKey? hydrationKey,
+    bool sequenceAdvanced = false,
+  }) async {
+    final preserveHistory = source == StrategySource.cloud &&
+        _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
+        _lastHydratedRemotePageKey?.pageId == pageData.pageId;
+    final themeProfileId = _resolveThemeProfileId(source, strategyId);
+    final themeOverridePalette =
+        _resolveThemeOverridePalette(source, strategyId);
+
+    state = state.copyWith(
+      isApplyingPage: true,
+      activePageId: pageData.pageId,
+      availablePageIds:
+          await _resolvePageSource(strategyId, source).listPageIds(),
+    );
+
+    try {
+      await applyStrategyEditorPageData(
+        ref,
+        pageData,
+        themeProfileId: themeProfileId,
+        themeOverridePalette: themeOverridePalette,
+        preserveHistory: preserveHistory,
+      );
+      _updateHydrationBookkeeping(
+        pageData.pageId,
+        hydrationKey: hydrationKey,
+        sequenceAdvanced: sequenceAdvanced,
+      );
+    } finally {
+      state = state.copyWith(
+        activePageId: pageData.pageId,
+        isApplyingPage: false,
+      );
+      _resumePendingRemoteReapplyIfPossible();
+    }
+  }
+
+  StrategyPageSource _resolvePageSource(
+    String strategyId,
+    StrategySource source,
+  ) {
+    switch (source) {
+      case StrategySource.local:
+        return LocalStrategyPageSource(
+          ref,
+          strategyId: strategyId,
+          activePageId: () => state.activePageId,
+        );
+      case StrategySource.cloud:
+        return CloudStrategyPageSource(
+          ref,
+          strategyId: strategyId,
+          activePageId: () => state.activePageId,
+        );
+    }
+  }
+
+  String _resolveThemeProfileId(StrategySource source, String strategyId) {
+    if (source == StrategySource.cloud) {
+      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      return snapshot?.header.themeProfileId ??
+          MapThemeProfilesProvider.immutableDefaultProfileId;
+    }
+
+    final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(
+      strategyId,
+    );
+    return strategy?.themeProfileId ??
+        MapThemeProfilesProvider.immutableDefaultProfileId;
+  }
+
+  MapThemePalette? _resolveThemeOverridePalette(
+    StrategySource source,
+    String strategyId,
+  ) {
+    if (source == StrategySource.cloud) {
+      final payload = ref
+          .read(remoteStrategySnapshotProvider)
+          .valueOrNull
+          ?.header
+          .themeOverridePalette;
+      if (payload == null || payload.isEmpty) {
+        return null;
+      }
+      try {
+        final decoded = jsonDecode(payload);
+        if (decoded is Map<String, dynamic>) {
+          return MapThemePalette.fromJson(decoded);
+        }
+        if (decoded is Map) {
+          return MapThemePalette.fromJson(Map<String, dynamic>.from(decoded));
+        }
+      } catch (_) {
+        return null;
+      }
+      return null;
+    }
+
+    return Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+        .get(strategyId)
+        ?.themeOverridePalette;
+  }
+
+  bool _canSafelyReapplyRemotePage() {
+    return !state.isApplyingPage &&
+        state.transitionState == PageTransitionState.idle;
+  }
+
+  void _requestRemoteRehydrate(
+    String pageId, {
+    required _RemotePageHydrationKey hydrationKey,
+    required bool sequenceAdvanced,
+  }) {
+    if (_canSafelyReapplyRemotePage()) {
+      unawaited(
+        _rehydrateActivePageFromSource(
+          pageId,
+          hydrationKey: hydrationKey,
+          sequenceAdvanced: sequenceAdvanced,
+        ),
+      );
+    } else {
+      _pendingRemoteReapply = true;
+      _pendingRemoteSequenceAdvanced =
+          _pendingRemoteSequenceAdvanced || sequenceAdvanced;
+    }
+  }
+
+  String? _resolveHydrationTargetPage(RemoteStrategySnapshot snapshot) {
+    if (snapshot.pages.isEmpty) {
+      return null;
+    }
+
+    final activePageId = state.activePageId;
+    if (activePageId != null &&
+        snapshot.pages.any((page) => page.publicId == activePageId)) {
+      return activePageId;
+    }
+
+    final pages = [...snapshot.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    return pages.first.publicId;
+  }
+
+  void _updateHydrationBookkeeping(
+    String pageId, {
+    _RemotePageHydrationKey? hydrationKey,
+    bool sequenceAdvanced = false,
+  }) {
+    final key = hydrationKey ?? _currentRemotePageHydrationKey(pageId);
+    if (key == null) {
+      return;
+    }
+    _lastHydratedRemotePageKey = key;
+    if (sequenceAdvanced) {
+      _lastSequenceAdvancedHydrationKey = key;
+    }
+  }
+
+  _RemotePageHydrationKey? _currentRemotePageHydrationKey(String pageId) {
+    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+    if (snapshot == null) {
+      return null;
+    }
+    return _buildRemotePageHydrationKey(snapshot, pageId);
+  }
+
+  _RemotePageHydrationKey? _buildRemotePageHydrationKey(
+    RemoteStrategySnapshot snapshot,
+    String pageId,
+  ) {
+    RemotePage? page;
+    for (final candidate in snapshot.pages) {
+      if (candidate.publicId == pageId) {
+        page = candidate;
+        break;
+      }
+    }
+    if (page == null) {
+      return null;
+    }
+
+    final elements = [
+      ...snapshot.elementsByPage[pageId] ?? const <RemoteElement>[]
+    ]..sort(_compareRemoteElements);
+    final lineups = [
+      ...snapshot.lineupsByPage[pageId] ?? const <RemoteLineup>[]
+    ]..sort(_compareRemoteLineups);
+    final assets = snapshot.assetsById.values.toList()
+      ..sort((a, b) => a.publicId.compareTo(b.publicId));
+
+    final fingerprint = jsonEncode({
+      'page': {
+        'publicId': page.publicId,
+        'name': page.name,
+        'sortIndex': page.sortIndex,
+        'isAttack': page.isAttack,
+        'revision': page.revision,
+        'settings': page.settings,
+      },
+      'elements': [
+        for (final element in elements)
+          {
+            'publicId': element.publicId,
+            'elementType': element.elementType,
+            'payload': element.payload,
+            'sortIndex': element.sortIndex,
+            'revision': element.revision,
+            'deleted': element.deleted,
+          },
+      ],
+      'lineups': [
+        for (final lineup in lineups)
+          {
+            'publicId': lineup.publicId,
+            'payload': lineup.payload,
+            'sortIndex': lineup.sortIndex,
+            'revision': lineup.revision,
+            'deleted': lineup.deleted,
+          },
+      ],
+      'assets': [
+        for (final asset in assets)
+          {
+            'publicId': asset.publicId,
+            'fileExtension': asset.fileExtension,
+            'mimeType': asset.mimeType,
+            'width': asset.width,
+            'height': asset.height,
+            'url': asset.url,
+            'legacyStoragePath': asset.legacyStoragePath,
+          },
+      ],
+    });
+
+    return _RemotePageHydrationKey(
+      strategyPublicId: snapshot.header.publicId,
+      sequence: snapshot.header.sequence,
+      pageId: pageId,
+      fingerprint: fingerprint,
+    );
+  }
+
+  int _compareRemoteElements(RemoteElement a, RemoteElement b) {
+    final sortCompare = a.sortIndex.compareTo(b.sortIndex);
+    if (sortCompare != 0) {
+      return sortCompare;
+    }
+    return a.publicId.compareTo(b.publicId);
+  }
+
+  int _compareRemoteLineups(RemoteLineup a, RemoteLineup b) {
+    final sortCompare = a.sortIndex.compareTo(b.sortIndex);
+    if (sortCompare != 0) {
+      return sortCompare;
+    }
+    return a.publicId.compareTo(b.publicId);
+  }
+
+  bool _shouldRehydrateLateSectionReplacement(
+    _RemotePageHydrationKey hydrationKey,
+  ) {
+    final lastHydratedKey = _lastHydratedRemotePageKey;
+    final sequenceAdvancedKey = _lastSequenceAdvancedHydrationKey;
+    return lastHydratedKey != null &&
+        sequenceAdvancedKey != null &&
+        hydrationKey.sameTargetAs(lastHydratedKey) &&
+        hydrationKey.sameTargetAs(sequenceAdvancedKey) &&
+        hydrationKey.fingerprint != lastHydratedKey.fingerprint;
+  }
+
+  Future<void> _reconcileAcks(
+    List<OpAck> acks,
+    List<AckedEntityIntent> ackBatch,
+  ) async {
+    final strategyState = ref.read(strategyProvider);
+    if (strategyState.source != StrategySource.cloud || acks.isEmpty) {
+      return;
+    }
+
+    ref.read(activePageLiveSyncProvider.notifier).recordAckBatch(ackBatch);
+    var hasReject = false;
+    for (final ack in acks) {
+      if (ack.isAck) {
+        continue;
+      }
+      hasReject = true;
+      Map<String, dynamic>? serverPayload;
+      if (ack.latestPayload != null && ack.latestPayload!.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(ack.latestPayload!);
+          if (decoded is Map<String, dynamic>) {
+            serverPayload = decoded;
+          }
+        } catch (_) {
+          serverPayload = null;
+        }
+      }
+
+      ref.read(strategyConflictProvider.notifier).push(
+            ConflictResolution(
+              type: ConflictResolutionType.rebase,
+              opId: ack.opId,
+              message: ack.reason,
+              serverPayload: serverPayload,
+              serverRevision: ack.latestRevision,
+              serverSequence: ack.latestSequence,
+            ),
+          );
+    }
+
+    await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+    final activePageId = state.activePageId;
+    final strategyId = strategyState.strategyId;
+    if (activePageId != null && strategyId != null) {
+      final desiredOpsByEntityKey =
+          ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+                strategyPublicId: strategyId,
+                pageId: activePageId,
+              );
+      ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
+            pageId: activePageId,
+            desiredOpsByEntityKey: desiredOpsByEntityKey,
+            flushImmediately: false,
+          );
+      if (_canSafelyReapplyRemotePage()) {
+        await _rehydrateActivePageFromSource(activePageId);
+      } else {
+        _pendingRemoteReapply = true;
+      }
+    } else if (hasReject) {
+      _pendingRemoteReapply = true;
+    }
+  }
+
+  void _resumePendingRemoteReapplyIfPossible() {
+    if (!_pendingRemoteReapply || !_canSafelyReapplyRemotePage()) {
+      return;
+    }
+    final sequenceAdvanced = _pendingRemoteSequenceAdvanced;
+    _pendingRemoteReapply = false;
+    _pendingRemoteSequenceAdvanced = false;
+    final pageId = state.activePageId;
+    if (pageId != null) {
+      unawaited(
+        _rehydrateActivePageFromSource(
+          pageId,
+          sequenceAdvanced: sequenceAdvanced,
+        ),
+      );
+    }
+  }
+
+  Map<String, PlacedWidget> _snapshotAllPlaced() {
+    final map = <String, PlacedWidget>{};
+    for (final agent in ref.read(agentProvider)) {
+      map[agent.id] = agent;
+    }
+    for (final ability in ref.read(abilityProvider)) {
+      map[ability.id] = ability;
+    }
+    for (final text in ref.read(textProvider)) {
+      map[text.id] = text;
+    }
+    for (final image in ref.read(placedImageProvider).images) {
+      map[image.id] = image;
+    }
+    for (final utility in ref.read(utilityProvider)) {
+      map[utility.id] = utility;
+    }
+    return map;
+  }
+
+  List<PageTransitionEntry> _diffToTransitions(
+    Map<String, PlacedWidget> previous,
+    Map<String, PlacedWidget> next,
+  ) {
+    final entries = <PageTransitionEntry>[];
+    var order = 0;
+
+    next.forEach((id, to) {
+      final from = previous[id];
+      if (from != null) {
+        if (from.position != to.position ||
+            PageTransitionEntry.rotationOf(from) !=
+                PageTransitionEntry.rotationOf(to) ||
+            PageTransitionEntry.lengthOf(from) !=
+                PageTransitionEntry.lengthOf(to) ||
+            !listEquals(
+              PageTransitionEntry.armLengthsOf(from),
+              PageTransitionEntry.armLengthsOf(to),
+            ) ||
+            PageTransitionEntry.scaleOf(from) !=
+                PageTransitionEntry.scaleOf(to) ||
+            PageTransitionEntry.textSizeOf(from) !=
+                PageTransitionEntry.textSizeOf(to) ||
+            PageTransitionEntry.agentStateOf(from) !=
+                PageTransitionEntry.agentStateOf(to) ||
+            PageTransitionEntry.customDiameterOf(from) !=
+                PageTransitionEntry.customDiameterOf(to) ||
+            PageTransitionEntry.customWidthOf(from) !=
+                PageTransitionEntry.customWidthOf(to) ||
+            PageTransitionEntry.customLengthOf(from) !=
+                PageTransitionEntry.customLengthOf(to)) {
+          entries
+              .add(PageTransitionEntry.move(from: from, to: to, order: order));
+        } else {
+          entries.add(PageTransitionEntry.none(to: to, order: order));
+        }
+      } else {
+        entries.add(PageTransitionEntry.appear(to: to, order: order));
+      }
+      order++;
+    });
+
+    previous.forEach((id, from) {
+      if (!next.containsKey(id)) {
+        entries.add(PageTransitionEntry.disappear(from: from, order: order));
+        order++;
+      }
+    });
+
+    return entries;
+  }
+}

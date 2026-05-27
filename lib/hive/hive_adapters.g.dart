@@ -213,13 +213,17 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       length: fields[6] == null ? 0 : (fields[6] as num).toDouble(),
       lineUpID: fields[7] as String?,
       rotation: fields[2] == null ? 0 : (fields[2] as num).toDouble(),
+      visualState: fields[9] == null
+          ? const AbilityVisualState()
+          : fields[9] as AbilityVisualState,
+      armLengthsMeters: (fields[8] as List?)?.cast<double>(),
     )..isDeleted = fields[4] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedAbility obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.data)
       ..writeByte(1)
@@ -235,7 +239,11 @@ class PlacedAbilityAdapter extends TypeAdapter<PlacedAbility> {
       ..writeByte(6)
       ..write(obj.length)
       ..writeByte(7)
-      ..write(obj.lineUpID);
+      ..write(obj.lineUpID)
+      ..writeByte(8)
+      ..write(obj.armLengthsMeters)
+      ..writeByte(9)
+      ..write(obj.visualState);
   }
 
   @override
@@ -262,7 +270,9 @@ class PlacedTextAdapter extends TypeAdapter<PlacedText> {
     return PlacedText(
       position: fields[4] as Offset,
       id: fields[2] as String,
-      size: fields[1] == null ? 200 : (fields[1] as num).toDouble(),
+      size: fields[1] == null ? 185 : (fields[1] as num).toDouble(),
+      fontSize: fields[6] == null ? 16 : (fields[6] as num).toDouble(),
+      sizeVersion: (fields[7] as num?)?.toInt(),
       tagColorValue: (fields[5] as num?)?.toInt(),
     )
       ..text = fields[0] as String
@@ -272,7 +282,7 @@ class PlacedTextAdapter extends TypeAdapter<PlacedText> {
   @override
   void write(BinaryWriter writer, PlacedText obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.text)
       ..writeByte(1)
@@ -284,7 +294,11 @@ class PlacedTextAdapter extends TypeAdapter<PlacedText> {
       ..writeByte(4)
       ..write(obj.position)
       ..writeByte(5)
-      ..write(obj.tagColorValue);
+      ..write(obj.tagColorValue)
+      ..writeByte(6)
+      ..write(obj.fontSize)
+      ..writeByte(7)
+      ..write(obj.sizeVersion);
   }
 
   @override
@@ -314,6 +328,7 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       aspectRatio: (fields[1] as num).toDouble(),
       scale: (fields[2] as num).toDouble(),
       fileExtension: fields[8] as String?,
+      sizeVersion: (fields[10] as num?)?.toInt(),
       tagColorValue: (fields[9] as num?)?.toInt(),
     )
       ..link = fields[3] as String
@@ -323,7 +338,7 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
   @override
   void write(BinaryWriter writer, PlacedImage obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(9)
       ..writeByte(1)
       ..write(obj.aspectRatio)
       ..writeByte(2)
@@ -339,7 +354,9 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       ..writeByte(8)
       ..write(obj.fileExtension)
       ..writeByte(9)
-      ..write(obj.tagColorValue);
+      ..write(obj.tagColorValue)
+      ..writeByte(10)
+      ..write(obj.sizeVersion);
   }
 
   @override
@@ -493,6 +510,8 @@ class AgentTypeAdapter extends TypeAdapter<AgentType> {
         return AgentType.waylay;
       case 27:
         return AgentType.veto;
+      case 28:
+        return AgentType.miks;
       default:
         return AgentType.jett;
     }
@@ -557,6 +576,8 @@ class AgentTypeAdapter extends TypeAdapter<AgentType> {
         writer.writeByte(26);
       case AgentType.veto:
         writer.writeByte(27);
+      case AgentType.miks:
+        writer.writeByte(28);
     }
   }
 
@@ -621,6 +642,9 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
     return FreeDrawing(
       listOfPoints: (fields[0] as List?)?.cast<Offset>(),
       color: fields[2] as Color,
+      thickness: fields[11] == null
+          ? Settings.defaultStrokeThickness
+          : (fields[11] as num).toDouble(),
       boundingBox: fields[6] as BoundingBox?,
       isDotted: fields[3] as bool,
       hasArrow: fields[4] as bool,
@@ -629,13 +653,14 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       traversalSpeedProfile: fields[9] == null
           ? TraversalSpeed.defaultProfile
           : fields[9] as TraversalSpeedProfile,
+      cachedPolylineLengthUnits: (fields[10] as num?)?.toDouble(),
     );
   }
 
   @override
   void write(BinaryWriter writer, FreeDrawing obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.listOfPoints)
       ..writeByte(2)
@@ -651,7 +676,11 @@ class FreeDrawingAdapter extends TypeAdapter<FreeDrawing> {
       ..writeByte(8)
       ..write(obj.showTraversalTime)
       ..writeByte(9)
-      ..write(obj.traversalSpeedProfile);
+      ..write(obj.traversalSpeedProfile)
+      ..writeByte(10)
+      ..write(obj.cachedPolylineLengthUnits)
+      ..writeByte(11)
+      ..write(obj.thickness);
   }
 
   @override
@@ -679,16 +708,24 @@ class LineAdapter extends TypeAdapter<Line> {
       lineStart: fields[0] as Offset,
       lineEnd: fields[1] as Offset,
       color: fields[2] as Color,
+      thickness: fields[9] == null
+          ? Settings.defaultStrokeThickness
+          : (fields[9] as num).toDouble(),
+      boundingBox: fields[6] as BoundingBox?,
       isDotted: fields[3] as bool,
       hasArrow: fields[4] as bool,
       id: fields[5] as String,
-    )..boundingBox = fields[6] as BoundingBox?;
+      showTraversalTime: fields[7] == null ? false : fields[7] as bool,
+      traversalSpeedProfile: fields[8] == null
+          ? TraversalSpeed.defaultProfile
+          : fields[8] as TraversalSpeedProfile,
+    );
   }
 
   @override
   void write(BinaryWriter writer, Line obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.lineStart)
       ..writeByte(1)
@@ -702,7 +739,13 @@ class LineAdapter extends TypeAdapter<Line> {
       ..writeByte(5)
       ..write(obj.id)
       ..writeByte(6)
-      ..write(obj.boundingBox);
+      ..write(obj.boundingBox)
+      ..writeByte(7)
+      ..write(obj.showTraversalTime)
+      ..writeByte(8)
+      ..write(obj.traversalSpeedProfile)
+      ..writeByte(9)
+      ..write(obj.thickness);
   }
 
   @override
@@ -808,8 +851,8 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       type: fields[0] as UtilityType,
       position: fields[5] as Offset,
       id: fields[3] as String,
+      isAlly: fields[14] == null ? true : fields[14] as bool,
       angle: fields[6] == null ? 0.0 : (fields[6] as num).toDouble(),
-      attachedAgentId: fields[7] as String?,
       customDiameter: (fields[8] as num?)?.toDouble(),
       customWidth: (fields[9] as num?)?.toDouble(),
       customLength: (fields[10] as num?)?.toDouble(),
@@ -839,8 +882,6 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       ..write(obj.position)
       ..writeByte(6)
       ..write(obj.angle)
-      ..writeByte(7)
-      ..write(obj.attachedAgentId)
       ..writeByte(8)
       ..write(obj.customDiameter)
       ..writeByte(9)
@@ -850,7 +891,9 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       ..writeByte(11)
       ..write(obj.customColorValue)
       ..writeByte(12)
-      ..write(obj.customOpacityPercent);
+      ..write(obj.customOpacityPercent)
+      ..writeByte(14)
+      ..write(obj.isAlly);
   }
 
   @override
@@ -883,6 +926,14 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
         return UtilityType.customCircle;
       case 5:
         return UtilityType.customRectangle;
+      case 6:
+        return UtilityType.controller;
+      case 7:
+        return UtilityType.duelist;
+      case 8:
+        return UtilityType.initiator;
+      case 9:
+        return UtilityType.sentinel;
       default:
         return UtilityType.spike;
     }
@@ -903,6 +954,14 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
         writer.writeByte(4);
       case UtilityType.customRectangle:
         writer.writeByte(5);
+      case UtilityType.controller:
+        writer.writeByte(6);
+      case UtilityType.duelist:
+        writer.writeByte(7);
+      case UtilityType.initiator:
+        writer.writeByte(8);
+      case UtilityType.sentinel:
+        writer.writeByte(9);
     }
   }
 
@@ -913,58 +972,6 @@ class UtilityTypeAdapter extends TypeAdapter<UtilityType> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is UtilityTypeAdapter &&
-          runtimeType == other.runtimeType &&
-          typeId == other.typeId;
-}
-
-class FolderAdapter extends TypeAdapter<Folder> {
-  @override
-  final typeId = 17;
-
-  @override
-  Folder read(BinaryReader reader) {
-    final numOfFields = reader.readByte();
-    final fields = <int, dynamic>{
-      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
-    };
-    return Folder(
-      name: fields[0] as String,
-      id: fields[1] as String,
-      dateCreated: fields[3] as DateTime,
-      icon: fields[4] as IconData,
-      color: fields[5] == null ? FolderColor.red : fields[5] as FolderColor,
-      parentID: fields[2] as String?,
-      customColor: fields[6] as Color?,
-    );
-  }
-
-  @override
-  void write(BinaryWriter writer, Folder obj) {
-    writer
-      ..writeByte(7)
-      ..writeByte(0)
-      ..write(obj.name)
-      ..writeByte(1)
-      ..write(obj.id)
-      ..writeByte(2)
-      ..write(obj.parentID)
-      ..writeByte(3)
-      ..write(obj.dateCreated)
-      ..writeByte(4)
-      ..write(obj.icon)
-      ..writeByte(5)
-      ..write(obj.color)
-      ..writeByte(6)
-      ..write(obj.customColor);
-  }
-
-  @override
-  int get hashCode => typeId.hashCode;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is FolderAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }
@@ -1086,7 +1093,7 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       id: fields[0] as String,
       name: fields[2] as String,
       drawingData: (fields[3] as List).cast<DrawingElement>(),
-      agentData: (fields[4] as List).cast<PlacedAgent>(),
+      agentData: (fields[4] as List).cast<PlacedAgentNode>(),
       abilityData: (fields[5] as List).cast<PlacedAbility>(),
       textData: (fields[6] as List).cast<PlacedText>(),
       imageData: (fields[7] as List).cast<PlacedImage>(),
@@ -1277,6 +1284,9 @@ class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
       start: fields[0] as Offset,
       end: fields[1] as Offset,
       color: fields[2] as Color,
+      thickness: fields[7] == null
+          ? Settings.defaultStrokeThickness
+          : (fields[7] as num).toDouble(),
       boundingBox: fields[6] as BoundingBox?,
       isDotted: fields[3] as bool,
       hasArrow: fields[4] as bool,
@@ -1287,7 +1297,7 @@ class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
   @override
   void write(BinaryWriter writer, RectangleDrawing obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(8)
       ..writeByte(0)
       ..write(obj.start)
       ..writeByte(1)
@@ -1301,7 +1311,9 @@ class RectangleDrawingAdapter extends TypeAdapter<RectangleDrawing> {
       ..writeByte(5)
       ..write(obj.id)
       ..writeByte(6)
-      ..write(obj.boundingBox);
+      ..write(obj.boundingBox)
+      ..writeByte(7)
+      ..write(obj.thickness);
   }
 
   @override
@@ -1458,15 +1470,18 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
     };
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies: fields[0] as String,
+      autosaveEnabled: fields[1] == null ? true : fields[1] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(1)
+      ..writeByte(2)
       ..writeByte(0)
-      ..write(obj.defaultThemeProfileIdForNewStrategies);
+      ..write(obj.defaultThemeProfileIdForNewStrategies)
+      ..writeByte(1)
+      ..write(obj.autosaveEnabled);
   }
 
   @override
@@ -1476,6 +1491,328 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is AppPreferencesAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class PlacedViewConeAgentAdapter extends TypeAdapter<PlacedViewConeAgent> {
+  @override
+  final typeId = 29;
+
+  @override
+  PlacedViewConeAgent read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return PlacedViewConeAgent(
+      type: fields[3] as AgentType,
+      position: fields[8] as Offset,
+      id: fields[6] as String,
+      presetType: fields[0] as UtilityType,
+      rotation: fields[1] == null ? 0 : (fields[1] as num).toDouble(),
+      length: fields[2] == null ? 0 : (fields[2] as num).toDouble(),
+      isAlly: fields[4] == null ? true : fields[4] as bool,
+      state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
+    )..isDeleted = fields[7] as bool;
+  }
+
+  @override
+  void write(BinaryWriter writer, PlacedViewConeAgent obj) {
+    writer
+      ..writeByte(9)
+      ..writeByte(0)
+      ..write(obj.presetType)
+      ..writeByte(1)
+      ..write(obj.rotation)
+      ..writeByte(2)
+      ..write(obj.length)
+      ..writeByte(3)
+      ..write(obj.type)
+      ..writeByte(4)
+      ..write(obj.isAlly)
+      ..writeByte(5)
+      ..write(obj.state)
+      ..writeByte(6)
+      ..write(obj.id)
+      ..writeByte(7)
+      ..write(obj.isDeleted)
+      ..writeByte(8)
+      ..write(obj.position);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlacedViewConeAgentAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class PlacedCircleAgentAdapter extends TypeAdapter<PlacedCircleAgent> {
+  @override
+  final typeId = 30;
+
+  @override
+  PlacedCircleAgent read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return PlacedCircleAgent(
+      type: fields[3] as AgentType,
+      position: fields[8] as Offset,
+      id: fields[6] as String,
+      diameterMeters: fields[0] == null ? 0 : (fields[0] as num).toDouble(),
+      colorValue: fields[1] == null ? 0xFFFFFFFF : (fields[1] as num).toInt(),
+      opacityPercent: fields[2] == null ? 100 : (fields[2] as num).toInt(),
+      isAlly: fields[4] == null ? true : fields[4] as bool,
+      state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
+    )..isDeleted = fields[7] as bool;
+  }
+
+  @override
+  void write(BinaryWriter writer, PlacedCircleAgent obj) {
+    writer
+      ..writeByte(9)
+      ..writeByte(0)
+      ..write(obj.diameterMeters)
+      ..writeByte(1)
+      ..write(obj.colorValue)
+      ..writeByte(2)
+      ..write(obj.opacityPercent)
+      ..writeByte(3)
+      ..write(obj.type)
+      ..writeByte(4)
+      ..write(obj.isAlly)
+      ..writeByte(5)
+      ..write(obj.state)
+      ..writeByte(6)
+      ..write(obj.id)
+      ..writeByte(7)
+      ..write(obj.isDeleted)
+      ..writeByte(8)
+      ..write(obj.position);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PlacedCircleAgentAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class EllipseDrawingAdapter extends TypeAdapter<EllipseDrawing> {
+  @override
+  final typeId = 31;
+
+  @override
+  EllipseDrawing read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return EllipseDrawing(
+      start: fields[0] as Offset,
+      end: fields[1] as Offset,
+      color: fields[2] as Color,
+      thickness: fields[3] == null
+          ? Settings.defaultStrokeThickness
+          : (fields[3] as num).toDouble(),
+      boundingBox: fields[7] as BoundingBox?,
+      isDotted: fields[4] as bool,
+      hasArrow: fields[5] as bool,
+      id: fields[6] as String,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, EllipseDrawing obj) {
+    writer
+      ..writeByte(8)
+      ..writeByte(0)
+      ..write(obj.start)
+      ..writeByte(1)
+      ..write(obj.end)
+      ..writeByte(2)
+      ..write(obj.color)
+      ..writeByte(3)
+      ..write(obj.thickness)
+      ..writeByte(4)
+      ..write(obj.isDotted)
+      ..writeByte(5)
+      ..write(obj.hasArrow)
+      ..writeByte(6)
+      ..write(obj.id)
+      ..writeByte(7)
+      ..write(obj.boundingBox);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EllipseDrawingAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class AbilityVisualStateAdapter extends TypeAdapter<AbilityVisualState> {
+  @override
+  final typeId = 32;
+
+  @override
+  AbilityVisualState read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return AbilityVisualState(
+      showRangeOutline: fields[2] == null ? true : fields[2] as bool,
+      showRangeFill: fields[3] == null ? true : fields[3] as bool,
+      showInnerOutline: fields[4] == null ? true : fields[4] as bool,
+      showInnerFill: fields[5] == null ? true : fields[5] as bool,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, AbilityVisualState obj) {
+    writer
+      ..writeByte(4)
+      ..writeByte(2)
+      ..write(obj.showRangeOutline)
+      ..writeByte(3)
+      ..write(obj.showRangeFill)
+      ..writeByte(4)
+      ..write(obj.showInnerOutline)
+      ..writeByte(5)
+      ..write(obj.showInnerFill);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AbilityVisualStateAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class CloudMediaJobStateAdapter extends TypeAdapter<CloudMediaJobState> {
+  @override
+  final typeId = 34;
+
+  @override
+  CloudMediaJobState read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return CloudMediaJobState.pendingUpload;
+      case 1:
+        return CloudMediaJobState.pendingAttach;
+      case 2:
+        return CloudMediaJobState.failed;
+      default:
+        return CloudMediaJobState.pendingUpload;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, CloudMediaJobState obj) {
+    switch (obj) {
+      case CloudMediaJobState.pendingUpload:
+        writer.writeByte(0);
+      case CloudMediaJobState.pendingAttach:
+        writer.writeByte(1);
+      case CloudMediaJobState.failed:
+        writer.writeByte(2);
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CloudMediaJobStateAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class CloudMediaUploadJobAdapter extends TypeAdapter<CloudMediaUploadJob> {
+  @override
+  final typeId = 35;
+
+  @override
+  CloudMediaUploadJob read(BinaryReader reader) {
+    final numOfFields = reader.readByte();
+    final fields = <int, dynamic>{
+      for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
+    };
+    return CloudMediaUploadJob(
+      jobId: fields[0] as String,
+      strategyPublicId: fields[1] as String,
+      assetPublicId: fields[5] as String,
+      fileExtension: fields[6] as String,
+      mimeType: fields[7] as String,
+      state: fields[11] as CloudMediaJobState,
+      attempts: (fields[12] as num).toInt(),
+      updatedAt: fields[14] as DateTime,
+      width: (fields[8] as num?)?.toInt(),
+      height: (fields[9] as num?)?.toInt(),
+      storageId: fields[10] as String?,
+      lastError: fields[13] as String?,
+    );
+  }
+
+  @override
+  void write(BinaryWriter writer, CloudMediaUploadJob obj) {
+    writer
+      ..writeByte(12)
+      ..writeByte(0)
+      ..write(obj.jobId)
+      ..writeByte(1)
+      ..write(obj.strategyPublicId)
+      ..writeByte(5)
+      ..write(obj.assetPublicId)
+      ..writeByte(6)
+      ..write(obj.fileExtension)
+      ..writeByte(7)
+      ..write(obj.mimeType)
+      ..writeByte(8)
+      ..write(obj.width)
+      ..writeByte(9)
+      ..write(obj.height)
+      ..writeByte(10)
+      ..write(obj.storageId)
+      ..writeByte(11)
+      ..write(obj.state)
+      ..writeByte(12)
+      ..write(obj.attempts)
+      ..writeByte(13)
+      ..write(obj.lastError)
+      ..writeByte(14)
+      ..write(obj.updatedAt);
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CloudMediaUploadJobAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

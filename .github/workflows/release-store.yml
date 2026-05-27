@@ -1,0 +1,106 @@
+name: Release Store
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: Version bump to apply before building.
+        type: choice
+        required: true
+        default: none
+        options:
+          - none
+          - patch
+          - minor
+          - major
+      publish_to_store:
+        description: Publish the staged package to Partner Center.
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dart-lang/setup-dart@v1
+
+      - name: Add Pub Cache To PATH
+        shell: pwsh
+        run: |
+          "$env:LOCALAPPDATA\Pub\Cache\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install FVM
+        shell: pwsh
+        run: dart pub global activate fvm
+
+      - name: Install Flutter SDK
+        shell: pwsh
+        run: fvm install
+
+      - name: Bump Version
+        if: ${{ inputs.version_bump != 'none' }}
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts/bump_version.ps1 -Bump ${{ inputs.version_bump }}
+
+      - name: Build Store Package
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts/build_store_release.ps1
+
+      - name: Upload Store Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: store-package
+          path: release/out/store/**
+          if-no-files-found: error
+
+      - name: Set Up Microsoft Store CLI
+        if: ${{ inputs.publish_to_store }}
+        uses: microsoft/setup-msstore-cli@v1
+
+      - name: Publish To Partner Center
+        if: ${{ inputs.publish_to_store }}
+        shell: pwsh
+        env:
+          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+          PRODUCT_ID: ${{ vars.MSSTORE_PRODUCT_ID }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:PRODUCT_ID)) {
+            throw "Repository variable MSSTORE_PRODUCT_ID is not configured."
+          }
+
+          $packageInfo = Get-Content release/out/store/package-info.json -Raw | ConvertFrom-Json
+          $packagePath = Join-Path $PWD "release/out/store/$($packageInfo.packageFile)"
+
+          msstore reconfigure --tenantId $env:AZURE_AD_TENANT_ID --sellerId $env:SELLER_ID --clientId $env:AZURE_AD_APPLICATION_CLIENT_ID --clientSecret $env:AZURE_AD_APPLICATION_SECRET
+          msstore publish $env:GITHUB_WORKSPACE -i $packagePath -id $env:PRODUCT_ID
+
+      - name: Commit Version Changes
+        if: ${{ github.ref_type == 'branch' }}
+        shell: pwsh
+        run: |
+          $changes = git status --porcelain -- pubspec.yaml lib/const/settings.dart
+          if ([string]::IsNullOrWhiteSpace(($changes | Out-String))) {
+            Write-Host "No version changes to commit."
+            exit 0
+          }
+
+          $versionLine = Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$'
+          $version = $versionLine.Matches[0].Groups[1].Value.Trim()
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.yaml lib/const/settings.dart
+          git commit -m "chore(release): store $version"
+          git push origin HEAD:${{ github.ref_name }}

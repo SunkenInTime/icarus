@@ -11,6 +11,7 @@ import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:uuid/uuid.dart';
 
 class DrawingState {
@@ -63,6 +64,16 @@ class DrawingState {
 final drawingProvider =
     NotifierProvider<DrawingProvider, DrawingState>(DrawingProvider.new);
 
+class DrawingProviderSnapshot {
+  final DrawingState state;
+  final List<DrawingElement> poppedElements;
+
+  const DrawingProviderSnapshot({
+    required this.state,
+    required this.poppedElements,
+  });
+}
+
 class DrawingProvider extends Notifier<DrawingState> {
   List<DrawingElement> poppedElements = [];
 
@@ -72,42 +83,72 @@ class DrawingProvider extends Notifier<DrawingState> {
   }
 
   void undoAction(UserAction action) {
-    final newElements = [...state.elements];
-    try {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      final newElements = [...state.elements];
       switch (action.type) {
         case ActionType.addition:
-          final index = DrawingElement.getIndexByID(action.id, newElements);
-          poppedElements.add(newElements.removeAt(index));
-
+          _removeDrawingById(action.id);
+          return;
         case ActionType.deletion:
-          final index = DrawingElement.getIndexByID(action.id, poppedElements);
-          newElements.add(poppedElements.removeAt(index));
-        default:
+          if (poppedElements.isEmpty) return;
+          newElements.add(cloneDrawingElement(poppedElements.removeLast()));
+          state = state.copyWith(elements: newElements);
+          _triggerRepaint();
+          return;
+        case ActionType.edit:
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          return;
       }
-    } catch (_) {
-      dev.log("Can't find index in undo action");
     }
-    state = state.copyWith(elements: newElements);
-    _triggerRepaint();
+    switch (action.type) {
+      case ActionType.addition:
+        _removeDrawingById(action.id);
+        return;
+      case ActionType.deletion:
+        final before = delta.before?.drawing;
+        if (before == null) return;
+        _upsertDrawing(cloneDrawingElement(before));
+        return;
+      case ActionType.edit:
+      case ActionType.bulkDeletion:
+      case ActionType.transaction:
+        return;
+    }
   }
 
   void redoAction(UserAction action) {
-    final newElements = [...state.elements];
-    try {
+    final delta = action.objectDelta;
+    if (delta == null) {
       switch (action.type) {
         case ActionType.addition:
-          final index = DrawingElement.getIndexByID(action.id, poppedElements);
-          newElements.add(poppedElements.removeAt(index));
+          if (poppedElements.isEmpty) return;
+          _upsertDrawing(cloneDrawingElement(poppedElements.removeLast()));
+          return;
         case ActionType.deletion:
-          final index = DrawingElement.getIndexByID(action.id, newElements);
-          poppedElements.add(newElements.removeAt(index));
-        default:
+          _removeDrawingById(action.id);
+          return;
+        case ActionType.edit:
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          return;
       }
-    } catch (_) {
-      dev.log("Can't find index in redo action");
     }
-    state = state.copyWith(elements: newElements);
-    _triggerRepaint();
+    switch (action.type) {
+      case ActionType.addition:
+        final after = delta.after?.drawing;
+        if (after == null) return;
+        _upsertDrawing(cloneDrawingElement(after));
+        return;
+      case ActionType.deletion:
+        _removeDrawingById(action.id);
+        return;
+      case ActionType.edit:
+      case ActionType.bulkDeletion:
+      case ActionType.transaction:
+        return;
+    }
   }
 
   String toJson() {
@@ -161,12 +202,47 @@ class DrawingProvider extends Notifier<DrawingState> {
       };
     }
 
+    if (element is Line) {
+      const colorConverter = ColorConverter();
+      const offsetConverter = OffsetConverter();
+      return {
+        'type': 'lineDrawing',
+        'color': colorConverter.toJson(element.color),
+        'thickness': element.thickness,
+        'isDotted': element.isDotted,
+        'hasArrow': element.hasArrow,
+        'id': element.id,
+        'boundingBox': element.boundingBox?.toJson(),
+        'lineStart': offsetConverter.toJson(element.lineStart),
+        'lineEnd': offsetConverter.toJson(element.lineEnd),
+        'showTraversalTime': element.showTraversalTime,
+        'traversalSpeedProfile': element.traversalSpeedProfile.name,
+      };
+    }
+
     if (element is RectangleDrawing) {
       const colorConverter = ColorConverter();
       const offsetConverter = OffsetConverter();
       return {
         'type': 'rectangleDrawing',
         'color': colorConverter.toJson(element.color),
+        'thickness': element.thickness,
+        'isDotted': element.isDotted,
+        'hasArrow': element.hasArrow,
+        'id': element.id,
+        'boundingBox': element.boundingBox?.toJson(),
+        'start': offsetConverter.toJson(element.start),
+        'end': offsetConverter.toJson(element.end),
+      };
+    }
+
+    if (element is EllipseDrawing) {
+      const colorConverter = ColorConverter();
+      const offsetConverter = OffsetConverter();
+      return {
+        'type': 'ellipseDrawing',
+        'color': colorConverter.toJson(element.color),
+        'thickness': element.thickness,
         'isDotted': element.isDotted,
         'hasArrow': element.hasArrow,
         'id': element.id,
@@ -192,6 +268,46 @@ class DrawingProvider extends Notifier<DrawingState> {
     if (type == 'freeDrawing') {
       final freeJson = Map<String, dynamic>.from(json)..remove('type');
       return FreeDrawing.fromJson(freeJson);
+    }
+
+    if (type == 'lineDrawing' ||
+        (type == null &&
+            json.containsKey('lineStart') &&
+            json.containsKey('lineEnd'))) {
+      const colorConverter = ColorConverter();
+      const offsetConverter = OffsetConverter();
+
+      final lineStart = offsetConverter
+          .fromJson(Map<String, dynamic>.from(json['lineStart'] as Map));
+      final lineEnd = offsetConverter
+          .fromJson(Map<String, dynamic>.from(json['lineEnd'] as Map));
+
+      BoundingBox? boundingBox;
+      if (json['boundingBox'] != null) {
+        boundingBox = BoundingBox.fromJson(
+          Map<String, dynamic>.from(json['boundingBox'] as Map),
+        );
+      } else {
+        boundingBox = _boundingBoxForPoints(lineStart, lineEnd);
+      }
+
+      return Line(
+        lineStart: lineStart,
+        lineEnd: lineEnd,
+        color: colorConverter.fromJson(json['color'] as String),
+        thickness: (json['thickness'] as num?)?.toDouble() ??
+            Settings.defaultStrokeThickness,
+        isDotted: json['isDotted'] as bool? ?? false,
+        hasArrow: json['hasArrow'] as bool? ?? false,
+        id: json['id'] as String,
+        boundingBox: boundingBox,
+        showTraversalTime: json['showTraversalTime'] as bool? ?? false,
+        traversalSpeedProfile: json['traversalSpeedProfile'] == null
+            ? TraversalSpeed.defaultProfile
+            : TraversalSpeedProfile.values.byName(
+                json['traversalSpeedProfile'] as String,
+              ),
+      );
     }
 
     if (type == 'rectangleDrawing' ||
@@ -222,6 +338,43 @@ class DrawingProvider extends Notifier<DrawingState> {
         start: start,
         end: end,
         color: colorConverter.fromJson(json['color'] as String),
+        thickness: (json['thickness'] as num?)?.toDouble() ??
+            Settings.defaultStrokeThickness,
+        isDotted: json['isDotted'] as bool? ?? false,
+        hasArrow: json['hasArrow'] as bool? ?? false,
+        id: json['id'] as String,
+        boundingBox: boundingBox,
+      );
+    }
+
+    if (type == 'ellipseDrawing') {
+      const colorConverter = ColorConverter();
+      const offsetConverter = OffsetConverter();
+
+      final start = offsetConverter
+          .fromJson(Map<String, dynamic>.from(json['start'] as Map));
+      final end = offsetConverter
+          .fromJson(Map<String, dynamic>.from(json['end'] as Map));
+      final normalizedRect = Rect.fromPoints(start, end);
+
+      BoundingBox? boundingBox;
+      if (json['boundingBox'] != null) {
+        boundingBox = BoundingBox.fromJson(
+          Map<String, dynamic>.from(json['boundingBox'] as Map),
+        );
+      } else {
+        boundingBox = BoundingBox(
+          min: normalizedRect.topLeft,
+          max: normalizedRect.bottomRight,
+        );
+      }
+
+      return EllipseDrawing(
+        start: start,
+        end: end,
+        color: colorConverter.fromJson(json['color'] as String),
+        thickness: (json['thickness'] as num?)?.toDouble() ??
+            Settings.defaultStrokeThickness,
         isDotted: json['isDotted'] as bool? ?? false,
         hasArrow: json['hasArrow'] as bool? ?? false,
         id: json['id'] as String,
@@ -241,12 +394,16 @@ class DrawingProvider extends Notifier<DrawingState> {
     final newElements = [...state.elements];
 
     final poppedElement = newElements.removeAt(index);
-    poppedElements.add(poppedElement);
+    poppedElements.removeWhere((element) => element.id == poppedElement.id);
+    poppedElements.add(cloneDrawingElement(poppedElement));
 
     final action = UserAction(
       type: ActionType.deletion,
       id: poppedElement.id,
       group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        before: ActionObjectState.drawing(poppedElement),
+      ),
     );
     ref.read(actionProvider.notifier).addAction(action);
 
@@ -278,6 +435,26 @@ class DrawingProvider extends Notifier<DrawingState> {
                 .isWithinOrNear(mousePos, Settings.erasingSize) &&
             _isPointNearRectangleStroke(
                 mousePos, drawing, Settings.erasingSize)) {
+          indicesToDelete.add(index);
+        }
+      } else if (drawing is EllipseDrawing) {
+        if (drawing.boundingBox != null &&
+            drawing.boundingBox!
+                .isWithinOrNear(mousePos, Settings.erasingSize) &&
+            _isPointNearEllipseStroke(
+                mousePos, drawing, Settings.erasingSize)) {
+          indicesToDelete.add(index);
+        }
+      } else if (drawing is Line) {
+        if (drawing.boundingBox != null &&
+            drawing.boundingBox!
+                .isWithinOrNear(mousePos, Settings.erasingSize) &&
+            distanceToLineSegment(
+                  mousePos,
+                  drawing.lineStart,
+                  drawing.lineEnd,
+                ) <=
+                Settings.erasingSize) {
           indicesToDelete.add(index);
         }
       }
@@ -327,6 +504,46 @@ class DrawingProvider extends Notifier<DrawingState> {
         distanceToLineSegment(point, bottomLeft, topLeft) <= threshold;
   }
 
+  bool _isPointNearEllipseStroke(
+      Offset point, EllipseDrawing ellipse, double threshold) {
+    final rect = ellipse.normalizedRect;
+    if (rect.width == 0 && rect.height == 0) {
+      return (point - rect.center).distance <= threshold;
+    }
+
+    if (rect.width == 0) {
+      return distanceToLineSegment(point, rect.topCenter, rect.bottomCenter) <=
+          threshold;
+    }
+
+    if (rect.height == 0) {
+      return distanceToLineSegment(point, rect.centerLeft, rect.centerRight) <=
+          threshold;
+    }
+
+    final outerRect = rect.inflate(threshold);
+    final isInsideOuter = _isPointInsideEllipse(point, outerRect);
+    if (!isInsideOuter) return false;
+
+    if (rect.width <= threshold * 2 || rect.height <= threshold * 2) {
+      return true;
+    }
+
+    final innerRect = rect.deflate(threshold);
+    return !_isPointInsideEllipse(point, innerRect);
+  }
+
+  bool _isPointInsideEllipse(Offset point, Rect rect) {
+    if (rect.width <= 0 || rect.height <= 0) return false;
+
+    final radiusX = rect.width / 2;
+    final radiusY = rect.height / 2;
+    final center = rect.center;
+    final normalizedX = (point.dx - center.dx) / radiusX;
+    final normalizedY = (point.dy - center.dy) / radiusY;
+    return (normalizedX * normalizedX) + (normalizedY * normalizedY) <= 1;
+  }
+
   // void startSimpleTap(Offset start, CoordinateSystem coordinateSystem) {
   //   if (state.currentElement != null) {
   //     dev.log(
@@ -368,6 +585,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       Offset start,
       CoordinateSystem coordinateSystem,
       Color activeColor,
+      double thickness,
       bool isDotted,
       bool hasArrow,
       bool showTraversalTime,
@@ -384,6 +602,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       hasArrow: hasArrow,
       isDotted: isDotted,
       color: activeColor,
+      thickness: thickness,
       boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
       id: id,
       showTraversalTime: showTraversalTime,
@@ -447,9 +666,13 @@ class DrawingProvider extends Notifier<DrawingState> {
     );
 
     final action = UserAction(
-        type: ActionType.addition,
-        id: finalDrawing.id,
-        group: ActionGroup.drawing);
+      type: ActionType.addition,
+      id: finalDrawing.id,
+      group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.drawing(finalDrawing),
+      ),
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     _triggerRepaint();
@@ -459,6 +682,7 @@ class DrawingProvider extends Notifier<DrawingState> {
     Offset start,
     CoordinateSystem coordinateSystem,
     Color activeColor,
+    double thickness,
     bool isDotted,
   ) {
     if (state.currentElement != null) {
@@ -474,6 +698,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       start: normalizedStart,
       end: normalizedStart,
       color: activeColor,
+      thickness: thickness,
       isDotted: isDotted,
       hasArrow: false,
       id: id,
@@ -525,6 +750,92 @@ class DrawingProvider extends Notifier<DrawingState> {
       type: ActionType.addition,
       id: rectangle.id,
       group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.drawing(rectangle),
+      ),
+    );
+    ref.read(actionProvider.notifier).addAction(action);
+
+    _triggerRepaint();
+  }
+
+  void startEllipse(
+    Offset start,
+    CoordinateSystem coordinateSystem,
+    Color activeColor,
+    double thickness,
+    bool isDotted,
+  ) {
+    if (state.currentElement != null) {
+      dev.log(
+          "An error occurred: the gesture detector is attempting to draw while another line is active");
+      return;
+    }
+
+    final normalizedStart = coordinateSystem.screenToCoordinate(start);
+    final id = const Uuid().v4();
+
+    final ellipse = EllipseDrawing(
+      start: normalizedStart,
+      end: normalizedStart,
+      color: activeColor,
+      thickness: thickness,
+      isDotted: isDotted,
+      hasArrow: false,
+      id: id,
+      boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
+    );
+
+    state = state.copyWith(currentElement: ellipse);
+    _triggerRepaint();
+  }
+
+  void updateEllipse(Offset offset, CoordinateSystem coordinateSystem) {
+    if (state.currentElement == null ||
+        state.currentElement is! EllipseDrawing) {
+      return;
+    }
+
+    final ellipse = state.currentElement as EllipseDrawing;
+    final normalizedOffset = coordinateSystem.screenToCoordinate(offset);
+    ellipse.updateEndPoint(normalizedOffset);
+    ellipse.boundingBox = BoundingBox(
+      min: ellipse.normalizedRect.topLeft,
+      max: ellipse.normalizedRect.bottomRight,
+    );
+
+    state = state.copyWith(currentElement: ellipse);
+    _triggerRepaint();
+  }
+
+  void finishEllipse(Offset? offset, CoordinateSystem coordinateSystem) {
+    if (state.currentElement == null ||
+        state.currentElement is! EllipseDrawing) {
+      return;
+    }
+
+    final ellipse = state.currentElement as EllipseDrawing;
+
+    if (offset != null) {
+      ellipse.updateEndPoint(coordinateSystem.screenToCoordinate(offset));
+    }
+
+    ellipse.boundingBox = BoundingBox(
+      min: ellipse.normalizedRect.topLeft,
+      max: ellipse.normalizedRect.bottomRight,
+    );
+
+    state = state.copyWithButEvil(
+      elements: [...state.elements, ellipse],
+    );
+
+    final action = UserAction(
+      type: ActionType.addition,
+      id: ellipse.id,
+      group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.drawing(ellipse),
+      ),
     );
     ref.read(actionProvider.notifier).addAction(action);
 
@@ -539,38 +850,75 @@ class DrawingProvider extends Notifier<DrawingState> {
     return BoundingBox(min: Offset(minX, minY), max: Offset(maxX, maxY));
   }
 
-  void startLine(Offset start) {
-    final listOfElements = state.elements;
-
+  void startLine(
+    Offset start,
+    CoordinateSystem coordinateSystem,
+    Color activeColor,
+    double thickness,
+    bool isDotted,
+    bool hasArrow,
+    bool showTraversalTime,
+    TraversalSpeedProfile traversalSpeedProfile,
+  ) {
     if (state.currentElement != null) {
       dev.log(
           "An error occured the gesture detecture is attempting to draw while another line is active");
       return;
     }
 
-    // Line newLine = Line(color: Colors.white, lineStart: start, lineEnd: start);
-    // listOfElements.add(newLine);
+    final normalizedStart = coordinateSystem.screenToCoordinate(start);
+    final line = Line(
+      lineStart: normalizedStart,
+      lineEnd: normalizedStart,
+      color: activeColor,
+      thickness: thickness,
+      boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
+      isDotted: isDotted,
+      hasArrow: hasArrow,
+      id: const Uuid().v4(),
+      showTraversalTime: showTraversalTime,
+      traversalSpeedProfile: traversalSpeedProfile,
+    );
 
-    state = state.copyWith(elements: listOfElements);
-    // _indexOfCurrentEdit = listOfElements.length - 1;
+    state = state.copyWith(currentElement: line);
     _triggerRepaint();
   }
 
-  void updateCurrentLine(Offset endpoint) {
-    final listOfElements = state.elements;
-    // (listOfElements[_indexOfCurrentEdit] as Line).updateEndPoint(endpoint);
+  void updateCurrentLine(Offset endpoint, CoordinateSystem coordinateSystem) {
+    if (state.currentElement == null || state.currentElement is! Line) return;
 
-    state = state.copyWith(elements: listOfElements);
+    final line = state.currentElement as Line;
+    final normalizedEndpoint = coordinateSystem.screenToCoordinate(endpoint);
+    line.updateEndPoint(normalizedEndpoint);
+    line.boundingBox = _boundingBoxForPoints(line.lineStart, line.lineEnd);
+
+    state = state.copyWith(currentElement: line);
     _triggerRepaint();
   }
 
-  void finishCurrentLine(Offset endpoint) {
-    final listOfElements = state.elements;
+  void finishCurrentLine(Offset? endpoint, CoordinateSystem coordinateSystem) {
+    if (state.currentElement == null || state.currentElement is! Line) return;
 
-    // (listOfElements[_indexOfCurrentEdit] as Line).updateEndPoint(endpoint);
-    // _indexOfCurrentEdit = -1;
+    final line = state.currentElement as Line;
+    if (endpoint != null) {
+      line.updateEndPoint(coordinateSystem.screenToCoordinate(endpoint));
+    }
+    line.boundingBox = _boundingBoxForPoints(line.lineStart, line.lineEnd);
 
-    state = state.copyWith(elements: listOfElements);
+    state = state.copyWithButEvil(
+      elements: [...state.elements, line],
+    );
+
+    final action = UserAction(
+      type: ActionType.addition,
+      id: line.id,
+      group: ActionGroup.drawing,
+      objectDelta: ObjectHistoryDelta(
+        after: ActionObjectState.drawing(line),
+      ),
+    );
+    ref.read(actionProvider.notifier).addAction(action);
+
     _triggerRepaint();
   }
 
@@ -592,6 +940,81 @@ class DrawingProvider extends Notifier<DrawingState> {
     state = DrawingState(elements: []);
     _triggerRepaint();
   }
+
+  DrawingProviderSnapshot takeSnapshot() {
+    return DrawingProviderSnapshot(
+      state: DrawingState(
+        elements: state.elements.map((element) => cloneDrawingElement(element)).toList(),
+        updateCounter: state.updateCounter,
+        currentElement: state.currentElement == null
+            ? null
+            : cloneDrawingElement(state.currentElement!),
+      ),
+      poppedElements:
+          poppedElements.map((element) => cloneDrawingElement(element)).toList(),
+    );
+  }
+
+  void restoreSnapshot(DrawingProviderSnapshot snapshot) {
+    poppedElements =
+        snapshot.poppedElements.map((element) => cloneDrawingElement(element)).toList();
+    state = DrawingState(
+      elements: snapshot.state.elements
+          .map((element) => cloneDrawingElement(element))
+          .toList(),
+      updateCounter: snapshot.state.updateCounter,
+      currentElement: snapshot.state.currentElement == null
+          ? null
+          : cloneDrawingElement(snapshot.state.currentElement!),
+    );
+    _triggerRepaint();
+  }
+
+  void switchSides() {
+    final switched = state.elements.map(switchDrawingElementSides).toList();
+    final current = state.currentElement == null
+        ? null
+        : switchDrawingElementSides(state.currentElement!);
+    poppedElements = poppedElements.map(switchDrawingElementSides).toList();
+    state = DrawingState(
+      elements: switched,
+      updateCounter: state.updateCounter,
+      currentElement: current,
+    );
+    _triggerRepaint();
+  }
+
+  void _upsertDrawing(DrawingElement element) {
+    final newElements = [...state.elements];
+    final index = DrawingElement.getIndexByID(element.id, newElements);
+    if (index < 0) {
+      newElements.add(element);
+    } else {
+      newElements[index] = element;
+    }
+    state = state.copyWith(elements: newElements);
+    _triggerRepaint();
+  }
+
+  void _removeDrawingById(String id) {
+    final newElements = [...state.elements];
+    final index = DrawingElement.getIndexByID(id, newElements);
+    if (index < 0) {
+      return;
+    }
+    final removedElement = newElements.removeAt(index);
+    poppedElements.removeWhere((element) => element.id == id);
+    poppedElements.add(cloneDrawingElement(removedElement));
+    state = state.copyWith(elements: newElements);
+    _triggerRepaint();
+  }
+}
+
+BoundingBox _boundingBoxForPoints(Offset a, Offset b) {
+  return BoundingBox(
+    min: Offset(min(a.dx, b.dx), min(a.dy, b.dy)),
+    max: Offset(max(a.dx, b.dx), max(a.dy, b.dy)),
+  );
 }
 
 //Yes I used AI to write the algo. I promise you I understand how it works

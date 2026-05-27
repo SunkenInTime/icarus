@@ -63,6 +63,36 @@ class CoordinateSystem {
     return Offset(screenX, screenY);
   }
 
+  double worldWidthToScreen(double worldWidth) {
+    return (worldWidth / worldNormalizedWidth) * _effectiveSize.width;
+  }
+
+  double worldHeightToScreen(double worldHeight) {
+    return (worldHeight / normalizedHeight) * _effectiveSize.height;
+  }
+
+  double screenWidthToWorld(double screenWidth) {
+    return (screenWidth / _effectiveSize.width) * worldNormalizedWidth;
+  }
+
+  double screenHeightToWorld(double screenHeight) {
+    return (screenHeight / _effectiveSize.height) * normalizedHeight;
+  }
+
+  Size worldSizeToScreen(Size worldSize) {
+    return Size(
+      worldWidthToScreen(worldSize.width),
+      worldHeightToScreen(worldSize.height),
+    );
+  }
+
+  Size screenSizeToWorld(Size screenSize) {
+    return Size(
+      screenWidthToWorld(screenSize.width),
+      screenHeightToWorld(screenSize.height),
+    );
+  }
+
   final double _baseHeight = 831.0;
   // Get the scale factor based on screen height
   double get _scaleFactor => _effectiveSize.height / _baseHeight;

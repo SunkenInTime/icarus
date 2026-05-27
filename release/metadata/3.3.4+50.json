@@ -1,0 +1,21 @@
+{
+    "version":  "3.3.4+50",
+    "shortVersion":  50,
+    "title":  "3.3.4 Release",
+    "description":  "Desktop release metadata for Icarus.",
+    "date":  "2026-03-12",
+    "mandatory":  false,
+    "channels":  [
+                     "desktop",
+                     "stable"
+                 ],
+    "platforms":  [
+                      "windows"
+                  ],
+    "changes":  [
+                    {
+                        "message":  "Replace this with the desktop release summary.",
+                        "type":  "other"
+                    }
+                ]
+}

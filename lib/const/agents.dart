@@ -31,6 +31,7 @@ enum AgentType {
   tejo,
   waylay,
   veto,
+  miks,
 }
 
 enum AgentState {
@@ -216,7 +217,7 @@ class AgentData implements DraggableData {
       agent.abilities[2].abilityData = CircleAbility(
         iconPath: agent.abilities[2].iconPath,
         size: 4.5,
-        outlineColor: Colors.redAccent,
+        rangeOutlineColor: Colors.redAccent,
         hasCenterDot: true,
       );
 
@@ -241,13 +242,13 @@ class AgentData implements DraggableData {
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
         size: 4.75,
-        outlineColor: Colors.purple,
+        rangeOutlineColor: Colors.purple,
       );
 
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 4.75,
-        outlineColor: Colors.purple,
+        rangeOutlineColor: Colors.purple,
       );
 
       agent.abilities[3].abilityData = CenterSquareAbility(
@@ -320,7 +321,7 @@ class AgentData implements DraggableData {
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
         size: 4.5,
-        outlineColor: Colors.greenAccent,
+        rangeOutlineColor: Colors.greenAccent,
         hasCenterDot: true,
       );
 
@@ -349,14 +350,14 @@ class AgentData implements DraggableData {
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 4,
-        outlineColor: const Color.fromARGB(255, 1, 131, 237),
+        rangeOutlineColor: const Color.fromARGB(255, 1, 131, 237),
         hasCenterDot: true,
       );
 
       agent.abilities[2].abilityData = CircleAbility(
         iconPath: agent.abilities[2].iconPath,
         size: 30,
-        outlineColor: const Color.fromARGB(255, 1, 131, 237),
+        rangeOutlineColor: const Color.fromARGB(255, 1, 131, 237),
         hasCenterDot: true,
       );
 
@@ -380,7 +381,7 @@ class AgentData implements DraggableData {
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
         size: 18,
-        outlineColor: Colors.green,
+        rangeOutlineColor: Colors.green,
         hasCenterDot: true,
       );
 
@@ -396,7 +397,7 @@ class AgentData implements DraggableData {
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
         size: 4,
-        outlineColor: const Color(0xFF8C06A3),
+        rangeOutlineColor: const Color(0xFF8C06A3),
         hasCenterDot: true,
       );
 
@@ -404,14 +405,14 @@ class AgentData implements DraggableData {
       agent.abilities[3].abilityData = CircleAbility(
         iconPath: agent.abilities[3].iconPath,
         size: 42.5,
-        outlineColor: const Color(0xFF8C06A3),
+        rangeOutlineColor: const Color(0xFF8C06A3),
         hasCenterDot: true,
       );
 
       agent.abilities[2].abilityData = CircleAbility(
         iconPath: agent.abilities[2].iconPath,
         size: 15,
-        outlineColor: const Color.fromARGB(255, 106, 14, 182),
+        rangeOutlineColor: const Color.fromARGB(255, 106, 14, 182),
         hasCenterDot: true,
       );
 
@@ -427,7 +428,7 @@ class AgentData implements DraggableData {
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
         size: 5.5,
-        outlineColor: const Color(0xFF6A0EB6),
+        rangeOutlineColor: const Color(0xFF6A0EB6),
         hasCenterDot: true,
       );
 
@@ -435,7 +436,7 @@ class AgentData implements DraggableData {
       agent.abilities[3].abilityData = CircleAbility(
         iconPath: agent.abilities[3].iconPath,
         size: 32.5,
-        outlineColor: const Color(0xFF6A0EB6),
+        rangeOutlineColor: const Color(0xFF6A0EB6),
         hasCenterDot: true,
       );
 
@@ -443,22 +444,20 @@ class AgentData implements DraggableData {
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 40,
-        outlineColor: Colors.white,
+        rangeOutlineColor: Colors.white,
         hasCenterDot: true,
-        hasPerimeter: true, // Previously isDouble
-        perimeterSize: 54.48, // Previously innerSize
-        fillColor:
-            const Color.fromARGB(255, 106, 14, 182), // Previously innerColor
+        innerRangeSize: 54.48,
+        innerRangeColor: const Color.fromARGB(255, 106, 14, 182),
       );
 
       // Turret
       agent.abilities[2].abilityData = CircleAbility(
         iconPath: agent.abilities[2].iconPath,
         size: 40,
-        outlineColor: Colors.white.withAlpha(100),
+        rangeOutlineColor: Colors.white.withAlpha(100),
         hasCenterDot: true,
         opacity: 0,
-        fillColor: Colors.transparent, // Previously innerColor
+        rangeFillColor: Colors.transparent,
       );
 
       return agent;
@@ -482,7 +481,7 @@ class AgentData implements DraggableData {
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 4.5,
-        outlineColor: Colors.red,
+        rangeOutlineColor: Colors.red,
         hasCenterDot: true,
       );
 
@@ -490,7 +489,7 @@ class AgentData implements DraggableData {
       agent.abilities.last.abilityData = CircleAbility(
         iconPath: agent.abilities[3].iconPath,
         size: 9,
-        outlineColor: Colors.red,
+        rangeOutlineColor: Colors.red,
         hasCenterDot: true,
       );
 
@@ -498,7 +497,7 @@ class AgentData implements DraggableData {
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities[0].iconPath,
         size: 6,
-        outlineColor: const Color.fromARGB(255, 97, 253, 131),
+        rangeOutlineColor: const Color.fromARGB(255, 97, 253, 131),
         hasCenterDot: true,
       );
 
@@ -517,11 +516,12 @@ class AgentData implements DraggableData {
         color: Colors.white,
         minLength: inGameMeters * 1,
         isWall: true,
+        defaultToMaxLength: true,
       );
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 3.72,
-        outlineColor: Colors.white,
+        rangeOutlineColor: Colors.white,
         hasCenterDot: true,
       );
 
@@ -537,14 +537,14 @@ class AgentData implements DraggableData {
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
         size: 10,
-        outlineColor: Colors.amber,
+        rangeOutlineColor: Colors.amber,
         hasCenterDot: true,
       );
 
       agent.abilities[2].abilityData = CircleAbility(
         iconPath: agent.abilities[2].iconPath,
         size: 18,
-        outlineColor: Colors.amber,
+        rangeOutlineColor: Colors.amber,
         hasCenterDot: true,
       );
 
@@ -560,14 +560,14 @@ class AgentData implements DraggableData {
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 6.58,
-        outlineColor: const Color(0xFF680A79),
+        rangeOutlineColor: const Color(0xFF680A79),
         hasCenterDot: true,
       );
 
       agent.abilities[2].abilityData = CircleAbility(
         iconPath: agent.abilities[2].iconPath,
         size: 30,
-        outlineColor: const Color(0xFF680A79),
+        rangeOutlineColor: const Color(0xFF680A79),
         hasCenterDot: true,
         opacity: 0,
       );
@@ -588,18 +588,21 @@ class AgentData implements DraggableData {
         name: "Neon",
       );
 
-      agent.abilities.first.abilityData = SquareAbility(
+      agent.abilities.first.abilityData = ResizableSquareAbility(
         width: 3.5 * inGameMeters,
         height: 45 * inGameMeters,
         iconPath: agent.abilities.first.iconPath,
         color: Colors.blueAccent,
         hasSideBorders: true,
         isTransparent: true,
+        isWall: true,
+        minLength: inGameMeters * 1,
+        defaultToMaxLength: true,
       );
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 5,
-        outlineColor: Colors.blue,
+        rangeOutlineColor: Colors.blue,
         hasCenterDot: true,
       );
 
@@ -654,7 +657,7 @@ class AgentData implements DraggableData {
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 6.5,
-        outlineColor: Colors.blueAccent,
+        rangeOutlineColor: Colors.blueAccent,
         hasCenterDot: true,
       );
 
@@ -678,8 +681,8 @@ class AgentData implements DraggableData {
 
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
-        size: 6,
-        outlineColor: const Color.fromARGB(255, 251, 106, 154),
+        size: 4,
+        rangeOutlineColor: const Color.fromARGB(255, 251, 106, 154),
         hasCenterDot: true,
       );
 
@@ -727,7 +730,7 @@ class AgentData implements DraggableData {
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
         size: 6.5,
-        outlineColor: Colors.blue,
+        rangeOutlineColor: Colors.blue,
         hasCenterDot: true,
       );
 
@@ -735,6 +738,11 @@ class AgentData implements DraggableData {
         width: 8 * inGameMeters,
         height: 9 * inGameMeters,
         iconPath: agent.abilities[1].iconPath,
+        color: Colors.blue,
+      );
+
+      agent.abilities[2].abilityData = DeadlockBarrierMeshAbility(
+        iconPath: agent.abilities[2].iconPath,
         color: Colors.blue,
       );
 
@@ -750,7 +758,7 @@ class AgentData implements DraggableData {
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
         size: 6.2,
-        outlineColor: Colors.greenAccent,
+        rangeOutlineColor: Colors.greenAccent,
         hasCenterDot: true,
       );
 
@@ -775,7 +783,7 @@ class AgentData implements DraggableData {
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
         size: 6,
-        outlineColor: Colors.lightBlue,
+        rangeOutlineColor: Colors.lightBlue,
         hasCenterDot: true,
       );
 
@@ -788,11 +796,14 @@ class AgentData implements DraggableData {
       //   color: Colors.lightBlue,
       // );
 
-      agent.abilities.last.abilityData = SquareAbility(
+      agent.abilities.last.abilityData = ResizableSquareAbility(
         width: 20 * inGameMeters,
         height: 40 * inGameMeters,
         iconPath: agent.abilities.last.iconPath,
         color: Colors.lightBlue,
+        minLength: inGameMeters * 1,
+        defaultToMaxLength: true,
+        hasTopborder: true,
       );
 
       return agent;
@@ -814,14 +825,14 @@ class AgentData implements DraggableData {
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 6.25,
-        outlineColor: Colors.deepPurple,
+        rangeOutlineColor: Colors.deepPurple,
         hasCenterDot: true,
       );
 
       agent.abilities.last.abilityData = CircleAbility(
         iconPath: agent.abilities.last.iconPath,
         size: 32.5,
-        outlineColor: Colors.deepPurple,
+        rangeOutlineColor: Colors.deepPurple,
         hasCenterDot: true,
       );
 
@@ -837,21 +848,21 @@ class AgentData implements DraggableData {
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
         size: 16,
-        outlineColor: Colors.orangeAccent,
+        rangeOutlineColor: Colors.orangeAccent,
         hasCenterDot: true,
       );
 
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 5.25,
-        outlineColor: Colors.orangeAccent,
+        rangeOutlineColor: Colors.orangeAccent,
         hasCenterDot: true,
       );
 
       agent.abilities[2].abilityData = CircleAbility(
         iconPath: agent.abilities[2].iconPath,
         size: 4.5,
-        outlineColor: Colors.orangeAccent,
+        rangeOutlineColor: Colors.orangeAccent,
         hasCenterDot: true,
       );
 
@@ -870,8 +881,8 @@ class AgentData implements DraggableData {
 
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
-        size: 5,
-        outlineColor: Colors.deepPurpleAccent,
+        size: 6,
+        rangeOutlineColor: Colors.deepPurpleAccent,
         hasCenterDot: true,
       );
 
@@ -892,25 +903,87 @@ class AgentData implements DraggableData {
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
         size: 24,
-        outlineColor: Colors.lightBlueAccent,
+        rangeOutlineColor: Colors.lightBlueAccent,
         hasCenterDot: true,
       );
 
       agent.abilities[1].abilityData = CircleAbility(
         iconPath: agent.abilities[1].iconPath,
         size: 6.58,
-        outlineColor: Colors.lightBlueAccent,
+        rangeOutlineColor: Colors.lightBlueAccent,
         hasCenterDot: true,
       );
 
       agent.abilities[2].abilityData = CircleAbility(
         iconPath: agent.abilities[2].iconPath,
         size: 18,
-        outlineColor: Colors.lightBlueAccent,
+        rangeOutlineColor: Colors.lightBlueAccent,
         hasCenterDot: true,
       );
 
       return agent;
     })(),
+    AgentType.miks: (() {
+      final agent = AgentData(
+        type: AgentType.miks,
+        role: AgentRole.controller,
+        name: "Miks",
+      );
+      // agent.abilities.
+      final miksConcuss = AbilityInfo(
+        type: AgentType.miks,
+        index: 0,
+        name: "Concussive Blast",
+        iconPath: 'assets/agents/Miks/1.webp',
+        abilityData: CircleAbility(
+          iconPath: agent.abilities[0].iconPath,
+          size: 5.5,
+          rangeOutlineColor: Colors.yellowAccent,
+          hasCenterDot: true,
+        ),
+      );
+      final miksHeal = AbilityInfo(
+        type: AgentType.miks,
+        index: 1,
+        name: "Healing Blast",
+        iconPath: 'assets/agents/Miks/2.webp',
+        abilityData: CircleAbility(
+          iconPath: agent.abilities[1].iconPath,
+          size: 5.5,
+          rangeOutlineColor: Colors.greenAccent,
+          hasCenterDot: true,
+        ),
+      );
+      final miksSmoke = AbilityInfo(
+        type: AgentType.miks,
+        index: 2,
+        name: "Miks Smoke",
+        iconPath: 'assets/agents/Miks/3.webp',
+        abilityData: ImageAbility(
+            imagePath: 'assets/agents/Miks/Smoke.webp',
+            size: 4.1 * inGameMetersDiameter),
+      );
+
+      final miksUlt = AbilityInfo(
+        type: AgentType.miks,
+        index: 4,
+        name: "Miks Ult",
+        iconPath: 'assets/agents/Miks/5.webp',
+        abilityData: SectorCircleAbility(
+          iconPath: "assets/agents/Miks/5.webp",
+          size: 40,
+          rangeOutlineColor: Colors.lightGreenAccent,
+          sweepAngleDegrees: 60,
+        ),
+      );
+      agent.abilities[0] = miksConcuss;
+      agent.abilities[1] = miksHeal;
+      agent.abilities[2] = miksSmoke;
+      agent.abilities.add(miksUlt);
+
+      return agent;
+    })(),
   };
 }
+
+

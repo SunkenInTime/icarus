@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
@@ -13,10 +11,35 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/placed_deadlock_barrier_mesh_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'dart:math' as math;
 
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+
+bool _shouldShowRotatableHandle(
+  Ability ability,
+  AbilityVisualState visualState,
+) {
+  return switch (ability) {
+    CircleAbility() => ability.hasInnerRange
+        ? visualState.showRangeOutline ||
+            visualState.showInnerOutline ||
+            visualState.showInnerFill
+        : visualState.showRangeOutline || visualState.showRangeFill,
+    SectorCircleAbility() => ability.hasInnerRange
+        ? visualState.showRangeOutline ||
+            visualState.showInnerOutline ||
+            visualState.showInnerFill
+        : visualState.showRangeOutline || visualState.showRangeFill,
+    ResizableSquareAbility() => visualState.showRangeFill,
+    SquareAbility() => visualState.showRangeFill,
+    CenterSquareAbility() => visualState.showRangeFill,
+    RotatableImageAbility() => true,
+    _ => visualState.showRangeFill,
+  };
+}
 
 class PlacedAbilityWidget extends ConsumerStatefulWidget {
   final PlacedAbility ability;
@@ -52,11 +75,20 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
   double? localLength;
   bool isDragging = false;
 
+  double _resolvedLengthFor(PlacedAbility ability, double rawLength) {
+    final abilityData = ability.data.abilityData;
+    if (abilityData is ResizableSquareAbility) {
+      return abilityData.resolveLength(rawLength);
+    }
+
+    return rawLength;
+  }
+
   @override
   void initState() {
     super.initState();
     localRotation ??= widget.rotation;
-    localLength ??= widget.length;
+    localLength ??= _resolvedLengthFor(widget.ability, widget.length);
   }
 
   Offset rotateOffset(Offset point, Offset origin, double angle) {
@@ -80,8 +112,9 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     final coordinateSystem = CoordinateSystem.instance;
 
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    final abilityData = widget.ability.data.abilityData;
 
-    if (localRotation == null) {
+    if (localRotation == null || abilityData == null) {
       return const SizedBox.shrink();
     }
 
@@ -91,8 +124,23 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
 
     final abilityRef = widget.isLineUp
         ? ref.watch(lineUpProvider).currentAbility!
-        : ref.watch(abilityProvider)[index];
+        : index >= 0
+            ? ref.watch(abilityProvider)[index]
+            : widget.ability;
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1;
+    final contextMenuItems =
+        widget.isLineUp ? null : buildAbilityContextMenuItems(ref, abilityRef);
+
+    if (abilityData is DeadlockBarrierMeshAbility) {
+      return PlacedDeadlockBarrierMeshWidget(
+        ability: abilityRef,
+        onDragEnd: widget.onDragEnd,
+        id: widget.id,
+        data: widget.data,
+        isLineUp: widget.isLineUp,
+        contextMenuItems: contextMenuItems,
+      );
+    }
     //Linking the local rotation with global rotation for things like undo redo
     if (!widget.isLineUp) {
       if (abilityRef.rotation != localRotation! &&
@@ -101,7 +149,10 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       }
 
       if (abilityRef.length != localLength! && lengthOrigin == Offset.zero) {
-        localLength = ref.read(abilityProvider)[index].length;
+        localLength = _resolvedLengthFor(
+          ref.read(abilityProvider)[index],
+          ref.read(abilityProvider)[index].length,
+        );
       }
 
       if (index < 0) {
@@ -112,46 +163,51 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           feedback: Opacity(
             opacity: Settings.feedbackOpacity,
             child: ZoomTransform(
-                child: widget.ability.data.abilityData!.createWidget(
-                    id: null, isAlly: isAlly, mapScale: mapScale)),
+              child: widget.ability.data.abilityData!.createWidget(
+                id: null,
+                isAlly: isAlly,
+                mapScale: mapScale,
+                armLengthsMeters: widget.ability.armLengthsMeters,
+                visualState: widget.ability.visualState,
+                watchMouse: false,
+              ),
+            ),
           ),
           childWhenDragging: const SizedBox.shrink(),
           onDragEnd: widget.onDragEnd,
-          child: widget.ability.data.abilityData!
-              .createWidget(id: widget.id, isAlly: isAlly, mapScale: mapScale),
+          child: widget.ability.data.abilityData!.createWidget(
+            id: widget.id,
+            isAlly: isAlly,
+            mapScale: mapScale,
+            armLengthsMeters: widget.ability.armLengthsMeters,
+            visualState: widget.ability.visualState,
+            watchMouse: true,
+            contextMenuItems: contextMenuItems,
+          ),
         );
       }
     }
 
-    if (widget.ability.data.abilityData is SquareAbility ||
-        widget.ability.data.abilityData is CenterSquareAbility ||
-        widget.ability.data.abilityData is RotatableImageAbility ||
-        widget.ability.data.abilityData is ResizableSquareAbility) {
+    if (isRotatable(abilityData)) {
       final screenPosition = screenPositionForWidget(
         widget: widget.ability,
         coordinateSystem: coordinateSystem,
       );
-      final isCenterSquare =
-          widget.ability.data.abilityData is CenterSquareAbility;
+      final isCenterSquare = abilityData is CenterSquareAbility;
+      final isResizableSquare = abilityData is ResizableSquareAbility;
       final double? buttonTop;
       if (isCenterSquare) {
-        buttonTop = widget.ability.data.abilityData!
+        buttonTop = abilityData
                 .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
                 .dy -
             abilitySize -
             30;
-      } else if (widget.ability.data.abilityData is ResizableSquareAbility) {
-        final resizeWidget =
-            (widget.ability.data.abilityData! as ResizableSquareAbility);
+      } else if (isResizableSquare) {
+        final resizeWidget = abilityData;
+        final resolvedLength = resizeWidget.resolveLength(localLength ?? 0);
 
-        // final double anchorLength = coordinateSystem.scale(
-        //   resizeWidget.height -
-        //       (coordinateSystem.normalize(localLength ?? 0))
-        //           .clamp(resizeWidget.minLength, resizeWidget.height),
-        // );
         final double clampedLength = resizeWidget.height -
-            ((localLength ?? 0))
-                .clamp(resizeWidget.minLength, resizeWidget.height);
+            resolvedLength.clamp(resizeWidget.minLength, resizeWidget.height);
 
         final double anchorLength = (clampedLength * mapScale);
 
@@ -167,23 +223,25 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           buttonTop: buttonTop,
           rotation: localRotation!,
           isDragging: isDragging,
-          origin: widget.ability.data.abilityData!
-              .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize),
+          showHandle: _shouldShowRotatableHandle(
+            abilityData,
+            abilityRef.visualState,
+          ),
+          origin: abilityData.getAnchorPoint(
+              mapScale: mapScale, abilitySize: abilitySize),
           onPanStart: (details) {
-            log("Rotation Start");
             // ref.read(abilityProvider.notifier).updateRotationHistory(index);
             // ref.read(abilityProvider.notifier).updateLengthHistory(index);
 
             final box = context.findRenderObject() as RenderBox;
-            final bottomCenter = widget.ability.data.abilityData!
+            final bottomCenter = abilityData
                 .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
                 .scale(
                     coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
 
             rotationOrigin = box.localToGlobal(bottomCenter);
-            if (widget.ability.data.abilityData is ResizableSquareAbility) {
-              final resizeAbility =
-                  (widget.ability.data.abilityData! as ResizableSquareAbility);
+            if (isResizableSquare) {
+              final resizeAbility = abilityData;
               lengthOrigin = box.localToGlobal(
                 resizeAbility.getLengthAnchor(mapScale, abilitySize).scale(
                     coordinateSystem.scaleFactor, coordinateSystem.scaleFactor),
@@ -208,7 +266,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             setState(() {
               localRotation = newRotation;
             });
-            if (widget.ability.data.abilityData is ResizableSquareAbility) {
+            if (isResizableSquare) {
               final Offset currentPosLength = (currentPosition -
                   rotateOffset(lengthOrigin, rotationOrigin, localRotation!));
               double currentLength =
@@ -242,7 +300,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
             dragAnchorStrategy: (draggable, context, position) {
               final RenderBox renderObject =
                   context.findRenderObject()! as RenderBox;
-              final anchorPoint = widget.ability.data.abilityData!
+              final anchorPoint = abilityData
                   .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
                   .scale(coordinateSystem.scaleFactor,
                       coordinateSystem.scaleFactor);
@@ -260,7 +318,7 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               child: Transform.rotate(
                 angle: localRotation!,
                 alignment: Alignment.topLeft,
-                origin: widget.ability.data.abilityData!
+                origin: abilityData
                     .getAnchorPoint(
                         mapScale: mapScale, abilitySize: abilitySize)
                     .scale(
@@ -269,12 +327,16 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
                         coordinateSystem.scaleFactor *
                             ref.watch(screenZoomProvider)),
                 child: ZoomTransform(
-                  child: abilityRef.data.abilityData!.createWidget(
-                      id: widget.id,
-                      isAlly: isAlly,
-                      mapScale: mapScale,
-                      rotation: localRotation!,
-                      length: localLength!),
+                  child: abilityData.createWidget(
+                    id: widget.id,
+                    isAlly: isAlly,
+                    mapScale: mapScale,
+                    rotation: localRotation!,
+                    length: localLength!,
+                    armLengthsMeters: abilityRef.armLengthsMeters,
+                    visualState: abilityRef.visualState,
+                    watchMouse: false,
+                  ),
                 ),
               ),
             ),
@@ -291,12 +353,17 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
               widget.onDragEnd(details);
             },
             // dragAnchorStrategy: pointDragAnchorStrategy,
-            child: abilityRef.data.abilityData!.createWidget(
-                id: widget.id,
-                isAlly: isAlly,
-                mapScale: mapScale,
-                rotation: localRotation!,
-                length: localLength!),
+            child: abilityData.createWidget(
+              id: widget.id,
+              isAlly: isAlly,
+              mapScale: mapScale,
+              rotation: localRotation!,
+              length: localLength!,
+              armLengthsMeters: abilityRef.armLengthsMeters,
+              visualState: abilityRef.visualState,
+              watchMouse: true,
+              contextMenuItems: contextMenuItems,
+            ),
           ),
         ),
       );
@@ -315,13 +382,26 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
         feedback: Opacity(
           opacity: Settings.feedbackOpacity,
           child: ZoomTransform(
-              child: widget.ability.data.abilityData!
-                  .createWidget(id: null, isAlly: isAlly, mapScale: mapScale)),
+              child: widget.ability.data.abilityData!.createWidget(
+            id: null,
+            isAlly: isAlly,
+            mapScale: mapScale,
+            armLengthsMeters: widget.ability.armLengthsMeters,
+            visualState: widget.ability.visualState,
+            watchMouse: false,
+          )),
         ),
         childWhenDragging: const SizedBox.shrink(),
         onDragEnd: widget.onDragEnd,
-        child: widget.ability.data.abilityData!
-            .createWidget(id: widget.id, isAlly: isAlly, mapScale: mapScale),
+        child: widget.ability.data.abilityData!.createWidget(
+          id: widget.id,
+          isAlly: isAlly,
+          mapScale: mapScale,
+          armLengthsMeters: widget.ability.armLengthsMeters,
+          visualState: abilityRef.visualState,
+          watchMouse: true,
+          contextMenuItems: contextMenuItems,
+        ),
       ),
     );
   }

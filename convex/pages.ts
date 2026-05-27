@@ -175,14 +175,6 @@ export const deletePage = mutation({
       await ctx.db.delete(lineup._id);
     }
 
-    const assets = await ctx.db
-      .query("imageAssets")
-      .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-      .collect();
-    for (const asset of assets) {
-      await ctx.db.delete(asset._id);
-    }
-
     await ctx.db.delete(page._id);
 
     const ordered = sortByNumberField(
@@ -190,7 +182,7 @@ export const deletePage = mutation({
       "sortIndex",
     );
     for (let i = 0; i < ordered.length; i += 1) {
-      const current = ordered[i];
+      const current = ordered[i]!;
       if (current.sortIndex !== i) {
         await ctx.db.patch(current._id, {
           sortIndex: i,
@@ -231,7 +223,7 @@ export const reorder = mutation({
     const now = Date.now();
 
     for (let i = 0; i < args.orderedPagePublicIds.length; i += 1) {
-      const publicId = args.orderedPagePublicIds[i];
+      const publicId = args.orderedPagePublicIds[i]!;
       const page = pageByPublicId.get(publicId);
       if (!page) {
         throw new Error(`Unknown page id: ${publicId}`);

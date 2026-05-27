@@ -8,7 +8,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/main.dart';
 
-enum PenMode { line, freeDraw, square }
+enum PenMode { line, freeDraw, square, ellipse }
 
 class PenState {
   final Color color;
@@ -81,7 +81,7 @@ class PenProvider extends Notifier<PenState> {
       hasArrow: false,
       isDotted: false,
       opacity: 1,
-      thickness: Settings.brushSize,
+      thickness: Settings.defaultStrokeThickness,
       traversalTimeEnabled: false,
       activeTraversalSpeedProfile: TraversalSpeed.defaultProfile,
       drawingCursor: staticDrawingCursor,
@@ -164,8 +164,8 @@ class PenProvider extends Notifier<PenState> {
   }
 
   void setTraversalMode(TraversalSpeedProfile profile) {
-    final isCurrentMode =
-        state.activeTraversalSpeedProfile == profile && state.traversalTimeEnabled;
+    final isCurrentMode = state.activeTraversalSpeedProfile == profile &&
+        state.traversalTimeEnabled;
 
     state = state.copyWith(
       activeTraversalSpeedProfile: profile,

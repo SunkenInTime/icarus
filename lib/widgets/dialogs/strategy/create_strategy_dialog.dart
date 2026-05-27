@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -24,8 +25,10 @@ class _NameStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final isCloud =
+        ref.watch(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
     return ShadDialog(
-      title: const Text("Create Strategy"),
+      title: Text(isCloud ? "Create Cloud Strategy" : "Create Strategy"),
       actions: [
         ShadButton(
           child: const Text("Create"),
@@ -40,8 +43,9 @@ class _NameStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
                 Navigator.of(context).pop(strategyID); // Close the dialog
               } catch (_) {
                 Settings.showToast(
-                  message:
-                      "Couldn't create cloud strategy right now. Please try logging in again.",
+                  message: isCloud
+                      ? "Couldn't create cloud strategy right now. Please try logging in again."
+                      : "Couldn't create strategy right now.",
                   backgroundColor: Settings.tacticalVioletTheme.destructive,
                 );
               }
@@ -72,8 +76,9 @@ class _NameStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
                 Navigator.of(context).pop(strategyID); // Close the dialog
               } catch (_) {
                 Settings.showToast(
-                  message:
-                      "Couldn't create cloud strategy right now. Please try logging in again.",
+                  message: isCloud
+                      ? "Couldn't create cloud strategy right now. Please try logging in again."
+                      : "Couldn't create strategy right now.",
                   backgroundColor: Settings.tacticalVioletTheme.destructive,
                 );
               }

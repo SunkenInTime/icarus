@@ -15,7 +15,16 @@ class Settings {
 
   static const Color abilityBGColor = Color(0xFF1B1B1B);
   static const double feedbackOpacity = 0.7;
-  static const double brushSize = 5;
+  static const double strokeThicknessSmall = 3;
+  static const double strokeThicknessMedium = 5;
+  static const double strokeThicknessLarge = 8;
+  static const double defaultStrokeThickness = strokeThicknessMedium;
+  static const List<double> strokeThicknessOptions = [
+    strokeThicknessSmall,
+    strokeThicknessMedium,
+    strokeThicknessLarge,
+  ];
+  static const double brushSize = defaultStrokeThickness;
   static const double freeDrawMinDistance = 3;
   static const bool enableStrokeSimplification = false;
   static const double strokeSimplificationEpsilon = 1.4;
@@ -41,8 +50,11 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 42;
-  static const String versionName = "3.2.3";
+  static const int versionNumber = 60;
+  static const String versionName = "4.0.6";
+  static final Uri desktopUpdaterArchiveUrl = Uri.parse(
+    "https://sunkenintime.github.io/icarus/updates/windows/stable/app-archive.json",
+  );
 
   static const double sideBarContentWidth = 325;
   static const double sideBarPanelWidth = sideBarContentWidth + 20;
@@ -161,12 +173,20 @@ class Settings {
     offset: Offset(0, 4), // Slight downward shift
   );
 
-  static void showToast(
-      {required String message, required Color backgroundColor}) {
+  static void showToast({
+    required String message,
+    required Color backgroundColor,
+    String? actionLabel,
+    VoidCallback? onActionPressed,
+  }) {
     toastification.showCustom(
       autoCloseDuration: const Duration(seconds: 3),
       alignment: Alignment.bottomCenter,
       builder: (context, holder) {
+        final actionIsVisible = actionLabel != null &&
+            actionLabel.isNotEmpty &&
+            onActionPressed != null;
+
         return Container(
           margin: const EdgeInsets.all(16),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -177,12 +197,40 @@ class Settings {
               color: Settings.tacticalVioletTheme.border,
             ),
           ),
-          child: Text(
-            message,
-            style: ShadTheme.of(context)
-                .textTheme
-                .small
-                .copyWith(color: Colors.white),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  message,
+                  style: ShadTheme.of(context)
+                      .textTheme
+                      .small
+                      .copyWith(color: Colors.white),
+                ),
+              ),
+              if (actionIsVisible) const SizedBox(width: 12),
+              if (actionIsVisible)
+                TextButton(
+                  onPressed: onActionPressed,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.35),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  child: Text(actionLabel),
+                ),
+            ],
           ),
         );
       },

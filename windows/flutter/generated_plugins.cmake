@@ -5,6 +5,7 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   desktop_drop
+  desktop_updater
   flutter_inappwebview_windows
   pasteboard
   screen_retriever_windows

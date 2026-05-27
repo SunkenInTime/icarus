@@ -1,39 +1,37 @@
 import 'dart:async';
-import 'dart:developer';
-import 'dart:io';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:desktop_updater/desktop_updater.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
-import 'package:icarus/providers/collab/cloud_migration_provider.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_rail_hover_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/providers/update_status_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/windows_desktop_update_controller.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/current_path_bar.dart';
+import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
+import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
-import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
+import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:hive_ce_flutter/adapters.dart';
-import 'package:icarus/collab/collab_models.dart';
-import 'package:icarus/const/hive_boxes.dart';
-import 'package:icarus/providers/collab/cloud_collab_provider.dart';
-import 'package:icarus/providers/collab/remote_library_provider.dart';
-import 'package:icarus/providers/strategy_filter_provider.dart';
-import 'package:icarus/widgets/custom_search_field.dart';
-import 'package:icarus/widgets/dot_painter.dart';
-import 'package:icarus/widgets/folder_pill.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
-import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderNavigator extends ConsumerStatefulWidget {
   const FolderNavigator({super.key});
@@ -46,6 +44,20 @@ class FolderNavigator extends ConsumerStatefulWidget {
 class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   bool _warnedOnce = false;
   bool _hasPromptedUpdateDialog = false;
+  WindowsDesktopUpdateController? _desktopUpdaterController;
+  final GlobalKey _importExportButtonKey = GlobalKey();
+  final ShadPopoverController _importExportPopoverController =
+      ShadPopoverController();
+
+  bool get _isWindowsDesktop =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
+  @override
+  void dispose() {
+    _importExportPopoverController.dispose();
+    _desktopUpdaterController?.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -53,11 +65,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
     // Show the demo warning only once after the first frame on web.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(ref.read(cloudMigrationProvider.notifier).maybeMigrate());
       if (!_warnedOnce) {
         _warnedOnce = true;
 
-        log("Warning webview");
         _warnWebView();
 
         _warnDemo();
@@ -67,7 +77,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
   void _warnWebView() async {
     if (kIsWeb) return;
-    if (!Platform.isWindows) return;
+    if (!_isWindowsDesktop) return;
+    await warmUpWebViewEnvironment();
+    if (!mounted) return;
     if (isWebViewInitialized) return;
     await showShadDialog<void>(
       context: context,
@@ -87,14 +99,132 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     );
   }
 
+  void _showDesktopOnlyToast() {
+    Settings.showToast(
+      message: 'This feature is only supported in the Windows version.',
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
+    );
+  }
+
+  void _toggleImportExportPopover() {
+    _importExportPopoverController.toggle();
+  }
+
+  Future<void> handleImportIca() async {
+    if (kIsWeb) {
+      _showDesktopOnlyToast();
+      return;
+    }
+    try {
+      await StrategyImportExportService(ref).loadFromFilePicker();
+    } on NewerVersionImportException catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        NewerVersionImportException.userMessage,
+        error: error,
+        stackTrace: stackTrace,
+        source: 'FolderNavigator.handleImportIca',
+      );
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to import strategy file.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'FolderNavigator.handleImportIca',
+      );
+    }
+  }
+
+  Future<void> handleImportBackup() async {
+    if (kIsWeb) {
+      _showDesktopOnlyToast();
+      return;
+    }
+    try {
+      final result =
+          await StrategyImportExportService(ref).importBackupFromFilePicker();
+      if (result.hasImports || result.issues.isNotEmpty) {
+        final message = buildImportSummaryMessage(result);
+        if (result.hasImports) {
+          Settings.showToast(
+            message: message,
+            backgroundColor: Settings.tacticalVioletTheme.primary,
+          );
+          if (result.issues.isNotEmpty) {
+            AppErrorReporter.reportWarning(
+              message,
+              source: 'FolderNavigator.handleImportBackup',
+            );
+          }
+        } else {
+          AppErrorReporter.reportError(
+            message,
+            source: 'FolderNavigator.handleImportBackup',
+          );
+        }
+      }
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to import backup archive.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'FolderNavigator.handleImportBackup',
+      );
+    }
+  }
+
+  Future<void> handleExportLibrary() async {
+    if (kIsWeb) {
+      _showDesktopOnlyToast();
+      return;
+    }
+    try {
+      await StrategyImportExportService(ref).exportLibrary();
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to export library.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'FolderNavigator.handleExportLibrary',
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<AsyncValue<UpdateCheckResult>>(appUpdateStatusProvider,
         (_, next) {
       next.whenData((result) {
-        if (!mounted || _hasPromptedUpdateDialog || !result.isUpdateAvailable) {
+        if (!mounted) {
           return;
         }
+
+        final bool isDirectWindowsInstall =
+            _isWindowsDesktop && !result.isSupported;
+        if (isDirectWindowsInstall && _desktopUpdaterController == null) {
+          _desktopUpdaterController = WindowsDesktopUpdateController(
+            appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
+            localization: const DesktopUpdateLocalization(
+              updateAvailableText: 'Update Available',
+              newVersionAvailableText: '{} {} is available',
+              newVersionLongText:
+                  'A desktop update is ready. Downloading will fetch {} MB of files.',
+              downloadText: 'Download Update',
+              restartText: 'Restart to update',
+              skipThisVersionText: 'Later',
+              warningTitleText: 'Restart Required',
+              restartWarningText:
+                  'Icarus needs to restart to finish installing the update. Unsaved changes will be lost. Restart now?',
+              warningCancelText: 'Not now',
+              warningConfirmText: 'Restart',
+            ),
+          );
+          setState(() {});
+        }
+
+        if (_hasPromptedUpdateDialog || !result.isUpdateAvailable) {
+          return;
+        }
+
         _hasPromptedUpdateDialog = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -106,18 +236,27 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final double height = MediaQuery.sizeOf(context).height - 90;
     final Size playAreaSize = Size(height * (16 / 9), height);
     CoordinateSystem(playAreaSize: playAreaSize);
+    final workspace = ref.watch(libraryWorkspaceProvider);
+    final isCloudWorkspace = workspace == LibraryWorkspace.cloud;
+    final isCommunityWorkspace = workspace == LibraryWorkspace.community;
     final currentFolderId = ref.watch(folderProvider);
     final currentFolder = currentFolderId != null
-        ? ref.read(folderProvider.notifier).findFolderByID(currentFolderId)
+        ? isCloudWorkspace
+            ? ref.read(folderProvider.notifier).findCloudFolderByID(
+                  currentFolderId,
+                  ref.watch(cloudAllFoldersProvider).valueOrNull ?? const [],
+                )
+            : ref
+                .read(folderProvider.notifier)
+                .findLocalFolderByID(currentFolderId)
         : null;
-    final authState = ref.watch(authProvider);
     Future<void> navigateWithLoading(
         BuildContext context, String strategyId) async {
       // Show loading overlay
       // showLoadingOverlay(context);
 
       try {
-        await ref.read(strategyProvider.notifier).openStrategy(strategyId);
+        await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
 
         if (!context.mounted) return;
 
@@ -159,94 +298,158 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
       if (strategyId != null) {
         if (!context.mounted) return;
-        await navigateWithLoading(context, strategyId);
+        if (isCloudWorkspace) {
+          await Navigator.push(
+            context,
+            PageRouteBuilder(
+              transitionDuration: const Duration(milliseconds: 200),
+              reverseTransitionDuration: const Duration(milliseconds: 200),
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  const StrategyView(),
+              transitionsBuilder:
+                  (context, animation, secondaryAnimation, child) {
+                return FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.9, end: 1.0)
+                        .chain(CurveTween(curve: Curves.easeOut))
+                        .animate(animation),
+                    child: child,
+                  ),
+                );
+              },
+            ),
+          );
+        } else {
+          await navigateWithLoading(context, strategyId);
+        }
       }
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const CurrentPathBar(),
-        toolbarHeight: 70,
-        actionsPadding: const EdgeInsets.only(right: 24),
+    const double railReservedWidth = 64;
 
-        actions: [
-          if (kIsWeb)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8.0),
-              child: DemoTag(),
+    return Stack(
+      children: [
+        Scaffold(
+          appBar: AppBar(
+            title: const Padding(
+              padding: EdgeInsets.only(left: railReservedWidth),
+              child: CurrentPathBar(),
             ),
-          Row(
-            spacing: 15,
-            children: [
-              ShadButton.secondary(
-                onPressed: authState.isLoading
-                    ? null
-                    : () {
-                        if (authState.isAuthenticated) {
-                          unawaited(ref.read(authProvider.notifier).signOut());
-                        } else {
-                            showDialog<void>(
-                              context: context,
-                              builder: (_) => const AuthDialog(),
-                            );
-                        }
-                      },
-                leading: Icon(
-                  authState.isAuthenticated ? Icons.logout : Icons.login,
+            toolbarHeight: 70,
+            actionsPadding: const EdgeInsets.only(right: 24),
+
+            actions: [
+              if (kIsWeb)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8.0),
+                  child: DemoTag(),
                 ),
-                child: Text(
-                  authState.isLoading
-                      ? 'Please wait...'
-                      : (authState.isAuthenticated ? 'Sign Out' : 'Log In'),
-                ),
-              ),
-              ShadButton.secondary(
-                onPressed: () async {
-                  if (kIsWeb) {
-                    Settings.showToast(
-                      message:
-                          'This feature is only supported in the Windows version.',
-                      backgroundColor: Settings.tacticalVioletTheme.destructive,
-                    );
-                    return;
-                  }
-                  try {
-                    await ref
-                        .read(strategyProvider.notifier)
-                        .loadFromFilePicker();
-                  } on NewerVersionImportException {
-                    Settings.showToast(
-                      message: NewerVersionImportException.userMessage,
-                      backgroundColor: Settings.tacticalVioletTheme.destructive,
-                    );
-                  }
-                },
-                leading: const Icon(Icons.file_download),
-                child: const Text('Import .ica'),
-              ),
-              ShadButton.secondary(
-                leading: const Icon(LucideIcons.folderPlus),
-                child: const Text('Add Folder'),
-                onPressed: () async {
-                  await showDialog<String>(
-                    context: context,
-                    builder: (context) {
-                      return const FolderEditDialog();
+              Row(
+                spacing: 15,
+                children: [
+                  ShadPopover(
+                    controller: _importExportPopoverController,
+                    padding: const EdgeInsets.all(8),
+                    anchor: const ShadAnchor(
+                      offset: Offset(0, 8),
+                      childAlignment: Alignment.topLeft,
+                      overlayAlignment: Alignment.bottomLeft,
+                    ),
+                    popover: (context) {
+                      return SizedBox(
+                        width: 178,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            ShadButton.ghost(
+                              onPressed: handleImportIca,
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              leading: const Icon(
+                                Icons.file_download,
+                              ),
+                              child: const Text(
+                                'Import .ica',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ),
+                            ShadButton.ghost(
+                              onPressed: handleImportBackup,
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              leading: const Icon(
+                                Icons.archive_outlined,
+                              ),
+                              child: const Text('Import Backup',
+                                  style: TextStyle(color: Colors.white)),
+                            ),
+                            ShadButton.ghost(
+                              onPressed: handleExportLibrary,
+                              mainAxisAlignment: MainAxisAlignment.start,
+                              leading: const Icon(
+                                Icons.backup_outlined,
+                              ),
+                              child: const Text('Export Library',
+                                  style: TextStyle(color: Colors.white)),
+                            ),
+                          ],
+                        ),
+                      );
                     },
-                  );
-                },
-              ),
-              ShadButton(
-                onPressed: showCreateDialog,
-                leading: const Icon(Icons.add),
-                child: const Text('Create Strategy'),
-              ),
+                    child: ShadButton.secondary(
+                      key: _importExportButtonKey,
+                      onPressed: isCloudWorkspace || isCommunityWorkspace
+                          ? null
+                          : _toggleImportExportPopover,
+                      leading: const Icon(Icons.import_export),
+                      trailing: const Icon(Icons.keyboard_arrow_down),
+                      child: const Text('Import / Export'),
+                    ),
+                  ),
+                  ShadButton.secondary(
+                    leading: const Icon(LucideIcons.folderPlus),
+                    onPressed: isCommunityWorkspace
+                        ? null
+                        : () async {
+                            await showDialog<String>(
+                              context: context,
+                              builder: (context) {
+                                return const FolderEditDialog();
+                              },
+                            );
+                          },
+                    child: const Text('Add Folder'),
+                  ),
+                  ShadButton(
+                    onPressed: isCommunityWorkspace ? null : showCreateDialog,
+                    leading: const Icon(Icons.add),
+                    child: Text(
+                      isCloudWorkspace
+                          ? 'Create Cloud Strategy'
+                          : 'Create Strategy',
+                    ),
+                  ),
+                ],
+              )
             ],
-          )
-        ],
-        // ... your existing actions
-      ),
-      body: FolderContent(folder: currentFolder),
+            // ... your existing actions
+          ),
+          body: Padding(
+            padding: const EdgeInsets.only(left: railReservedWidth),
+            child: FolderContent(folder: currentFolder),
+          ),
+        ),
+        const Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          child: LibraryNavigationRail(),
+        ),
+        if (_desktopUpdaterController != null)
+          DesktopUpdateDialogListener(
+            controller: _desktopUpdaterController!,
+          ),
+      ],
     );
   }
 }
@@ -260,123 +463,188 @@ class FolderItem extends GridItem {
 }
 
 class StrategyItem extends GridItem {
-  final StrategyData strategy;
+  final String strategyId;
+  final StrategyData? strategy;
 
-  StrategyItem(this.strategy);
+  StrategyItem.local(this.strategy) : strategyId = strategy!.id;
+
+  StrategyItem.cloud(this.strategyId) : strategy = null;
 }
 
-class FolderContent extends ConsumerWidget {
-  const FolderContent({super.key, this.folder});
-
-  final Folder? folder;
+class LibraryNavigationRail extends ConsumerStatefulWidget {
+  const LibraryNavigationRail({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isCloud = ref.watch(isCloudCollabEnabledProvider);
-    if (isCloud) {
-      return _CloudFolderContent(folder: folder);
-    }
-    return _LocalFolderContent(folder: folder);
+  ConsumerState<LibraryNavigationRail> createState() =>
+      _LibraryNavigationRailState();
+}
+
+class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
+  static const _closeDelay = Duration(milliseconds: 120);
+  static const _detailsDelay = Duration(milliseconds: 190);
+  static const _routeArrivalHoverDelay = Duration(seconds: 2);
+
+  bool _expanded = false;
+  bool _showExpandedContent = false;
+  Timer? _closeTimer;
+  Timer? _routeArrivalHoverTimer;
+
+  @override
+  void dispose() {
+    _closeTimer?.cancel();
+    _routeArrivalHoverTimer?.cancel();
+    super.dispose();
   }
-}
-
-class _CloudFolderContent extends ConsumerWidget {
-  const _CloudFolderContent({this.folder});
-
-  final Folder? folder;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final foldersAsync = ref.watch(cloudFoldersProvider);
-    final strategiesAsync = ref.watch(cloudStrategiesProvider);
-    final search = ref.watch(strategySearchQueryProvider).trim().toLowerCase();
-    final filter = ref.watch(strategyFilterProvider);
+  Widget build(BuildContext context) {
+    final workspace = ref.watch(libraryWorkspaceProvider);
+    final cloudSection = ref.watch(cloudLibrarySectionProvider);
+    final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
+    final authState = ref.watch(authProvider);
 
-    final folders = foldersAsync.valueOrNull ?? const <CloudFolderSummary>[];
-    var strategies =
-        strategiesAsync.valueOrNull ?? const <CloudStrategySummary>[];
+    final items = [
+      _LibraryRailItemData(
+        icon: LucideIcons.monitor,
+        label: 'This Computer',
+        description: 'Local strategies and imports',
+        selected: workspace == LibraryWorkspace.local,
+        onTap: () => _selectLocal(),
+      ),
+      _LibraryRailItemData(
+        icon: LucideIcons.cloud,
+        label: 'Cloud',
+        description: cloudAvailable
+            ? 'Your online strategies'
+            : 'Log in to sync strategies',
+        selected: workspace == LibraryWorkspace.cloud &&
+            cloudSection == CloudLibrarySection.home,
+        onTap: cloudAvailable ? () => _selectCloudHome() : null,
+      ),
+      _LibraryRailItemData(
+        icon: LucideIcons.users,
+        label: 'Shared',
+        description: cloudAvailable
+            ? 'Strategies shared with you'
+            : 'Log in to view shared strats',
+        selected: workspace == LibraryWorkspace.cloud &&
+            cloudSection == CloudLibrarySection.sharedWithMe,
+        onTap: cloudAvailable ? () => _selectShared() : null,
+      ),
+      _LibraryRailItemData(
+        icon: Icons.public,
+        label: 'Community',
+        description: 'Public strategy library',
+        selected: workspace == LibraryWorkspace.community,
+        onTap: () => _selectCommunity(),
+      ),
+    ];
 
-    if (search.isNotEmpty) {
-      strategies = strategies
-          .where((strategy) => strategy.name.toLowerCase().contains(search))
-          .toList(growable: false);
-    }
-
-    Comparator<CloudStrategySummary> comparator = switch (filter.sortBy) {
-      SortBy.alphabetical =>
-        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-      SortBy.dateCreated => (a, b) => a.createdAt.compareTo(b.createdAt),
-      SortBy.dateUpdated => (a, b) => a.updatedAt.compareTo(b.updatedAt),
-    };
-
-    final direction = filter.sortOrder == SortOrder.ascending ? 1 : -1;
-    strategies = [...strategies]..sort((a, b) => direction * comparator(a, b));
-
-    return Stack(
-      children: [
-        const Positioned.fill(
-          child: Padding(
-            padding: EdgeInsets.all(4),
-            child: DotGrid(),
-          ),
+    return MouseRegion(
+      onEnter: (_) {
+        if (ref.read(suppressLibraryRailHoverProvider)) {
+          _routeArrivalHoverTimer?.cancel();
+          _routeArrivalHoverTimer = Timer(_routeArrivalHoverDelay, () {
+            if (!mounted) {
+              return;
+            }
+            ref.read(suppressLibraryRailHoverProvider.notifier).state = false;
+          });
+          return;
+        }
+        _closeTimer?.cancel();
+        setState(() => _expanded = true);
+        Future.delayed(_detailsDelay, () {
+          if (!mounted || !_expanded) {
+            return;
+          }
+          setState(() => _showExpandedContent = true);
+        });
+      },
+      onExit: (_) {
+        _routeArrivalHoverTimer?.cancel();
+        if (ref.read(suppressLibraryRailHoverProvider)) {
+          ref.read(suppressLibraryRailHoverProvider.notifier).state = false;
+        }
+        _closeTimer?.cancel();
+        _closeTimer = Timer(_closeDelay, () {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _showExpandedContent = false;
+            _expanded = false;
+          });
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        width: _expanded ? 226 : 64,
+        margin: EdgeInsets.zero,
+        decoration: BoxDecoration(
+          color: Settings.tacticalVioletTheme.card.withValues(alpha: 0.96),
+          borderRadius: const BorderRadius.only(
+              // topRight: Radius.circular(14),
+              // bottomRight: Radius.circular(14),
+              ),
+          border: Border.all(color: Settings.tacticalVioletTheme.border),
+          boxShadow: const [Settings.cardForegroundBackdrop],
         ),
-        Positioned.fill(
+        child: ClipRRect(
+          borderRadius: const BorderRadius.only(
+              // topRight: Radius.circular(14),
+              // bottomRight: Radius.circular(14),
+              ),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const _FolderToolbar(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
+                child: _RailHeader(
+                  expanded: _expanded,
+                  showDetails: _showExpandedContent,
+                ),
+              ),
+              Divider(height: 1, color: Settings.tacticalVioletTheme.border),
               Expanded(
-                child: IcaDropTarget(
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
+                  child: Column(
                     children: [
-                      if (folders.isNotEmpty)
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            for (final cloudFolder in folders)
-                              ActionChip(
-                                label: Text(cloudFolder.name),
-                                onPressed: () {
-                                  ref
-                                      .read(folderProvider.notifier)
-                                      .updateID(cloudFolder.publicId);
-                                },
-                              ),
-                          ],
+                      for (final item in items) ...[
+                        _LibraryRailItem(
+                          data: item,
+                          expanded: _expanded,
+                          showDetails: _showExpandedContent,
                         ),
-                      if (folders.isNotEmpty) const SizedBox(height: 16),
-                      if (strategies.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 24),
-                          child: Center(
-                            child: Text('No cloud strategies in this folder'),
-                          ),
-                        ),
-                      for (final strategy in strategies)
-                        Card(
-                          color: Settings.tacticalVioletTheme.card,
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: ListTile(
-                            title: Text(strategy.name),
-                            subtitle: Text(
-                              '${strategy.mapData} • Updated ${strategy.updatedAt.toLocal()}',
-                            ),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () async {
-                              await ref
-                                  .read(strategyProvider.notifier)
-                                  .openStrategy(strategy.publicId);
-                              if (!context.mounted) return;
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const StrategyView(),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      const Spacer(),
+                      _AccountRailItem(
+                        expanded: _expanded,
+                        showDetails: _showExpandedContent,
+                        isLoading: authState.isLoading,
+                        isAuthenticated: authState.isAuthenticated,
+                        avatarUrl: authState.avatarUrl,
+                        label: authState.isAuthenticated
+                            ? authState.displayName
+                            : 'Log In',
+                        onAuthAction: authState.isLoading
+                            ? null
+                            : () {
+                                if (authState.isAuthenticated) {
+                                  unawaited(
+                                    ref.read(authProvider.notifier).signOut(),
+                                  );
+                                } else {
+                                  showDialog<void>(
+                                    context: context,
+                                    builder: (_) => const AuthDialog(),
+                                  );
+                                }
+                              },
+                      ),
                     ],
                   ),
                 ),
@@ -384,204 +652,338 @@ class _CloudFolderContent extends ConsumerWidget {
             ],
           ),
         ),
-      ],
+      ),
     );
+  }
+
+  void _selectLocal() {
+    ref.read(libraryWorkspaceProvider.notifier).select(LibraryWorkspace.local);
+    ref.read(folderProvider.notifier).updateID(null);
+  }
+
+  void _selectCloudHome() {
+    ref.read(libraryWorkspaceProvider.notifier).select(LibraryWorkspace.cloud);
+    ref
+        .read(cloudLibrarySectionProvider.notifier)
+        .select(CloudLibrarySection.home);
+    ref.read(folderProvider.notifier).updateID(null);
+  }
+
+  void _selectShared() {
+    ref.read(libraryWorkspaceProvider.notifier).select(LibraryWorkspace.cloud);
+    ref
+        .read(cloudLibrarySectionProvider.notifier)
+        .select(CloudLibrarySection.sharedWithMe);
+    ref.read(folderProvider.notifier).updateID(null);
+  }
+
+  void _selectCommunity() {
+    ref
+        .read(libraryWorkspaceProvider.notifier)
+        .select(LibraryWorkspace.community);
+    ref.read(folderProvider.notifier).updateID(null);
   }
 }
 
-class _LocalFolderContent extends ConsumerWidget {
-  const _LocalFolderContent({this.folder});
+class _RailHeader extends StatelessWidget {
+  const _RailHeader({
+    required this.expanded,
+    required this.showDetails,
+  });
 
-  final Folder? folder;
+  final bool expanded;
+  final bool showDetails;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final folderBox = Hive.box<Folder>(HiveBoxNames.foldersBox);
-
-    return Stack(
-      children: [
-        const Positioned.fill(
-          child: Padding(
-            padding: EdgeInsets.all(4),
-            child: DotGrid(),
-          ),
-        ),
-        Positioned.fill(
-          child: Column(
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 42,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final showLabel = showDetails && constraints.maxWidth >= 96;
+          return Stack(
+            clipBehavior: Clip.none,
             children: [
-              const _FolderToolbar(),
-              Expanded(
-                child: ValueListenableBuilder<Box<StrategyData>>(
-                  valueListenable: strategyBox.listenable(),
-                  builder: (context, strategiesListenable, _) {
-                    return ValueListenableBuilder<Box<Folder>>(
-                      valueListenable: folderBox.listenable(),
-                      builder: (context, foldersListenable, __) {
-                        final search = ref
-                            .watch(strategySearchQueryProvider)
-                            .trim()
-                            .toLowerCase();
-                        final filter = ref.watch(strategyFilterProvider);
-
-                        final folders = foldersListenable.values
-                            .where((f) => f.parentID == folder?.id)
-                            .toList(growable: false);
-
-                        var strategies = strategiesListenable.values
-                            .where((s) => s.folderID == folder?.id)
-                            .toList(growable: false);
-
-                        if (search.isNotEmpty) {
-                          strategies = strategies
-                              .where((s) =>
-                                  s.name.toLowerCase().contains(search))
-                              .toList(growable: false);
-                        }
-
-                        Comparator<StrategyData> comparator =
-                            switch (filter.sortBy) {
-                          SortBy.alphabetical => (a, b) =>
-                            a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-                          SortBy.dateCreated =>
-                            (a, b) => a.createdAt.compareTo(b.createdAt),
-                          SortBy.dateUpdated =>
-                            (a, b) => a.lastEdited.compareTo(b.lastEdited),
-                        };
-                        final direction =
-                            filter.sortOrder == SortOrder.ascending ? 1 : -1;
-                        strategies = [...strategies]
-                          ..sort((a, b) => direction * comparator(a, b));
-
-                        return IcaDropTarget(
-                          child: CustomScrollView(
-                            slivers: [
-                              if (folders.isNotEmpty)
-                                SliverToBoxAdapter(
-                                  child: Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                        16, 16, 16, 8),
-                                    child: Wrap(
-                                      spacing: 10,
-                                      runSpacing: 10,
-                                      children: folders
-                                          .map((f) => FolderPill(folder: f))
-                                          .toList(growable: false),
-                                    ),
-                                  ),
-                                ),
-                              if (strategies.isNotEmpty)
-                                SliverPadding(
-                                  padding: const EdgeInsets.all(16),
-                                  sliver: SliverGrid(
-                                    gridDelegate:
-                                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                                      maxCrossAxisExtent: 320,
-                                      mainAxisExtent: 250,
-                                      crossAxisSpacing: 20,
-                                      mainAxisSpacing: 20,
-                                    ),
-                                    delegate: SliverChildBuilderDelegate(
-                                      (context, index) {
-                                        return StrategyTile(
-                                            strategyData: strategies[index]);
-                                      },
-                                      childCount: strategies.length,
-                                    ),
-                                  ),
-                                )
-                              else
-                                const SliverFillRemaining(
-                                  hasScrollBody: false,
-                                  child: Center(
-                                    child: Text('No strategies in this folder'),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        );
-                      },
-                    );
-                  },
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: 48,
+                child: Center(
+                  child: SizedBox(
+                    width: 32,
+                    height: 32,
+                    child: Image.asset(
+                      'assets/icarus-icon.webp',
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                left: 50,
+                child: IgnorePointer(
+                  ignoring: !showLabel,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 120),
+                    opacity: expanded && showLabel ? 1 : 0,
+                    child: const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Icarus',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _FolderToolbar extends ConsumerWidget {
-  const _FolderToolbar();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4, left: 16, right: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            children: [
-              ShadSelect<SortBy>(
-                decoration: ShadDecoration(
-                  color: Settings.tacticalVioletTheme.card,
-                  shadows: const [Settings.cardForegroundBackdrop],
-                ),
-                initialValue: ref.watch(strategyFilterProvider).sortBy,
-                selectedOptionBuilder: (context, value) =>
-                    Text(StrategyFilterProvider.sortByLabels[value]!),
-                options: [
-                  for (final value in SortBy.values)
-                    ShadOption(
-                      value: value,
-                      child: Text(StrategyFilterProvider.sortByLabels[value]!),
-                    ),
-                ],
-                onChanged: (value) => ref
-                    .read(strategyFilterProvider.notifier)
-                    .setSortBy(value!),
-              ),
-              const SizedBox(width: 8),
-              ShadSelect<SortOrder>(
-                decoration: ShadDecoration(
-                  color: Settings.tacticalVioletTheme.card,
-                  shadows: const [Settings.cardForegroundBackdrop],
-                ),
-                initialValue: ref.watch(strategyFilterProvider).sortOrder,
-                selectedOptionBuilder: (context, value) =>
-                    Text(StrategyFilterProvider.sortOrderLabels[value]!),
-                options: [
-                  for (final value in SortOrder.values)
-                    ShadOption(
-                      value: value,
-                      child:
-                          Text(StrategyFilterProvider.sortOrderLabels[value]!),
-                    ),
-                ],
-                onChanged: (value) => ref
-                    .read(strategyFilterProvider.notifier)
-                    .setSortOrder(value!),
-              ),
-            ],
-          ),
-          const SizedBox(
-            height: 40,
-            child: SearchTextField(
-              collapsedWidth: 40,
-              expandedWidth: 250,
-              compact: true,
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 }
 
+class _LibraryRailItemData {
+  const _LibraryRailItemData({
+    required this.icon,
+    required this.label,
+    required this.description,
+    required this.selected,
+    required this.onTap,
+  });
 
+  final IconData icon;
+  final String label;
+  final String description;
+  final bool selected;
+  final VoidCallback? onTap;
+}
 
+class _LibraryRailItem extends StatelessWidget {
+  const _LibraryRailItem({
+    required this.data,
+    required this.expanded,
+    required this.showDetails,
+  });
 
+  final _LibraryRailItemData data;
+  final bool expanded;
+  final bool showDetails;
 
+  @override
+  Widget build(BuildContext context) {
+    final selectedColor =
+        Settings.tacticalVioletTheme.primary.withValues(alpha: 0.18);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        mouseCursor: data.onTap == null
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        onTap: data.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          decoration: BoxDecoration(
+            color: data.selected ? selectedColor : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: data.selected
+                  ? Settings.tacticalVioletTheme.primary
+                  : Colors.transparent,
+            ),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final showLabel = showDetails && constraints.maxWidth >= 96;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 26,
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: Icon(
+                        data.icon,
+                        size: 21,
+                        color: data.onTap == null
+                            ? Settings.tacticalVioletTheme.mutedForeground
+                            : null,
+                      ),
+                    ),
+                  ),
+                  Positioned.fill(
+                    left: 33,
+                    child: IgnorePointer(
+                      ignoring: !showLabel,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 120),
+                        opacity: expanded && showLabel ? 1 : 0,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              data.label,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              data.description,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Settings
+                                    .tacticalVioletTheme.mutedForeground,
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountRailItem extends StatelessWidget {
+  const _AccountRailItem({
+    required this.expanded,
+    required this.showDetails,
+    required this.isLoading,
+    required this.isAuthenticated,
+    required this.avatarUrl,
+    required this.label,
+    required this.onAuthAction,
+  });
+
+  final bool expanded;
+  final bool showDetails;
+  final bool isLoading;
+  final bool isAuthenticated;
+  final String? avatarUrl;
+  final String label;
+  final VoidCallback? onAuthAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        mouseCursor: onAuthAction == null
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        onTap: onAuthAction,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          decoration: BoxDecoration(
+            color: Settings.tacticalVioletTheme.secondary.withValues(
+              alpha: 0.5,
+            ),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Settings.tacticalVioletTheme.border),
+          ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final showLabel = showDetails && constraints.maxWidth >= 96;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 28,
+                    child: Align(
+                      alignment: Alignment.center,
+                      child: _AccountAvatar(
+                        avatarUrl: avatarUrl,
+                        isAuthenticated: isAuthenticated,
+                      ),
+                    ),
+                  ),
+                  Positioned.fill(
+                    left: 38,
+                    child: IgnorePointer(
+                      ignoring: !showLabel,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 120),
+                        curve: Curves.easeOutCubic,
+                        opacity: expanded && showLabel ? 1 : 0,
+                        child: showLabel
+                            ? Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      isLoading ? 'Please wait...' : label,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : const SizedBox.shrink(),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccountAvatar extends StatelessWidget {
+  const _AccountAvatar({
+    required this.avatarUrl,
+    required this.isAuthenticated,
+  });
+
+  final String? avatarUrl;
+  final bool isAuthenticated;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isAuthenticated && avatarUrl != null) {
+      return CircleAvatar(
+        radius: 14,
+        backgroundImage: NetworkImage(avatarUrl!),
+      );
+    }
+
+    return CircleAvatar(
+      radius: 14,
+      backgroundColor: Settings.tacticalVioletTheme.card,
+      child: Icon(
+        isAuthenticated ? Icons.person : LucideIcons.userRound,
+        size: 15,
+      ),
+    );
+  }
+}
