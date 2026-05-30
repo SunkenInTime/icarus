@@ -4,23 +4,21 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/share/share_link_format.dart';
 
 final shareLinkControllerProvider =
     NotifierProvider<ShareLinkController, String?>(ShareLinkController.new);
 
 class ShareLinkController extends Notifier<String?> {
   Future<bool> handleIncomingUri(Uri uri, {required String source}) async {
-    final isShareLink = uri.scheme.toLowerCase() == 'icarus' &&
-        (uri.host.toLowerCase() == 'share' ||
-            uri.pathSegments.contains('share'));
-    if (!isShareLink) {
+    if (!isIcarusShareUri(uri)) {
       return false;
     }
 
-    final token = uri.queryParameters['token'];
+    final token = extractIcarusShareCode(uri.toString());
     if (token == null || token.isEmpty) {
       Settings.showToast(
-        message: 'That share link is missing a token.',
+        message: 'That share link is missing a share code.',
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
       return true;

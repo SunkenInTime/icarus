@@ -30,6 +30,7 @@ import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
@@ -110,6 +111,9 @@ Future<void> main(List<String> args) async {
 
       await registerDeepLinkProtocol('icarus');
       await _initializeDeepLinkHandling();
+      if (kIsWeb && isIcarusShareUri(Uri.base)) {
+        _publishDeepLink(Uri.base, source: 'web_location');
+      }
 
       if (!kIsWeb && Platform.isWindows) {
         await WindowsSingleInstance.ensureSingleInstance(
@@ -334,7 +338,8 @@ class _MyAppState extends ConsumerState<MyApp> {
     required String source,
   }) async {
     final uri = Uri.tryParse(argument);
-    if (uri != null && uri.scheme.toLowerCase() == 'icarus') {
+    if (uri != null &&
+        (uri.scheme.toLowerCase() == 'icarus' || isIcarusShareUri(uri))) {
       _handleIncomingUri(uri, source: source);
       return;
     }

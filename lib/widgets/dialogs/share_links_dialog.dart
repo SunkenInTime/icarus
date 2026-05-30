@@ -5,10 +5,8 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/share/share_link_format.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:uuid/uuid.dart';
-
-String buildIcarusShareLink(String token) => 'icarus://share?token=$token';
 
 /// Headline like: Share "My Strategy Name" (`"` in [name] become `'`).
 String _shareDialogHeadline(String name) {
@@ -69,7 +67,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
 
   Future<void> _createLink() async {
     setState(() => _isCreating = true);
-    final token = const Uuid().v4();
+    final token = generateIcarusShareCode();
     try {
       await ref.read(convexStrategyRepositoryProvider).createShareLink(
             targetType: widget.targetType,
@@ -99,6 +97,14 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
     await Clipboard.setData(ClipboardData(text: buildIcarusShareLink(token)));
     Settings.showToast(
       message: 'Share link copied to clipboard.',
+      backgroundColor: Settings.tacticalVioletTheme.primary,
+    );
+  }
+
+  Future<void> _copyCode(String token) async {
+    await Clipboard.setData(ClipboardData(text: token));
+    Settings.showToast(
+      message: 'Share code copied to clipboard.',
       backgroundColor: Settings.tacticalVioletTheme.primary,
     );
   }
@@ -229,7 +235,8 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final link = _links[index];
-                    final url = buildIcarusShareLink(link.token);
+                    final code = link.token;
+                    final url = buildIcarusShareLink(code);
                     return DecoratedBox(
                       decoration: BoxDecoration(
                         border: Border.all(color: theme.colorScheme.border),
@@ -247,17 +254,38 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
                               child: Tooltip(
                                 message: url,
                                 child: SelectionArea(
-                                  child: Text(
-                                    url,
-                                    style: theme.textTheme.small.copyWith(
-                                      color: theme.colorScheme.mutedForeground,
-                                      fontFamily: 'monospace',
-                                      fontSize: 11,
-                                      height: 1.35,
-                                    ),
-                                    maxLines: 4,
-                                    overflow: TextOverflow.ellipsis,
-                                    softWrap: true,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        url,
+                                        style: theme.textTheme.small.copyWith(
+                                          color:
+                                              theme.colorScheme.mutedForeground,
+                                          fontFamily: 'monospace',
+                                          fontSize: 11,
+                                          height: 1.35,
+                                        ),
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                        softWrap: true,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Code: $code',
+                                        style: theme.textTheme.small.copyWith(
+                                          color:
+                                              theme.colorScheme.mutedForeground,
+                                          fontFamily: 'monospace',
+                                          fontSize: 11,
+                                          height: 1.35,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -273,6 +301,18 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
                                     onPressed: () => _copyLink(link.token),
                                     child: Icon(
                                       LucideIcons.copy,
+                                      size: 16,
+                                      color: theme.colorScheme.foreground,
+                                    ),
+                                  ),
+                                ),
+                                Tooltip(
+                                  message: 'Copy code',
+                                  child: ShadButton.ghost(
+                                    size: ShadButtonSize.sm,
+                                    onPressed: () => _copyCode(link.token),
+                                    child: Icon(
+                                      LucideIcons.hash,
                                       size: 16,
                                       color: theme.colorScheme.foreground,
                                     ),
@@ -330,18 +370,9 @@ class _JoinShareLinkDialogState extends ConsumerState<JoinShareLinkDialog> {
     super.dispose();
   }
 
-  String _extractToken(String value) {
-    final trimmed = value.trim();
-    final uri = Uri.tryParse(trimmed);
-    if (uri != null) {
-      return uri.queryParameters['token'] ?? trimmed;
-    }
-    return trimmed;
-  }
-
   Future<void> _submit() async {
-    final token = _extractToken(_controller.text);
-    if (token.isEmpty) {
+    final token = extractIcarusShareCode(_controller.text);
+    if (token == null || token.isEmpty) {
       return;
     }
     setState(() => _isSubmitting = true);
@@ -356,7 +387,7 @@ class _JoinShareLinkDialogState extends ConsumerState<JoinShareLinkDialog> {
     return ShadDialog(
       title: const Text('Join Shared Item'),
       description: const Text(
-          'Paste an Icarus share link to add it to your cloud library.'),
+          'Paste an Icarus share link or enter a share code to add it to your cloud library.'),
       actions: [
         ShadButton.secondary(
           onPressed: () => Navigator.of(context).pop(),
@@ -369,7 +400,7 @@ class _JoinShareLinkDialogState extends ConsumerState<JoinShareLinkDialog> {
       ],
       child: ShadInput(
         controller: _controller,
-        placeholder: const Text('icarus://share?token=...'),
+        placeholder: const Text('https://icarusstrats.com/share/ICR-...'),
       ),
     );
   }
