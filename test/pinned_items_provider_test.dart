@@ -81,6 +81,40 @@ void main() {
     expect(notifier.pinnedIdsByManualOrder(), ['third', 'first', 'second']);
   });
 
+  test('movePin reorders an id around a target id', () async {
+    final notifier = container.read(pinnedItemsProvider.notifier);
+
+    await notifier.togglePin('third');
+    await notifier.togglePin('second');
+    await notifier.togglePin('first');
+
+    await notifier.movePin(
+      id: 'third',
+      targetId: 'first',
+      insertAfterTarget: false,
+    );
+    expect(notifier.pinnedIdsByManualOrder(), ['third', 'first', 'second']);
+
+    await notifier.movePin(
+      id: 'third',
+      targetId: 'second',
+      insertAfterTarget: true,
+    );
+    expect(notifier.pinnedIdsByManualOrder(), ['first', 'second', 'third']);
+  });
+
+  test('saved order removes stale box keys', () async {
+    final notifier = container.read(pinnedItemsProvider.notifier);
+    final box = Hive.box<int>(HiveBoxNames.pinnedItemsBox);
+
+    await notifier.togglePin('first');
+    await notifier.togglePin('second');
+    await notifier.removePin('first');
+
+    expect(box.containsKey('first'), false);
+    expect(box.toMap(), {'second': 0});
+  });
+
   test('legacy timestamp pins keep recency order until saved', () async {
     final box = Hive.box<int>(HiveBoxNames.pinnedItemsBox);
     await box.put('first', 1710000000000);

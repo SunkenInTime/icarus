@@ -169,36 +169,29 @@ class FolderContent extends ConsumerWidget {
                         folders.sort(
                             (a, b) => a.dateCreated.compareTo(b.dateCreated));
 
-                        // At the home/root screen (and only when not searching),
-                        // pinned items — which may live in any folder — float to
-                        // the top of the normal lists. They render exactly like
-                        // every other tile/pill, just ordered first.
-                        final isRoot = folder == null;
                         final pinned = ref.watch(pinnedItemsProvider);
-                        if (isRoot && pinned.isNotEmpty && search.isEmpty) {
+                        if (pinned.isNotEmpty && search.isEmpty) {
                           final orderedPinnedIds =
                               pinnedIdsInManualOrder(pinned);
-                          final strategyById = {
-                            for (final s in strategyBox.values) s.id: s
-                          };
-                          final folderById = {
-                            for (final f in folderBox.values) f.id: f
+                          final pinnedIdOrder = {
+                            for (final entry
+                                in orderedPinnedIds.asMap().entries)
+                              entry.value: entry.key,
                           };
 
-                          final pinnedStrategies = <StrategyData>[];
-                          final pinnedFolders = <Folder>[];
-                          for (final id in orderedPinnedIds) {
-                            final s = strategyById[id];
-                            if (s != null) {
-                              pinnedStrategies.add(s);
-                              continue;
-                            }
-                            final f = folderById[id];
-                            if (f != null) pinnedFolders.add(f);
-                          }
+                          final pinnedStrategies = strategies
+                              .where(
+                                  (strategy) => pinned.containsKey(strategy.id))
+                              .toList()
+                            ..sort((a, b) => pinnedIdOrder[a.id]!
+                                .compareTo(pinnedIdOrder[b.id]!));
+                          final pinnedFolders = folders
+                              .where((listFolder) =>
+                                  pinned.containsKey(listFolder.id))
+                              .toList()
+                            ..sort((a, b) => pinnedIdOrder[a.id]!
+                                .compareTo(pinnedIdOrder[b.id]!));
 
-                          // Remove pinned items from their normal position, then
-                          // re-insert at the front so they sort to the top.
                           strategies
                               .removeWhere((s) => pinned.containsKey(s.id));
                           folders.removeWhere((f) => pinned.containsKey(f.id));

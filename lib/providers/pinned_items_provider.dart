@@ -101,8 +101,11 @@ class PinnedItemsProvider extends Notifier<Map<String, int>> {
     final nextState = <String, int>{
       for (final entry in orderedIds.asMap().entries) entry.value: entry.key,
     };
-    await _box.clear();
     await _box.putAll(nextState);
+    final staleKeys = _box.keys
+        .where((key) => key is! String || !nextState.containsKey(key))
+        .toList();
+    await _box.deleteAll(staleKeys);
     state = nextState;
   }
 
