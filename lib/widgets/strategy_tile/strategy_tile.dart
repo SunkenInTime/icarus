@@ -117,16 +117,34 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   }
 
   List<ShadContextMenuItem> _buildMenuItems() {
-    final isPinned =
-        ref.watch(pinnedItemsProvider).containsKey(widget.strategyData.id);
+    final pinned = ref.watch(pinnedItemsProvider);
+    final id = widget.strategyData.id;
+    final isPinned = pinned.containsKey(id);
     return [
       ShadContextMenuItem(
         leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
         child: Text(isPinned ? 'Unpin' : 'Pin'),
-        onPressed: () => ref
-            .read(pinnedItemsProvider.notifier)
-            .togglePin(widget.strategyData.id),
+        onPressed: () => ref.read(pinnedItemsProvider.notifier).togglePin(id),
       ),
+      if (isPinned) ...[
+        ShadContextMenuItem(
+          leading: const Icon(Icons.vertical_align_top),
+          child: const Text('Move Pin to Top'),
+          onPressed: () =>
+              ref.read(pinnedItemsProvider.notifier).movePinToTop(id),
+        ),
+        ShadContextMenuItem(
+          leading: const Icon(Icons.keyboard_arrow_up),
+          child: const Text('Move Pin Up'),
+          onPressed: () => ref.read(pinnedItemsProvider.notifier).movePinUp(id),
+        ),
+        ShadContextMenuItem(
+          leading: const Icon(Icons.keyboard_arrow_down),
+          child: const Text('Move Pin Down'),
+          onPressed: () =>
+              ref.read(pinnedItemsProvider.notifier).movePinDown(id),
+        ),
+      ],
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.pencil),
         child: const Text('Rename'),

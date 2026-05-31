@@ -14,7 +14,6 @@ import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_pill.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderContent extends ConsumerWidget {
   FolderContent({super.key, this.folder});
@@ -33,8 +32,6 @@ class FolderContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Move all your existing grid logic here from FolderView
-    // Filter by folder?.id instead of folder.id
     final strategiesBoxListenable = ref.watch(strategiesListenable);
 
     return Stack(
@@ -179,9 +176,8 @@ class FolderContent extends ConsumerWidget {
                         final isRoot = folder == null;
                         final pinned = ref.watch(pinnedItemsProvider);
                         if (isRoot && pinned.isNotEmpty && search.isEmpty) {
-                          final pinnedIds = ref
-                              .read(pinnedItemsProvider.notifier)
-                              .pinnedIdsByRecency();
+                          final orderedPinnedIds =
+                              pinnedIdsInManualOrder(pinned);
                           final strategyById = {
                             for (final s in strategyBox.values) s.id: s
                           };
@@ -191,7 +187,7 @@ class FolderContent extends ConsumerWidget {
 
                           final pinnedStrategies = <StrategyData>[];
                           final pinnedFolders = <Folder>[];
-                          for (final id in pinnedIds) {
+                          for (final id in orderedPinnedIds) {
                             final s = strategyById[id];
                             if (s != null) {
                               pinnedStrategies.add(s);
@@ -203,7 +199,8 @@ class FolderContent extends ConsumerWidget {
 
                           // Remove pinned items from their normal position, then
                           // re-insert at the front so they sort to the top.
-                          strategies.removeWhere((s) => pinned.containsKey(s.id));
+                          strategies
+                              .removeWhere((s) => pinned.containsKey(s.id));
                           folders.removeWhere((f) => pinned.containsKey(f.id));
                           strategies.insertAll(0, pinnedStrategies);
                           folders.insertAll(0, pinnedFolders);

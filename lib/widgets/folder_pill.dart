@@ -192,17 +192,44 @@ class _FolderPillState extends ConsumerState<FolderPill>
   }
 
   List<ShadContextMenuItem> _buildMenuItems() {
-    final isPinned =
-        ref.watch(pinnedItemsProvider).containsKey(widget.folder.id);
+    final pinned = ref.watch(pinnedItemsProvider);
+    final id = widget.folder.id;
+    final isPinned = pinned.containsKey(id);
     return [
       ShadContextMenuItem(
         leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
         child: Text(isPinned ? 'Unpin' : 'Pin'),
         onPressed: () {
           if (widget.isDemo) return;
-          ref.read(pinnedItemsProvider.notifier).togglePin(widget.folder.id);
+          ref.read(pinnedItemsProvider.notifier).togglePin(id);
         },
       ),
+      if (isPinned) ...[
+        ShadContextMenuItem(
+          leading: const Icon(Icons.vertical_align_top),
+          child: const Text('Move Pin to Top'),
+          onPressed: () {
+            if (widget.isDemo) return;
+            ref.read(pinnedItemsProvider.notifier).movePinToTop(id);
+          },
+        ),
+        ShadContextMenuItem(
+          leading: const Icon(Icons.keyboard_arrow_up),
+          child: const Text('Move Pin Up'),
+          onPressed: () {
+            if (widget.isDemo) return;
+            ref.read(pinnedItemsProvider.notifier).movePinUp(id);
+          },
+        ),
+        ShadContextMenuItem(
+          leading: const Icon(Icons.keyboard_arrow_down),
+          child: const Text('Move Pin Down'),
+          onPressed: () {
+            if (widget.isDemo) return;
+            ref.read(pinnedItemsProvider.notifier).movePinDown(id);
+          },
+        ),
+      ],
       ShadContextMenuItem(
         leading: const Icon(Icons.text_fields),
         child: const Text('Edit'),

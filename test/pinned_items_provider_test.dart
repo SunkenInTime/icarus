@@ -39,14 +39,13 @@ void main() {
     expect(notifier.isPinned('a'), false);
   });
 
-  test('pinnedIdsByRecency returns most-recently-pinned first', () async {
+  test('pinned ids stay in manual order with newest pin at the top', () async {
     final notifier = container.read(pinnedItemsProvider.notifier);
 
     await notifier.togglePin('first');
-    await Future<void>.delayed(const Duration(milliseconds: 5));
     await notifier.togglePin('second');
 
-    expect(notifier.pinnedIdsByRecency(), ['second', 'first']);
+    expect(notifier.pinnedIdsByManualOrder(), ['second', 'first']);
   });
 
   test('removePin is a no-op when the id is not pinned', () async {
@@ -54,5 +53,45 @@ void main() {
 
     await notifier.removePin('missing'); // should not throw
     expect(notifier.isPinned('missing'), false);
+  });
+
+  test('movePinUp and movePinDown update manual order', () async {
+    final notifier = container.read(pinnedItemsProvider.notifier);
+
+    await notifier.togglePin('third');
+    await notifier.togglePin('second');
+    await notifier.togglePin('first');
+
+    await notifier.movePinDown('first');
+    expect(notifier.pinnedIdsByManualOrder(), ['second', 'first', 'third']);
+
+    await notifier.movePinUp('third');
+    expect(notifier.pinnedIdsByManualOrder(), ['second', 'third', 'first']);
+  });
+
+  test('movePinToTop moves pinned id to the start', () async {
+    final notifier = container.read(pinnedItemsProvider.notifier);
+
+    await notifier.togglePin('third');
+    await notifier.togglePin('second');
+    await notifier.togglePin('first');
+
+    await notifier.movePinToTop('third');
+
+    expect(notifier.pinnedIdsByManualOrder(), ['third', 'first', 'second']);
+  });
+
+  test('legacy timestamp pins keep recency order until saved', () async {
+    final box = Hive.box<int>(HiveBoxNames.pinnedItemsBox);
+    await box.put('first', 1710000000000);
+    await box.put('second', 1720000000000);
+    final legacyContainer = ProviderContainer();
+    addTearDown(legacyContainer.dispose);
+    final notifier = legacyContainer.read(pinnedItemsProvider.notifier);
+
+    expect(notifier.pinnedIdsByManualOrder(), ['second', 'first']);
+
+    await notifier.movePinDown('second');
+    expect(notifier.pinnedIdsByManualOrder(), ['first', 'second']);
   });
 }
