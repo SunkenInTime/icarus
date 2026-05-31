@@ -208,6 +208,9 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
                       ? null
                       : () {
                           ref
+                              .read(dragNotifier.notifier)
+                              .updateDragState(false);
+                          ref
                               .read(abilityBarProvider.notifier)
                               .updateData(agent);
                         },
