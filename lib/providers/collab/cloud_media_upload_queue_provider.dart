@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -253,8 +252,7 @@ class CloudMediaUploadQueueNotifier
       return;
     }
 
-    if (job.state == CloudMediaJobState.pendingUpload ||
-        job.storageId == null) {
+    if (!job.hasUploadedRemoteObject) {
       await _uploadJobBlob(job);
       return;
     }
@@ -278,18 +276,33 @@ class CloudMediaUploadQueueNotifier
         return;
       }
 
-      final uploadUrl =
-          await _repo.generateImageUploadUrl(job.strategyPublicId);
-      if (uploadUrl.isEmpty) {
-        throw StateError('Empty Convex upload URL');
+      final bytes = await file.readAsBytes();
+      final intent = await _repo.generateImageUploadUrl(
+        strategyPublicId: job.strategyPublicId,
+        assetPublicId: job.assetPublicId,
+        mimeType: job.mimeType,
+        fileExtension: job.fileExtension,
+        byteSize: bytes.length,
+        width: job.width,
+        height: job.height,
+      );
+      if (intent.uploadUrl.isEmpty) {
+        throw StateError('Empty R2 upload URL');
+      }
+      if (intent.maxBytes > 0 && bytes.length > intent.maxBytes) {
+        throw StateError(
+          'Image exceeds maximum upload size (${intent.maxBytes} bytes).',
+        );
       }
 
-      final response = await http.post(
-        Uri.parse(uploadUrl),
+      final response = await http.put(
+        Uri.parse(intent.uploadUrl),
         headers: {
-          'Content-Type': job.mimeType,
+          ...intent.requiredHeaders,
+          if (!intent.requiredHeaders.containsKey('Content-Type'))
+            'Content-Type': job.mimeType,
         },
-        body: await file.readAsBytes(),
+        body: bytes,
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw StateError(
@@ -297,11 +310,16 @@ class CloudMediaUploadQueueNotifier
         );
       }
 
-      final storageId = _parseStorageId(response.body);
       await _box.put(
         job.jobId,
         job.copyWith(
-          storageId: storageId,
+          provider: intent.provider,
+          uploadId: intent.uploadId,
+          objectKey: intent.objectKey,
+          storageId: null,
+          etag: response.headers['etag'],
+          byteSize: bytes.length,
+          uploadUrlExpiresAt: intent.expiresAt,
           state: CloudMediaJobState.pendingAttach,
           attempts: 0,
           lastError: null,
@@ -320,12 +338,27 @@ class CloudMediaUploadQueueNotifier
 
   Future<void> _attachUploadedJob(CloudMediaUploadJob job) async {
     try {
+      if ((job.provider == 'r2' || job.uploadId != null) &&
+          (job.uploadId == null || job.objectKey == null)) {
+        throw StateError('R2 upload job is missing upload intent metadata.');
+      }
+      if ((job.provider == null || job.provider == 'convex') &&
+          job.uploadId == null &&
+          job.storageId == null) {
+        throw StateError('Upload job is missing remote storage metadata.');
+      }
+
       await _repo.completeImageUpload(
         strategyPublicId: job.strategyPublicId,
         assetPublicId: job.assetPublicId,
-        storageId: job.storageId!,
+        provider: job.provider,
+        uploadId: job.uploadId,
+        objectKey: job.objectKey,
+        storageId: job.storageId,
+        etag: job.etag,
         mimeType: job.mimeType,
         fileExtension: job.fileExtension,
+        byteSize: job.byteSize,
         width: job.width,
         height: job.height,
       );
@@ -411,6 +444,7 @@ class CloudMediaUploadQueueNotifier
         mimeType: nextJob.mimeType,
         width: nextJob.width,
         height: nextJob.height,
+        byteSize: nextJob.byteSize,
       );
       await _box.put(nextJob.jobId, merged);
     } else {
@@ -428,23 +462,5 @@ class CloudMediaUploadQueueNotifier
       jobs: _readJobs(),
       isProcessing: isProcessing ?? state.isProcessing,
     );
-  }
-
-  String _parseStorageId(String responseBody) {
-    final decoded = jsonDecode(responseBody);
-    if (decoded is Map<String, dynamic>) {
-      final storageId = decoded['storageId'];
-      if (storageId is String && storageId.isNotEmpty) {
-        return storageId;
-      }
-    }
-    if (decoded is Map) {
-      final storageId = decoded['storageId'];
-      if (storageId is String && storageId.isNotEmpty) {
-        return storageId;
-      }
-    }
-    throw const FormatException(
-        'Convex upload response did not include storageId');
   }
 }

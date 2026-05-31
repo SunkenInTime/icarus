@@ -112,18 +112,17 @@ This part is a solid foundation.
 
 ### Orphan Storage Risk
 
-- If the blob upload succeeds but `images:completeUpload` fails, the Convex storage object can be orphaned.
+- R2 migration note: new uploads now create a pending `imageAssets` row before the client PUTs to R2, then `images:completeUpload` verifies object metadata and marks the row active.
+- If the R2 upload succeeds but completion fails, the pending row keeps `objectKey` for retry and can later be swept by `images:sweepStaleUploadsForStrategy`.
 
-Suggested fix: add a cleanup path for unattached storage IDs, or store an upload intent before posting the blob so old pending uploads can be swept.
+Remaining setup: configure the Cloudflare R2 bucket, custom public domain, and Convex env vars in `docs/cloudflare_r2_media_storage.md`.
 
-### Stale Asset Cleanup Is Not Implemented
+### Stale Asset Cleanup Wiring
 
-- `images:listPotentiallyStale` currently returns an empty list.
-- `images:deleteAssetRef` only deletes assets still referenced by the strategy.
+- R2 migration note: `images:listPotentiallyStale` now returns strategy-owned unreferenced assets plus pending/failed upload candidates.
+- `images:deleteAssetRef` now deletes strategy-owned R2 assets and legacy Convex-storage assets with editor permission checks.
 
-Impact: once an image is removed from a strategy, the current delete path may no longer be able to clean up the asset row/storage object.
-
-Suggested fix: track asset ownership/strategy association directly on `imageAssets`, or keep a reference table so stale assets can be listed and deleted safely.
+Residual risk: legacy rows without `strategyId` can only be cleaned when they are still provably referenced by the requesting strategy, because old dev rows did not record ownership.
 
 ## Follow-Up Checklist
 
@@ -134,6 +133,6 @@ Suggested fix: track asset ownership/strategy association directly on `imageAsse
 - [ ] Add visible conflict/sync status UI.
 - [ ] Clarify "revoke link" versus "remove collaborator access."
 - [ ] Decide whether share links need expiry before public launch.
-- [ ] Implement stale/orphan media cleanup.
+- [ ] Decide whether stale/orphan media cleanup should run from UI, cron, or an admin maintenance action.
 - [ ] Add backend tests for share redemption, revocation, role inheritance, and stale op rejection.
 - [ ] Add client tests for conflict ack handling and media upload failure recovery.

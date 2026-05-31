@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 
 final convexStrategyRepositoryProvider = Provider<ConvexStrategyRepository>(
@@ -450,33 +451,57 @@ class ConvexStrategyRepository {
     );
   }
 
-  Future<String> generateImageUploadUrl(String strategyPublicId) async {
-    final response = await _client.mutation(
+  Future<CloudImageUploadIntent> generateImageUploadUrl({
+    required String strategyPublicId,
+    required String assetPublicId,
+    required String mimeType,
+    required String fileExtension,
+    int? byteSize,
+    int? width,
+    int? height,
+  }) async {
+    final response = await _client.action(
       name: 'images:generateUploadUrl',
       args: {
         'strategyPublicId': strategyPublicId,
+        'assetPublicId': assetPublicId,
+        'mimeType': mimeType,
+        'fileExtension': fileExtension,
+        if (byteSize != null) 'byteSize': byteSize,
+        if (width != null) 'width': width,
+        if (height != null) 'height': height,
       },
     );
-    return (_decodeObject(response)['uploadUrl'] as String?) ?? '';
+    return CloudImageUploadIntent.fromJson(_decodeObject(response));
   }
 
   Future<void> completeImageUpload({
     required String strategyPublicId,
     required String assetPublicId,
-    required String storageId,
+    String? provider,
+    String? uploadId,
+    String? objectKey,
+    String? storageId,
+    String? etag,
     String? mimeType,
     String? fileExtension,
+    int? byteSize,
     int? width,
     int? height,
   }) async {
-    await _client.mutation(
+    await _client.action(
       name: 'images:completeUpload',
       args: {
         'strategyPublicId': strategyPublicId,
         'assetPublicId': assetPublicId,
-        'storageId': storageId,
+        if (provider != null) 'provider': provider,
+        if (uploadId != null) 'uploadId': uploadId,
+        if (objectKey != null) 'objectKey': objectKey,
+        if (storageId != null) 'storageId': storageId,
+        if (etag != null) 'etag': etag,
         if (mimeType != null) 'mimeType': mimeType,
         if (fileExtension != null) 'fileExtension': fileExtension,
+        if (byteSize != null) 'byteSize': byteSize,
         if (width != null) 'width': width,
         if (height != null) 'height': height,
       },

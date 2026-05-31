@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 
@@ -108,6 +109,64 @@ void main() {
       );
 
       expect(remote.decodedPayload(), isEmpty);
+    });
+  });
+
+  group('RemoteImageAsset', () {
+    test('parses R2 metadata without treating URL as durable payload', () {
+      final asset = RemoteImageAsset.fromJson({
+        'publicId': 'asset-1',
+        'provider': 'r2',
+        'uploadStatus': 'active',
+        'fileExtension': '.png',
+        'mimeType': 'image/png',
+        'width': 1920,
+        'height': 1080,
+        'byteSize': 42,
+        'uploadedAt': 1700000000000,
+        'url': 'https://media.example.com/asset-1.png',
+      });
+
+      expect(asset.publicId, 'asset-1');
+      expect(asset.provider, 'r2');
+      expect(asset.uploadStatus, 'active');
+      expect(asset.byteSize, 42);
+      expect(
+          asset.uploadedAt, DateTime.fromMillisecondsSinceEpoch(1700000000000));
+      expect(asset.url, startsWith('https://media.example.com/'));
+    });
+
+    test('defaults legacy Convex storage rows to active Convex assets', () {
+      final asset = RemoteImageAsset.fromJson({
+        'publicId': 'asset-legacy',
+        'fileExtension': '.jpg',
+      });
+
+      expect(asset.provider, 'convex');
+      expect(asset.uploadStatus, 'active');
+      expect(asset.fileExtension, '.jpg');
+    });
+  });
+
+  group('CloudImageUploadIntent', () {
+    test('parses R2 upload response headers and expiration', () {
+      final intent = CloudImageUploadIntent.fromJson({
+        'provider': 'r2',
+        'uploadId': 'upload-1',
+        'objectKey': 'strategies/s/images/a.png',
+        'uploadUrl': 'https://example.r2.cloudflarestorage.com/bucket/key',
+        'requiredHeaders': {'Content-Type': 'image/png'},
+        'expiresAt': 1700000000000,
+        'maxBytes': 1024,
+      });
+
+      expect(intent.provider, 'r2');
+      expect(intent.uploadId, 'upload-1');
+      expect(intent.objectKey, 'strategies/s/images/a.png');
+      expect(intent.requiredHeaders['Content-Type'], 'image/png');
+      expect(
+          intent.expiresAt, DateTime.fromMillisecondsSinceEpoch(1700000000000));
+      expect(intent.maxBytes, 1024);
     });
   });
 

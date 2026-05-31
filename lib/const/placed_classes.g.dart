@@ -53,9 +53,7 @@ PlacedImage _$PlacedImageFromJson(Map<String, dynamic> json) => PlacedImage(
       fileExtension: json['fileExtension'] as String?,
       sizeVersion: (json['sizeVersion'] as num?)?.toInt(),
       tagColorValue: (json['tagColorValue'] as num?)?.toInt(),
-    )
-      ..isDeleted = json['isDeleted'] as bool? ?? false
-      ..link = json['link'] as String;
+    )..isDeleted = json['isDeleted'] as bool? ?? false;
 
 Map<String, dynamic> _$PlacedImageToJson(PlacedImage instance) =>
     <String, dynamic>{
@@ -67,7 +65,6 @@ Map<String, dynamic> _$PlacedImageToJson(PlacedImage instance) =>
       'scale': instance.scale,
       'sizeVersion': instance.sizeVersion,
       'tagColorValue': instance.tagColorValue,
-      'link': instance.link,
     };
 
 PlacedAgent _$PlacedAgentFromJson(Map<String, dynamic> json) => PlacedAgent(

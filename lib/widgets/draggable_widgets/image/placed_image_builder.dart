@@ -58,8 +58,8 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
 
       if (ref.watch(placedImageProvider).images[index].scale != localScale &&
           !isPanning) {
-        localScale =
-            ImageScalePolicy.clamp(ref.read(placedImageProvider).images[index].scale);
+        localScale = ImageScalePolicy.clamp(
+            ref.read(placedImageProvider).images[index].scale);
       }
 
       return ImageScaleController(
@@ -100,7 +100,6 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
             child: IgnorePointer(
               child: ImageWidget(
                 isFeedback: true,
-                link: widget.placedImage.link,
                 aspectRatio: widget.placedImage.aspectRatio,
                 scale: localScale!,
                 fileExtension: widget.placedImage.fileExtension,
@@ -134,7 +133,6 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
               child: ImageWidget(
                 fileExtension: widget.placedImage.fileExtension,
                 aspectRatio: widget.placedImage.aspectRatio,
-                link: widget.placedImage.link,
                 scale: localScale!,
                 id: widget.placedImage.id,
                 tagColorValue: widget.placedImage.tagColorValue,

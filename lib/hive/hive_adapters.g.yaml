@@ -123,8 +123,6 @@ types:
         index: 1
       scale:
         index: 2
-      link:
-        index: 3
       id:
         index: 4
       isDeleted:
@@ -597,7 +595,7 @@ types:
         index: 2
   CloudMediaUploadJob:
     typeId: 35
-    nextIndex: 15
+    nextIndex: 21
     fields:
       jobId:
         index: 0
@@ -623,3 +621,15 @@ types:
         index: 13
       updatedAt:
         index: 14
+      byteSize:
+        index: 15
+      provider:
+        index: 16
+      uploadId:
+        index: 17
+      objectKey:
+        index: 18
+      etag:
+        index: 19
+      uploadUrlExpiresAt:
+        index: 20

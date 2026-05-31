@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -128,7 +129,6 @@ class _ImageFullScreenOverlay extends StatelessWidget {
 class ImageWidget extends ConsumerStatefulWidget {
   const ImageWidget({
     super.key,
-    required this.link,
     required this.aspectRatio,
     required this.scale,
     required this.fileExtension,
@@ -137,7 +137,6 @@ class ImageWidget extends ConsumerStatefulWidget {
     this.isFeedback = false,
   });
   final double aspectRatio;
-  final String? link;
   final double scale;
   final String? fileExtension;
   final String id;
@@ -169,14 +168,19 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
       'images',
       '${widget.id}${widget.fileExtension}',
     ));
+    final remoteUrl = ref
+        .watch(remoteStrategySnapshotProvider)
+        .valueOrNull
+        ?.assetsById[widget.id]
+        ?.url;
 
     // Build the small image widget used both here and in the hero
     Widget buildThumb() {
       if (file.existsSync() && widget.fileExtension != null) {
         return Image.file(file, fit: BoxFit.contain);
       }
-      if (widget.link != null && widget.link!.isNotEmpty) {
-        return Image.network(widget.link!, fit: BoxFit.contain);
+      if (remoteUrl != null && remoteUrl.isNotEmpty) {
+        return Image.network(remoteUrl, fit: BoxFit.contain);
       }
       return const Placeholder();
     }
@@ -190,7 +194,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
               (file.existsSync() && widget.fileExtension != null) ? file : null,
           networkLink: (file.existsSync() && widget.fileExtension != null)
               ? null
-              : widget.link,
+              : remoteUrl,
           aspectRatio: widget.aspectRatio,
         );
       },

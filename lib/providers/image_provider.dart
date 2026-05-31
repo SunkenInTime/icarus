@@ -561,9 +561,6 @@ class PlacedImageSerializer {
     // Add the image bytes into the JSON.
     json['imageBytes'] = serializedBytes;
 
-    // Optionally update the object's link.
-    image.updateLink(filePath);
-
     return json;
   }
 
@@ -608,9 +605,6 @@ class PlacedImageSerializer {
 
     // Write the image bytes to disk.
     await file.writeAsBytes(imageBytes);
-
-    // Update the link on the instance.
-    placedImage.updateLink(filePath);
 
     return placedImage;
   }

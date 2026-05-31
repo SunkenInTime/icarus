@@ -17,6 +17,7 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_entities from "../lib/entities.js";
 import type * as lib_errors from "../lib/errors.js";
 import type * as lib_opTypes from "../lib/opTypes.js";
+import type * as lib_r2 from "../lib/r2.js";
 import type * as lineups from "../lineups.js";
 import type * as ops from "../ops.js";
 import type * as pages from "../pages.js";
@@ -40,6 +41,7 @@ declare const fullApi: ApiFromModules<{
   "lib/entities": typeof lib_entities;
   "lib/errors": typeof lib_errors;
   "lib/opTypes": typeof lib_opTypes;
+  "lib/r2": typeof lib_r2;
   lineups: typeof lineups;
   ops: typeof ops;
   pages: typeof pages;

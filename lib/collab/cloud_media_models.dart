@@ -43,7 +43,13 @@ class CloudMediaUploadJob extends HiveObject {
     required this.updatedAt,
     this.width,
     this.height,
+    this.byteSize,
+    this.provider,
+    this.uploadId,
+    this.objectKey,
     this.storageId,
+    this.etag,
+    this.uploadUrlExpiresAt,
     this.lastError,
   });
 
@@ -54,13 +60,26 @@ class CloudMediaUploadJob extends HiveObject {
   final String mimeType;
   final int? width;
   final int? height;
+  final int? byteSize;
+  final String? provider;
+  final String? uploadId;
+  final String? objectKey;
   final String? storageId;
+  final String? etag;
+  final DateTime? uploadUrlExpiresAt;
   final CloudMediaJobState state;
   final int attempts;
   final String? lastError;
   final DateTime updatedAt;
 
   bool get isFailed => state == CloudMediaJobState.failed;
+
+  bool get hasUploadedRemoteObject {
+    if (provider == 'r2') {
+      return uploadId != null && objectKey != null;
+    }
+    return storageId != null;
+  }
 
   CloudMediaUploadJob copyWith({
     String? jobId,
@@ -70,7 +89,13 @@ class CloudMediaUploadJob extends HiveObject {
     String? mimeType,
     int? width,
     int? height,
+    Object? byteSize = _noChange,
+    Object? provider = _noChange,
+    Object? uploadId = _noChange,
+    Object? objectKey = _noChange,
     Object? storageId = _noChange,
+    Object? etag = _noChange,
+    Object? uploadUrlExpiresAt = _noChange,
     CloudMediaJobState? state,
     int? attempts,
     Object? lastError = _noChange,
@@ -84,9 +109,22 @@ class CloudMediaUploadJob extends HiveObject {
       mimeType: mimeType ?? this.mimeType,
       width: width ?? this.width,
       height: height ?? this.height,
+      byteSize:
+          identical(byteSize, _noChange) ? this.byteSize : byteSize as int?,
+      provider:
+          identical(provider, _noChange) ? this.provider : provider as String?,
+      uploadId:
+          identical(uploadId, _noChange) ? this.uploadId : uploadId as String?,
+      objectKey: identical(objectKey, _noChange)
+          ? this.objectKey
+          : objectKey as String?,
       storageId: identical(storageId, _noChange)
           ? this.storageId
           : storageId as String?,
+      etag: identical(etag, _noChange) ? this.etag : etag as String?,
+      uploadUrlExpiresAt: identical(uploadUrlExpiresAt, _noChange)
+          ? this.uploadUrlExpiresAt
+          : uploadUrlExpiresAt as DateTime?,
       state: state ?? this.state,
       attempts: attempts ?? this.attempts,
       lastError: identical(lastError, _noChange)
@@ -97,10 +135,45 @@ class CloudMediaUploadJob extends HiveObject {
   }
 }
 
+class CloudImageUploadIntent {
+  const CloudImageUploadIntent({
+    required this.provider,
+    required this.uploadId,
+    required this.objectKey,
+    required this.uploadUrl,
+    required this.requiredHeaders,
+    required this.expiresAt,
+    required this.maxBytes,
+  });
+
+  final String provider;
+  final String uploadId;
+  final String objectKey;
+  final String uploadUrl;
+  final Map<String, String> requiredHeaders;
+  final DateTime expiresAt;
+  final int maxBytes;
+
+  factory CloudImageUploadIntent.fromJson(Map<String, dynamic> json) {
+    final headers = json['requiredHeaders'];
+    return CloudImageUploadIntent(
+      provider: json['provider'] as String? ?? 'r2',
+      uploadId: json['uploadId'] as String,
+      objectKey: json['objectKey'] as String,
+      uploadUrl: json['uploadUrl'] as String,
+      requiredHeaders: headers is Map
+          ? headers.map((key, value) => MapEntry('$key', '$value'))
+          : const <String, String>{},
+      expiresAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['expiresAt'] as num).toInt(),
+      ),
+      maxBytes: (json['maxBytes'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
 Map<String, dynamic> cloudImagePayloadFromPlacedImage(PlacedImage image) {
-  final payload = Map<String, dynamic>.from(image.toJson());
-  payload['link'] = '';
-  return payload;
+  return Map<String, dynamic>.from(image.toJson());
 }
 
 Map<String, dynamic> cloudLineupPayload(LineUp lineup) {

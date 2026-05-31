@@ -214,8 +214,7 @@ PlacedText clonePlacedText(PlacedText value) => value.copyWith(
     )..isDeleted = value.isDeleted;
 
 PlacedImage clonePlacedImage(PlacedImage value) =>
-    value.copyWith(isDeleted: value.isDeleted, link: value.link)
-      ..isDeleted = value.isDeleted;
+    value.copyWith(isDeleted: value.isDeleted)..isDeleted = value.isDeleted;
 
 PlacedUtility clonePlacedUtility(PlacedUtility value) =>
     value.copyWith()..isDeleted = value.isDeleted;

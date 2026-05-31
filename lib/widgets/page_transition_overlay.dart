@@ -548,7 +548,6 @@ class PlacedWidgetPreview {
       return ImageWidget(
         fileExtension: w.fileExtension,
         aspectRatio: w.aspectRatio,
-        link: w.link,
         scale: scale ?? w.scale,
         id: w.id,
         tagColorValue: w.tagColorValue,

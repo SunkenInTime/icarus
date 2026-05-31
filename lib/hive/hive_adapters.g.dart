@@ -330,21 +330,17 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       fileExtension: fields[8] as String?,
       sizeVersion: (fields[10] as num?)?.toInt(),
       tagColorValue: (fields[9] as num?)?.toInt(),
-    )
-      ..link = fields[3] as String
-      ..isDeleted = fields[5] as bool;
+    )..isDeleted = fields[5] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedImage obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(8)
       ..writeByte(1)
       ..write(obj.aspectRatio)
       ..writeByte(2)
       ..write(obj.scale)
-      ..writeByte(3)
-      ..write(obj.link)
       ..writeByte(4)
       ..write(obj.id)
       ..writeByte(5)
@@ -1771,7 +1767,13 @@ class CloudMediaUploadJobAdapter extends TypeAdapter<CloudMediaUploadJob> {
       updatedAt: fields[14] as DateTime,
       width: (fields[8] as num?)?.toInt(),
       height: (fields[9] as num?)?.toInt(),
+      byteSize: (fields[15] as num?)?.toInt(),
+      provider: fields[16] as String?,
+      uploadId: fields[17] as String?,
+      objectKey: fields[18] as String?,
       storageId: fields[10] as String?,
+      etag: fields[19] as String?,
+      uploadUrlExpiresAt: fields[20] as DateTime?,
       lastError: fields[13] as String?,
     );
   }
@@ -1779,7 +1781,7 @@ class CloudMediaUploadJobAdapter extends TypeAdapter<CloudMediaUploadJob> {
   @override
   void write(BinaryWriter writer, CloudMediaUploadJob obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(18)
       ..writeByte(0)
       ..write(obj.jobId)
       ..writeByte(1)
@@ -1803,7 +1805,19 @@ class CloudMediaUploadJobAdapter extends TypeAdapter<CloudMediaUploadJob> {
       ..writeByte(13)
       ..write(obj.lastError)
       ..writeByte(14)
-      ..write(obj.updatedAt);
+      ..write(obj.updatedAt)
+      ..writeByte(15)
+      ..write(obj.byteSize)
+      ..writeByte(16)
+      ..write(obj.provider)
+      ..writeByte(17)
+      ..write(obj.uploadId)
+      ..writeByte(18)
+      ..write(obj.objectKey)
+      ..writeByte(19)
+      ..write(obj.etag)
+      ..writeByte(20)
+      ..write(obj.uploadUrlExpiresAt);
   }
 
   @override

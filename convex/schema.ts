@@ -134,17 +134,42 @@ export default defineSchema({
     .index("by_strategyId", ["strategyId"]),
   imageAssets: defineTable({
     publicId: v.string(),
+    provider: v.optional(v.union(v.literal("convex"), v.literal("r2"))),
+    strategyId: v.optional(v.id("strategies")),
+    createdByUserId: v.optional(v.id("users")),
     storageId: v.optional(v.id("_storage")),
+    objectKey: v.optional(v.string()),
+    uploadStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("active"),
+        v.literal("failed"),
+        v.literal("deleted"),
+      ),
+    ),
     fileExtension: v.optional(v.string()),
     mimeType: v.optional(v.string()),
     width: v.optional(v.number()),
     height: v.optional(v.number()),
+    byteSize: v.optional(v.number()),
+    etag: v.optional(v.string()),
+    uploadedAt: v.optional(v.number()),
+    deletedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
     // Legacy rows may still have a storagePath that can help infer the extension.
     storagePath: v.optional(v.string()),
   })
-    .index("by_publicId", ["publicId"]),
+    .index("by_publicId", ["publicId"])
+    .index("by_strategyId", ["strategyId"])
+    .index("by_strategyId_and_publicId", ["strategyId", "publicId"])
+    .index("by_strategyId_and_publicId_and_uploadStatus", [
+      "strategyId",
+      "publicId",
+      "uploadStatus",
+    ])
+    .index("by_uploadStatus_and_updatedAt", ["uploadStatus", "updatedAt"])
+    .index("by_objectKey", ["objectKey"]),
   operationEvents: defineTable({
     strategyId: v.id("strategies"),
     pageId: v.optional(v.id("pages")),
@@ -162,4 +187,3 @@ export default defineSchema({
     .index("by_strategyId", ["strategyId"])
     .index("by_strategyId_clientId_opId", ["strategyId", "clientId", "opId"]),
 });
-

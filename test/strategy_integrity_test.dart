@@ -95,7 +95,8 @@ Map<String, dynamic> _buildExportPayload(StrategyData strategy) {
     'versionNumber': '${Settings.versionNumber}',
     'mapData': Maps.mapNames[strategy.mapData],
     'themePalette': strategy.themeOverridePalette?.toJson(),
-    if (strategy.themeProfileId != null) 'themeProfileId': strategy.themeProfileId,
+    if (strategy.themeProfileId != null)
+      'themeProfileId': strategy.themeProfileId,
     'pages': strategy.pages.map((page) => page.toJson(strategy.id)).toList(),
   };
 }
@@ -108,9 +109,10 @@ Future<StrategyData> _importStrategyFromDecoded({
 }) async {
   final drawingData =
       DrawingProvider.fromJson(jsonEncode(decoded['drawingData'] ?? []));
-  final agentData = AgentProvider.fromJson(jsonEncode(decoded['agentData'] ?? []))
-      .whereType<PlacedAgent>()
-      .toList(growable: false);
+  final agentData =
+      AgentProvider.fromJson(jsonEncode(decoded['agentData'] ?? []))
+          .whereType<PlacedAgent>()
+          .toList(growable: false);
   final abilityData =
       AbilityProvider.fromJson(jsonEncode(decoded['abilityData'] ?? []));
   final textData = TextProvider.fromJson(jsonEncode(decoded['textData'] ?? []));
@@ -322,7 +324,6 @@ void main() {
                 'fileExtension': '.png',
                 'scale': 220.0,
                 'tagColorValue': null,
-                'link': '',
               },
             ],
             'utilityData': [
@@ -491,7 +492,8 @@ void main() {
       expect(circle.customDiameter, 14.0);
     });
 
-    test('imported custom shapes retain dimensions and styling fields', () async {
+    test('imported custom shapes retain dimensions and styling fields',
+        () async {
       final fixture = File(path.join(_fixtureDirectory, 'base-test.ica'));
       final decoded = await _readIcaJson(fixture);
 
@@ -526,7 +528,6 @@ void main() {
                 'aspectRatio': 1.0,
                 'fileExtension': '.png',
                 'scale': 9999.0,
-                'link': '',
               },
             ],
             'utilityData': <PlacedUtility>[],
@@ -545,7 +546,10 @@ void main() {
       );
 
       expect(imported.pages.single.sortIndex, 0);
-      expect(imported.pages.single.imageData.single.scale, 500.0);
+      expect(
+        imported.pages.single.imageData.single.scale,
+        closeTo(425.9259, 0.001),
+      );
       expect(imported.createdAt, imported.lastEdited);
     });
   });

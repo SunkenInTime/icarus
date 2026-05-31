@@ -277,16 +277,10 @@ class PlacedImage extends PlacedWidget {
   @JsonKey(defaultValue: null)
   int? tagColorValue;
 
-  String link = "";
-
   bool get usesWorldSize => (sizeVersion ?? 0) >= currentSizeVersion;
 
   void markSizeAsWorld() {
     sizeVersion = currentSizeVersion;
-  }
-
-  void updateLink(String link) {
-    this.link = link;
   }
 
   void updateTagColor(int? colorValue) {
@@ -327,7 +321,6 @@ class PlacedImage extends PlacedWidget {
     int? sizeVersion,
     int? tagColorValue,
     bool? isDeleted,
-    String? link,
   }) {
     final cloned = PlacedImage(
       position: position ?? this.position,
@@ -340,8 +333,6 @@ class PlacedImage extends PlacedWidget {
     );
     // Base class field
     // cloned.isDeleted = isDeleted ?? this.isDeleted;
-    // Mutable field specific to PlacedImage
-    cloned.link = link ?? this.link;
     return cloned;
   }
 

@@ -298,24 +298,40 @@ class RemoteImageAsset {
     required this.height,
     required this.url,
     required this.legacyStoragePath,
+    this.provider = 'convex',
+    this.uploadStatus = 'active',
     this.mimeType,
+    this.byteSize,
+    this.uploadedAt,
   });
 
   final String publicId;
+  final String provider;
+  final String uploadStatus;
   final String fileExtension;
   final String? mimeType;
   final int? width;
   final int? height;
+  final int? byteSize;
+  final DateTime? uploadedAt;
   final String? url;
   final String? legacyStoragePath;
 
   factory RemoteImageAsset.fromJson(Map<String, dynamic> json) {
     return RemoteImageAsset(
       publicId: json['publicId'] as String,
+      provider: json['provider'] as String? ?? 'convex',
+      uploadStatus: json['uploadStatus'] as String? ?? 'active',
       fileExtension: json['fileExtension'] as String? ?? '',
       mimeType: json['mimeType'] as String?,
       width: (json['width'] as num?)?.toInt(),
       height: (json['height'] as num?)?.toInt(),
+      byteSize: (json['byteSize'] as num?)?.toInt(),
+      uploadedAt: json['uploadedAt'] == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(
+              (json['uploadedAt'] as num).toInt(),
+            ),
       url: json['url'] as String?,
       legacyStoragePath: json['legacyStoragePath'] as String?,
     );
