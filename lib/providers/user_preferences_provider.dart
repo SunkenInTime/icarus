@@ -665,13 +665,18 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
   }
 
   AppPreferences _readFromHive() {
-    return Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).get(
-          MapThemeProfilesProvider.appPreferencesSingletonKey,
-        ) ??
-        AppPreferences(
-          defaultThemeProfileIdForNewStrategies:
-              MapThemeProfilesProvider.immutableDefaultProfileId,
-        );
+    final fallback = AppPreferences(
+      defaultThemeProfileIdForNewStrategies:
+          MapThemeProfilesProvider.immutableDefaultProfileId,
+    );
+    try {
+      return Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).get(
+            MapThemeProfilesProvider.appPreferencesSingletonKey,
+          ) ??
+          fallback;
+    } on HiveError {
+      return fallback;
+    }
   }
 }
 
