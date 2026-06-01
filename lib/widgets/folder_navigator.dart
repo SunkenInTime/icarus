@@ -26,6 +26,7 @@ import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
+import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
@@ -239,6 +240,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final workspace = ref.watch(libraryWorkspaceProvider);
     final isCloudWorkspace = workspace == LibraryWorkspace.cloud;
     final isCommunityWorkspace = workspace == LibraryWorkspace.community;
+    final cloudSection = ref.watch(cloudLibrarySectionProvider);
+    final isSharedWithMe =
+        isCloudWorkspace && cloudSection == CloudLibrarySection.sharedWithMe;
     final currentFolderId = ref.watch(folderProvider);
     final currentFolder = currentFolderId != null
         ? isCloudWorkspace
@@ -348,87 +352,95 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
               Row(
                 spacing: 15,
                 children: [
-                  ShadPopover(
-                    controller: _importExportPopoverController,
-                    padding: const EdgeInsets.all(8),
-                    anchor: const ShadAnchor(
-                      offset: Offset(0, 8),
-                      childAlignment: Alignment.topLeft,
-                      overlayAlignment: Alignment.bottomLeft,
+                  if (isSharedWithMe)
+                    ShadButton(
+                      onPressed: () => showAddSharedItemDialog(context),
+                      leading: const Icon(LucideIcons.link),
+                      child: const Text('Add by Link or Code'),
+                    )
+                  else ...[
+                    ShadPopover(
+                      controller: _importExportPopoverController,
+                      padding: const EdgeInsets.all(8),
+                      anchor: const ShadAnchor(
+                        offset: Offset(0, 8),
+                        childAlignment: Alignment.topLeft,
+                        overlayAlignment: Alignment.bottomLeft,
+                      ),
+                      popover: (context) {
+                        return SizedBox(
+                          width: 178,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ShadButton.ghost(
+                                onPressed: handleImportIca,
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                leading: const Icon(
+                                  Icons.file_download,
+                                ),
+                                child: const Text(
+                                  'Import .ica',
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                              ),
+                              ShadButton.ghost(
+                                onPressed: handleImportBackup,
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                leading: const Icon(
+                                  Icons.archive_outlined,
+                                ),
+                                child: const Text('Import Backup',
+                                    style: TextStyle(color: Colors.white)),
+                              ),
+                              ShadButton.ghost(
+                                onPressed: handleExportLibrary,
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                leading: const Icon(
+                                  Icons.backup_outlined,
+                                ),
+                                child: const Text('Export Library',
+                                    style: TextStyle(color: Colors.white)),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                      child: ShadButton.secondary(
+                        key: _importExportButtonKey,
+                        onPressed: isCloudWorkspace || isCommunityWorkspace
+                            ? null
+                            : _toggleImportExportPopover,
+                        leading: const Icon(Icons.import_export),
+                        trailing: const Icon(Icons.keyboard_arrow_down),
+                        child: const Text('Import / Export'),
+                      ),
                     ),
-                    popover: (context) {
-                      return SizedBox(
-                        width: 178,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            ShadButton.ghost(
-                              onPressed: handleImportIca,
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              leading: const Icon(
-                                Icons.file_download,
-                              ),
-                              child: const Text(
-                                'Import .ica',
-                                style: TextStyle(color: Colors.white),
-                              ),
-                            ),
-                            ShadButton.ghost(
-                              onPressed: handleImportBackup,
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              leading: const Icon(
-                                Icons.archive_outlined,
-                              ),
-                              child: const Text('Import Backup',
-                                  style: TextStyle(color: Colors.white)),
-                            ),
-                            ShadButton.ghost(
-                              onPressed: handleExportLibrary,
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              leading: const Icon(
-                                Icons.backup_outlined,
-                              ),
-                              child: const Text('Export Library',
-                                  style: TextStyle(color: Colors.white)),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                    child: ShadButton.secondary(
-                      key: _importExportButtonKey,
-                      onPressed: isCloudWorkspace || isCommunityWorkspace
+                    ShadButton.secondary(
+                      leading: const Icon(LucideIcons.folderPlus),
+                      onPressed: isCommunityWorkspace
                           ? null
-                          : _toggleImportExportPopover,
-                      leading: const Icon(Icons.import_export),
-                      trailing: const Icon(Icons.keyboard_arrow_down),
-                      child: const Text('Import / Export'),
+                          : () async {
+                              await showDialog<String>(
+                                context: context,
+                                builder: (context) {
+                                  return const FolderEditDialog();
+                                },
+                              );
+                            },
+                      child: const Text('Add Folder'),
                     ),
-                  ),
-                  ShadButton.secondary(
-                    leading: const Icon(LucideIcons.folderPlus),
-                    onPressed: isCommunityWorkspace
-                        ? null
-                        : () async {
-                            await showDialog<String>(
-                              context: context,
-                              builder: (context) {
-                                return const FolderEditDialog();
-                              },
-                            );
-                          },
-                    child: const Text('Add Folder'),
-                  ),
-                  ShadButton(
-                    onPressed: isCommunityWorkspace ? null : showCreateDialog,
-                    leading: const Icon(Icons.add),
-                    child: Text(
-                      isCloudWorkspace
-                          ? 'Create Cloud Strategy'
-                          : 'Create Strategy',
+                    ShadButton(
+                      onPressed: isCommunityWorkspace ? null : showCreateDialog,
+                      leading: const Icon(Icons.add),
+                      child: Text(
+                        isCloudWorkspace
+                            ? 'Create Cloud Strategy'
+                            : 'Create Strategy',
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               )
             ],

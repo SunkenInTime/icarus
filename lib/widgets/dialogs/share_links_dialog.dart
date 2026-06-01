@@ -30,6 +30,13 @@ class ShareLinksDialog extends ConsumerStatefulWidget {
   ConsumerState<ShareLinksDialog> createState() => _ShareLinksDialogState();
 }
 
+Future<void> showAddSharedItemDialog(BuildContext context) {
+  return showShadDialog<void>(
+    context: context,
+    builder: (_) => const AddSharedItemDialog(),
+  );
+}
+
 class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   List<ShareLinkSummary> _links = const [];
   bool _isLoading = true;
@@ -352,15 +359,15 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   }
 }
 
-class JoinShareLinkDialog extends ConsumerStatefulWidget {
-  const JoinShareLinkDialog({super.key});
+class AddSharedItemDialog extends ConsumerStatefulWidget {
+  const AddSharedItemDialog({super.key});
 
   @override
-  ConsumerState<JoinShareLinkDialog> createState() =>
-      _JoinShareLinkDialogState();
+  ConsumerState<AddSharedItemDialog> createState() =>
+      _AddSharedItemDialogState();
 }
 
-class _JoinShareLinkDialogState extends ConsumerState<JoinShareLinkDialog> {
+class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
   final TextEditingController _controller = TextEditingController();
   bool _isSubmitting = false;
 
@@ -385,9 +392,9 @@ class _JoinShareLinkDialogState extends ConsumerState<JoinShareLinkDialog> {
   @override
   Widget build(BuildContext context) {
     return ShadDialog(
-      title: const Text('Join Shared Item'),
+      title: const Text('Add Shared Item'),
       description: const Text(
-          'Paste an Icarus share link or enter a share code to add it to your cloud library.'),
+          'Paste an Icarus share link or enter a share code to add it to Shared with Me.'),
       actions: [
         ShadButton.secondary(
           onPressed: () => Navigator.of(context).pop(),
@@ -395,12 +402,12 @@ class _JoinShareLinkDialogState extends ConsumerState<JoinShareLinkDialog> {
         ),
         ShadButton(
           onPressed: _isSubmitting ? null : _submit,
-          child: Text(_isSubmitting ? 'Joining...' : 'Join'),
+          child: Text(_isSubmitting ? 'Adding...' : 'Add'),
         ),
       ],
       child: ShadInput(
         controller: _controller,
-        placeholder: const Text('https://icarusstrats.com/share/ICR-...'),
+        placeholder: const Text('Paste share link or code'),
       ),
     );
   }

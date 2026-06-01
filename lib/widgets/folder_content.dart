@@ -12,6 +12,7 @@ import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
+import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_pill.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
@@ -53,6 +54,7 @@ class FolderContent extends ConsumerWidget {
           .toList(growable: false);
       final strategies =
           ref.watch(cloudStrategiesProvider).valueOrNull ?? const [];
+      final isSharedWithMe = cloudSection == CloudLibrarySection.sharedWithMe;
       return _buildScaffold(
         context,
         ref,
@@ -60,10 +62,10 @@ class FolderContent extends ConsumerWidget {
         localStrategies: const [],
         cloudStrategies: _filterCloudStrategies(ref, strategies),
         isCloud: true,
-        emptyStateTitle: cloudSection == CloudLibrarySection.sharedWithMe
-            ? 'No shared items yet'
-            : 'No cloud strategies yet',
-        emptyStateSubtitle: cloudSection == CloudLibrarySection.sharedWithMe
+        showAddSharedItemAction: isSharedWithMe,
+        emptyStateTitle:
+            isSharedWithMe ? 'No shared items yet' : 'No cloud strategies yet',
+        emptyStateSubtitle: isSharedWithMe
             ? 'Shared folders and strategies will appear here'
             : 'Create a cloud strategy to start your online workspace',
       );
@@ -169,18 +171,41 @@ class FolderContent extends ConsumerWidget {
     required List<StrategyData> localStrategies,
     required List<CloudStrategySummary> cloudStrategies,
     required bool isCloud,
+    bool showAddSharedItemAction = false,
     required String emptyStateTitle,
     required String emptyStateSubtitle,
   }) {
     final hasStrategies =
         localStrategies.isNotEmpty || cloudStrategies.isNotEmpty;
     final Widget emptyState = Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(emptyStateTitle),
-          Text(emptyStateSubtitle),
-        ],
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              emptyStateTitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              emptyStateSubtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Settings.tacticalVioletTheme.mutedForeground,
+              ),
+            ),
+            if (showAddSharedItemAction) ...[
+              const SizedBox(height: 18),
+              ShadButton(
+                onPressed: () => showAddSharedItemDialog(context),
+                leading: const Icon(LucideIcons.link),
+                child: const Text('Add by Link or Code'),
+              ),
+            ],
+          ],
+        ),
       ),
     );
     final Widget content = LayoutBuilder(

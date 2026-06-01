@@ -105,8 +105,8 @@ class _SidebarShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final currentFolderId = ref.watch(folderProvider);
     final cloudSection = ref.watch(cloudLibrarySectionProvider);
-    final canMutateCloudLibrary =
-        !isCloud || cloudSection == CloudLibrarySection.home;
+    final isSharedWithMe =
+        isCloud && cloudSection == CloudLibrarySection.sharedWithMe;
     final filterState = ref.watch(strategyFilterProvider);
     final searchQuery =
         ref.watch(strategySearchQueryProvider).trim().toLowerCase();
@@ -129,30 +129,25 @@ class _SidebarShell extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                ShadButton(
-                  onPressed: canMutateCloudLibrary ? onCreateStrategy : null,
-                  leading: const Icon(Icons.add),
-                  child: Text(
-                    isCloud ? 'Create Cloud Strategy' : 'Create Strategy',
+                if (isSharedWithMe) ...[
+                  ShadButton(
+                    onPressed: () => showAddSharedItemDialog(context),
+                    leading: const Icon(LucideIcons.link),
+                    child: const Text('Add by Link or Code'),
                   ),
-                ),
-                const SizedBox(height: 8),
-                ShadButton.secondary(
-                  onPressed: canMutateCloudLibrary ? onAddFolder : null,
-                  leading: const Icon(LucideIcons.folderPlus),
-                  child: const Text('Add Folder'),
-                ),
-                if (isCloud) ...[
+                ] else ...[
+                  ShadButton(
+                    onPressed: onCreateStrategy,
+                    leading: const Icon(Icons.add),
+                    child: Text(
+                      isCloud ? 'Create Cloud Strategy' : 'Create Strategy',
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   ShadButton.secondary(
-                    onPressed: () async {
-                      await showShadDialog<void>(
-                        context: context,
-                        builder: (_) => const JoinShareLinkDialog(),
-                      );
-                    },
-                    leading: const Icon(LucideIcons.link),
-                    child: const Text('Join Share Link'),
+                    onPressed: onAddFolder,
+                    leading: const Icon(LucideIcons.folderPlus),
+                    child: const Text('Add Folder'),
                   ),
                 ],
                 const SizedBox(height: 12),
