@@ -12,7 +12,7 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -151,10 +151,10 @@ class _NoopScreenshotProvider extends ScreenshotProvider {
 
 class _NoopLineUpProvider extends LineUpProvider {
   @override
-  LineUpState build() => LineUpState(lineUps: const []);
+  LineUpState build() => LineUpState(groups: const []);
 
   @override
-  void fromHive(List<LineUp> lineUps) {}
+  void fromHive(covariant List groups) {}
 }
 
 void main() {
@@ -165,7 +165,13 @@ void main() {
     CoordinateSystem.instance.setIsScreenshot(false);
   });
 
-  Widget buildHarness({required bool isAttack}) {
+  Widget buildHarness({
+    required bool isAttack,
+    bool showSpawnBarrier = false,
+    bool showRegionNames = false,
+    bool showUltOrbs = false,
+    String? pageName,
+  }) {
     const strategyState = StrategyState(
       strategyId: 'strategy-id',
       strategyName: 'test strategy',
@@ -202,6 +208,9 @@ void main() {
           data: const MediaQueryData(size: CoordinateSystem.screenShotSize),
           child: ScreenshotView(
             mapValue: MapValue.bind,
+            showSpawnBarrier: showSpawnBarrier,
+            showRegionNames: showRegionNames,
+            showUltOrbs: showUltOrbs,
             agents: const [],
             abilities: const [],
             text: const [],
@@ -211,6 +220,7 @@ void main() {
             strategySettings: StrategySettings(),
             isAttack: isAttack,
             strategyState: strategyState,
+            pageName: pageName,
             lineUps: const <LineUp>[],
             themeProfileId: null,
             themeOverridePalette: null,
@@ -223,6 +233,22 @@ void main() {
   Transform findPainterTransform(WidgetTester tester) {
     final transformFinder = find.ancestor(
       of: find.byType(InteractivePainter),
+      matching: find.byType(Transform),
+    );
+
+    expect(transformFinder, findsOneWidget);
+    return tester.widget<Transform>(transformFinder);
+  }
+
+  Finder findSemanticsLabel(String label) {
+    return find.byWidgetPredicate(
+      (widget) => widget is Semantics && widget.properties.label == label,
+    );
+  }
+
+  Transform findTransformForLabel(WidgetTester tester, String label) {
+    final transformFinder = find.ancestor(
+      of: findSemanticsLabel(label),
       matching: find.byType(Transform),
     );
 
@@ -249,5 +275,99 @@ void main() {
 
     expect(transform.transform.storage[0], 1);
     expect(transform.transform.storage[5], 1);
+  });
+
+  testWidgets('spawn barrier visibility follows screenshot flags',
+      (tester) async {
+    await tester.pumpWidget(
+      buildHarness(
+        isAttack: true,
+        showSpawnBarrier: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(findSemanticsLabel('Barrier'), findsOneWidget);
+
+    await tester.pumpWidget(buildHarness(isAttack: true));
+    await tester.pumpAndSettle();
+
+    expect(findSemanticsLabel('Barrier'), findsNothing);
+  });
+
+  testWidgets('region names visibility follows screenshot flags',
+      (tester) async {
+    await tester.pumpWidget(
+      buildHarness(
+        isAttack: true,
+        showRegionNames: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(findSemanticsLabel('Callouts'), findsOneWidget);
+
+    await tester.pumpWidget(buildHarness(isAttack: true));
+    await tester.pumpAndSettle();
+
+    expect(findSemanticsLabel('Callouts'), findsNothing);
+  });
+
+  testWidgets('ultimate orb visibility follows screenshot flags',
+      (tester) async {
+    await tester.pumpWidget(
+      buildHarness(
+        isAttack: true,
+        showUltOrbs: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(findSemanticsLabel('Ult Orbs'), findsOneWidget);
+
+    await tester.pumpWidget(buildHarness(isAttack: true));
+    await tester.pumpAndSettle();
+
+    expect(findSemanticsLabel('Ult Orbs'), findsNothing);
+  });
+
+  testWidgets('defense helper overlays flip for barriers and ult orbs',
+      (tester) async {
+    await tester.pumpWidget(
+      buildHarness(
+        isAttack: false,
+        showSpawnBarrier: true,
+        showUltOrbs: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final barrierTransform = findTransformForLabel(tester, 'Barrier');
+    final ultOrbTransform = findTransformForLabel(tester, 'Ult Orbs');
+
+    expect(barrierTransform.transform.storage[0], -1);
+    expect(barrierTransform.transform.storage[5], -1);
+    expect(ultOrbTransform.transform.storage[0], -1);
+    expect(ultOrbTransform.transform.storage[5], -1);
+  });
+
+  testWidgets('page name is shown in the lower-left screenshot corner',
+      (tester) async {
+    await tester.pumpWidget(
+      buildHarness(
+        isAttack: true,
+        pageName: 'A Execute',
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final labelFinder = find.text('A Execute');
+
+    expect(labelFinder, findsOneWidget);
+    expect(tester.getBottomLeft(labelFinder).dx, 28);
+    expect(
+      tester.getBottomLeft(labelFinder).dy,
+      lessThan(CoordinateSystem.screenShotSize.height),
+    );
   });
 }

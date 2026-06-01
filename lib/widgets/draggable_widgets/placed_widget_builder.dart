@@ -13,6 +13,7 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
+import 'package:icarus/providers/canvas_resize_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -151,16 +152,7 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                       abilitySize: abilitySize,
                       mapScale: mapScale,
                     ),
-                    const Positioned.fill(
-                      child: LineUpLinePainter(),
-                    ),
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        _LineUpAgents(),
-                        _LineUpAbilities(),
-                      ],
-                    ),
+                    const LineUpOverlay(),
                   ],
                 ),
               ),
@@ -183,13 +175,31 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref.read(lineUpProvider.notifier).setAgent(placedAgent);
+                ref.read(lineUpProvider.notifier).startNewGroup(placedAgent);
                 return;
               }
               ref.read(agentProvider.notifier).addAgent(placedAgent);
               ref
                   .read(abilityBarProvider.notifier)
                   .updateData(AgentData.agents[placedAgent.type]!);
+            } else if (details.data is DraggedAbilityData) {
+              final abilityData = details.data as DraggedAbilityData;
+              PlacedAbility placedAbility = PlacedAbility(
+                id: uuid.v4(),
+                data: abilityData.ability,
+                position: normalizedPosition,
+                isAlly: abilityData.isAlly,
+              );
+
+              if (ref.read(interactionStateProvider) ==
+                  InteractionState.lineUpPlacing) {
+                ref
+                    .read(lineUpProvider.notifier)
+                    .setCurrentAbility(placedAbility);
+                return;
+              }
+
+              ref.read(abilityProvider.notifier).addAbility(placedAbility);
             } else if (details.data is AbilityInfo) {
               PlacedAbility placedAbility = PlacedAbility(
                 id: uuid.v4(),
@@ -200,7 +210,9 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               if (ref.read(interactionStateProvider) ==
                   InteractionState.lineUpPlacing) {
-                ref.read(lineUpProvider.notifier).setAbility(placedAbility);
+                ref
+                    .read(lineUpProvider.notifier)
+                    .setCurrentAbility(placedAbility);
                 return;
               }
 
@@ -375,7 +387,7 @@ class _AbilityList extends ConsumerWidget {
             ability: ability,
             id: ability.id,
             length: ability.length,
-            onDragEnd: (details) {
+            onDragEnd: (details, draggedId) {
               final renderBox = context.findRenderObject() as RenderBox;
               final localOffset = renderBox.globalToLocal(details.offset);
               final virtualOffset =
@@ -387,13 +399,13 @@ class _AbilityList extends ConsumerWidget {
                   virtualOffset.translate(safeArea.dx, safeArea.dy))) {
                 ref
                     .read(abilityProvider.notifier)
-                    .removeAbilityAsAction(ability.id);
+                    .removeAbilityAsAction(draggedId);
                 return;
               }
 
               ref
                   .read(abilityProvider.notifier)
-                  .updatePosition(virtualOffset, ability.id);
+                  .updatePosition(virtualOffset, draggedId);
             },
           ),
       ],
@@ -885,17 +897,36 @@ class _CustomShapeUtilityList extends ConsumerWidget {
   }
 }
 
+class LineUpOverlay extends StatelessWidget {
+  const LineUpOverlay({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: const [
+        Positioned.fill(
+          child: LineUpLinePainter(),
+        ),
+        _LineUpAgents(),
+        _LineUpAbilities(),
+      ],
+    );
+  }
+}
+
 class _LineUpAgents extends ConsumerWidget {
   const _LineUpAgents();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lineUps = ref.watch(lineUpProvider).lineUps;
+    ref.watch(canvasResizeProvider);
+    final groups = ref.watch(lineUpProvider).groups;
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        for (final lineUp in lineUps) LineUpAgentWidget(lineUp: lineUp),
+        for (final group in groups) LineUpGroupAgentWidget(group: group),
       ],
     );
   }
@@ -906,12 +937,15 @@ class _LineUpAbilities extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final lineUps = ref.watch(lineUpProvider).lineUps;
+    ref.watch(canvasResizeProvider);
+    final groups = ref.watch(lineUpProvider).groups;
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        for (final lineUp in lineUps) LineUpAbilityWidget(lineUp: lineUp),
+        for (final group in groups)
+          for (final item in group.items)
+            LineUpItemAbilityWidget(groupId: group.id, item: item),
       ],
     );
   }

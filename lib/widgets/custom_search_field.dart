@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 
 /// A themed search text field that smoothly expands (slides out) when:
 /// - Hovered by the pointer
@@ -123,8 +123,7 @@ class _SearchTextFieldState extends ConsumerState<SearchTextField> {
         curve: widget.curve,
         // Let the height be intrinsic.
         alignment: Alignment.centerLeft,
-        child: Shortcuts(
-          shortcuts: ShortcutInfo.textEditingOverrides,
+        child: TextEditingShortcutScope(
           child: _buildField(textStyle, contentPadding, compact),
         ),
       ),

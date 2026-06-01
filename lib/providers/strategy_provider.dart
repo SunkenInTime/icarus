@@ -20,7 +20,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -45,30 +45,6 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 
 final strategyProvider =
     NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
-
-void _logStrategyProviderDebug({
-  required String runId,
-  required String hypothesisId,
-  required String location,
-  required String message,
-  Map<String, Object?> data = const {},
-}) {
-  unawaited(
-    File(r'E:\Projects\icarus-cloud\debug-16ee23.log').writeAsString(
-      '${jsonEncode({
-            'sessionId': '16ee23',
-            'runId': runId,
-            'hypothesisId': hypothesisId,
-            'location': location,
-            'message': message,
-            'data': data,
-            'timestamp': DateTime.now().millisecondsSinceEpoch,
-          })}\n',
-      mode: FileMode.append,
-      flush: true,
-    ),
-  );
-}
 
 class StrategyProvider extends Notifier<StrategyState> {
   @override
@@ -120,7 +96,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
     _listenForPageBackedState(utilityProvider);
     _listenForPageBackedState(
-      lineUpProvider.select((lineups) => lineups.lineUps),
+      lineUpProvider.select((lineups) => lineups.groups),
     );
     _listenForPageBackedState(strategySettingsProvider);
     _listenForPageBackedState(mapProvider.select((map) => map.isAttack));
@@ -200,6 +176,26 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
       await _performSave(strategyId);
     });
+  }
+
+  Future<bool> flushPendingAutosaveBeforeExit() async {
+    final strategyId = state.strategyId;
+    if (strategyId == null || state.strategyName == null) {
+      return true;
+    }
+
+    final saveState = ref.read(strategySaveStateProvider);
+    if (!saveState.isDirty) {
+      return true;
+    }
+
+    if (!_currentStrategyIsCloud() &&
+        !ref.read(appPreferencesProvider).autosaveEnabled) {
+      return false;
+    }
+
+    await forceSaveNow(strategyId);
+    return !ref.read(strategySaveStateProvider).isDirty;
   }
 
   bool _currentStrategyIsCloud() {
@@ -363,6 +359,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     });
   }
 
+  void consumeScheduledCloudPageSync() {
+    _cloudMutationSyncScheduled = false;
+  }
+
   void _scheduleCloudStrategySync() {
     if (_cloudStrategyMutationSyncScheduled) {
       return;
@@ -519,19 +519,6 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> clearCurrentStrategy() async {
-    // #region agent log
-    _logStrategyProviderDebug(
-      runId: 'pre-fix',
-      hypothesisId: 'H2',
-      location: 'strategy_provider.dart:311',
-      message: 'clearCurrentStrategy start',
-      data: {
-        'previousStrategyId': state.strategyId,
-        'previousSource': state.source?.name,
-        'previousIsOpen': state.isOpen,
-      },
-    );
-    // #endregion
     cancelPendingSave();
     ref.read(strategyThemeProvider.notifier).fromStrategy();
     ref.read(strategySaveStateProvider.notifier).reset();
@@ -543,19 +530,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       storageDirectory: state.storageDirectory,
       isOpen: false,
     );
-    // #region agent log
-    _logStrategyProviderDebug(
-      runId: 'pre-fix',
-      hypothesisId: 'H2',
-      location: 'strategy_provider.dart:323',
-      message: 'clearCurrentStrategy state cleared',
-      data: {
-        'strategyId': state.strategyId,
-        'source': state.source?.name,
-        'isOpen': state.isOpen,
-      },
-    );
-    // #endregion
     ref.read(remoteStrategySnapshotProvider.notifier).clear();
     unawaited(
       ref.read(cloudMediaUploadQueueProvider.notifier).setActiveStrategy(null),
@@ -878,10 +852,10 @@ class StrategyProvider extends Notifier<StrategyState> {
       List<String> allImageIds = [];
       for (final page in newStrat.pages) {
         allImageIds.addAll(page.imageData.map((image) => image.id));
-        for (final lineUp in page.lineUps) {
-          List<String> lineUpImages = [];
-          lineUpImages.addAll(lineUp.images.map((image) => image.id));
-          allImageIds.addAll(lineUpImages);
+        for (final group in page.lineUpGroups) {
+          for (final item in group.items) {
+            allImageIds.addAll(item.images.map((image) => image.id));
+          }
         }
       }
       await ref
@@ -916,11 +890,19 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<String> createNewStrategy(String name) async {
+    final newID = const Uuid().v4();
+    final pageID = const Uuid().v4();
+    final defaultThemeProfileId =
+        ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies;
+    final appPreferences = ref.read(appPreferencesProvider);
+    final defaultSettings = StrategySettings(
+      agentSize: appPreferences.defaultAgentSizeForNewStrategies,
+      abilitySize: appPreferences.defaultAbilitySizeForNewStrategies,
+      useNeutralTeamColors:
+          appPreferences.defaultNeutralTeamColorsForNewStrategies,
+    );
+
     if (_selectedWorkspaceIsCloud()) {
-      final newID = const Uuid().v4();
-      final pageID = const Uuid().v4();
-      final defaultThemeProfileId =
-          ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies;
       try {
         await ref
             .read(convexStrategyRepositoryProvider)
@@ -931,6 +913,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               initialPagePublicId: pageID,
               initialPageName: "Page 1",
               initialPageIsAttack: true,
+              initialPageSettings: jsonEncode(defaultSettings.toJson()),
               folderPublicId: ref.read(folderProvider),
               themeProfileId: defaultThemeProfileId,
             );
@@ -950,10 +933,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       await openCloudStrategy(newID);
       return newID;
     }
-    final newID = const Uuid().v4();
-    final pageID = const Uuid().v4();
-    final defaultThemeProfileId =
-        ref.read(mapThemeProfilesProvider).defaultProfileIdForNewStrategies;
+
     final newStrategy = StrategyData(
       mapData: MapValue.ascent,
       versionNumber: Settings.versionNumber,
@@ -969,16 +949,16 @@ class StrategyProvider extends Notifier<StrategyState> {
           textData: [],
           imageData: [],
           utilityData: [],
-          lineUps: [],
+          lineUpGroups: [],
           sortIndex: 0,
           isAttack: true,
-          settings: StrategySettings(),
+          settings: defaultSettings,
         )
       ],
       lastEdited: DateTime.now(),
 
       // ignore: deprecated_member_use_from_same_package
-      strategySettings: StrategySettings(),
+      strategySettings: defaultSettings,
       folderID: ref.read(folderProvider),
       themeProfileId: defaultThemeProfileId,
     );
@@ -1294,7 +1274,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       utilityData: ref.read(utilityProvider),
       isAttack: ref.read(mapProvider).isAttack,
       settings: ref.read(strategySettingsProvider),
-      lineUps: ref.read(lineUpProvider).lineUps,
+      lineUpGroups: ref
+          .read(lineUpProvider)
+          .groups
+          .map((group) => group.deepCopy())
+          .toList(),
     );
 
     final strategyTheme = ref.read(strategyThemeProvider);
@@ -1316,6 +1300,69 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> applyMarkerSizesToAllPages() async {
     if (state.strategyName == null) return;
 
+    final target = ref.read(strategySettingsProvider);
+    await _applySettingsToAllPages(
+      (settings) => settings.copyWith(
+        agentSize: target.agentSize,
+        abilitySize: target.abilitySize,
+      ),
+    );
+  }
+
+  Future<void> applyNeutralTeamColorsToAllPages(bool value) async {
+    if (state.strategyName == null) return;
+
+    await _applySettingsToAllPages(
+      (settings) => settings.copyWith(useNeutralTeamColors: value),
+    );
+  }
+
+  Future<void> _applySettingsToAllPages(
+    StrategySettings Function(StrategySettings settings) transform,
+  ) async {
+    if (_currentStrategyIsCloud()) {
+      final strategyId = state.strategyId;
+      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      if (strategyId == null || snapshot == null || snapshot.pages.isEmpty) {
+        return;
+      }
+
+      final ops = [
+        for (final page in snapshot.pages)
+          StrategyOp(
+            opId: const Uuid().v4(),
+            kind: StrategyOpKind.patch,
+            entityType: StrategyOpEntityType.page,
+            entityPublicId: page.publicId,
+            pagePublicId: page.publicId,
+            payload: jsonEncode({
+              'settings': StrategySettingsProvider.objectToJson(
+                transform(_settingsFromJsonOrDefault(page.settings)),
+              ),
+            }),
+          ),
+      ];
+
+      try {
+        await ref.read(convexStrategyRepositoryProvider).applyBatch(
+              strategyPublicId: strategyId,
+              clientId: const Uuid().v4(),
+              ops: ops,
+            );
+      } catch (error, stackTrace) {
+        final handled = await _reportCloudUnauthenticated(
+          source: 'strategy:apply_settings_to_all_pages',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!handled) rethrow;
+        return;
+      }
+      await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+      ref.read(strategySaveStateProvider.notifier).markPersisted();
+      return;
+    }
+
     await _syncCurrentPageToHive();
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
@@ -1324,15 +1371,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     final strat = box.get(strategyId);
     if (strat == null || strat.pages.isEmpty) return;
 
-    final target = ref.read(strategySettingsProvider);
     final newPages = [
       for (final page in strat.pages)
-        page.copyWith(
-          settings: page.settings.copyWith(
-            agentSize: target.agentSize,
-            abilitySize: target.abilitySize,
-          ),
-        ),
+        page.copyWith(settings: transform(page.settings)),
     ];
 
     final strategyTheme = ref.read(strategyThemeProvider);
@@ -1347,6 +1388,22 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
     await box.put(updated.id, updated);
     setUnsaved();
+  }
+
+  StrategySettings _settingsFromJsonOrDefault(String? jsonString) {
+    if (jsonString == null || jsonString.isEmpty) {
+      return StrategySettings();
+    }
+    try {
+      final decoded = jsonDecode(jsonString);
+      if (decoded is Map<String, dynamic>) {
+        return StrategySettings.fromJson(decoded);
+      }
+      if (decoded is Map) {
+        return StrategySettings.fromJson(Map<String, dynamic>.from(decoded));
+      }
+    } catch (_) {}
+    return StrategySettings();
   }
 
   void moveToFolder({

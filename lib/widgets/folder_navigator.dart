@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:desktop_updater/desktop_updater.dart';
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -202,6 +202,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         final bool isDirectWindowsInstall =
             _isWindowsDesktop && !result.isSupported;
         if (isDirectWindowsInstall && _desktopUpdaterController == null) {
+          debugPrint(
+            'Desktop updater channel: $kResolvedUpdateChannel | Manifest: ${Settings.desktopUpdaterArchiveUrl}',
+          );
           _desktopUpdaterController = WindowsDesktopUpdateController(
             appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
             localization: const DesktopUpdateLocalization(

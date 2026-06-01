@@ -10,6 +10,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/drawing_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -42,8 +43,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
             child: ShadIconButton.ghost(
               foregroundColor: Colors.white,
               onPressed: () async {
-                showShadSheet(
-                  side: ShadSheetSide.left,
+                showShadDialog(
                   context: context,
                   builder: (context) => const SettingsTab(),
                 );
@@ -106,6 +106,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                   return;
                 }
                 final newController = ScreenshotController();
+                final mapState = ref.read(mapProvider);
                 final currentPageID =
                     ref.read(strategyPageSessionProvider).activePageId;
 
@@ -138,6 +139,9 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                               home: ScreenshotView(
                                 isAttack: activePage.isAttack,
                                 mapValue: newStrat.mapData,
+                                showSpawnBarrier: mapState.showSpawnBarrier,
+                                showRegionNames: mapState.showRegionNames,
+                                showUltOrbs: mapState.showUltOrbs,
                                 agents: activePage.agentData,
                                 abilities: activePage.abilityData,
                                 text: activePage.textData,
@@ -146,7 +150,8 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                                 utilities: activePage.utilityData,
                                 strategySettings: activePage.settings,
                                 strategyState: ref.read(strategyProvider),
-                                lineUps: activePage.lineUps,
+                                pageName: activePage.name,
+                                lineUpGroups: activePage.lineUpGroups,
                                 themeProfileId: newStrat.themeProfileId,
                                 themeOverridePalette:
                                     newStrat.themeOverridePalette,

@@ -6,9 +6,10 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
+import 'package:icarus/providers/canvas_resize_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -62,6 +63,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
 
   final controller = TransformationController();
   Size? _lastViewportSize;
+  Size? _lastPlayAreaSize;
   bool _placementCenterUpdateScheduled = false;
   bool _zoomSyncScheduled = false;
   double? _pendingZoom;
@@ -167,7 +169,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
             (constraints.maxWidth - Settings.sideBarReservedWidth)
                 .clamp(0.0, constraints.maxWidth);
         final viewportSize = Size(viewportWidth, height);
-        if (_lastViewportSize != viewportSize) {
+        if (_lastViewportSize != viewportSize ||
+            _lastPlayAreaSize != playAreaSize) {
           final double currentScale = controller.value.getMaxScaleOnAxis();
           final double safeScale = currentScale == 0 ? 1.0 : currentScale;
           final double centeredOffsetX =
@@ -184,6 +187,11 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
             coordinateSystem: coordinateSystem,
           );
           _lastViewportSize = viewportSize;
+          _lastPlayAreaSize = playAreaSize;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            ref.read(canvasResizeProvider.notifier).increment();
+          });
         }
         final double mapWidth = height * coordinateSystem.mapAspectRatio;
         final double mapLeft = (worldWidth - mapWidth) / 2;
@@ -331,6 +339,13 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                               : 1.0,
                                           child: PlacedWidgetBuilder(),
                                         ),
+                                ),
+                                Positioned.fill(
+                                  child: ref.watch(transitionProvider).hideView
+                                      ? IgnorePointer(
+                                          child: LineUpOverlay(),
+                                        )
+                                      : SizedBox.shrink(),
                                 ),
                                 Positioned.fill(
                                   child: ref.watch(transitionProvider).active

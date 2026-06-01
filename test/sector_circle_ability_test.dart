@@ -555,7 +555,7 @@ class _PlacedSectorAbilityHarness extends ConsumerWidget {
       children: [
         PlacedAbilityWidget(
           ability: ability,
-          onDragEnd: (_) {},
+          onDragEnd: (_, __) {},
           id: ability.id,
           data: ability,
           rotation: ability.rotation,
@@ -626,5 +626,4 @@ SectorCirclePainter _sectorPainter(WidgetTester tester) {
 
   return customPaint.painter! as SectorCirclePainter;
 }
-
 

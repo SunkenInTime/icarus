@@ -9,6 +9,12 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _agentIconSize = 27;
 const double _agentRowSpacing = 5;
+const List<AgentRole> _strategyTileRoleOrder = [
+  AgentRole.duelist,
+  AgentRole.initiator,
+  AgentRole.controller,
+  AgentRole.sentinel,
+];
 
 class StrategyTileViewData {
   const StrategyTileViewData({
@@ -99,7 +105,11 @@ class StrategyTileViewData {
         result.add(agent.type);
       }
     }
-    return result.toList();
+
+    return [
+      for (final role in _strategyTileRoleOrder)
+        ...result.where((type) => AgentData.agents[type]?.role == role),
+    ];
   }
 
   static String _timeAgo(DateTime date) {

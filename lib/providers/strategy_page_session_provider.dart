@@ -17,7 +17,7 @@ import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
@@ -331,6 +331,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       strategyState.strategyId!,
       strategyState.source ?? StrategySource.local,
     );
+    if (strategyState.source == StrategySource.cloud) {
+      ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
+    }
     await source.flushCurrentPage();
     if (flushImmediately && strategyState.source == StrategySource.cloud) {
       await ref.read(strategyOpQueueProvider.notifier).flushNow();
@@ -370,6 +373,9 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
 
     final pageSource = _resolvePageSource(strategyId, source);
+    if (source == StrategySource.cloud) {
+      ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
+    }
     await pageSource.flushCurrentPage();
     if (source == StrategySource.cloud) {
       await ref.read(strategyOpQueueProvider.notifier).flushNow();
@@ -739,6 +745,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     final activePageId = state.activePageId;
     final strategyId = strategyState.strategyId;
     if (activePageId != null && strategyId != null) {
+      ref.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
       final desiredOpsByEntityKey =
           ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
                 strategyPublicId: strategyId,

@@ -108,7 +108,7 @@ void main() {
     });
   });
 
-  test('LineUp serialization remains plain-agent-only', () {
+  test('LineUp serialization normalizes legacy data into a lineup group', () {
     final lineUp = LineUp(
       id: 'lineup-1',
       agent: PlacedAgent(
@@ -132,6 +132,6 @@ void main() {
 
     expect(decoded.single['agent']['kind'], PlacedAgentNode.plainKind);
     expect(restored.agent, isA<PlacedAgent>());
-    expect(restored.agent.lineUpID, isNull);
+    expect(restored.agent.lineUpID, 'lineup-1');
   });
 }

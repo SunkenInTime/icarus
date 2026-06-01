@@ -90,7 +90,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }
 
   bool hasOverlayForPage(String pageId) {
-    return state.overlayByEntityKey.keys.any((key) => pageIdForEntityKey(key) == pageId);
+    return state.overlayByEntityKey.keys
+        .any((key) => pageIdForEntityKey(key) == pageId);
   }
 
   void recordAckBatch(List<AckedEntityIntent> intents) {
@@ -121,9 +122,12 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final pageKeys = <EntitySyncKey>{
       ...remoteEntities.keys,
       ...localEntities.keys,
-      ...state.overlayByEntityKey.keys.where((key) => pageIdForEntityKey(key) == pageId),
-      ...queueState.queuedByEntityKey.keys.where((key) => pageIdForEntityKey(key) == pageId),
-      ...queueState.inFlightByEntityKey.keys.where((key) => pageIdForEntityKey(key) == pageId),
+      ...state.overlayByEntityKey.keys
+          .where((key) => pageIdForEntityKey(key) == pageId),
+      ...queueState.queuedByEntityKey.keys
+          .where((key) => pageIdForEntityKey(key) == pageId),
+      ...queueState.inFlightByEntityKey.keys
+          .where((key) => pageIdForEntityKey(key) == pageId),
     };
 
     final nextOverlay = Map<EntitySyncKey, ActivePageOverlayEntry>.from(
@@ -210,7 +214,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       if (_overlayMatchesRemote(overlay, remote)) {
         continue;
       }
-      final op = _strategyOpFromOverlay(pageId: pageId, overlay: overlay, remote: remote);
+      final op = _strategyOpFromOverlay(
+          pageId: pageId, overlay: overlay, remote: remote);
       if (op != null) {
         desiredOpsByEntityKey[key] = op;
       }
@@ -242,10 +247,11 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     );
 
     final remoteElements = {
-      for (final element
-          in (snapshot.elementsByPage[page.publicId] ?? const <RemoteElement>[]))
+      for (final element in (snapshot.elementsByPage[page.publicId] ??
+          const <RemoteElement>[]))
         if (!element.deleted)
-          elementEntityKey(page.publicId, element.publicId): ProjectedPageElement(
+          elementEntityKey(page.publicId, element.publicId):
+              ProjectedPageElement(
             publicId: element.publicId,
             elementType: element.elementType,
             payload: element.payload,
@@ -368,8 +374,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       ),
     };
 
-    for (final element
-        in (snapshot.elementsByPage[page.publicId] ?? const <RemoteElement>[])) {
+    for (final element in (snapshot.elementsByPage[page.publicId] ??
+        const <RemoteElement>[])) {
       if (element.deleted) {
         continue;
       }
@@ -403,7 +409,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     return entities;
   }
 
-  Map<EntitySyncKey, _NormalizedEntity> _normalizedLocalEntities(String pageId) {
+  Map<EntitySyncKey, _NormalizedEntity> _normalizedLocalEntities(
+      String pageId) {
     final entities = <EntitySyncKey, _NormalizedEntity>{};
 
     final pageKey = pageSettingsEntityKey(pageId);
@@ -433,14 +440,14 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    final lineups = ref.read(lineUpProvider).lineUps;
-    for (var index = 0; index < lineups.length; index++) {
-      final lineup = lineups[index];
-      final key = lineupEntityKey(pageId, lineup.id);
+    final groups = ref.read(lineUpProvider).groups;
+    for (var index = 0; index < groups.length; index++) {
+      final group = groups[index];
+      final key = lineupEntityKey(pageId, group.id);
       entities[key] = _NormalizedEntity(
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.lineup,
-        payload: jsonEncode(cloudLineupPayload(lineup)),
+        payload: jsonEncode(cloudLineupPayload(group)),
         sortIndex: index,
         revision: 0,
         deleted: false,
@@ -476,7 +483,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     }
 
     for (final drawing in ref.read(drawingProvider).elements) {
-      final encoded = jsonDecode(DrawingProvider.objectToJson([drawing])) as List;
+      final encoded =
+          jsonDecode(DrawingProvider.objectToJson([drawing])) as List;
       final payload = Map<String, dynamic>.from(
         (encoded.isEmpty ? <String, dynamic>{} : encoded.first) as Map,
       )..putIfAbsent('elementType', () => 'drawing');
@@ -502,8 +510,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     for (final image in ref.read(placedImageProvider).images) {
       final payload = Map<String, dynamic>.from(
         cloudImagePayloadFromPlacedImage(image),
-      )
-        ..putIfAbsent('elementType', () => 'image');
+      )..putIfAbsent('elementType', () => 'image');
       envelopes.add(
         _CollabElementEnvelope(
           publicId: image.id,
@@ -604,7 +611,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           pagePublicId: pageId,
           payload: overlay.desiredPayload,
           sortIndex: overlay.desiredSortIndex,
-          expectedRevision: remote == null ? null : remote.revision,
+          expectedRevision: remote?.revision,
         );
     }
   }

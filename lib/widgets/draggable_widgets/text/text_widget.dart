@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_media_dimensions.dart';
-import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
+import 'package:icarus/providers/text_widget_height_provider.dart';
+import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 
 class TextWidget extends ConsumerWidget {
   const TextWidget({
@@ -89,6 +90,10 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
       textDraftProvider,
       (_, __) => _syncControllerWithExternalState(),
     );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateMeasuredSize();
+    });
   }
 
   @override
@@ -144,6 +149,16 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
     );
   }
 
+  void _updateMeasuredSize() {
+    if (!mounted) return;
+
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox) return;
+
+    final offset = Offset(renderObject.size.width, renderObject.size.height);
+    ref.read(textWidgetHeightProvider.notifier).updateHeight(widget.id, offset);
+  }
+
   @override
   Widget build(BuildContext context) {
     final metrics = PlacedTextDimensions.screenSize(
@@ -152,22 +167,31 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
       fontSizeWorld: widget.fontSize,
       text: _controller.text,
     );
-    return Shortcuts(
-      shortcuts: ShortcutInfo.textEditingOverrides,
-      child: _TextBoxFrame(
-        metrics: metrics,
-        tagColorValue: widget.tagColorValue,
-        child: _SharedTextField(
-          controller: _controller,
-          focusNode: _focusNode,
-          fontSize: widget.fontSize,
-          onChanged: (value) {
-            _draftNotifier.setDraft(widget.id, value);
-            setState(() {});
-          },
-          onTapOutside: (_) {
-            _focusNode.unfocus();
-          },
+    return TextEditingShortcutScope(
+      child: NotificationListener<SizeChangedLayoutNotification>(
+        onNotification: (notification) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _updateMeasuredSize();
+          });
+          return true;
+        },
+        child: SizeChangedLayoutNotifier(
+          child: _TextBoxFrame(
+            metrics: metrics,
+            tagColorValue: widget.tagColorValue,
+            child: _SharedTextField(
+              controller: _controller,
+              focusNode: _focusNode,
+              fontSize: widget.fontSize,
+              onChanged: (value) {
+                _draftNotifier.setDraft(widget.id, value);
+                setState(() {});
+              },
+              onTapOutside: (_) {
+                _focusNode.unfocus();
+              },
+            ),
+          ),
         ),
       ),
     );

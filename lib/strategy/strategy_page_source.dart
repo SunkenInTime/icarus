@@ -18,7 +18,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
@@ -89,7 +89,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
       texts: page.textData,
       images: page.imageData,
       utilities: page.utilityData,
-      lineups: page.lineUps,
+      lineUpGroups: page.lineUpGroups,
     );
   }
 
@@ -116,7 +116,11 @@ class LocalStrategyPageSource implements StrategyPageSource {
       utilityData: ref.read(utilityProvider),
       isAttack: ref.read(mapProvider).isAttack,
       settings: ref.read(strategySettingsProvider),
-      lineUps: ref.read(lineUpProvider).lineUps,
+      lineUpGroups: ref
+          .read(lineUpProvider)
+          .groups
+          .map((group) => group.deepCopy())
+          .toList(),
     );
 
     final strategyTheme = ref.read(strategyThemeProvider);
@@ -236,7 +240,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       }
     }
 
-    final parsedLineups = <LineUp>[];
+    final parsedLineUpGroups = <LineUpGroup>[];
     for (final lineup in lineups) {
       if (lineup.deleted) {
         continue;
@@ -244,10 +248,10 @@ class CloudStrategyPageSource implements StrategyPageSource {
       try {
         final decoded = jsonDecode(lineup.payload);
         if (decoded is Map<String, dynamic>) {
-          parsedLineups.add(LineUp.fromJson(decoded));
+          parsedLineUpGroups.add(LineUpGroup.fromJson(decoded));
         } else if (decoded is Map) {
-          parsedLineups
-              .add(LineUp.fromJson(Map<String, dynamic>.from(decoded)));
+          parsedLineUpGroups
+              .add(LineUpGroup.fromJson(Map<String, dynamic>.from(decoded)));
         }
       } catch (_) {
         // Ignore malformed payloads during hydration.
@@ -282,7 +286,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       texts: texts,
       images: images,
       utilities: utilities,
-      lineups: parsedLineups,
+      lineUpGroups: parsedLineUpGroups,
     );
   }
 
@@ -416,15 +420,15 @@ class CloudStrategyPageSource implements StrategyPageSource {
       }
     }
 
-    final parsedLineups = <LineUp>[];
+    final parsedLineUpGroups = <LineUpGroup>[];
     for (final lineup in projected.lineups) {
       try {
         final decoded = jsonDecode(lineup.payload);
         if (decoded is Map<String, dynamic>) {
-          parsedLineups.add(LineUp.fromJson(decoded));
+          parsedLineUpGroups.add(LineUpGroup.fromJson(decoded));
         } else if (decoded is Map) {
-          parsedLineups
-              .add(LineUp.fromJson(Map<String, dynamic>.from(decoded)));
+          parsedLineUpGroups
+              .add(LineUpGroup.fromJson(Map<String, dynamic>.from(decoded)));
         }
       } catch (_) {
         // Ignore malformed payloads during hydration.
@@ -450,7 +454,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       texts: texts,
       images: images,
       utilities: utilities,
-      lineups: parsedLineups,
+      lineUpGroups: parsedLineUpGroups,
     );
   }
 

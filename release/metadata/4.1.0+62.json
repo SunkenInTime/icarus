@@ -1,0 +1,37 @@
+{
+  "version": "4.1.0+62",
+  "shortVersion": 62,
+  "title": "4.1.0 Release",
+  "description": "Desktop release metadata for Icarus.",
+  "date": "2026-04-04",
+  "mandatory": false,
+  "channels": [
+    "desktop",
+    "stable"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "changes": [
+    {
+      "message": "Stack multiple lineup abilities in one place and pick them from a clearer, easier-to-use menu.",
+      "type": "feat"
+    },
+    {
+      "message": "Resize the pages bar and keep your height between sessions; the bar shows two rows when space allows.",
+      "type": "feat"
+    },
+    {
+      "message": "Export screenshots with options to show or hide the spawn barrier, region names, and ultimate orb markers.",
+      "type": "feat"
+    },
+    {
+      "message": "Strategy tiles list agents in role order so compositions are quicker to scan.",
+      "type": "improvement"
+    },
+    {
+      "message": "Smoother lineup editing: better migration for older saves, more reliable menus and hover feedback, and fewer stray hitbox issues.",
+      "type": "fix"
+    }
+  ]
+}

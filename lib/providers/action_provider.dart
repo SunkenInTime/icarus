@@ -163,11 +163,11 @@ class BulkActionSnapshot {
       lineUpSnapshot: lineUpSnapshot == null
           ? null
           : LineUpProviderSnapshot(
-              lineUps: lineUpSnapshot!.lineUps
-                  .map((lineUp) => cloneLineUp(lineUp))
+              groups: lineUpSnapshot!.groups
+                  .map((group) => group.deepCopy())
                   .toList(),
-              poppedLineUps: lineUpSnapshot!.poppedLineUps
-                  .map((lineUp) => cloneLineUp(lineUp))
+              poppedGroups: lineUpSnapshot!.poppedGroups
+                  .map((group) => group.deepCopy())
                   .toList(),
             ),
     );
@@ -298,9 +298,9 @@ class BulkActionSnapshot {
       lineUpSnapshot: lineUpSnapshot == null
           ? null
           : LineUpProviderSnapshot(
-              lineUps: lineUpSnapshot!.lineUps
+              groups: lineUpSnapshot!.groups
                   .map(
-                    (lineUp) => cloneLineUp(lineUp)
+                    (group) => group.deepCopy()
                       ..switchSides(
                         agentSize: context.agentSize,
                         abilitySize: context.abilitySize,
@@ -308,9 +308,9 @@ class BulkActionSnapshot {
                       ),
                   )
                   .toList(),
-              poppedLineUps: lineUpSnapshot!.poppedLineUps
+              poppedGroups: lineUpSnapshot!.poppedGroups
                   .map(
-                    (lineUp) => cloneLineUp(lineUp)
+                    (group) => group.deepCopy()
                       ..switchSides(
                         agentSize: context.agentSize,
                         abilitySize: context.abilitySize,
@@ -622,7 +622,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
         case ActionGroup.utility:
           if (ref.read(utilityProvider).isNotEmpty) return true;
         case ActionGroup.lineUp:
-          if (ref.read(lineUpProvider).lineUps.isNotEmpty) return true;
+          if (ref.read(lineUpProvider).groups.isNotEmpty) return true;
         case ActionGroup.bulk:
           break;
       }

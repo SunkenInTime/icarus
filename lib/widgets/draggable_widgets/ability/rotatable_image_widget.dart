@@ -12,12 +12,14 @@ class RotatableImageWidget extends ConsumerWidget {
     required this.width,
     required this.id,
     this.lineUpId,
+    this.lineUpItemId,
   });
   final String imagePath;
   final double height;
   final double width;
   final String? id;
   final String? lineUpId;
+  final String? lineUpItemId;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
@@ -29,6 +31,7 @@ class RotatableImageWidget extends ConsumerWidget {
 
     return MouseWatch(
       lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       cursor: SystemMouseCursors.click,
       deleteTarget: deleteTarget,
       child: Column(

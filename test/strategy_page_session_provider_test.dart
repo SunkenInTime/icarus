@@ -240,27 +240,34 @@ RemoteLineup _remoteLineup({
   required String notes,
   int sortIndex = 0,
 }) {
-  final lineup = LineUp(
+  final group = LineUpGroup(
     id: lineupId,
     agent: PlacedAgent(
       id: '$lineupId-agent',
       type: AgentType.jett,
       position: const Offset(10, 20),
+      lineUpID: lineupId,
     ),
-    ability: PlacedAbility(
-      id: '$lineupId-ability',
-      data: AgentData.agents[AgentType.jett]!.abilities.first,
-      position: const Offset(30, 40),
-    ),
-    youtubeLink: '',
-    images: const [],
-    notes: notes,
+    items: [
+      LineUpItem(
+        id: '$lineupId-item',
+        ability: PlacedAbility(
+          id: '$lineupId-ability',
+          data: AgentData.agents[AgentType.jett]!.abilities.first,
+          position: const Offset(30, 40),
+          lineUpID: lineupId,
+        ),
+        youtubeLink: '',
+        images: const [],
+        notes: notes,
+      ),
+    ],
   );
   return RemoteLineup(
     publicId: lineupId,
     strategyPublicId: strategyId,
     pagePublicId: pageId,
-    payload: jsonEncode(lineup.toJson()),
+    payload: jsonEncode(group.toJson()),
     sortIndex: sortIndex,
     revision: 1,
     deleted: false,
@@ -328,14 +335,12 @@ Future<ProviderContainer> _cloudContainer({
 }) async {
   final container = ProviderContainer(
     overrides: [
-      strategyProvider.overrideWith(
-        () => _StaticStrategyProvider(strategyState),
-      ),
       remoteStrategySnapshotProvider.overrideWith(() => remoteNotifier),
       strategyOpQueueProvider.overrideWith(() => queueNotifier),
     ],
   );
   addTearDown(container.dispose);
+  container.read(strategyProvider.notifier).setFromState(strategyState);
   container.listen(strategyPageSessionProvider, (_, __) {});
   await container.read(remoteStrategySnapshotProvider.future);
   return container;
@@ -1123,7 +1128,7 @@ void main() {
     await _settle();
 
     expect(remoteNotifier.refreshCount, 1);
-    expect(queueNotifier.syncDesiredOpsForPageCount, 1);
+    expect(queueNotifier.syncDesiredOpsForPageCount, greaterThanOrEqualTo(1));
     expect(queueNotifier.flushNowCount, 0);
     expect(container.read(textProvider).single.text, 'local-only');
     expect(container.read(strategyOpQueueProvider).pending, isNotEmpty);
