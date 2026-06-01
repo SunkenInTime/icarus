@@ -15,7 +15,6 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(AppPreferencesAdapter());
     registerAdapter(BoundingBoxAdapter());
     registerAdapter(CloudMediaJobStateAdapter());
-    registerAdapter(CloudMediaUploadJobAdapter());
     registerAdapter(EllipseDrawingAdapter());
     registerAdapter(FolderColorAdapter());
     registerAdapter(FreeDrawingAdapter());
@@ -53,7 +52,6 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(AppPreferencesAdapter());
     registerAdapter(BoundingBoxAdapter());
     registerAdapter(CloudMediaJobStateAdapter());
-    registerAdapter(CloudMediaUploadJobAdapter());
     registerAdapter(EllipseDrawingAdapter());
     registerAdapter(FolderColorAdapter());
     registerAdapter(FreeDrawingAdapter());

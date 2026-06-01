@@ -1,4 +1,3 @@
-import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 
@@ -31,7 +30,7 @@ String mimeTypeForImageExtension(String extension) {
   }
 }
 
-class CloudMediaUploadJob extends HiveObject {
+class CloudMediaUploadJob {
   CloudMediaUploadJob({
     required this.jobId,
     required this.strategyPublicId,

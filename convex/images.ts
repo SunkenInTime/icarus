@@ -200,6 +200,29 @@ async function getActiveAssetForStrategy(
   );
 }
 
+async function getViewerAssetForStrategy(
+  ctx: AnyCtx,
+  strategyId: Id<"strategies">,
+  assetPublicId: string,
+): Promise<Doc<"imageAssets"> | null> {
+  const strategyCandidates = await ctx.db
+    .query("imageAssets")
+    .withIndex("by_strategyId_and_publicId", (q) =>
+      q.eq("strategyId", strategyId).eq("publicId", assetPublicId),
+    )
+    .order("desc")
+    .take(20);
+  const strategyAsset =
+    strategyCandidates.find(
+      (asset) => inferUploadStatus(asset) !== "deleted",
+    ) ?? null;
+  if (strategyAsset !== null) {
+    return strategyAsset;
+  }
+
+  return await getActiveAssetForStrategy(ctx, strategyId, assetPublicId);
+}
+
 async function getDeletionCandidateForStrategy(
   ctx: AnyCtx,
   strategyId: Id<"strategies">,
@@ -254,7 +277,7 @@ async function serializeAssetForViewer(
       ? asset.objectKey === undefined || uploadStatus !== "active"
         ? null
         : publicR2UrlForObjectKey(asset.objectKey)
-      : asset.storageId === undefined
+      : asset.storageId === undefined || uploadStatus !== "active"
         ? null
         : await ctx.storage.getUrl(asset.storageId);
 
@@ -722,7 +745,7 @@ export const listForStrategy = query({
     );
     const assets = await Promise.all(
       [...referencedAssetIds].map((assetPublicId) =>
-        getActiveAssetForStrategy(ctx, strategy._id, assetPublicId),
+        getViewerAssetForStrategy(ctx, strategy._id, assetPublicId),
       ),
     );
 

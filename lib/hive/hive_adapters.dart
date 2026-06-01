@@ -44,7 +44,6 @@ import 'package:icarus/strategy/strategy_models.dart';
   AdapterSpec<LineUp>(),
   AdapterSpec<SimpleImageData>(),
   AdapterSpec<CloudMediaJobState>(),
-  AdapterSpec<CloudMediaUploadJob>(),
   AdapterSpec<AgentState>(),
   AdapterSpec<RectangleDrawing>(),
   AdapterSpec<EllipseDrawing>(),

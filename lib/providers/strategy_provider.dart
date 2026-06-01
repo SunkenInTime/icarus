@@ -270,6 +270,13 @@ class StrategyProvider extends Notifier<StrategyState> {
           selectFirstPageIfNeeded: true,
         );
     unawaited(
+      ref.read(cloudMediaUploadQueueProvider.notifier).reconcilePageMedia(
+            strategyPublicId: snapshot.header.publicId,
+            placedImages: ref.read(placedImageProvider).images,
+            assetsById: snapshot.assetsById,
+          ),
+    );
+    unawaited(
       ref.read(cloudMediaUploadQueueProvider.notifier).setActiveStrategy(
             snapshot.header.publicId,
           ),

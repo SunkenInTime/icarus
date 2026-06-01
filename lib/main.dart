@@ -11,7 +11,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
-import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/services/deep_link_registrar.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -147,7 +146,6 @@ Future<void> main(List<String> args) async {
 
       await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
       await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
-      await Hive.openBox<CloudMediaUploadJob>(HiveBoxNames.mediaUploadJobsBox);
       await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
       await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);

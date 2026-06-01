@@ -8,6 +8,7 @@ import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -168,19 +169,42 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
       'images',
       '${widget.id}${widget.fileExtension}',
     ));
-    final remoteUrl = ref
+    final strategyState = ref.watch(strategyProvider);
+    final remoteAsset = ref
         .watch(remoteStrategySnapshotProvider)
         .valueOrNull
-        ?.assetsById[widget.id]
-        ?.url;
+        ?.assetsById[widget.id];
+    final remoteUrl = remoteAsset?.url;
+    final hasLocalFile = file.existsSync() && widget.fileExtension != null;
+    final isCloudStrategy = strategyState.source == StrategySource.cloud;
+    final remoteUploadStatus = remoteAsset?.uploadStatus;
+    final showFailedPlaceholder =
+        isCloudStrategy && remoteUploadStatus == 'failed' && !hasLocalFile;
+    final showLoadingPlaceholder = isCloudStrategy &&
+        !showFailedPlaceholder &&
+        !hasLocalFile &&
+        (remoteUrl == null || remoteUrl.isEmpty);
 
     // Build the small image widget used both here and in the hero
     Widget buildThumb() {
-      if (file.existsSync() && widget.fileExtension != null) {
+      if (hasLocalFile) {
         return Image.file(file, fit: BoxFit.contain);
       }
       if (remoteUrl != null && remoteUrl.isNotEmpty) {
         return Image.network(remoteUrl, fit: BoxFit.contain);
+      }
+      if (showFailedPlaceholder) {
+        return const _ImageStatePlaceholder(
+          icon: LucideIcons.imageOff,
+          label: 'Image unavailable',
+        );
+      }
+      if (showLoadingPlaceholder) {
+        return const _ImageStatePlaceholder(
+          icon: LucideIcons.loaderCircle,
+          label: 'Syncing image',
+          showSpinner: true,
+        );
       }
       return const Placeholder();
     }
@@ -190,11 +214,8 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
         _showImageFullScreenOverlay(
           context: context,
           heroTag: 'image_${widget.id}',
-          file:
-              (file.existsSync() && widget.fileExtension != null) ? file : null,
-          networkLink: (file.existsSync() && widget.fileExtension != null)
-              ? null
-              : remoteUrl,
+          file: hasLocalFile ? file : null,
+          networkLink: hasLocalFile ? null : remoteUrl,
           aspectRatio: widget.aspectRatio,
         );
       },
@@ -245,6 +266,51 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ImageStatePlaceholder extends StatelessWidget {
+  const _ImageStatePlaceholder({
+    required this.icon,
+    required this.label,
+    this.showSpinner = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool showSpinner;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: const Color.fromARGB(255, 20, 20, 20),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showSpinner)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Icon(icon, color: Colors.white70, size: 22),
+                const SizedBox(height: 8),
+                Text(
+                  label,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

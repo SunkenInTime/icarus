@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/image_provider.dart';
 
 final remoteStrategySnapshotProvider = AsyncNotifierProvider<
     RemoteStrategySnapshotNotifier, RemoteStrategySnapshot?>(
@@ -120,9 +122,20 @@ class RemoteStrategySnapshotNotifier
 
     _assetsSubscription =
         repository.watchImageAssetsForStrategy(strategyPublicId).listen(
-              (assets) => _replaceSnapshot(
-                (snapshot) => snapshot.replaceAssets(assets),
-              ),
+              (assets) {
+                _replaceSnapshot((snapshot) => snapshot.replaceAssets(assets));
+                unawaited(
+                  ref
+                      .read(cloudMediaUploadQueueProvider.notifier)
+                      .reconcilePageMedia(
+                        strategyPublicId: strategyPublicId,
+                        placedImages: ref.read(placedImageProvider).images,
+                        assetsById: {
+                          for (final asset in assets) asset.publicId: asset,
+                        },
+                      ),
+                );
+              },
               onError: (error, stackTrace) => _handleSubscriptionError(
                 source: 'remote_snapshot:assets_subscription',
                 error: error,

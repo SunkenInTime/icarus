@@ -139,12 +139,23 @@ class PlacedImageProvider extends Notifier<ImageState> {
       double? aspectRatio,
       int? tagColorValue}) async {
     final imageID = const Uuid().v4();
+    AppErrorReporter.reportInfo(
+      'Image add requested: image=$imageID strategy=$strategyId '
+      'source=${strategySource?.name ?? 'unknown'} extension=$fileExtension '
+      'bytes=${imageBytes.length}',
+      source: 'cloud_media.image_provider',
+    );
 
     await saveSecureImage(
       imageBytes,
       imageID,
       fileExtension,
       strategyId: strategyId,
+    );
+    AppErrorReporter.reportInfo(
+      'Image saved locally: image=$imageID strategy=$strategyId '
+      'extension=$fileExtension bytes=${imageBytes.length}',
+      source: 'cloud_media.image_provider',
     );
 
     final effectiveAspectRatio =
@@ -171,8 +182,18 @@ class PlacedImageProvider extends Notifier<ImageState> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = state.copyWith(images: [...state.images, placedImage]);
+    AppErrorReporter.reportInfo(
+      'Image visible in editor: image=$imageID strategy=$strategyId '
+      'source=${strategySource?.name ?? 'unknown'}',
+      source: 'cloud_media.image_provider',
+    );
 
     if (strategySource == StrategySource.cloud && strategyId != null) {
+      AppErrorReporter.reportInfo(
+        'Image enqueueing cloud upload: image=${placedImage.id} '
+        'strategy=$strategyId extension=$fileExtension',
+        source: 'cloud_media.image_provider',
+      );
       await ref
           .read(cloudMediaUploadQueueProvider.notifier)
           .enqueuePlacedImageUpload(

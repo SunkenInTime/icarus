@@ -173,14 +173,15 @@ class Settings {
     offset: Offset(0, 4), // Slight downward shift
   );
 
-  static void showToast({
+  static ToastificationItem showToast({
     required String message,
     required Color backgroundColor,
+    Duration? autoCloseDuration = const Duration(seconds: 3),
     String? actionLabel,
     VoidCallback? onActionPressed,
   }) {
-    toastification.showCustom(
-      autoCloseDuration: const Duration(seconds: 3),
+    return toastification.showCustom(
+      autoCloseDuration: autoCloseDuration,
       alignment: Alignment.bottomCenter,
       builder: (context, holder) {
         final actionIsVisible = actionLabel != null &&
@@ -234,6 +235,16 @@ class Settings {
           ),
         );
       },
+    );
+  }
+
+  static void dismissToast(
+    ToastificationItem toast, {
+    bool showRemoveAnimation = true,
+  }) {
+    toastification.dismiss(
+      toast,
+      showRemoveAnimation: showRemoveAnimation,
     );
   }
 

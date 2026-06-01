@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:convex_flutter/convex_flutter.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -16,6 +18,7 @@ enum UnsavedStrategyDecision {
 
 enum CloudExitDecision {
   stay,
+  cancelUpload,
   retrySync,
   retryAuth,
 }
@@ -64,6 +67,7 @@ Future<UnsavedStrategyDecision> showUnsavedStrategyDialog(
 Future<CloudExitDecision> _showCloudSyncBlockedDialog(
   BuildContext context, {
   required String message,
+  required bool showCancelUpload,
   required bool showRetryAuth,
 }) async {
   final result = await showShadDialog<CloudExitDecision>(
@@ -88,6 +92,13 @@ Future<CloudExitDecision> _showCloudSyncBlockedDialog(
                 Navigator.of(context).pop(CloudExitDecision.retryAuth);
               },
               child: const Text('Retry Convex Auth'),
+            ),
+          if (showCancelUpload)
+            ShadButton.destructive(
+              onPressed: () {
+                Navigator.of(context).pop(CloudExitDecision.cancelUpload);
+              },
+              child: const Text('Cancel Upload'),
             ),
           ShadButton(
             onPressed: () {
@@ -135,24 +146,62 @@ Future<bool> _guardCloudStrategyExit({
     final saveState = ref.read(strategySaveStateProvider);
     final queueState = ref.read(strategyOpQueueProvider);
     final authState = ref.read(authProvider);
+    final mediaQueueState = ref.read(cloudMediaUploadQueueProvider);
+    final hasPendingMediaJobs =
+        mediaQueueState.jobsForStrategy(strategyState.strategyId).isNotEmpty;
 
     final hasPendingSync = saveState.hasPendingCloudSync ||
         saveState.hasPendingMediaSync ||
+        hasPendingMediaJobs ||
         queueState.pending.isNotEmpty;
     final cloudError = saveState.cloudSyncError ?? queueState.lastError;
+    AppErrorReporter.reportInfo(
+      'Cloud exit guard check: strategy=${strategyState.strategyId} '
+      'dirty=${saveState.isDirty} saving=${saveState.isSaving} '
+      'pendingCloud=${saveState.hasPendingCloudSync} '
+      'pendingMedia=${saveState.hasPendingMediaSync} '
+      'mediaErrors=${saveState.mediaSyncErrorCount} '
+      'opPending=${queueState.pending.length} '
+      'opFlushing=${queueState.isFlushing} '
+      'mediaJobs=${mediaQueueState.jobs.length} '
+      'mediaProcessing=${mediaQueueState.isProcessing} '
+      'auth=${authState.isAuthenticated} '
+      'userReady=${authState.isConvexUserReady} '
+      'authIncident=${authState.hasActiveAuthIncident} '
+      'connected=${ConvexClient.instance.isConnected} '
+      'cloudError=${cloudError ?? 'none'}',
+      source: 'cloud_media.exit_guard',
+    );
     if (!hasPendingSync && cloudError == null) {
       if (!context.mounted) {
         return false;
       }
+      AppErrorReporter.reportInfo(
+        'Cloud exit guard allowing leave: strategy=${strategyState.strategyId}',
+        source: 'cloud_media.exit_guard',
+      );
       await onContinue();
       return true;
     }
 
     if (queueState.isFlushing && cloudError == null) {
+      AppErrorReporter.reportInfo(
+        'Cloud exit guard waiting for active op flush: '
+        'strategy=${strategyState.strategyId}',
+        source: 'cloud_media.exit_guard',
+      );
       final synced = await _waitForCloudSync(ref);
       if (synced) {
+        AppErrorReporter.reportInfo(
+          'Cloud exit guard wait completed; rechecking sync state.',
+          source: 'cloud_media.exit_guard',
+        );
         continue;
       }
+      AppErrorReporter.reportInfo(
+        'Cloud exit guard wait timed out; showing blocked dialog.',
+        source: 'cloud_media.exit_guard',
+      );
     }
 
     if (!context.mounted) {
@@ -165,18 +214,45 @@ Future<bool> _guardCloudStrategyExit({
           (saveState.mediaSyncErrorCount > 0
               ? 'Some media uploads failed. Retry sync or stay here until the queue clears.'
               : 'Icarus is still syncing cloud edits and media. Stay on this screen until sync completes.'),
+      showCancelUpload: hasPendingMediaJobs,
       showRetryAuth: authState.hasActiveAuthIncident,
     );
 
     switch (decision) {
       case CloudExitDecision.stay:
+        AppErrorReporter.reportInfo(
+          'Cloud exit guard user chose stay.',
+          source: 'cloud_media.exit_guard',
+        );
         return false;
       case CloudExitDecision.retryAuth:
+        AppErrorReporter.reportInfo(
+          'Cloud exit guard retrying auth.',
+          source: 'cloud_media.exit_guard',
+        );
         await ref
             .read(authProvider.notifier)
             .reinitializeConvexAuth(source: 'cloud_exit_guard');
         break;
+      case CloudExitDecision.cancelUpload:
+        AppErrorReporter.reportInfo(
+          'Cloud exit guard canceling media uploads.',
+          source: 'cloud_media.exit_guard',
+        );
+        final strategyId = strategyState.strategyId;
+        if (strategyId == null) {
+          return false;
+        }
+        await ref
+            .read(cloudMediaUploadQueueProvider.notifier)
+            .cancelUploadsForStrategy(strategyId);
+        await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
+        break;
       case CloudExitDecision.retrySync:
+        AppErrorReporter.reportInfo(
+          'Cloud exit guard retrying sync.',
+          source: 'cloud_media.exit_guard',
+        );
         final strategyId = strategyState.strategyId;
         if (strategyId == null) {
           return false;
