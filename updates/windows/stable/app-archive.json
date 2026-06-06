@@ -3,6 +3,28 @@
     "description":  "Desktop release metadata for Icarus.",
     "items":  [
                   {
+                      "version":  "4.3.5+89",
+                      "shortVersion":  89,
+                      "changes":  [
+                                      {
+                                          "message":  "Updated Fade\u0027s agent icon.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Fixed Fade\u0027s scan radius so it now renders with a visible colored outline.",
+                                          "type":  "bugfix"
+                                      },
+                                      {
+                                          "message":  "Updated the map rotation so Ascent is in rotation and Bind is out of rotation.",
+                                          "type":  "improvement"
+                                      }
+                                  ],
+                      "date":  "2026-06-06",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.3.5%2B89-windows",
+                      "platform":  "windows"
+                  },
+                  {
                       "version":  "4.3.4+88",
                       "shortVersion":  88,
                       "changes":  [
