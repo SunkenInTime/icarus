@@ -1,0 +1,30 @@
+{
+    "version":  "4.3.5+89",
+    "shortVersion":  89,
+    "title":  "4.3.5 Release",
+    "description":  "Desktop release metadata for Icarus.",
+    "date":  "2026-06-06",
+    "mandatory":  false,
+    "channels":  [
+                     "desktop",
+                     "prerelease",
+                     "stable"
+                 ],
+    "platforms":  [
+                      "windows"
+                  ],
+    "changes":  [
+                    {
+                        "message":  "Updated Fade's agent icon.",
+                        "type":  "improvement"
+                    },
+                    {
+                        "message":  "Fixed Fade's scan radius so it now renders with a visible colored outline.",
+                        "type":  "bugfix"
+                    },
+                    {
+                        "message":  "Updated the map rotation so Ascent is in rotation and Bind is out of rotation.",
+                        "type":  "improvement"
+                    }
+                ]
+}
