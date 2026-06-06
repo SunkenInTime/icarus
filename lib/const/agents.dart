@@ -579,7 +579,6 @@ class AgentData implements DraggableData {
         size: 30,
         rangeOutlineColor: const Color(0xFF680A79),
         hasCenterDot: true,
-        opacity: 0,
       );
 
       agent.abilities.last.abilityData = SquareAbility(

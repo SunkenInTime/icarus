@@ -15,7 +15,7 @@ enum MapValue {
 
 class Maps {
   static List<MapValue> availableMaps = [
-    MapValue.bind,
+    MapValue.ascent,
     MapValue.haven,
     MapValue.pearl,
     MapValue.split,
@@ -26,7 +26,7 @@ class Maps {
 
   static List<MapValue> outofplayMaps = [
     MapValue.sunset,
-    MapValue.ascent,
+    MapValue.bind,
     MapValue.abyss,
     MapValue.icebox,
     MapValue.corrode,
