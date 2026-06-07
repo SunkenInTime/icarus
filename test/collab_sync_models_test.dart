@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
@@ -113,6 +114,31 @@ void main() {
       );
 
       expect(remote.decodedPayload(), isEmpty);
+    });
+  });
+
+  group('canonical cloud JSON', () {
+    test('treats equivalent objects as equal regardless of key order', () {
+      final left = {
+        'kind': 'text',
+        'payloadVersion': 1,
+        'data': {
+          'id': 'text-1',
+          'position': {'dx': 10, 'dy': 20.0},
+          'elementType': 'text',
+        },
+      };
+      final right = {
+        'data': {
+          'elementType': 'text',
+          'position': {'dy': 20, 'dx': 10.0},
+          'id': 'text-1',
+        },
+        'payloadVersion': 1.0,
+        'kind': 'text',
+      };
+
+      expect(cloudJsonEquivalent(left, right), isTrue);
     });
   });
 

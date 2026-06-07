@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -653,13 +654,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }
 
   bool _payloadsEquivalent(Object? left, Object? right) {
-    if (identical(left, right)) {
-      return true;
-    }
-    if (left == null || right == null) {
-      return false;
-    }
-    return jsonEncode(left) == jsonEncode(right);
+    return cloudJsonEquivalent(left, right);
   }
 
   Map<String, dynamic> _pagePayload({

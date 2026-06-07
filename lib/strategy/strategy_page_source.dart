@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/canonical_json.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -323,8 +324,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
     final mapMatches = header.mapData == currentMapData;
     final themeProfileMatches =
         header.themeProfileId == strategyTheme.profileId;
-    final themeOverrideMatches = jsonEncode(header.themeOverridePalette) ==
-        jsonEncode(desiredThemeOverride);
+    final themeOverrideMatches =
+        cloudJsonEquivalent(header.themeOverridePalette, desiredThemeOverride);
 
     if (mapMatches && themeProfileMatches && themeOverrideMatches) {
       ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(

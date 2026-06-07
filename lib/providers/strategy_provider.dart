@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 import 'package:convex_flutter/convex_flutter.dart';
@@ -30,6 +29,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
@@ -414,8 +414,10 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final matchesRemote = snapshot.header.mapData == localMapData &&
         snapshot.header.themeProfileId == localThemeProfileId &&
-        jsonEncode(snapshot.header.themeOverridePalette) ==
-            jsonEncode(localThemeOverridePalette);
+        cloudJsonEquivalent(
+          snapshot.header.themeOverridePalette,
+          localThemeOverridePalette,
+        );
     if (matchesRemote) {
       return null;
     }
