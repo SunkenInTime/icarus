@@ -269,7 +269,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           ),
     };
 
-    var projectedSettingsJson = page.settings;
+    var projectedSettingsPayload = page.settings;
     var projectedIsAttack = page.isAttack;
 
     final pageOverlays = state.overlayByEntityKey.entries.where(
@@ -283,7 +283,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
             continue;
           }
           final decoded = _decodeObject(overlay.desiredPayload!);
-          projectedSettingsJson = decoded['settings'] as String?;
+          projectedSettingsPayload =
+              cloudObjectPayloadOrNull(decoded['settings']);
           final isAttack = decoded['isAttack'];
           if (isAttack is bool) {
             projectedIsAttack = isAttack;
@@ -298,11 +299,13 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           if (elementId == null || overlay.desiredPayload == null) {
             continue;
           }
-          final decoded = _decodeObject(overlay.desiredPayload!);
+          final decoded = cloudPayloadData(overlay.desiredPayload);
           remoteElements[entry.key] = ProjectedPageElement(
             publicId: elementId,
-            elementType: decoded['elementType'] as String? ?? 'generic',
-            payload: overlay.desiredPayload!,
+            elementType: decoded['elementType'] as String? ??
+                (overlay.desiredPayload as Map?)?['kind'] as String? ??
+                'generic',
+            payload: Map<String, dynamic>.from(overlay.desiredPayload! as Map),
             sortIndex: overlay.desiredSortIndex ?? 0,
           );
           continue;
@@ -317,7 +320,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           }
           remoteLineups[entry.key] = ProjectedPageLineup(
             publicId: lineupId,
-            payload: overlay.desiredPayload!,
+            payload: Map<String, dynamic>.from(overlay.desiredPayload! as Map),
             sortIndex: overlay.desiredSortIndex ?? 0,
           );
           continue;
@@ -332,7 +335,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       pageId: page.publicId,
       pageName: page.name,
       isAttack: projectedIsAttack,
-      settingsJson: projectedSettingsJson,
+      settingsPayload: projectedSettingsPayload,
       elements: remoteElements.values.toList(growable: false)
         ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)),
       lineups: remoteLineups.values.toList(growable: false)
@@ -340,8 +343,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     );
   }
 
-  Map<String, dynamic> _decodeObject(String payload) {
-    final decoded = jsonDecode(payload);
+  Map<String, dynamic> _decodeObject(Object payload) {
+    final decoded = payload is String ? jsonDecode(payload) : payload;
     if (decoded is Map<String, dynamic>) {
       return decoded;
     }
@@ -365,7 +368,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         key: pageSettingsEntityKey(page.publicId),
         overlayEntityType: ActivePageOverlayEntityType.pageSettings,
         payload: _pagePayload(
-          settingsJson: page.settings,
+          settingsPayload: page.settings,
           isAttack: page.isAttack,
         ),
         sortIndex: null,
@@ -418,7 +421,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       key: pageKey,
       overlayEntityType: ActivePageOverlayEntityType.pageSettings,
       payload: _pagePayload(
-        settingsJson: ref.read(strategySettingsProvider.notifier).toJson(),
+        settingsPayload: ref.read(strategySettingsProvider).toJson(),
         isAttack: ref.read(mapProvider).isAttack,
       ),
       sortIndex: null,
@@ -433,7 +436,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       entities[key] = _NormalizedEntity(
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.element,
-        payload: jsonEncode(envelope.payload),
+        payload: cloudElementPayload(
+          kind: envelope.payload['elementType'] as String? ?? 'generic',
+          data: envelope.payload,
+        ),
         sortIndex: index,
         revision: 0,
         deleted: false,
@@ -447,7 +453,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       entities[key] = _NormalizedEntity(
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.lineup,
-        payload: jsonEncode(cloudLineupPayload(group)),
+        payload: cloudLineupGroupPayload(cloudLineupPayload(group)),
         sortIndex: index,
         revision: 0,
         deleted: false,
@@ -626,7 +632,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     if (remote == null) {
       return false;
     }
-    return overlay.desiredPayload == remote.payload &&
+    return _payloadsEquivalent(overlay.desiredPayload, remote.payload) &&
         overlay.desiredSortIndex == remote.sortIndex;
   }
 
@@ -641,19 +647,29 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       return false;
     }
     return local.deleted == remote.deleted &&
-        local.payload == remote.payload &&
+        _payloadsEquivalent(local.payload, remote.payload) &&
         local.sortIndex == remote.sortIndex &&
         local.overlayEntityType == remote.overlayEntityType;
   }
 
-  String _pagePayload({
-    required String? settingsJson,
+  bool _payloadsEquivalent(Object? left, Object? right) {
+    if (identical(left, right)) {
+      return true;
+    }
+    if (left == null || right == null) {
+      return false;
+    }
+    return jsonEncode(left) == jsonEncode(right);
+  }
+
+  Map<String, dynamic> _pagePayload({
+    required Map<String, dynamic>? settingsPayload,
     required bool isAttack,
   }) {
-    return jsonEncode({
-      'settings': settingsJson,
+    return {
+      'settings': settingsPayload,
       'isAttack': isAttack,
-    });
+    };
   }
 
   void _debugLog(String message) {
@@ -676,7 +692,7 @@ class _NormalizedEntity {
 
   final EntitySyncKey key;
   final ActivePageOverlayEntityType overlayEntityType;
-  final String payload;
+  final Object payload;
   final int? sortIndex;
   final int revision;
   final bool deleted;

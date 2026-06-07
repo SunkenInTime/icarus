@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -226,7 +225,7 @@ RemoteElement _remoteText({
     strategyPublicId: strategyId,
     pagePublicId: pageId,
     elementType: 'text',
-    payload: jsonEncode(payload),
+    payload: cloudElementPayload(kind: 'text', data: payload),
     sortIndex: sortIndex,
     revision: 1,
     deleted: false,
@@ -267,7 +266,7 @@ RemoteLineup _remoteLineup({
     publicId: lineupId,
     strategyPublicId: strategyId,
     pagePublicId: pageId,
-    payload: jsonEncode(group.toJson()),
+    payload: cloudLineupGroupPayload(group.toJson()),
     sortIndex: sortIndex,
     revision: 1,
     deleted: false,
@@ -826,7 +825,8 @@ void main() {
               elementEntityKey('page-1', 'text-1'): ActivePageOverlayEntry(
                 entityKey: elementEntityKey('page-1', 'text-1'),
                 entityType: ActivePageOverlayEntityType.element,
-                desiredPayload: jsonEncode(localTextPayload),
+                desiredPayload:
+                    cloudElementPayload(kind: 'text', data: localTextPayload),
                 desiredSortIndex: 0,
                 deletion: false,
                 baseRevision: 1,
@@ -946,7 +946,7 @@ void main() {
         )
         .single;
     expect(
-      jsonDecode(strategyPatch.payload!) as Map<String, dynamic>,
+      strategyPatch.payload as Map<String, dynamic>,
       containsPair('mapData', Maps.mapNames[MapValue.bind]),
     );
   });
@@ -1015,7 +1015,8 @@ void main() {
               elementEntityKey('page-1', 'text-1'): ActivePageOverlayEntry(
                 entityKey: elementEntityKey('page-1', 'text-1'),
                 entityType: ActivePageOverlayEntityType.element,
-                desiredPayload: jsonEncode(localTextPayload),
+                desiredPayload:
+                    cloudElementPayload(kind: 'text', data: localTextPayload),
                 desiredSortIndex: 0,
                 deletion: false,
                 baseRevision: 1,
@@ -1032,7 +1033,7 @@ void main() {
     final textsById = {
       for (final element in projectedState!.elements)
         element.publicId: PlacedText.fromJson(
-          jsonDecode(element.payload) as Map<String, dynamic>,
+          cloudPayloadData(element.payload),
         ).text,
     };
     expect(textsById['text-1'], 'local-a');
@@ -1106,7 +1107,7 @@ void main() {
         latestSequence: 2,
         reason: 'conflict',
       ),
-    ], const [
+    ], [
       AckedEntityIntent(
         entityKey: 'element:page-1:text-1',
         op: StrategyOp(
@@ -1115,9 +1116,12 @@ void main() {
           entityType: StrategyOpEntityType.element,
           entityPublicId: 'text-1',
           pagePublicId: 'page-1',
-          payload: '{"text":"after"}',
+          payload: cloudElementPayload(
+            kind: 'text',
+            data: {'text': 'after', 'elementType': 'text'},
+          ),
         ),
-        ack: OpAck(
+        ack: const OpAck(
           opId: 'op-1',
           status: 'reject',
           latestSequence: 2,

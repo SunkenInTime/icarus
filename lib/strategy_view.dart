@@ -1,7 +1,11 @@
+import 'dart:async';
+import 'dart:developer' as developer;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/custom_icons.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
@@ -11,8 +15,10 @@ import 'package:icarus/providers/library_rail_hover_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/delete_capture.dart';
 import 'package:icarus/widgets/demo_tag.dart';
+import 'package:icarus/widgets/strategy_view_skeleton.dart';
 import 'package:icarus/widgets/strategy_quick_switcher.dart';
 import 'package:icarus/widgets/map_selector.dart';
 import 'package:icarus/widgets/pages_bar.dart';
@@ -25,7 +31,51 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 
 class StrategyView extends ConsumerStatefulWidget {
-  const StrategyView({super.key});
+  const StrategyView({
+    super.key,
+    this.initialStrategyId,
+    this.initialStrategyName,
+    this.initialStrategySource,
+    this.initialMapValue,
+    this.initialIsAttack = true,
+  });
+
+  final String? initialStrategyId;
+  final String? initialStrategyName;
+  final StrategySource? initialStrategySource;
+  final MapValue? initialMapValue;
+  final bool initialIsAttack;
+
+  static PageRoute<void> route({
+    String? initialStrategyId,
+    String? initialStrategyName,
+    StrategySource? initialStrategySource,
+    MapValue? initialMapValue,
+    bool initialIsAttack = true,
+  }) {
+    return PageRouteBuilder<void>(
+      transitionDuration: const Duration(milliseconds: 200),
+      reverseTransitionDuration: const Duration(milliseconds: 200),
+      pageBuilder: (context, animation, _) => StrategyView(
+        initialStrategyId: initialStrategyId,
+        initialStrategyName: initialStrategyName,
+        initialStrategySource: initialStrategySource,
+        initialMapValue: initialMapValue,
+        initialIsAttack: initialIsAttack,
+      ),
+      transitionsBuilder: (context, animation, _, child) {
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.9, end: 1.0)
+                .chain(CurveTween(curve: Curves.easeOut))
+                .animate(animation),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
 
   @override
   ConsumerState<ConsumerStatefulWidget> createState() => _StrategyViewState();
@@ -34,10 +84,18 @@ class StrategyView extends ConsumerStatefulWidget {
 class _StrategyViewState extends ConsumerState<StrategyView>
     with WindowListener {
   bool _isClosingWindow = false;
+  bool _isInitialLoadPending = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialStrategyId != null &&
+        widget.initialStrategySource != null) {
+      _isInitialLoadPending = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_loadInitialStrategy());
+      });
+    }
     if (!kIsWeb) {
       windowManager.addListener(this);
       _enableWindowCloseGuard();
@@ -55,6 +113,46 @@ class _StrategyViewState extends ConsumerState<StrategyView>
 
   Future<void> _enableWindowCloseGuard() async {
     await windowManager.setPreventClose(true);
+  }
+
+  Future<void> _loadInitialStrategy() async {
+    final strategyId = widget.initialStrategyId;
+    final source = widget.initialStrategySource;
+    if (strategyId == null || source == null) {
+      if (mounted) {
+        setState(() => _isInitialLoadPending = false);
+      }
+      return;
+    }
+
+    try {
+      switch (source) {
+        case StrategySource.local:
+          await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
+        case StrategySource.cloud:
+          await ref.read(strategyProvider.notifier).openCloudStrategy(
+                strategyId,
+              );
+      }
+    } catch (error, stackTrace) {
+      developer.log(
+        'Error loading strategy: $error',
+        name: 'strategy_view',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (mounted) {
+        Settings.showToast(
+          message: 'Could not load strategy.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        Navigator.maybePop(context);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isInitialLoadPending = false);
+      }
+    }
   }
 
   Future<void> _leaveToLibrary() async {
@@ -90,6 +188,23 @@ class _StrategyViewState extends ConsumerState<StrategyView>
         );
       }
     });
+    final strategyState = ref.watch(strategyProvider);
+    final hasInitialTarget = widget.initialStrategyId != null;
+    final showSkeleton = _isInitialLoadPending ||
+        (hasInitialTarget &&
+            (!strategyState.isOpen ||
+                strategyState.strategyId != widget.initialStrategyId));
+
+    if (showSkeleton) {
+      return Scaffold(
+        body: StrategyViewSkeleton(
+          strategyName: widget.initialStrategyName,
+          mapValue: widget.initialMapValue,
+          isAttack: widget.initialIsAttack,
+        ),
+      );
+    }
+
     return Scaffold(
       body: Column(
         children: [

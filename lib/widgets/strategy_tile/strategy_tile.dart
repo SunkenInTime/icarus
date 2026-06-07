@@ -1,9 +1,8 @@
-import 'dart:developer';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
@@ -62,6 +61,26 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       widget.strategyData?.id ?? widget.cloudStrategy!.publicId;
   String get _strategyName =>
       widget.strategyData?.name ?? widget.cloudStrategy!.name;
+  MapValue? get _mapValue {
+    final strategy = widget.strategyData;
+    if (strategy != null) return strategy.mapData;
+
+    final mapData = widget.cloudStrategy?.mapData;
+    if (mapData == null) return null;
+    for (final entry in Maps.mapNames.entries) {
+      if (entry.value == mapData) return entry.key;
+    }
+    return null;
+  }
+
+  bool get _isAttack {
+    final strategy = widget.strategyData;
+    if (strategy != null) {
+      return strategy.pages.isEmpty ? true : strategy.pages.first.isAttack;
+    }
+    return widget.cloudStrategy?.attackLabel != 'Defend';
+  }
+
   StrategyTileViewData get _viewData => widget.strategyData != null
       ? StrategyTileViewData.fromStrategy(widget.strategyData!)
       : StrategyTileViewData.fromCloudSummary(widget.cloudStrategy!);
@@ -189,55 +208,25 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     }
 
     setState(() => _isLoading = true);
-    _showLoadingOverlay();
 
     try {
-      if (_isCloud) {
-        await ref
-            .read(strategyProvider.notifier)
-            .openCloudStrategy(_strategyId);
-      } else {
-        await ref.read(strategyProvider.notifier).loadFromHive(_strategyId);
-      }
       if (!context.mounted) return;
-      Navigator.pop(context);
       await Navigator.push(
         context,
-        PageRouteBuilder(
-          transitionDuration: const Duration(milliseconds: 200),
-          reverseTransitionDuration: const Duration(milliseconds: 200),
-          pageBuilder: (context, animation, _) => const StrategyView(),
-          transitionsBuilder: (context, animation, _, child) {
-            return FadeTransition(
-              opacity: animation,
-              child: ScaleTransition(
-                scale: Tween<double>(begin: 0.9, end: 1.0)
-                    .chain(CurveTween(curve: Curves.easeOut))
-                    .animate(animation),
-                child: child,
-              ),
-            );
-          },
+        StrategyView.route(
+          initialStrategyId: _strategyId,
+          initialStrategyName: _strategyName,
+          initialStrategySource:
+              _isCloud ? StrategySource.cloud : StrategySource.local,
+          initialMapValue: _mapValue,
+          initialIsAttack: _isAttack,
         ),
       );
-    } catch (error, stackTrace) {
-      log('Error loading strategy: $error', stackTrace: stackTrace);
-      if (context.mounted) {
-        Navigator.pop(context);
-      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
-  }
-
-  void _showLoadingOverlay() {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
   }
 
   Future<void> _duplicateStrategy() async {

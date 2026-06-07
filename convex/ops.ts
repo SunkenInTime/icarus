@@ -9,6 +9,8 @@ import {
   getStrategyByPublicId,
 } from "./lib/entities";
 import { strategyOpValidator } from "./lib/opTypes";
+import { assertSupportedCloudProtocol } from "./lib/cloudProtocol";
+import type { Doc } from "./_generated/dataModel";
 
 async function incrementSequence(ctx: any, strategy: any): Promise<any> {
   const nextSequence = strategy.sequence + 1;
@@ -24,28 +26,128 @@ async function incrementSequence(ctx: any, strategy: any): Promise<any> {
   };
 }
 
-function parsePayload(payload: string | undefined): Record<string, unknown> {
-  if (payload === undefined || payload.length === 0) {
+type ElementPayload = Doc<"elements">["payload"];
+type LineupPayload = Doc<"lineups">["payload"];
+type StrategyPatchPayload = {
+  name?: string;
+  mapData?: string;
+  themeProfileId?: string;
+  clearThemeProfileId?: boolean;
+  themeOverridePalette?: Doc<"strategies">["themeOverridePalette"];
+  clearThemeOverridePalette?: boolean;
+};
+type PagePayload = {
+  name?: string;
+  settings?: Doc<"pages">["settings"];
+  isAttack?: boolean;
+};
+
+function isRecord(payload: unknown): payload is Record<string, unknown> {
+  return (
+    typeof payload === "object" && payload !== null && !Array.isArray(payload)
+  );
+}
+
+function assertKnownPayloadKeys(
+  payload: Record<string, unknown>,
+  allowedKeys: Set<string>,
+  label: string,
+): void {
+  for (const key of Object.keys(payload)) {
+    if (!allowedKeys.has(key)) {
+      throw new Error(`Invalid ${label} payload`);
+    }
+  }
+}
+
+const strategyPatchPayloadKeys = new Set([
+  "name",
+  "mapData",
+  "themeProfileId",
+  "clearThemeProfileId",
+  "themeOverridePalette",
+  "clearThemeOverridePalette",
+]);
+
+const pagePayloadKeys = new Set(["name", "settings", "isAttack"]);
+
+function assertStrategyPatchPayload(payload: unknown): StrategyPatchPayload {
+  if (payload === undefined) {
     return {};
   }
-  try {
-    const parsed = JSON.parse(payload);
-    if (typeof parsed === "object" && parsed !== null) {
-      return parsed as Record<string, unknown>;
-    }
-  } catch (_) {
-    // ignore, validated at call sites
+  if (!isRecord(payload)) {
+    throw new Error("Invalid strategy payload");
   }
-  return {};
+  assertKnownPayloadKeys(payload, strategyPatchPayloadKeys, "strategy");
+  return payload as StrategyPatchPayload;
+}
+
+function assertPagePayload(payload: unknown): PagePayload {
+  if (payload === undefined) {
+    return {};
+  }
+  if (!isRecord(payload)) {
+    throw new Error("Invalid page payload");
+  }
+  assertKnownPayloadKeys(payload, pagePayloadKeys, "page");
+  return payload as PagePayload;
+}
+
+function assertElementPayload(payload: unknown): ElementPayload {
+  if (!isRecord(payload)) {
+    throw new Error("Missing element payload");
+  }
+  const kind = payload.kind;
+  const payloadVersion = payload.payloadVersion;
+  const data = payload.data;
+  if (
+    kind !== "agent" &&
+    kind !== "ability" &&
+    kind !== "drawing" &&
+    kind !== "text" &&
+    kind !== "image" &&
+    kind !== "utility"
+  ) {
+    throw new Error("Invalid element payload kind");
+  }
+  if (typeof payloadVersion !== "number") {
+    throw new Error("Invalid element payload version");
+  }
+  if (!isRecord(data)) {
+    throw new Error("Invalid element payload data");
+  }
+  if (typeof data.elementType === "string" && data.elementType !== kind) {
+    throw new Error("elementType_payloadKind_mismatch");
+  }
+  return payload as ElementPayload;
+}
+
+function assertLineupPayload(payload: unknown): LineupPayload {
+  if (!isRecord(payload)) {
+    throw new Error("Missing lineup payload");
+  }
+  if (payload.kind !== "lineupGroup") {
+    throw new Error("Invalid lineup payload kind");
+  }
+  if (typeof payload.payloadVersion !== "number") {
+    throw new Error("Invalid lineup payload version");
+  }
+  if (!isRecord(payload.data)) {
+    throw new Error("Invalid lineup payload data");
+  }
+  return payload as LineupPayload;
 }
 
 export const applyBatch = mutation({
   args: {
     strategyPublicId: v.string(),
     clientId: v.string(),
+    clientProtocolVersion: v.number(),
     ops: v.array(strategyOpValidator),
   },
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
+
     let strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
 
@@ -81,7 +183,7 @@ export const applyBatch = mutation({
       let reason: string | undefined;
       let appliedRevision: number | undefined;
       let latestRevision: number | undefined;
-      let latestPayload: string | undefined;
+      let latestPayload: ElementPayload | LineupPayload | undefined;
       let eventPageId: Id<"pages"> | undefined;
 
       try {
@@ -96,7 +198,7 @@ export const applyBatch = mutation({
             throw new Error("Unsupported strategy op");
           }
 
-          const payload = parsePayload(op.payload);
+          const payload = assertStrategyPatchPayload(op.payload);
           const patch: Record<string, unknown> = {
             updatedAt: Date.now(),
           };
@@ -112,7 +214,7 @@ export const applyBatch = mutation({
           if (payload.clearThemeProfileId === true) {
             patch.themeProfileId = undefined;
           }
-          if (typeof payload.themeOverridePalette === "string") {
+          if (payload.themeOverridePalette !== undefined) {
             patch.themeOverridePalette = payload.themeOverridePalette;
           }
           if (payload.clearThemeOverridePalette === true) {
@@ -127,7 +229,7 @@ export const applyBatch = mutation({
             if (!pagePublicId) {
               throw new Error("Missing pagePublicId");
             }
-            const payload = parsePayload(op.payload);
+            const payload = assertPagePayload(op.payload);
             const now = Date.now();
             const existingPage = await ctx.db
               .query("pages")
@@ -151,7 +253,7 @@ export const applyBatch = mutation({
                     ? payload.isAttack
                     : existingPage.isAttack,
                 settings:
-                  typeof payload.settings === "string"
+                  payload.settings !== undefined
                     ? payload.settings
                     : existingPage.settings,
                 revision: existingPage.revision + 1,
@@ -165,10 +267,7 @@ export const applyBatch = mutation({
                 name: typeof payload.name === "string" ? payload.name : "Page",
                 sortIndex: op.sortIndex ?? 0,
                 isAttack: payload.isAttack === false ? false : true,
-                settings:
-                  typeof payload.settings === "string"
-                    ? payload.settings
-                    : undefined,
+                settings: payload.settings,
                 revision: 1,
                 createdAt: now,
                 updatedAt: now,
@@ -198,13 +297,13 @@ export const applyBatch = mutation({
               status = "reject";
               reason = "revision_mismatch";
             } else if (op.kind === "patch") {
-              const payload = parsePayload(op.payload);
+              const payload = assertPagePayload(op.payload);
               const patch: Record<string, unknown> = {
                 revision: page.revision + 1,
                 updatedAt: Date.now(),
               };
               if (typeof payload.name === "string") patch.name = payload.name;
-              if (typeof payload.settings === "string") {
+              if (payload.settings !== undefined) {
                 patch.settings = payload.settings;
               }
               if (typeof payload.isAttack === "boolean") {
@@ -257,11 +356,8 @@ export const applyBatch = mutation({
               throw new Error("Page strategy mismatch");
             }
             eventPageId = page._id;
-            const payload = parsePayload(op.payload);
-            const elementType =
-              typeof payload.elementType === "string"
-                ? payload.elementType
-                : "generic";
+            const payload = assertElementPayload(op.payload);
+            const elementType = payload.kind;
             const now = Date.now();
             const existingElement = await ctx.db
               .query("elements")
@@ -275,7 +371,9 @@ export const applyBatch = mutation({
               await ctx.db.patch(existingElement._id, {
                 pageId: page._id,
                 elementType,
-                payload: op.payload,
+                payloadKind: payload.kind,
+                payloadVersion: payload.payloadVersion,
+                payload,
                 sortIndex: op.sortIndex ?? existingElement.sortIndex,
                 deleted: false,
                 revision: existingElement.revision + 1,
@@ -288,7 +386,9 @@ export const applyBatch = mutation({
                 strategyId: strategy._id,
                 pageId: page._id,
                 elementType,
-                payload: op.payload,
+                payloadKind: payload.kind,
+                payloadVersion: payload.payloadVersion,
+                payload,
                 sortIndex: op.sortIndex ?? 0,
                 revision: 1,
                 deleted: false,
@@ -331,7 +431,13 @@ export const applyBatch = mutation({
                 updatedAt: Date.now(),
               };
               if (op.payload !== undefined) {
-                patch.payload = op.payload;
+                const payload = assertElementPayload(op.payload);
+                if (payload.kind !== element.elementType) {
+                  throw new Error("elementType_payloadKind_mismatch");
+                }
+                patch.payload = payload;
+                patch.payloadKind = payload.kind;
+                patch.payloadVersion = payload.payloadVersion;
               }
               if (op.sortIndex !== undefined) {
                 patch.sortIndex = op.sortIndex;
@@ -372,6 +478,7 @@ export const applyBatch = mutation({
               throw new Error("Page strategy mismatch");
             }
             eventPageId = page._id;
+            const payload = assertLineupPayload(op.payload);
             const now = Date.now();
             const existingLineup = await ctx.db
               .query("lineups")
@@ -384,7 +491,9 @@ export const applyBatch = mutation({
               }
               await ctx.db.patch(existingLineup._id, {
                 pageId: page._id,
-                payload: op.payload,
+                payloadKind: payload.kind,
+                payloadVersion: payload.payloadVersion,
+                payload,
                 sortIndex: op.sortIndex ?? existingLineup.sortIndex,
                 deleted: false,
                 revision: existingLineup.revision + 1,
@@ -396,7 +505,9 @@ export const applyBatch = mutation({
                 publicId: lineupPublicId,
                 strategyId: strategy._id,
                 pageId: page._id,
-                payload: op.payload,
+                payloadKind: payload.kind,
+                payloadVersion: payload.payloadVersion,
+                payload,
                 sortIndex: op.sortIndex ?? 0,
                 revision: 1,
                 deleted: false,
@@ -439,7 +550,10 @@ export const applyBatch = mutation({
                 updatedAt: Date.now(),
               };
               if (op.payload !== undefined) {
-                patch.payload = op.payload;
+                const payload = assertLineupPayload(op.payload);
+                patch.payload = payload;
+                patch.payloadKind = payload.kind;
+                patch.payloadVersion = payload.payloadVersion;
               }
               if (op.sortIndex !== undefined) {
                 patch.sortIndex = op.sortIndex;

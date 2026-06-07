@@ -2382,16 +2382,7 @@ class StrategyImportExportService {
           continue;
         }
         try {
-          final decoded = jsonDecode(lineup.payload);
-          final mapped = decoded is Map<String, dynamic>
-              ? decoded
-              : decoded is Map
-                  ? Map<String, dynamic>.from(decoded)
-                  : null;
-          if (mapped == null) {
-            continue;
-          }
-          final parsed = LineUpGroup.fromJson(mapped);
+          final parsed = LineUpGroup.fromJson(cloudPayloadData(lineup.payload));
           for (final item in parsed.items) {
             for (final image in item.images) {
               assetIds.add(image.id);
@@ -2499,22 +2490,16 @@ class StrategyImportExportService {
       for (final lineup in lineups) {
         if (lineup.deleted) continue;
         try {
-          final decoded = jsonDecode(lineup.payload);
-          if (decoded is Map<String, dynamic>) {
-            parsedLineUpGroups.add(LineUpGroup.fromJson(decoded));
-          } else if (decoded is Map) {
-            parsedLineUpGroups.add(
-              LineUpGroup.fromJson(Map<String, dynamic>.from(decoded)),
-            );
-          }
+          parsedLineUpGroups.add(
+            LineUpGroup.fromJson(cloudPayloadData(lineup.payload)),
+          );
         } catch (_) {}
       }
 
       StrategySettings settings = StrategySettings();
       if (remotePage.settings != null && remotePage.settings!.isNotEmpty) {
         try {
-          settings =
-              StrategySettings.fromJson(jsonDecode(remotePage.settings!));
+          settings = StrategySettings.fromJson(remotePage.settings!);
         } catch (_) {}
       }
 
@@ -2540,14 +2525,7 @@ class StrategyImportExportService {
     final rawPalette = snapshot.header.themeOverridePalette;
     if (rawPalette != null && rawPalette.isNotEmpty) {
       try {
-        final decoded = jsonDecode(rawPalette);
-        if (decoded is Map<String, dynamic>) {
-          overridePalette = MapThemePalette.fromJson(decoded);
-        } else if (decoded is Map) {
-          overridePalette = MapThemePalette.fromJson(
-            Map<String, dynamic>.from(decoded),
-          );
-        }
+        overridePalette = MapThemePalette.fromJson(rawPalette);
       } catch (_) {}
     }
 

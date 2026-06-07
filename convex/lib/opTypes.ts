@@ -1,4 +1,10 @@
 import { v } from "convex/values";
+import {
+  elementPayloadValidator,
+  lineupGroupPayloadValidator,
+  pagePayloadValidator,
+  strategyPatchPayloadValidator,
+} from "./payloadValidators";
 
 export const opKindValidator = v.union(
   v.literal("add"),
@@ -21,7 +27,14 @@ export const strategyOpValidator = v.object({
   entityType: entityTypeValidator,
   entityPublicId: v.optional(v.string()),
   pagePublicId: v.optional(v.string()),
-  payload: v.optional(v.string()),
+  payload: v.optional(
+    v.union(
+      strategyPatchPayloadValidator,
+      pagePayloadValidator,
+      elementPayloadValidator,
+      lineupGroupPayloadValidator,
+    ),
+  ),
   sortIndex: v.optional(v.number()),
   expectedRevision: v.optional(v.number()),
   expectedSequence: v.optional(v.number()),

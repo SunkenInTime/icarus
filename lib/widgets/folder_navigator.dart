@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
@@ -14,9 +15,9 @@ import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_rail_hover_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
@@ -257,42 +258,22 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 .read(folderProvider.notifier)
                 .findLocalFolderByID(currentFolderId)
         : null;
-    Future<void> navigateWithLoading(
-        BuildContext context, String strategyId) async {
-      // Show loading overlay
-      // showLoadingOverlay(context);
-
-      try {
-        await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
-
-        if (!context.mounted) return;
-
-        Navigator.push(
-          context,
-          PageRouteBuilder(
-            transitionDuration: const Duration(milliseconds: 200),
-            reverseTransitionDuration:
-                const Duration(milliseconds: 200), // pop duration
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                const StrategyView(),
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.9, end: 1.0)
-                      .chain(CurveTween(curve: Curves.easeOut))
-                      .animate(animation),
-                  child: child,
-                ),
-              );
-            },
-          ),
-        );
-      } catch (e) {
-        // Handle errors
-        // Show error message
-      }
+    Future<void> navigateToLocalStrategy(
+      BuildContext context,
+      String strategyId, {
+      String? strategyName,
+    }) async {
+      if (!context.mounted) return;
+      await Navigator.push(
+        context,
+        StrategyView.route(
+          initialStrategyId: strategyId,
+          initialStrategyName: strategyName,
+          initialStrategySource: StrategySource.local,
+          initialMapValue: MapValue.ascent,
+          initialIsAttack: true,
+        ),
+      );
     }
 
     void showCreateDialog() async {
@@ -308,27 +289,10 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         if (isCloudWorkspace) {
           await Navigator.push(
             context,
-            PageRouteBuilder(
-              transitionDuration: const Duration(milliseconds: 200),
-              reverseTransitionDuration: const Duration(milliseconds: 200),
-              pageBuilder: (context, animation, secondaryAnimation) =>
-                  const StrategyView(),
-              transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.9, end: 1.0)
-                        .chain(CurveTween(curve: Curves.easeOut))
-                        .animate(animation),
-                    child: child,
-                  ),
-                );
-              },
-            ),
+            StrategyView.route(),
           );
         } else {
-          await navigateWithLoading(context, strategyId);
+          await navigateToLocalStrategy(context, strategyId);
         }
       }
     }

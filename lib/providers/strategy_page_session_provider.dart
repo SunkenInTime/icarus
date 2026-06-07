@@ -515,17 +515,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         return null;
       }
       try {
-        final decoded = jsonDecode(payload);
-        if (decoded is Map<String, dynamic>) {
-          return MapThemePalette.fromJson(decoded);
-        }
-        if (decoded is Map) {
-          return MapThemePalette.fromJson(Map<String, dynamic>.from(decoded));
-        }
+        return MapThemePalette.fromJson(payload);
       } catch (_) {
         return null;
       }
-      return null;
     }
 
     return Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
@@ -719,14 +712,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       hasReject = true;
       Map<String, dynamic>? serverPayload;
       if (ack.latestPayload != null && ack.latestPayload!.isNotEmpty) {
-        try {
-          final decoded = jsonDecode(ack.latestPayload!);
-          if (decoded is Map<String, dynamic>) {
-            serverPayload = decoded;
-          }
-        } catch (_) {
-          serverPayload = null;
-        }
+        serverPayload = cloudPayloadData(ack.latestPayload);
       }
 
       ref.read(strategyConflictProvider.notifier).push(

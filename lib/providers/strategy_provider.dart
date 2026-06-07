@@ -410,13 +410,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     final localMapData = Maps.mapNames[ref.read(mapProvider).currentMap] ??
         snapshot.header.mapData;
     final localThemeProfileId = strategyTheme.profileId;
-    final localThemeOverridePalette = strategyTheme.overridePalette == null
-        ? null
-        : jsonEncode(strategyTheme.overridePalette!.toJson());
+    final localThemeOverridePalette = strategyTheme.overridePalette?.toJson();
 
     final matchesRemote = snapshot.header.mapData == localMapData &&
         snapshot.header.themeProfileId == localThemeProfileId &&
-        snapshot.header.themeOverridePalette == localThemeOverridePalette;
+        jsonEncode(snapshot.header.themeOverridePalette) ==
+            jsonEncode(localThemeOverridePalette);
     if (matchesRemote) {
       return null;
     }
@@ -426,7 +425,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       kind: StrategyOpKind.patch,
       entityType: StrategyOpEntityType.strategy,
       entityPublicId: strategyId,
-      payload: jsonEncode({
+      payload: {
         'mapData': localMapData,
         if (localThemeProfileId != null) 'themeProfileId': localThemeProfileId,
         if (localThemeProfileId == null) 'clearThemeProfileId': true,
@@ -434,7 +433,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           'themeOverridePalette': localThemeOverridePalette,
         if (localThemeOverridePalette == null)
           'clearThemeOverridePalette': true,
-      }),
+      },
     );
   }
 
@@ -650,7 +649,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           "name": name ?? "Page ${pages.length + 1}",
           "sortIndex": nextIndex,
           "isAttack": pages.isNotEmpty ? pages.last.isAttack : true,
-          "settings": ref.read(strategySettingsProvider.notifier).toJson(),
+          "settings": ref.read(strategySettingsProvider).toJson(),
         });
       } catch (error, stackTrace) {
         final handled = await _reportCloudUnauthenticated(
@@ -913,7 +912,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               initialPagePublicId: pageID,
               initialPageName: "Page 1",
               initialPageIsAttack: true,
-              initialPageSettings: jsonEncode(defaultSettings.toJson()),
+              initialPageSettings: defaultSettings.toJson(),
               folderPublicId: ref.read(folderProvider),
               themeProfileId: defaultThemeProfileId,
             );
@@ -1091,7 +1090,11 @@ class StrategyProvider extends Notifier<StrategyState> {
               entityType: StrategyOpEntityType.element,
               entityPublicId: newElementId,
               pagePublicId: newPageId,
-              payload: jsonEncode(payloadMap),
+              payload: cloudElementPayload(
+                kind:
+                    payloadMap['elementType'] as String? ?? element.elementType,
+                data: payloadMap,
+              ),
               sortIndex: element.sortIndex,
             ));
           }
@@ -1100,26 +1103,15 @@ class StrategyProvider extends Notifier<StrategyState> {
           for (final lineup in lineups) {
             if (lineup.deleted) continue;
             final newLineupId = const Uuid().v4();
-            String lineupPayload = lineup.payload;
-            try {
-              final decoded = jsonDecode(lineup.payload);
-              if (decoded is Map<String, dynamic>) {
-                final payload = Map<String, dynamic>.from(decoded)
-                  ..["id"] = newLineupId;
-                lineupPayload = jsonEncode(payload);
-              } else if (decoded is Map) {
-                final payload = Map<String, dynamic>.from(decoded)
-                  ..["id"] = newLineupId;
-                lineupPayload = jsonEncode(payload);
-              }
-            } catch (_) {}
+            final lineupPayload = cloudPayloadData(lineup.payload)
+              ..["id"] = newLineupId;
             ops.add(StrategyOp(
               opId: const Uuid().v4(),
               kind: StrategyOpKind.add,
               entityType: StrategyOpEntityType.lineup,
               entityPublicId: newLineupId,
               pagePublicId: newPageId,
-              payload: lineupPayload,
+              payload: cloudLineupGroupPayload(lineupPayload),
               sortIndex: lineup.sortIndex,
             ));
           }
@@ -1335,11 +1327,11 @@ class StrategyProvider extends Notifier<StrategyState> {
             entityType: StrategyOpEntityType.page,
             entityPublicId: page.publicId,
             pagePublicId: page.publicId,
-            payload: jsonEncode({
-              'settings': StrategySettingsProvider.objectToJson(
-                transform(_settingsFromJsonOrDefault(page.settings)),
-              ),
-            }),
+            payload: {
+              'settings':
+                  transform(_settingsFromPayloadOrDefault(page.settings))
+                      .toJson(),
+            },
           ),
       ];
 
@@ -1390,17 +1382,14 @@ class StrategyProvider extends Notifier<StrategyState> {
     setUnsaved();
   }
 
-  StrategySettings _settingsFromJsonOrDefault(String? jsonString) {
-    if (jsonString == null || jsonString.isEmpty) {
+  StrategySettings _settingsFromPayloadOrDefault(Object? payload) {
+    if (payload == null) {
       return StrategySettings();
     }
     try {
-      final decoded = jsonDecode(jsonString);
-      if (decoded is Map<String, dynamic>) {
+      final decoded = cloudObjectPayloadOrNull(payload);
+      if (decoded != null) {
         return StrategySettings.fromJson(decoded);
-      }
-      if (decoded is Map) {
-        return StrategySettings.fromJson(Map<String, dynamic>.from(decoded));
       }
     } catch (_) {}
     return StrategySettings();

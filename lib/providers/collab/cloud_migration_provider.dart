@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer';
 
 import 'package:convex_flutter/convex_flutter.dart';
@@ -63,13 +62,11 @@ class CloudMigrationNotifier extends Notifier<bool> {
           initialPageName: firstPage?.name ?? 'Page 1',
           initialPageIsAttack: firstPage?.isAttack ?? true,
           initialPageSettings: firstPage == null
-              ? ref.read(strategySettingsProvider.notifier).toJson()
-              : StrategySettingsProvider.objectToJson(firstPage.settings),
+              ? ref.read(strategySettingsProvider).toJson()
+              : firstPage.settings.toJson(),
           folderPublicId: strategy.folderID,
           themeProfileId: strategy.themeProfileId,
-          themeOverridePalette: strategy.themeOverridePalette == null
-              ? null
-              : jsonEncode(strategy.themeOverridePalette!.toJson()),
+          themeOverridePalette: strategy.themeOverridePalette?.toJson(),
         );
       } catch (error, stackTrace) {
         await _maybeReportCloudUnauthenticated(
@@ -100,7 +97,7 @@ class CloudMigrationNotifier extends Notifier<bool> {
             'name': page.name,
             'sortIndex': page.sortIndex,
             'isAttack': page.isAttack,
-            'settings': StrategySettingsProvider.objectToJson(page.settings),
+            'settings': page.settings.toJson(),
           });
         } catch (error, stackTrace) {
           await _maybeReportCloudUnauthenticated(
@@ -138,6 +135,7 @@ class CloudMigrationNotifier extends Notifier<bool> {
 
     state = true;
   }
+
   Future<void> _maybeReportCloudUnauthenticated({
     required String source,
     required Object error,

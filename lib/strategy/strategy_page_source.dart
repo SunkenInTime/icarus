@@ -246,13 +246,9 @@ class CloudStrategyPageSource implements StrategyPageSource {
         continue;
       }
       try {
-        final decoded = jsonDecode(lineup.payload);
-        if (decoded is Map<String, dynamic>) {
-          parsedLineUpGroups.add(LineUpGroup.fromJson(decoded));
-        } else if (decoded is Map) {
-          parsedLineUpGroups
-              .add(LineUpGroup.fromJson(Map<String, dynamic>.from(decoded)));
-        }
+        parsedLineUpGroups.add(LineUpGroup.fromJson(
+          cloudPayloadData(lineup.payload),
+        ));
       } catch (_) {
         // Ignore malformed payloads during hydration.
       }
@@ -266,9 +262,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
     StrategySettings pageSettings = StrategySettings();
     if (page.settings != null && page.settings!.isNotEmpty) {
       try {
-        pageSettings = ref
-            .read(strategySettingsProvider.notifier)
-            .fromJson(page.settings!);
+        pageSettings = StrategySettings.fromJson(page.settings!);
       } catch (_) {
         pageSettings = StrategySettings();
       }
@@ -323,16 +317,14 @@ class CloudStrategyPageSource implements StrategyPageSource {
     }
 
     final strategyTheme = ref.read(strategyThemeProvider);
-    final desiredThemeOverride = strategyTheme.overridePalette == null
-        ? null
-        : jsonEncode(strategyTheme.overridePalette!.toJson());
+    final desiredThemeOverride = strategyTheme.overridePalette?.toJson();
     final header = snapshot.header;
 
     final mapMatches = header.mapData == currentMapData;
     final themeProfileMatches =
         header.themeProfileId == strategyTheme.profileId;
-    final themeOverrideMatches =
-        header.themeOverridePalette == desiredThemeOverride;
+    final themeOverrideMatches = jsonEncode(header.themeOverridePalette) ==
+        jsonEncode(desiredThemeOverride);
 
     if (mapMatches && themeProfileMatches && themeOverrideMatches) {
       ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
@@ -361,7 +353,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
             opId: const Uuid().v4(),
             kind: StrategyOpKind.patch,
             entityType: StrategyOpEntityType.strategy,
-            payload: jsonEncode(payload),
+            payload: payload,
             expectedSequence: header.sequence,
           ),
           flushImmediately: false,
@@ -381,7 +373,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
     final utilities = <PlacedUtility>[];
 
     for (final element in projected.elements) {
-      final payload = _decodeJsonObject(element.payload);
+      final payload = cloudPayloadData(element.payload);
       try {
         switch (element.elementType) {
           case 'agent':
@@ -423,13 +415,9 @@ class CloudStrategyPageSource implements StrategyPageSource {
     final parsedLineUpGroups = <LineUpGroup>[];
     for (final lineup in projected.lineups) {
       try {
-        final decoded = jsonDecode(lineup.payload);
-        if (decoded is Map<String, dynamic>) {
-          parsedLineUpGroups.add(LineUpGroup.fromJson(decoded));
-        } else if (decoded is Map) {
-          parsedLineUpGroups
-              .add(LineUpGroup.fromJson(Map<String, dynamic>.from(decoded)));
-        }
+        parsedLineUpGroups.add(LineUpGroup.fromJson(
+          cloudPayloadData(lineup.payload),
+        ));
       } catch (_) {
         // Ignore malformed payloads during hydration.
       }
@@ -440,7 +428,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
     );
 
-    final settings = _parsePageSettings(projected.settingsJson);
+    final settings = _parsePageSettings(projected.settingsPayload);
 
     return StrategyEditorPageData(
       pageId: projected.pageId,
@@ -458,29 +446,14 @@ class CloudStrategyPageSource implements StrategyPageSource {
     );
   }
 
-  StrategySettings _parsePageSettings(String? settingsJson) {
-    if (settingsJson == null || settingsJson.isEmpty) {
+  StrategySettings _parsePageSettings(Map<String, dynamic>? settingsPayload) {
+    if (settingsPayload == null) {
       return StrategySettings();
     }
     try {
-      return ref.read(strategySettingsProvider.notifier).fromJson(settingsJson);
+      return StrategySettings.fromJson(settingsPayload);
     } catch (_) {
       return StrategySettings();
     }
-  }
-
-  Map<String, dynamic> _decodeJsonObject(String payload) {
-    try {
-      final decoded = jsonDecode(payload);
-      if (decoded is Map<String, dynamic>) {
-        return decoded;
-      }
-      if (decoded is Map) {
-        return Map<String, dynamic>.from(decoded);
-      }
-    } catch (_) {
-      // Ignore malformed payloads during hydration.
-    }
-    return <String, dynamic>{};
   }
 }

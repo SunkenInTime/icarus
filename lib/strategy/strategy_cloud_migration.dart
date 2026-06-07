@@ -83,7 +83,7 @@ void appendMigratedPageOps(
         entityType: StrategyOpEntityType.lineup,
         entityPublicId: lineupId,
         pagePublicId: page.id,
-        payload: jsonEncode(lineupPayload),
+        payload: cloudLineupGroupPayload(lineupPayload),
         sortIndex: lineupOrder++,
       ),
     );
@@ -114,7 +114,10 @@ StrategyOp buildMigratedElementOp(
     entityType: StrategyOpEntityType.element,
     entityPublicId: elementId,
     pagePublicId: pagePublicId,
-    payload: jsonEncode(payload),
+    payload: cloudElementPayload(
+      kind: payload['elementType'] as String? ?? 'generic',
+      data: payload,
+    ),
     sortIndex: sortIndex,
   );
 }

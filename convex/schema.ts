@@ -1,6 +1,13 @@
 // convex/schema.ts
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  elementPayloadKindValidator,
+  elementPayloadValidator,
+  lineupGroupPayloadValidator,
+  mapThemePaletteValidator,
+  strategySettingsValidator,
+} from "./lib/payloadValidators";
 
 export default defineSchema({
   users: defineTable({
@@ -34,7 +41,7 @@ export default defineSchema({
     mapData: v.string(),
     sequence: v.number(),
     themeProfileId: v.optional(v.string()),
-    themeOverridePalette: v.optional(v.string()),
+    themeOverridePalette: v.optional(mapThemePaletteValidator),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -47,7 +54,7 @@ export default defineSchema({
     name: v.string(),
     sortIndex: v.number(),
     isAttack: v.boolean(),
-    settings: v.optional(v.string()),
+    settings: v.optional(strategySettingsValidator),
     revision: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -58,8 +65,10 @@ export default defineSchema({
     publicId: v.string(),
     strategyId: v.id("strategies"),
     pageId: v.id("pages"),
-    elementType: v.string(),
-    payload: v.string(),
+    elementType: elementPayloadKindValidator,
+    payloadKind: elementPayloadKindValidator,
+    payloadVersion: v.number(),
+    payload: elementPayloadValidator,
     sortIndex: v.number(),
     revision: v.number(),
     deleted: v.boolean(),
@@ -73,7 +82,9 @@ export default defineSchema({
     publicId: v.string(),
     strategyId: v.id("strategies"),
     pageId: v.id("pages"),
-    payload: v.string(),
+    payloadKind: v.literal("lineupGroup"),
+    payloadVersion: v.number(),
+    payload: lineupGroupPayloadValidator,
     sortIndex: v.number(),
     revision: v.number(),
     deleted: v.boolean(),

@@ -43,7 +43,7 @@ void main() {
         kind: StrategyOpKind.patch,
         entityType: StrategyOpEntityType.element,
         entityPublicId: 'element-1',
-        payload: '{"foo":"bar"}',
+        payload: {'foo': 'bar'},
       );
 
       final json = op.toConvexJson();
@@ -52,7 +52,7 @@ void main() {
       expect(json['kind'], 'patch');
       expect(json['entityType'], 'element');
       expect(json['entityPublicId'], 'element-1');
-      expect(json['payload'], '{"foo":"bar"}');
+      expect(json['payload'], {'foo': 'bar'});
       expect(json.containsKey('pagePublicId'), isFalse);
       expect(json.containsKey('sortIndex'), isFalse);
       expect(json.containsKey('expectedRevision'), isFalse);
@@ -80,13 +80,17 @@ void main() {
   });
 
   group('RemoteElement', () {
-    test('decodes valid payload json object', () {
+    test('decodes valid payload object data', () {
       const remote = RemoteElement(
         publicId: 'el-1',
         strategyPublicId: 'strat-1',
         pagePublicId: 'page-1',
         elementType: 'agent',
-        payload: '{"id":"agent-1","elementType":"agent"}',
+        payload: {
+          'kind': 'agent',
+          'payloadVersion': 1,
+          'data': {'id': 'agent-1', 'elementType': 'agent'},
+        },
         sortIndex: 0,
         revision: 1,
         deleted: false,
@@ -96,19 +100,53 @@ void main() {
       expect(remote.decodedPayload()['elementType'], 'agent');
     });
 
-    test('returns empty map for invalid payload json', () {
+    test('returns empty map for payload without data', () {
       const remote = RemoteElement(
         publicId: 'el-2',
         strategyPublicId: 'strat-1',
         pagePublicId: 'page-1',
         elementType: 'agent',
-        payload: 'not json',
+        payload: {},
         sortIndex: 0,
         revision: 1,
         deleted: false,
       );
 
       expect(remote.decodedPayload(), isEmpty);
+    });
+  });
+
+  group('remote metadata payloads', () {
+    test('strategy headers and pages parse object metadata payloads', () {
+      final header = RemoteStrategyHeader.fromJson({
+        'publicId': 'strat-1',
+        'name': 'Cloud',
+        'mapData': 'ascent',
+        'sequence': 1,
+        'createdAt': 1,
+        'updatedAt': 2,
+        'themeOverridePalette': {
+          'base': '#111111',
+          'detail': '#222222',
+          'highlight': '#333333',
+        },
+      });
+      final page = RemotePage.fromJson({
+        'publicId': 'page-1',
+        'strategyPublicId': 'strat-1',
+        'name': 'Page 1',
+        'sortIndex': 0,
+        'isAttack': true,
+        'revision': 1,
+        'settings': {
+          'agentSize': 35.0,
+          'abilitySize': 25.0,
+          'useNeutralTeamColors': true,
+        },
+      });
+
+      expect(header.themeOverridePalette, containsPair('base', '#111111'));
+      expect(page.settings, containsPair('useNeutralTeamColors', true));
     });
   });
 
@@ -200,7 +238,11 @@ void main() {
       strategyPublicId: 'strat-1',
       pagePublicId: 'page-1',
       elementType: 'text',
-      payload: '{}',
+      payload: {
+        'kind': 'text',
+        'payloadVersion': 1,
+        'data': {},
+      },
       sortIndex: 1,
       revision: 1,
       deleted: false,
@@ -210,7 +252,11 @@ void main() {
       strategyPublicId: 'strat-1',
       pagePublicId: 'page-1',
       elementType: 'text',
-      payload: '{}',
+      payload: {
+        'kind': 'text',
+        'payloadVersion': 1,
+        'data': {},
+      },
       sortIndex: 0,
       revision: 2,
       deleted: true,
@@ -219,7 +265,11 @@ void main() {
       publicId: 'lineup-1',
       strategyPublicId: 'strat-1',
       pagePublicId: 'page-2',
-      payload: '{}',
+      payload: {
+        'kind': 'lineupGroup',
+        'payloadVersion': 1,
+        'data': {},
+      },
       sortIndex: 0,
       revision: 1,
       deleted: false,

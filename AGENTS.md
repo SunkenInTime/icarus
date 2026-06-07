@@ -1,26 +1,8 @@
-# Icarus — Valorant Strategies & Line ups
 
-A Flutter desktop app for creating interactive Valorant game strategies. See `README.md` for features and architecture.
+All of the cloud and online authentication stuff is only by me, the dev. This is not released publicly yet so If there's a change that might need a migration, I would rather wipe everything on the server and then get the new shape done instead of having to write a migration for something that will never hit prod. The main goal is to try to get the right shape for all these features if that will make it into prod
 
-## Cursor Cloud specific instructions
-
-### Services
-
-| Service | How to run |
-|---------|-----------|
-| Icarus (Flutter Linux desktop app) | `fvm flutter run -d linux` |
-
-### Key caveats
-
-- **FVM is required.** Flutter is pinned to `3.38.4` via `.fvmrc`. Always prefix Flutter/Dart commands with `fvm` (e.g. `fvm flutter run`, `fvm dart run`).
-- **Cloud is still dev-build only.** The cloud backend has not shipped publicly yet, so backwards compatibility with existing dev cloud data is not automatically required. If a change breaks cloud data/API compatibility, explicitly tell the user first and let them decide whether to wipe/migrate the dev database or take another action.
-- **`xdg-user-dirs` must be initialized.** The `path_provider` plugin needs XDG user directories. Run `sudo apt-get install -y xdg-user-dirs && xdg-user-dirs-update` if the app crashes with `MissingPlatformDirectoryException`.
-- **Linux build deps.** `clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-14-dev` must be installed for Linux desktop builds.
-- **Code generation.** After changing Hive models, Riverpod providers, or JSON-serializable classes, regenerate with: `fvm flutter pub run build_runner build --delete-conflicting-outputs`.
 - **Generated files are outputs, not edit targets.** Never manually edit generated files like `*.g.dart`, `*.g.yaml`, or registrar outputs. Make changes in the source files that drive generation, or replace generated behavior with explicit source-owned code such as a custom adapter, then regenerate.
-- **No automated tests exist** in this codebase. `flutter test` will find nothing.
-- **Lint.** `fvm flutter analyze` — expect ~70 pre-existing warnings/infos (unused imports, deprecated APIs). No errors.
-- **Build.** `fvm flutter build linux --debug` produces the binary at `build/linux/x64/debug/bundle/icarus`.
+
 
 <!-- convex-ai-start -->
 This project uses [Convex](https://convex.dev) as its backend.
