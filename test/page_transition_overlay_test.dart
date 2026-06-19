@@ -6,6 +6,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 const Color _expectedMutedAllyBgColor = Color.fromARGB(255, 60, 60, 60);
 
@@ -24,7 +25,7 @@ void main() {
   }) {
     return UncontrolledProviderScope(
       container: container,
-      child: MaterialApp(
+      child: ShadApp(
         home: Scaffold(
           body: PlacedWidgetPreview.build(
             agent,

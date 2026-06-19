@@ -61,6 +61,20 @@ Finder _opacityFinder(AgentType type) {
   return find.byKey(ValueKey('agent-dim-opacity-${type.name}'));
 }
 
+Finder _agentTileFinder(AgentType type) {
+  return find.descendant(
+    of: _opacityFinder(type),
+    matching: find.byType(InkWell),
+  );
+}
+
+Finder _agentIgnorePointerFinder(AgentType type) {
+  return find.ancestor(
+    of: _opacityFinder(type),
+    matching: find.byType(IgnorePointer),
+  );
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -112,7 +126,17 @@ void main() {
 
     await _pumpHarness(tester, container: container);
 
-    await tester.tap(find.byType(InkWell).at(1), warnIfMissed: false);
+    expect(
+      tester
+          .widget<IgnorePointer>(
+              _agentIgnorePointerFinder(AgentType.sova).first)
+          .ignoring,
+      isFalse,
+    );
+
+    final sovaTile = tester.widget<InkWell>(_agentTileFinder(AgentType.sova));
+    expect(sovaTile.onTap, isNotNull);
+    sovaTile.onTap!();
     await tester.pumpAndSettle();
 
     expect(container.read(abilityBarProvider)?.type, AgentType.sova);
@@ -191,7 +215,13 @@ void main() {
 
     await _pumpHarness(tester, container: container);
 
-    await tester.tap(find.byType(InkWell).at(1), warnIfMissed: false);
+    expect(
+      tester
+          .widget<IgnorePointer>(
+              _agentIgnorePointerFinder(AgentType.sova).first)
+          .ignoring,
+      isTrue,
+    );
     await tester.pumpAndSettle();
 
     expect(container.read(abilityBarProvider)?.type, AgentType.breach);
@@ -229,7 +259,7 @@ void main() {
     await _pumpHarness(tester, container: container);
 
     await tester.drag(
-      find.byType(InkWell).at(1),
+      _agentTileFinder(AgentType.sova),
       const Offset(30, 0),
       warnIfMissed: false,
     );

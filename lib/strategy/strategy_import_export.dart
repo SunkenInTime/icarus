@@ -1732,16 +1732,22 @@ class StrategyImportExportService {
                 ? globals.defaultThemeProfileIdForNewStrategies!
                 : MapThemeProfilesProvider.immutableDefaultProfileId);
 
+    final currentPreferences = appPreferencesBox
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey) ??
+        AppPreferences(
+          defaultThemeProfileIdForNewStrategies:
+              MapThemeProfilesProvider.immutableDefaultProfileId,
+        );
     await appPreferencesBox.put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,
-      (appPreferencesBox
-                  .get(MapThemeProfilesProvider.appPreferencesSingletonKey) ??
-              AppPreferences(
-                defaultThemeProfileIdForNewStrategies:
-                    MapThemeProfilesProvider.immutableDefaultProfileId,
-              ))
-          .copyWith(
+      currentPreferences.copyWith(
         defaultThemeProfileIdForNewStrategies: resolvedDefaultProfileId,
+        showSpawnBarrier:
+            globals.showSpawnBarrier ?? currentPreferences.showSpawnBarrier,
+        showUltOrbs: globals.showUltOrbs ?? currentPreferences.showUltOrbs,
+        showRegionNames:
+            globals.showRegionNames ?? currentPreferences.showRegionNames,
+        customColorValues: globals.customColorValues,
       ),
     );
 
