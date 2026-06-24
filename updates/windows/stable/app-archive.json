@@ -3,6 +3,24 @@
     "description":  "Desktop release metadata for Icarus.",
     "items":  [
                   {
+                      "version":  "4.3.6+90",
+                      "shortVersion":  90,
+                      "changes":  [
+                                      {
+                                          "message":  "Added Summit as a selectable map with map, callout, spawn wall, ultimate orb, and thumbnail assets.",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Updated the map rotation so Sunset and Summit are in rotation, and Fracture and Pearl are out of rotation.",
+                                          "type":  "improvement"
+                                      }
+                                  ],
+                      "date":  "2026-06-24",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.3.6%2B90-windows",
+                      "platform":  "windows"
+                  },
+                  {
                       "version":  "4.3.5+89",
                       "shortVersion":  89,
                       "changes":  [
