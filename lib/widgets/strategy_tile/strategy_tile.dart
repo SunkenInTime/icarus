@@ -10,6 +10,7 @@ import 'package:icarus/widgets/dialogs/strategy/delete_strategy_alert_dialog.dar
 import 'package:icarus/widgets/dialogs/strategy/rename_strategy_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile_sections.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class StrategyTile extends ConsumerStatefulWidget {
@@ -116,7 +117,16 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   }
 
   List<ShadContextMenuItem> _buildMenuItems() {
+    final isPinned =
+        ref.watch(pinnedItemsProvider).containsKey(widget.strategyData.id);
     return [
+      ShadContextMenuItem(
+        leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+        child: Text(isPinned ? 'Unpin' : 'Pin'),
+        onPressed: () => ref
+            .read(pinnedItemsProvider.notifier)
+            .togglePin(widget.strategyData.id),
+      ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.pencil),
         child: const Text('Rename'),

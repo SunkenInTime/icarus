@@ -12,8 +12,9 @@ import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_pill.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-// ... your existing imports
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderContent extends ConsumerWidget {
   FolderContent({super.key, this.folder});
@@ -170,6 +171,43 @@ class FolderContent extends ConsumerWidget {
                         );
                         folders.sort(
                             (a, b) => a.dateCreated.compareTo(b.dateCreated));
+
+                        // At the home/root screen (and only when not searching),
+                        // pinned items — which may live in any folder — float to
+                        // the top of the normal lists. They render exactly like
+                        // every other tile/pill, just ordered first.
+                        final isRoot = folder == null;
+                        final pinned = ref.watch(pinnedItemsProvider);
+                        if (isRoot && pinned.isNotEmpty && search.isEmpty) {
+                          final pinnedIds = ref
+                              .read(pinnedItemsProvider.notifier)
+                              .pinnedIdsByRecency();
+                          final strategyById = {
+                            for (final s in strategyBox.values) s.id: s
+                          };
+                          final folderById = {
+                            for (final f in folderBox.values) f.id: f
+                          };
+
+                          final pinnedStrategies = <StrategyData>[];
+                          final pinnedFolders = <Folder>[];
+                          for (final id in pinnedIds) {
+                            final s = strategyById[id];
+                            if (s != null) {
+                              pinnedStrategies.add(s);
+                              continue;
+                            }
+                            final f = folderById[id];
+                            if (f != null) pinnedFolders.add(f);
+                          }
+
+                          // Remove pinned items from their normal position, then
+                          // re-insert at the front so they sort to the top.
+                          strategies.removeWhere((s) => pinned.containsKey(s.id));
+                          folders.removeWhere((f) => pinned.containsKey(f.id));
+                          strategies.insertAll(0, pinnedStrategies);
+                          folders.insertAll(0, pinnedFolders);
+                        }
 
                         // Check if both folders and strategies are empty
                         if (folders.isEmpty && strategies.isEmpty) {
