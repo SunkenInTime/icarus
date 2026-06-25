@@ -92,6 +92,13 @@ try {
         New-Item -ItemType File -Path $noJekyllPath | Out-Null
     }
 
+    $attributesPath = Join-Path $tempRoot ".gitattributes"
+    @(
+        "# Keep updater payload bytes identical to the generated hashes.",
+        "updates/** -text",
+        "downloads/** -text"
+    ) | Set-Content -Path $attributesPath -Encoding utf8
+
     Invoke-RepoCommand -WorkingDirectory $tempRoot -Command "git" -Arguments @("config", "user.name", "Icarus Local Publisher")
     Invoke-RepoCommand -WorkingDirectory $tempRoot -Command "git" -Arguments @("config", "user.email", "local-publisher@users.noreply.github.com")
     Invoke-RepoCommand -WorkingDirectory $tempRoot -Command "git" -Arguments @("add", "--all")
