@@ -443,7 +443,7 @@ class PlacedWidgetPreview {
     if (w is PlacedAgent) {
       return AgentWidget(
         isAlly: w.isAlly,
-        id: w.id,
+        id: '',
         agent: AgentData.agents[w.type]!,
         state: w.state,
         deadStateProgress: deadStateProgress,

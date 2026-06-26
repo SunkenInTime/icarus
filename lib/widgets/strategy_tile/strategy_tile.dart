@@ -10,6 +10,7 @@ import 'package:icarus/widgets/dialogs/strategy/delete_strategy_alert_dialog.dar
 import 'package:icarus/widgets/dialogs/strategy/rename_strategy_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile_sections.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class StrategyTile extends ConsumerStatefulWidget {
@@ -40,83 +41,130 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   @override
   Widget build(BuildContext context) {
     final viewData = StrategyTileViewData(widget.strategyData);
+    final pinned = ref.watch(pinnedItemsProvider);
+    final id = widget.strategyData.id;
+    final isPinned = pinned.containsKey(id);
 
-    return Draggable<GridItem>(
-      data: StrategyItem(widget.strategyData),
-      dragAnchorStrategy: pointerDragAnchorStrategy,
-      feedback: Opacity(
-        opacity: 0.95,
-        child: Material(
-          color: Colors.transparent,
-          child: StrategyTileDragPreview(data: viewData),
-        ),
-      ),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) =>
-            setState(() => _highlightColor = Settings.tacticalVioletTheme.ring),
-        onExit: (_) => setState(
-            () => _highlightColor = Settings.tacticalVioletTheme.border),
-        child: AbsorbPointer(
-          absorbing: _isLoading,
-          child: ShadContextMenuRegion(
-            controller: _rightClickMenuController,
-            items: _buildMenuItems(),
-            child: GestureDetector(
-              onTap: () => _openStrategy(context),
-              child: Stack(
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 100),
-                    decoration: BoxDecoration(
-                      color: ShadTheme.of(context).colorScheme.card,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: _highlightColor, width: 2),
-                    ),
-                    padding: const EdgeInsets.all(8),
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: StrategyTileThumbnail(
-                            assetPath: viewData.thumbnailAsset,
+    return DragTarget<GridItem>(
+      onWillAcceptWithDetails: (details) {
+        final item = details.data;
+        return item is StrategyItem &&
+            item.strategy.id != id &&
+            isPinned &&
+            pinned.containsKey(item.strategy.id);
+      },
+      onAcceptWithDetails: (details) async {
+        final item = details.data;
+        if (item is! StrategyItem) return;
+        final renderObject = context.findRenderObject();
+        if (renderObject is! RenderBox) return;
+
+        final localOffset = renderObject.globalToLocal(details.offset);
+        await ref.read(pinnedItemsProvider.notifier).movePin(
+              id: item.strategy.id,
+              targetId: id,
+              insertAfterTarget: localOffset.dx > renderObject.size.width / 2,
+            );
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isPinDropTarget = candidateData.any((item) =>
+            item is StrategyItem &&
+            item.strategy.id != id &&
+            isPinned &&
+            pinned.containsKey(item.strategy.id));
+
+        return Draggable<GridItem>(
+          data: StrategyItem(widget.strategyData),
+          dragAnchorStrategy: pointerDragAnchorStrategy,
+          feedback: Opacity(
+            opacity: 0.95,
+            child: Material(
+              color: Colors.transparent,
+              child: StrategyTileDragPreview(data: viewData),
+            ),
+          ),
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => setState(
+                () => _highlightColor = Settings.tacticalVioletTheme.ring),
+            onExit: (_) => setState(
+                () => _highlightColor = Settings.tacticalVioletTheme.border),
+            child: AbsorbPointer(
+              absorbing: _isLoading,
+              child: ShadContextMenuRegion(
+                controller: _rightClickMenuController,
+                items: _buildMenuItems(),
+                child: GestureDetector(
+                  onTap: () => _openStrategy(context),
+                  child: Stack(
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 100),
+                        decoration: BoxDecoration(
+                          color: ShadTheme.of(context).colorScheme.card,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: isPinDropTarget
+                                ? Settings.tacticalVioletTheme.ring
+                                : _highlightColor,
+                            width: isPinDropTarget ? 3 : 2,
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        Expanded(child: StrategyTileDetails(data: viewData)),
-                      ],
-                    ),
-                  ),
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: ShadContextMenuRegion(
-                        controller: _menuButtonController,
-                        items: _buildMenuItems(),
-                        child: ShadIconButton.secondary(
-                          width: 28,
-                          height: 28,
-                          onPressed: () {
-                            _menuButtonController.toggle();
-                          },
-                          icon: const Icon(
-                            Icons.more_vert_outlined,
+                        padding: const EdgeInsets.all(8),
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: StrategyTileThumbnail(
+                                assetPath: viewData.thumbnailAsset,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Expanded(
+                                child: StrategyTileDetails(data: viewData)),
+                          ],
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.topRight,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: ShadContextMenuRegion(
+                            controller: _menuButtonController,
+                            items: _buildMenuItems(),
+                            child: ShadIconButton.secondary(
+                              width: 28,
+                              height: 28,
+                              onPressed: () {
+                                _menuButtonController.toggle();
+                              },
+                              icon: const Icon(
+                                Icons.more_vert_outlined,
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   List<ShadContextMenuItem> _buildMenuItems() {
+    final pinned = ref.watch(pinnedItemsProvider);
+    final id = widget.strategyData.id;
+    final isPinned = pinned.containsKey(id);
     return [
+      ShadContextMenuItem(
+        leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+        child: Text(isPinned ? 'Unpin' : 'Pin'),
+        onPressed: () => ref.read(pinnedItemsProvider.notifier).togglePin(id),
+      ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.pencil),
         child: const Text('Rename'),

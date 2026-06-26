@@ -199,8 +199,10 @@ class AgentWidget extends ConsumerWidget {
           )
         : null;
 
+    final canShowAgentContextMenu =
+        !isScreenshot && (lineUpId != null || (id != null && id!.isNotEmpty));
     final contextMenuItems = <ShadContextMenuItem>[
-      if (!isScreenshot)
+      if (canShowAgentContextMenu)
         ShadContextMenuItem.raw(
           variant: ShadContextMenuItemVariant.primary,
           height: 36,

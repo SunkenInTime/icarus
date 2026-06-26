@@ -12,8 +12,8 @@ import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_pill.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-// ... your existing imports
 
 class FolderContent extends ConsumerWidget {
   FolderContent({super.key, this.folder});
@@ -32,8 +32,6 @@ class FolderContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Move all your existing grid logic here from FolderView
-    // Filter by folder?.id instead of folder.id
     final strategiesBoxListenable = ref.watch(strategiesListenable);
 
     return Stack(
@@ -170,6 +168,36 @@ class FolderContent extends ConsumerWidget {
                         );
                         folders.sort(
                             (a, b) => a.dateCreated.compareTo(b.dateCreated));
+
+                        final pinned = ref.watch(pinnedItemsProvider);
+                        if (pinned.isNotEmpty && search.isEmpty) {
+                          final orderedPinnedIds =
+                              pinnedIdsInManualOrder(pinned);
+                          final pinnedIdOrder = {
+                            for (final entry
+                                in orderedPinnedIds.asMap().entries)
+                              entry.value: entry.key,
+                          };
+
+                          final pinnedStrategies = strategies
+                              .where(
+                                  (strategy) => pinned.containsKey(strategy.id))
+                              .toList()
+                            ..sort((a, b) => pinnedIdOrder[a.id]!
+                                .compareTo(pinnedIdOrder[b.id]!));
+                          final pinnedFolders = folders
+                              .where((listFolder) =>
+                                  pinned.containsKey(listFolder.id))
+                              .toList()
+                            ..sort((a, b) => pinnedIdOrder[a.id]!
+                                .compareTo(pinnedIdOrder[b.id]!));
+
+                          strategies
+                              .removeWhere((s) => pinned.containsKey(s.id));
+                          folders.removeWhere((f) => pinned.containsKey(f.id));
+                          strategies.insertAll(0, pinnedStrategies);
+                          folders.insertAll(0, pinnedFolders);
+                        }
 
                         // Check if both folders and strategies are empty
                         if (folders.isEmpty && strategies.isEmpty) {

@@ -5,6 +5,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderPill extends ConsumerStatefulWidget {
@@ -60,6 +61,10 @@ class _FolderPillState extends ConsumerState<FolderPill>
 
   @override
   Widget build(BuildContext context) {
+    final pinned = ref.watch(pinnedItemsProvider);
+    final id = widget.folder.id;
+    final isPinned = pinned.containsKey(id);
+
     return Draggable<GridItem>(
       feedback: _buildDragFeedback(),
       dragAnchorStrategy: pointerDragAnchorStrategy,
@@ -68,15 +73,38 @@ class _FolderPillState extends ConsumerState<FolderPill>
         onWillAcceptWithDetails: (details) {
           final item = details.data;
           if (widget.isDemo) return false;
+          if (item is FolderItem &&
+              item.folder.id != id &&
+              isPinned &&
+              pinned.containsKey(item.folder.id)) {
+            return true;
+          }
           if (item is FolderItem) {
-            return item.folder.id != widget.folder.id &&
-                !_isParentFolder(item.folder.id);
+            return item.folder.id != id && !_isParentFolder(item.folder.id);
           }
           return true;
         },
-        onAcceptWithDetails: (details) {
+        onAcceptWithDetails: (details) async {
           if (widget.isDemo) return;
           final item = details.data;
+          final draggedPinnedId = item is FolderItem &&
+                  item.folder.id != id &&
+                  pinned.containsKey(item.folder.id)
+              ? item.folder.id
+              : null;
+          if (draggedPinnedId != null && isPinned) {
+            final renderObject = context.findRenderObject();
+            if (renderObject is! RenderBox) return;
+            final localOffset = renderObject.globalToLocal(details.offset);
+            await ref.read(pinnedItemsProvider.notifier).movePin(
+                  id: draggedPinnedId,
+                  targetId: id,
+                  insertAfterTarget:
+                      localOffset.dx > renderObject.size.width / 2,
+                );
+            return;
+          }
+
           if (item is StrategyItem) {
             ref.read(strategyProvider.notifier).moveToFolder(
                 strategyID: item.strategy.id, parentID: widget.folder.id);
@@ -191,7 +219,18 @@ class _FolderPillState extends ConsumerState<FolderPill>
   }
 
   List<ShadContextMenuItem> _buildMenuItems() {
+    final pinned = ref.watch(pinnedItemsProvider);
+    final id = widget.folder.id;
+    final isPinned = pinned.containsKey(id);
     return [
+      ShadContextMenuItem(
+        leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+        child: Text(isPinned ? 'Unpin' : 'Pin'),
+        onPressed: () {
+          if (widget.isDemo) return;
+          ref.read(pinnedItemsProvider.notifier).togglePin(id);
+        },
+      ),
       ShadContextMenuItem(
         leading: const Icon(Icons.text_fields),
         child: const Text('Edit'),

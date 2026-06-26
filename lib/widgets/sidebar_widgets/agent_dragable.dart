@@ -48,6 +48,8 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
   late final Animation<double> _clickScale;
   Timer? _favoriteHoverDelayTimer;
   DateTime _starOffEnabledAt = DateTime.fromMillisecondsSinceEpoch(0);
+  Offset? _pointerDownPosition;
+  bool _pointerMovedForDrag = false;
 
   @override
   void initState() {
@@ -102,6 +104,34 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
     await _clickController.forward(from: 0);
   }
 
+  void _handlePointerDown(PointerDownEvent event) {
+    _pointerDownPosition = event.position;
+    _pointerMovedForDrag = false;
+  }
+
+  void _handlePointerMove(PointerMoveEvent event) {
+    final pointerDownPosition = _pointerDownPosition;
+    if (pointerDownPosition == null) return;
+
+    if ((event.position - pointerDownPosition).distance > 18) {
+      _pointerMovedForDrag = true;
+    }
+  }
+
+  void _handlePointerUp(AgentData agent) {
+    if (!_pointerMovedForDrag) {
+      ref.read(dragNotifier.notifier).updateDragState(false);
+      ref.read(abilityBarProvider.notifier).updateData(agent);
+    }
+    _pointerDownPosition = null;
+    _pointerMovedForDrag = false;
+  }
+
+  void _handlePointerCancel(PointerCancelEvent event) {
+    _pointerDownPosition = null;
+    _pointerMovedForDrag = false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final agent = widget.agent;
@@ -149,138 +179,100 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
         ? (canShowStarOff ? const Color(0xFFE53935) : const Color(0xFFFF9800))
         : (_isStarHovered ? const Color(0xFFFF9800) : const Color(0xFF9AA0A6));
 
-    return IgnorePointer(
-      ignoring:
-          ref.watch(dragNotifier) == true || shouldDisableForLockedAddItem,
-      child: Draggable(
-        data: agent,
-        onDragStarted: () {
-          if (ref.read(interactionStateProvider) == InteractionState.drawing ||
-              ref.read(interactionStateProvider) == InteractionState.erasing) {
-            ref
-                .read(interactionStateProvider.notifier)
-                .update(InteractionState.navigation);
-          }
-          ref.read(dragNotifier.notifier).updateDragState(true);
-        },
-        onDraggableCanceled: (velocity, offset) {
-          ref.read(dragNotifier.notifier).updateDragState(false);
-        },
-        onDragCompleted: () {
-          ref.read(dragNotifier.notifier).updateDragState(false);
-        },
-        feedback: Opacity(
-          opacity: Settings.feedbackOpacity,
-          child: ZoomTransform(child: AgentFeedback(agent: agent)),
-        ),
-        dragAnchorStrategy: (draggable, context, position) {
-          final agentSize = CoordinateSystem.instance
-              .scale(ref.watch(strategySettingsProvider).agentSize);
-          return Offset(
-            (agentSize / 2),
-            (agentSize / 2),
-          ).scale(ref.read(screenZoomProvider), ref.read(screenZoomProvider));
-        },
-        child: MouseRegion(
-          cursor: shouldDisableForLockedAddItem
-              ? SystemMouseCursors.forbidden
-              : SystemMouseCursors.click,
-          onEnter: (_) => setState(() => _isTileHovered = true),
-          onExit: (_) {
-            setState(() {
-              _isTileHovered = false;
-              _isStarHovered = false;
-            });
-          },
-          child: AnimatedOpacity(
-            key: ValueKey('agent-dim-opacity-${agent.type.name}'),
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            opacity: tileOpacity,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                InkWell(
-                  mouseCursor: shouldDisableForLockedAddItem
-                      ? SystemMouseCursors.forbidden
-                      : SystemMouseCursors.click,
-                  onTap: shouldDisableForLockedAddItem
-                      ? null
-                      : () {
-                          ref
-                              .read(abilityBarProvider.notifier)
-                              .updateData(agent);
-                        },
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: ColoredBox(
-                      color: displayColor,
-                      child: Image.asset(
-                        agent.iconPath,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
+    Widget tile = MouseRegion(
+      cursor: shouldDisableForLockedAddItem
+          ? SystemMouseCursors.forbidden
+          : SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _isTileHovered = true),
+      onExit: (_) {
+        setState(() {
+          _isTileHovered = false;
+          _isStarHovered = false;
+        });
+      },
+      child: AnimatedOpacity(
+        key: ValueKey('agent-dim-opacity-${agent.type.name}'),
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        opacity: tileOpacity,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            InkWell(
+              mouseCursor: shouldDisableForLockedAddItem
+                  ? SystemMouseCursors.forbidden
+                  : SystemMouseCursors.click,
+              onTap: shouldDisableForLockedAddItem
+                  ? null
+                  : () {
+                      ref.read(abilityBarProvider.notifier).updateData(agent);
+                    },
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: ColoredBox(
+                  color: displayColor,
+                  child: Image.asset(
+                    agent.iconPath,
+                    fit: BoxFit.cover,
                   ),
                 ),
-                Positioned(
-                  top: 2,
-                  right: 2,
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 130),
-                    curve: Curves.easeOutCubic,
-                    opacity: showStar ? 1 : 0,
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.click,
-                      onEnter: (_) => setState(() => _isStarHovered = true),
-                      onExit: (_) => setState(() {
-                        _isStarHovered = false;
-                        _isStarPressed = false;
-                      }),
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTapDown: (_) => setState(() => _isStarPressed = true),
-                        onTapUp: (_) => setState(() => _isStarPressed = false),
-                        onTapCancel: () =>
-                            setState(() => _isStarPressed = false),
-                        onTap: () => _toggleFavoriteWithFeedback(
-                          type: agent.type,
-                          wasFavorite: isFavorite,
+              ),
+            ),
+            Positioned(
+              top: 2,
+              right: 2,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 130),
+                curve: Curves.easeOutCubic,
+                opacity: showStar ? 1 : 0,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  onEnter: (_) => setState(() => _isStarHovered = true),
+                  onExit: (_) => setState(() {
+                    _isStarHovered = false;
+                    _isStarPressed = false;
+                  }),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (_) => setState(() => _isStarPressed = true),
+                    onTapUp: (_) => setState(() => _isStarPressed = false),
+                    onTapCancel: () => setState(() => _isStarPressed = false),
+                    onTap: () => _toggleFavoriteWithFeedback(
+                      type: agent.type,
+                      wasFavorite: isFavorite,
+                    ),
+                    child: AnimatedBuilder(
+                      animation: _clickController,
+                      builder: (context, child) {
+                        final pressScale = _isStarPressed ? 0.88 : 1.0;
+                        return Transform.scale(
+                          scale: pressScale * _clickScale.value,
+                          child: child,
+                        );
+                      },
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 120),
+                        switchInCurve: Curves.easeOut,
+                        switchOutCurve: Curves.easeIn,
+                        transitionBuilder: (child, animation) => FadeTransition(
+                          opacity: animation,
+                          child: child,
                         ),
-                        child: AnimatedBuilder(
-                          animation: _clickController,
-                          builder: (context, child) {
-                            final pressScale = _isStarPressed ? 0.88 : 1.0;
-                            return Transform.scale(
-                              scale: pressScale * _clickScale.value,
-                              child: child,
-                            );
-                          },
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 120),
-                            switchInCurve: Curves.easeOut,
-                            switchOutCurve: Curves.easeIn,
-                            transitionBuilder: (child, animation) =>
-                                FadeTransition(
-                              opacity: animation,
-                              child: child,
-                            ),
-                            child: SizedBox.square(
-                              key: ValueKey("${isFavorite}_$canShowStarOff"),
-                              dimension: 18,
-                              child: Center(
-                                child: Icon(
-                                  iconData,
-                                  size: iconSize,
-                                  color: iconColor,
-                                  shadows: [
-                                    BoxShadow(
-                                      color: Colors.black.withAlpha(100),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
+                        child: SizedBox.square(
+                          key: ValueKey("${isFavorite}_$canShowStarOff"),
+                          dimension: 18,
+                          child: Center(
+                            child: Icon(
+                              iconData,
+                              size: iconSize,
+                              color: iconColor,
+                              shadows: [
+                                BoxShadow(
+                                  color: Colors.black.withAlpha(100),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
                                 ),
-                              ),
+                              ],
                             ),
                           ),
                         ),
@@ -288,10 +280,55 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
                     ),
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
+      ),
+    );
+
+    if (shouldDisableForLockedAddItem) return tile;
+
+    tile = Draggable(
+      data: agent,
+      onDragStarted: () {
+        if (ref.read(interactionStateProvider) == InteractionState.drawing ||
+            ref.read(interactionStateProvider) == InteractionState.erasing) {
+          ref
+              .read(interactionStateProvider.notifier)
+              .update(InteractionState.navigation);
+        }
+        ref.read(dragNotifier.notifier).updateDragState(true);
+      },
+      onDraggableCanceled: (velocity, offset) {
+        ref.read(dragNotifier.notifier).updateDragState(false);
+      },
+      onDragCompleted: () {
+        ref.read(dragNotifier.notifier).updateDragState(false);
+      },
+      feedback: Opacity(
+        opacity: Settings.feedbackOpacity,
+        child: ZoomTransform(child: AgentFeedback(agent: agent)),
+      ),
+      dragAnchorStrategy: (draggable, context, position) {
+        final agentSize = CoordinateSystem.instance
+            .scale(ref.watch(strategySettingsProvider).agentSize);
+        return Offset(
+          (agentSize / 2),
+          (agentSize / 2),
+        ).scale(ref.read(screenZoomProvider), ref.read(screenZoomProvider));
+      },
+      child: tile,
+    );
+
+    return Listener(
+      onPointerDown: _handlePointerDown,
+      onPointerMove: _handlePointerMove,
+      onPointerUp: (_) => _handlePointerUp(agent),
+      onPointerCancel: _handlePointerCancel,
+      child: IgnorePointer(
+        ignoring: ref.watch(dragNotifier) == true,
+        child: tile,
       ),
     );
   }

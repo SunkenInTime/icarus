@@ -79,6 +79,7 @@ Future<void> main(List<String> args) async {
       await Hive.openBox<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox);
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
       await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
+      await Hive.openBox<int>(HiveBoxNames.pinnedItemsBox);
 
       await MapThemeProfilesProvider.bootstrap();
 
