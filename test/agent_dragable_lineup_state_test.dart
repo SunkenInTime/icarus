@@ -61,13 +61,8 @@ Finder _opacityFinder(AgentType type) {
   return find.byKey(ValueKey('agent-dim-opacity-${type.name}'));
 }
 
-Finder _tileTapTarget(AgentType type) {
-  return find
-      .descendant(
-        of: _opacityFinder(type),
-        matching: find.byType(InkWell),
-      )
-      .first;
+Finder _tileFinder(AgentType type) {
+  return find.byKey(ValueKey('agent-tile-${type.name}'));
 }
 
 void main() {
@@ -121,7 +116,7 @@ void main() {
 
     await _pumpHarness(tester, container: container);
 
-    await tester.tap(_tileTapTarget(AgentType.sova), warnIfMissed: false);
+    await tester.tap(_tileFinder(AgentType.sova), warnIfMissed: false);
     await tester.pumpAndSettle();
 
     expect(container.read(abilityBarProvider)?.type, AgentType.sova);
@@ -200,7 +195,7 @@ void main() {
 
     await _pumpHarness(tester, container: container);
 
-    await tester.tap(_tileTapTarget(AgentType.sova), warnIfMissed: false);
+    await tester.tap(_tileFinder(AgentType.sova), warnIfMissed: false);
     await tester.pumpAndSettle();
 
     expect(container.read(abilityBarProvider)?.type, AgentType.breach);
@@ -238,7 +233,7 @@ void main() {
     await _pumpHarness(tester, container: container);
 
     await tester.drag(
-      _tileTapTarget(AgentType.sova),
+      _tileFinder(AgentType.sova),
       const Offset(30, 0),
       warnIfMissed: false,
     );

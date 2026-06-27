@@ -206,6 +206,7 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
               clipBehavior: Clip.none,
               children: [
                 InkWell(
+                  key: ValueKey('agent-tile-${agent.type.name}'),
                   mouseCursor: shouldDisableForLockedAddItem
                       ? SystemMouseCursors.forbidden
                       : SystemMouseCursors.click,
