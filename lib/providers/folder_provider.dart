@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
-import 'package:icarus/const/custom_icons.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -22,7 +22,7 @@ class Folder extends HiveObject {
   final String id;
   final DateTime dateCreated;
   String? parentID; // null for root folders, clearer than empty string
-  IconData icon;
+  int iconId;
   FolderColor color;
   Color? customColor;
 
@@ -30,11 +30,15 @@ class Folder extends HiveObject {
     required this.name,
     required this.id,
     required this.dateCreated,
-    required this.icon,
+    int? iconId,
+    IconData? icon,
     this.color = FolderColor.red,
     this.parentID, // Optional, defaults to null (root)
     this.customColor,
-  });
+  }) : iconId = iconId ??
+            (icon == null
+                ? FolderIconRegistry.defaultId
+                : FolderIconRegistry.idForLegacyIconData(icon));
 
   static Map<FolderColor, Color> folderColorMap = {
     FolderColor.red: Colors.red,
@@ -54,58 +58,19 @@ class Folder extends HiveObject {
     FolderColor.generic,
   ];
 
-  static List<IconData> folderIcons = [
-    // 📂 Folder & File Related
+  @Deprecated('Use iconId and FolderIconRegistry instead.')
+  IconData get icon => FolderIconRegistry.legacyIconDataForId(iconId);
 
-    Icons.star_rate_rounded,
-    Icons.ac_unit_sharp,
-    Icons.bug_report,
-    Icons.cake,
-    Icons.code,
-    Icons.add_shopping_cart_rounded,
-    Icons.airline_stops_sharp,
-    Icons.all_inclusive,
-    Icons.api_rounded,
+  @Deprecated('Use iconId and FolderIconRegistry instead.')
+  set icon(IconData icon) {
+    iconId = FolderIconRegistry.idForLegacyIconData(icon);
+  }
 
-    Icons.drive_folder_upload,
-    Icons.folder_shared,
-    Icons.folder_special,
-    Icons.workspaces,
-
-    // 🗂️ Organization & Structure
-    Icons.category,
-    Icons.collections_bookmark,
-    Icons.library_books,
-    Icons.archive,
-    Icons.assignment,
-    Icons.assignment_turned_in,
-    Icons.dashboard,
-    Icons.anchor,
-    Icons.hourglass_bottom_outlined,
-    Icons.image_search,
-    Icons.view_quilt,
-
-    // 🎯 Strategy & Planning
-    Icons.map,
-    Icons.place,
-    Icons.explore,
-    Icons.explore_off,
-    Icons.flag,
-    Icons.outlined_flag,
-    Icons.emoji_objects,
-    Icons.lightbulb,
-    Icons.track_changes,
-    Icons.timeline,
-
-    // ⚔️ Valorant / Tactical Feel
-    Icons.sports_esports,
-    CustomIcons.sword,
-    Icons.military_tech,
-    Icons.shield,
-    Icons.security,
-    Icons.bolt,
-    Icons.psychology,
-  ];
+  @Deprecated('Use FolderIconRegistry.pickerEntries instead.')
+  static List<IconData> get folderIcons => [
+        for (final entry in FolderIconRegistry.pickerEntries)
+          if (entry.iconData != null) entry.iconData!,
+      ];
 
   bool get isRoot => parentID == null;
 }
@@ -116,13 +81,13 @@ final folderProvider =
 class FolderProvider extends Notifier<String?> {
   Future<Folder> createFolder({
     required String name,
-    required IconData icon,
+    required int iconId,
     required FolderColor color,
     Color? customColor,
     String? parentID,
   }) async {
     final newFolder = Folder(
-      icon: icon,
+      iconId: iconId,
       name: name,
       id: const Uuid().v4(),
       dateCreated: DateTime.now(),
@@ -160,8 +125,6 @@ class FolderProvider extends Notifier<String?> {
     return pathIDs;
   }
 
-  // I want to be able
-
   List<Folder> findFolderChildren(String id) {
     return Hive.box<Folder>(HiveBoxNames.foldersBox)
         .values
@@ -196,12 +159,12 @@ class FolderProvider extends Notifier<String?> {
   void editFolder({
     required Folder folder,
     required String newName,
-    required IconData newIcon,
+    required int newIconId,
     required FolderColor newColor,
     required Color? newCustomColor,
   }) async {
     folder.name = newName;
-    folder.icon = newIcon;
+    folder.iconId = newIconId;
     folder.customColor = newCustomColor;
     folder.color = newColor;
     await folder.save();

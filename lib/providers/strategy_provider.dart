@@ -16,6 +16,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
@@ -1547,7 +1548,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }) {
     return ref.read(folderProvider.notifier).createFolder(
           name: name,
-          icon: Icons.drive_folder_upload,
+          iconId: FolderIconRegistry.idForLegacyIconData(
+            Icons.drive_folder_upload,
+          ),
           color: FolderColor.generic,
           parentID: parentFolderId,
         );
@@ -1954,7 +1957,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       final createdFolder =
           await ref.read(folderProvider.notifier).createFolder(
                 name: folderEntry.name,
-                icon: folderEntry.icon.toIconData(),
+                iconId: folderEntry.iconId,
                 color: folderEntry.color,
                 customColor: folderEntry.customColorValue == null
                     ? null
@@ -2476,7 +2479,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       final createdFolder =
           await ref.read(folderProvider.notifier).createFolder(
                 name: folderEntry.name,
-                icon: folderEntry.icon.toIconData(),
+                iconId: folderEntry.iconId,
                 color: folderEntry.color,
                 customColor: folderEntry.customColorValue == null
                     ? null
@@ -3282,7 +3285,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         name: currentFolder.name,
         parentManifestId: parentManifestId,
         archivePath: normalizeArchivePath(currentArchivePath),
-        icon: ArchiveIconDescriptor.fromIconData(currentFolder.icon),
+        iconId: currentFolder.iconId,
         color: currentFolder.color,
         customColorValue: currentFolder.customColor?.toARGB32(),
       ),

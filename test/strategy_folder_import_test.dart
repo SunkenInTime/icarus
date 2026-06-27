@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
@@ -324,7 +325,7 @@ void main() {
       container,
       name: 'Retakes',
       parentID: rootFolder.id,
-      icon: Icons.lightbulb,
+      iconId: FolderIconRegistry.duelistRoleId,
       color: FolderColor.blue,
     );
 
@@ -348,6 +349,15 @@ void main() {
       expect(decoded['archiveType'], ArchiveType.folderTree.jsonValue);
       expect((decoded['folders'] as List).length, 2);
       expect((decoded['strategies'] as List).length, 2);
+      final decodedFolders = (decoded['folders'] as List)
+          .map((entry) => Map<String, dynamic>.from(entry as Map))
+          .toList();
+      expect(
+          decodedFolders.map((entry) => entry['iconId']),
+          containsAll([
+            FolderIconRegistry.idForLegacyIconData(Icons.flag),
+            FolderIconRegistry.duelistRoleId,
+          ]));
 
       final zipFile = await _zipDirectory(
         sourceDirectory: exportedRoot,
@@ -368,10 +378,13 @@ void main() {
 
       final importedRoot = _folderByName('Utility / Pack');
       final importedChild = _folderByName('Retakes');
-      expect(importedRoot.icon.codePoint, Icons.flag.codePoint);
+      expect(
+        importedRoot.iconId,
+        FolderIconRegistry.idForLegacyIconData(Icons.flag),
+      );
       expect(importedRoot.color, FolderColor.custom);
       expect(importedRoot.customColor, const Color(0xFF22C55E));
-      expect(importedChild.icon.codePoint, Icons.lightbulb.codePoint);
+      expect(importedChild.iconId, FolderIconRegistry.duelistRoleId);
       expect(importedChild.color, FolderColor.blue);
       expect(importedChild.parentID, importedRoot.id);
       expect(_strategyByName('default').folderID, importedRoot.id);
@@ -704,6 +717,7 @@ ArchiveManifest _buildBrokenFolderTreeManifest() {
         name: 'Manifest Root',
         parentManifestId: null,
         archivePath: '',
+        iconId: FolderIconRegistry.idForLegacyIconData(Icons.folder),
         icon: defaultIcon,
         color: FolderColor.red,
         customColorValue: null,
@@ -713,6 +727,7 @@ ArchiveManifest _buildBrokenFolderTreeManifest() {
         name: 'Broken Child',
         parentManifestId: 'deep-parent',
         archivePath: 'b',
+        iconId: FolderIconRegistry.idForLegacyIconData(Icons.folder),
         icon: defaultIcon,
         color: FolderColor.red,
         customColorValue: null,
@@ -722,6 +737,7 @@ ArchiveManifest _buildBrokenFolderTreeManifest() {
         name: 'Deep Parent',
         parentManifestId: 'root',
         archivePath: 'b/c',
+        iconId: FolderIconRegistry.idForLegacyIconData(Icons.folder),
         icon: defaultIcon,
         color: FolderColor.red,
         customColorValue: null,
@@ -760,6 +776,7 @@ Future<Folder> _createFolder(
   required String name,
   required String? parentID,
   IconData icon = Icons.folder,
+  int? iconId,
   FolderColor color = FolderColor.red,
   Color? customColor,
   bool setCurrent = false,
@@ -767,7 +784,7 @@ Future<Folder> _createFolder(
   final notifier = container.read(folderProvider.notifier);
   final folder = await notifier.createFolder(
     name: name,
-    icon: icon,
+    iconId: iconId ?? FolderIconRegistry.idForLegacyIconData(icon),
     color: color,
     customColor: customColor,
     parentID: parentID,
