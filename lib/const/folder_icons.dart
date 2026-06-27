@@ -15,20 +15,19 @@ class FolderIconDefinition {
     this.hiddenFromPicker = false,
   })  : kind = FolderIconRenderKind.material,
         iconData = icon,
-        assetPath = null;
+        assetPath = '';
 
   const FolderIconDefinition.asset({
     required this.id,
     required this.assetPath,
     this.hiddenFromPicker = false,
   })  : kind = FolderIconRenderKind.asset,
-        iconData = null,
-        assert(assetPath != null);
+        iconData = null;
 
   final int id;
   final FolderIconRenderKind kind;
   final IconData? iconData;
-  final String? assetPath;
+  final String assetPath;
   final bool hiddenFromPicker;
 
   String get stableSignature {
@@ -215,8 +214,10 @@ class FolderIconView extends StatelessWidget {
     return SizedBox.square(
       dimension: size,
       child: Image.asset(
-        definition.assetPath!,
+        definition.assetPath,
         fit: BoxFit.contain,
+        color: color,
+        colorBlendMode: BlendMode.srcIn,
       ),
     );
   }
