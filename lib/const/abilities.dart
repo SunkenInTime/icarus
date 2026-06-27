@@ -13,6 +13,11 @@ import 'package:icarus/widgets/draggable_widgets/ability/sector_circle_widget.da
 import 'package:icarus/widgets/draggable_widgets/ability/simple_image_ability_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
+// Ability range inputs are gameplay measurements. CircleAbility and
+// SectorCircleAbility treat size/innerRangeSize as radii and convert them with
+// AgentData.inGameMetersDiameter; other shapes use AgentData.inGameMeters where
+// their dimensions represent direct lengths.
+
 bool isRotatable(Ability ability) {
   switch (ability) {
     case SquareAbility():
@@ -162,12 +167,15 @@ class CircleAbility extends Ability {
     this.rangeFillColor,
     this.innerRangeColor,
     this.opacity,
-    this.innerRangeSize,
+    double? innerRangeSize,
   })  : assert(
           innerRangeSize == null || innerRangeColor != null,
           'innerRangeColor is required when innerRangeSize is set',
         ),
-        size = size * AgentData.inGameMetersDiameter;
+        size = size * AgentData.inGameMetersDiameter,
+        innerRangeSize = innerRangeSize != null
+            ? innerRangeSize * AgentData.inGameMetersDiameter
+            : null;
 
   final double size;
   final Color rangeOutlineColor;
@@ -242,12 +250,15 @@ class SectorCircleAbility extends Ability {
     this.rangeFillColor,
     this.innerRangeColor,
     this.opacity = 70,
-    this.innerRangeSize,
+    double? innerRangeSize,
   })  : assert(
           innerRangeSize == null || innerRangeColor != null,
           'innerRangeColor is required when innerRangeSize is set',
         ),
-        size = size * AgentData.inGameMetersDiameter;
+        size = size * AgentData.inGameMetersDiameter,
+        innerRangeSize = innerRangeSize != null
+            ? innerRangeSize * AgentData.inGameMetersDiameter
+            : null;
 
   final double size;
   final Color rangeOutlineColor;
