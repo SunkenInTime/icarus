@@ -179,7 +179,11 @@ class AgentData implements DraggableData {
     required this.role,
     required this.name,
     List<String>? abilityNames,
-  })  : iconPath = 'assets/agents/$name/icon.webp',
+  })  : assert(
+          abilityNames == null || abilityNames.length == 4,
+          'abilityNames must contain exactly 4 entries',
+        ),
+        iconPath = 'assets/agents/$name/icon.webp',
         abilities = List.generate(
           4,
           (index) => AbilityInfo(

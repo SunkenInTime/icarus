@@ -156,6 +156,7 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
       child: Draggable(
         data: agent,
         onDragStarted: () {
+          clearHoveredMapItemNameIfCurrent(ref, agent.name);
           if (ref.read(interactionStateProvider) == InteractionState.drawing ||
               ref.read(interactionStateProvider) == InteractionState.erasing) {
             ref
