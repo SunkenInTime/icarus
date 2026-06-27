@@ -8,6 +8,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
+import 'package:icarus/providers/hovered_map_item_name_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -185,8 +186,12 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
           cursor: shouldDisableForLockedAddItem
               ? SystemMouseCursors.forbidden
               : SystemMouseCursors.click,
-          onEnter: (_) => setState(() => _isTileHovered = true),
+          onEnter: (_) {
+            ref.read(hoveredMapItemNameProvider.notifier).state = agent.name;
+            setState(() => _isTileHovered = true);
+          },
           onExit: (_) {
+            clearHoveredMapItemNameIfCurrent(ref, agent.name);
             setState(() {
               _isTileHovered = false;
               _isStarHovered = false;
