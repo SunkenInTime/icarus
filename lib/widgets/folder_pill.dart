@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
@@ -135,8 +136,8 @@ class _FolderPillState extends ConsumerState<FolderPill>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              widget.folder.icon,
+                            FolderIconView(
+                              iconId: widget.folder.iconId,
                               color: Colors.white,
                               size: 20,
                             ),
@@ -253,8 +254,8 @@ class _FolderPillState extends ConsumerState<FolderPill>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                widget.folder.icon,
+              FolderIconView(
+                iconId: widget.folder.iconId,
                 color: Colors.white,
                 size: 20,
               ),

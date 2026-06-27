@@ -8,6 +8,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -313,7 +314,7 @@ class FolderAdapter extends TypeAdapter<Folder> {
       id: fields[1] as String,
       parentID: fields[2] as String?,
       dateCreated: fields[3] as DateTime,
-      icon: fields[4] as IconData,
+      iconId: FolderIconRegistry.idForStoredValue(fields[4]),
       color: fields[5] as FolderColor? ?? FolderColor.red,
       customColor: switch (fields[6]) {
         final int colorValue => Color(colorValue),
@@ -337,7 +338,7 @@ class FolderAdapter extends TypeAdapter<Folder> {
       ..writeByte(3)
       ..write(obj.dateCreated)
       ..writeByte(4)
-      ..write(obj.icon)
+      ..write(obj.iconId)
       ..writeByte(5)
       ..write(obj.color)
       ..writeByte(6)
