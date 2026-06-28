@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:path/path.dart' as path;
@@ -75,20 +76,25 @@ class ArchiveIconDescriptor {
 }
 
 class ArchiveFolderEntry {
-  const ArchiveFolderEntry({
+  ArchiveFolderEntry({
     required this.manifestId,
     required this.name,
     required this.parentManifestId,
     required this.archivePath,
-    required this.icon,
+    required this.iconId,
+    ArchiveIconDescriptor? icon,
     required this.color,
     required this.customColorValue,
-  });
+  }) : icon = icon ??
+            ArchiveIconDescriptor.fromIconData(
+              FolderIconRegistry.legacyIconDataForId(iconId),
+            );
 
   final String manifestId;
   final String name;
   final String? parentManifestId;
   final String archivePath;
+  final int iconId;
   final ArchiveIconDescriptor icon;
   final FolderColor color;
   final int? customColorValue;
@@ -99,7 +105,7 @@ class ArchiveFolderEntry {
       'name': name,
       'parentManifestId': parentManifestId,
       'archivePath': archivePath,
-      'icon': icon.toJson(),
+      'iconId': iconId,
       'color': color.name,
       if (customColorValue != null) 'customColorValue': customColorValue,
     };
@@ -107,13 +113,22 @@ class ArchiveFolderEntry {
 
   factory ArchiveFolderEntry.fromJson(Map<String, dynamic> json) {
     final colorName = _readRequiredString(json, 'color');
+    final legacyIcon = json['icon'] == null
+        ? null
+        : ArchiveIconDescriptor.fromJson(_readRequiredMap(json, 'icon'));
     return ArchiveFolderEntry(
       manifestId: _readRequiredString(json, 'manifestId'),
       name: _readRequiredString(json, 'name'),
       parentManifestId: _readNullableString(json, 'parentManifestId'),
       archivePath:
           normalizeArchivePath(_readStringAllowEmpty(json, 'archivePath')),
-      icon: ArchiveIconDescriptor.fromJson(_readRequiredMap(json, 'icon')),
+      iconId: _readNullableInt(json, 'iconId') ??
+          (legacyIcon == null
+              ? FolderIconRegistry.defaultId
+              : FolderIconRegistry.idForLegacyIconData(
+                  legacyIcon.toIconData(),
+                )),
+      icon: legacyIcon,
       color: FolderColor.values.firstWhere(
         (candidate) => candidate.name == colorName,
         orElse: () => throw FormatException('Unknown folder color: $colorName'),

@@ -553,6 +553,7 @@ class ConvexStrategyRepository {
     required String publicId,
     required String name,
     String? parentFolderPublicId,
+    int? iconId,
     int? iconCodePoint,
     String? iconFontFamily,
     String? iconFontPackage,
@@ -566,6 +567,7 @@ class ConvexStrategyRepository {
         'name': name,
         if (parentFolderPublicId != null)
           'parentFolderPublicId': parentFolderPublicId,
+        if (iconId != null) 'iconId': iconId,
         if (iconCodePoint != null) 'iconCodePoint': iconCodePoint,
         if (iconFontFamily != null) 'iconFontFamily': iconFontFamily,
         if (iconFontPackage != null) 'iconFontPackage': iconFontPackage,

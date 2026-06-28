@@ -397,6 +397,8 @@ class MapValueAdapter extends TypeAdapter<MapValue> {
         return MapValue.bind;
       case 11:
         return MapValue.corrode;
+      case 12:
+        return MapValue.summit;
       default:
         return MapValue.ascent;
     }
@@ -429,6 +431,8 @@ class MapValueAdapter extends TypeAdapter<MapValue> {
         writer.writeByte(10);
       case MapValue.corrode:
         writer.writeByte(11);
+      case MapValue.summit:
+        writer.writeByte(12);
     }
   }
 

@@ -18,6 +18,7 @@ import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/delete_area.dart';
+import 'package:icarus/widgets/hovered_map_item_name_card.dart';
 import 'package:icarus/widgets/lineup_control_buttons.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
@@ -388,7 +389,14 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                       Positioned(
                         top: 0,
                         right: 0,
-                        child: DeleteArea(),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            HoveredMapItemNameCard(),
+                            DeleteArea(),
+                          ],
+                        ),
                       ),
                       Align(
                         alignment: Alignment.bottomRight,

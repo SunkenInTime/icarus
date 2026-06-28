@@ -62,10 +62,7 @@ Finder _opacityFinder(AgentType type) {
 }
 
 Finder _agentTileFinder(AgentType type) {
-  return find.descendant(
-    of: _opacityFinder(type),
-    matching: find.byType(InkWell),
-  );
+  return find.byKey(ValueKey('agent-tile-${type.name}'));
 }
 
 Finder _agentIgnorePointerFinder(AgentType type) {
@@ -222,6 +219,7 @@ void main() {
           .ignoring,
       isTrue,
     );
+    await tester.tap(_agentTileFinder(AgentType.sova), warnIfMissed: false);
     await tester.pumpAndSettle();
 
     expect(container.read(abilityBarProvider)?.type, AgentType.breach);

@@ -548,6 +548,7 @@ class CloudFolderSummary {
     required this.updatedAt,
     this.role,
     this.parentFolderPublicId,
+    this.iconId,
     this.iconCodePoint,
     this.iconFontFamily,
     this.iconFontPackage,
@@ -561,6 +562,7 @@ class CloudFolderSummary {
   final DateTime updatedAt;
   final String? role;
   final String? parentFolderPublicId;
+  final int? iconId;
   final int? iconCodePoint;
   final String? iconFontFamily;
   final String? iconFontPackage;
@@ -579,6 +581,7 @@ class CloudFolderSummary {
       ),
       role: json['role'] as String?,
       parentFolderPublicId: json['parentFolderPublicId'] as String?,
+      iconId: (json['iconId'] as num?)?.toInt(),
       iconCodePoint: (json['iconCodePoint'] as num?)?.toInt(),
       iconFontFamily: json['iconFontFamily'] as String?,
       iconFontPackage: json['iconFontPackage'] as String?,

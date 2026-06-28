@@ -38,6 +38,7 @@ class CloudMigrationNotifier extends Notifier<bool> {
           publicId: folder.id,
           name: folder.name,
           parentFolderPublicId: folder.parentID,
+          iconId: folder.iconId,
         );
       } catch (error, stackTrace) {
         await _maybeReportCloudUnauthenticated(

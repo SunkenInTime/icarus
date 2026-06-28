@@ -127,6 +127,7 @@ export const listForParent = query({
       .map(({ folder, role }) => ({
         publicId: folder.publicId,
         name: folder.name,
+        iconId: folder.iconId ?? null,
         iconCodePoint: folder.iconCodePoint ?? null,
         iconFontFamily: folder.iconFontFamily ?? null,
         iconFontPackage: folder.iconFontPackage ?? null,
@@ -148,6 +149,7 @@ export const create = mutation({
     publicId: v.string(),
     name: v.string(),
     parentFolderPublicId: v.optional(v.string()),
+    iconId: v.optional(v.number()),
     iconCodePoint: v.optional(v.number()),
     iconFontFamily: v.optional(v.string()),
     iconFontPackage: v.optional(v.string()),
@@ -185,6 +187,7 @@ export const create = mutation({
       ownerId: user._id,
       name: args.name,
       parentFolderId,
+      iconId: args.iconId,
       iconCodePoint: args.iconCodePoint,
       iconFontFamily: args.iconFontFamily,
       iconFontPackage: args.iconFontPackage,
@@ -202,6 +205,7 @@ export const update = mutation({
   args: {
     folderPublicId: v.string(),
     name: v.optional(v.string()),
+    iconId: v.optional(v.number()),
     iconCodePoint: v.optional(v.number()),
     iconFontFamily: v.optional(v.string()),
     iconFontPackage: v.optional(v.string()),
@@ -221,6 +225,7 @@ export const update = mutation({
 
     const patch: {
       name?: string;
+      iconId?: number;
       iconCodePoint?: number;
       iconFontFamily?: string;
       iconFontPackage?: string;
@@ -233,6 +238,9 @@ export const update = mutation({
 
     if (args.name !== undefined) {
       patch.name = args.name;
+    }
+    if (args.iconId !== undefined) {
+      patch.iconId = args.iconId;
     }
     if (args.iconCodePoint !== undefined) {
       patch.iconCodePoint = args.iconCodePoint;
@@ -282,6 +290,7 @@ export const listAll = query({
       .map(({ folder, role }) => ({
         publicId: folder.publicId,
         name: folder.name,
+        iconId: folder.iconId ?? null,
         iconCodePoint: folder.iconCodePoint ?? null,
         iconFontFamily: folder.iconFontFamily ?? null,
         iconFontPackage: folder.iconFontPackage ?? null,

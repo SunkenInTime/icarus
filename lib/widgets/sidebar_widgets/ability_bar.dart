@@ -5,6 +5,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
+import 'package:icarus/providers/hovered_map_item_name_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -57,8 +58,6 @@ class AbiilityBar extends ConsumerWidget {
         ),
         boxShadow: const [
           Settings.cardForegroundBackdrop,
-          
-
         ],
       ),
       child: Column(
@@ -68,9 +67,11 @@ class AbiilityBar extends ConsumerWidget {
           ...List.generate(
             activeAgent.abilities.length,
             (index) {
+              final ability = activeAgent.abilities[index];
               return Draggable<AbilityInfo>(
-                data: activeAgent.abilities[index],
+                data: ability,
                 onDragStarted: () {
+                  clearHoveredMapItemNameIfCurrent(ref, ability.name);
                   if (ref.read(interactionStateProvider) ==
                           InteractionState.drawing ||
                       ref.read(interactionStateProvider) ==
@@ -96,8 +97,7 @@ class AbiilityBar extends ConsumerWidget {
                 feedback: Opacity(
                   opacity: Settings.feedbackOpacity,
                   child: ZoomTransform(
-                    child:
-                        activeAgent.abilities[index].abilityData!.createWidget(
+                    child: ability.abilityData!.createWidget(
                       id: null,
                       isAlly: ref.watch(teamProvider),
                       mapScale: mapScale,
@@ -106,15 +106,25 @@ class AbiilityBar extends ConsumerWidget {
                 ),
 
                 // dragAnchorStrategy: centerDragStrategy,
-                child: InkWell(
-                  mouseCursor: SystemMouseCursors.click,
-                  onTap: () {},
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: SizedBox(
-                      height: 55,
-                      width: 55,
-                      child: Image.asset(activeAgent.abilities[index].iconPath),
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  onEnter: (_) {
+                    ref.read(hoveredMapItemNameProvider.notifier).state =
+                        ability.name;
+                  },
+                  onExit: (_) {
+                    clearHoveredMapItemNameIfCurrent(ref, ability.name);
+                  },
+                  child: InkWell(
+                    mouseCursor: SystemMouseCursors.click,
+                    onTap: () {},
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: SizedBox(
+                        height: 55,
+                        width: 55,
+                        child: Image.asset(ability.iconPath),
+                      ),
                     ),
                   ),
                 ),

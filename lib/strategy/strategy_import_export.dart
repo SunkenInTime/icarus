@@ -12,6 +12,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
@@ -475,7 +476,9 @@ class StrategyImportExportService {
   }) {
     return ref.read(folderProvider.notifier).createFolder(
           name: name,
-          icon: Icons.drive_folder_upload,
+          iconId: FolderIconRegistry.idForLegacyIconData(
+            Icons.drive_folder_upload,
+          ),
           color: FolderColor.generic,
           parentID: parentFolderId,
         );
@@ -882,7 +885,7 @@ class StrategyImportExportService {
       final createdFolder =
           await ref.read(folderProvider.notifier).createFolder(
                 name: folderEntry.name,
-                icon: folderEntry.icon.toIconData(),
+                iconId: folderEntry.iconId,
                 color: folderEntry.color,
                 customColor: folderEntry.customColorValue == null
                     ? null
@@ -1406,7 +1409,7 @@ class StrategyImportExportService {
       final createdFolder =
           await ref.read(folderProvider.notifier).createFolder(
                 name: folderEntry.name,
-                icon: folderEntry.icon.toIconData(),
+                iconId: folderEntry.iconId,
                 color: folderEntry.color,
                 customColor: folderEntry.customColorValue == null
                     ? null
@@ -2149,6 +2152,7 @@ class StrategyImportExportService {
         name: currentFolder.name,
         parentManifestId: parentManifestId,
         archivePath: normalizeArchivePath(currentArchivePath),
+        iconId: currentFolder.iconId,
         icon: ArchiveIconDescriptor.fromIconData(currentFolder.icon),
         color: currentFolder.color,
         customColorValue: currentFolder.customColor?.toARGB32(),

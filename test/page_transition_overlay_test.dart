@@ -3,12 +3,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const Color _expectedMutedAllyBgColor = Color.fromARGB(255, 60, 60, 60);
+
+class _FixedMapProvider extends MapProvider {
+  @override
+  MapState build() => MapState(currentMap: MapValue.ascent, isAttack: true);
+
+  @override
+  void fromHive(MapValue map, bool isAttack) {}
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -41,7 +51,7 @@ void main() {
 
   testWidgets('dead agents stay in dead state in transition previews',
       (tester) async {
-    final container = ProviderContainer();
+    final container = _createContainer();
     addTearDown(container.dispose);
 
     final agent = PlacedAgent(
@@ -67,7 +77,7 @@ void main() {
 
   testWidgets('alive agents do not render dead-state styling in previews',
       (tester) async {
-    final container = ProviderContainer();
+    final container = _createContainer();
     addTearDown(container.dispose);
 
     final agent = PlacedAgent(
@@ -93,7 +103,7 @@ void main() {
 
   testWidgets('partial dead-state progress lerps styling for transition',
       (tester) async {
-    final container = ProviderContainer();
+    final container = _createContainer();
     addTearDown(container.dispose);
 
     final agent = PlacedAgent(
@@ -131,4 +141,12 @@ void main() {
     );
     await tester.pump();
   });
+}
+
+ProviderContainer _createContainer() {
+  return ProviderContainer(
+    overrides: [
+      mapProvider.overrideWith(_FixedMapProvider.new),
+    ],
+  );
 }

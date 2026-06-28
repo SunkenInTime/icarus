@@ -137,7 +137,7 @@ types:
         index: 10
   MapValue:
     typeId: 6
-    nextIndex: 12
+    nextIndex: 13
     fields:
       ascent:
         index: 0
@@ -163,6 +163,8 @@ types:
         index: 10
       corrode:
         index: 11
+      summit:
+        index: 12
   AgentType:
     typeId: 7
     nextIndex: 29
