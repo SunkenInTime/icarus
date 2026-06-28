@@ -6,8 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
@@ -387,7 +389,7 @@ void main() {
         position: const Offset(100, 100),
       );
 
-      final container = ProviderContainer();
+      final container = _createContainer();
       addTearDown(() async {
         await tester.pumpWidget(const SizedBox.shrink());
         container.dispose();
@@ -420,8 +422,7 @@ void main() {
       expect(rotatable.buttonTop, isNull);
     });
 
-    testWidgets('icon-only sector hides the rotation handle',
-        (tester) async {
+    testWidgets('icon-only sector hides the rotation handle', (tester) async {
       final abilityInfo = AbilityInfo(
         name: 'Sector',
         iconPath: 'assets/agents/Cypher/1.webp',
@@ -444,7 +445,7 @@ void main() {
         ),
       );
 
-      final container = ProviderContainer();
+      final container = _createContainer();
       addTearDown(() async {
         await tester.pumpWidget(const SizedBox.shrink());
         container.dispose();
@@ -545,6 +546,22 @@ void main() {
   });
 }
 
+class _FixedMapProvider extends MapProvider {
+  @override
+  MapState build() => MapState(currentMap: MapValue.ascent, isAttack: true);
+
+  @override
+  void fromHive(MapValue map, bool isAttack) {}
+}
+
+ProviderContainer _createContainer() {
+  return ProviderContainer(
+    overrides: [
+      mapProvider.overrideWith(_FixedMapProvider.new),
+    ],
+  );
+}
+
 class _PlacedSectorAbilityHarness extends ConsumerWidget {
   const _PlacedSectorAbilityHarness();
 
@@ -555,7 +572,7 @@ class _PlacedSectorAbilityHarness extends ConsumerWidget {
       children: [
         PlacedAbilityWidget(
           ability: ability,
-          onDragEnd: (_) {},
+          onDragEnd: (_, __) {},
           id: ability.id,
           data: ability,
           rotation: ability.rotation,
@@ -567,7 +584,7 @@ class _PlacedSectorAbilityHarness extends ConsumerWidget {
 }
 
 Future<void> _pumpWidget(WidgetTester tester, Widget child) async {
-  final container = ProviderContainer();
+  final container = _createContainer();
   addTearDown(() async {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
@@ -626,5 +643,3 @@ SectorCirclePainter _sectorPainter(WidgetTester tester) {
 
   return customPaint.painter! as SectorCirclePainter;
 }
-
-

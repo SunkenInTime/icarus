@@ -7,6 +7,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
+import 'package:icarus/migrations/lineup_group_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/const/settings.dart';
@@ -23,7 +24,10 @@ class StrategyMigrator {
       final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
       final customCircleMigrated =
           migrateCustomCircleWrapper(squareAoeMigrated);
-      if (customCircleMigrated != squareAoeMigrated) {
+      final lineUpGroupMigrated = migrateLineUpGroups(customCircleMigrated);
+      if (lineUpGroupMigrated != customCircleMigrated) {
+        await box.put(lineUpGroupMigrated.id, lineUpGroupMigrated);
+      } else if (customCircleMigrated != squareAoeMigrated) {
         await box.put(customCircleMigrated.id, customCircleMigrated);
       } else if (squareAoeMigrated != abilityScaleMigrated) {
         await box.put(squareAoeMigrated.id, squareAoeMigrated);
@@ -120,13 +124,40 @@ class StrategyMigrator {
     );
   }
 
+  static StrategyData migrateLineUpGroups(StrategyData strat,
+      {bool force = false}) {
+    if (!force && strat.versionNumber >= LineUpGroupMigration.version) {
+      return strat;
+    }
+
+    final migratedPages = LineUpGroupMigration.migratePages(
+      pages: strat.pages,
+    );
+    final hasPageChanged = migratedPages.length == strat.pages.length &&
+        migratedPages.asMap().entries.any((entry) {
+          final index = entry.key;
+          return entry.value != strat.pages[index];
+        });
+
+    if (!hasPageChanged && !force) {
+      return strat;
+    }
+
+    return strat.copyWith(
+      pages: migratedPages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
   static StrategyData migrateToCurrentVersion(StrategyData strat,
       {bool forceAbilityScale = false}) {
     final worldMigrated = migrateToWorld16x9(strat);
     final abilityScaleMigrated =
         migrateAbilityScale(worldMigrated, force: forceAbilityScale);
     final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
-    return migrateCustomCircleWrapper(squareAoeMigrated);
+    final customCircleMigrated = migrateCustomCircleWrapper(squareAoeMigrated);
+    return migrateLineUpGroups(customCircleMigrated);
   }
 
   static Future<StrategyData> migrateLegacyData(StrategyData strat) async {
@@ -189,9 +220,13 @@ class StrategyMigrator {
       abilityScaleMigrated,
       force: originalVersion < SquareAoeCenterMigration.version,
     );
-    return migrateCustomCircleWrapper(
+    final customCircleMigrated = migrateCustomCircleWrapper(
       squareAoeMigrated,
       force: originalVersion < CustomCircleWrapperMigration.version,
+    );
+    return migrateLineUpGroups(
+      customCircleMigrated,
+      force: originalVersion < LineUpGroupMigration.version,
     );
   }
 
@@ -269,21 +304,23 @@ class StrategyMigrator {
       ];
     }
 
-    List<LineUp> shiftLineUps(List<LineUp> lineUps) {
+    List<LineUpGroup> shiftLineUpGroups(List<LineUpGroup> groups) {
       return [
-        for (final lineUp in lineUps)
-          () {
-            final shiftedAgent = lineUp.agent.copyWith(
-              position: shift(lineUp.agent.position),
-            )..isDeleted = lineUp.agent.isDeleted;
-            final shiftedAbility = lineUp.ability.copyWith(
-              position: shift(lineUp.ability.position),
-            )..isDeleted = lineUp.ability.isDeleted;
-            return lineUp.copyWith(
-              agent: shiftedAgent,
-              ability: shiftedAbility,
-            );
-          }()
+        for (final group in groups)
+          group.copyWith(
+            agent: group.agent.copyWith(
+              position: shift(group.agent.position),
+            )..isDeleted = group.agent.isDeleted,
+            items: [
+              for (final item in group.items)
+                item.copyWith(
+                  ability: item.ability.copyWith(
+                    position: shift(item.ability.position),
+                  )..isDeleted = item.ability.isDeleted,
+                  images: item.images.map((image) => image.copyWith()).toList(),
+                ),
+            ],
+          )
       ];
     }
 
@@ -357,7 +394,7 @@ class StrategyMigrator {
               imageData: shiftImages(page.imageData),
               utilityData: shiftUtilities(page.utilityData),
               drawingData: shiftDrawings(page.drawingData),
-              lineUps: shiftLineUps(page.lineUps),
+              lineUpGroups: shiftLineUpGroups(page.lineUpGroups),
             ))
         .toList(growable: false);
 

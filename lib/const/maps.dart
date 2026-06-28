@@ -11,25 +11,27 @@ enum MapValue {
   pearl,
   bind,
   corrode,
+  summit,
 }
 
 class Maps {
   static List<MapValue> availableMaps = [
-    MapValue.bind,
-    MapValue.haven,
-    MapValue.pearl,
-    MapValue.split,
+    MapValue.ascent,
     MapValue.breeze,
+    MapValue.haven,
     MapValue.lotus,
-    MapValue.fracture,
+    MapValue.split,
+    MapValue.sunset,
+    MapValue.summit,
   ];
 
   static List<MapValue> outofplayMaps = [
-    MapValue.sunset,
-    MapValue.ascent,
     MapValue.abyss,
-    MapValue.icebox,
+    MapValue.bind,
     MapValue.corrode,
+    MapValue.fracture,
+    MapValue.icebox,
+    MapValue.pearl,
   ];
 
   static Map<MapValue, String> mapNames = {
@@ -45,6 +47,7 @@ class Maps {
     MapValue.pearl: 'pearl',
     MapValue.bind: 'bind',
     MapValue.corrode: 'corrode',
+    MapValue.summit: 'summit',
   };
 
   static Map<MapValue, double> mapScale = {
@@ -60,5 +63,6 @@ class Maps {
     MapValue.abyss: 1.138, //modified
     MapValue.pearl: 1.11, //modified
     MapValue.corrode: 0.985,
+    MapValue.summit: 1.03,
   };
 }

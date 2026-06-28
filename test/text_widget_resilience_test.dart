@@ -11,7 +11,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';

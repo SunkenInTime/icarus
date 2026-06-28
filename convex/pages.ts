@@ -6,6 +6,11 @@ import {
   getStrategyByPublicId,
   sortByNumberField,
 } from "./lib/entities";
+import { strategySettingsValidator } from "./lib/payloadValidators";
+
+function settingsEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
 
 export const listForStrategy = query({
   args: {
@@ -41,7 +46,7 @@ export const add = mutation({
     name: v.string(),
     sortIndex: v.number(),
     isAttack: v.boolean(),
-    settings: v.optional(v.string()),
+    settings: v.optional(strategySettingsValidator),
   },
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
@@ -57,8 +62,7 @@ export const add = mutation({
         throw new Error(`Page publicId already exists: ${args.pagePublicId}`);
       }
 
-      const settingsChanged =
-        (existingPage.settings ?? null) !== (args.settings ?? null);
+      const settingsChanged = !settingsEqual(existingPage.settings, args.settings);
       const hasChanges =
         existingPage.name !== args.name ||
         existingPage.sortIndex !== args.sortIndex ||

@@ -15,12 +15,11 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(AppPreferencesAdapter());
     registerAdapter(BoundingBoxAdapter());
     registerAdapter(CloudMediaJobStateAdapter());
-    registerAdapter(EllipseDrawingAdapter());
     registerAdapter(FolderColorAdapter());
-    registerAdapter(FreeDrawingAdapter());
     registerAdapter(IconDataAdapter());
-    registerAdapter(LineAdapter());
     registerAdapter(LineUpAdapter());
+    registerAdapter(LineUpGroupAdapter());
+    registerAdapter(LineUpItemAdapter());
     registerAdapter(MapThemePaletteAdapter());
     registerAdapter(MapThemeProfileAdapter());
     registerAdapter(MapValueAdapter());
@@ -33,7 +32,6 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(PlacedUtilityAdapter());
     registerAdapter(PlacedViewConeAgentAdapter());
     registerAdapter(PlacedWidgetAdapter());
-    registerAdapter(RectangleDrawingAdapter());
     registerAdapter(SimpleImageDataAdapter());
     registerAdapter(StrategyDataAdapter());
     registerAdapter(StrategyPageAdapter());
@@ -52,12 +50,11 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(AppPreferencesAdapter());
     registerAdapter(BoundingBoxAdapter());
     registerAdapter(CloudMediaJobStateAdapter());
-    registerAdapter(EllipseDrawingAdapter());
     registerAdapter(FolderColorAdapter());
-    registerAdapter(FreeDrawingAdapter());
     registerAdapter(IconDataAdapter());
-    registerAdapter(LineAdapter());
     registerAdapter(LineUpAdapter());
+    registerAdapter(LineUpGroupAdapter());
+    registerAdapter(LineUpItemAdapter());
     registerAdapter(MapThemePaletteAdapter());
     registerAdapter(MapThemeProfileAdapter());
     registerAdapter(MapValueAdapter());
@@ -70,7 +67,6 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(PlacedUtilityAdapter());
     registerAdapter(PlacedViewConeAgentAdapter());
     registerAdapter(PlacedWidgetAdapter());
-    registerAdapter(RectangleDrawingAdapter());
     registerAdapter(SimpleImageDataAdapter());
     registerAdapter(StrategyDataAdapter());
     registerAdapter(StrategyPageAdapter());

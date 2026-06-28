@@ -82,14 +82,14 @@ class ActivePageOverlayEntry {
 
   final EntitySyncKey entityKey;
   final ActivePageOverlayEntityType entityType;
-  final String? desiredPayload;
+  final Object? desiredPayload;
   final int? desiredSortIndex;
   final bool deletion;
   final int baseRevision;
   final DateTime dirtyAt;
 
   ActivePageOverlayEntry copyWith({
-    String? desiredPayload,
+    Object? desiredPayload,
     int? desiredSortIndex,
     bool? deletion,
     int? baseRevision,
@@ -117,7 +117,7 @@ class ProjectedPageElement {
 
   final String publicId;
   final String elementType;
-  final String payload;
+  final CloudPayload payload;
   final int sortIndex;
 }
 
@@ -129,7 +129,7 @@ class ProjectedPageLineup {
   });
 
   final String publicId;
-  final String payload;
+  final CloudPayload payload;
   final int sortIndex;
 }
 
@@ -138,7 +138,7 @@ class ActivePageProjectedState {
     required this.pageId,
     required this.pageName,
     required this.isAttack,
-    required this.settingsJson,
+    required this.settingsPayload,
     required this.elements,
     required this.lineups,
   });
@@ -146,7 +146,7 @@ class ActivePageProjectedState {
   final String pageId;
   final String pageName;
   final bool isAttack;
-  final String? settingsJson;
+  final CloudPayload? settingsPayload;
   final List<ProjectedPageElement> elements;
   final List<ProjectedPageLineup> lineups;
 }

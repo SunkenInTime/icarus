@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-04T21:15:40Z",
+  "title": "Design System: Icarus",
+  "extensions": {
+    "colorMeta": {
+      "tactical-background": {
+        "role": "neutral",
+        "displayName": "Workbench Black",
+        "canonical": "#09090b",
+        "tonalRamp": ["oklch(15% 0.008 285)", "oklch(24% 0.008 285)", "oklch(34% 0.008 285)", "oklch(45% 0.008 285)", "oklch(56% 0.008 285)", "oklch(68% 0.008 285)", "oklch(82% 0.008 285)", "oklch(95% 0.008 285)"]
+      },
+      "tactical-card": {
+        "role": "neutral",
+        "displayName": "Panel Zinc",
+        "canonical": "#18181b",
+        "tonalRamp": ["oklch(15% 0.008 285)", "oklch(24% 0.008 285)", "oklch(34% 0.008 285)", "oklch(45% 0.008 285)", "oklch(56% 0.008 285)", "oklch(68% 0.008 285)", "oklch(82% 0.008 285)", "oklch(95% 0.008 285)"]
+      },
+      "tactical-raised": {
+        "role": "neutral",
+        "displayName": "Raised Zinc",
+        "canonical": "#27272a",
+        "tonalRamp": ["oklch(15% 0.008 285)", "oklch(24% 0.008 285)", "oklch(34% 0.008 285)", "oklch(45% 0.008 285)", "oklch(56% 0.008 285)", "oklch(68% 0.008 285)", "oklch(82% 0.008 285)", "oklch(95% 0.008 285)"]
+      },
+      "tactical-primary": {
+        "role": "primary",
+        "displayName": "Command Violet",
+        "canonical": "#7c3aed",
+        "tonalRamp": ["oklch(15% 0.14 295)", "oklch(24% 0.16 295)", "oklch(34% 0.18 295)", "oklch(45% 0.2 295)", "oklch(56% 0.22 295)", "oklch(68% 0.18 295)", "oklch(82% 0.1 295)", "oklch(95% 0.035 295)"]
+      },
+      "tactical-danger": {
+        "role": "secondary",
+        "displayName": "Destructive Red",
+        "canonical": "#ef4444",
+        "tonalRamp": ["oklch(15% 0.11 25)", "oklch(24% 0.13 25)", "oklch(34% 0.16 25)", "oklch(45% 0.19 25)", "oklch(56% 0.21 25)", "oklch(68% 0.16 25)", "oklch(82% 0.08 25)", "oklch(95% 0.025 25)"]
+      },
+      "tactical-favorite": {
+        "role": "secondary",
+        "displayName": "Favorite Amber",
+        "canonical": "#ff9800",
+        "tonalRamp": ["oklch(15% 0.09 70)", "oklch(24% 0.11 70)", "oklch(34% 0.13 70)", "oklch(45% 0.15 70)", "oklch(56% 0.17 70)", "oklch(68% 0.15 70)", "oklch(82% 0.09 70)", "oklch(95% 0.03 70)"]
+      },
+      "tactical-ally": {
+        "role": "secondary",
+        "displayName": "Ally Green",
+        "canonical": "#3a7e5d",
+        "tonalRamp": ["oklch(15% 0.07 155)", "oklch(24% 0.08 155)", "oklch(34% 0.09 155)", "oklch(45% 0.1 155)", "oklch(56% 0.11 155)", "oklch(68% 0.09 155)", "oklch(82% 0.055 155)", "oklch(95% 0.02 155)"]
+      },
+      "tactical-enemy": {
+        "role": "secondary",
+        "displayName": "Enemy Red",
+        "canonical": "#772727",
+        "tonalRamp": ["oklch(15% 0.08 25)", "oklch(24% 0.09 25)", "oklch(34% 0.1 25)", "oklch(45% 0.11 25)", "oklch(56% 0.12 25)", "oklch(68% 0.09 25)", "oklch(82% 0.05 25)", "oklch(95% 0.02 25)"]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headings such as Tools and Agents."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Dialog titles, settings group titles, card titles, and primary row labels."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Normal controls, option labels, strategy metadata, and helper text."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Section labels, filter state text, compact state descriptions, and setting captions."
+      },
+      "micro": {
+        "displayName": "Micro",
+        "purpose": "Badges such as DEFAULT and CUSTOM OVERRIDE."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card-foreground-backdrop",
+        "value": "0 4px 12px rgba(0, 0, 0, 0.54)",
+        "purpose": "Separate foreground card details and select controls from the dark tactical surface."
+      },
+      {
+        "name": "folder-pill-glow",
+        "value": "0 2px 4px color-matched at 30% opacity; hover increases blur to 8px",
+        "purpose": "Give draggable folder pills a clear hover and drag affordance."
+      },
+      {
+        "name": "delete-menu-lift",
+        "value": "0 8px 24px rgba(0, 0, 0, 0.28)",
+        "purpose": "Lift floating destructive controls above the canvas."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-fast",
+        "value": "150ms ease-out",
+        "purpose": "Small hover and text-state transitions."
+      },
+      {
+        "name": "state-standard",
+        "value": "200ms ease-out-cubic",
+        "purpose": "Route transitions, panel reveals, menu reveals, and state fades."
+      },
+      {
+        "name": "state-deliberate",
+        "value": "240-250ms ease-in-out-cubic",
+        "purpose": "Segmented tab indicator motion and expanding search fields."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "desktop-workspace",
+        "value": "fixed desktop app shell"
+      },
+      {
+        "name": "strategy-grid-min-tile",
+        "value": "250px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary command button for decisive strategy or settings actions.",
+      "html": "<button class=\"ds-btn-primary\"><span class=\"ds-btn-icon\">+</span>Create Strategy</button>",
+      "css": ".ds-btn-primary { background: #7c3aed; color: #f9fafb; border: 1px solid #7c3aed; border-radius: 8px; padding: 8px 14px; font: 600 14px system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif; display: inline-flex; align-items: center; gap: 8px; transition: background 180ms ease-out, border-color 180ms ease-out, transform 120ms ease-out; } .ds-btn-primary:hover { background: #8b5cf6; border-color: #8b5cf6; } .ds-btn-primary:focus-visible { outline: 2px solid #7c3aed; outline-offset: 2px; } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-icon { font-size: 16px; line-height: 1; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Utility button for import, export, folders, resets, and non-primary commands.",
+      "html": "<button class=\"ds-btn-secondary\">Import / Export</button>",
+      "css": ".ds-btn-secondary { background: #27272a; color: #fafafa; border: 1px solid #27272a; border-radius: 8px; padding: 8px 14px; font: 500 14px system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif; transition: background 180ms ease-out, border-color 180ms ease-out; } .ds-btn-secondary:hover { background: #323236; border-color: #3f3f46; } .ds-btn-secondary:focus-visible { outline: 2px solid #7c3aed; outline-offset: 2px; }"
+    },
+    {
+      "name": "Tool Icon Button",
+      "kind": "button",
+      "refersTo": "tool-button-selected",
+      "description": "Square icon control used in the sidebar tool grid, with shortcut label support.",
+      "html": "<button class=\"ds-tool-button ds-tool-button-selected\"><span class=\"ds-tool-icon\">✎</span><span class=\"ds-tool-shortcut\">Q</span></button>",
+      "css": ".ds-tool-button { position: relative; width: 57.8px; height: 57.8px; background: #27272a; color: #fafafa; border: 1px solid #27272a; border-radius: 8px; display: inline-grid; place-items: center; transition: background 180ms ease-out, border-color 180ms ease-out; } .ds-tool-button:hover { background: #323236; border-color: #3f3f46; } .ds-tool-button:focus-visible { outline: 2px solid #7c3aed; outline-offset: 2px; } .ds-tool-button-selected { background: #7c3aed; border-color: #7c3aed; } .ds-tool-icon { font-size: 20px; } .ds-tool-shortcut { position: absolute; right: 4px; bottom: 4px; color: #a1a1aa; font: 700 9px system-ui, sans-serif; }"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "refersTo": "search-field",
+      "description": "Collapsible search input that expands when active.",
+      "html": "<label class=\"ds-search\"><span class=\"ds-search-icon\">⌕</span><input placeholder=\"Search\" /></label>",
+      "css": ".ds-search { width: 250px; height: 40px; background: #18181b; color: #fafafa; border: 1px solid #27272a; border-radius: 8px; padding: 0 8px; display: inline-flex; align-items: center; gap: 8px; transition: width 250ms cubic-bezier(0.215, 0.61, 0.355, 1), border-color 180ms ease-out; } .ds-search:hover { border-color: #3f3f46; } .ds-search:focus-within { border-color: #7c3aed; box-shadow: 0 0 0 1px #7c3aed; } .ds-search input { min-width: 0; flex: 1; background: transparent; border: 0; color: #fafafa; font: 14px system-ui, sans-serif; outline: 0; } .ds-search input::placeholder { color: rgba(255,255,255,0.54); } .ds-search-icon { color: #fafafa; font-size: 18px; }"
+    },
+    {
+      "name": "Segmented Tabs",
+      "kind": "chip",
+      "refersTo": "segmented-tabs",
+      "description": "Compact segmented mode switcher with a sliding violet selected pill.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab ds-tab-active\">Strategy</button><button class=\"ds-tab\">Global</button></div>",
+      "css": ".ds-tabs { display: inline-flex; gap: 2px; background: #27272a; border: 1px solid #27272a; border-radius: 6px; padding: 2px; } .ds-tab { border: 0; background: transparent; color: #a1a1aa; border-radius: 5px; padding: 4px 8px; font: 600 13px system-ui, sans-serif; transition: background 240ms cubic-bezier(0.65, 0, 0.35, 1), color 180ms ease-out; } .ds-tab:hover { color: #fafafa; } .ds-tab:focus-visible { outline: 2px solid #7c3aed; outline-offset: 2px; } .ds-tab-active { background: #7c3aed; color: #f9fafb; }"
+    },
+    {
+      "name": "Strategy Card",
+      "kind": "card",
+      "refersTo": "strategy-card",
+      "description": "Library tile for a saved strategy with map thumbnail, metadata, role icons, and context menu.",
+      "html": "<article class=\"ds-strategy-card\"><div class=\"ds-strategy-thumb\"></div><div class=\"ds-strategy-detail\"><strong>Ascent A Split</strong><span>Ascent</span><span class=\"ds-strategy-side\">Attack</span></div></article>",
+      "css": ".ds-strategy-card { width: 250px; height: 250px; background: #18181b; border: 2px solid #27272a; border-radius: 16px; padding: 8px; display: grid; grid-template-rows: 1fr 1fr; gap: 10px; color: #fafafa; transition: border-color 100ms ease-out; } .ds-strategy-card:hover { border-color: #7c3aed; } .ds-strategy-card:focus-within { outline: 2px solid #7c3aed; outline-offset: 2px; } .ds-strategy-thumb { border-radius: 16px; background: linear-gradient(135deg, #271406, #b27c40 70%, #f08234); } .ds-strategy-detail { background: #18181b; border: 1px solid #27272a; border-radius: 16px; padding: 10px 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.54); display: grid; gap: 5px; font: 14px system-ui, sans-serif; } .ds-strategy-detail strong { font-weight: 500; } .ds-strategy-side { color: #ff5252; justify-self: end; }"
+    },
+    {
+      "name": "Sidebar Panel",
+      "kind": "nav",
+      "refersTo": "sidebar-panel",
+      "description": "Right-side tactical tool panel that groups tools, filters, agents, and contextual controls.",
+      "html": "<aside class=\"ds-sidebar\"><h2>Tools</h2><div class=\"ds-tool-grid\"><span></span><span></span><span></span><span></span><span></span></div><h2>Agents</h2></aside>",
+      "css": ".ds-sidebar { width: 345px; background: #18181b; color: #fafafa; border: 2px solid rgba(210,214,219,0.1); border-radius: 12px; padding: 16px; } .ds-sidebar h2 { margin: 0 0 16px; font: 500 20px system-ui, sans-serif; } .ds-tool-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-bottom: 24px; } .ds-tool-grid span { aspect-ratio: 1; background: #27272a; border-radius: 8px; border: 1px solid #27272a; }"
+    },
+    {
+      "name": "Folder Pill",
+      "kind": "chip",
+      "refersTo": "folder-pill",
+      "description": "User-colored draggable organization chip for folders.",
+      "html": "<button class=\"ds-folder-pill\"><span>▣</span>Execs</button>",
+      "css": ".ds-folder-pill { height: 44px; background: #3a7e5d; color: #fafafa; border: 1px solid rgba(255,255,255,0.15); border-radius: 22px; padding: 0 12px 0 14px; display: inline-flex; align-items: center; gap: 10px; font: 600 14px system-ui, sans-serif; box-shadow: 0 2px 4px rgba(58,126,93,0.3); transition: transform 150ms ease-out, border-color 150ms ease-out, box-shadow 150ms ease-out; } .ds-folder-pill:hover { transform: scale(1.03); border-color: rgba(255,255,255,0.5); box-shadow: 0 2px 8px rgba(58,126,93,0.3); } .ds-folder-pill:focus-visible { outline: 2px solid #7c3aed; outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Tactical Workbench",
+    "overview": "Icarus should feel like a disciplined workbench for planning Valorant rounds: dark, compact, map-first, and deliberate. The UI is allowed to be dense because the work is dense, but every cluster needs an obvious job and a stable place. Panels, toolbars, filter controls, and strategy cards should support tactical thinking without asking for attention.\n\nThe current system is a dark Shad UI foundation with a restrained violet accent, cool zinc surfaces, image-rich map and agent assets, and small, fast transitions. The product direction is minimal, intuitive, tasteful, and fast; polish comes from order, not ornament.\n\nThis system explicitly rejects disorganized layouts, flashy color, novelty effects, cluttered panels, and features that look shoehorned into the interface. If a control cannot explain why it sits where it sits, it is not refined enough.",
+    "keyCharacteristics": [
+      "Canvas-first: map, agents, abilities, drawings, and lineups stay visually dominant.",
+      "Restrained tactical color: violet marks primary action and selection only.",
+      "Dense but calm: tool surfaces are compact, predictable, and grouped by task.",
+      "Native product typography: system sans, practical weights, no decorative type.",
+      "Fast state feedback: transitions are short and communicate hover, selection, reveal, or loading."
+    ],
+    "rules": [
+      {
+        "name": "The One Command Color Rule",
+        "body": "Violet is for current action, selection, focus, and primary commands. It is not decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Tactical Semantics Rule",
+        "body": "Ally, enemy, favorite, and map colors carry game meaning. Do not reuse them for unrelated UI emphasis.",
+        "section": "colors"
+      },
+      {
+        "name": "The Native Tool Rule",
+        "body": "Use the system sans stack for all product UI. Display fonts, novelty fonts, and over-styled labels are forbidden.",
+        "section": "typography"
+      },
+      {
+        "name": "The Compact Legibility Rule",
+        "body": "Dense panels may use small text, but labels must keep enough weight, contrast, and spacing to scan at desktop distance.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tonal First Rule",
+        "body": "Prefer surface changes and borders before shadows. If a shadow does not explain stacking, remove it.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep the map and tactical objects visually dominant; supporting UI should feel like workbench hardware around the canvas.",
+      "Do use Command Violet for selected tools, primary actions, focus rings, and current assignments.",
+      "Do group tools by task and reveal contextual controls only when the current interaction mode needs them.",
+      "Do keep dense panels orderly with consistent 8px, 10px, 12px, 16px, and 24px spacing steps.",
+      "Do use icons for familiar tool actions, with tooltips for compact controls.",
+      "Do preserve tactical color meaning for ally, enemy, favorite, destructive, and map states.",
+      "Do keep transitions short: 150-250ms for hover, reveal, route, and state changes."
+    ],
+    "donts": [
+      "Don't make Icarus look disorganized, noisy, or arbitrary.",
+      "Don't add flashy colors, loud gradients, glow-heavy treatments, glassmorphism, or decorative effects.",
+      "Don't shoehorn features into spare space; every control needs a clear reason for its position.",
+      "Don't reuse ally, enemy, favorite, or map colors for unrelated UI decoration.",
+      "Don't introduce marketing-page composition, hero typography, decorative dashboards, or generic gamer overlay styling.",
+      "Don't use colored side-stripe borders, gradient text, nested cards, or identical decorative card grids.",
+      "Don't invent custom affordances where standard Shad, Flutter, or desktop patterns already communicate the action clearly."
+    ]
+  }
+}

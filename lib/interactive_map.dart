@@ -6,9 +6,10 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
+import 'package:icarus/providers/canvas_resize_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -17,6 +18,7 @@ import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/delete_area.dart';
+import 'package:icarus/widgets/hovered_map_item_name_card.dart';
 import 'package:icarus/widgets/lineup_control_buttons.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
@@ -62,6 +64,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
 
   final controller = TransformationController();
   Size? _lastViewportSize;
+  Size? _lastPlayAreaSize;
   bool _placementCenterUpdateScheduled = false;
   bool _zoomSyncScheduled = false;
   double? _pendingZoom;
@@ -167,7 +170,8 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
             (constraints.maxWidth - Settings.sideBarReservedWidth)
                 .clamp(0.0, constraints.maxWidth);
         final viewportSize = Size(viewportWidth, height);
-        if (_lastViewportSize != viewportSize) {
+        if (_lastViewportSize != viewportSize ||
+            _lastPlayAreaSize != playAreaSize) {
           final double currentScale = controller.value.getMaxScaleOnAxis();
           final double safeScale = currentScale == 0 ? 1.0 : currentScale;
           final double centeredOffsetX =
@@ -184,6 +188,11 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
             coordinateSystem: coordinateSystem,
           );
           _lastViewportSize = viewportSize;
+          _lastPlayAreaSize = playAreaSize;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            ref.read(canvasResizeProvider.notifier).increment();
+          });
         }
         final double mapWidth = height * coordinateSystem.mapAspectRatio;
         final double mapLeft = (worldWidth - mapWidth) / 2;
@@ -333,6 +342,13 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                         ),
                                 ),
                                 Positioned.fill(
+                                  child: ref.watch(transitionProvider).hideView
+                                      ? IgnorePointer(
+                                          child: LineUpOverlay(),
+                                        )
+                                      : SizedBox.shrink(),
+                                ),
+                                Positioned.fill(
                                   child: ref.watch(transitionProvider).active
                                       ? PageTransitionOverlay()
                                       : SizedBox.shrink(),
@@ -373,7 +389,14 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                       Positioned(
                         top: 0,
                         right: 0,
-                        child: DeleteArea(),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            HoveredMapItemNameCard(),
+                            DeleteArea(),
+                          ],
+                        ),
                       ),
                       Align(
                         alignment: Alignment.bottomRight,

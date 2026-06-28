@@ -9,6 +9,10 @@ import {
   requireCurrentUser,
 } from "./lib/auth";
 import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
+import {
+  mapThemePaletteValidator,
+  strategySettingsValidator,
+} from "./lib/payloadValidators";
 
 type StrategyScope = "owned" | "shared" | "all";
 
@@ -18,14 +22,14 @@ type StrategyCreateInput = {
   mapData: string;
   folderPublicId?: string;
   themeProfileId?: string;
-  themeOverridePalette?: string;
+  themeOverridePalette?: Doc<"strategies">["themeOverridePalette"];
 };
 
 type InitialPageInput = {
   publicId: string;
   name: string;
   isAttack: boolean;
-  settings?: string;
+  settings?: Doc<"pages">["settings"];
 };
 
 function createPublicId(): string {
@@ -375,7 +379,7 @@ export const create = mutation({
     mapData: v.string(),
     folderPublicId: v.optional(v.string()),
     themeProfileId: v.optional(v.string()),
-    themeOverridePalette: v.optional(v.string()),
+    themeOverridePalette: v.optional(mapThemePaletteValidator),
   },
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
@@ -395,10 +399,10 @@ export const createWithInitialPage = mutation({
     initialPagePublicId: v.string(),
     initialPageName: v.string(),
     initialPageIsAttack: v.boolean(),
-    initialPageSettings: v.optional(v.string()),
+    initialPageSettings: v.optional(strategySettingsValidator),
     folderPublicId: v.optional(v.string()),
     themeProfileId: v.optional(v.string()),
-    themeOverridePalette: v.optional(v.string()),
+    themeOverridePalette: v.optional(mapThemePaletteValidator),
   },
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
@@ -418,7 +422,7 @@ export const update = mutation({
     mapData: v.optional(v.string()),
     themeProfileId: v.optional(v.string()),
     clearThemeProfileId: v.optional(v.boolean()),
-    themeOverridePalette: v.optional(v.string()),
+    themeOverridePalette: v.optional(mapThemePaletteValidator),
     clearThemeOverridePalette: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {

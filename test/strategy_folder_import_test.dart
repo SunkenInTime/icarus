@@ -7,14 +7,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -24,6 +26,14 @@ bool _adaptersRegistered = false;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    appProviderContainer = ProviderContainer();
+  });
+
+  tearDownAll(() {
+    appProviderContainer.dispose();
+  });
 
   late Directory tempDir;
   late ProviderContainer container;
@@ -227,7 +237,9 @@ void main() {
     expect(result.issues.single.path, zipFile.path);
     expect(_folderByName('Manifest Root').parentID, currentFolder.id);
     expect(
-      Hive.box<Folder>(HiveBoxNames.foldersBox).values.map((folder) => folder.name),
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .map((folder) => folder.name),
       containsAll(['Current', 'Manifest Root']),
     );
     expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, hasLength(2));
@@ -279,7 +291,9 @@ void main() {
     expect(result.issues.single.path, sourceRoot.path);
     expect(_folderByName('Manifest Root').parentID, currentFolder.id);
     expect(
-      Hive.box<Folder>(HiveBoxNames.foldersBox).values.map((folder) => folder.name),
+      Hive.box<Folder>(HiveBoxNames.foldersBox)
+          .values
+          .map((folder) => folder.name),
       containsAll(['Current', 'Manifest Root']),
     );
     expect(Hive.box<Folder>(HiveBoxNames.foldersBox).values, hasLength(2));
@@ -312,7 +326,7 @@ void main() {
       container,
       name: 'Retakes',
       parentID: rootFolder.id,
-      icon: Icons.lightbulb,
+      iconId: FolderIconRegistry.duelistRoleId,
       color: FolderColor.blue,
     );
 
@@ -323,7 +337,8 @@ void main() {
         .buildFolderExportDirectoryForTest(rootFolder.id);
 
     try {
-      final exportedRoot = exportDirectory.listSync().whereType<Directory>().single;
+      final exportedRoot =
+          exportDirectory.listSync().whereType<Directory>().single;
       final manifestFile =
           File(path.join(exportedRoot.path, archiveMetadataFileName));
       expect(await manifestFile.exists(), isTrue);
@@ -334,6 +349,15 @@ void main() {
       expect(decoded['archiveType'], ArchiveType.folderTree.jsonValue);
       expect((decoded['folders'] as List).length, 2);
       expect((decoded['strategies'] as List).length, 2);
+      final decodedFolders = (decoded['folders'] as List)
+          .map((entry) => Map<String, dynamic>.from(entry as Map))
+          .toList();
+      expect(
+          decodedFolders.map((entry) => entry['iconId']),
+          containsAll([
+            FolderIconRegistry.idForLegacyIconData(Icons.flag),
+            FolderIconRegistry.duelistRoleId,
+          ]));
 
       final zipFile = await _zipDirectory(
         sourceDirectory: exportedRoot,
@@ -354,10 +378,13 @@ void main() {
 
       final importedRoot = _folderByName('Utility / Pack');
       final importedChild = _folderByName('Retakes');
-      expect(importedRoot.icon.codePoint, Icons.flag.codePoint);
+      expect(
+        importedRoot.iconId,
+        FolderIconRegistry.idForLegacyIconData(Icons.flag),
+      );
       expect(importedRoot.color, FolderColor.custom);
       expect(importedRoot.customColor, const Color(0xFF22C55E));
-      expect(importedChild.icon.codePoint, Icons.lightbulb.codePoint);
+      expect(importedChild.iconId, FolderIconRegistry.duelistRoleId);
       expect(importedChild.color, FolderColor.blue);
       expect(importedChild.parentID, importedRoot.id);
       expect(_strategyByName('default').folderID, importedRoot.id);
@@ -369,21 +396,23 @@ void main() {
     }
   });
 
-  test('library backup restores global state and theme profile links', () async {
+  test('library backup restores global state and theme profile links',
+      () async {
     final themeProvider = container.read(mapThemeProfilesProvider.notifier);
     final palette = MapThemePalette(
       baseColorValue: 0xFF0F172A,
       detailColorValue: 0xFF38BDF8,
       highlightColorValue: 0xFFF97316,
     );
-    expect(
-      await themeProvider.createProfile(name: 'Tournament', palette: palette),
-      isTrue,
+    final customProfile = await themeProvider.createProfile(
+      name: 'Tournament',
+      palette: palette,
     );
-    final customProfile = Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
-        .values
-        .firstWhere((profile) => profile.name == 'Tournament');
-    await themeProvider.setDefaultProfileForNewStrategies(customProfile.id);
+    expect(customProfile, isNotNull);
+    await themeProvider.setDefaultProfileForNewStrategies(customProfile!.id);
+    await container
+        .read(appPreferencesProvider.notifier)
+        .setCustomColorValues(const [0xFF22C55E, 0xFF38BDF8]);
     await container
         .read(favoriteAgentsProvider.notifier)
         .toggleFavorite(AgentType.jett);
@@ -451,6 +480,12 @@ void main() {
             .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
             ?.defaultThemeProfileIdForNewStrategies,
         restoredProfile.id,
+      );
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
+            ?.customColorValues,
+        const [0xFF22C55E, 0xFF38BDF8],
       );
       expect(
         Hive.box<bool>(HiveBoxNames.favoriteAgentsBox).containsKey('jett'),
@@ -681,6 +716,7 @@ ArchiveManifest _buildBrokenFolderTreeManifest() {
         name: 'Manifest Root',
         parentManifestId: null,
         archivePath: '',
+        iconId: FolderIconRegistry.idForLegacyIconData(Icons.folder),
         icon: defaultIcon,
         color: FolderColor.red,
         customColorValue: null,
@@ -690,6 +726,7 @@ ArchiveManifest _buildBrokenFolderTreeManifest() {
         name: 'Broken Child',
         parentManifestId: 'deep-parent',
         archivePath: 'b',
+        iconId: FolderIconRegistry.idForLegacyIconData(Icons.folder),
         icon: defaultIcon,
         color: FolderColor.red,
         customColorValue: null,
@@ -699,6 +736,7 @@ ArchiveManifest _buildBrokenFolderTreeManifest() {
         name: 'Deep Parent',
         parentManifestId: 'root',
         archivePath: 'b/c',
+        iconId: FolderIconRegistry.idForLegacyIconData(Icons.folder),
         icon: defaultIcon,
         color: FolderColor.red,
         customColorValue: null,
@@ -737,6 +775,7 @@ Future<Folder> _createFolder(
   required String name,
   required String? parentID,
   IconData icon = Icons.folder,
+  int? iconId,
   FolderColor color = FolderColor.red,
   Color? customColor,
   bool setCurrent = false,
@@ -744,7 +783,7 @@ Future<Folder> _createFolder(
   final notifier = container.read(folderProvider.notifier);
   final folder = await notifier.createFolder(
     name: name,
-    icon: icon,
+    iconId: iconId ?? FolderIconRegistry.idForLegacyIconData(icon),
     color: color,
     customColor: customColor,
     parentID: parentID,

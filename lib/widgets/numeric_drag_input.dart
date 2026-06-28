@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// A numeric text field that supports drag-to-adjust: drag left/right to
@@ -244,29 +245,31 @@ class _NumericDragInputState extends State<NumericDragInput> {
         final leadingPadding = _resolveInsets(context, widget.leadingPadding);
         final trailingPadding = _resolveInsets(context, widget.trailingPadding);
         final suffix = widget.suffix?.trim();
-        final textField = TextField(
-          controller: _controller,
-          focusNode: _focusNode,
-          keyboardType: widget.keyboardType,
-          onSubmitted: (_) => _commitText(),
-          maxLines: 1,
-          style: valueStyle,
-          inputFormatters: suffix != null && suffix.isNotEmpty
-              ? [_SuffixFormatter(suffix)]
-              : null,
-          decoration: InputDecoration(
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
-            errorBorder: InputBorder.none,
-            disabledBorder: InputBorder.none,
-            hoverColor: Colors.transparent,
-            filled: true,
-            fillColor: Colors.transparent,
-            hintText: widget.hintText,
-            hintStyle: hintStyle,
-            isCollapsed: true,
-            contentPadding: EdgeInsets.zero,
+        final textField = TextEditingShortcutScope(
+          child: TextField(
+            controller: _controller,
+            focusNode: _focusNode,
+            keyboardType: widget.keyboardType,
+            onSubmitted: (_) => _commitText(),
+            maxLines: 1,
+            style: valueStyle,
+            inputFormatters: suffix != null && suffix.isNotEmpty
+                ? [_SuffixFormatter(suffix)]
+                : null,
+            decoration: InputDecoration(
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              errorBorder: InputBorder.none,
+              disabledBorder: InputBorder.none,
+              hoverColor: Colors.transparent,
+              filled: true,
+              fillColor: Colors.transparent,
+              hintText: widget.hintText,
+              hintStyle: hintStyle,
+              isCollapsed: true,
+              contentPadding: EdgeInsets.zero,
+            ),
           ),
         );
 

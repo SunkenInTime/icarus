@@ -76,34 +76,17 @@ function inferFileExtension(
   return match?.[1]?.toLowerCase() ?? "";
 }
 
-function decodeObject(payload: string): Record<string, unknown> | null {
-  try {
-    const decoded = JSON.parse(payload);
-    if (typeof decoded === "object" && decoded !== null) {
-      return decoded as Record<string, unknown>;
-    }
-  } catch (_) {
-    // Ignore malformed payloads while gathering asset references.
-  }
-  return null;
+function collectAssetIdFromElementPayload(
+  payload: Doc<"elements">["payload"],
+): string | null {
+  return typeof payload.data.id === "string" ? payload.data.id : null;
 }
 
-function collectAssetIdFromElementPayload(payload: string): string | null {
-  const decoded = decodeObject(payload);
-  if (decoded === null) {
-    return null;
-  }
-  return typeof decoded.id === "string" ? decoded.id : null;
-}
-
-function collectAssetIdsFromLineupPayload(payload: string): Set<string> {
+function collectAssetIdsFromLineupPayload(
+  payload: Doc<"lineups">["payload"],
+): Set<string> {
   const assetIds = new Set<string>();
-  const decoded = decodeObject(payload);
-  if (decoded === null) {
-    return assetIds;
-  }
-
-  const rawImages = decoded.images;
+  const rawImages = payload.data.images;
   if (!Array.isArray(rawImages)) {
     return assetIds;
   }

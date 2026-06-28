@@ -5,13 +5,19 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
-import 'package:icarus/providers/strategy_page_session_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart'
+    hide PageTransitionState;
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+const double _pagesBarCornerRadius = 12;
+const double _pagesBarInnerButtonRadius = 6;
 
 class PageListItemViewModel {
   const PageListItemViewModel({
@@ -31,7 +37,170 @@ class PagesBar extends ConsumerStatefulWidget {
 }
 
 class _PagesBarState extends ConsumerState<PagesBar> {
+  static const double _defaultExpandedHeight = 310;
+  static const double _defaultWidth = 224;
+  static const double _minWidth = 224;
+  static const double _maxWidth = 420;
+  static const double _widthResizeHandleWidth = 8;
+  static final double _minExpandedHeight =
+      _ExpandedPanel.minHeightForVisibleRows(
+    2,
+  );
+  static const double _maxExpandedHeight = 520;
+
   bool _expanded = false;
+  bool _isHeightResizing = false;
+  bool _isWidthResizing = false;
+  double? _liveExpandedHeight;
+  double? _liveWidth;
+  double? _persistedExpandedHeightCache;
+  double? _persistedWidthCache;
+  final GlobalKey _expandedPanelKey = GlobalKey();
+  final GlobalKey _barKey = GlobalKey();
+
+  StrategyData? _strategy(Box<StrategyData> box, String id) => box.get(id);
+
+  double _clampExpandedHeight(double height) {
+    return height.clamp(_minExpandedHeight, _maxExpandedHeight).toDouble();
+  }
+
+  double _clampWidth(double width) {
+    return width.clamp(_minWidth, _maxWidth).toDouble();
+  }
+
+  double _effectiveExpandedHeight(double persistedHeight) {
+    final baseHeight = _persistedExpandedHeightCache ?? persistedHeight;
+    return _clampExpandedHeight(
+      _isHeightResizing ? (_liveExpandedHeight ?? baseHeight) : baseHeight,
+    );
+  }
+
+  double _effectiveWidth(double persistedWidth) {
+    final baseWidth = _persistedWidthCache ?? persistedWidth;
+    return _clampWidth(
+        _isWidthResizing ? (_liveWidth ?? baseWidth) : baseWidth);
+  }
+
+  void _startHeightResize() {
+    final context = _expandedPanelKey.currentContext;
+    final renderBox = context?.findRenderObject() as RenderBox?;
+    final renderedHeight = renderBox != null && renderBox.hasSize
+        ? renderBox.size.height
+        : (_persistedExpandedHeightCache ?? _defaultExpandedHeight);
+
+    setState(() {
+      _isHeightResizing = true;
+      _liveExpandedHeight = _clampExpandedHeight(renderedHeight);
+    });
+  }
+
+  void _updateHeightResize(Offset globalPosition) {
+    final context = _expandedPanelKey.currentContext;
+    if (context == null) return;
+
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) return;
+
+    final localPosition = renderBox.globalToLocal(globalPosition);
+    final nextHeight =
+        _clampExpandedHeight(renderBox.size.height - localPosition.dy);
+    final currentHeight = _liveExpandedHeight;
+    if (currentHeight != null && (nextHeight - currentHeight).abs() < 0.5) {
+      return;
+    }
+
+    setState(() {
+      _liveExpandedHeight = nextHeight;
+    });
+  }
+
+  Future<void> _endHeightResize() async {
+    if (!_isHeightResizing) return;
+
+    final height = _clampExpandedHeight(
+      _liveExpandedHeight ??
+          _persistedExpandedHeightCache ??
+          _defaultExpandedHeight,
+    );
+
+    setState(() {
+      _isHeightResizing = false;
+      _liveExpandedHeight = null;
+      _persistedExpandedHeightCache = height;
+    });
+
+    await ref
+        .read(appPreferencesProvider.notifier)
+        .setPagesBarExpandedHeight(height);
+
+    if (!mounted) return;
+    setState(() {
+      _persistedExpandedHeightCache = null;
+    });
+  }
+
+  void _startWidthResize() {
+    final context = _barKey.currentContext;
+    final renderBox = context?.findRenderObject() as RenderBox?;
+    final renderedWidth = renderBox != null && renderBox.hasSize
+        ? renderBox.size.width
+        : (_persistedWidthCache ?? _defaultWidth);
+
+    setState(() {
+      _isWidthResizing = true;
+      _liveWidth = _clampWidth(renderedWidth);
+    });
+  }
+
+  void _updateWidthResize(Offset globalPosition) {
+    final context = _barKey.currentContext;
+    if (context == null) return;
+
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) return;
+
+    final localPosition = renderBox.globalToLocal(globalPosition);
+    final nextWidth = _clampWidth(localPosition.dx);
+    final currentWidth = _liveWidth;
+    if (currentWidth != null && (nextWidth - currentWidth).abs() < 0.5) {
+      return;
+    }
+
+    setState(() {
+      _liveWidth = nextWidth;
+    });
+  }
+
+  Future<void> _endWidthResize() async {
+    if (!_isWidthResizing) return;
+
+    final width =
+        _clampWidth(_liveWidth ?? _persistedWidthCache ?? _defaultWidth);
+
+    setState(() {
+      _isWidthResizing = false;
+      _liveWidth = null;
+      _persistedWidthCache = width;
+    });
+
+    await ref.read(appPreferencesProvider.notifier).setPagesBarWidth(width);
+
+    if (!mounted) return;
+    setState(() {
+      _persistedWidthCache = null;
+    });
+  }
+
+  Future<void> _collapsePanel() async {
+    if (_isHeightResizing) {
+      await _endHeightResize();
+    }
+    if (_isWidthResizing) {
+      await _endWidthResize();
+    }
+    if (!mounted) return;
+    setState(() => _expanded = false);
+  }
 
   Future<void> _addPage() async {
     final caps = ref.read(currentStrategyCapabilitiesProvider);
@@ -51,23 +220,24 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     final newName = await showShadDialog<String>(
       context: context,
       builder: (ctx) => ShadDialog(
-        title: const Text('Rename page'),
-        description: const Text('Enter a new name for the page:'),
+        title: const Text("Rename page"),
+        description: const Text("Enter a new name for the page:"),
         actions: [
           ShadButton.secondary(
             onPressed: () => Navigator.of(ctx).pop(),
             backgroundColor: Settings.tacticalVioletTheme.border,
-            child: const Text('Cancel'),
+            child: const Text("Cancel"),
           ),
           ShadButton(
             onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
             leading: const Icon(Icons.text_fields),
-            child: const Text('Rename'),
+            child: const Text("Rename"),
           ),
         ],
         child: CustomTextField(
+          // autofocus: true,
           controller: controller,
-          onSubmitted: (value) => Navigator.of(ctx).pop(value.trim()),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
       ),
     );
@@ -84,11 +254,12 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       context: context,
       title: "Delete '${page.name}'?",
       content:
-          'Are you sure you want to delete this page? This action cannot be undone.',
-      confirmText: 'Delete',
-      cancelText: 'Cancel',
+          "Are you sure you want to delete this page? This action cannot be undone.",
+      confirmText: "Delete",
+      cancelText: "Cancel",
       isDestructive: true,
     );
+
     if (confirm != true) return;
     await ref.read(strategyProvider.notifier).deletePage(page.id);
   }
@@ -99,10 +270,17 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       strategyPageSessionProvider.select((state) => state.activePageId),
     );
     final caps = ref.watch(currentStrategyCapabilitiesProvider);
+    final persistedExpandedHeight = ref.watch(
+      appPreferencesProvider.select((prefs) => prefs.pagesBarExpandedHeight),
+    );
+    final persistedWidth = ref.watch(
+      appPreferencesProvider.select((prefs) => prefs.pagesBarWidth),
+    );
     final isCloud = ref.watch(
           strategyProvider.select((value) => value.source),
         ) ==
         StrategySource.cloud;
+
     if (!isCloud) {
       final strategyId = ref.watch(strategyProvider).strategyId;
       if (strategyId == null) {
@@ -111,61 +289,122 @@ class _PagesBarState extends ConsumerState<PagesBar> {
       final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
       return ValueListenableBuilder(
         valueListenable: box.listenable(keys: [strategyId]),
-        builder: (context, Box<StrategyData> _, __) {
-          final data = _buildLocalData(activePageId);
+        builder: (context, Box<StrategyData> b, _) {
+          final data = _buildLocalData(b, strategyId, activePageId);
           if (data == null || data.pages.isEmpty) {
             return const SizedBox.shrink();
           }
-          return _buildPageBar(data, caps);
+          return _buildPageBar(
+            data: data,
+            caps: caps,
+            persistedExpandedHeight: persistedExpandedHeight,
+            persistedWidth: persistedWidth,
+          );
         },
       );
     }
+
     final data = _buildCloudData(activePageId);
     if (data == null || data.pages.isEmpty) {
       return const SizedBox.shrink();
     }
-    return _buildPageBar(data, caps);
+    return _buildPageBar(
+      data: data,
+      caps: caps,
+      persistedExpandedHeight: persistedExpandedHeight,
+      persistedWidth: persistedWidth,
+    );
   }
 
-  Widget _buildPageBar(_PageBarData data, StrategyCapabilities caps) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeInOut,
-      decoration: BoxDecoration(
-        color: Settings.tacticalVioletTheme.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Settings.tacticalVioletTheme.border,
-          width: 2,
-        ),
-      ),
-      width: 224,
-      padding: EdgeInsets.zero,
-      child: _expanded
-          ? _ExpandedPanel(
-              pages: data.pages,
-              activePageId: data.activePageId,
-              canAddPage: caps.canAddPage,
-              canRenamePage: caps.canRenamePage,
-              canDeletePage: caps.canDeletePage,
-              canReorderPages: caps.canReorderPages,
-              onSelect: _selectPage,
-              onRename: _renamePage,
-              onDelete: _deletePage,
-              onAdd: _addPage,
-              onReorder: caps.canReorderPages
-                  ? (oldIndex, newIndex) => ref
-                      .read(strategyProvider.notifier)
-                      .reorderPage(oldIndex, newIndex)
-                  : null,
-              onCollapse: () => setState(() => _expanded = false),
-            )
-          : _CollapsedPill(
-              activeName: data.activeName,
-              onAdd: caps.canAddPage ? _addPage : null,
-              onToggle: () => setState(() => _expanded = true),
+  Widget _buildPageBar({
+    required _PageBarData data,
+    required StrategyCapabilities caps,
+    required double persistedExpandedHeight,
+    required double persistedWidth,
+  }) {
+    final width = _effectiveWidth(persistedWidth);
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          key: _barKey,
+          decoration: BoxDecoration(
+            color: Settings.tacticalVioletTheme.card,
+            borderRadius: BorderRadius.circular(_pagesBarCornerRadius),
+            border: Border.all(
+              color: Settings.tacticalVioletTheme.border,
+              width: 2,
             ),
+          ),
+          width: width,
+          padding: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.only(right: _widthResizeHandleWidth),
+            child: _expanded
+                ? _ExpandedPanel(
+                    pages: data.pages,
+                    activePageId: data.activePageId,
+                    canAddPage: caps.canAddPage,
+                    canRenamePage: caps.canRenamePage,
+                    canDeletePage: caps.canDeletePage,
+                    canReorderPages: caps.canReorderPages,
+                    height: _effectiveExpandedHeight(persistedExpandedHeight),
+                    panelKey: _expandedPanelKey,
+                    onSelect: _selectPage,
+                    onRename: caps.canRenamePage ? _renamePage : null,
+                    onDelete: caps.canDeletePage ? _deletePage : null,
+                    onAdd: _addPage,
+                    onCollapse: _collapsePanel,
+                    onReorder: caps.canReorderPages
+                        ? (oldIndex, newIndex) => ref
+                            .read(strategyProvider.notifier)
+                            .reorderPage(oldIndex, newIndex)
+                        : null,
+                    onResizeStart: _startHeightResize,
+                    onResizeUpdate: _updateHeightResize,
+                    onResizeEnd: _endHeightResize,
+                    isResizeActive: _isHeightResizing,
+                  )
+                : _CollapsedPill(
+                    activeName: data.activeName,
+                    onAdd: caps.canAddPage ? _addPage : null,
+                    onToggle: () => setState(() => _expanded = true),
+                  ),
+          ),
+        ),
+        Positioned(
+          top: 0,
+          right: 2,
+          bottom: 0,
+          child: _ResizeHandle(
+            width: _widthResizeHandleWidth,
+            axis: Axis.horizontal,
+            onResizeStart: _startWidthResize,
+            onResizeUpdate: _updateWidthResize,
+            onResizeEnd: _endWidthResize,
+            isActive: _isWidthResizing,
+          ),
+        ),
+      ],
     );
+  }
+
+  _PageBarData? _buildLocalData(
+    Box<StrategyData> box,
+    String strategyId,
+    String? activePageId,
+  ) {
+    final strategy = _strategy(box, strategyId);
+    if (strategy == null || strategy.pages.isEmpty) {
+      return null;
+    }
+    final pages = [...strategy.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    final items = pages
+        .map((page) => PageListItemViewModel(id: page.id, name: page.name))
+        .toList(growable: false);
+    return _pageBarData(items, activePageId);
   }
 
   _PageBarData? _buildCloudData(String? activePageId) {
@@ -176,44 +415,25 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     final pages = [...snapshot.pages]
       ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
     final items = pages
-        .map((page) => PageListItemViewModel(id: page.publicId, name: page.name))
+        .map(
+            (page) => PageListItemViewModel(id: page.publicId, name: page.name))
         .toList(growable: false);
-    final resolvedActiveId = activePageId ?? items.first.id;
-    final activeName = items
-        .firstWhere(
-          (page) => page.id == resolvedActiveId,
-          orElse: () => items.first,
-        )
-        .name;
-    return _PageBarData(
-      pages: items,
-      activePageId: resolvedActiveId,
-      activeName: activeName,
-    );
+    return _pageBarData(items, activePageId);
   }
 
-  _PageBarData? _buildLocalData(String? activePageId) {
-    final strategyId = ref.watch(strategyProvider).strategyId;
-    if (strategyId == null) return null;
-    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final strategy = box.get(strategyId);
-    if (strategy == null || strategy.pages.isEmpty) {
-      return null;
-    }
-    final pages = [...strategy.pages]
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-    final items = pages
-        .map((page) => PageListItemViewModel(id: page.id, name: page.name))
-        .toList(growable: false);
-    final resolvedActiveId = activePageId ?? items.first.id;
-    final activeName = items
+  _PageBarData _pageBarData(
+    List<PageListItemViewModel> pages,
+    String? activePageId,
+  ) {
+    final resolvedActiveId = activePageId ?? pages.first.id;
+    final activeName = pages
         .firstWhere(
           (page) => page.id == resolvedActiveId,
-          orElse: () => items.first,
+          orElse: () => pages.first,
         )
         .name;
     return _PageBarData(
-      pages: items,
+      pages: pages,
       activePageId: resolvedActiveId,
       activeName: activeName,
     );
@@ -232,6 +452,7 @@ class _PageBarData {
   final String activeName;
 }
 
+/* -------- Collapsed pill -------- */
 class _CollapsedPill extends StatelessWidget {
   const _CollapsedPill({
     required this.activeName,
@@ -254,7 +475,7 @@ class _CollapsedPill extends StatelessWidget {
           _SquareIconButton(
             icon: Icons.add,
             onTap: onAdd,
-            tooltip: 'Add page',
+            tooltip: "Add page",
             color: Settings.tacticalVioletTheme.primary,
             shortcutLabel: 'C',
           ),
@@ -264,10 +485,9 @@ class _CollapsedPill extends StatelessWidget {
               activeName,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.titleMedium?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-              ),
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14),
             ),
           ),
           ShadIconButton.ghost(
@@ -275,14 +495,14 @@ class _CollapsedPill extends StatelessWidget {
             onPressed: onToggle,
             icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
           ),
-          const SizedBox(width: 4),
         ],
       ),
     );
   }
 }
 
-class _ExpandedPanel extends StatelessWidget {
+/* -------- Expanded panel -------- */
+class _ExpandedPanel extends ConsumerWidget {
   const _ExpandedPanel({
     required this.pages,
     required this.activePageId,
@@ -290,11 +510,17 @@ class _ExpandedPanel extends StatelessWidget {
     required this.canRenamePage,
     required this.canDeletePage,
     required this.canReorderPages,
+    required this.height,
+    required this.panelKey,
     required this.onSelect,
     required this.onRename,
     required this.onDelete,
     required this.onAdd,
     required this.onCollapse,
+    required this.onResizeStart,
+    required this.onResizeUpdate,
+    required this.onResizeEnd,
+    required this.isResizeActive,
     this.onReorder,
   });
 
@@ -304,35 +530,51 @@ class _ExpandedPanel extends StatelessWidget {
   final bool canRenamePage;
   final bool canDeletePage;
   final bool canReorderPages;
+  final double height;
+  final GlobalKey panelKey;
   final ValueChanged<String> onSelect;
-  final ValueChanged<PageListItemViewModel> onRename;
-  final Future<void> Function(PageListItemViewModel page, int pageCount) onDelete;
+  final ValueChanged<PageListItemViewModel>? onRename;
+  final Future<void> Function(PageListItemViewModel page, int pageCount)?
+      onDelete;
   final VoidCallback onAdd;
   final VoidCallback onCollapse;
+  final VoidCallback onResizeStart;
+  final ValueChanged<Offset> onResizeUpdate;
+  final Future<void> Function() onResizeEnd;
+  final bool isResizeActive;
   final void Function(int oldIndex, int newIndex)? onReorder;
 
-  static const double _rowHeight = 40;
-  static const double _verticalSpacing = 10;
-  static const double _headerFooterHeight = 49;
-  static const double _topPadding = 8;
-  static const double _bottomPadding = 0;
-  static const double _maxPanelHeight = 310;
+  static const double _rowHeight = 40; // each page tile height
+  static const double _verticalSpacing = 10; // separator height
+  static const double _resizeHandleHeight = 8;
+  static const double _headerFooterHeight = 48 + 1; // bottom bar + divider
+  static const double _topPadding = 0; // handle + gap should match side inset
+  static const double _bottomPadding = 0; // list bottom padding inside Expanded
 
-  double _computeDesiredHeight(int count) {
-    if (count == 0) return _headerFooterHeight + 56;
-    final rowsHeight = count * _rowHeight;
-    final spacersHeight = (count - 1) * _verticalSpacing;
+  static double minHeightForVisibleRows(int visibleRows) {
+    final clampedRows = visibleRows < 1 ? 1 : visibleRows;
+    final rowsHeight = clampedRows * _rowHeight;
+    final spacersHeight = (clampedRows - 1) * 8.0;
     final listSection =
-        _topPadding + rowsHeight + spacersHeight + _bottomPadding;
-    final total = listSection + _headerFooterHeight;
-    return total.clamp(0, _maxPanelHeight);
+        _topPadding + rowsHeight + spacersHeight + _bottomPadding + 8;
+    return _resizeHandleHeight + listSection + _headerFooterHeight;
+  }
+
+  Widget proxyDecorator(Widget child, int index, Animation<double> animation) {
+    return child;
   }
 
   @override
-  Widget build(BuildContext context) {
-    final desiredHeight = _computeDesiredHeight(pages.length);
-    final needsScroll = desiredHeight >= _maxPanelHeight - 0.5;
-    final activeIndex = pages.indexWhere((page) => page.id == activePageId);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final listViewportHeight =
+        height - _resizeHandleHeight - _headerFooterHeight - _topPadding - 8;
+    final availableListHeight = listViewportHeight > 0 ? listViewportHeight : 0;
+    final contentListHeight = pages.isEmpty
+        ? 56.0
+        : (pages.length * _rowHeight) + ((pages.length - 1) * _verticalSpacing);
+    final needsScroll = contentListHeight > availableListHeight + 0.5;
+    final activeIndex = pages.indexWhere((p) => p.id == activePageId);
+    final transitionState = ref.watch(transitionProvider);
 
     int? backwardIndex;
     int? forwardIndex;
@@ -344,80 +586,88 @@ class _ExpandedPanel extends StatelessWidget {
       if (forwardIndex >= pages.length) forwardIndex = 0;
     }
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      curve: Curves.easeInOut,
-      constraints: BoxConstraints(
-        maxHeight: _maxPanelHeight,
-        minHeight: desiredHeight,
-      ),
+    return SizedBox(
+      key: panelKey,
+      height: height,
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Flexible(
+          _ResizeHandle(
+            height: _resizeHandleHeight,
+            axis: Axis.vertical,
+            onResizeStart: onResizeStart,
+            onResizeUpdate: onResizeUpdate,
+            onResizeEnd: onResizeEnd,
+            isActive: isResizeActive,
+          ),
+          Expanded(
             child: Padding(
               padding: const EdgeInsets.only(top: _topPadding),
-              child: ReorderableListView.builder(
-                onReorder: onReorder == null ? (_, __) {} : onReorder!,
-                // Rows use ReorderableDragStartListener; default handles overlap delete.
-                buildDefaultDragHandles: false,
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                shrinkWrap: needsScroll ? false : true,
-                physics:
-                    needsScroll ? null : const NeverScrollableScrollPhysics(),
-                itemCount: pages.length,
-                proxyDecorator: (child, _, __) => child,
-                itemBuilder: (context, index) {
-                  bool showForwardIndicator = false;
-                  bool showBackwardIndicator = false;
-                  final page = pages[index];
+              child: ScrollConfiguration(
+                behavior:
+                    ScrollConfiguration.of(context).copyWith(scrollbars: false),
+                child: ReorderableListView.builder(
+                  onReorder: onReorder ?? (_, __) {},
+                  padding: const EdgeInsets.fromLTRB(8, 0, 0, 8),
+                  shrinkWrap: false,
+                  physics:
+                      needsScroll ? null : const NeverScrollableScrollPhysics(),
+                  itemCount: pages.length,
+                  buildDefaultDragHandles: false,
+                  proxyDecorator: proxyDecorator,
+                  itemBuilder: (ctx, i) {
+                    bool showForwardIndicator = false;
+                    bool showBackwardIndicator = false;
+                    final p = pages[i];
 
-                  if (pages.length != 1) {
-                    if (pages.length == 2) {
-                      if (activeIndex == 0 && activeIndex != index) {
-                        showForwardIndicator = true;
-                      } else if (activeIndex == 1 && activeIndex != index) {
-                        showBackwardIndicator = true;
-                      }
-                    } else {
-                      if (forwardIndex != null && index == forwardIndex) {
-                        showForwardIndicator = true;
-                      }
-                      if (backwardIndex != null &&
-                          index == backwardIndex &&
-                          forwardIndex != backwardIndex) {
-                        showBackwardIndicator = true;
+                    if (pages.length != 1) {
+                      if (pages.length == 2) {
+                        if (activeIndex == 0 && activeIndex != i) {
+                          showForwardIndicator = true;
+                        } else if (activeIndex == 1 && activeIndex != i) {
+                          showBackwardIndicator = true;
+                        }
+                      } else {
+                        if (forwardIndex != null && i == forwardIndex) {
+                          showForwardIndicator = true;
+                        }
+                        if (backwardIndex != null &&
+                            i == backwardIndex &&
+                            forwardIndex != backwardIndex) {
+                          showBackwardIndicator = true;
+                        }
                       }
                     }
-                  }
 
-                  final row = Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: _PageRow(
-                      page: page,
-                      active: page.id == activePageId,
-                      showBackwardIndicator: showBackwardIndicator,
-                      showForwardIndicator: showForwardIndicator,
-                      onSelect: onSelect,
-                      onRename: canRenamePage ? onRename : null,
-                      onDelete: canDeletePage
-                          ? () => onDelete(page, pages.length)
-                          : null,
-                      disableDelete: !canDeletePage || pages.length == 1,
-                    ),
-                  );
-                  if (!canReorderPages) {
-                    return KeyedSubtree(
-                      key: ValueKey(page.id),
+                    final row = Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _PageRow(
+                        page: p,
+                        active: p.id == activePageId,
+                        showBackwardIndicator: showBackwardIndicator,
+                        showForwardIndicator: showForwardIndicator,
+                        transitionProgress:
+                            _rowTransitionProgress(transitionState, p.id),
+                        onSelect: onSelect,
+                        onRename: onRename,
+                        onDelete: onDelete,
+                        pageCount: pages.length,
+                        canRename: canRenamePage,
+                        disableDelete: !canDeletePage || pages.length == 1,
+                      ),
+                    );
+                    if (!canReorderPages) {
+                      return KeyedSubtree(
+                        key: ValueKey(p.id),
+                        child: row,
+                      );
+                    }
+                    return ReorderableDragStartListener(
+                      key: ValueKey(p.id),
+                      index: i,
                       child: row,
                     );
-                  }
-                  return ReorderableDragStartListener(
-                    key: ValueKey(page.id),
-                    index: index,
-                    child: row,
-                  );
-                },
+                  },
+                ),
               ),
             ),
           ),
@@ -430,7 +680,7 @@ class _ExpandedPanel extends StatelessWidget {
                 _SquareIconButton(
                   icon: Icons.add,
                   onTap: canAddPage ? onAdd : null,
-                  tooltip: 'Add page',
+                  tooltip: "Add page",
                   color: Settings.tacticalVioletTheme.primary,
                   shortcutLabel: 'C',
                 ),
@@ -438,9 +688,9 @@ class _ExpandedPanel extends StatelessWidget {
                 ShadIconButton.ghost(
                   foregroundColor: Colors.white,
                   onPressed: onCollapse,
-                  icon: const Icon(Icons.keyboard_arrow_up, color: Colors.white),
+                  icon:
+                      const Icon(Icons.keyboard_arrow_up, color: Colors.white),
                 ),
-                const SizedBox(width: 4),
               ],
             ),
           ),
@@ -448,17 +698,133 @@ class _ExpandedPanel extends StatelessWidget {
       ),
     );
   }
+
+  double? _rowTransitionProgress(PageTransitionState state, String pageId) {
+    if (state.phase != PageTransitionPhase.preparing &&
+        state.phase != PageTransitionPhase.animating) {
+      return null;
+    }
+    if (state.sourcePageId == pageId) return (1 - state.progress).toDouble();
+    if (state.targetPageId == pageId) return state.progress.toDouble();
+    return null;
+  }
 }
 
-class _PageRow extends StatelessWidget {
+class _ResizeHandle extends StatelessWidget {
+  const _ResizeHandle({
+    this.height,
+    this.width,
+    required this.axis,
+    required this.onResizeStart,
+    required this.onResizeUpdate,
+    required this.onResizeEnd,
+    required this.isActive,
+  });
+
+  final double? height;
+  final double? width;
+  final Axis axis;
+  final VoidCallback onResizeStart;
+  final ValueChanged<Offset> onResizeUpdate;
+  final Future<void> Function() onResizeEnd;
+  final bool isActive;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ResizeHandleStateful(
+      height: height,
+      width: width,
+      axis: axis,
+      onResizeStart: onResizeStart,
+      onResizeUpdate: onResizeUpdate,
+      onResizeEnd: onResizeEnd,
+      isActive: isActive,
+    );
+  }
+}
+
+class _ResizeHandleStateful extends StatefulWidget {
+  const _ResizeHandleStateful({
+    this.height,
+    this.width,
+    required this.axis,
+    required this.onResizeStart,
+    required this.onResizeUpdate,
+    required this.onResizeEnd,
+    required this.isActive,
+  });
+
+  final double? height;
+  final double? width;
+  final Axis axis;
+  final VoidCallback onResizeStart;
+  final ValueChanged<Offset> onResizeUpdate;
+  final Future<void> Function() onResizeEnd;
+  final bool isActive;
+
+  @override
+  State<_ResizeHandleStateful> createState() => _ResizeHandleStatefulState();
+}
+
+class _ResizeHandleStatefulState extends State<_ResizeHandleStateful> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final isHighlighted = widget.isActive || _isHovered;
+    final handleColor = isHighlighted
+        ? Settings.tacticalVioletTheme.primary
+        : Colors.transparent;
+    final isHorizontalResize = widget.axis == Axis.horizontal;
+
+    return MouseRegion(
+      cursor: isHorizontalResize
+          ? SystemMouseCursors.resizeLeftRight
+          : SystemMouseCursors.resizeUpDown,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanStart: (_) => widget.onResizeStart(),
+        onPanUpdate: (details) => widget.onResizeUpdate(details.globalPosition),
+        onPanEnd: (_) {
+          widget.onResizeEnd();
+        },
+        onPanCancel: () {
+          widget.onResizeEnd();
+        },
+        child: SizedBox(
+          height: widget.height ?? double.infinity,
+          width: widget.width ?? double.infinity,
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              width: isHorizontalResize ? 2 : 36,
+              height: isHorizontalResize ? 36 : 2,
+              decoration: BoxDecoration(
+                color: handleColor,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PageRow extends StatefulWidget {
   const _PageRow({
     required this.page,
     required this.active,
     required this.showBackwardIndicator,
     required this.showForwardIndicator,
+    required this.transitionProgress,
     required this.onSelect,
     required this.onRename,
     required this.onDelete,
+    required this.pageCount,
+    required this.canRename,
     required this.disableDelete,
   });
 
@@ -466,88 +832,153 @@ class _PageRow extends StatelessWidget {
   final bool active;
   final bool showBackwardIndicator;
   final bool showForwardIndicator;
+  final double? transitionProgress;
   final ValueChanged<String> onSelect;
   final ValueChanged<PageListItemViewModel>? onRename;
-  final VoidCallback? onDelete;
+  final Future<void> Function(PageListItemViewModel page, int pageCount)?
+      onDelete;
+  final int pageCount;
+  final bool canRename;
   final bool disableDelete;
+
+  static const double _rowHeight = 40;
+  static const double _rowRadius = 6;
+
+  @override
+  State<_PageRow> createState() => _PageRowState();
+}
+
+class _PageRowState extends State<_PageRow> {
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final bg = active
+    final fillProgress = widget.transitionProgress?.clamp(0.0, 1.0);
+    final showActions =
+        _hovered || widget.active || widget.transitionProgress != null;
+    final bg = widget.active && fillProgress == null
         ? Settings.tacticalVioletTheme.primary
         : Settings.tacticalVioletTheme.card;
-    return Material(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: InkWell(
-        mouseCursor: SystemMouseCursors.click,
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => onSelect(page.id),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: Settings.tacticalVioletTheme.border,
-              width: 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Settings.tacticalVioletTheme.card.withValues(alpha: 0.2),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Material(
+        // color: bg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(_PageRow._rowRadius),
+        ),
+        child: InkWell(
+          mouseCursor: SystemMouseCursors.click,
+          borderRadius: BorderRadius.circular(_PageRow._rowRadius),
+          onTap: () => widget.onSelect(widget.page.id),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(_PageRow._rowRadius),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(_PageRow._rowRadius),
+                border: Border.all(
+                  color: Settings.tacticalVioletTheme.border,
+                  width: 1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                      color: Settings.tacticalVioletTheme.card
+                          .withValues(alpha: 0.2),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4))
+                ],
+                color: bg,
               ),
-            ],
-            color: bg,
-          ),
-          height: 40,
-          child: Padding(
-            padding: const EdgeInsets.only(left: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    page.name,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                      fontSize: 14,
+              height: _PageRow._rowHeight,
+              child: Stack(
+                children: [
+                  if (fillProgress != null)
+                    Positioned.fill(
+                      child: FractionallySizedBox(
+                        widthFactor: fillProgress,
+                        alignment: Alignment.centerLeft,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Settings.tacticalVioletTheme.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  Positioned.fill(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 12, right: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              widget.page.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                color: Colors.white,
+                                fontWeight: widget.active
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          if (widget.showBackwardIndicator ||
+                              widget.showForwardIndicator) ...[
+                            const SizedBox(width: 6),
+                            if (widget.showBackwardIndicator)
+                              const _KeybindBadge(label: "A"),
+                            if (widget.showBackwardIndicator &&
+                                widget.showForwardIndicator)
+                              const SizedBox(width: 4),
+                            if (widget.showForwardIndicator)
+                              const _KeybindBadge(label: "D"),
+                            const SizedBox(width: 2),
+                          ],
+                          if (showActions) ...[
+                            ShadTooltip(
+                              builder: (context) => const Text("Rename"),
+                              child: ShadIconButton.ghost(
+                                width: 24,
+                                hoverBackgroundColor: Colors.transparent,
+                                foregroundColor: widget.canRename
+                                    ? Colors.white
+                                    : Colors.white24,
+                                icon: const Icon(LucideIcons.pen,
+                                    size: 18, color: Colors.white),
+                                onPressed: widget.canRename
+                                    ? () => widget.onRename?.call(widget.page)
+                                    : null,
+                              ),
+                            ),
+                            const SizedBox(width: 2),
+                            ShadTooltip(
+                              builder: (context) => const Text("Delete"),
+                              child: ShadIconButton.ghost(
+                                width: 24,
+                                hoverForegroundColor:
+                                    Settings.tacticalVioletTheme.destructive,
+                                hoverBackgroundColor: Colors.transparent,
+                                foregroundColor: widget.disableDelete
+                                    ? Colors.white24
+                                    : Colors.white,
+                                icon: const Icon(
+                                  LucideIcons.trash,
+                                  size: 18,
+                                ),
+                                onPressed: widget.disableDelete
+                                    ? null
+                                    : () => widget.onDelete
+                                        ?.call(widget.page, widget.pageCount),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                if (showBackwardIndicator || showForwardIndicator) ...[
-                  const SizedBox(width: 6),
-                  if (showBackwardIndicator) const _KeybindBadge(label: 'A'),
-                  if (showBackwardIndicator && showForwardIndicator)
-                    const SizedBox(width: 4),
-                  if (showForwardIndicator) const _KeybindBadge(label: 'D'),
-                  const SizedBox(width: 2),
                 ],
-                ShadTooltip(
-                  builder: (context) => const Text('Rename'),
-                  child: ShadIconButton.ghost(
-                    hoverBackgroundColor: Colors.transparent,
-                    foregroundColor:
-                        onRename == null ? Colors.white24 : Colors.white,
-                    icon: const Icon(Icons.edit, size: 18, color: Colors.white),
-                    onPressed: onRename == null ? null : () => onRename!(page),
-                  ),
-                ),
-                ShadTooltip(
-                  builder: (context) => const Text('Delete'),
-                  child: ShadIconButton.ghost(
-                    hoverForegroundColor:
-                        Settings.tacticalVioletTheme.destructive,
-                    hoverBackgroundColor: Colors.transparent,
-                    foregroundColor:
-                        disableDelete ? Colors.white24 : Colors.white,
-                    icon: const Icon(Icons.delete, size: 18),
-                    onPressed: disableDelete ? null : onDelete,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -575,8 +1006,8 @@ class _KeybindBadge extends StatelessWidget {
       ),
       child: Center(
         child: Text(
-          label,
           textAlign: TextAlign.center,
+          label,
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: Settings.tacticalVioletTheme.mutedForeground,
                 fontWeight: FontWeight.w700,
@@ -589,6 +1020,7 @@ class _KeybindBadge extends StatelessWidget {
   }
 }
 
+/* -------- Square + button -------- */
 class _SquareIconButton extends StatelessWidget {
   const _SquareIconButton({
     required this.icon,
@@ -618,7 +1050,7 @@ class _SquareIconButton extends StatelessWidget {
         onPressed: onTap,
         decoration: ShadDecoration(
           border: ShadBorder(
-            radius: BorderRadius.circular(12),
+            radius: BorderRadius.circular(_pagesBarInnerButtonRadius),
           ),
         ),
       ),

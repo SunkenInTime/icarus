@@ -19,7 +19,8 @@ bool supportsAbilityVisibilityMenu(Ability? ability) {
 List<ShadContextMenuItem>? buildAbilityContextMenuItems(
   WidgetRef ref,
   PlacedAbility ability, {
-  String? lineUpId,
+  String? lineUpGroupId,
+  String? lineUpItemId,
   bool includeDelete = false,
 }) {
   final abilityData = ability.data.abilityData;
@@ -27,7 +28,8 @@ List<ShadContextMenuItem>? buildAbilityContextMenuItems(
     ref,
     ability,
     abilityData,
-    lineUpId: lineUpId,
+    lineUpGroupId: lineUpGroupId,
+    lineUpItemId: lineUpItemId,
   );
 
   if (visibilityItems.isEmpty && !includeDelete) {
@@ -36,7 +38,8 @@ List<ShadContextMenuItem>? buildAbilityContextMenuItems(
 
   return [
     ...visibilityItems,
-    if (includeDelete && lineUpId != null) _buildDeleteItem(ref, lineUpId),
+    if (includeDelete && lineUpGroupId != null && lineUpItemId != null)
+      _buildDeleteItem(ref, lineUpGroupId, lineUpItemId),
   ];
 }
 
@@ -44,7 +47,8 @@ List<ShadContextMenuItem> _buildVisibilityItems(
   WidgetRef ref,
   PlacedAbility ability,
   Ability? abilityData, {
-  String? lineUpId,
+  String? lineUpGroupId,
+  String? lineUpItemId,
 }) {
   final controls = _buildVisibilityControls(abilityData, ability.visualState);
   return controls
@@ -56,7 +60,8 @@ List<ShadContextMenuItem> _buildVisibilityItems(
             ref,
             ability,
             control.toggle(ability.visualState),
-            lineUpId: lineUpId,
+            lineUpGroupId: lineUpGroupId,
+            lineUpItemId: lineUpItemId,
           ),
         ),
       )
@@ -161,7 +166,11 @@ ShadContextMenuItem _buildToggleItem({
   );
 }
 
-ShadContextMenuItem _buildDeleteItem(WidgetRef ref, String lineUpId) {
+ShadContextMenuItem _buildDeleteItem(
+  WidgetRef ref,
+  String lineUpGroupId,
+  String lineUpItemId,
+) {
   return ShadContextMenuItem(
     leading: Icon(
       Icons.delete,
@@ -169,7 +178,15 @@ ShadContextMenuItem _buildDeleteItem(WidgetRef ref, String lineUpId) {
     ),
     child: const Text('Delete'),
     onPressed: () {
-      ref.read(lineUpProvider.notifier).deleteLineUpById(lineUpId);
+      ref.read(actionProvider.notifier).performTransaction(
+            groups: const [ActionGroup.lineUp],
+            mutation: () {
+              ref.read(lineUpProvider.notifier).deleteItem(
+                    groupId: lineUpGroupId,
+                    itemId: lineUpItemId,
+                  );
+            },
+          );
     },
   );
 }
@@ -178,15 +195,18 @@ void _updateVisualState(
   WidgetRef ref,
   PlacedAbility ability,
   AbilityVisualState visualState, {
-  String? lineUpId,
+  String? lineUpGroupId,
+  String? lineUpItemId,
 }) {
-  if (lineUpId != null) {
+  if (lineUpGroupId != null && lineUpItemId != null) {
     ref.read(actionProvider.notifier).performTransaction(
       groups: const [ActionGroup.lineUp],
       mutation: () {
-        ref
-            .read(lineUpProvider.notifier)
-            .updateAbilityVisualState(lineUpId, visualState);
+        ref.read(lineUpProvider.notifier).updateItemAbilityVisualState(
+              groupId: lineUpGroupId,
+              itemId: lineUpItemId,
+              visualState: visualState,
+            );
       },
     );
     return;

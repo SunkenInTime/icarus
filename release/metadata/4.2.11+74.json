@@ -1,0 +1,21 @@
+{
+    "version":  "4.2.11+74",
+    "shortVersion":  74,
+    "title":  "4.2.11 Release",
+    "description":  "Desktop release metadata for Icarus.",
+    "date":  "2026-04-13",
+    "mandatory":  false,
+    "channels":  [
+                     "desktop",
+                     "prerelease"
+                 ],
+    "platforms":  [
+                      "windows"
+                  ],
+    "changes":  [
+                    {
+                        "message":  "Local prerelease build for updater testing.",
+                        "type":  "other"
+                    }
+                ]
+}

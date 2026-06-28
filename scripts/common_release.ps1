@@ -101,3 +101,22 @@ function Invoke-RepoCommand {
         Pop-Location
     }
 }
+
+function Write-JsonFileUtf8 {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Value,
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter()]
+        [int]$Depth = 8
+    )
+
+    $json = $Value | ConvertTo-Json -Depth $Depth
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText(
+        [System.IO.Path]::GetFullPath($Path),
+        $json + [System.Environment]::NewLine,
+        $utf8NoBom
+    )
+}

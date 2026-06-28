@@ -108,6 +108,16 @@ class AbilityInfo extends HiveObject implements DraggableData {
   }
 }
 
+class DraggedAbilityData implements DraggableData {
+  const DraggedAbilityData({
+    required this.ability,
+    required this.isAlly,
+  });
+
+  final AbilityInfo ability;
+  final bool isAlly;
+}
+
 // This is the custom Hive adapter for AbilityInfo.
 // It only stores the AgentType and index.
 class AbilityInfoAdapter extends TypeAdapter<AbilityInfo> {
@@ -168,11 +178,16 @@ class AgentData implements DraggableData {
     required this.type,
     required this.role,
     required this.name,
-  })  : iconPath = 'assets/agents/$name/icon.webp',
+    List<String>? abilityNames,
+  })  : assert(
+          abilityNames == null || abilityNames.length == 4,
+          'abilityNames must contain exactly 4 entries',
+        ),
+        iconPath = 'assets/agents/$name/icon.webp',
         abilities = List.generate(
           4,
           (index) => AbilityInfo(
-            name: 'Ability ${index + 1}', // You can override this later
+            name: abilityNames?[index] ?? 'Ability ${index + 1}',
             iconPath: 'assets/agents/$name/${index + 1}.webp',
             type: type,
             index: index,
@@ -186,6 +201,12 @@ class AgentData implements DraggableData {
       type: AgentType.jett,
       role: AgentRole.duelist,
       name: "Jett",
+      abilityNames: const [
+        "Cloudburst",
+        "Updraft",
+        "Tailwind",
+        "Blade Storm",
+      ],
     )..abilities[0] =
           // Override the default abilities
           AbilityInfo(
@@ -200,12 +221,24 @@ class AgentData implements DraggableData {
       type: AgentType.raze,
       role: AgentRole.duelist,
       name: "Raze",
+      abilityNames: const [
+        "Boom Bot",
+        "Blast Pack",
+        "Paint Shells",
+        "Showstopper",
+      ],
     ),
     AgentType.pheonix: (() {
       final agent = AgentData(
         type: AgentType.pheonix,
         role: AgentRole.duelist,
         name: "Phoenix",
+        abilityNames: const [
+          "Blaze",
+          "Hot Hands",
+          "Curveball",
+          "Run it Back",
+        ],
       );
       agent.abilities.first.abilityData = SquareAbility(
         width: 5,
@@ -228,10 +261,16 @@ class AgentData implements DraggableData {
         type: AgentType.astra,
         role: AgentRole.controller,
         name: "Astra",
+        abilityNames: const [
+          "Gravity Well",
+          "Nova Pulse",
+          "Nebula/Dissipate",
+          "Cosmic Divide",
+        ],
       )..abilities[2] = AbilityInfo(
           type: AgentType.astra,
           index: 2,
-          name: "Nebula",
+          name: "Nebula/Dissipate",
           iconPath: 'assets/agents/Astra/3.webp',
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Astra/Smoke.webp',
@@ -275,6 +314,12 @@ class AgentData implements DraggableData {
         type: AgentType.breach,
         role: AgentRole.initiator,
         name: "Breach",
+        abilityNames: const [
+          "Aftershock",
+          "Flashpoint",
+          "Fault Line",
+          "Rolling Thunder",
+        ],
       );
       agent.abilities.first.abilityData = SquareAbility(
         width: 3 * inGameMetersDiameter,
@@ -307,10 +352,16 @@ class AgentData implements DraggableData {
         type: AgentType.viper,
         role: AgentRole.controller,
         name: "Viper",
+        abilityNames: const [
+          "Snake Bite",
+          "Poison Cloud",
+          "Toxic Screen",
+          "Viper's Pit",
+        ],
       )..abilities[1] = AbilityInfo(
           type: AgentType.viper,
           index: 1,
-          name: "Sky Smoke",
+          name: "Poison Cloud",
           iconPath: 'assets/agents/Viper/2.webp',
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Viper/Smoke.webp',
@@ -339,12 +390,24 @@ class AgentData implements DraggableData {
       type: AgentType.yoru,
       role: AgentRole.duelist,
       name: "Yoru",
+      abilityNames: const [
+        "Fakeout",
+        "Blindside",
+        "Gatecrash",
+        "Dimensional Drift",
+      ],
     ),
     AgentType.sova: (() {
       final agent = AgentData(
         type: AgentType.sova,
         role: AgentRole.initiator,
         name: "Sova",
+        abilityNames: const [
+          "Owl Drone",
+          "Shock Bolt",
+          "Recon Bolt",
+          "Hunter's Fury",
+        ],
       );
 
       agent.abilities[1].abilityData = CircleAbility(
@@ -375,6 +438,12 @@ class AgentData implements DraggableData {
         type: AgentType.skye,
         role: AgentRole.initiator,
         name: "Skye",
+        abilityNames: const [
+          "Regrowth",
+          "Trailblazer",
+          "Guiding Light",
+          "Seekers",
+        ],
       );
 
       // Heal
@@ -392,6 +461,12 @@ class AgentData implements DraggableData {
         type: AgentType.kayo,
         role: AgentRole.initiator,
         name: "Kayo",
+        abilityNames: const [
+          "FRAG/ment",
+          "FLASH/drive",
+          "ZERO/point",
+          "NULL/cmd",
+        ],
       );
 
       agent.abilities.first.abilityData = CircleAbility(
@@ -423,19 +498,17 @@ class AgentData implements DraggableData {
         type: AgentType.killjoy,
         role: AgentRole.sentinel,
         name: "Killjoy",
+        abilityNames: const [
+          "Nanoswarm",
+          "Alarmbot",
+          "Turret",
+          "Lockdown",
+        ],
       );
 
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
-        size: 5.5,
-        rangeOutlineColor: const Color(0xFF6A0EB6),
-        hasCenterDot: true,
-      );
-
-      // Ultimate
-      agent.abilities[3].abilityData = CircleAbility(
-        iconPath: agent.abilities[3].iconPath,
-        size: 32.5,
+        size: 4.71,
         rangeOutlineColor: const Color(0xFF6A0EB6),
         hasCenterDot: true,
       );
@@ -446,7 +519,7 @@ class AgentData implements DraggableData {
         size: 40,
         rangeOutlineColor: Colors.white,
         hasCenterDot: true,
-        innerRangeSize: 54.48,
+        innerRangeSize: 5.5,
         innerRangeColor: const Color.fromARGB(255, 106, 14, 182),
       );
 
@@ -460,6 +533,14 @@ class AgentData implements DraggableData {
         rangeFillColor: Colors.transparent,
       );
 
+      // Ultimate
+      agent.abilities[3].abilityData = CircleAbility(
+        iconPath: agent.abilities[3].iconPath,
+        size: 32.5,
+        rangeOutlineColor: const Color(0xFF6A0EB6),
+        hasCenterDot: true,
+      );
+
       return agent;
     })(),
     AgentType.brimstone: (() {
@@ -467,6 +548,12 @@ class AgentData implements DraggableData {
         type: AgentType.brimstone,
         role: AgentRole.controller,
         name: "Brimstone",
+        abilityNames: const [
+          "Stim Beacon",
+          "Incendiary",
+          "Sky Smoke",
+          "Orbital Strike",
+        ],
       )..abilities[2] = AbilityInfo(
           type: AgentType.brimstone,
           index: 2,
@@ -508,6 +595,12 @@ class AgentData implements DraggableData {
         type: AgentType.cypher,
         role: AgentRole.sentinel,
         name: "Cypher",
+        abilityNames: const [
+          "Trapwire",
+          "Cyber Cage",
+          "Spycam",
+          "Neural Theft",
+        ],
       );
       agent.abilities.first.abilityData = ResizableSquareAbility(
         width: 3,
@@ -532,6 +625,12 @@ class AgentData implements DraggableData {
         type: AgentType.chamber,
         role: AgentRole.sentinel,
         name: "Chamber",
+        abilityNames: const [
+          "Trademark",
+          "Headhunter",
+          "Rendezvous",
+          "Tour De Force",
+        ],
       );
 
       agent.abilities.first.abilityData = CircleAbility(
@@ -555,6 +654,12 @@ class AgentData implements DraggableData {
         type: AgentType.fade,
         role: AgentRole.initiator,
         name: "Fade",
+        abilityNames: const [
+          "Prowler",
+          "Seize",
+          "Haunt",
+          "Nightfall",
+        ],
       );
 
       agent.abilities[1].abilityData = CircleAbility(
@@ -569,7 +674,6 @@ class AgentData implements DraggableData {
         size: 30,
         rangeOutlineColor: const Color(0xFF680A79),
         hasCenterDot: true,
-        opacity: 0,
       );
 
       agent.abilities.last.abilityData = SquareAbility(
@@ -586,6 +690,12 @@ class AgentData implements DraggableData {
         type: AgentType.neon,
         role: AgentRole.duelist,
         name: "Neon",
+        abilityNames: const [
+          "Fast Lane",
+          "Relay Bolt",
+          "High Gear",
+          "Overdrive",
+        ],
       );
 
       agent.abilities.first.abilityData = ResizableSquareAbility(
@@ -613,10 +723,16 @@ class AgentData implements DraggableData {
         type: AgentType.omen,
         role: AgentRole.controller,
         name: "Omen",
+        abilityNames: const [
+          "Shrouded Step",
+          "Paranoia",
+          "Dark Cover",
+          "From the Shadows",
+        ],
       )..abilities[2] = AbilityInfo(
           type: AgentType.omen,
           index: 2,
-          name: "Smoke",
+          name: "Dark Cover",
           iconPath: 'assets/agents/Omen/3.webp',
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Omen/Smoke.webp',
@@ -638,6 +754,12 @@ class AgentData implements DraggableData {
         type: AgentType.reyna,
         role: AgentRole.duelist,
         name: "Reyna",
+        abilityNames: const [
+          "Leer",
+          "Devour",
+          "Dismiss",
+          "Empress",
+        ],
       );
       return agent;
     })(),
@@ -646,6 +768,12 @@ class AgentData implements DraggableData {
         type: AgentType.sage,
         role: AgentRole.sentinel,
         name: "Sage",
+        abilityNames: const [
+          "Barrier Orb",
+          "Slow Orb",
+          "Healing Orb",
+          "Resurrection",
+        ],
       );
 
       agent.abilities.first.abilityData = RotatableImageAbility(
@@ -668,10 +796,16 @@ class AgentData implements DraggableData {
         type: AgentType.clove,
         role: AgentRole.controller,
         name: "Clove",
+        abilityNames: const [
+          "Pick-me-up",
+          "Meddle",
+          "Ruse",
+          "Not Dead Yet",
+        ],
       )..abilities[2] = AbilityInfo(
           type: AgentType.clove,
           index: 2,
-          name: "Sky Smoke",
+          name: "Ruse",
           iconPath: 'assets/agents/Clove/3.webp',
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Clove/Smoke.webp',
@@ -693,6 +827,12 @@ class AgentData implements DraggableData {
         type: AgentType.iso,
         role: AgentRole.duelist,
         name: "Iso",
+        abilityNames: const [
+          "Contingency",
+          "Undercut",
+          "Double Tap",
+          "Kill Contract",
+        ],
       );
 
       agent.abilities.first.abilityData = SquareAbility(
@@ -725,6 +865,12 @@ class AgentData implements DraggableData {
         type: AgentType.deadlock,
         role: AgentRole.sentinel,
         name: "Deadlock",
+        abilityNames: const [
+          "Barrier Mesh",
+          "Sonic Sensor",
+          "GravNet",
+          "Annihilation",
+        ],
       );
 
       agent.abilities.first.abilityData = CircleAbility(
@@ -753,6 +899,12 @@ class AgentData implements DraggableData {
         type: AgentType.gekko,
         role: AgentRole.initiator,
         name: "Gekko",
+        abilityNames: const [
+          "Mosh Pit",
+          "Wingman",
+          "Dizzy",
+          "Thrash",
+        ],
       );
 
       agent.abilities.first.abilityData = CircleAbility(
@@ -769,10 +921,16 @@ class AgentData implements DraggableData {
         type: AgentType.harbor,
         role: AgentRole.controller,
         name: "Harbor",
+        abilityNames: const [
+          "Storm Surge",
+          "High Tide",
+          "Cove",
+          "Reckoning",
+        ],
       )..abilities[2] = AbilityInfo(
           type: AgentType.harbor,
           index: 2,
-          name: "Sky Smoke",
+          name: "Cove",
           iconPath: 'assets/agents/Harbor/3.webp',
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Harbor/Smoke.webp',
@@ -813,6 +971,12 @@ class AgentData implements DraggableData {
         type: AgentType.vyse,
         role: AgentRole.sentinel,
         name: "Vyse",
+        abilityNames: const [
+          "Razorvine",
+          "Shear",
+          "Arc Rose",
+          "Steel Garden",
+        ],
       );
 
       agent.abilities.first.abilityData = SquareAbility(
@@ -843,6 +1007,12 @@ class AgentData implements DraggableData {
         type: AgentType.tejo,
         role: AgentRole.initiator,
         name: "Tejo",
+        abilityNames: const [
+          "Stealth Drone",
+          "Special Delivery",
+          "Guided Salvo",
+          "Armageddon",
+        ],
       );
 
       agent.abilities.first.abilityData = CircleAbility(
@@ -877,7 +1047,16 @@ class AgentData implements DraggableData {
     })(),
     AgentType.waylay: (() {
       final agent = AgentData(
-          type: AgentType.waylay, role: AgentRole.duelist, name: "Waylay");
+        type: AgentType.waylay,
+        role: AgentRole.duelist,
+        name: "Waylay",
+        abilityNames: const [
+          "Saturate",
+          "Lightspeed",
+          "Refract",
+          "Convergent Paths",
+        ],
+      );
 
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
@@ -898,7 +1077,16 @@ class AgentData implements DraggableData {
     })(),
     AgentType.veto: (() {
       final agent = AgentData(
-          type: AgentType.veto, role: AgentRole.sentinel, name: "Veto");
+        type: AgentType.veto,
+        role: AgentRole.sentinel,
+        name: "Veto",
+        abilityNames: const [
+          "Crosscut",
+          "Chokehold",
+          "Interceptor",
+          "Evolution",
+        ],
+      );
 
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
@@ -928,12 +1116,18 @@ class AgentData implements DraggableData {
         type: AgentType.miks,
         role: AgentRole.controller,
         name: "Miks",
+        abilityNames: const [
+          "M-pulse Concuss",
+          "M-pulse Healing",
+          "Harmonize",
+          "Waveform",
+        ],
       );
       // agent.abilities.
       final miksConcuss = AbilityInfo(
         type: AgentType.miks,
         index: 0,
-        name: "Concussive Blast",
+        name: "M-pulse Concuss",
         iconPath: 'assets/agents/Miks/1.webp',
         abilityData: CircleAbility(
           iconPath: agent.abilities[0].iconPath,
@@ -945,7 +1139,7 @@ class AgentData implements DraggableData {
       final miksHeal = AbilityInfo(
         type: AgentType.miks,
         index: 1,
-        name: "Healing Blast",
+        name: "M-pulse Healing",
         iconPath: 'assets/agents/Miks/2.webp',
         abilityData: CircleAbility(
           iconPath: agent.abilities[1].iconPath,
@@ -954,20 +1148,27 @@ class AgentData implements DraggableData {
           hasCenterDot: true,
         ),
       );
-      final miksSmoke = AbilityInfo(
+      final miksHarmonize = AbilityInfo(
         type: AgentType.miks,
         index: 2,
-        name: "Miks Smoke",
+        name: "Harmonize",
         iconPath: 'assets/agents/Miks/3.webp',
         abilityData: ImageAbility(
             imagePath: 'assets/agents/Miks/Smoke.webp',
             size: 4.1 * inGameMetersDiameter),
       );
+      final miksWaveform = AbilityInfo(
+        type: AgentType.miks,
+        index: 3,
+        name: "Waveform",
+        iconPath: 'assets/agents/Miks/4.webp',
+        abilityData: BaseAbility(iconPath: 'assets/agents/Miks/4.webp'),
+      );
 
       final miksUlt = AbilityInfo(
         type: AgentType.miks,
         index: 4,
-        name: "Miks Ult",
+        name: "Bassquake",
         iconPath: 'assets/agents/Miks/5.webp',
         abilityData: SectorCircleAbility(
           iconPath: "assets/agents/Miks/5.webp",
@@ -978,12 +1179,11 @@ class AgentData implements DraggableData {
       );
       agent.abilities[0] = miksConcuss;
       agent.abilities[1] = miksHeal;
-      agent.abilities[2] = miksSmoke;
+      agent.abilities[2] = miksHarmonize;
+      agent.abilities[3] = miksWaveform;
       agent.abilities.add(miksUlt);
 
       return agent;
     })(),
   };
 }
-
-

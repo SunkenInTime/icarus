@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
-import 'package:icarus/widgets/draggable_widgets/shared/framed_icon_shell.dart';
+import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
 class RoleIconUtilityWidget extends ConsumerWidget {
@@ -25,7 +25,7 @@ class RoleIconUtilityWidget extends ConsumerWidget {
       deleteTarget: (id?.isNotEmpty ?? false)
           ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
           : null,
-      child: FramedIconShell(
+      child: FramedAbilityIconShell(
         size: size,
         isAlly: isAlly,
         child: Image.asset(

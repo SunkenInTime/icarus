@@ -4,6 +4,83 @@ enum StrategyOpKind { add, move, patch, delete, reorder }
 
 enum StrategyOpEntityType { strategy, page, element, lineup }
 
+const currentCloudProtocolVersion = 1;
+const currentCloudPayloadVersion = 1;
+
+typedef CloudPayload = Map<String, dynamic>;
+
+CloudPayload cloudElementPayload({
+  required String kind,
+  required Map<String, dynamic> data,
+}) {
+  return <String, dynamic>{
+    'kind': kind,
+    'payloadVersion': currentCloudPayloadVersion,
+    'data': _normalizeCloudPayloadData(data),
+  };
+}
+
+CloudPayload cloudLineupGroupPayload(Map<String, dynamic> data) {
+  return <String, dynamic>{
+    'kind': 'lineupGroup',
+    'payloadVersion': currentCloudPayloadVersion,
+    'data': _normalizeCloudPayloadData(data),
+  };
+}
+
+Map<String, dynamic> _normalizeCloudPayloadData(Map<String, dynamic> data) {
+  final normalized = jsonDecode(jsonEncode(data));
+  if (normalized is Map<String, dynamic>) {
+    return normalized;
+  }
+  if (normalized is Map) {
+    return Map<String, dynamic>.from(normalized);
+  }
+  return <String, dynamic>{};
+}
+
+Map<String, dynamic> cloudPayloadData(Object? payload) {
+  if (payload is Map<String, dynamic>) {
+    final data = payload['data'];
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+    return payload;
+  }
+  if (payload is Map) {
+    return cloudPayloadData(Map<String, dynamic>.from(payload));
+  }
+  return <String, dynamic>{};
+}
+
+CloudPayload? cloudObjectPayloadOrNull(Object? payload) {
+  if (payload == null) {
+    return null;
+  }
+  Object? decoded = payload;
+  if (payload is String) {
+    try {
+      decoded = jsonDecode(payload);
+    } catch (_) {
+      return null;
+    }
+  }
+  if (decoded is Map<String, dynamic>) {
+    return decoded;
+  }
+  if (decoded is Map) {
+    return Map<String, dynamic>.from(decoded);
+  }
+  return null;
+}
+
+CloudPayload cloudObjectPayload(Object? payload) {
+  return cloudObjectPayloadOrNull(payload) ?? <String, dynamic>{};
+}
+
 class StrategyOp {
   const StrategyOp({
     required this.opId,
@@ -22,7 +99,7 @@ class StrategyOp {
   final StrategyOpEntityType entityType;
   final String? entityPublicId;
   final String? pagePublicId;
-  final String? payload;
+  final Object? payload;
   final int? sortIndex;
   final int? expectedRevision;
   final int? expectedSequence;
@@ -101,7 +178,7 @@ class OpAck {
   final int? latestSequence;
   final int? appliedRevision;
   final int? latestRevision;
-  final String? latestPayload;
+  final CloudPayload? latestPayload;
 
   bool get isAck => status == 'ack';
 
@@ -114,7 +191,9 @@ class OpAck {
       latestSequence: (json['latestSequence'] as num?)?.toInt(),
       appliedRevision: (json['appliedRevision'] as num?)?.toInt(),
       latestRevision: (json['latestRevision'] as num?)?.toInt(),
-      latestPayload: json['latestPayload'] as String?,
+      latestPayload: json['latestPayload'] == null
+          ? null
+          : Map<String, dynamic>.from(json['latestPayload'] as Map),
     );
   }
 }
@@ -159,7 +238,7 @@ class RemoteStrategyHeader {
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? themeProfileId;
-  final String? themeOverridePalette;
+  final CloudPayload? themeOverridePalette;
   final String? role;
 
   factory RemoteStrategyHeader.fromJson(Map<String, dynamic> json) {
@@ -175,7 +254,8 @@ class RemoteStrategyHeader {
         (json['updatedAt'] as num?)?.toInt() ?? 0,
       ),
       themeProfileId: json['themeProfileId'] as String?,
-      themeOverridePalette: json['themeOverridePalette'] as String?,
+      themeOverridePalette:
+          cloudObjectPayloadOrNull(json['themeOverridePalette']),
       role: json['role'] as String?,
     );
   }
@@ -198,7 +278,7 @@ class RemotePage {
   final int sortIndex;
   final bool isAttack;
   final int revision;
-  final String? settings;
+  final CloudPayload? settings;
 
   factory RemotePage.fromJson(Map<String, dynamic> json) {
     return RemotePage(
@@ -208,7 +288,7 @@ class RemotePage {
       sortIndex: (json['sortIndex'] as num).toInt(),
       isAttack: json['isAttack'] as bool? ?? true,
       revision: (json['revision'] as num?)?.toInt() ?? 0,
-      settings: json['settings'] as String?,
+      settings: cloudObjectPayloadOrNull(json['settings']),
     );
   }
 }
@@ -229,20 +309,12 @@ class RemoteElement {
   final String strategyPublicId;
   final String pagePublicId;
   final String elementType;
-  final String payload;
+  final CloudPayload payload;
   final int sortIndex;
   final int revision;
   final bool deleted;
 
-  Map<String, dynamic> decodedPayload() {
-    try {
-      final parsed = jsonDecode(payload);
-      if (parsed is Map<String, dynamic>) {
-        return parsed;
-      }
-    } catch (_) {}
-    return <String, dynamic>{};
-  }
+  Map<String, dynamic> decodedPayload() => cloudPayloadData(payload);
 
   factory RemoteElement.fromJson(Map<String, dynamic> json) {
     return RemoteElement(
@@ -250,7 +322,7 @@ class RemoteElement {
       strategyPublicId: json['strategyPublicId'] as String,
       pagePublicId: json['pagePublicId'] as String,
       elementType: json['elementType'] as String,
-      payload: json['payload'] as String,
+      payload: Map<String, dynamic>.from(json['payload'] as Map),
       sortIndex: (json['sortIndex'] as num?)?.toInt() ?? 0,
       revision: (json['revision'] as num?)?.toInt() ?? 0,
       deleted: json['deleted'] as bool? ?? false,
@@ -272,7 +344,7 @@ class RemoteLineup {
   final String publicId;
   final String strategyPublicId;
   final String pagePublicId;
-  final String payload;
+  final CloudPayload payload;
   final int sortIndex;
   final int revision;
   final bool deleted;
@@ -282,7 +354,7 @@ class RemoteLineup {
       publicId: json['publicId'] as String,
       strategyPublicId: json['strategyPublicId'] as String,
       pagePublicId: json['pagePublicId'] as String,
-      payload: json['payload'] as String,
+      payload: Map<String, dynamic>.from(json['payload'] as Map),
       sortIndex: (json['sortIndex'] as num?)?.toInt() ?? 0,
       revision: (json['revision'] as num?)?.toInt() ?? 0,
       deleted: json['deleted'] as bool? ?? false,
@@ -476,6 +548,7 @@ class CloudFolderSummary {
     required this.updatedAt,
     this.role,
     this.parentFolderPublicId,
+    this.iconId,
     this.iconCodePoint,
     this.iconFontFamily,
     this.iconFontPackage,
@@ -489,6 +562,7 @@ class CloudFolderSummary {
   final DateTime updatedAt;
   final String? role;
   final String? parentFolderPublicId;
+  final int? iconId;
   final int? iconCodePoint;
   final String? iconFontFamily;
   final String? iconFontPackage;
@@ -507,6 +581,7 @@ class CloudFolderSummary {
       ),
       role: json['role'] as String?,
       parentFolderPublicId: json['parentFolderPublicId'] as String?,
+      iconId: (json['iconId'] as num?)?.toInt(),
       iconCodePoint: (json['iconCodePoint'] as num?)?.toInt(),
       iconFontFamily: json['iconFontFamily'] as String?,
       iconFontPackage: json['iconFontPackage'] as String?,

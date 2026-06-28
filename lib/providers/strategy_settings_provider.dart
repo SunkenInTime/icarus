@@ -10,20 +10,24 @@ part "strategy_settings_provider.g.dart";
 class StrategySettings extends HiveObject {
   final double agentSize;
   final double abilitySize;
+  final bool useNeutralTeamColors;
 
   StrategySettings({
     this.agentSize = Settings.agentSize,
     this.abilitySize = Settings.abilitySize,
+    this.useNeutralTeamColors = false,
   });
 
   StrategySettings copyWith({
     double? agentSize,
     double? abilitySize,
+    bool? useNeutralTeamColors,
     bool? isOpen,
   }) {
     return StrategySettings(
       agentSize: agentSize ?? this.agentSize,
       abilitySize: abilitySize ?? this.abilitySize,
+      useNeutralTeamColors: useNeutralTeamColors ?? this.useNeutralTeamColors,
     );
   }
 
@@ -75,5 +79,9 @@ class StrategySettingsProvider extends Notifier<StrategySettings> {
 
   void updateAbilitySize(double size) {
     state = state.copyWith(abilitySize: size);
+  }
+
+  void updateNeutralTeamColors(bool value) {
+    state = state.copyWith(useNeutralTeamColors: value);
   }
 }

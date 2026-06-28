@@ -6,9 +6,11 @@ import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/default_placement.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
@@ -95,6 +97,11 @@ class ToolGrid extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentInteractionState = ref.watch(interactionStateProvider);
+    final shortcutBindings =
+        ref.watch(appPreferencesProvider).customShortcutBindings;
+    String shortcutLabel(IcarusShortcutAction action) {
+      return ShortcutInfo.displayLabelFor(action.name, shortcutBindings);
+    }
 
     // void showImageDialog() {
     //   showDialog(
@@ -126,7 +133,7 @@ class ToolGrid extends ConsumerWidget {
               SelectableIconButton(
                 icon: const Icon(Icons.draw),
                 tooltip: "Draw",
-                shortcutLabel: 'Q',
+                shortcutLabel: shortcutLabel(IcarusShortcutAction.draw),
                 onPressed: () {
                   switch (currentInteractionState) {
                     case InteractionState.drawing:
@@ -143,7 +150,7 @@ class ToolGrid extends ConsumerWidget {
               ),
               SelectableIconButton(
                 tooltip: "Eraser",
-                shortcutLabel: 'W',
+                shortcutLabel: shortcutLabel(IcarusShortcutAction.erase),
                 onPressed: () async {
                   await ref.read(penProvider.notifier).buildCursors();
                   switch (currentInteractionState) {
@@ -165,7 +172,7 @@ class ToolGrid extends ConsumerWidget {
               ),
               SelectableIconButton(
                 tooltip: "Add Text",
-                shortcutLabel: 'T',
+                shortcutLabel: shortcutLabel(IcarusShortcutAction.addText),
                 onPressed: () {
                   switch (currentInteractionState) {
                     case InteractionState.textTools:
@@ -246,7 +253,7 @@ class ToolGrid extends ConsumerWidget {
               ),
               SelectableIconButton(
                 tooltip: "Add Lineup",
-                shortcutLabel: 'G',
+                shortcutLabel: shortcutLabel(IcarusShortcutAction.addLineup),
                 onPressed: () async {
                   if (kIsWeb) {
                     Settings.showToast(

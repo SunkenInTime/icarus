@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
-import 'package:icarus/widgets/draggable_widgets/shared/framed_icon_shell.dart';
+import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -13,12 +13,14 @@ class AbilityWidget extends ConsumerWidget {
     required this.id,
     required this.isAlly,
     this.lineUpId,
+    this.lineUpItemId,
     this.watchMouse = true,
     this.contextMenuItems,
     this.onTapOverride,
   });
 
   final String? lineUpId;
+  final String? lineUpItemId;
 
   final String? id;
   final bool isAlly;
@@ -36,10 +38,11 @@ class AbilityWidget extends ConsumerWidget {
             ? HoveredDeleteTarget.ability(id: id!, ownerToken: Object())
             : null;
 
-    final shell = FramedIconShell(
+    final shell = FramedAbilityIconShell(
       size: abilitySize,
       isAlly: isAlly,
       lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       child: Image.asset(
         iconPath,
         fit: BoxFit.contain,
@@ -52,6 +55,7 @@ class AbilityWidget extends ConsumerWidget {
 
     return MouseWatch(
       lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       cursor: SystemMouseCursors.click,
       deleteTarget: deleteTarget,
       contextMenuItems: contextMenuItems,

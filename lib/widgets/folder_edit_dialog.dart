@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/widgets/better_color_picker.dart';
 import 'package:icarus/widgets/color_picker_button.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_pill.dart';
+import 'package:icarus/widgets/icarus_color_picker_style.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -24,7 +26,7 @@ class FolderEditDialog extends ConsumerStatefulWidget {
 class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
   final TextEditingController _folderNameController = TextEditingController();
 
-  IconData _selectedIcon = Folder.folderIcons[0];
+  int _selectedIconId = FolderIconRegistry.defaultId;
   FolderColor _selectedColor = FolderColor.red;
   Color? _customColor;
   @override
@@ -40,7 +42,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
     _selectedColor = widget.folder?.color ?? FolderColor.generic;
     if (widget.folder != null) {
       _folderNameController.text = widget.folder!.name;
-      _selectedIcon = widget.folder!.icon;
+      _selectedIconId = widget.folder!.iconId;
       _customColor = widget.folder!.customColor;
     }
     _folderNameController.addListener(() {
@@ -50,11 +52,6 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final previewColor =
-        Folder.folderColorMap[_selectedColor] ??
-        _customColor ??
-        Settings.tacticalVioletTheme.primary;
-
     return ShadDialog(
       title: Text(widget.folder != null ? "Edit Folder" : "Add Folder"),
       actions: [
@@ -77,7 +74,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                       newName: _folderNameController.text.isEmpty
                           ? "New Folder"
                           : _folderNameController.text,
-                      newIcon: _selectedIcon,
+                      newIconId: _selectedIconId,
                       newColor: _selectedColor,
                       newCustomColor: _customColor,
                     );
@@ -88,7 +85,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                     name: _folderNameController.text.isEmpty
                         ? "New Folder"
                         : _folderNameController.text,
-                    icon: _selectedIcon,
+                    iconId: _selectedIconId,
                     color: _selectedColor,
                     customColor: _customColor,
                   );
@@ -134,7 +131,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                           color: Colors.transparent,
                           child: FolderPill(
                             folder: Folder(
-                              icon: _selectedIcon,
+                              iconId: _selectedIconId,
                               name: _folderNameController.text,
                               id: "null",
                               dateCreated: DateTime.now(),
@@ -191,18 +188,28 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                               ),
                             ],
                             child: Material(
+                              color: Colors.transparent,
                               child: SizedBox(
                                 width: 300,
-                                child: ColorPicker(
-                                  portraitOnly: true,
-                                  pickerColor: previewColor,
-                                  onColorChanged: (color) {
+                                child: BetterColorPicker(
+                                  value: Folder
+                                          .folderColorMap[_selectedColor] ??
+                                      _customColor ??
+                                      Folder.folderColorMap[FolderColor.red]!,
+                                  initialMode: BetterColorPickerMode.hsv,
+                                  style: icarusColorPickerStyle,
+                                  onChanging: (color) {
                                     setState(() {
                                       _selectedColor = FolderColor.custom;
                                       _customColor = color;
                                     });
                                   },
-                                  pickerAreaHeightPercent: 0.8,
+                                  onChanged: (color) {
+                                    setState(() {
+                                      _selectedColor = FolderColor.custom;
+                                      _customColor = color;
+                                    });
+                                  },
                                 ),
                               ),
                             ),
@@ -233,22 +240,23 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                   crossAxisSpacing: 8,
                   childAspectRatio: 1,
                 ),
-                itemCount: Folder.folderIcons.length,
+                itemCount: FolderIconRegistry.pickerEntries.length,
                 itemBuilder: (context, index) {
+                  final iconId = FolderIconRegistry.pickerEntries[index].id;
                   return IconButton(
                       onPressed: () {
                         setState(() {
-                          _selectedIcon = Folder.folderIcons[index];
+                          _selectedIconId = iconId;
                         });
                       },
-                      isSelected: _selectedIcon == Folder.folderIcons[index],
-                      icon: Icon(
-                        Folder.folderIcons[index],
+                      isSelected: _selectedIconId == iconId,
+                      icon: FolderIconView(
+                        iconId: iconId,
                         size: 24,
                         color: Colors.white,
                       ),
-                      selectedIcon: Icon(
-                        Folder.folderIcons[index],
+                      selectedIcon: FolderIconView(
+                        iconId: iconId,
                         size: 24,
                         color: Settings.tacticalVioletTheme.primary,
                       ));

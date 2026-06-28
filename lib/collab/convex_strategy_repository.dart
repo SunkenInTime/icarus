@@ -536,6 +536,7 @@ class ConvexStrategyRepository {
       args: {
         'strategyPublicId': strategyPublicId,
         'clientId': clientId,
+        'clientProtocolVersion': currentCloudProtocolVersion,
         'ops': ops.map((op) => op.toConvexJson()).toList(growable: false),
       },
     );
@@ -552,6 +553,7 @@ class ConvexStrategyRepository {
     required String publicId,
     required String name,
     String? parentFolderPublicId,
+    int? iconId,
     int? iconCodePoint,
     String? iconFontFamily,
     String? iconFontPackage,
@@ -565,6 +567,7 @@ class ConvexStrategyRepository {
         'name': name,
         if (parentFolderPublicId != null)
           'parentFolderPublicId': parentFolderPublicId,
+        if (iconId != null) 'iconId': iconId,
         if (iconCodePoint != null) 'iconCodePoint': iconCodePoint,
         if (iconFontFamily != null) 'iconFontFamily': iconFontFamily,
         if (iconFontPackage != null) 'iconFontPackage': iconFontPackage,
@@ -580,7 +583,7 @@ class ConvexStrategyRepository {
     required String mapData,
     String? folderPublicId,
     String? themeProfileId,
-    String? themeOverridePalette,
+    Map<String, dynamic>? themeOverridePalette,
   }) async {
     await _client.mutation(
       name: 'strategies:create',
@@ -605,8 +608,8 @@ class ConvexStrategyRepository {
     required bool initialPageIsAttack,
     String? folderPublicId,
     String? themeProfileId,
-    String? themeOverridePalette,
-    String? initialPageSettings,
+    Map<String, dynamic>? themeOverridePalette,
+    Map<String, dynamic>? initialPageSettings,
   }) async {
     await _client.mutation(
       name: 'strategies:createWithInitialPage',

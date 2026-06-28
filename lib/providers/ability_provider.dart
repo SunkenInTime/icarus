@@ -10,6 +10,7 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:uuid/uuid.dart';
 
 final abilityProvider =
     NotifierProvider<AbilityProvider, List<PlacedAbility>>(AbilityProvider.new);
@@ -35,6 +36,8 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   List<PlacedAbility> poppedAbility = [];
   final Map<String, ActionObjectState> _pendingEditBefore = {};
   List<AbilitySnapshot> snapshots = [];
+  static const _uuid = Uuid();
+
   @override
   List<PlacedAbility> build() {
     return [];
@@ -113,6 +116,33 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
+  }
+
+  String? duplicateAbilityAt({
+    required String sourceId,
+    required Offset position,
+  }) {
+    final sourceIndex = PlacedWidget.getIndexByID(sourceId, state);
+    if (sourceIndex < 0) return null;
+
+    final sourceAbility = state[sourceIndex];
+    final coordinateSystem = CoordinateSystem.instance;
+    final mapState = ref.read(mapProvider);
+    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
+    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
+    final centerOffset = sourceAbility.data.abilityData!
+        .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize);
+    final centerPosition =
+        Offset(position.dx + centerOffset.dx, position.dy + centerOffset.dy);
+
+    if (coordinateSystem.isOutOfBounds(centerPosition)) return null;
+
+    final duplicatedAbility = sourceAbility.copyWith(
+      id: _uuid.v4(),
+      position: position,
+    );
+    addAbility(duplicatedAbility);
+    return duplicatedAbility.id;
   }
 
   void switchSides() {

@@ -6,13 +6,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/custom_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -182,7 +185,7 @@ void main() {
       length: 0,
     );
 
-    final container = ProviderContainer();
+    final container = _createContainer();
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       container.dispose();
@@ -192,12 +195,12 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: MaterialApp(
+        child: ShadApp(
           home: Stack(
             children: [
               PlacedAbilityWidget(
                 ability: placedAbility,
-                onDragEnd: (_) {},
+                onDragEnd: (_, __) {},
                 id: placedAbility.id,
                 data: placedAbility,
                 rotation: placedAbility.rotation,
@@ -222,7 +225,7 @@ void main() {
 
     final ability = AgentData.agents[AgentType.neon]!.abilities.first
         .abilityData! as ResizableSquareAbility;
-    final container = ProviderContainer();
+    final container = _createContainer();
     final abilitySize = container.read(strategySettingsProvider).abilitySize;
 
     addTearDown(() async {
@@ -264,7 +267,7 @@ void main() {
 
     final ability = AgentData.agents[AgentType.viper]!.abilities[2].abilityData!
         as SquareAbility;
-    final container = ProviderContainer();
+    final container = _createContainer();
     final abilitySize = container.read(strategySettingsProvider).abilitySize;
 
     addTearDown(() async {
@@ -370,4 +373,20 @@ void main() {
       expect(placedAbility.rotation, closeTo(initialRotation + pi, 0.0001));
     });
   });
+}
+
+class _FixedMapProvider extends MapProvider {
+  @override
+  MapState build() => MapState(currentMap: MapValue.ascent, isAttack: true);
+
+  @override
+  void fromHive(MapValue map, bool isAttack) {}
+}
+
+ProviderContainer _createContainer() {
+  return ProviderContainer(
+    overrides: [
+      mapProvider.overrideWith(_FixedMapProvider.new),
+    ],
+  );
 }

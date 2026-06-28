@@ -19,7 +19,8 @@ void appendMigratedPageOps(
     final payload = Map<String, dynamic>.from(agent.toJson())
       ..putIfAbsent('elementType', () => 'agent')
       ..['id'] = elementId;
-    ops.add(buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
+    ops.add(
+        buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
   }
 
   for (final ability in page.abilityData) {
@@ -27,7 +28,8 @@ void appendMigratedPageOps(
     final payload = Map<String, dynamic>.from(ability.toJson())
       ..putIfAbsent('elementType', () => 'ability')
       ..['id'] = elementId;
-    ops.add(buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
+    ops.add(
+        buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
   }
 
   for (final drawing in page.drawingData) {
@@ -39,7 +41,8 @@ void appendMigratedPageOps(
     )
       ..putIfAbsent('elementType', () => 'drawing')
       ..['id'] = elementId;
-    ops.add(buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
+    ops.add(
+        buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
   }
 
   for (final text in page.textData) {
@@ -47,7 +50,8 @@ void appendMigratedPageOps(
     final payload = Map<String, dynamic>.from(text.toJson())
       ..putIfAbsent('elementType', () => 'text')
       ..['id'] = elementId;
-    ops.add(buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
+    ops.add(
+        buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
   }
 
   for (final image in page.imageData) {
@@ -55,7 +59,8 @@ void appendMigratedPageOps(
     final payload = cloudImagePayloadFromPlacedImage(image)
       ..putIfAbsent('elementType', () => 'image')
       ..['id'] = elementId;
-    ops.add(buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
+    ops.add(
+        buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
   }
 
   for (final utility in page.utilityData) {
@@ -63,14 +68,14 @@ void appendMigratedPageOps(
     final payload = Map<String, dynamic>.from(utility.toJson())
       ..putIfAbsent('elementType', () => 'utility')
       ..['id'] = elementId;
-    ops.add(buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
+    ops.add(
+        buildMigratedElementOp(page.id, elementId, payload, elementOrder++));
   }
 
   var lineupOrder = 0;
-  for (final lineup in page.lineUps) {
-    final lineupId = nextUniqueMigrationId(lineup.id, usedLineupIds);
-    final lineupPayload = cloudLineupPayload(lineup)
-      ..['id'] = lineupId;
+  for (final group in page.lineUpGroups) {
+    final lineupId = nextUniqueMigrationId(group.id, usedLineupIds);
+    final lineupPayload = cloudLineupPayload(group)..['id'] = lineupId;
     ops.add(
       StrategyOp(
         opId: const Uuid().v4(),
@@ -78,7 +83,7 @@ void appendMigratedPageOps(
         entityType: StrategyOpEntityType.lineup,
         entityPublicId: lineupId,
         pagePublicId: page.id,
-        payload: jsonEncode(lineupPayload),
+        payload: cloudLineupGroupPayload(lineupPayload),
         sortIndex: lineupOrder++,
       ),
     );
@@ -109,7 +114,10 @@ StrategyOp buildMigratedElementOp(
     entityType: StrategyOpEntityType.element,
     entityPublicId: elementId,
     pagePublicId: pagePublicId,
-    payload: jsonEncode(payload),
+    payload: cloudElementPayload(
+      kind: payload['elementType'] as String? ?? 'generic',
+      data: payload,
+    ),
     sortIndex: sortIndex,
   );
 }
