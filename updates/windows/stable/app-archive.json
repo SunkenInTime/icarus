@@ -3,6 +3,36 @@
     "description":  "Desktop release metadata for Icarus.",
     "items":  [
                   {
+                      "version":  "4.3.7+91",
+                      "shortVersion":  91,
+                      "changes":  [
+                                      {
+                                          "message":  "Ability and agent tiles now show clear hover labels while browsing, dragging, deleting, or selecting lineup items on the map.",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Added real ability names for every agent so hover labels and placed ability details use the actual in-game names instead of generic ability numbers.",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Added registry-backed folder icons so folders can use bundled agent role image icons.",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Migrated folder icon persistence and archive metadata to stable icon ids with legacy IconData compatibility.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Corrected several ability range measurements, including Killjoy radius conversions, so map previews better match their intended gameplay ranges.",
+                                          "type":  "fix"
+                                      }
+                                  ],
+                      "date":  "2026-06-27",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.3.7%2B91-windows",
+                      "platform":  "windows"
+                  },
+                  {
                       "version":  "4.3.6+90",
                       "shortVersion":  90,
                       "changes":  [
