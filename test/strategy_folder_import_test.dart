@@ -17,8 +17,9 @@ import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:path/path.dart' as path;
 
 bool _adaptersRegistered = false;
@@ -76,7 +77,7 @@ void main() {
     await _writeStrategyFile(File(path.join(childDir.path, 'a-site.ica')));
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -105,7 +106,7 @@ void main() {
         await Directory(path.join(emptyChild.path, 'Deep Empty')).create();
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -142,7 +143,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(zipFile.path)],
     );
 
@@ -182,7 +183,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(zipFile.path)],
     );
 
@@ -225,7 +226,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(zipFile.path)],
     );
 
@@ -279,7 +280,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -332,8 +333,7 @@ void main() {
     await _storeStrategy(name: 'default', folderID: rootFolder.id);
     await _storeStrategy(name: 'a-site', folderID: childFolder.id);
 
-    final exportDirectory = await container
-        .read(strategyProvider.notifier)
+    final exportDirectory = await StrategyImportExportService(container)
         .buildFolderExportDirectoryForTest(rootFolder.id);
 
     try {
@@ -368,7 +368,7 @@ void main() {
       await Hive.box<Folder>(HiveBoxNames.foldersBox).clear();
 
       final result =
-          await container.read(strategyProvider.notifier).loadFromFileDrop(
+          await StrategyImportExportService(container).loadFromFileDrop(
         [XFile(zipFile.path)],
       );
 
@@ -433,8 +433,7 @@ void main() {
       themeProfileId: customProfile.id,
     );
 
-    final exportDirectory = await container
-        .read(strategyProvider.notifier)
+    final exportDirectory = await StrategyImportExportService(container)
         .buildLibraryExportDirectoryForTest();
 
     try {
@@ -458,7 +457,7 @@ void main() {
       await MapThemeProfilesProvider.bootstrap();
 
       final result =
-          await container.read(strategyProvider.notifier).loadFromFileDrop(
+          await StrategyImportExportService(container).loadFromFileDrop(
         [XFile(zipFile.path)],
       );
 
@@ -511,7 +510,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -544,7 +543,7 @@ void main() {
     await _writeStrategyFile(file);
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(file.path)],
     );
 
@@ -580,7 +579,7 @@ void main() {
     );
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -610,7 +609,7 @@ void main() {
     await nestedText.writeAsString('notes');
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(sourceRoot.path)],
     );
 
@@ -631,7 +630,7 @@ void main() {
     await file.writeAsString('not a strategy');
 
     final result =
-        await container.read(strategyProvider.notifier).loadFromFileDrop(
+        await StrategyImportExportService(container).loadFromFileDrop(
       [XFile(file.path)],
     );
 

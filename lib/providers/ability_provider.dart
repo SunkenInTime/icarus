@@ -7,6 +7,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -33,6 +34,7 @@ class AbilitySnapshot {
 
 class AbilityProvider extends Notifier<List<PlacedAbility>> {
   List<PlacedAbility> poppedAbility = [];
+  final Map<String, ActionObjectState> _pendingEditBefore = {};
   List<AbilitySnapshot> snapshots = [];
   static const _uuid = Uuid();
 
@@ -45,20 +47,27 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     final action = UserAction(
         type: ActionType.addition,
         id: placedAbility.id,
-        group: ActionGroup.ability);
+        group: ActionGroup.ability,
+        objectDelta: ObjectHistoryDelta(
+          after: ActionObjectState.ability(placedAbility),
+        ));
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...state, placedAbility];
   }
 
   void removeAbilityAsAction(String id) {
-    if (!state.any((ability) => ability.id == id)) return;
+    final index = PlacedWidget.getIndexByID(id, state);
+    if (index < 0) return;
 
     ref.read(actionProvider.notifier).addAction(
           UserAction(
             type: ActionType.deletion,
             id: id,
             group: ActionGroup.ability,
+            objectDelta: ObjectHistoryDelta(
+              before: ActionObjectState.ability(state[index]),
+            ),
           ),
         );
     removeAbility(id);
@@ -72,6 +81,7 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     if (index < 0) return;
 
     final ability = newState[index];
+    final before = ActionObjectState.ability(ability);
 
     final coordinateSystem = CoordinateSystem.instance;
     final mapState = ref.read(mapProvider);
@@ -94,8 +104,15 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
     final temp = newState.removeAt(index);
 
-    final action =
-        UserAction(type: ActionType.edit, id: id, group: ActionGroup.ability);
+    final action = UserAction(
+      type: ActionType.edit,
+      id: id,
+      group: ActionGroup.ability,
+      objectDelta: ObjectHistoryDelta(
+        before: before,
+        after: ActionObjectState.ability(temp),
+      ),
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
@@ -158,16 +175,22 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     List<double>? armLengthsMeters,
   }) {
     final newState = [...state];
-    updateGeometryHistory(index);
+    final before = _pendingEditBefore.remove(newState[index].id) ??
+        ActionObjectState.ability(newState[index]);
     newState[index].updateGeometry(
       newRotation: rotation,
       newLength: length,
       newArmLengthsMeters: armLengthsMeters,
     );
     final action = UserAction(
-        type: ActionType.edit,
-        id: newState[index].id,
-        group: ActionGroup.ability);
+      type: ActionType.edit,
+      id: newState[index].id,
+      group: ActionGroup.ability,
+      objectDelta: ObjectHistoryDelta(
+        before: before,
+        after: ActionObjectState.ability(newState[index]),
+      ),
+    );
     ref.read(actionProvider.notifier).addAction(action);
     state = newState;
   }
@@ -182,13 +205,17 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
       return;
     }
 
-    updateGeometryHistory(index);
+    final before = ActionObjectState.ability(newState[index]);
     newState[index].updateVisualState(visualState);
     ref.read(actionProvider.notifier).addAction(
           UserAction(
             type: ActionType.edit,
             id: newState[index].id,
             group: ActionGroup.ability,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.ability(newState[index]),
+            ),
           ),
         );
     state = newState;
@@ -212,11 +239,8 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void updateGeometryHistory(int index) {
-    final newState = [...state];
-
-    newState[index].updateGeometryHistory();
-
-    state = newState;
+    if (index < 0 || index >= state.length) return;
+    _pendingEditBefore[state[index].id] = ActionObjectState.ability(state[index]);
   }
 
   // void updateLengthHistory(int index) {
@@ -228,25 +252,44 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   // }
 
   void undoAction(UserAction action) {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      switch (action.type) {
+        case ActionType.addition:
+          removeAbility(action.id);
+          return;
+        case ActionType.deletion:
+          if (poppedAbility.isEmpty) return;
+          final newState = [...state];
+          newState.add(clonePlacedAbility(poppedAbility.removeLast()));
+          state = newState;
+          return;
+        case ActionType.edit:
+          final index = PlacedWidget.getIndexByID(action.id, state);
+          if (index < 0) return;
+          final newState = [...state];
+          newState[index].undoAction();
+          state = newState;
+          return;
+        case ActionType.bulkDeletion:
+        case ActionType.transaction:
+          return;
+      }
+    }
     switch (action.type) {
       case ActionType.addition:
         removeAbility(action.id);
+        return;
       case ActionType.deletion:
-        if (poppedAbility.isEmpty) {
-          return;
-        }
-
-        final newState = [...state];
-
-        newState.add(poppedAbility.removeLast());
-        state = newState;
+        final before = delta.before?.ability;
+        if (before == null) return;
+        _upsertAbility(clonePlacedAbility(before));
+        return;
       case ActionType.edit:
-        final newState = [...state];
-
-        final index = PlacedWidget.getIndexByID(action.id, newState);
-
-        newState[index].undoAction();
-        state = newState;
+        final before = delta.before?.ability;
+        if (before == null) return;
+        _upsertAbility(clonePlacedAbility(before));
+        return;
       case ActionType.bulkDeletion:
       case ActionType.transaction:
         return;
@@ -254,27 +297,50 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void redoAction(UserAction action) {
-    final newState = [...state];
-
-    try {
+    final delta = action.objectDelta;
+    if (delta == null) {
+      final newState = [...state];
       switch (action.type) {
         case ActionType.addition:
-          final index = PlacedWidget.getIndexByID(action.id, poppedAbility);
-          newState.add(poppedAbility.removeAt(index));
-
+          if (poppedAbility.isEmpty) return;
+          newState.add(clonePlacedAbility(poppedAbility.removeLast()));
+          state = newState;
+          return;
         case ActionType.deletion:
-          final index = PlacedWidget.getIndexByID(action.id, poppedAbility);
-
-          poppedAbility.add(newState.removeAt(index));
+          final index = PlacedWidget.getIndexByID(action.id, newState);
+          if (index < 0) return;
+          poppedAbility.add(clonePlacedAbility(newState.removeAt(index)));
+          state = newState;
+          return;
         case ActionType.edit:
           final index = PlacedWidget.getIndexByID(action.id, newState);
+          if (index < 0) return;
           newState[index].redoAction();
+          state = newState;
+          return;
         case ActionType.bulkDeletion:
         case ActionType.transaction:
           return;
       }
-    } catch (_) {}
-    state = newState;
+    }
+    switch (action.type) {
+      case ActionType.addition:
+        final after = delta.after?.ability;
+        if (after == null) return;
+        _upsertAbility(clonePlacedAbility(after));
+        return;
+      case ActionType.deletion:
+        removeAbility(action.id);
+        return;
+      case ActionType.edit:
+        final after = delta.after?.ability;
+        if (after == null) return;
+        _upsertAbility(clonePlacedAbility(after));
+        return;
+      case ActionType.bulkDeletion:
+      case ActionType.transaction:
+        return;
+    }
   }
 
   void removeAbility(String id) {
@@ -283,32 +349,49 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     final index = PlacedWidget.getIndexByID(id, newState);
 
     if (index < 0) return;
-    final ability = newState.removeAt(index);
-    poppedAbility.add(ability);
+    final removedAbility = newState.removeAt(index);
+    poppedAbility.removeWhere((item) => item.id == id);
+    poppedAbility.add(clonePlacedAbility(removedAbility));
 
     state = newState;
   }
 
   void fromHive(List<PlacedAbility> hiveAbilities) {
     poppedAbility = [];
+    _pendingEditBefore.clear();
     state = hiveAbilities;
   }
 
   void clearAll() {
     poppedAbility = [];
+    _pendingEditBefore.clear();
     state = [];
   }
 
   AbilityProviderSnapshot takeSnapshot() {
     return AbilityProviderSnapshot(
-      abilities: [...state],
-      poppedAbilities: [...poppedAbility],
+      abilities: state.map((ability) => clonePlacedAbility(ability)).toList(),
+      poppedAbilities:
+          poppedAbility.map((ability) => clonePlacedAbility(ability)).toList(),
     );
   }
 
   void restoreSnapshot(AbilityProviderSnapshot snapshot) {
-    poppedAbility = [...snapshot.poppedAbilities];
-    state = [...snapshot.abilities];
+    poppedAbility =
+        snapshot.poppedAbilities.map((ability) => clonePlacedAbility(ability)).toList();
+    _pendingEditBefore.clear();
+    state = snapshot.abilities.map((ability) => clonePlacedAbility(ability)).toList();
+  }
+
+  void _upsertAbility(PlacedAbility ability) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(ability.id, newState);
+    if (index < 0) {
+      newState.add(ability);
+    } else {
+      newState[index] = ability;
+    }
+    state = newState;
   }
 
   String toJson() {

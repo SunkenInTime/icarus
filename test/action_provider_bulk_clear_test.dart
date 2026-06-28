@@ -13,27 +13,27 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
-import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
-import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 
 class _NoopStrategyProvider extends StrategyProvider {
   @override
   StrategyState build() {
-    return StrategyState(
-      isSaved: true,
-      stratName: null,
-      id: 'test-strategy',
+    return const StrategyState(
+      strategyId: 'test-strategy',
+      strategyName: null,
+      source: StrategySource.local,
       storageDirectory: null,
-      activePageId: null,
+      isOpen: true,
     );
   }
 
   @override
   void setUnsaved() {
-    state = state.copyWith(isSaved: false);
+    state = state.copyWith(isOpen: true);
   }
 }
 
@@ -237,13 +237,6 @@ void main() {
           .read(lineUpProvider.notifier)
           .fromHive([_buildLineUp('lineup-all')]);
 
-      container
-          .read(imageWidgetSizeProvider.notifier)
-          .updateSize('image-all', const Offset(80, 60));
-      container
-          .read(textWidgetHeightProvider.notifier)
-          .updateHeight('text-all', const Offset(120, 44));
-
       container.read(actionProvider.notifier).clearAllAsAction();
 
       expect(container.read(agentProvider), isEmpty);
@@ -253,14 +246,6 @@ void main() {
       expect(container.read(placedImageProvider).images, isEmpty);
       expect(container.read(utilityProvider), isEmpty);
       expect(container.read(lineUpProvider).lineUps, isEmpty);
-      expect(
-        container.read(imageWidgetSizeProvider.notifier).getSize('image-all'),
-        Offset.zero,
-      );
-      expect(
-        container.read(textWidgetHeightProvider.notifier).getOffset('text-all'),
-        Offset.zero,
-      );
       expect(container.read(actionProvider), hasLength(1));
       expect(
           container.read(actionProvider).single.type, ActionType.bulkDeletion);
@@ -274,14 +259,6 @@ void main() {
       expect(container.read(placedImageProvider).images, hasLength(1));
       expect(container.read(utilityProvider), hasLength(1));
       expect(container.read(lineUpProvider).lineUps, hasLength(1));
-      expect(
-        container.read(imageWidgetSizeProvider.notifier).getSize('image-all'),
-        const Offset(80, 60),
-      );
-      expect(
-        container.read(textWidgetHeightProvider.notifier).getOffset('text-all'),
-        const Offset(120, 44),
-      );
       expect(container.read(actionProvider), isEmpty);
     });
 

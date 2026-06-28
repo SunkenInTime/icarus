@@ -96,7 +96,6 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
             child: IgnorePointer(
               child: ImageWidget(
                 isFeedback: true,
-                link: widget.placedImage.link,
                 aspectRatio: widget.placedImage.aspectRatio,
                 scale: localScale!,
                 fileExtension: widget.placedImage.fileExtension,
@@ -130,7 +129,6 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
               child: ImageWidget(
                 fileExtension: widget.placedImage.fileExtension,
                 aspectRatio: widget.placedImage.aspectRatio,
-                link: widget.placedImage.link,
                 scale: localScale!,
                 id: widget.placedImage.id,
                 tagColorValue: widget.placedImage.tagColorValue,

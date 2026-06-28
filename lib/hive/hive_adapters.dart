@@ -5,6 +5,7 @@ import 'dart:ui' show Offset;
 
 import 'package:flutter/material.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -18,8 +19,8 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 
 @GenerateAdapters([
   AdapterSpec<StrategyData>(),
@@ -43,6 +44,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
   AdapterSpec<LineUpGroup>(),
   AdapterSpec<LineUpItem>(),
   AdapterSpec<SimpleImageData>(),
+  AdapterSpec<CloudMediaJobState>(),
   AdapterSpec<AgentState>(),
   AdapterSpec<TraversalSpeedProfile>(),
   AdapterSpec<MapThemePalette>(),

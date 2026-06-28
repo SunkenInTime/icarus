@@ -15,10 +15,13 @@ import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
+import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 bool _adaptersRegistered = false;
@@ -53,7 +56,7 @@ class _FakeGuardStrategyProvider extends StrategyProvider {
   @override
   Future<void> forceSaveNow(String id) async {
     forceSaveCalls++;
-    state = state.copyWith(isSaved: true);
+    ref.read(strategySaveStateProvider.notifier).markPersisted();
   }
 
   @override
@@ -133,22 +136,21 @@ void main() {
           .setDraft('text-1', 'autosaved draft');
 
       final notifier = container.read(strategyProvider.notifier);
-      notifier
-        ..setFromState(
-          StrategyState(
-            isSaved: false,
-            stratName: strategy.name,
-            id: strategy.id,
-            storageDirectory: null,
-            activePageId: strategy.pages.single.id,
-          ),
-        )
-        ..activePageID = strategy.pages.single.id;
+      notifier.setFromState(
+        StrategyState(
+          strategyId: strategy.id,
+          strategyName: strategy.name,
+          source: StrategySource.local,
+          storageDirectory: null,
+          isOpen: true,
+        ),
+      );
+      container.read(strategySaveStateProvider.notifier).markDirty();
 
       final result = await notifier.flushPendingAutosaveBeforeExit();
 
       expect(result, isTrue);
-      expect(container.read(strategyProvider).isSaved, isTrue);
+      expect(container.read(strategySaveStateProvider).isDirty, isFalse);
       final saved =
           Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategy.id);
       expect(saved, isNotNull);
@@ -171,22 +173,21 @@ void main() {
           .setDraft('text-1', 'unsaved draft');
 
       final notifier = container.read(strategyProvider.notifier);
-      notifier
-        ..setFromState(
-          StrategyState(
-            isSaved: false,
-            stratName: strategy.name,
-            id: strategy.id,
-            storageDirectory: null,
-            activePageId: strategy.pages.single.id,
-          ),
-        )
-        ..activePageID = strategy.pages.single.id;
+      notifier.setFromState(
+        StrategyState(
+          strategyId: strategy.id,
+          strategyName: strategy.name,
+          source: StrategySource.local,
+          storageDirectory: null,
+          isOpen: true,
+        ),
+      );
+      container.read(strategySaveStateProvider.notifier).markDirty();
 
       final result = await notifier.flushPendingAutosaveBeforeExit();
 
       expect(result, isFalse);
-      expect(container.read(strategyProvider).isSaved, isFalse);
+      expect(container.read(strategySaveStateProvider).isDirty, isTrue);
       final saved =
           Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategy.id);
       expect(saved, isNotNull);
@@ -209,17 +210,15 @@ void main() {
           .setDraft('text-1', 'draft should not save');
 
       final notifier = container.read(strategyProvider.notifier);
-      notifier
-        ..setFromState(
-          StrategyState(
-            isSaved: true,
-            stratName: strategy.name,
-            id: strategy.id,
-            storageDirectory: null,
-            activePageId: strategy.pages.single.id,
-          ),
-        )
-        ..activePageID = strategy.pages.single.id;
+      notifier.setFromState(
+        StrategyState(
+          strategyId: strategy.id,
+          strategyName: strategy.name,
+          source: StrategySource.local,
+          storageDirectory: null,
+          isOpen: true,
+        ),
+      );
 
       final result = await notifier.flushPendingAutosaveBeforeExit();
 
@@ -245,18 +244,19 @@ void main() {
         overrides: [
           strategyProvider.overrideWith(
             () => _ThrowingSaveStrategyProvider(
-              StrategyState(
-                isSaved: false,
-                stratName: 'Strategy 4',
-                id: 'strategy-4',
+              const StrategyState(
+                strategyId: 'strategy-4',
+                strategyName: 'Strategy 4',
+                source: StrategySource.local,
                 storageDirectory: null,
-                activePageId: 'page-1',
+                isOpen: true,
               ),
             ),
           ),
         ],
       );
       addTearDown(container.dispose);
+      container.read(strategySaveStateProvider.notifier).markDirty();
 
       await expectLater(
         container
@@ -301,12 +301,12 @@ void main() {
         'dirty autosave-enabled exit saves and continues without dialog',
         (tester) async {
       notifier = _FakeGuardStrategyProvider(
-        initialState: StrategyState(
-          isSaved: false,
-          stratName: 'Strategy A',
-          id: 'strategy-a',
+        initialState: const StrategyState(
+          strategyId: 'strategy-a',
+          strategyName: 'Strategy A',
+          source: StrategySource.local,
           storageDirectory: null,
-          activePageId: 'page-1',
+          isOpen: true,
         ),
         flushResult: true,
       );
@@ -316,6 +316,7 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
+      container.read(strategySaveStateProvider.notifier).markDirty();
       await pumpHarness(tester);
 
       var continueCalls = 0;
@@ -339,12 +340,12 @@ void main() {
         'dirty autosave-disabled exit shows dialog and save still works',
         (tester) async {
       notifier = _FakeGuardStrategyProvider(
-        initialState: StrategyState(
-          isSaved: false,
-          stratName: 'Strategy B',
-          id: 'strategy-b',
+        initialState: const StrategyState(
+          strategyId: 'strategy-b',
+          strategyName: 'Strategy B',
+          source: StrategySource.local,
           storageDirectory: null,
-          activePageId: 'page-1',
+          isOpen: true,
         ),
         flushResult: false,
       );
@@ -354,6 +355,7 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
+      container.read(strategySaveStateProvider.notifier).markDirty();
       await pumpHarness(tester);
 
       var continueCalls = 0;
@@ -382,12 +384,12 @@ void main() {
         'dirty autosave-disabled exit keeps dont-save branch behavior intact',
         (tester) async {
       notifier = _FakeGuardStrategyProvider(
-        initialState: StrategyState(
-          isSaved: false,
-          stratName: 'Strategy C',
-          id: 'strategy-c',
+        initialState: const StrategyState(
+          strategyId: 'strategy-c',
+          strategyName: 'Strategy C',
+          source: StrategySource.local,
           storageDirectory: null,
-          activePageId: 'page-1',
+          isOpen: true,
         ),
         flushResult: false,
       );
@@ -397,6 +399,7 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
+      container.read(strategySaveStateProvider.notifier).markDirty();
       await pumpHarness(tester);
 
       var continueCalls = 0;
@@ -424,12 +427,12 @@ void main() {
     testWidgets('autosave flush failure reports error and blocks exit',
         (tester) async {
       notifier = _FakeGuardStrategyProvider(
-        initialState: StrategyState(
-          isSaved: false,
-          stratName: 'Strategy D',
-          id: 'strategy-d',
+        initialState: const StrategyState(
+          strategyId: 'strategy-d',
+          strategyName: 'Strategy D',
+          source: StrategySource.local,
           storageDirectory: null,
-          activePageId: 'page-1',
+          isOpen: true,
         ),
         flushResult: true,
         flushError: StateError('boom'),
@@ -440,6 +443,7 @@ void main() {
         ],
       );
       addTearDown(container.dispose);
+      container.read(strategySaveStateProvider.notifier).markDirty();
       await pumpHarness(tester);
 
       var continueCalls = 0;

@@ -45,39 +45,52 @@ class YoutubeView extends StatefulWidget {
 
 class _YoutubeViewState extends State<YoutubeView>
     with AutomaticKeepAliveClientMixin {
+  late final Future<void> _webViewWarmupFuture;
+
   @override
   bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    _webViewWarmupFuture = warmUpWebViewEnvironment();
+  }
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
 
-    if (!isWebViewInitialized) {
-      // showShadDialog<void>(
-      //   context: context,
-      //   builder: (context) {
-      //     return const WebViewDialog();
-      //   },
-      // );
-      return const WebViewDialog();
-    }
-    return Stack(
-      children: [
-        const Align(
-          alignment: Alignment.center,
-          child: CircularProgressIndicator(),
-        ),
-        Positioned.fill(
-          child: InAppWebView(
-            webViewEnvironment: webViewEnvironment,
-            initialSettings:
-                InAppWebViewSettings(allowBackgroundAudioPlaying: false),
-            initialUrlRequest: URLRequest(
-                url: WebUri(
-                    "https://embed.icarus-strats.xyz/?v=${YoutubeHandler.extractYoutubeIdWithTimestamp(widget.youtubeLink)}")),
-          ),
-        ),
-      ],
+    return FutureBuilder<void>(
+      future: _webViewWarmupFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done &&
+            !isWebViewWarmupComplete) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (!isWebViewInitialized) {
+          return const WebViewDialog();
+        }
+
+        return Stack(
+          children: [
+            const Align(
+              alignment: Alignment.center,
+              child: CircularProgressIndicator(),
+            ),
+            Positioned.fill(
+              child: InAppWebView(
+                webViewEnvironment: webViewEnvironment,
+                initialSettings:
+                    InAppWebViewSettings(allowBackgroundAudioPlaying: false),
+                initialUrlRequest: URLRequest(
+                    url: WebUri(
+                        "https://embed.icarus-strats.xyz/?v=${YoutubeHandler.extractYoutubeIdWithTimestamp(widget.youtubeLink)}")),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

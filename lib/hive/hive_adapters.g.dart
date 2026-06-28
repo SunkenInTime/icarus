@@ -330,21 +330,17 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       fileExtension: fields[8] as String?,
       sizeVersion: (fields[10] as num?)?.toInt(),
       tagColorValue: (fields[9] as num?)?.toInt(),
-    )
-      ..link = fields[3] as String
-      ..isDeleted = fields[5] as bool;
+    )..isDeleted = fields[5] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedImage obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(8)
       ..writeByte(1)
       ..write(obj.aspectRatio)
       ..writeByte(2)
       ..write(obj.scale)
-      ..writeByte(3)
-      ..write(obj.link)
       ..writeByte(4)
       ..write(obj.id)
       ..writeByte(5)
@@ -1597,6 +1593,47 @@ class LineUpItemAdapter extends TypeAdapter<LineUpItem> {
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is LineUpItemAdapter &&
+          runtimeType == other.runtimeType &&
+          typeId == other.typeId;
+}
+
+class CloudMediaJobStateAdapter extends TypeAdapter<CloudMediaJobState> {
+  @override
+  final typeId = 35;
+
+  @override
+  CloudMediaJobState read(BinaryReader reader) {
+    switch (reader.readByte()) {
+      case 0:
+        return CloudMediaJobState.pendingUpload;
+      case 1:
+        return CloudMediaJobState.pendingAttach;
+      case 2:
+        return CloudMediaJobState.failed;
+      default:
+        return CloudMediaJobState.pendingUpload;
+    }
+  }
+
+  @override
+  void write(BinaryWriter writer, CloudMediaJobState obj) {
+    switch (obj) {
+      case CloudMediaJobState.pendingUpload:
+        writer.writeByte(0);
+      case CloudMediaJobState.pendingAttach:
+        writer.writeByte(1);
+      case CloudMediaJobState.failed:
+        writer.writeByte(2);
+    }
+  }
+
+  @override
+  int get hashCode => typeId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CloudMediaJobStateAdapter &&
           runtimeType == other.runtimeType &&
           typeId == other.typeId;
 }

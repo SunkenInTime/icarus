@@ -163,6 +163,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                         onTap: () {
                           setState(() {
                             _selectedColor = color;
+                            _customColor = null;
                           });
                           // ref.read(penProvider.notifier).setColor(index);
                         },

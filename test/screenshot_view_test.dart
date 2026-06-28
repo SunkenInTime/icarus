@@ -16,6 +16,8 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/pen_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
@@ -149,7 +151,7 @@ class _NoopScreenshotProvider extends ScreenshotProvider {
 
 class _NoopLineUpProvider extends LineUpProvider {
   @override
-  LineUpState build() => LineUpState(lineUps: const []);
+  LineUpState build() => LineUpState(groups: const []);
 
   @override
   void fromHive(covariant List groups) {}
@@ -170,12 +172,12 @@ void main() {
     bool showUltOrbs = false,
     String? pageName,
   }) {
-    final strategyState = StrategyState(
-      isSaved: true,
-      stratName: 'test strategy',
-      id: 'strategy-id',
+    const strategyState = StrategyState(
+      strategyId: 'strategy-id',
+      strategyName: 'test strategy',
+      source: StrategySource.local,
       storageDirectory: null,
-      activePageId: 'page-1',
+      isOpen: true,
     );
 
     return ProviderScope(
@@ -240,9 +242,7 @@ void main() {
 
   Finder findSemanticsLabel(String label) {
     return find.byWidgetPredicate(
-      (widget) =>
-          widget is Semantics &&
-          widget.properties.label == label,
+      (widget) => widget is Semantics && widget.properties.label == label,
     );
   }
 

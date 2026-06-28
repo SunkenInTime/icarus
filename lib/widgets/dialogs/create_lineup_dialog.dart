@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/services/clipboard_service.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
 import 'package:path/path.dart' as path;
@@ -30,6 +33,26 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   final TextEditingController _youtubeLinkController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   final List<SimpleImageData> _imagePaths = [];
+
+  Future<void> _enqueueLineupMediaJobs({
+    required List<SimpleImageData> images,
+  }) async {
+    final strategyState = ref.read(strategyProvider);
+    if (strategyState.source != StrategySource.cloud ||
+        strategyState.strategyId == null) {
+      return;
+    }
+
+    for (final image in images) {
+      await ref
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .enqueueJobForLocalFile(
+            strategyPublicId: strategyState.strategyId!,
+            assetPublicId: image.id,
+            fileExtension: image.fileExtension,
+          );
+    }
+  }
 
   bool get _isEditing =>
       widget.lineUpGroupId != null && widget.lineUpItemId != null;
@@ -68,18 +91,18 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       );
       if (existingItem != null) {
         ref.read(actionProvider.notifier).performTransaction(
-              groups: const [ActionGroup.lineUp],
-              mutation: () {
-                notifier.updateItem(
-                  groupId: widget.lineUpGroupId!,
-                  item: existingItem.copyWith(
-                    youtubeLink: _youtubeLinkController.text,
-                    notes: _notesController.text,
-                    images: _imagePaths,
-                  ),
-                );
-              },
+          groups: const [ActionGroup.lineUp],
+          mutation: () {
+            notifier.updateItem(
+              groupId: widget.lineUpGroupId!,
+              item: existingItem.copyWith(
+                youtubeLink: _youtubeLinkController.text,
+                notes: _notesController.text,
+                images: _imagePaths,
+              ),
             );
+          },
+        );
       }
     } else {
       final currentAbility = lineUpState.currentAbility;
@@ -97,18 +120,18 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
 
       if (lineUpState.currentGroupId != null) {
         ref.read(actionProvider.notifier).performTransaction(
-              groups: const [ActionGroup.lineUp],
-              mutation: () {
-                notifier.addItemToGroup(
-                  groupId: lineUpState.currentGroupId!,
-                  item: item.copyWith(
-                    ability: item.ability.copyWith(
-                      lineUpID: lineUpState.currentGroupId,
-                    ),
-                  ),
-                );
-              },
+          groups: const [ActionGroup.lineUp],
+          mutation: () {
+            notifier.addItemToGroup(
+              groupId: lineUpState.currentGroupId!,
+              item: item.copyWith(
+                ability: item.ability.copyWith(
+                  lineUpID: lineUpState.currentGroupId,
+                ),
+              ),
             );
+          },
+        );
       } else {
         final currentAgent = lineUpState.currentAgent;
         if (currentAgent == null) {
@@ -129,6 +152,8 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         );
       }
     }
+
+    await _enqueueLineupMediaJobs(images: _imagePaths);
 
     ref
         .read(interactionStateProvider.notifier)
@@ -175,13 +200,17 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
               final fileExtension = path.extension(imageFile.path);
               final imageBytes = await imageFile.readAsBytes();
               final id = const Uuid().v4();
+              final strategyId = ref.read(strategyProvider).strategyId;
 
               final imageData =
                   SimpleImageData(id: id, fileExtension: fileExtension);
 
-              await ref
-                  .read(placedImageProvider.notifier)
-                  .saveSecureImage(imageBytes, id, fileExtension);
+              await ref.read(placedImageProvider.notifier).saveSecureImage(
+                    imageBytes,
+                    id,
+                    fileExtension,
+                    strategyId: strategyId,
+                  );
 
               setState(() {
                 _imagePaths.add(imageData);
@@ -210,12 +239,16 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
               }
 
               final id = const Uuid().v4();
+              final strategyId = ref.read(strategyProvider).strategyId;
               final imageData =
                   SimpleImageData(id: id, fileExtension: fileExtension);
 
-              await ref
-                  .read(placedImageProvider.notifier)
-                  .saveSecureImage(bytes, id, fileExtension);
+              await ref.read(placedImageProvider.notifier).saveSecureImage(
+                    bytes,
+                    id,
+                    fileExtension,
+                    strategyId: strategyId,
+                  );
 
               setState(() {
                 _imagePaths.add(imageData);

@@ -9,7 +9,9 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
@@ -58,7 +60,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final activeStrategyName = ref.watch(strategyProvider).stratName;
+    final activeStrategyName = ref.watch(strategyProvider).strategyName;
     final strategySettings = ref.watch(strategySettingsProvider);
     final mapState = ref.watch(mapProvider);
     final appPreferences = ref.watch(appPreferencesProvider);
@@ -1522,13 +1524,17 @@ class _PageMarkerSizesSyncBannerState
   @override
   Widget build(BuildContext context) {
     final stratState = ref.watch(strategyProvider);
+    final activePageId = ref.watch(
+        strategyPageSessionProvider.select((state) => state.activePageId));
     final liveSettings = ref.watch(strategySettingsProvider);
-    final strategy =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(stratState.id);
-    final showCta = stratState.stratName != null &&
+    final strategyId = stratState.strategyId;
+    final strategy = strategyId == null
+        ? null
+        : Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
+    final showCta = stratState.strategyName != null &&
         markerSizesDifferAcrossPages(
           strategy: strategy,
-          activePageId: stratState.activePageId,
+          activePageId: activePageId,
           liveSettings: liveSettings,
         );
 

@@ -6,8 +6,9 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/migrations/lineup_group_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/strategy/strategy_migrator.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 
 StrategyData _buildStrategyWithGroup({
   required String? agentLineUpId,
@@ -63,13 +64,14 @@ StrategyData _buildStrategyWithGroup({
 
 void main() {
   group('LineUpGroupMigration', () {
-    test('does not rewrite strategy when lineup ids are already normalized', () {
+    test('does not rewrite strategy when lineup ids are already normalized',
+        () {
       final strategy = _buildStrategyWithGroup(
         agentLineUpId: 'group-1',
         abilityLineUpId: 'group-1',
       );
 
-      final migrated = StrategyProvider.migrateLineUpGroups(strategy);
+      final migrated = StrategyMigrator.migrateLineUpGroups(strategy);
 
       expect(identical(migrated, strategy), isTrue);
     });
@@ -80,7 +82,7 @@ void main() {
         abilityLineUpId: null,
       );
 
-      final migrated = StrategyProvider.migrateLineUpGroups(strategy);
+      final migrated = StrategyMigrator.migrateLineUpGroups(strategy);
       final group = migrated.pages.single.lineUpGroups.single;
 
       expect(identical(migrated, strategy), isFalse);

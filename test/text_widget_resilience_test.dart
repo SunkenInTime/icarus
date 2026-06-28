@@ -13,10 +13,13 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -266,17 +269,23 @@ void main() {
     container.read(textProvider.notifier).fromHive(page.textData);
 
     final strategyNotifier = container.read(strategyProvider.notifier);
-    strategyNotifier
-      ..setFromState(
-        StrategyState(
-          isSaved: false,
-          stratName: strategy.name,
-          id: strategy.id,
-          storageDirectory: null,
-          activePageId: page.id,
-        ),
-      )
-      ..activePageID = page.id;
+    strategyNotifier.setFromState(
+      StrategyState(
+        strategyId: strategy.id,
+        strategyName: strategy.name,
+        source: StrategySource.local,
+        storageDirectory: null,
+        isOpen: true,
+      ),
+    );
+    container.read(strategyPageSessionProvider.notifier).setStateForTest(
+          const StrategyPageSessionState(
+            activePageId: 'page-1',
+            availablePageIds: ['page-1'],
+            transitionState: PageTransitionState.idle,
+            isApplyingPage: false,
+          ),
+        );
 
     await tester.pumpWidget(buildTextHarness(container));
     await tester.enterText(find.byType(TextField), 'before edited');
@@ -302,6 +311,15 @@ void main() {
     expect(container.read(textDraftProvider), {'text-1': 'before edited'});
     expect(savedStrategy, isNotNull);
     expect(savedStrategy!.pages.single.textData.single.text, 'before edited');
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: SizedBox.shrink()),
+      ),
+    );
+    await tester.pump();
+    container.read(strategyProvider.notifier).cancelPendingSave();
   });
 
   testWidgets('feedback widget matches editable widget size', (tester) async {
@@ -313,5 +331,105 @@ void main() {
 
     expect(feedbackSize.width, editableSize.width);
     expect(feedbackSize.height, editableSize.height);
+  });
+
+  testWidgets('text widget starts single-line and grows instead of scrolling',
+      (tester) async {
+    final container = createContainer();
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(
+        id: 'text-1',
+        position: const Offset(10, 20),
+        size: 80,
+        fontSize: 16,
+        sizeVersion: worldSizedMediaVersion,
+      )..text = 'ew',
+    ]);
+
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.pump();
+
+    final initialSize = tester.getSize(find.byType(TextWidget));
+    expect(initialSize.height, lessThan(64));
+
+    await tester.enterText(
+      find.byType(TextField),
+      'this text is long enough to wrap across several lines in the editor',
+    );
+    await tester.pump();
+
+    final wrappedSize = tester.getSize(find.byType(TextWidget));
+    expect(wrappedSize.height, greaterThan(initialSize.height));
+
+    final scrollableFinder = find.descendant(
+      of: find.byType(TextField),
+      matching: find.byType(Scrollable),
+    );
+    final scrollableState =
+        tester.state<ScrollableState>(scrollableFinder.first);
+    final scrollable = tester.widget<Scrollable>(scrollableFinder.first);
+    expect(scrollable.axisDirection, AxisDirection.down);
+    expect(
+      scrollableState.position.maxScrollExtent,
+      0,
+      reason: 'wrappedSize=$wrappedSize',
+    );
+  });
+
+  testWidgets('side switch mirrors text with deterministic widget bounds',
+      (tester) async {
+    final container = createContainer();
+    final placedText = PlacedText(
+      id: 'text-1',
+      position: const Offset(10, 20),
+      size: 220,
+      fontSize: 16,
+      sizeVersion: worldSizedMediaVersion,
+    )..text = 'same text\nsecond line';
+
+    container.read(textProvider.notifier).fromHive([placedText]);
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.pump();
+
+    final renderedSize = tester.getSize(find.byType(TextWidget));
+
+    container.read(textProvider.notifier).switchSides();
+
+    expect(
+      container.read(textProvider).single.position,
+      getFlippedPosition(
+        position: placedText.position,
+        scaledSize: Offset(renderedSize.width, renderedSize.height),
+      ),
+    );
+  });
+
+  testWidgets(
+      'side switch uses deterministic rendered text height for vertical placement',
+      (tester) async {
+    final container = createContainer();
+    final placedText = PlacedText(
+      id: 'text-1',
+      position: const Offset(10, 20),
+      size: 220,
+      fontSize: 16,
+      sizeVersion: worldSizedMediaVersion,
+    )..text = 'one line';
+
+    container.read(textProvider.notifier).fromHive([placedText]);
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.pump();
+
+    final renderedSize = tester.getSize(find.byType(TextWidget));
+
+    container.read(textProvider.notifier).switchSides();
+
+    expect(
+      container.read(textProvider).single.position,
+      getFlippedPosition(
+        position: placedText.position,
+        scaledSize: Offset(renderedSize.width, renderedSize.height),
+      ),
+    );
   });
 }

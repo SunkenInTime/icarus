@@ -8,6 +8,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 
@@ -52,7 +53,10 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
   }
 
   Future<void> _loadDirectory() async {
-    final strategyID = ref.read(strategyProvider).id;
+    final strategyID = ref.read(strategyProvider).strategyId;
+    if (strategyID == null) {
+      return;
+    }
     final dir = await PlacedImageProvider.getImageFolder(strategyID);
     if (mounted) {
       setState(() {
@@ -71,7 +75,6 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    // log(widget.youtubeLink ?? 'No youtube link');
     if (imageFolderPath == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -111,19 +114,29 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                 final fullPath = path.join(
                     imageFolderPath!.path, image.id + image.fileExtension);
                 final file = File(fullPath);
+                final snapshot =
+                    ref.watch(remoteStrategySnapshotProvider).valueOrNull;
+                final remoteUrl = snapshot?.assetsById[image.id]?.url;
 
-                if (!file.existsSync()) {
+                if (!file.existsSync() &&
+                    (remoteUrl == null || remoteUrl.isEmpty)) {
                   return const Center(
-                      child: Icon(Icons.broken_image, color: Colors.white));
+                    child: Icon(Icons.broken_image, color: Colors.white),
+                  );
                 }
 
                 return InteractiveViewer(
                   minScale: 0.5,
                   maxScale: 4.0,
-                  child: Image.file(
-                    file,
-                    fit: BoxFit.contain,
-                  ),
+                  child: file.existsSync()
+                      ? Image.file(
+                          file,
+                          fit: BoxFit.contain,
+                        )
+                      : Image.network(
+                          remoteUrl!,
+                          fit: BoxFit.contain,
+                        ),
                 );
               },
             ),

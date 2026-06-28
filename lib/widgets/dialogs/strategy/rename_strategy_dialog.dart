@@ -2,17 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class RenameStrategyDialog extends ConsumerStatefulWidget {
   final String strategyId;
   final String currentName;
+  final StrategySource source;
 
   const RenameStrategyDialog({
     super.key,
     required this.strategyId,
     required this.currentName,
+    required this.source,
   });
 
   @override
@@ -52,7 +55,11 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
             if (strategyName.isNotEmpty) {
               await ref
                   .read(strategyProvider.notifier)
-                  .renameStrategy(widget.strategyId, strategyName);
+                  .renameStrategy(
+                    widget.strategyId,
+                    strategyName,
+                    source: widget.source,
+                  );
               if (!context.mounted) return;
               Navigator.of(context).pop(true); // Close the dialog with success
             } else {
@@ -79,7 +86,11 @@ class _RenameStrategyDialogState extends ConsumerState<RenameStrategyDialog> {
               if (value.isNotEmpty) {
                 await ref
                     .read(strategyProvider.notifier)
-                    .renameStrategy(widget.strategyId, value);
+                    .renameStrategy(
+                      widget.strategyId,
+                      value,
+                      source: widget.source,
+                    );
                 if (!context.mounted) return;
                 Navigator.of(context)
                     .pop(true); // Close the dialog with success
