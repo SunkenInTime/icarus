@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/settings.dart';
@@ -83,7 +84,33 @@ void main() {
         1001: 'asset|assets/agents/duelist.webp',
         1002: 'asset|assets/agents/initiator.webp',
         1003: 'asset|assets/agents/sentinel.webp',
+        for (final entry in AgentData.agents.entries)
+          2000 + entry.key.index: 'asset|${entry.value.iconPath}',
       },
+    );
+  });
+
+  test('folder icon registry exposes filtered picker groups', () {
+    expect(
+      FolderIconRegistry.pickerEntriesFor(FolderIconCategory.symbol)
+          .map((entry) => entry.category)
+          .toSet(),
+      {FolderIconCategory.symbol},
+    );
+    expect(
+      FolderIconRegistry.pickerEntriesFor(FolderIconCategory.role)
+          .map((entry) => entry.id),
+      containsAll([
+        FolderIconRegistry.controllerRoleId,
+        FolderIconRegistry.duelistRoleId,
+        FolderIconRegistry.initiatorRoleId,
+        FolderIconRegistry.sentinelRoleId,
+      ]),
+    );
+    expect(
+      FolderIconRegistry.pickerEntriesFor(FolderIconCategory.agent)
+          .map((entry) => entry.label),
+      containsAll(AgentData.agents.values.map((agent) => agent.name)),
     );
   });
 
