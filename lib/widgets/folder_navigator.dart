@@ -38,12 +38,15 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   bool _hasPromptedUpdateDialog = false;
   WindowsDesktopUpdateController? _desktopUpdaterController;
   final GlobalKey _importExportButtonKey = GlobalKey();
+  final ShadContextMenuController _backgroundMenuController =
+      ShadContextMenuController();
   final ShadPopoverController _importExportPopoverController =
       ShadPopoverController();
 
   @override
   void dispose() {
     _importExportPopoverController.dispose();
+    _backgroundMenuController.dispose();
     _desktopUpdaterController?.dispose();
     super.dispose();
   }
@@ -269,6 +272,15 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       }
     }
 
+    Future<void> showCreateFolderDialog() async {
+      await showDialog<String>(
+        context: context,
+        builder: (context) {
+          return const FolderEditDialog();
+        },
+      );
+    }
+
     void showCreateDialog() async {
       final String? strategyId = await showDialog<String>(
         context: context,
@@ -358,15 +370,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                   ),
                   ShadButton.secondary(
                     leading: const Icon(LucideIcons.folderPlus),
+                    onPressed: showCreateFolderDialog,
                     child: const Text('Add Folder'),
-                    onPressed: () async {
-                      await showDialog<String>(
-                        context: context,
-                        builder: (context) {
-                          return const FolderEditDialog();
-                        },
-                      );
-                    },
                   ),
                   ShadButton(
                     onPressed: showCreateDialog,
@@ -378,7 +383,22 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
             ],
             // ... your existing actions
           ),
-          body: FolderContent(folder: currentFolder),
+          body: ShadContextMenuRegion(
+            controller: _backgroundMenuController,
+            items: [
+              ShadContextMenuItem(
+                leading: const Icon(Icons.create_new_folder_outlined),
+                onPressed: showCreateFolderDialog,
+                child: const Text('Create Folder'),
+              ),
+              ShadContextMenuItem(
+                leading: const Icon(Icons.note_add_outlined),
+                onPressed: showCreateDialog,
+                child: const Text('Create Strategy'),
+              ),
+            ],
+            child: FolderContent(folder: currentFolder),
+          ),
         ),
         if (_desktopUpdaterController != null)
           DesktopUpdateDialogListener(

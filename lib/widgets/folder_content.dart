@@ -15,6 +15,21 @@ import 'package:icarus/widgets/folder_pill.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 // ... your existing imports
 
+@visibleForTesting
+bool strategyBelongsToVisibleFolder({
+  required StrategyData strategy,
+  required String? currentFolderId,
+  required Set<String> existingFolderIds,
+}) {
+  if (currentFolderId != null) {
+    return strategy.folderID == currentFolderId;
+  }
+
+  final strategyFolderId = strategy.folderID;
+  return strategyFolderId == null ||
+      !existingFolderIds.contains(strategyFolderId);
+}
+
 class FolderContent extends ConsumerWidget {
   FolderContent({super.key, this.folder});
 
@@ -124,9 +139,13 @@ class FolderContent extends ConsumerWidget {
                     return ValueListenableBuilder<Box<Folder>>(
                       valueListenable: foldersBoxListenable,
                       builder: (context, folderBox, _) {
-                        final folders = folderBox.values.toList();
+                        final allFolders = folderBox.values.toList();
+                        final existingFolderIds =
+                            allFolders.map((folder) => folder.id).toSet();
+                        final folders = allFolders.toList();
 
-                        final strategies = strategyBox.values.toList();
+                        final allStrategies = strategyBox.values.toList();
+                        final strategies = allStrategies.toList();
 
                         final search = ref
                             .watch(strategySearchQueryProvider)
@@ -134,7 +153,12 @@ class FolderContent extends ConsumerWidget {
                             .toLowerCase();
                         // Filter strategies and folders by the current folder
                         strategies.removeWhere(
-                            (strategy) => strategy.folderID != folder?.id);
+                          (strategy) => !strategyBelongsToVisibleFolder(
+                            strategy: strategy,
+                            currentFolderId: folder?.id,
+                            existingFolderIds: existingFolderIds,
+                          ),
+                        );
                         folders.removeWhere(
                             (listFolder) => listFolder.parentID != folder?.id);
 
@@ -205,7 +229,7 @@ class FolderContent extends ConsumerWidget {
 
                             return CustomScrollView(
                               slivers: [
-                                // Folder pills section (wrap row)
+                                // Folder cards section (wrap row)
                                 if (folders.isNotEmpty)
                                   SliverToBoxAdapter(
                                     child: Padding(
@@ -215,7 +239,20 @@ class FolderContent extends ConsumerWidget {
                                         spacing: 10,
                                         runSpacing: 10,
                                         children: folders
-                                            .map((f) => FolderPill(folder: f))
+                                            .map(
+                                              (f) => FolderPill(
+                                                folder: f,
+                                                strategyCount: allStrategies
+                                                    .where((strategy) =>
+                                                        strategy.folderID ==
+                                                        f.id)
+                                                    .length,
+                                                folderCount: allFolders
+                                                    .where((folder) =>
+                                                        folder.parentID == f.id)
+                                                    .length,
+                                              ),
+                                            )
                                             .toList(),
                                       ),
                                     ),

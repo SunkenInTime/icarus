@@ -116,10 +116,11 @@ components:
     textColor: "{colors.tactical-foreground}"
     rounded: "{rounded.panel}"
     width: "345px"
-  folder-pill:
+  folder-card:
+    backgroundColor: "{colors.tactical-card}"
     textColor: "{colors.tactical-foreground}"
-    rounded: "{rounded.pill}"
-    height: "44px"
+    rounded: "{rounded.panel}"
+    size: "232px x 64px"
 ---
 
 # Design System: Icarus
@@ -197,11 +198,11 @@ The palette is a restrained tactical dark system: near-black workspace surfaces,
 
 ## 4. Elevation
 
-Icarus is flat by default and uses tonal layering first: background, panel, raised control, border, and selected state. Shadows are reserved for foregrounded content like strategy tile detail panels, drag previews, folder pills, delete menus, and popover-like controls. Depth should clarify stacking or interaction, never decorate an otherwise flat surface.
+Icarus is flat by default and uses tonal layering first: background, panel, raised control, border, and selected state. Shadows are reserved for foregrounded content like strategy tile detail panels, drag previews, folder drag cards, delete menus, and popover-like controls. Depth should clarify stacking or interaction, never decorate an otherwise flat surface.
 
 ### Shadow Vocabulary
 - **Card Foreground Backdrop** (`0 4px 12px rgba(0,0,0,0.54)`): Used on card foreground details and select controls to separate them from dark textured surroundings.
-- **Folder Pill Glow** (`0 2px 4-8px current folder color at 30% opacity`): Used only on draggable folder pills as hover and drag affordance.
+- **Folder Drag Lift** (`0 4px 12px rgba(0,0,0,0.54)`): Used only on draggable folder card previews to separate them from the dotted canvas.
 - **Delete Menu Lift** (`0 8px 24px rgba(0,0,0,0.28)`): Used on floating destructive-control panels.
 
 ### Named Rules
@@ -221,10 +222,10 @@ Buttons are compact, icon-led, and stateful. Primary buttons use Command Violet 
 
 ### Chips
 
-Chips are functional state markers, not decoration. Folder pills may be colorful because folder color is user-authored organization; state badges use tinted violet surfaces and small uppercase type.
+Chips are functional state markers, not decoration. Folder cards may show user-authored color, but color lives inside the icon swatch rather than flooding the entire surface; state badges use tinted violet surfaces and small uppercase type.
 
-- **Style:** Folder pills are 44px tall, 22px radius, white text, a subtle border, and a small color-matched shadow.
-- **State:** Hover scales folder pills to 1.03 and brightens the border. Drop-target state uses a clear white border.
+- **Style:** Folder cards are 232px wide, 64px tall, 12px radius, zinc surface, 1px zinc border, a 40px tinted icon swatch, title text, muted metadata, and a compact menu button.
+- **State:** Hover changes the border to Command Violet without scaling. Drop-target state uses a 2px Command Violet border and faint violet surface tint.
 
 ### Cards / Containers
 
