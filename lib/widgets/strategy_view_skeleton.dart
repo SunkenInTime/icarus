@@ -279,13 +279,11 @@ class _MapCanvasSkeleton extends StatelessWidget {
       builder: (context, constraints) {
         final height = constraints.maxHeight;
         final worldWidth = height * (16 / 9);
-        final playAreaSize = Size(worldWidth, height);
-        final coordinateSystem = CoordinateSystem(playAreaSize: playAreaSize);
         final viewportWidth =
             (constraints.maxWidth - Settings.sideBarReservedWidth)
                 .clamp(0.0, constraints.maxWidth)
                 .toDouble();
-        final mapWidth = height * coordinateSystem.mapAspectRatio;
+        final mapWidth = height * CoordinateSystem.defaultMapAspectRatio;
         final mapLeft = (worldWidth - mapWidth) / 2;
         final worldLeft = (viewportWidth - worldWidth) / 2;
 
