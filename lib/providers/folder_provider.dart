@@ -4,6 +4,7 @@ import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:uuid/uuid.dart';
 
@@ -136,8 +137,9 @@ class FolderProvider extends Notifier<String?> {
     return Hive.box<Folder>(HiveBoxNames.foldersBox).get(id);
   }
 
-  void deleteFolder(String folderID) async {
+  Future<void> deleteFolder(String folderID) async {
     // state = state.where((folder) => folder.id != folderID).toList();
+    await ref.read(pinnedItemsProvider.notifier).removePin(folderID);
 
     final strategyList =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values.toList();

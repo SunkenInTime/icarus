@@ -30,6 +30,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/favorite_agents_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -989,13 +990,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    // Flutter ReorderableListView reports `newIndex` as the target index in the
-    // list *after* the removal. When dragging down, we need to decrement.
-    var targetIndex = newIndex;
-    if (targetIndex > oldIndex) targetIndex -= 1;
-
     final moved = ordered.removeAt(oldIndex);
-    ordered.insert(targetIndex, moved);
+    ordered.insert(newIndex, moved);
 
     final reindexed = [
       for (var i = 0; i < ordered.length; i++)
@@ -3564,6 +3560,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> deleteStrategy(String strategyID) async {
+    await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(strategyID);
 
     final directory = await getApplicationSupportDirectory();

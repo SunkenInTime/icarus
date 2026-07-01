@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "dart": {
+      "command": "fvm",
+      "args": [
+        "dart",
+        "mcp-server",
+        "--force-roots-fallback"
+      ]
+    }
+  }
+}

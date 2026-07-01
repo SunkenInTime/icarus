@@ -5,6 +5,7 @@ import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
@@ -13,7 +14,6 @@ import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/folder_pill.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-// ... your existing imports
 
 @visibleForTesting
 bool strategyBelongsToVisibleFolder({
@@ -142,10 +142,10 @@ class FolderContent extends ConsumerWidget {
                         final allFolders = folderBox.values.toList();
                         final existingFolderIds =
                             allFolders.map((folder) => folder.id).toSet();
-                        final folders = allFolders.toList();
+                        var folders = allFolders.toList();
 
                         final allStrategies = strategyBox.values.toList();
-                        final strategies = allStrategies.toList();
+                        var strategies = allStrategies.toList();
 
                         final search = ref
                             .watch(strategySearchQueryProvider)
@@ -194,6 +194,20 @@ class FolderContent extends ConsumerWidget {
                         );
                         folders.sort(
                             (a, b) => a.dateCreated.compareTo(b.dateCreated));
+
+                        final pinned = ref.watch(pinnedItemsProvider);
+                        if (search.isEmpty && pinned.isNotEmpty) {
+                          folders = sortPinnedItemsFirst(
+                            folders,
+                            pinned,
+                            (folder) => folder.id,
+                          );
+                          strategies = sortPinnedItemsFirst(
+                            strategies,
+                            pinned,
+                            (strategy) => strategy.id,
+                          );
+                        }
 
                         // Check if both folders and strategies are empty
                         if (folders.isEmpty && strategies.isEmpty) {

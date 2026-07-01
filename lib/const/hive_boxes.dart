@@ -4,4 +4,5 @@ class HiveBoxNames {
   static const mapThemeProfilesBox = "map_theme_profiles_box";
   static const appPreferencesBox = "app_preferences_box";
   static const favoriteAgentsBox = "favorite_agents_box";
+  static const pinnedItemsBox = "pinned_items_box";
 }
