@@ -80,6 +80,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     with WindowListener {
   bool _isClosingWindow = false;
   bool _isInitialLoadPending = false;
+  bool _hasInitialLoadCompleted = false;
 
   @override
   void initState() {
@@ -124,6 +125,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       if (loadedStrategy.id != strategyId || loadedStrategy.stratName == null) {
         throw StateError('Strategy "$strategyId" was not found.');
       }
+      _hasInitialLoadCompleted = true;
     } catch (error, stackTrace) {
       developer.log(
         'Error loading strategy: $error',
@@ -180,7 +182,8 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     final strategyState = ref.watch(strategyProvider);
     final initialStrategyId = widget.initialStrategyId;
     final showSkeleton = _isInitialLoadPending ||
-        (initialStrategyId != null &&
+        (!_hasInitialLoadCompleted &&
+            initialStrategyId != null &&
             (strategyState.stratName == null ||
                 strategyState.id != initialStrategyId));
 
