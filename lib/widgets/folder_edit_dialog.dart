@@ -8,7 +8,7 @@ import 'package:icarus/widgets/color_picker_button.dart';
 import 'package:icarus/widgets/custom_segmented_tabs.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dot_painter.dart';
-import 'package:icarus/widgets/folder_pill.dart';
+import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/icarus_color_picker_style.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -138,14 +138,20 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                         padding: const EdgeInsets.all(24.0),
                         child: Material(
                           color: Colors.transparent,
-                          child: FolderPill(
-                            folder: Folder(
-                              iconId: _selectedIconId,
-                              name: _folderNameController.text,
-                              id: "null",
-                              dateCreated: DateTime.now(),
-                              color: _selectedColor,
-                              customColor: _customColor,
+                          child: FolderCard(
+                            data: FolderCardViewData(
+                              folder: Folder(
+                                iconId: _selectedIconId,
+                                name: _folderNameController.text.isEmpty
+                                    ? "New Folder"
+                                    : _folderNameController.text,
+                                id: "null",
+                                dateCreated: DateTime.now(),
+                                color: _selectedColor,
+                                customColor: _customColor,
+                              ),
+                              strategies: const [],
+                              folderCount: 0,
                             ),
                             isDemo: true,
                           ),

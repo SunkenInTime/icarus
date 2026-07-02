@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
@@ -36,6 +37,8 @@ class _FolderPillState extends ConsumerState<FolderPill>
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
   bool _isHovered = false;
+  bool _isMenuButtonHovered = false;
+  bool _menuButtonWasOpenOnPointerDown = false;
   DropInsertionSide? _pinnedDropSide;
   final ShadContextMenuController _contextMenuController =
       ShadContextMenuController();
@@ -66,6 +69,22 @@ class _FolderPillState extends ConsumerState<FolderPill>
     super.dispose();
   }
 
+  void _closeMenus() {
+    _contextMenuController.hide();
+    _rightClickMenuController.hide();
+  }
+
+  void _handleMenuButtonPressed() {
+    if (_menuButtonWasOpenOnPointerDown) {
+      _menuButtonWasOpenOnPointerDown = false;
+      _closeMenus();
+      return;
+    }
+
+    dismissLibraryContextMenus(ref);
+    _contextMenuController.show();
+  }
+
   Color get _folderColor =>
       widget.folder.customColor ??
       Folder.folderColorMap[widget.folder.color] ??
@@ -83,18 +102,13 @@ class _FolderPillState extends ConsumerState<FolderPill>
         pinned.containsKey(item.folder.id);
   }
 
-  DropInsertionSide? _resolveInsertionSide(Offset globalOffset) {
-    final renderObject = context.findRenderObject();
-    if (renderObject is! RenderBox) return null;
-
-    final localOffset = renderObject.globalToLocal(globalOffset);
-    return localOffset.dx > renderObject.size.width / 2
-        ? DropInsertionSide.after
-        : DropInsertionSide.before;
-  }
-
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(
+      libraryContextMenuDismissalProvider,
+      (_, __) => _closeMenus(),
+    );
+
     final pinned = ref.watch(pinnedItemsProvider);
     final id = widget.folder.id;
     final isPinned = pinned.containsKey(id);
@@ -116,7 +130,11 @@ class _FolderPillState extends ConsumerState<FolderPill>
           final item = details.data;
           final nextSide =
               _isPinnedFolderReorderCandidate(item, pinned, id, isPinned)
-                  ? _resolveInsertionSide(details.offset)
+                  ? resolveDropInsertionSide(
+                      context: context,
+                      globalOffset: details.offset,
+                      current: _pinnedDropSide,
+                    )
                   : null;
           if (nextSide != _pinnedDropSide) {
             setState(() => _pinnedDropSide = nextSide);
@@ -134,7 +152,11 @@ class _FolderPillState extends ConsumerState<FolderPill>
               item.folder.id != id &&
               isPinned &&
               pinned.containsKey(item.folder.id)) {
-            final insertionSide = _resolveInsertionSide(details.offset);
+            final insertionSide = _pinnedDropSide ??
+                resolveDropInsertionSide(
+                  context: context,
+                  globalOffset: details.offset,
+                );
             if (mounted) {
               setState(() => _pinnedDropSide = null);
             }
@@ -188,6 +210,14 @@ class _FolderPillState extends ConsumerState<FolderPill>
                 child: AnimatedBuilder(
                   animation: _scaleAnimation,
                   builder: (context, child) {
+                    final dropSide = _pinnedDropSide;
+                    final slotKey = dropSide == null
+                        ? null
+                        : dropInsertionSlotKey(
+                            itemId: id,
+                            side: dropSide,
+                            pinnedOrder: pinnedIdsInManualOrder(pinned),
+                          );
                     return Transform.scale(
                       scale: isPinnedDropTarget ? 1 : _scaleAnimation.value,
                       child: Stack(
@@ -251,12 +281,13 @@ class _FolderPillState extends ConsumerState<FolderPill>
                               ],
                             ),
                           ),
-                          if (_pinnedDropSide != null)
+                          if (dropSide != null && slotKey != null)
                             Positioned.fill(
                               child: DropInsertionIndicator(
-                                side: _pinnedDropSide!,
-                                height: 24,
-                                horizontalOutset: 9,
+                                key: ValueKey(slotKey),
+                                slotKey: slotKey,
+                                side: dropSide,
+                                gap: 18,
                               ),
                             ),
                         ],
@@ -273,20 +304,42 @@ class _FolderPillState extends ConsumerState<FolderPill>
   }
 
   Widget _buildMenuButton() {
+    final backgroundAlpha = _isMenuButtonHovered ? 0.16 : 0.04;
+    final iconAlpha = _isMenuButtonHovered ? 0.96 : 0.74;
+
     return ShadContextMenuRegion(
       controller: _contextMenuController,
       items: _buildMenuItems(),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(_folderPillMenuButtonRadius),
-        onTap: () {
-          _contextMenuController.toggle();
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(4.0),
-          child: Icon(
-            Icons.more_vert,
-            color: Colors.white.withValues(alpha: 0.8),
-            size: 18,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _isMenuButtonHovered = true),
+        onExit: (_) => setState(() => _isMenuButtonHovered = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOutCubic,
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: backgroundAlpha),
+            borderRadius: BorderRadius.circular(_folderPillMenuButtonRadius),
+          ),
+          child: Listener(
+            onPointerDown: (_) {
+              _menuButtonWasOpenOnPointerDown = _contextMenuController.isOpen;
+            },
+            child: InkWell(
+              borderRadius: BorderRadius.circular(_folderPillMenuButtonRadius),
+              mouseCursor: SystemMouseCursors.click,
+              hoverColor: Colors.transparent,
+              splashColor: Colors.white.withValues(alpha: 0.12),
+              highlightColor: Colors.white.withValues(alpha: 0.08),
+              onTap: _handleMenuButtonPressed,
+              child: Icon(
+                Icons.more_vert,
+                color: Colors.white.withValues(alpha: iconAlpha),
+                size: 18,
+              ),
+            ),
           ),
         ),
       ),
@@ -302,6 +355,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
         leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
         child: Text(isPinned ? 'Unpin' : 'Pin'),
         onPressed: () {
+          _closeMenus();
           if (widget.isDemo) return;
           ref.read(pinnedItemsProvider.notifier).togglePin(id);
         },
@@ -310,6 +364,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
         leading: const Icon(Icons.text_fields),
         child: const Text('Edit'),
         onPressed: () async {
+          _closeMenus();
           if (widget.isDemo) return;
           await showDialog<String>(
             context: context,
@@ -323,6 +378,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
         leading: const Icon(Icons.file_upload),
         child: const Text('Export'),
         onPressed: () async {
+          _closeMenus();
           await ref
               .read(strategyProvider.notifier)
               .exportFolder(widget.folder.id);
@@ -332,6 +388,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
         leading: const Icon(Icons.delete, color: Colors.redAccent),
         child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
         onPressed: () async {
+          _closeMenus();
           ConfirmAlertDialog.show(
             context: context,
             title:

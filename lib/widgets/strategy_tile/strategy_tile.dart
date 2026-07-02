@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy_view.dart';
@@ -26,6 +27,7 @@ class StrategyTile extends ConsumerStatefulWidget {
 class _StrategyTileState extends ConsumerState<StrategyTile> {
   Color _highlightColor = Settings.tacticalVioletTheme.border;
   bool _isLoading = false;
+  bool _menuButtonWasOpenOnPointerDown = false;
   DropInsertionSide? _pinnedDropSide;
 
   final ShadContextMenuController _menuButtonController =
@@ -40,8 +42,29 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     super.dispose();
   }
 
+  void _closeMenus() {
+    _menuButtonController.hide();
+    _rightClickMenuController.hide();
+  }
+
+  void _handleMenuButtonPressed() {
+    if (_menuButtonWasOpenOnPointerDown) {
+      _menuButtonWasOpenOnPointerDown = false;
+      _closeMenus();
+      return;
+    }
+
+    dismissLibraryContextMenus(ref);
+    _menuButtonController.show();
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen<int>(
+      libraryContextMenuDismissalProvider,
+      (_, __) => _closeMenus(),
+    );
+
     final viewData = StrategyTileViewData(widget.strategyData);
     final pinned = ref.watch(pinnedItemsProvider);
     final id = widget.strategyData.id;
@@ -61,7 +84,11 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                 item.strategy.id != id &&
                 isPinned &&
                 pinned.containsKey(item.strategy.id)
-            ? _resolveInsertionSide(details.offset)
+            ? resolveDropInsertionSide(
+                context: context,
+                globalOffset: details.offset,
+                current: _pinnedDropSide,
+              )
             : null;
         if (nextSide != _pinnedDropSide) {
           setState(() => _pinnedDropSide = nextSide);
@@ -76,7 +103,13 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         final item = details.data;
         if (item is! StrategyItem) return;
 
-        final insertionSide = _resolveInsertionSide(details.offset);
+        // Commit whatever the indicator was showing so the drop always
+        // matches what the user saw.
+        final insertionSide = _pinnedDropSide ??
+            resolveDropInsertionSide(
+              context: context,
+              globalOffset: details.offset,
+            );
         if (mounted) {
           setState(() => _pinnedDropSide = null);
         }
@@ -120,83 +153,106 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                 items: _buildMenuItems(),
                 child: GestureDetector(
                   onTap: () => _openStrategy(context),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 100),
-                        decoration: BoxDecoration(
-                          color: ShadTheme.of(context).colorScheme.card,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isPinDropTarget
-                                ? Settings.tacticalVioletTheme.border
-                                : _highlightColor,
-                            width: 2,
-                          ),
-                        ),
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          children: [
-                            Expanded(
-                              child: StrategyTileThumbnail(
-                                assetPath: viewData.thumbnailAsset,
+                  child: Builder(
+                    builder: (context) {
+                      final dropSide = _pinnedDropSide;
+                      final slotKey = dropSide == null
+                          ? null
+                          : dropInsertionSlotKey(
+                              itemId: id,
+                              side: dropSide,
+                              pinnedOrder: pinnedIdsInManualOrder(pinned),
+                            );
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 100),
+                            decoration: BoxDecoration(
+                              color: ShadTheme.of(context).colorScheme.card,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: isPinDropTarget
+                                    ? Settings.tacticalVioletTheme.border
+                                    : _highlightColor,
+                                width: 2,
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            Expanded(
-                                child: StrategyTileDetails(data: viewData)),
-                          ],
-                        ),
-                      ),
-                      if (isPinned)
-                        Align(
-                          alignment: Alignment.topLeft,
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: Settings.tacticalVioletTheme.background
-                                    .withValues(alpha: 0.78),
-                                borderRadius: BorderRadius.circular(999),
-                                border: Border.all(
-                                  color: Settings.tacticalVioletTheme.border,
+                            padding: const EdgeInsets.all(8),
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: StrategyTileThumbnail(
+                                    assetPath: viewData.thumbnailAsset,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Expanded(
+                                    child: StrategyTileDetails(data: viewData)),
+                              ],
+                            ),
+                          ),
+                          if (isPinned)
+                            Align(
+                              alignment: Alignment.topLeft,
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Settings
+                                        .tacticalVioletTheme.background
+                                        .withValues(alpha: 0.78),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color:
+                                          Settings.tacticalVioletTheme.border,
+                                    ),
+                                  ),
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(5),
+                                    child: Icon(Icons.push_pin, size: 15),
+                                  ),
                                 ),
                               ),
-                              child: const Padding(
-                                padding: EdgeInsets.all(5),
-                                child: Icon(Icons.push_pin, size: 15),
+                            ),
+                          Align(
+                            alignment: Alignment.topRight,
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: ShadContextMenuRegion(
+                                controller: _menuButtonController,
+                                items: _buildMenuItems(),
+                                child: Listener(
+                                  onPointerDown: (_) {
+                                    _menuButtonWasOpenOnPointerDown =
+                                        _menuButtonController.isOpen;
+                                  },
+                                  child: ShadIconButton.secondary(
+                                    width: 28,
+                                    height: 28,
+                                    onPressed: _handleMenuButtonPressed,
+                                    icon: const Icon(Icons.more_vert_outlined),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      Align(
-                        alignment: Alignment.topRight,
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: ShadContextMenuRegion(
-                            controller: _menuButtonController,
-                            items: _buildMenuItems(),
-                            child: ShadIconButton.secondary(
-                              width: 28,
-                              height: 28,
-                              onPressed: () {
-                                _menuButtonController.toggle();
-                              },
-                              icon: const Icon(Icons.more_vert_outlined),
+                          if (dropSide != null && slotKey != null)
+                            Positioned.fill(
+                              child: DropInsertionIndicator(
+                                key: ValueKey(slotKey),
+                                slotKey: slotKey,
+                                side: dropSide,
+                                // Matches the grid crossAxisSpacing so the
+                                // caret sits centered in the gutter.
+                                gap: 20,
+                                topInset: 6,
+                                bottomInset: 6,
+                              ),
                             ),
-                          ),
-                        ),
-                      ),
-                      if (_pinnedDropSide != null)
-                        Positioned.fill(
-                          child: DropInsertionIndicator(
-                            side: _pinnedDropSide!,
-                            height: 154,
-                            horizontalOutset: 14,
-                          ),
-                        ),
-                    ],
+                        ],
+                      );
+                    },
                   ),
                 ),
               ),
@@ -207,16 +263,6 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     );
   }
 
-  DropInsertionSide? _resolveInsertionSide(Offset globalOffset) {
-    final renderObject = context.findRenderObject();
-    if (renderObject is! RenderBox) return null;
-
-    final localOffset = renderObject.globalToLocal(globalOffset);
-    return localOffset.dx > renderObject.size.width / 2
-        ? DropInsertionSide.after
-        : DropInsertionSide.before;
-  }
-
   List<ShadContextMenuItem> _buildMenuItems() {
     final pinned = ref.watch(pinnedItemsProvider);
     final id = widget.strategyData.id;
@@ -225,27 +271,42 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       ShadContextMenuItem(
         leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
         child: Text(isPinned ? 'Unpin' : 'Pin'),
-        onPressed: () => ref.read(pinnedItemsProvider.notifier).togglePin(id),
+        onPressed: () {
+          _closeMenus();
+          ref.read(pinnedItemsProvider.notifier).togglePin(id);
+        },
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.pencil),
         child: const Text('Rename'),
-        onPressed: () => _showRenameDialog(),
+        onPressed: () {
+          _closeMenus();
+          _showRenameDialog();
+        },
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.copy),
         child: const Text('Duplicate'),
-        onPressed: () => _duplicateStrategy(),
+        onPressed: () {
+          _closeMenus();
+          _duplicateStrategy();
+        },
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.upload),
         child: const Text('Export'),
-        onPressed: () => _exportStrategy(),
+        onPressed: () {
+          _closeMenus();
+          _exportStrategy();
+        },
       ),
       ShadContextMenuItem(
         leading: const Icon(LucideIcons.trash2, color: Colors.redAccent),
         child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
-        onPressed: () => _showDeleteDialog(),
+        onPressed: () {
+          _closeMenus();
+          _showDeleteDialog();
+        },
       ),
     ];
   }
