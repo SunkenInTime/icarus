@@ -5,12 +5,20 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/widgets/better_color_picker.dart';
 import 'package:icarus/widgets/color_picker_button.dart';
+import 'package:icarus/widgets/custom_segmented_tabs.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dot_painter.dart';
-import 'package:icarus/widgets/folder_pill.dart';
+import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/icarus_color_picker_style.dart';
 import 'package:icarus/widgets/sidebar_widgets/color_buttons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+enum _FolderIconFilter {
+  all,
+  symbols,
+  roles,
+  agents,
+}
 
 class FolderEditDialog extends ConsumerStatefulWidget {
   const FolderEditDialog({
@@ -29,6 +37,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
   int _selectedIconId = FolderIconRegistry.defaultId;
   FolderColor _selectedColor = FolderColor.red;
   Color? _customColor;
+  _FolderIconFilter _iconFilter = _FolderIconFilter.all;
   @override
   void dispose() {
     _folderNameController.dispose();
@@ -129,14 +138,20 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                         padding: const EdgeInsets.all(24.0),
                         child: Material(
                           color: Colors.transparent,
-                          child: FolderPill(
-                            folder: Folder(
-                              iconId: _selectedIconId,
-                              name: _folderNameController.text,
-                              id: "null",
-                              dateCreated: DateTime.now(),
-                              color: _selectedColor,
-                              customColor: _customColor,
+                          child: FolderCard(
+                            data: FolderCardViewData(
+                              folder: Folder(
+                                iconId: _selectedIconId,
+                                name: _folderNameController.text.isEmpty
+                                    ? "New Folder"
+                                    : _folderNameController.text,
+                                id: "null",
+                                dateCreated: DateTime.now(),
+                                color: _selectedColor,
+                                customColor: _customColor,
+                              ),
+                              strategies: const [],
+                              folderCount: 0,
                             ),
                             isDemo: true,
                           ),
@@ -220,8 +235,42 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                 ],
               ),
             ),
+            SizedBox(
+              width: 358,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: CustomSegmentedTabs<_FolderIconFilter>(
+                  compactness: 0.8,
+                  value: _iconFilter,
+                  items: const [
+                    SegmentedTabItem<_FolderIconFilter>(
+                      value: _FolderIconFilter.all,
+                      child: Text("All"),
+                    ),
+                    SegmentedTabItem<_FolderIconFilter>(
+                      value: _FolderIconFilter.symbols,
+                      child: Text("Symbols"),
+                    ),
+                    SegmentedTabItem<_FolderIconFilter>(
+                      value: _FolderIconFilter.roles,
+                      child: Text("Roles"),
+                    ),
+                    SegmentedTabItem<_FolderIconFilter>(
+                      value: _FolderIconFilter.agents,
+                      child: Text("Agents"),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    setState(() {
+                      _iconFilter = value;
+                    });
+                  },
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
             Container(
-              height: 200,
+              height: 220,
               width: 358,
               decoration: BoxDecoration(
                 border: Border.all(
@@ -239,10 +288,14 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                   crossAxisSpacing: 8,
                   childAspectRatio: 1,
                 ),
-                itemCount: FolderIconRegistry.pickerEntries.length,
+                itemCount: _filteredIconEntries.length,
                 itemBuilder: (context, index) {
-                  final iconId = FolderIconRegistry.pickerEntries[index].id;
+                  final entry = _filteredIconEntries[index];
+                  final iconId = entry.id;
+                  final iconSize =
+                      entry.category == FolderIconCategory.agent ? 27.0 : 24.0;
                   return IconButton(
+                      tooltip: entry.label.isEmpty ? null : entry.label,
                       onPressed: () {
                         setState(() {
                           _selectedIconId = iconId;
@@ -251,12 +304,12 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                       isSelected: _selectedIconId == iconId,
                       icon: FolderIconView(
                         iconId: iconId,
-                        size: 24,
+                        size: iconSize,
                         color: Colors.white,
                       ),
                       selectedIcon: FolderIconView(
                         iconId: iconId,
-                        size: 24,
+                        size: iconSize,
                         color: Settings.tacticalVioletTheme.primary,
                       ));
                 },
@@ -266,5 +319,17 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
         ),
       ),
     );
+  }
+
+  List<FolderIconDefinition> get _filteredIconEntries {
+    return switch (_iconFilter) {
+      _FolderIconFilter.all => FolderIconRegistry.pickerEntries,
+      _FolderIconFilter.symbols =>
+        FolderIconRegistry.pickerEntriesFor(FolderIconCategory.symbol),
+      _FolderIconFilter.roles =>
+        FolderIconRegistry.pickerEntriesFor(FolderIconCategory.role),
+      _FolderIconFilter.agents =>
+        FolderIconRegistry.pickerEntriesFor(FolderIconCategory.agent),
+    };
   }
 }
