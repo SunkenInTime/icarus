@@ -3,6 +3,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/folder_content.dart';
 
 void main() {
@@ -188,6 +189,75 @@ void main() {
       ),
       DateTime.utc(2026, 1, 5),
     );
+  });
+
+  test('folder card summary includes descendant folder strategies', () {
+    final root = folder(
+      id: 'root',
+      name: 'Root',
+      dateCreated: DateTime.utc(2026, 1, 1),
+    );
+    final child = folder(
+      id: 'child',
+      name: 'Child',
+      dateCreated: DateTime.utc(2026, 1, 2),
+      parentID: root.id,
+    );
+    final grandchild = folder(
+      id: 'grandchild',
+      name: 'Grandchild',
+      dateCreated: DateTime.utc(2026, 1, 3),
+      parentID: child.id,
+    );
+    final sibling = folder(
+      id: 'sibling',
+      name: 'Sibling',
+      dateCreated: DateTime.utc(2026, 1, 4),
+    );
+
+    final summaryStrategies = strategiesInFolderTree(
+      folder: root,
+      allFolders: [root, child, grandchild, sibling],
+      allStrategies: [
+        strategy(
+          id: 'direct',
+          name: 'Direct',
+          folderID: root.id,
+          lastEdited: DateTime.utc(2026, 1, 5),
+        ),
+        strategy(
+          id: 'nested',
+          name: 'Nested',
+          folderID: child.id,
+          lastEdited: DateTime.utc(2026, 1, 6),
+        ),
+        strategy(
+          id: 'deep',
+          name: 'Deep',
+          folderID: grandchild.id,
+          lastEdited: DateTime.utc(2026, 1, 7),
+        ),
+        strategy(
+          id: 'sibling-strategy',
+          name: 'Sibling Strategy',
+          folderID: sibling.id,
+          lastEdited: DateTime.utc(2026, 1, 8),
+        ),
+      ],
+    );
+
+    final viewData = FolderCardViewData(
+      folder: root,
+      strategies: summaryStrategies,
+      folderCount: 1,
+    );
+
+    expect(summaryStrategies.map((strategy) => strategy.id), [
+      'direct',
+      'nested',
+      'deep',
+    ]);
+    expect(viewData.strategyCount, 3);
   });
 
   test('empty folder last updated falls back to creation date', () {

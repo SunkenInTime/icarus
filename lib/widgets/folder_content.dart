@@ -13,6 +13,7 @@ import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_card.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -45,19 +46,33 @@ DateTime folderLastUpdated({
   required Iterable<Folder> allFolders,
   required Iterable<StrategyData> allStrategies,
 }) {
-  final folderIds = _folderAndDescendantIds(folder, allFolders);
   var latest = folder.dateCreated;
 
-  for (final strategy in allStrategies) {
-    if (strategy.folderID == null || !folderIds.contains(strategy.folderID)) {
-      continue;
-    }
+  for (final strategy in strategiesInFolderTree(
+    folder: folder,
+    allFolders: allFolders,
+    allStrategies: allStrategies,
+  )) {
     if (strategy.lastEdited.isAfter(latest)) {
       latest = strategy.lastEdited;
     }
   }
 
   return latest;
+}
+
+@visibleForTesting
+List<StrategyData> strategiesInFolderTree({
+  required Folder folder,
+  required Iterable<Folder> allFolders,
+  required Iterable<StrategyData> allStrategies,
+}) {
+  final folderIds = _folderAndDescendantIds(folder, allFolders);
+  return [
+    for (final strategy in allStrategies)
+      if (strategy.folderID != null && folderIds.contains(strategy.folderID))
+        strategy,
+  ];
 }
 
 @visibleForTesting
@@ -320,109 +335,119 @@ class FolderContent extends ConsumerWidget {
                           }
 
                           return IcaDropTarget(
-                            child:
-                                LayoutBuilder(builder: (context, constraints) {
-                              // Calculate how many columns can fit with minimum width
-                              const double minTileWidth =
-                                  250; // Your minimum width
-                              const double spacing = 20;
-                              const double padding = 32; // 16 * 2
+                            child: DropInsertionIndicatorScope(
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  // Calculate how many columns can fit with minimum width
+                                  const double minTileWidth =
+                                      250; // Your minimum width
+                                  const double spacing = 20;
+                                  const double padding = 32; // 16 * 2
 
-                              int crossAxisCount =
-                                  ((constraints.maxWidth - padding + spacing) /
+                                  int crossAxisCount = ((constraints.maxWidth -
+                                              padding +
+                                              spacing) /
                                           (minTileWidth + spacing))
                                       .floor();
-                              crossAxisCount = crossAxisCount
-                                  .clamp(1, double.infinity)
-                                  .toInt();
+                                  crossAxisCount = crossAxisCount
+                                      .clamp(1, double.infinity)
+                                      .toInt();
 
-                              return CustomScrollView(
-                                slivers: [
-                                  // Folder cards section (wrap row)
-                                  if (folders.isNotEmpty)
-                                    SliverToBoxAdapter(
-                                      child: Padding(
-                                        // Horizontal padding is reduced by the
-                                        // gutter baked into each FolderCard so
-                                        // the cards still align at x=16.
-                                        padding: const EdgeInsets.fromLTRB(
-                                            16 - folderCardGutterOutset,
-                                            16,
-                                            16 - folderCardGutterOutset,
-                                            8),
-                                        child: Wrap(
-                                          // Zero spacing: each card carries
-                                          // half the 14px gutter as drop hit
-                                          // area on both sides.
-                                          spacing: 0,
-                                          runSpacing: 14,
-                                          children: folders
-                                              .map(
-                                                (f) => FolderCard(
-                                                  key: ValueKey(f.id),
-                                                  data: FolderCardViewData(
-                                                    folder: f,
-                                                    strategies: allStrategies
-                                                        .where((strategy) =>
-                                                            strategy.folderID ==
-                                                            f.id)
-                                                        .toList(),
-                                                    folderCount: allFolders
-                                                        .where((folder) =>
-                                                            folder.parentID ==
-                                                            f.id)
-                                                        .length,
-                                                  ),
-                                                ),
-                                              )
-                                              .toList(),
-                                        ),
-                                      ),
-                                    ),
-
-                                  // Strategies grid
-                                  if (strategies.isNotEmpty)
-                                    SliverPadding(
-                                      padding: const EdgeInsets.all(16),
-                                      sliver: SliverGrid(
-                                        gridDelegate:
-                                            SliverGridDelegateWithFixedCrossAxisCount(
-                                          crossAxisCount: crossAxisCount,
-                                          mainAxisExtent: 250,
-                                          crossAxisSpacing: 20,
-                                          mainAxisSpacing: 20,
-                                        ),
-                                        delegate: SliverChildBuilderDelegate(
-                                          (context, index) {
-                                            return StrategyTile(
-                                              key: ValueKey(
-                                                  strategies[index].id),
-                                              strategyData: strategies[index],
-                                            );
-                                          },
-                                          childCount: strategies.length,
-                                        ),
-                                      ),
-                                    )
-                                  else if (folders.isNotEmpty)
-                                    // Show placeholder when only folders exist
-                                    const SliverFillRemaining(
-                                      hasScrollBody: false,
-                                      child: Center(
-                                        child: Padding(
-                                          padding: EdgeInsets.only(top: 48),
-                                          child: Text(
-                                            'No strategies in this folder',
-                                            style: TextStyle(
-                                              color: Colors.grey,
+                                  return CustomScrollView(
+                                    slivers: [
+                                      // Folder cards section (wrap row)
+                                      if (folders.isNotEmpty)
+                                        SliverToBoxAdapter(
+                                          child: Padding(
+                                            // Horizontal padding is reduced by the
+                                            // gutter baked into each FolderCard so
+                                            // the cards still align at x=16.
+                                            padding: const EdgeInsets.fromLTRB(
+                                                16 - folderCardGutterOutset,
+                                                16,
+                                                16 - folderCardGutterOutset,
+                                                8),
+                                            child: Wrap(
+                                              // Zero spacing: each card carries
+                                              // half the 14px gutter as drop hit
+                                              // area on both sides.
+                                              spacing: 0,
+                                              runSpacing: 14,
+                                              children: folders
+                                                  .map(
+                                                    (f) => FolderCard(
+                                                      key: ValueKey(f.id),
+                                                      data: FolderCardViewData(
+                                                        folder: f,
+                                                        strategies:
+                                                            strategiesInFolderTree(
+                                                          folder: f,
+                                                          allFolders:
+                                                              allFolders,
+                                                          allStrategies:
+                                                              allStrategies,
+                                                        ),
+                                                        folderCount: allFolders
+                                                            .where((folder) =>
+                                                                folder
+                                                                    .parentID ==
+                                                                f.id)
+                                                            .length,
+                                                      ),
+                                                    ),
+                                                  )
+                                                  .toList(),
                                             ),
                                           ),
                                         ),
-                                      ),
-                                    ),
-                                ],
-                              );
-                            }),
+
+                                      // Strategies grid
+                                      if (strategies.isNotEmpty)
+                                        SliverPadding(
+                                          padding: const EdgeInsets.all(16),
+                                          sliver: SliverGrid(
+                                            gridDelegate:
+                                                SliverGridDelegateWithFixedCrossAxisCount(
+                                              crossAxisCount: crossAxisCount,
+                                              mainAxisExtent: 250,
+                                              crossAxisSpacing: 20,
+                                              mainAxisSpacing: 20,
+                                            ),
+                                            delegate:
+                                                SliverChildBuilderDelegate(
+                                              (context, index) {
+                                                return StrategyTile(
+                                                  key: ValueKey(
+                                                      strategies[index].id),
+                                                  strategyData:
+                                                      strategies[index],
+                                                );
+                                              },
+                                              childCount: strategies.length,
+                                            ),
+                                          ),
+                                        )
+                                      else if (folders.isNotEmpty)
+                                        // Show placeholder when only folders exist
+                                        const SliverFillRemaining(
+                                          hasScrollBody: false,
+                                          child: Center(
+                                            child: Padding(
+                                              padding: EdgeInsets.only(top: 48),
+                                              child: Text(
+                                                'No strategies in this folder',
+                                                style: TextStyle(
+                                                  color: Colors.grey,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
                           );
                         },
                       );

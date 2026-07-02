@@ -47,6 +47,71 @@ String dropInsertionSlotKey({
   return 'pin-slot:$itemId|${pinnedOrder[index + 1]}';
 }
 
+class DropInsertionIndicatorScope extends StatefulWidget {
+  const DropInsertionIndicatorScope({
+    super.key,
+    required this.child,
+  });
+
+  final Widget child;
+
+  static _DropInsertionIndicatorRegistry? _maybeOf(BuildContext context) {
+    return context
+        .dependOnInheritedWidgetOfExactType<_DropInsertionIndicatorHost>()
+        ?.registry;
+  }
+
+  @override
+  State<DropInsertionIndicatorScope> createState() =>
+      _DropInsertionIndicatorScopeState();
+}
+
+class _DropInsertionIndicatorScopeState
+    extends State<DropInsertionIndicatorScope> {
+  final _registry = _DropInsertionIndicatorRegistry();
+
+  @override
+  Widget build(BuildContext context) {
+    return _DropInsertionIndicatorHost(
+      registry: _registry,
+      child: widget.child,
+    );
+  }
+}
+
+class _DropInsertionIndicatorHost extends InheritedWidget {
+  const _DropInsertionIndicatorHost({
+    required this.registry,
+    required super.child,
+  });
+
+  final _DropInsertionIndicatorRegistry registry;
+
+  @override
+  bool updateShouldNotify(_DropInsertionIndicatorHost oldWidget) {
+    return registry != oldWidget.registry;
+  }
+}
+
+class _DropInsertionIndicatorRegistry {
+  final _slotRefCounts = <String, int>{};
+
+  bool acquire(String slotKey) {
+    final count = _slotRefCounts[slotKey] ?? 0;
+    _slotRefCounts[slotKey] = count + 1;
+    return count > 0;
+  }
+
+  void release(String slotKey) {
+    final nextCount = (_slotRefCounts[slotKey] ?? 1) - 1;
+    if (nextCount <= 0) {
+      _slotRefCounts.remove(slotKey);
+    } else {
+      _slotRefCounts[slotKey] = nextCount;
+    }
+  }
+}
+
 /// A vertical insertion caret shown while a drag hovers over a reorder
 /// target.
 ///
@@ -82,33 +147,39 @@ class DropInsertionIndicator extends StatefulWidget {
 
 class _DropInsertionIndicatorState extends State<DropInsertionIndicator>
     with SingleTickerProviderStateMixin {
-  static final Map<String, int> _slotRefCounts = {};
-
   static const double _lineWidth = 3;
   static const double _capSize = 7;
 
   late final AnimationController _controller;
   late final Animation<double> _t;
+  _DropInsertionIndicatorRegistry? _registry;
+  String? _activeSlotKey;
 
   @override
   void initState() {
     super.initState();
-    final skipEntrance = (_slotRefCounts[widget.slotKey] ?? 0) > 0;
-    _slotRefCounts[widget.slotKey] =
-        (_slotRefCounts[widget.slotKey] ?? 0) + 1;
-
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 140),
-      value: skipEntrance ? 1 : 0,
     );
     _t = CurvedAnimation(
       parent: _controller,
       curve: Curves.easeOutCubic,
     );
-    if (!skipEntrance) {
-      _controller.forward();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final nextRegistry = DropInsertionIndicatorScope._maybeOf(context);
+    if (identical(nextRegistry, _registry) && _activeSlotKey != null) {
+      return;
     }
+
+    _releaseActiveSlot();
+    _registry = nextRegistry;
+    _acquireSlot(widget.slotKey);
   }
 
   @override
@@ -116,31 +187,31 @@ class _DropInsertionIndicatorState extends State<DropInsertionIndicator>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.slotKey == widget.slotKey) return;
 
-    _releaseSlot(oldWidget.slotKey);
+    _releaseActiveSlot();
+    _acquireSlot(widget.slotKey);
+  }
 
-    final skipEntrance = (_slotRefCounts[widget.slotKey] ?? 0) > 0;
-    _slotRefCounts[widget.slotKey] =
-        (_slotRefCounts[widget.slotKey] ?? 0) + 1;
+  @override
+  void dispose() {
+    _releaseActiveSlot();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _acquireSlot(String slotKey) {
+    final skipEntrance = _registry?.acquire(slotKey) ?? false;
+    _activeSlotKey = slotKey;
     _controller.value = skipEntrance ? 1 : 0;
     if (!skipEntrance) {
       _controller.forward(from: 0);
     }
   }
 
-  @override
-  void dispose() {
-    _releaseSlot(widget.slotKey);
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _releaseSlot(String slotKey) {
-    final nextCount = (_slotRefCounts[slotKey] ?? 1) - 1;
-    if (nextCount <= 0) {
-      _slotRefCounts.remove(slotKey);
-    } else {
-      _slotRefCounts[slotKey] = nextCount;
-    }
+  void _releaseActiveSlot() {
+    final slotKey = _activeSlotKey;
+    if (slotKey == null) return;
+    _registry?.release(slotKey);
+    _activeSlotKey = null;
   }
 
   @override
