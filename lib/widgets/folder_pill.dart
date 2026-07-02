@@ -201,7 +201,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
             cursor: SystemMouseCursors.click,
             child: ShadContextMenuRegion(
               controller: _rightClickMenuController,
-              items: _buildMenuItems(),
+              items: _buildMenuItems(isPinned: isPinned),
               child: GestureDetector(
                 onTap: () {
                   if (widget.isDemo) return;
@@ -277,7 +277,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
                                   ),
                                 ],
                                 const SizedBox(width: 4),
-                                _buildMenuButton(),
+                                _buildMenuButton(isPinned: isPinned),
                               ],
                             ),
                           ),
@@ -303,13 +303,13 @@ class _FolderPillState extends ConsumerState<FolderPill>
     );
   }
 
-  Widget _buildMenuButton() {
+  Widget _buildMenuButton({required bool isPinned}) {
     final backgroundAlpha = _isMenuButtonHovered ? 0.16 : 0.04;
     final iconAlpha = _isMenuButtonHovered ? 0.96 : 0.74;
 
     return ShadContextMenuRegion(
       controller: _contextMenuController,
-      items: _buildMenuItems(),
+      items: _buildMenuItems(isPinned: isPinned),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _isMenuButtonHovered = true),
@@ -346,10 +346,8 @@ class _FolderPillState extends ConsumerState<FolderPill>
     );
   }
 
-  List<ShadContextMenuItem> _buildMenuItems() {
-    final pinned = ref.watch(pinnedItemsProvider);
+  List<ShadContextMenuItem> _buildMenuItems({required bool isPinned}) {
     final id = widget.folder.id;
-    final isPinned = pinned.containsKey(id);
     return [
       ShadContextMenuItem(
         leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
