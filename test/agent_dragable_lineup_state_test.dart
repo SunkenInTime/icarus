@@ -116,7 +116,10 @@ void main() {
 
     await _pumpHarness(tester, container: container);
 
-    await tester.tap(_tileFinder(AgentType.sova), warnIfMissed: false);
+    final sovaTile = tester.widget<InkWell>(_tileFinder(AgentType.sova));
+    expect(sovaTile.onTap, isNotNull);
+
+    sovaTile.onTap!();
     await tester.pumpAndSettle();
 
     expect(container.read(abilityBarProvider)?.type, AgentType.sova);

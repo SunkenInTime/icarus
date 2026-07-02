@@ -23,8 +23,9 @@ class CoordinateSystem {
 
   Size get effectiveSize => _effectiveSize;
   // The normalized coordinate space will maintain this aspect ratio
+  static const double defaultMapAspectRatio = 1.24;
   final double normalizedHeight = 1000.0;
-  final double mapAspectRatio = 1.24;
+  final double mapAspectRatio = defaultMapAspectRatio;
   final double worldAspectRatio = 16 / 9;
 
   double get mapNormalizedWidth => normalizedHeight * mapAspectRatio;

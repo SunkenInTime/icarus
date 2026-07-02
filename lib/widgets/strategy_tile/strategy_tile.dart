@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -317,38 +315,18 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     }
 
     setState(() => _isLoading = true);
-    _showLoadingOverlay();
 
     try {
-      await ref
-          .read(strategyProvider.notifier)
-          .loadFromHive(widget.strategyData.id);
       if (!context.mounted) return;
-      Navigator.pop(context);
       await Navigator.push(
         context,
-        PageRouteBuilder(
-          transitionDuration: const Duration(milliseconds: 200),
-          reverseTransitionDuration: const Duration(milliseconds: 200),
-          pageBuilder: (context, animation, _) => const StrategyView(),
-          transitionsBuilder: (context, animation, _, child) {
-            return FadeTransition(
-              opacity: animation,
-              child: ScaleTransition(
-                scale: Tween<double>(begin: 0.9, end: 1.0)
-                    .chain(CurveTween(curve: Curves.easeOut))
-                    .animate(animation),
-                child: child,
-              ),
-            );
-          },
+        StrategyView.route(
+          initialStrategyId: widget.strategyData.id,
+          initialStrategyName: widget.strategyData.name,
+          initialMapValue: widget.strategyData.mapData,
+          initialIsAttack: _initialIsAttack(widget.strategyData),
         ),
       );
-    } catch (error, stackTrace) {
-      log('Error loading strategy: $error', stackTrace: stackTrace);
-      if (context.mounted) {
-        Navigator.pop(context);
-      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -356,12 +334,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     }
   }
 
-  void _showLoadingOverlay() {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
+  bool _initialIsAttack(StrategyData strategy) {
+    return strategy.pages.isEmpty ? true : strategy.pages.first.isAttack;
   }
 
   Future<void> _duplicateStrategy() async {
