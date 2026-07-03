@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
@@ -204,35 +205,43 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
       );
     }
 
-    return Material(
-      color: Colors.transparent,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
-              child: Container(color: Colors.black54),
-            ),
-          ),
-          content,
-          Positioned(
-            top: 24,
-            right: 24,
-            child: SafeArea(
-              child: Row(
-                spacing: 8,
-                children: [
-                  ShadIconButton.destructive(
-                    icon: const Icon(LucideIcons.trash2),
-                    decoration: ShadDecoration(
-                      border: ShadBorder.all(
-                          color: Settings.tacticalVioletTheme.border),
-                    ),
-                    // tooltip: 'Close',
-                    onPressed: () {
-                      Navigator.of(context).pop();
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          Navigator.of(context).maybePop();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Material(
+          color: Colors.transparent,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
+                  child: Container(color: Colors.black54),
+                ),
+              ),
+              content,
+              Positioned(
+                top: 24,
+                right: 24,
+                child: SafeArea(
+                  child: Row(
+                    spacing: 8,
+                    children: [
+                      ShadIconButton.destructive(
+                        icon: const Icon(LucideIcons.trash2),
+                        decoration: ShadDecoration(
+                          border: ShadBorder.all(
+                              color: Settings.tacticalVioletTheme.border),
+                        ),
+                        // tooltip: 'Close',
+                        onPressed: () {
+                          Navigator.of(context).pop();
 
-                      ref.read(actionProvider.notifier).performTransaction(
+                          ref.read(actionProvider.notifier).performTransaction(
                             groups: const [ActionGroup.lineUp],
                             mutation: () {
                               ref.read(lineUpProvider.notifier).deleteItem(
@@ -241,38 +250,40 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                                   );
                             },
                           );
-                    },
-                  ),
-                  ShadButton(
-                    // height: 32,
-                    leading: const Icon(LucideIcons.pencil),
-                    // width: 80,
-                  child: const Text("Edit"),
-                  onPressed: () {
-                      Navigator.of(context).pop();
-                      showDialog(
-                        context: context,
-                        builder: (context) => CreateLineupDialog(
-                          lineUpGroupId: widget.lineUpGroupId,
-                          lineUpItemId: widget.lineUpItemId,
+                        },
+                      ),
+                      ShadButton(
+                        // height: 32,
+                        leading: const Icon(LucideIcons.pencil),
+                        // width: 80,
+                        child: const Text("Edit"),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          showDialog(
+                            context: context,
+                            builder: (context) => CreateLineupDialog(
+                              lineUpGroupId: widget.lineUpGroupId,
+                              lineUpItemId: widget.lineUpItemId,
+                            ),
+                          );
+                        },
+                      ),
+                      ShadIconButton.secondary(
+                        icon: const Icon(LucideIcons.x),
+                        decoration: ShadDecoration(
+                          border: ShadBorder.all(
+                              color: Settings.tacticalVioletTheme.border),
                         ),
-                      );
-                    },
+                        // tooltip: 'Close',
+                        onPressed: () => Navigator.of(context).pop(),
+                      ),
+                    ],
                   ),
-                  ShadIconButton.secondary(
-                    icon: const Icon(LucideIcons.x),
-                    decoration: ShadDecoration(
-                      border: ShadBorder.all(
-                          color: Settings.tacticalVioletTheme.border),
-                    ),
-                    // tooltip: 'Close',
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

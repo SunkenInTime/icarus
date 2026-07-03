@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
 import 'package:icarus/const/settings.dart';
@@ -60,67 +61,77 @@ class _ImageFullScreenOverlay extends StatelessWidget {
             ? Image.network(networkLink!, fit: BoxFit.contain)
             : const Placeholder());
 
-    return Material(
-      color: Colors.transparent,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
-              child: Container(color: Colors.black54),
-            ),
-          ),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: LayoutBuilder(builder: (context, constraints) {
-                final width =
-                    constraints.maxWidth - 100; // typically the screen width
-                final height = width / aspectRatio;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          Navigator.of(context).maybePop();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Material(
+          color: Colors.transparent,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 5.0, sigmaY: 5.0),
+                  child: Container(color: Colors.black54),
+                ),
+              ),
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: LayoutBuilder(builder: (context, constraints) {
+                    final width = constraints.maxWidth -
+                        100; // typically the screen width
+                    final height = width / aspectRatio;
 
-                return Stack(
-                  children: [
-                    Positioned.fill(
-                      child: GestureDetector(
-                        onTap: () => Navigator.of(context).maybePop(),
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.center,
-                      child: InteractiveViewer(
-                        minScale: 0.5,
-                        maxScale: 8,
-                        child: SizedBox(
-                          width: width,
-                          height: height,
-                          child: Hero(
-                            tag: heroTag,
-                            child: image,
+                    return Stack(
+                      children: [
+                        Positioned.fill(
+                          child: GestureDetector(
+                            onTap: () => Navigator.of(context).maybePop(),
                           ),
                         ),
+                        Align(
+                          alignment: Alignment.center,
+                          child: InteractiveViewer(
+                            minScale: 0.5,
+                            maxScale: 8,
+                            child: SizedBox(
+                              width: width,
+                              height: height,
+                              child: Hero(
+                                tag: heroTag,
+                                child: image,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  }),
+                ),
+              ),
+              Positioned(
+                top: 24,
+                right: 24,
+                child: SafeArea(
+                  child: ShadIconButton.secondary(
+                    icon: const Icon(LucideIcons.x, color: Colors.white),
+                    decoration: ShadDecoration(
+                      border: ShadBorder.all(
+                        color: Settings.tacticalVioletTheme.border,
                       ),
                     ),
-                  ],
-                );
-              }),
-            ),
-          ),
-          Positioned(
-            top: 24,
-            right: 24,
-            child: SafeArea(
-              child: ShadIconButton.secondary(
-                icon: const Icon(LucideIcons.x, color: Colors.white),
-                decoration: ShadDecoration(
-                  border: ShadBorder.all(
-                    color: Settings.tacticalVioletTheme.border,
+                    onPressed: () => Navigator.of(context).maybePop(),
                   ),
                 ),
-                onPressed: () => Navigator.of(context).maybePop(),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
