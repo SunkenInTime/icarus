@@ -184,7 +184,7 @@ class DesktopUpdateDialog extends StatelessWidget {
                       ],
                     ),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -225,26 +225,28 @@ class _PatchNotes extends StatelessWidget {
           children: [
             for (final note in notes)
               Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.only(bottom: 14),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      margin: const EdgeInsets.only(top: 7),
-                      height: 5,
-                      width: 5,
+                      margin: const EdgeInsets.only(top: 8),
+                      height: 4,
+                      width: 4,
                       decoration: BoxDecoration(
-                        color: _colorForNoteType(theme, note.type),
+                        color: _colorForNoteType(theme, note.type)
+                            .withValues(alpha: 0.55),
                         shape: BoxShape.circle,
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Text(
                         note.message,
                         style: theme.textTheme.small.copyWith(
                           color: theme.colorScheme.foreground,
                           fontWeight: FontWeight.w400,
+                          height: 1.55,
                         ),
                       ),
                     ),
@@ -282,20 +284,9 @@ class _UpdateButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-
     if (controller.isDownloading && !controller.isDownloaded) {
-      return ShadButton.secondary(
-        width: double.infinity,
-        onPressed: null,
-        leading: const SizedBox(
-          height: 16,
-          width: 16,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-        child: Text(
-          'Downloading… ${(controller.downloadProgress * 100).toInt()}%',
-        ),
+      return _DownloadFillButton(
+        progress: controller.downloadProgress,
       );
     }
 
@@ -310,24 +301,13 @@ class _UpdateButton extends StatelessWidget {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ShadButton(
-          width: double.infinity,
-          onPressed: () => _startDownload(context),
-          leading: const Icon(LucideIcons.download),
-          child: Text(
-            controller.getLocalization?.downloadText ?? 'Download Update',
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          '${_formatMegabytes(controller.downloadSize ?? 0)} MB, applied on restart',
-          textAlign: TextAlign.center,
-          style: theme.textTheme.muted.copyWith(fontSize: 12),
-        ),
-      ],
+    return ShadButton(
+      width: double.infinity,
+      onPressed: () => _startDownload(context),
+      leading: const Icon(LucideIcons.download),
+      child: Text(
+        controller.getLocalization?.downloadText ?? 'Download Update',
+      ),
     );
   }
 
@@ -367,8 +347,59 @@ class _UpdateButton extends StatelessWidget {
       }
     }
   }
+}
 
-  static String _formatMegabytes(double sizeInKilobytes) {
-    return (sizeInKilobytes / 1024).toStringAsFixed(1);
+/// Download button whose background fills left-to-right with primary violet
+/// as progress advances.
+class _DownloadFillButton extends StatelessWidget {
+  const _DownloadFillButton({
+    required this.progress,
+  });
+
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+    final fill = progress.clamp(0.0, 1.0);
+    final percent = (fill * 100).toInt();
+
+    return SizedBox(
+      width: double.infinity,
+      height: 40,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ColoredBox(color: theme.colorScheme.secondary),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    curve: Curves.easeOut,
+                    width: width * fill,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                Center(
+                  child: Text(
+                    'Downloading… $percent%',
+                    style: theme.textTheme.small.copyWith(
+                      color: theme.colorScheme.foreground,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 }

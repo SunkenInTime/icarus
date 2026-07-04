@@ -49,12 +49,22 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
     controller._needUpdate = true;
     controller._isMandatory = false;
     controller._appName = 'Icarus';
-    controller._appVersion = '5.0.0';
+    controller._appVersion = '4.4.0.0';
     controller._downloadSizeBytes = 52 * 1024 * 1024;
     controller._releaseNotes = <ChangeModel?>[
-      ChangeModel(message: 'Hover-aware dot grid rendered with shaders'),
-      ChangeModel(message: 'Pinned strategies can be reordered by drag'),
-      ChangeModel(message: 'Faster library loading for large collections'),
+      ChangeModel(
+        message:
+            'Dot grids now render with shaders, making strategy boards feel smoother and faster while adding a cleaner animated look.',
+      ),
+      ChangeModel(
+        message:
+            'Dragging items on the map now has more natural tilt feedback, making movement feel more responsive.',
+      ),
+      ChangeModel(
+        message:
+            'Desktop update screens have a refreshed look with smoother progress animation.',
+      ),
+      ChangeModel(message: 'Media overlays can now be dismissed with Escape.'),
     ];
     return controller;
   }
