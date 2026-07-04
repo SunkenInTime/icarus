@@ -511,7 +511,10 @@ class _ExpandedPanel extends ConsumerWidget {
                 behavior:
                     ScrollConfiguration.of(context).copyWith(scrollbars: false),
                 child: ReorderableListView.builder(
-                  onReorderItem: (oldIndex, newIndex) {
+                  onReorder: (oldIndex, newIndex) {
+                    if (oldIndex < newIndex) {
+                      newIndex -= 1;
+                    }
                     ref
                         .read(strategyProvider.notifier)
                         .reorderPage(oldIndex, newIndex);

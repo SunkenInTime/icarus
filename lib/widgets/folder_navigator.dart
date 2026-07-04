@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:desktop_updater/desktop_updater.dart';
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -51,9 +51,30 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     super.dispose();
   }
 
+  static const _desktopUpdateLocalization = DesktopUpdateLocalization(
+    updateAvailableText: 'Update Available',
+    newVersionAvailableText: '{} {} is available',
+    newVersionLongText:
+        'A desktop update is ready. Downloading will fetch {} MB of files.',
+    downloadText: 'Download Update',
+    restartText: 'Restart to update',
+    skipThisVersionText: 'Later',
+    warningTitleText: 'Restart Required',
+    restartWarningText:
+        'Icarus needs to restart to finish installing the update. Unsaved changes will be lost. Restart now?',
+    warningCancelText: 'Not now',
+    warningConfirmText: 'Restart',
+  );
+
   @override
   void initState() {
     super.initState();
+
+    if (kDebugMode && kDebugForceDesktopUpdateDialog) {
+      _desktopUpdaterController = WindowsDesktopUpdateController.debugPreview(
+        localization: _desktopUpdateLocalization,
+      );
+    }
 
     // Show the demo warning only once after the first frame on web.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -197,20 +218,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           );
           _desktopUpdaterController = WindowsDesktopUpdateController(
             appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
-            localization: const DesktopUpdateLocalization(
-              updateAvailableText: 'Update Available',
-              newVersionAvailableText: '{} {} is available',
-              newVersionLongText:
-                  'A desktop update is ready. Downloading will fetch {} MB of files.',
-              downloadText: 'Download Update',
-              restartText: 'Restart to update',
-              skipThisVersionText: 'Later',
-              warningTitleText: 'Restart Required',
-              restartWarningText:
-                  'Icarus needs to restart to finish installing the update. Unsaved changes will be lost. Restart now?',
-              warningCancelText: 'Not now',
-              warningConfirmText: 'Restart',
-            ),
+            localization: _desktopUpdateLocalization,
           );
           setState(() {});
         }

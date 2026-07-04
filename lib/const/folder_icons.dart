@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/custom_icons.dart';
-import 'package:icarus/const/settings.dart';
 
 const int folderIconRegistryVersion = 91;
 
@@ -13,7 +11,6 @@ enum FolderIconRenderKind {
 enum FolderIconCategory {
   symbol,
   role,
-  agent,
 }
 
 class FolderIconDefinition {
@@ -69,7 +66,6 @@ class FolderIconRegistry {
   static const int duelistRoleId = 1001;
   static const int initiatorRoleId = 1002;
   static const int sentinelRoleId = 1003;
-  static const int _agentIdBase = 2000;
 
   static const List<FolderIconDefinition> _baseEntries = [
     FolderIconDefinition.material(
@@ -141,19 +137,8 @@ class FolderIconRegistry {
     ),
   ];
 
-  static final List<FolderIconDefinition> _agentEntries = [
-    for (final entry in AgentData.agents.entries)
-      FolderIconDefinition.asset(
-        id: _agentIdBase + entry.key.index,
-        assetPath: entry.value.iconPath,
-        label: entry.value.name,
-        category: FolderIconCategory.agent,
-      ),
-  ];
-
   static final List<FolderIconDefinition> entries = [
     ..._baseEntries,
-    ..._agentEntries,
   ];
 
   static final Map<int, FolderIconDefinition> _byId = {
@@ -251,20 +236,6 @@ class FolderIconView extends StatelessWidget {
         icon,
         color: color,
         size: size,
-      );
-    }
-
-    if (definition.category == FolderIconCategory.agent) {
-      return Container(
-        height: size,
-        width: size,
-        decoration: BoxDecoration(
-          color: Settings.tacticalVioletTheme.card,
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(color: Settings.tacticalVioletTheme.border),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Image.asset(definition.assetPath, fit: BoxFit.cover),
       );
     }
 

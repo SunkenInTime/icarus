@@ -69,6 +69,9 @@ msix_config:
   store: true
 
 flutter:
+  shaders:
+    - shaders/dot_grid.frag
+    - shaders/dither_fire.frag
   fonts:
     - family: CustomIcons
       fonts:

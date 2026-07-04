@@ -11,6 +11,11 @@ import 'package:path/path.dart' as path;
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/windows_desktop_update_restart_service.dart';
 
+/// Flip to true to force the desktop update dialog to appear with fake data,
+/// regardless of platform/install checks. Debug builds only; for designing
+/// the update experience without waiting for a real update.
+const bool kDebugForceDesktopUpdateDialog = false;
+
 class WindowsDesktopUpdateController extends ChangeNotifier {
   WindowsDesktopUpdateController({
     required Uri appArchiveUrl,
@@ -29,6 +34,32 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
       unawaited(checkVersion());
     }
   }
+
+  /// Creates a controller pre-seeded with fake update data so the dialog can
+  /// be designed/previewed. Download and restart are simulated.
+  factory WindowsDesktopUpdateController.debugPreview({
+    DesktopUpdateLocalization? localization,
+  }) {
+    final controller = WindowsDesktopUpdateController(
+      appArchiveUrl: Uri.parse('https://preview.invalid/app-archive.json'),
+      localization: localization,
+      autoCheck: false,
+    );
+    controller._isDebugPreview = true;
+    controller._needUpdate = true;
+    controller._isMandatory = false;
+    controller._appName = 'Icarus';
+    controller._appVersion = '5.0.0';
+    controller._downloadSizeBytes = 52 * 1024 * 1024;
+    controller._releaseNotes = <ChangeModel?>[
+      ChangeModel(message: 'Hover-aware dot grid rendered with shaders'),
+      ChangeModel(message: 'Pinned strategies can be reordered by drag'),
+      ChangeModel(message: 'Faster library loading for large collections'),
+    ];
+    return controller;
+  }
+
+  bool _isDebugPreview = false;
 
   final Uri _appArchiveUrl;
   final DesktopUpdater _updater;
@@ -145,6 +176,11 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
       return;
     }
 
+    if (_isDebugPreview) {
+      await _simulatePreviewDownload();
+      return;
+    }
+
     final update = _availableUpdate;
     if (update == null) {
       throw StateError('No desktop update is available to download.');
@@ -231,7 +267,32 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
     }
   }
 
+  Future<void> _simulatePreviewDownload() async {
+    _skipUpdate = false;
+    _isDownloading = true;
+    _isDownloaded = false;
+    _downloadProgress = 0;
+    _downloadedBytes = 0;
+    notifyListeners();
+
+    const steps = 80;
+    for (var i = 1; i <= steps; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      _downloadedBytes = _downloadSizeBytes * i ~/ steps;
+      _downloadProgress = i / steps;
+      notifyListeners();
+    }
+
+    _isDownloading = false;
+    _isDownloaded = true;
+    notifyListeners();
+  }
+
   Future<void> restartApp() async {
+    if (_isDebugPreview) {
+      return;
+    }
+
     final update = _availableUpdate;
     if (update == null) {
       throw StateError('No desktop update is available to apply.');

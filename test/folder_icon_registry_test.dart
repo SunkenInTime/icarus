@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/settings.dart';
@@ -84,8 +83,6 @@ void main() {
         1001: 'asset|assets/agents/duelist.webp',
         1002: 'asset|assets/agents/initiator.webp',
         1003: 'asset|assets/agents/sentinel.webp',
-        for (final entry in AgentData.agents.entries)
-          2000 + entry.key.index: 'asset|${entry.value.iconPath}',
       },
     );
   });
@@ -107,11 +104,8 @@ void main() {
         FolderIconRegistry.sentinelRoleId,
       ]),
     );
-    expect(
-      FolderIconRegistry.pickerEntriesFor(FolderIconCategory.agent)
-          .map((entry) => entry.label),
-      containsAll(AgentData.agents.values.map((agent) => agent.name)),
-    );
+    expect(FolderIconRegistry.isKnownId(2000), isFalse);
+    expect(FolderIconRegistry.resolve(2000).id, FolderIconRegistry.defaultId);
   });
 
   test('legacy IconData values migrate to registry ids', () {
