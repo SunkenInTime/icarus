@@ -3,6 +3,32 @@
     "description":  "Desktop release metadata for Icarus.",
     "items":  [
                   {
+                      "version":  "4.4.0+92",
+                      "shortVersion":  92,
+                      "changes":  [
+                                      {
+                                          "message":  "Dot grids now render with shaders, making strategy boards feel smoother and faster while adding a cleaner animated look.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Dragging items on the map now has more natural tilt feedback, making movement feel more responsive.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Desktop update screens have a refreshed look with smoother progress animation.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Media overlays can now be dismissed with Escape.",
+                                          "type":  "feature"
+                                      }
+                                  ],
+                      "date":  "2026-07-04",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.4.0%2B92-windows",
+                      "platform":  "windows"
+                  },
+                  {
                       "version":  "4.3.7+91",
                       "shortVersion":  91,
                       "changes":  [
