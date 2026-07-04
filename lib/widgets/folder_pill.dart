@@ -6,6 +6,7 @@ import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/widgets/drag_tilt_feedback.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
@@ -44,6 +45,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
       ShadContextMenuController();
   final ShadContextMenuController _rightClickMenuController =
       ShadContextMenuController();
+  final DragTiltController _dragTiltController = DragTiltController();
   @override
   void initState() {
     super.initState();
@@ -114,8 +116,13 @@ class _FolderPillState extends ConsumerState<FolderPill>
     final isPinned = pinned.containsKey(id);
 
     return Draggable<GridItem>(
-      feedback: _buildDragFeedback(),
+      feedback: TiltDragFeedback(
+        controller: _dragTiltController,
+        opacity: 0.9,
+        child: _buildDragFeedback(),
+      ),
       dragAnchorStrategy: pointerDragAnchorStrategy,
+      onDragUpdate: (details) => _dragTiltController.addDelta(details.delta.dx),
       data: FolderItem(widget.folder),
       child: DragTarget<GridItem>(
         onWillAcceptWithDetails: (details) {
@@ -407,38 +414,32 @@ class _FolderPillState extends ConsumerState<FolderPill>
   }
 
   Widget _buildDragFeedback() {
-    return Opacity(
-      opacity: 0.9,
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: _folderColor,
-            borderRadius: BorderRadius.circular(_folderPillCornerRadius),
-            border: Border.all(color: Colors.white, width: 2),
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: _folderColor,
+        borderRadius: BorderRadius.circular(_folderPillCornerRadius),
+        border: Border.all(color: Colors.white, width: 2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FolderIconView(
+            iconId: widget.folder.iconId,
+            color: Colors.white,
+            size: 20,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FolderIconView(
-                iconId: widget.folder.iconId,
-                color: Colors.white,
-                size: 20,
-              ),
-              const SizedBox(width: 10),
-              Text(
-                widget.folder.name,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+          const SizedBox(width: 10),
+          Text(
+            widget.folder.name,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
