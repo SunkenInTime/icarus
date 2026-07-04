@@ -17,7 +17,6 @@ enum _FolderIconFilter {
   all,
   symbols,
   roles,
-  agents,
 }
 
 class FolderEditDialog extends ConsumerStatefulWidget {
@@ -255,10 +254,6 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                       value: _FolderIconFilter.roles,
                       child: Text("Roles"),
                     ),
-                    SegmentedTabItem<_FolderIconFilter>(
-                      value: _FolderIconFilter.agents,
-                      child: Text("Agents"),
-                    ),
                   ],
                   onChanged: (value) {
                     setState(() {
@@ -292,8 +287,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                 itemBuilder: (context, index) {
                   final entry = _filteredIconEntries[index];
                   final iconId = entry.id;
-                  final iconSize =
-                      entry.category == FolderIconCategory.agent ? 27.0 : 24.0;
+                  const iconSize = 24.0;
                   return IconButton(
                       tooltip: entry.label.isEmpty ? null : entry.label,
                       onPressed: () {
@@ -328,8 +322,6 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
         FolderIconRegistry.pickerEntriesFor(FolderIconCategory.symbol),
       _FolderIconFilter.roles =>
         FolderIconRegistry.pickerEntriesFor(FolderIconCategory.role),
-      _FolderIconFilter.agents =>
-        FolderIconRegistry.pickerEntriesFor(FolderIconCategory.agent),
     };
   }
 }

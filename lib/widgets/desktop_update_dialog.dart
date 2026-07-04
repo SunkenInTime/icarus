@@ -4,6 +4,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/widgets/dither_fire_banner.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class DesktopUpdateDialogListener extends StatefulWidget {
@@ -29,9 +30,8 @@ class _DesktopUpdateDialogListenerState
       listenable: widget.controller,
       builder: (context, _) {
         final controller = widget.controller;
-        final shouldShow = controller.needUpdate &&
-            !controller.skipUpdate &&
-            !_dialogOpen;
+        final shouldShow =
+            controller.needUpdate && !controller.skipUpdate && !_dialogOpen;
 
         if (shouldShow) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -53,7 +53,7 @@ class _DesktopUpdateDialogListenerState
 
     await showShadDialog<void>(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: !widget.controller.isMandatory,
       builder: (context) => DesktopUpdateDialog(
         controller: widget.controller,
       ),
@@ -63,6 +63,10 @@ class _DesktopUpdateDialogListenerState
     if (!mounted) {
       return;
     }
+
+    // Whether closed by the X or by tapping outside, don't nag again
+    // this session (mandatory updates can't reach this without restarting).
+    widget.controller.makeSkipUpdate();
 
     setState(() {
       _dialogOpen = false;
@@ -78,381 +82,177 @@ class DesktopUpdateDialog extends StatelessWidget {
 
   final WindowsDesktopUpdateController controller;
 
+  static const double _width = 420;
+  static const double _heroHeight = 180;
+
   @override
   Widget build(BuildContext context) {
-    final shadTheme = ShadTheme.of(context);
+    final theme = ShadTheme.of(context);
 
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
-        final bool canDismiss = !controller.isMandatory &&
-            !controller.isDownloading &&
-            !controller.isDownloaded;
-        final String versionLabel = controller.appVersion ?? 'Latest version';
-        final String appLabel = controller.appName ?? 'Icarus';
-        final String headline = getLocalizedString(
-              controller.getLocalization?.newVersionAvailableText ??
-                  '{} {} is available',
-              [appLabel, versionLabel],
-            ) ??
-            '$appLabel $versionLabel is available';
-        final String summary = getLocalizedString(
-              controller.getLocalization?.newVersionLongText ??
-                  'A desktop update is ready. Downloading will fetch {} MB of files.',
-              [_formatMegabytes(controller.downloadSize ?? 0)],
-            ) ??
-            '';
+        final bool canDismiss = !controller.isMandatory;
+        final notes = (controller.releaseNotes ?? const <ChangeModel?>[])
+            .whereType<ChangeModel>()
+            .toList();
 
-        return ShadDialog.alert(
-          title: Row(
-            children: [
-              Container(
-                height: 40,
-                width: 40,
+        final double fireProgress = controller.isDownloaded
+            ? 1
+            : controller.isDownloading
+                ? controller.downloadProgress
+                : 0;
+
+        return Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _width),
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                clipBehavior: Clip.antiAlias,
                 decoration: BoxDecoration(
-                  color: shadTheme.colorScheme.primary.withValues(alpha: 0.14),
-                  borderRadius: BorderRadius.circular(12),
+                  color: theme.colorScheme.background,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: theme.colorScheme.border),
+                  boxShadow: const [Settings.cardForegroundBackdrop],
                 ),
-                child: Icon(
-                  controller.isDownloaded
-                      ? LucideIcons.badgeCheck
-                      : LucideIcons.download,
-                  color: shadTheme.colorScheme.primary,
-                  size: 18,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      controller.getLocalization?.updateAvailableText ??
-                          'Update Available',
-                    ),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    Stack(
                       children: [
-                        ShadBadge.secondary(
-                          child: Text(versionLabel),
+                        DitherFireBanner(
+                          progress: fireProgress,
+                          height: _heroHeight,
+                          child: Container(
+                            width: 170,
+                            height: 170,
+                            decoration: const BoxDecoration(
+                              // Soft dark pool so the lockup stays readable
+                              // over the busy halftone field.
+                              gradient: RadialGradient(
+                                colors: [
+                                  Color(0xB30C0612),
+                                  Color(0x000C0612),
+                                ],
+                                stops: [0.35, 1],
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Image.asset(
+                                  'assets/logo_mark.png',
+                                  width: 116,
+                                  height: 116,
+                                  filterQuality: FilterQuality.medium,
+                                ),
+                                Text(
+                                  controller.appVersion ?? '',
+                                  style: theme.textTheme.small.copyWith(
+                                    // Quiet on purpose: findable if you look,
+                                    // silent if you don't.
+                                    color: const Color(0xff5b5566),
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                         if (controller.isMandatory)
-                          const ShadBadge.destructive(
-                            child: Text('Required'),
-                          )
-                        else
-                          const ShadBadge.outline(
-                            child: Text('Direct Download'),
+                          const Positioned(
+                            top: 10,
+                            left: 10,
+                            child: ShadBadge.destructive(
+                              child: Text('Required'),
+                            ),
+                          ),
+                        if (canDismiss)
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: ShadIconButton.ghost(
+                              icon: const Icon(LucideIcons.x, size: 16),
+                              width: 28,
+                              height: 28,
+                              padding: EdgeInsets.zero,
+                              onPressed: () => Navigator.of(context).pop(),
+                            ),
                           ),
                       ],
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (notes.isNotEmpty) ...[
+                            _PatchNotes(notes: notes),
+                            const SizedBox(height: 18),
+                          ],
+                          _UpdateButton(controller: controller),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
-            ],
+            ),
           ),
-          closeIcon: canDismiss
-              ? ShadIconButton.ghost(
-                  icon: const Icon(LucideIcons.x, size: 16),
-                  width: 20,
-                  height: 20,
-                  padding: EdgeInsets.zero,
-                  onPressed: () => _dismissForLater(context),
-                )
-              : null,
-          description: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                headline,
-                style: shadTheme.textTheme.small.copyWith(
-                  color: shadTheme.colorScheme.foreground,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              if (summary.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Text(summary),
-              ],
-              const SizedBox(height: 16),
-              _StatusPanel(
-                controller: controller,
-              ),
-              if ((controller.releaseNotes ?? const <ChangeModel?>[]).isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: _ReleaseNotesPanel(
-                    notes: controller.releaseNotes ?? const <ChangeModel?>[],
-                  ),
-                ),
-            ],
-          ),
-          actions: _buildActions(context),
         );
       },
     );
   }
-
-  List<Widget> _buildActions(BuildContext context) {
-    if (controller.isDownloading && !controller.isDownloaded) {
-      return [
-        ShadButton.secondary(
-          onPressed: null,
-          leading: const SizedBox(
-            height: 16,
-            width: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          child: Text(
-            '${(controller.downloadProgress * 100).toInt()}% downloaded',
-          ),
-        ),
-      ];
-    }
-
-    if (controller.isDownloaded) {
-      return [
-        ShadButton.secondary(
-          onPressed: () async {
-            final bool confirmed = await ConfirmAlertDialog.show(
-              context: context,
-              title: controller.getLocalization?.warningTitleText ??
-                  'Restart Required',
-              content: controller.getLocalization?.restartWarningText ??
-                  'A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?',
-              confirmText:
-                  controller.getLocalization?.warningConfirmText ?? 'Restart',
-              cancelText:
-                  controller.getLocalization?.warningCancelText ?? 'Not now',
-            );
-
-            if (confirmed) {
-              try {
-                await controller.restartApp();
-              } catch (error, stackTrace) {
-                AppErrorReporter.reportError(
-                  'Failed to apply the downloaded desktop update. Please try downloading it again.',
-                  error: error,
-                  stackTrace: stackTrace,
-                  source: 'DesktopUpdateDialog.restartToUpdate',
-                );
-              }
-            }
-          },
-          leading: const Icon(LucideIcons.rotateCcw),
-          child: Text(
-            controller.getLocalization?.restartText ?? 'Restart to update',
-          ),
-        ),
-      ];
-    }
-
-    return [
-      if (!controller.isMandatory)
-        ShadButton.secondary(
-          onPressed: () => _dismissForLater(context),
-          child: Text(
-            controller.getLocalization?.skipThisVersionText ?? 'Later',
-          ),
-        ),
-      ShadButton(
-        onPressed: () async {
-          try {
-            await controller.downloadUpdate();
-          } catch (error, stackTrace) {
-            AppErrorReporter.reportError(
-              'Failed to download the desktop update. Please try again.',
-              error: error,
-              stackTrace: stackTrace,
-              source: 'DesktopUpdateDialog.downloadUpdate',
-            );
-          }
-        },
-        leading: const Icon(LucideIcons.download),
-        child: Text(
-          controller.getLocalization?.downloadText ?? 'Download Update',
-        ),
-      ),
-    ];
-  }
-
-  void _dismissForLater(BuildContext context) {
-    controller.makeSkipUpdate();
-    Navigator.of(context).pop();
-  }
-
-  static String _formatMegabytes(double sizeInKilobytes) {
-    return (sizeInKilobytes / 1024).toStringAsFixed(2);
-  }
 }
 
-class _StatusPanel extends StatelessWidget {
-  const _StatusPanel({
-    required this.controller,
-  });
+class _PatchNotes extends StatelessWidget {
+  const _PatchNotes({required this.notes});
 
-  final WindowsDesktopUpdateController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    final bool isDownloading = controller.isDownloading && !controller.isDownloaded;
-    final bool isDownloaded = controller.isDownloaded;
-
-    String title;
-    String subtitle;
-    IconData icon;
-
-    if (isDownloaded) {
-      title = 'Update ready to install';
-      subtitle = 'Restart Icarus to finish applying version ${controller.appVersion ?? ''}.';
-      icon = LucideIcons.badgeCheck;
-    } else if (isDownloading) {
-      title = 'Downloading update';
-      subtitle =
-          '${(controller.downloadProgress * 100).toInt()}% complete • ${_formatMegabytes(controller.downloadedSize)} MB of ${_formatMegabytes(controller.downloadSize ?? 0)} MB';
-      icon = LucideIcons.loaderCircle;
-    } else {
-      title = 'Ready to download';
-      subtitle =
-          '${_formatMegabytes(controller.downloadSize ?? 0)} MB will be downloaded and applied on restart.';
-      icon = LucideIcons.download;
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.border),
-        boxShadow: const [Settings.cardForegroundBackdrop],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                icon,
-                size: 16,
-                color: isDownloaded
-                    ? const Color(0xFF4ADE80)
-                    : theme.colorScheme.primary,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  title,
-                  style: theme.textTheme.small.copyWith(
-                    color: theme.colorScheme.foreground,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            subtitle,
-            style: theme.textTheme.muted,
-          ),
-          const SizedBox(height: 12),
-          ShadProgress(
-            value: isDownloaded ? 1 : (isDownloading ? controller.downloadProgress : 0),
-            minHeight: 10,
-            borderRadius: BorderRadius.circular(999),
-            innerBorderRadius: BorderRadius.circular(999),
-            backgroundColor: theme.colorScheme.secondary,
-            color: isDownloaded
-                ? const Color(0xFF4ADE80)
-                : theme.colorScheme.primary,
-          ),
-        ],
-      ),
-    );
-  }
-
-  static String _formatMegabytes(double sizeInKilobytes) {
-    return (sizeInKilobytes / 1024).toStringAsFixed(2);
-  }
-}
-
-class _ReleaseNotesPanel extends StatelessWidget {
-  const _ReleaseNotesPanel({
-    required this.notes,
-  });
-
-  final List<ChangeModel?> notes;
+  final List<ChangeModel> notes;
 
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: theme.colorScheme.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'What is changing',
-            style: theme.textTheme.small.copyWith(
-              color: theme.colorScheme.foreground,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 10),
-          ...notes.whereType<ChangeModel>().map(
-                (note) => Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        margin: const EdgeInsets.only(top: 6),
-                        height: 6,
-                        width: 6,
-                        decoration: BoxDecoration(
-                          color: _colorForNoteType(theme, note.type),
-                          shape: BoxShape.circle,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 280),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final note in notes)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(top: 7),
+                      height: 5,
+                      width: 5,
+                      decoration: BoxDecoration(
+                        color: _colorForNoteType(theme, note.type),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        note.message,
+                        style: theme.textTheme.small.copyWith(
+                          color: theme.colorScheme.foreground,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (note.type != null && note.type!.trim().isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 4),
-                                child: ShadBadge.outline(
-                                  child: Text(note.type!.trim()),
-                                ),
-                              ),
-                            Text(
-                              note.message,
-                              style: theme.textTheme.small.copyWith(
-                                color: theme.colorScheme.foreground,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -470,5 +270,105 @@ class _ReleaseNotesPanel extends StatelessWidget {
       default:
         return theme.colorScheme.mutedForeground;
     }
+  }
+}
+
+/// Single action that morphs through the update lifecycle:
+/// download -> percent progress -> restart to install.
+class _UpdateButton extends StatelessWidget {
+  const _UpdateButton({required this.controller});
+
+  final WindowsDesktopUpdateController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShadTheme.of(context);
+
+    if (controller.isDownloading && !controller.isDownloaded) {
+      return ShadButton.secondary(
+        width: double.infinity,
+        onPressed: null,
+        leading: const SizedBox(
+          height: 16,
+          width: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        child: Text(
+          'Downloading… ${(controller.downloadProgress * 100).toInt()}%',
+        ),
+      );
+    }
+
+    if (controller.isDownloaded) {
+      return ShadButton(
+        width: double.infinity,
+        onPressed: () => _confirmRestart(context),
+        leading: const Icon(LucideIcons.rotateCcw),
+        child: Text(
+          controller.getLocalization?.restartText ?? 'Restart to update',
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ShadButton(
+          width: double.infinity,
+          onPressed: () => _startDownload(context),
+          leading: const Icon(LucideIcons.download),
+          child: Text(
+            controller.getLocalization?.downloadText ?? 'Download Update',
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '${_formatMegabytes(controller.downloadSize ?? 0)} MB, applied on restart',
+          textAlign: TextAlign.center,
+          style: theme.textTheme.muted.copyWith(fontSize: 12),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _startDownload(BuildContext context) async {
+    try {
+      await controller.downloadUpdate();
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to download the desktop update. Please try again.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'DesktopUpdateDialog.downloadUpdate',
+      );
+    }
+  }
+
+  Future<void> _confirmRestart(BuildContext context) async {
+    final bool confirmed = await ConfirmAlertDialog.show(
+      context: context,
+      title: controller.getLocalization?.warningTitleText ?? 'Restart Required',
+      content: controller.getLocalization?.restartWarningText ??
+          'A restart is required to complete the update installation.\nAny unsaved changes will be lost. Would you like to restart now?',
+      confirmText: controller.getLocalization?.warningConfirmText ?? 'Restart',
+      cancelText: controller.getLocalization?.warningCancelText ?? 'Not now',
+    );
+
+    if (confirmed) {
+      try {
+        await controller.restartApp();
+      } catch (error, stackTrace) {
+        AppErrorReporter.reportError(
+          'Failed to apply the downloaded desktop update. Please try downloading it again.',
+          error: error,
+          stackTrace: stackTrace,
+          source: 'DesktopUpdateDialog.restartToUpdate',
+        );
+      }
+    }
+  }
+
+  static String _formatMegabytes(double sizeInKilobytes) {
+    return (sizeInKilobytes / 1024).toStringAsFixed(1);
   }
 }

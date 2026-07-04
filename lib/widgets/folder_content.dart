@@ -12,9 +12,9 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
-import 'package:icarus/widgets/dot_painter.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_card.dart';
+import 'package:icarus/widgets/hover_dot_grid.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 @visibleForTesting
@@ -151,7 +151,7 @@ class FolderContent extends ConsumerWidget {
           const Positioned.fill(
             child: Padding(
               padding: EdgeInsets.all(4.0),
-              child: DotGrid(),
+              child: HoverDotGrid(),
             ),
           ),
           Positioned.fill(
