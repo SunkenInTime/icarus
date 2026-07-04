@@ -8,7 +8,7 @@ on:
 
 jobs:
   validate:
-    runs-on: windows-latest
+    runs-on: blacksmith-4vcpu-windows-2025
     env:
       FVM_HOME: ${{ github.workspace }}/.fvm_cache
       PUB_CACHE: ${{ github.workspace }}/.pub-cache
