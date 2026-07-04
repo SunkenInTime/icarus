@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -40,6 +41,7 @@ class _DitherFireBannerState extends State<DitherFireBanner>
     with SingleTickerProviderStateMixin {
   ui.FragmentShader? _shader;
   late final Ticker _ticker;
+  Duration _lastTick = Duration.zero;
   double _time = 0;
   double _displayProgress = 0;
 
@@ -62,10 +64,16 @@ class _DitherFireBannerState extends State<DitherFireBanner>
   }
 
   void _onTick(Duration elapsed) {
+    final dt = _lastTick == Duration.zero
+        ? 1 / 60
+        : (elapsed - _lastTick).inMicroseconds / 1e6;
+    _lastTick = elapsed;
+
     setState(() {
       _time = elapsed.inMicroseconds / 1e6;
       // Chase the target so progress jumps render as a smooth swell.
-      _displayProgress += (widget.progress - _displayProgress) * 0.06;
+      _displayProgress +=
+          (widget.progress - _displayProgress) * (1 - math.exp(-dt * 4));
     });
   }
 
