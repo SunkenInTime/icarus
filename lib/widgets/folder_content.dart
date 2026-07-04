@@ -341,13 +341,13 @@ class FolderContent extends ConsumerWidget {
                                   // Calculate how many columns can fit with minimum width
                                   const double minTileWidth =
                                       250; // Your minimum width
-                                  const double spacing = 20;
                                   const double padding = 32; // 16 * 2
 
                                   int crossAxisCount = ((constraints.maxWidth -
                                               padding +
-                                              spacing) /
-                                          (minTileWidth + spacing))
+                                              strategyTileGridSpacing) /
+                                          (minTileWidth +
+                                              strategyTileGridSpacing))
                                       .floor();
                                   crossAxisCount = crossAxisCount
                                       .clamp(1, double.infinity)
@@ -404,14 +404,17 @@ class FolderContent extends ConsumerWidget {
                                       // Strategies grid
                                       if (strategies.isNotEmpty)
                                         SliverPadding(
-                                          padding: const EdgeInsets.all(16),
+                                          padding: const EdgeInsets.all(
+                                            16 - strategyTileGutterOutset,
+                                          ),
                                           sliver: SliverGrid(
                                             gridDelegate:
                                                 SliverGridDelegateWithFixedCrossAxisCount(
                                               crossAxisCount: crossAxisCount,
-                                              mainAxisExtent: 250,
-                                              crossAxisSpacing: 20,
-                                              mainAxisSpacing: 20,
+                                              mainAxisExtent:
+                                                  strategyTileGridMainAxisExtent,
+                                              crossAxisSpacing: 0,
+                                              mainAxisSpacing: 0,
                                             ),
                                             delegate:
                                                 SliverChildBuilderDelegate(

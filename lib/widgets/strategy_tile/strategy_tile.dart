@@ -8,10 +8,17 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/dialogs/strategy/delete_strategy_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/rename_strategy_dialog.dart';
+import 'package:icarus/widgets/drag_tilt_feedback.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile_sections.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+const double strategyTileGridSpacing = 20;
+const double strategyTileGutterOutset = strategyTileGridSpacing / 2;
+const double strategyTileMainAxisExtent = 250;
+const double strategyTileGridMainAxisExtent =
+    strategyTileMainAxisExtent + strategyTileGridSpacing;
 
 class StrategyTile extends ConsumerStatefulWidget {
   const StrategyTile({super.key, required this.strategyData});
@@ -32,6 +39,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       ShadContextMenuController();
   final ShadContextMenuController _rightClickMenuController =
       ShadContextMenuController();
+  final DragTiltController _dragTiltController = DragTiltController();
 
   @override
   void dispose() {
@@ -128,129 +136,133 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
               pinned.containsKey(item.strategy.id),
         );
 
-        return Draggable<GridItem>(
-          data: StrategyItem(widget.strategyData),
-          dragAnchorStrategy: pointerDragAnchorStrategy,
-          feedback: Opacity(
-            opacity: 0.95,
-            child: Material(
-              color: Colors.transparent,
+        return Padding(
+          padding: const EdgeInsets.all(strategyTileGutterOutset),
+          child: Draggable<GridItem>(
+            data: StrategyItem(widget.strategyData),
+            dragAnchorStrategy: pointerDragAnchorStrategy,
+            onDragUpdate: (details) =>
+                _dragTiltController.addDelta(details.delta.dx),
+            feedback: TiltDragFeedback(
+              controller: _dragTiltController,
               child: StrategyTileDragPreview(data: viewData),
             ),
-          ),
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            onEnter: (_) => setState(
-                () => _highlightColor = Settings.tacticalVioletTheme.ring),
-            onExit: (_) => setState(
-                () => _highlightColor = Settings.tacticalVioletTheme.border),
-            child: AbsorbPointer(
-              absorbing: _isLoading,
-              child: ShadContextMenuRegion(
-                controller: _rightClickMenuController,
-                items: _buildMenuItems(),
-                child: GestureDetector(
-                  onTap: () => _openStrategy(context),
-                  child: Builder(
-                    builder: (context) {
-                      final dropSide = _pinnedDropSide;
-                      final slotKey = dropSide == null
-                          ? null
-                          : dropInsertionSlotKey(
-                              itemId: id,
-                              side: dropSide,
-                              pinnedOrder: pinnedIdsInManualOrder(pinned),
-                            );
-                      return Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 100),
-                            decoration: BoxDecoration(
-                              color: ShadTheme.of(context).colorScheme.card,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: isPinDropTarget
-                                    ? Settings.tacticalVioletTheme.border
-                                    : _highlightColor,
-                                width: 2,
-                              ),
-                            ),
-                            padding: const EdgeInsets.all(8),
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: StrategyTileThumbnail(
-                                    assetPath: viewData.thumbnailAsset,
-                                  ),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              onEnter: (_) => setState(
+                  () => _highlightColor = Settings.tacticalVioletTheme.ring),
+              onExit: (_) => setState(
+                  () => _highlightColor = Settings.tacticalVioletTheme.border),
+              child: AbsorbPointer(
+                absorbing: _isLoading,
+                child: ShadContextMenuRegion(
+                  controller: _rightClickMenuController,
+                  items: _buildMenuItems(),
+                  child: GestureDetector(
+                    onTap: () => _openStrategy(context),
+                    child: Builder(
+                      builder: (context) {
+                        final dropSide = _pinnedDropSide;
+                        final slotKey = dropSide == null
+                            ? null
+                            : dropInsertionSlotKey(
+                                itemId: id,
+                                side: dropSide,
+                                pinnedOrder: pinnedIdsInManualOrder(pinned),
+                              );
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 100),
+                              decoration: BoxDecoration(
+                                color: ShadTheme.of(context).colorScheme.card,
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: isPinDropTarget
+                                      ? Settings.tacticalVioletTheme.border
+                                      : _highlightColor,
+                                  width: 2,
                                 ),
-                                const SizedBox(height: 10),
-                                Expanded(
-                                    child: StrategyTileDetails(data: viewData)),
-                              ],
-                            ),
-                          ),
-                          if (isPinned)
-                            Align(
-                              alignment: Alignment.topLeft,
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: Settings
-                                        .tacticalVioletTheme.background
-                                        .withValues(alpha: 0.78),
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                      color:
-                                          Settings.tacticalVioletTheme.border,
+                              ),
+                              padding: const EdgeInsets.all(8),
+                              child: Column(
+                                children: [
+                                  Expanded(
+                                    child: StrategyTileThumbnail(
+                                      assetPath: viewData.thumbnailAsset,
                                     ),
                                   ),
-                                  child: const Padding(
-                                    padding: EdgeInsets.all(5),
-                                    child: Icon(Icons.push_pin, size: 15),
+                                  const SizedBox(height: 10),
+                                  Expanded(
+                                      child:
+                                          StrategyTileDetails(data: viewData)),
+                                ],
+                              ),
+                            ),
+                            if (isPinned)
+                              Align(
+                                alignment: Alignment.topLeft,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: Settings
+                                          .tacticalVioletTheme.background
+                                          .withValues(alpha: 0.78),
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color:
+                                            Settings.tacticalVioletTheme.border,
+                                      ),
+                                    ),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(5),
+                                      child: Icon(Icons.push_pin, size: 15),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            Align(
+                              alignment: Alignment.topRight,
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: ShadContextMenuRegion(
+                                  controller: _menuButtonController,
+                                  items: _buildMenuItems(),
+                                  child: Listener(
+                                    onPointerDown: (_) {
+                                      _menuButtonWasOpenOnPointerDown =
+                                          _menuButtonController.isOpen;
+                                    },
+                                    child: ShadIconButton.secondary(
+                                      width: 28,
+                                      height: 28,
+                                      onPressed: _handleMenuButtonPressed,
+                                      icon:
+                                          const Icon(Icons.more_vert_outlined),
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          Align(
-                            alignment: Alignment.topRight,
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: ShadContextMenuRegion(
-                                controller: _menuButtonController,
-                                items: _buildMenuItems(),
-                                child: Listener(
-                                  onPointerDown: (_) {
-                                    _menuButtonWasOpenOnPointerDown =
-                                        _menuButtonController.isOpen;
-                                  },
-                                  child: ShadIconButton.secondary(
-                                    width: 28,
-                                    height: 28,
-                                    onPressed: _handleMenuButtonPressed,
-                                    icon: const Icon(Icons.more_vert_outlined),
-                                  ),
+                            if (dropSide != null && slotKey != null)
+                              Positioned.fill(
+                                child: DropInsertionIndicator(
+                                  key: ValueKey(slotKey),
+                                  slotKey: slotKey,
+                                  side: dropSide,
+                                  // Matches the grid spacing in FolderContent
+                                  // so the caret sits centered in the gutter.
+                                  gap: strategyTileGridSpacing,
+                                  topInset: 6,
+                                  bottomInset: 6,
                                 ),
                               ),
-                            ),
-                          ),
-                          if (dropSide != null && slotKey != null)
-                            Positioned.fill(
-                              child: DropInsertionIndicator(
-                                key: ValueKey(slotKey),
-                                slotKey: slotKey,
-                                side: dropSide,
-                                // Matches the grid crossAxisSpacing so the
-                                // caret sits centered in the gutter.
-                                gap: 20,
-                                topInset: 6,
-                                bottomInset: 6,
-                              ),
-                            ),
-                        ],
-                      );
-                    },
+                          ],
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
