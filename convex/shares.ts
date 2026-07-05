@@ -7,6 +7,11 @@ import {
   requireCurrentUser,
 } from "./lib/auth";
 import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
+import {
+  notFoundError,
+  errorWithCode,
+  conflictError,
+} from "./lib/errors";
 
 const targetTypeValidator = v.union(v.literal("strategy"), v.literal("folder"));
 const collaboratorRoleValidator = v.union(v.literal("viewer"), v.literal("editor"));
@@ -35,15 +40,9 @@ export const list = query({
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
 
     if (resolved.strategy !== null) {
-      const { role } = await assertStrategyRole(ctx, resolved.strategy, "owner");
-      if (role !== "owner") {
-        throw new Error("Forbidden");
-      }
+      await assertStrategyRole(ctx, resolved.strategy, "owner");
     } else if (resolved.folder !== null) {
-      const { role } = await assertFolderRole(ctx, resolved.folder, "owner");
-      if (role !== "owner") {
-        throw new Error("Forbidden");
-      }
+      await assertFolderRole(ctx, resolved.folder, "owner");
     }
 
     const links =
@@ -80,15 +79,17 @@ export const create = mutation({
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
 
     if (resolved.strategy !== null) {
-      const { role } = await assertStrategyRole(ctx, resolved.strategy, "owner");
-      if (role !== "owner") {
-        throw new Error("Forbidden");
-      }
+      await assertStrategyRole(ctx, resolved.strategy, "owner");
     } else if (resolved.folder !== null) {
-      const { role } = await assertFolderRole(ctx, resolved.folder, "owner");
-      if (role !== "owner") {
-        throw new Error("Forbidden");
-      }
+      await assertFolderRole(ctx, resolved.folder, "owner");
+    }
+
+    const existingLink = await ctx.db
+      .query("shareLinks")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .first();
+    if (existingLink !== null) {
+      throw conflictError(`Share token already exists: ${args.token}`);
     }
 
     await ctx.db.insert("shareLinks", {
@@ -116,15 +117,9 @@ export const revoke = mutation({
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
 
     if (resolved.strategy !== null) {
-      const { role } = await assertStrategyRole(ctx, resolved.strategy, "owner");
-      if (role !== "owner") {
-        throw new Error("Forbidden");
-      }
+      await assertStrategyRole(ctx, resolved.strategy, "owner");
     } else if (resolved.folder !== null) {
-      const { role } = await assertFolderRole(ctx, resolved.folder, "owner");
-      if (role !== "owner") {
-        throw new Error("Forbidden");
-      }
+      await assertFolderRole(ctx, resolved.folder, "owner");
     }
 
     const link = await ctx.db
@@ -133,14 +128,14 @@ export const revoke = mutation({
       .first();
 
     if (link === null) {
-      throw new Error("Share link not found");
+      throw notFoundError("Share link", args.token);
     }
 
     if (
       (resolved.strategy !== null && link.strategyId !== resolved.strategy._id) ||
       (resolved.folder !== null && link.folderId !== resolved.folder._id)
     ) {
-      throw new Error("Share link not found");
+      throw notFoundError("Share link", args.token);
     }
 
     await ctx.db.patch(link._id, {
@@ -164,17 +159,20 @@ export const redeem = mutation({
       .first();
 
     if (link === null) {
-      throw new Error("Share link not found");
+      throw notFoundError("Share link", args.token);
     }
 
     if (link.revokedAt !== undefined) {
-      throw new Error("Share link revoked");
+      throw errorWithCode("SHARE_LINK_REVOKED", "Share link revoked");
     }
 
     if (link.targetType === "strategy") {
       const strategy = link.strategyId === undefined ? null : await ctx.db.get(link.strategyId);
       if (strategy === null) {
-        throw new Error("Strategy not found");
+        throw notFoundError(
+          "Strategy",
+          link.strategyId === undefined ? "unknown" : link.strategyId,
+        );
       }
 
       if (strategy.ownerId !== user._id) {
@@ -216,7 +214,7 @@ export const redeem = mutation({
 
     const folder = link.folderId === undefined ? null : await ctx.db.get(link.folderId);
     if (folder === null) {
-      throw new Error("Folder not found");
+      throw notFoundError("Folder", args.token);
     }
 
     if (folder.ownerId !== user._id) {

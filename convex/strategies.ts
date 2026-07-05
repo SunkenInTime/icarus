@@ -5,14 +5,22 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
   assertFolderRole,
   assertStrategyRole,
+  getEffectiveFolderRoleForUser,
   getEffectiveStrategyRoleForUser,
+  higherRole,
   requireCurrentUser,
 } from "./lib/auth";
+import type { StrategyRole } from "./lib/auth";
 import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
 import {
   mapThemePaletteValidator,
   strategySettingsValidator,
 } from "./lib/payloadValidators";
+import {
+  conflictError,
+  forbiddenError,
+} from "./lib/errors";
+import { purgeDeletedPageOrphansRef } from "./maintenance";
 
 type StrategyScope = "owned" | "shared" | "all";
 
@@ -67,59 +75,109 @@ async function summarizeStrategies(
     .query("strategyCollaborators")
     .withIndex("by_userId", (q) => q.eq("userId", userId))
     .collect();
-
-  const folderIdToPublicId = new Map<Id<"folders">, string>();
-  for (const strategy of strategies) {
-    if (
-      strategy.folderId !== undefined &&
-      !folderIdToPublicId.has(strategy.folderId)
-    ) {
-      const folder = await ctx.db.get(strategy.folderId);
-      if (folder !== null) {
-        folderIdToPublicId.set(strategy.folderId, folder.publicId);
-      }
-    }
+  const strategyRoleById = new Map<Id<"strategies">, "viewer" | "editor">();
+  for (const membership of memberships) {
+    strategyRoleById.set(membership.strategyId, membership.role);
   }
 
-  return await Promise.all(
-    strategies
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .map(async (s) => {
-        const pages = await ctx.db
-          .query("pages")
-          .withIndex("by_strategyId", (q) => q.eq("strategyId", s._id))
-          .collect();
-        let attackLabel = "Unknown";
-        if (pages.length > 0) {
-          const first = pages[0]!.isAttack;
-          const mixed = pages.some((page) => page.isAttack !== first);
-          attackLabel = mixed ? "Mixed" : first ? "Attack" : "Defend";
-        }
-        const role =
-          s.ownerId === userId
-            ? "owner"
-            : ((await getEffectiveStrategyRoleForUser(ctx, s, userId)) ??
-              memberships.find((m: any) => m.strategyId === s._id)?.role ??
-              "viewer");
+  const folderById = new Map<Id<"folders">, Promise<Doc<"folders"> | null>>();
+  const folderRoleById = new Map<
+    Id<"folders">,
+    Promise<StrategyRole | null>
+  >();
 
-        return {
-          publicId: s.publicId,
-          name: s.name,
-          mapData: s.mapData,
-          sequence: s.sequence,
-          createdAt: s.createdAt,
-          updatedAt: s.updatedAt,
-          role,
-          attackLabel,
-          folderPublicId:
-            s.folderId === undefined
-              ? null
-              : (folderIdToPublicId.get(s.folderId) ?? null),
-          themeProfileId: s.themeProfileId ?? null,
-          themeOverridePalette: s.themeOverridePalette ?? null,
-        };
-      }),
-  );
+  const getFolder = (folderId: Id<"folders">): Promise<Doc<"folders"> | null> => {
+    const cached = folderById.get(folderId);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const promise = ctx.db.get(folderId);
+    folderById.set(folderId, promise);
+    return promise;
+  };
+
+  const getFolderRole = (
+    folderId: Id<"folders">,
+  ): Promise<StrategyRole | null> => {
+    const cached = folderRoleById.get(folderId);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    const promise = (async () => {
+      const folder = await getFolder(folderId);
+      if (folder === null) {
+        return null;
+      }
+      return await getEffectiveFolderRoleForUser(ctx, folder, userId);
+    })();
+    folderRoleById.set(folderId, promise);
+    return promise;
+  };
+
+  const orderedStrategies = [...strategies].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  return await Promise.all(orderedStrategies.map(async (strategy): Promise<{
+    publicId: string;
+    name: string;
+    mapData: string;
+    sequence: number;
+    createdAt: number;
+    updatedAt: number;
+    role: StrategyRole;
+    attackLabel: string;
+    folderPublicId: string | null;
+    themeProfileId: string | null;
+    themeOverridePalette: Doc<"strategies">["themeOverridePalette"] | null;
+  }> => {
+    const pagesPromise = ctx.db
+      .query("pages")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+      .take(100);
+    const folderPromise =
+      strategy.folderId === undefined
+        ? Promise.resolve(null)
+        : getFolder(strategy.folderId);
+    const folderRolePromise =
+      strategy.folderId === undefined || strategy.ownerId === userId
+        ? Promise.resolve(null)
+        : getFolderRole(strategy.folderId);
+    const [pages, folder, folderRole] = await Promise.all([
+      pagesPromise,
+      folderPromise,
+      folderRolePromise,
+    ]);
+    let attackLabel = "Unknown";
+    if (pages.length > 0) {
+      const first = pages[0]!.isAttack;
+      const mixed = pages.some((page) => page.isAttack !== first);
+      attackLabel = mixed ? "Mixed" : first ? "Attack" : "Defend";
+    }
+
+    let role: StrategyRole;
+    if (strategy.ownerId === userId) {
+      role = "owner";
+    } else {
+      const directRole = strategyRoleById.get(strategy._id);
+      role = higherRole(directRole ?? null, folderRole) ?? "viewer";
+    }
+
+    return {
+      publicId: strategy.publicId,
+      name: strategy.name,
+      mapData: strategy.mapData,
+      sequence: strategy.sequence,
+      createdAt: strategy.createdAt,
+      updatedAt: strategy.updatedAt,
+      role,
+      attackLabel,
+      folderPublicId:
+        strategy.folderId === undefined ? null : (folder?.publicId ?? null),
+      themeProfileId: strategy.themeProfileId ?? null,
+      themeOverridePalette: strategy.themeOverridePalette ?? null,
+    };
+  }));
 }
 
 async function listStrategiesInFolder(
@@ -198,7 +256,7 @@ async function resolveOwnedFolderId(
   }
   const folder = await getFolderByPublicId(ctx, folderPublicId);
   if (folder.ownerId !== userId) {
-    throw new Error("Forbidden");
+    throw forbiddenError();
   }
   return folder._id;
 }
@@ -217,7 +275,7 @@ async function assertInitialPagePublicIdAvailable(
     (allowedStrategyId === undefined ||
       existingPage.strategyId !== allowedStrategyId)
   ) {
-    throw new Error(`Page publicId already exists: ${pagePublicId}`);
+    throw conflictError(`Page publicId already exists: ${pagePublicId}`);
   }
 }
 
@@ -276,7 +334,7 @@ async function createStrategyWithInitialPageRecord(
     return { ok: true, reused: true };
   }
   if (existing.length > 0) {
-    throw new Error(`Strategy publicId already exists: ${args.publicId}`);
+    throw conflictError(`Strategy publicId already exists: ${args.publicId}`);
   }
 
   await assertInitialPagePublicIdAvailable(ctx, initialPage.publicId);
@@ -467,7 +525,7 @@ export const move = mutation({
     if (args.folderPublicId !== undefined) {
       const folder = await getFolderByPublicId(ctx, args.folderPublicId);
       if (folder.ownerId !== strategy.ownerId) {
-        throw new Error("Forbidden");
+        throw forbiddenError();
       }
       folderId = folder._id;
     }
@@ -488,11 +546,7 @@ export const deleteStrategy = mutation({
   },
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    const { role } = await assertStrategyRole(ctx, strategy, "owner");
-
-    if (role !== "owner") {
-      throw new Error("Forbidden");
-    }
+    await assertStrategyRole(ctx, strategy, "owner");
 
     const pages = await ctx.db
       .query("pages")
@@ -500,23 +554,10 @@ export const deleteStrategy = mutation({
       .collect();
 
     for (const page of pages) {
-      const pageElements = await ctx.db
-        .query("elements")
-        .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-        .collect();
-      for (const element of pageElements) {
-        await ctx.db.delete(element._id);
-      }
-
-      const pageLineups = await ctx.db
-        .query("lineups")
-        .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-        .collect();
-      for (const lineup of pageLineups) {
-        await ctx.db.delete(lineup._id);
-      }
-
       await ctx.db.delete(page._id);
+      await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
+        pageId: page._id,
+      });
     }
 
     const collaborators = await ctx.db

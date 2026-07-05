@@ -97,7 +97,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     enqueuedOps.addAll(collected);
     final queued = <EntitySyncKey, QueuedEntityIntent>{};
     for (final op in collected) {
-      final key = entityKeyForStrategyOp(op);
+      final key = EntitySyncKey.forStrategyOp(op);
       if (key == null) {
         continue;
       }
@@ -822,8 +822,8 @@ void main() {
             strategyPublicId: strategyId,
             activePageId: 'page-1',
             overlayByEntityKey: {
-              elementEntityKey('page-1', 'text-1'): ActivePageOverlayEntry(
-                entityKey: elementEntityKey('page-1', 'text-1'),
+              const EntitySyncKey.element('page-1', 'text-1'): ActivePageOverlayEntry(
+                entityKey: const EntitySyncKey.element('page-1', 'text-1'),
                 entityType: ActivePageOverlayEntityType.element,
                 desiredPayload:
                     cloudElementPayload(kind: 'text', data: localTextPayload),
@@ -1012,8 +1012,8 @@ void main() {
             strategyPublicId: strategyId,
             activePageId: 'page-1',
             overlayByEntityKey: {
-              elementEntityKey('page-1', 'text-1'): ActivePageOverlayEntry(
-                entityKey: elementEntityKey('page-1', 'text-1'),
+              const EntitySyncKey.element('page-1', 'text-1'): ActivePageOverlayEntry(
+                entityKey: const EntitySyncKey.element('page-1', 'text-1'),
                 entityType: ActivePageOverlayEntityType.element,
                 desiredPayload:
                     cloudElementPayload(kind: 'text', data: localTextPayload),
@@ -1109,7 +1109,7 @@ void main() {
       ),
     ], [
       AckedEntityIntent(
-        entityKey: 'element:page-1:text-1',
+        entityKey: const EntitySyncKey.element('page-1', 'text-1'),
         op: StrategyOp(
           opId: 'op-1',
           kind: StrategyOpKind.patch,

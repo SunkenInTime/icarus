@@ -7,16 +7,27 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 void main() {
   group('Entity sync keys', () {
     test('round trips page ids that contain delimiters', () {
-      final pageId = 'strategy-1:page:1';
-      final elementId = 'element-1';
-      final lineupId = 'lineup-1';
+      const pageId = 'strategy-1:page:1';
+      const elementId = 'element-1';
+      const lineupId = 'lineup-1';
+      const strategyKey = EntitySyncKey.strategy();
+      const pageKey = EntitySyncKey.pageSettings(pageId);
+      const elementKey = EntitySyncKey.element(pageId, elementId);
+      const lineupKey = EntitySyncKey.lineup(pageId, lineupId);
 
-      expect(pageIdForEntityKey(pageSettingsEntityKey(pageId)), pageId);
-      expect(pageIdForEntityKey(elementEntityKey(pageId, elementId)), pageId);
-      expect(
-          entityIdForEntityKey(elementEntityKey(pageId, elementId)), elementId);
-      expect(pageIdForEntityKey(lineupEntityKey(pageId, lineupId)), pageId);
-      expect(entityIdForEntityKey(lineupEntityKey(pageId, lineupId)), lineupId);
+      expect(strategyKey.kind, EntitySyncKeyKind.strategy);
+      expect(strategyKey.overlayType, isNull);
+      expect(pageKey.kind, EntitySyncKeyKind.pageSettings);
+      expect(pageKey.overlayType, ActivePageOverlayEntityType.pageSettings);
+      expect(pageKey.pageId, pageId);
+      expect(elementKey.pageId, pageId);
+      expect(elementKey.kind, EntitySyncKeyKind.element);
+      expect(elementKey.overlayType, ActivePageOverlayEntityType.element);
+      expect(elementKey.entityId, elementId);
+      expect(lineupKey.pageId, pageId);
+      expect(lineupKey.kind, EntitySyncKeyKind.lineup);
+      expect(lineupKey.overlayType, ActivePageOverlayEntityType.lineup);
+      expect(lineupKey.entityId, lineupId);
     });
   });
 

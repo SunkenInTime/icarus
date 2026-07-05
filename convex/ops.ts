@@ -1,5 +1,5 @@
-import { mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { mutation, type MutationCtx } from "./_generated/server";
+import { ConvexError, v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
 import {
@@ -11,6 +11,8 @@ import {
 import { strategyOpValidator } from "./lib/opTypes";
 import { assertSupportedCloudProtocol } from "./lib/cloudProtocol";
 import type { Doc } from "./_generated/dataModel";
+import { errorWithCode, invalidPayloadError } from "./lib/errors";
+import { purgeDeletedPageOrphansRef } from "./maintenance";
 
 async function incrementSequence(ctx: any, strategy: any): Promise<any> {
   const nextSequence = strategy.sequence + 1;
@@ -28,6 +30,11 @@ async function incrementSequence(ctx: any, strategy: any): Promise<any> {
 
 type ElementPayload = Doc<"elements">["payload"];
 type LineupPayload = Doc<"lineups">["payload"];
+type ReplayEntityTable = "elements" | "lineups";
+type ReplayEntitySnapshot = {
+  revision: number;
+  payload: ElementPayload | LineupPayload;
+};
 type StrategyPatchPayload = {
   name?: string;
   mapData?: string;
@@ -42,6 +49,29 @@ type PagePayload = {
   isAttack?: boolean;
 };
 
+async function getReplayEntitySnapshot(
+  ctx: MutationCtx,
+  tableName: ReplayEntityTable,
+  entityPublicId: string,
+  strategyId: Id<"strategies">,
+): Promise<ReplayEntitySnapshot | null> {
+  const entity =
+    tableName === "elements"
+      ? await ctx.db
+          .query("elements")
+          .withIndex("by_publicId", (q) => q.eq("publicId", entityPublicId))
+          .first()
+      : await ctx.db
+          .query("lineups")
+          .withIndex("by_publicId", (q) => q.eq("publicId", entityPublicId))
+          .first();
+
+  if (entity === null || entity.strategyId !== strategyId) {
+    return null;
+  }
+  return { revision: entity.revision, payload: entity.payload };
+}
+
 function isRecord(payload: unknown): payload is Record<string, unknown> {
   return (
     typeof payload === "object" && payload !== null && !Array.isArray(payload)
@@ -55,7 +85,7 @@ function assertKnownPayloadKeys(
 ): void {
   for (const key of Object.keys(payload)) {
     if (!allowedKeys.has(key)) {
-      throw new Error(`Invalid ${label} payload`);
+      throw invalidPayloadError(`Invalid ${label} payload`);
     }
   }
 }
@@ -76,7 +106,7 @@ function assertStrategyPatchPayload(payload: unknown): StrategyPatchPayload {
     return {};
   }
   if (!isRecord(payload)) {
-    throw new Error("Invalid strategy payload");
+    throw invalidPayloadError("Invalid strategy payload");
   }
   assertKnownPayloadKeys(payload, strategyPatchPayloadKeys, "strategy");
   return payload as StrategyPatchPayload;
@@ -87,7 +117,7 @@ function assertPagePayload(payload: unknown): PagePayload {
     return {};
   }
   if (!isRecord(payload)) {
-    throw new Error("Invalid page payload");
+    throw invalidPayloadError("Invalid page payload");
   }
   assertKnownPayloadKeys(payload, pagePayloadKeys, "page");
   return payload as PagePayload;
@@ -95,7 +125,7 @@ function assertPagePayload(payload: unknown): PagePayload {
 
 function assertElementPayload(payload: unknown): ElementPayload {
   if (!isRecord(payload)) {
-    throw new Error("Missing element payload");
+    throw errorWithCode("MISSING_ELEMENT_PAYLOAD", "Missing element payload");
   }
   const kind = payload.kind;
   const payloadVersion = payload.payloadVersion;
@@ -108,32 +138,32 @@ function assertElementPayload(payload: unknown): ElementPayload {
     kind !== "image" &&
     kind !== "utility"
   ) {
-    throw new Error("Invalid element payload kind");
+    throw errorWithCode("INVALID_ELEMENT_PAYLOAD_KIND", "Invalid element payload kind");
   }
   if (typeof payloadVersion !== "number") {
-    throw new Error("Invalid element payload version");
+    throw errorWithCode("INVALID_ELEMENT_PAYLOAD_VERSION", "Invalid element payload version");
   }
   if (!isRecord(data)) {
-    throw new Error("Invalid element payload data");
+    throw errorWithCode("INVALID_ELEMENT_PAYLOAD_DATA", "Invalid element payload data");
   }
   if (typeof data.elementType === "string" && data.elementType !== kind) {
-    throw new Error("elementType_payloadKind_mismatch");
+    throw errorWithCode("ELEMENT_TYPE_PAYLOAD_KIND_MISMATCH", "elementType_payloadKind_mismatch");
   }
   return payload as ElementPayload;
 }
 
 function assertLineupPayload(payload: unknown): LineupPayload {
   if (!isRecord(payload)) {
-    throw new Error("Missing lineup payload");
+    throw errorWithCode("MISSING_LINEUP_PAYLOAD", "Missing lineup payload");
   }
   if (payload.kind !== "lineupGroup") {
-    throw new Error("Invalid lineup payload kind");
+    throw errorWithCode("INVALID_LINEUP_PAYLOAD_KIND", "Invalid lineup payload kind");
   }
   if (typeof payload.payloadVersion !== "number") {
-    throw new Error("Invalid lineup payload version");
+    throw errorWithCode("INVALID_LINEUP_PAYLOAD_VERSION", "Invalid lineup payload version");
   }
   if (!isRecord(payload.data)) {
-    throw new Error("Invalid lineup payload data");
+    throw errorWithCode("INVALID_LINEUP_PAYLOAD_DATA", "Invalid lineup payload data");
   }
   return payload as LineupPayload;
 }
@@ -224,6 +254,33 @@ export const applyBatch = mutation({
         .first();
 
       if (existingEvent !== null) {
+        let latestRevision: number | null = null;
+        let latestPayload: ElementPayload | LineupPayload | null = null;
+
+        if (op.entityType === "element" && op.entityPublicId !== undefined) {
+          const snapshot = await getReplayEntitySnapshot(
+            ctx,
+            "elements",
+            op.entityPublicId,
+            strategy._id,
+          );
+          if (snapshot !== null) {
+            latestRevision = snapshot.revision;
+            latestPayload = snapshot.payload;
+          }
+        } else if (op.entityType === "lineup" && op.entityPublicId !== undefined) {
+          const snapshot = await getReplayEntitySnapshot(
+            ctx,
+            "lineups",
+            op.entityPublicId,
+            strategy._id,
+          );
+          if (snapshot !== null) {
+            latestRevision = snapshot.revision;
+            latestPayload = snapshot.payload;
+          }
+        }
+
         results.push({
           opId: op.opId,
           status: existingEvent.status,
@@ -233,8 +290,8 @@ export const applyBatch = mutation({
           appliedRevision: existingEvent.appliedRevision ?? null,
           expectedRevision: existingEvent.expectedRevision ?? null,
           latestSequence: strategy.sequence,
-          latestRevision: null,
-          latestPayload: null,
+          latestRevision,
+          latestPayload,
         });
         continue;
       }
@@ -262,7 +319,7 @@ export const applyBatch = mutation({
           reason = "sequence_mismatch";
         } else if (op.entityType === "strategy") {
           if (op.kind !== "patch") {
-            throw new Error("Unsupported strategy op");
+            throw errorWithCode("UNSUPPORTED_OP", "Unsupported strategy op");
           }
 
           const payload = assertStrategyPatchPayload(op.payload);
@@ -315,7 +372,7 @@ export const applyBatch = mutation({
           if (op.kind === "add") {
             const pagePublicId = op.pagePublicId;
             if (!pagePublicId) {
-              throw new Error("Missing pagePublicId");
+              throw errorWithCode("MISSING_PAGE_PUBLIC_ID", "Missing pagePublicId");
             }
             const payload = assertPagePayload(op.payload);
             const now = Date.now();
@@ -326,7 +383,7 @@ export const applyBatch = mutation({
 
             if (existingPage !== null) {
               if (existingPage.strategyId !== strategy._id) {
-                throw new Error("Page strategy mismatch");
+                throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
               }
               eventPageId = existingPage._id;
 
@@ -394,11 +451,11 @@ export const applyBatch = mutation({
           } else {
             const pagePublicId = op.entityPublicId ?? op.pagePublicId;
             if (!pagePublicId) {
-              throw new Error("Missing page id");
+              throw errorWithCode("MISSING_PAGE_ID", "Missing page id");
             }
             const page = await getPageByPublicId(ctx, pagePublicId);
             if (page.strategyId !== strategy._id) {
-              throw new Error("Page strategy mismatch");
+              throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
             }
             eventPageId = page._id;
 
@@ -439,23 +496,10 @@ export const applyBatch = mutation({
                 markNoop(page.revision);
               }
             } else if (op.kind === "delete") {
-              const elements = await ctx.db
-                .query("elements")
-                .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-                .collect();
-              for (const element of elements) {
-                await ctx.db.delete(element._id);
-              }
-
-              const lineups = await ctx.db
-                .query("lineups")
-                .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-                .collect();
-              for (const lineup of lineups) {
-                await ctx.db.delete(lineup._id);
-              }
-
               await ctx.db.delete(page._id);
+              await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
+                pageId: page._id,
+              });
               appliedRevision = page.revision + 1;
               strategy = await incrementSequence(ctx, strategy);
             } else if (op.kind === "reorder") {
@@ -472,7 +516,7 @@ export const applyBatch = mutation({
                 strategy = await incrementSequence(ctx, strategy);
               }
             } else {
-              throw new Error("Unsupported page op");
+              throw errorWithCode("UNSUPPORTED_OP", "Unsupported page op");
             }
           }
         } else if (op.entityType === "element") {
@@ -480,11 +524,14 @@ export const applyBatch = mutation({
             const elementPublicId = op.entityPublicId;
             const pagePublicId = op.pagePublicId;
             if (!elementPublicId || !pagePublicId || !op.payload) {
-              throw new Error("Missing add element args");
+              throw errorWithCode(
+                "MISSING_ADD_ELEMENT_ARGS",
+                "Missing add element args",
+              );
             }
             const page = await getPageByPublicId(ctx, pagePublicId);
             if (page.strategyId !== strategy._id) {
-              throw new Error("Page strategy mismatch");
+              throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
             }
             eventPageId = page._id;
             const payload = assertElementPayload(op.payload);
@@ -497,7 +544,10 @@ export const applyBatch = mutation({
 
             if (existingElement !== null) {
               if (existingElement.strategyId !== strategy._id) {
-                throw new Error("Element strategy mismatch");
+                throw errorWithCode(
+                  "ELEMENT_STRATEGY_MISMATCH",
+                  "Element strategy mismatch",
+                );
               }
               const patch: Record<string, unknown> = {};
               setIfChanged(patch, "pageId", existingElement.pageId, page._id);
@@ -560,11 +610,14 @@ export const applyBatch = mutation({
             }
           } else {
             if (!op.entityPublicId) {
-              throw new Error("Missing entityPublicId");
+              throw errorWithCode("MISSING_ENTITY_PUBLIC_ID", "Missing entityPublicId");
             }
             const element = await getElementByPublicId(ctx, op.entityPublicId);
             if (element.strategyId !== strategy._id) {
-              throw new Error("Element strategy mismatch");
+              throw errorWithCode(
+                "ELEMENT_STRATEGY_MISMATCH",
+                "Element strategy mismatch",
+              );
             }
             eventPageId = element.pageId;
 
@@ -594,7 +647,10 @@ export const applyBatch = mutation({
               if (op.payload !== undefined) {
                 const payload = assertElementPayload(op.payload);
                 if (payload.kind !== element.elementType) {
-                  throw new Error("elementType_payloadKind_mismatch");
+                  throw errorWithCode(
+                    "ELEMENT_TYPE_PAYLOAD_KIND_MISMATCH",
+                    "elementType_payloadKind_mismatch",
+                  );
                 }
                 setIfChanged(patch, "payload", element.payload, payload);
                 setIfChanged(
@@ -621,7 +677,7 @@ export const applyBatch = mutation({
               if (op.pagePublicId !== undefined) {
                 const page = await getPageByPublicId(ctx, op.pagePublicId);
                 if (page.strategyId !== strategy._id) {
-                  throw new Error("Page strategy mismatch");
+                  throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
                 }
                 setIfChanged(patch, "pageId", element.pageId, page._id);
                 eventPageId = page._id;
@@ -652,7 +708,7 @@ export const applyBatch = mutation({
                 strategy = await incrementSequence(ctx, strategy);
               }
             } else {
-              throw new Error("Unsupported element op");
+              throw errorWithCode("UNSUPPORTED_OP", "Unsupported element op");
             }
           }
         } else if (op.entityType === "lineup") {
@@ -660,11 +716,11 @@ export const applyBatch = mutation({
             const lineupPublicId = op.entityPublicId;
             const pagePublicId = op.pagePublicId;
             if (!lineupPublicId || !pagePublicId || !op.payload) {
-              throw new Error("Missing add lineup args");
+              throw errorWithCode("MISSING_ADD_LINEUP_ARGS", "Missing add lineup args");
             }
             const page = await getPageByPublicId(ctx, pagePublicId);
             if (page.strategyId !== strategy._id) {
-              throw new Error("Page strategy mismatch");
+              throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
             }
             eventPageId = page._id;
             const payload = assertLineupPayload(op.payload);
@@ -676,7 +732,10 @@ export const applyBatch = mutation({
 
             if (existingLineup !== null) {
               if (existingLineup.strategyId !== strategy._id) {
-                throw new Error("Lineup strategy mismatch");
+                throw errorWithCode(
+                  "LINEUP_STRATEGY_MISMATCH",
+                  "Lineup strategy mismatch",
+                );
               }
               const patch: Record<string, unknown> = {};
               setIfChanged(patch, "pageId", existingLineup.pageId, page._id);
@@ -732,11 +791,11 @@ export const applyBatch = mutation({
             }
           } else {
             if (!op.entityPublicId) {
-              throw new Error("Missing entityPublicId");
+              throw errorWithCode("MISSING_ENTITY_PUBLIC_ID", "Missing entityPublicId");
             }
             const lineup = await getLineupByPublicId(ctx, op.entityPublicId);
             if (lineup.strategyId !== strategy._id) {
-              throw new Error("Lineup strategy mismatch");
+              throw errorWithCode("LINEUP_STRATEGY_MISMATCH", "Lineup strategy mismatch");
             }
             eventPageId = lineup.pageId;
 
@@ -790,7 +849,7 @@ export const applyBatch = mutation({
               if (op.pagePublicId !== undefined) {
                 const page = await getPageByPublicId(ctx, op.pagePublicId);
                 if (page.strategyId !== strategy._id) {
-                  throw new Error("Page strategy mismatch");
+                  throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
                 }
                 setIfChanged(patch, "pageId", lineup.pageId, page._id);
                 eventPageId = page._id;
@@ -820,16 +879,24 @@ export const applyBatch = mutation({
                 strategy = await incrementSequence(ctx, strategy);
               }
             } else {
-              throw new Error("Unsupported lineup op");
+              throw errorWithCode("UNSUPPORTED_OP", "Unsupported lineup op");
             }
           }
         } else {
-          throw new Error("Unsupported entityType");
+          throw errorWithCode("UNSUPPORTED_OP", "Unsupported entityType");
         }
       } catch (error) {
-        status = "reject";
-        reason = error instanceof Error ? error.message : "unknown_error";
-        shouldRecordEvent = true;
+        if (error instanceof ConvexError) {
+          status = "reject";
+          const code =
+            typeof error.data?.code === "string"
+              ? error.data.code
+              : "INTERNAL_ERROR";
+          reason = code.toLowerCase();
+          shouldRecordEvent = true;
+        } else {
+          throw error;
+        }
       }
 
       if (shouldRecordEvent) {

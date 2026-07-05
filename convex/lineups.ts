@@ -2,6 +2,7 @@ import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { assertStrategyRole } from "./lib/auth";
 import { getPageByPublicId, getStrategyByPublicId } from "./lib/entities";
+import { errorWithCode } from "./lib/errors";
 
 export const listForPage = query({
   args: {
@@ -14,7 +15,7 @@ export const listForPage = query({
 
     const page = await getPageByPublicId(ctx, args.pagePublicId);
     if (page.strategyId !== strategy._id) {
-      throw new Error("Page strategy mismatch");
+      throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
     }
 
     const lineups = await ctx.db
@@ -61,10 +62,11 @@ export const listForStrategy = query({
 
     return lineups
       .sort((a, b) => a.sortIndex - b.sortIndex)
+      .filter((lineup) => pagePublicIds.has(lineup.pageId))
       .map((lineup) => ({
         publicId: lineup.publicId,
         strategyPublicId: strategy.publicId,
-        pagePublicId: pagePublicIds.get(lineup.pageId) ?? "",
+        pagePublicId: pagePublicIds.get(lineup.pageId)!,
         payload: lineup.payload,
         sortIndex: lineup.sortIndex,
         revision: lineup.revision,

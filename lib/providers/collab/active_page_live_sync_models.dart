@@ -1,71 +1,105 @@
 import 'package:icarus/collab/collab_models.dart';
 
-typedef EntitySyncKey = String;
-
 enum ActivePageOverlayEntityType { pageSettings, element, lineup }
 
-String _encodeEntityKeyPart(String value) => Uri.encodeComponent(value);
+enum EntitySyncKeyKind { strategy, pageSettings, element, lineup }
 
-String _decodeEntityKeyPart(String value) => Uri.decodeComponent(value);
+class EntitySyncKey {
+  const EntitySyncKey._({
+    required this.kind,
+    required this.pageId,
+    required this.entityId,
+  });
 
-EntitySyncKey pageSettingsEntityKey(String pageId) =>
-    'page:${_encodeEntityKeyPart(pageId)}:settings';
+  const EntitySyncKey.pageSettings(String pageId)
+      : this._(
+          kind: EntitySyncKeyKind.pageSettings,
+          pageId: pageId,
+          entityId: null,
+        );
 
-EntitySyncKey elementEntityKey(String pageId, String elementId) =>
-    'element:${_encodeEntityKeyPart(pageId)}:${_encodeEntityKeyPart(elementId)}';
+  const EntitySyncKey.element(String pageId, String elementId)
+      : this._(
+          kind: EntitySyncKeyKind.element,
+          pageId: pageId,
+          entityId: elementId,
+        );
 
-EntitySyncKey lineupEntityKey(String pageId, String lineupId) =>
-    'lineup:${_encodeEntityKeyPart(pageId)}:${_encodeEntityKeyPart(lineupId)}';
+  const EntitySyncKey.lineup(String pageId, String lineupId)
+      : this._(
+          kind: EntitySyncKeyKind.lineup,
+          pageId: pageId,
+          entityId: lineupId,
+        );
 
-String? pageIdForEntityKey(EntitySyncKey entityKey) {
-  final parts = entityKey.split(':');
-  if (parts.length < 2) {
-    return null;
+  const EntitySyncKey.strategy()
+      : this._(
+          kind: EntitySyncKeyKind.strategy,
+          pageId: null,
+          entityId: null,
+        );
+
+  static String _encodeEntityKeyPart(String value) =>
+      Uri.encodeComponent(value);
+
+  static EntitySyncKey? forStrategyOp(StrategyOp op) {
+    switch (op.entityType) {
+      case StrategyOpEntityType.strategy:
+        return const EntitySyncKey.strategy();
+      case StrategyOpEntityType.page:
+        final pageId = op.entityPublicId ?? op.pagePublicId;
+        if (pageId == null) {
+          return null;
+        }
+        return EntitySyncKey.pageSettings(pageId);
+      case StrategyOpEntityType.element:
+        if (op.pagePublicId == null || op.entityPublicId == null) {
+          return null;
+        }
+        return EntitySyncKey.element(op.pagePublicId!, op.entityPublicId!);
+      case StrategyOpEntityType.lineup:
+        if (op.pagePublicId == null || op.entityPublicId == null) {
+          return null;
+        }
+        return EntitySyncKey.lineup(op.pagePublicId!, op.entityPublicId!);
+    }
   }
-  return _decodeEntityKeyPart(parts[1]);
-}
 
-String? entityIdForEntityKey(EntitySyncKey entityKey) {
-  final parts = entityKey.split(':');
-  if (parts.length < 3) {
-    return null;
-  }
-  return _decodeEntityKeyPart(parts[2]);
-}
+  final EntitySyncKeyKind kind;
+  final String? pageId;
+  final String? entityId;
 
-ActivePageOverlayEntityType? overlayEntityTypeForKey(EntitySyncKey entityKey) {
-  if (entityKey.startsWith('page:')) {
-    return ActivePageOverlayEntityType.pageSettings;
+  ActivePageOverlayEntityType? get overlayType {
+    return switch (kind) {
+      EntitySyncKeyKind.strategy => null,
+      EntitySyncKeyKind.pageSettings =>
+        ActivePageOverlayEntityType.pageSettings,
+      EntitySyncKeyKind.element => ActivePageOverlayEntityType.element,
+      EntitySyncKeyKind.lineup => ActivePageOverlayEntityType.lineup,
+    };
   }
-  if (entityKey.startsWith('element:')) {
-    return ActivePageOverlayEntityType.element;
-  }
-  if (entityKey.startsWith('lineup:')) {
-    return ActivePageOverlayEntityType.lineup;
-  }
-  return null;
-}
 
-EntitySyncKey? entityKeyForStrategyOp(StrategyOp op) {
-  switch (op.entityType) {
-    case StrategyOpEntityType.strategy:
-      return 'strategy';
-    case StrategyOpEntityType.page:
-      final pageId = op.entityPublicId ?? op.pagePublicId;
-      if (pageId == null) {
-        return null;
-      }
-      return pageSettingsEntityKey(pageId);
-    case StrategyOpEntityType.element:
-      if (op.pagePublicId == null || op.entityPublicId == null) {
-        return null;
-      }
-      return elementEntityKey(op.pagePublicId!, op.entityPublicId!);
-    case StrategyOpEntityType.lineup:
-      if (op.pagePublicId == null || op.entityPublicId == null) {
-        return null;
-      }
-      return lineupEntityKey(op.pagePublicId!, op.entityPublicId!);
+  @override
+  bool operator ==(Object other) {
+    return other is EntitySyncKey &&
+        kind == other.kind &&
+        pageId == other.pageId &&
+        entityId == other.entityId;
+  }
+
+  @override
+  int get hashCode => Object.hash(kind, pageId, entityId);
+
+  @override
+  String toString() {
+    final encodedPageId = _encodeEntityKeyPart(pageId ?? '');
+    final encodedEntityId = _encodeEntityKeyPart(entityId ?? '');
+    return switch (kind) {
+      EntitySyncKeyKind.strategy => 'strategy',
+      EntitySyncKeyKind.pageSettings => 'page:$encodedPageId:settings',
+      EntitySyncKeyKind.element => 'element:$encodedPageId:$encodedEntityId',
+      EntitySyncKeyKind.lineup => 'lineup:$encodedPageId:$encodedEntityId',
+    };
   }
 }
 

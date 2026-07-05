@@ -329,7 +329,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
 
     if (mapMatches && themeProfileMatches && themeOverrideMatches) {
       ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
-            entityKey: 'strategy',
+            entityKey: const EntitySyncKey.strategy(),
             desiredOp: null,
             flushImmediately: false,
           );
@@ -349,7 +349,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
     };
 
     ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
-          entityKey: 'strategy',
+          entityKey: const EntitySyncKey.strategy(),
           desiredOp: StrategyOp(
             opId: const Uuid().v4(),
             kind: StrategyOpKind.patch,

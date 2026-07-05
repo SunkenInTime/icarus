@@ -1,6 +1,10 @@
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
-import { unauthenticatedError } from "./errors";
+import {
+  forbiddenError,
+  internalError,
+  unauthenticatedError,
+} from "./errors";
 
 export type StrategyRole = "owner" | "editor" | "viewer";
 
@@ -66,7 +70,9 @@ export async function requireCurrentUser(ctx: AnyCtx): Promise<Doc<"users">> {
   const user = await findUserByIdentity(ctx, identity);
 
   if (user === null) {
-    throw new Error("Missing user record. Call users:ensureCurrentUser before querying collaborative data.");
+    throw internalError(
+      "Missing user record. Call users:ensureCurrentUser before querying collaborative data.",
+    );
   }
 
   return user;
@@ -110,7 +116,7 @@ export async function getFolderRoleForUser(
   return collaborator?.role ?? null;
 }
 
-function higherRole(
+export function higherRole(
   left: StrategyRole | null,
   right: StrategyRole | null,
 ): StrategyRole | null {
@@ -179,7 +185,7 @@ export async function assertStrategyRole(
   const role = await getEffectiveStrategyRoleForUser(ctx, strategy, user._id);
 
   if (!hasRole(role, required)) {
-    throw new Error("Forbidden");
+    throw forbiddenError();
   }
 
   return { user, role: role as StrategyRole };
@@ -194,7 +200,7 @@ export async function assertFolderRole(
   const role = await getEffectiveFolderRoleForUser(ctx, folder, user._id);
 
   if (!hasRole(role, required)) {
-    throw new Error("Forbidden");
+    throw forbiddenError();
   }
 
   return { user, role: role as StrategyRole };

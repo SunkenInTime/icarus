@@ -1,6 +1,19 @@
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import {
+  collectAssetIdFromElementPayload,
+  collectAssetIdsFromLineupPayload,
+  getActiveAssetForStrategy,
+  inferFileExtension,
+  getViewerAssetForStrategy,
+  inferProvider,
+  inferUploadStatus,
+  isVisibleAsset,
+  serializeAssetForViewer,
+  type Provider,
+  type UploadStatus,
+} from "./lib/imageAssets";
+import {
   action,
   internalMutation,
   internalQuery,
@@ -22,24 +35,15 @@ import {
   publicR2UrlForObjectKey,
   validateImageUploadMetadata,
 } from "./lib/r2";
+import {
+  conflictError,
+  errorWithCode,
+  internalError,
+  invalidPayloadError,
+  notFoundError,
+} from "./lib/errors";
 
 type AnyCtx = MutationCtx | QueryCtx;
-type Provider = "convex" | "r2";
-type UploadStatus = "pending" | "active" | "failed" | "deleted";
-
-type SerializedAsset = {
-  publicId: string;
-  provider: Provider;
-  uploadStatus: UploadStatus;
-  fileExtension: string;
-  mimeType: string | null;
-  width: number | null;
-  height: number | null;
-  byteSize: number | null;
-  uploadedAt: number | null;
-  url: string | null;
-  legacyStoragePath: string | null;
-};
 
 type DeletionTarget = {
   assetId: Id<"imageAssets">;
@@ -50,58 +54,6 @@ type DeletionTarget = {
 const maxDeletionBatch = 100;
 
 const providerValidator = v.union(v.literal("convex"), v.literal("r2"));
-
-function inferProvider(asset: Doc<"imageAssets">): Provider {
-  return asset.provider ?? "convex";
-}
-
-function inferUploadStatus(asset: Doc<"imageAssets">): UploadStatus {
-  if (asset.uploadStatus !== undefined) {
-    return asset.uploadStatus;
-  }
-  return asset.storageId !== undefined || asset.storagePath !== undefined
-    ? "active"
-    : "pending";
-}
-
-function inferFileExtension(
-  asset: Pick<Doc<"imageAssets">, "fileExtension" | "storagePath">,
-): string {
-  if (asset.fileExtension !== undefined && asset.fileExtension.length > 0) {
-    return normalizeImageExtension(asset.fileExtension);
-  }
-
-  const legacyPath = asset.storagePath ?? "";
-  const match = legacyPath.match(/(\.[A-Za-z0-9]+)(?:$|[?#])/);
-  return match?.[1]?.toLowerCase() ?? "";
-}
-
-function collectAssetIdFromElementPayload(
-  payload: Doc<"elements">["payload"],
-): string | null {
-  return typeof payload.data.id === "string" ? payload.data.id : null;
-}
-
-function collectAssetIdsFromLineupPayload(
-  payload: Doc<"lineups">["payload"],
-): Set<string> {
-  const assetIds = new Set<string>();
-  const rawImages = payload.data.images;
-  if (!Array.isArray(rawImages)) {
-    return assetIds;
-  }
-
-  for (const image of rawImages) {
-    if (
-      typeof image === "object" &&
-      image !== null &&
-      typeof image.id === "string"
-    ) {
-      assetIds.add(image.id);
-    }
-  }
-  return assetIds;
-}
 
 async function collectReferencedAssetIdsForStrategy(
   ctx: AnyCtx,
@@ -116,7 +68,6 @@ async function collectReferencedAssetIdsForStrategy(
     if (element.deleted || element.elementType !== "image") {
       continue;
     }
-
     const assetId = collectAssetIdFromElementPayload(element.payload);
     if (assetId !== null) {
       assetIds.add(assetId);
@@ -130,80 +81,12 @@ async function collectReferencedAssetIdsForStrategy(
     if (lineup.deleted) {
       continue;
     }
-
     for (const assetId of collectAssetIdsFromLineupPayload(lineup.payload)) {
       assetIds.add(assetId);
     }
   }
 
   return assetIds;
-}
-
-function isVisibleAsset(asset: Doc<"imageAssets">): boolean {
-  if (inferUploadStatus(asset) !== "active") {
-    return false;
-  }
-  if (inferProvider(asset) === "r2") {
-    return asset.objectKey !== undefined && asset.objectKey.length > 0;
-  }
-  return asset.storageId !== undefined;
-}
-
-async function getActiveAssetForStrategy(
-  ctx: AnyCtx,
-  strategyId: Id<"strategies">,
-  assetPublicId: string,
-): Promise<Doc<"imageAssets"> | null> {
-  const strategyAsset = await ctx.db
-    .query("imageAssets")
-    .withIndex("by_strategyId_and_publicId_and_uploadStatus", (q) =>
-      q
-        .eq("strategyId", strategyId)
-        .eq("publicId", assetPublicId)
-        .eq("uploadStatus", "active"),
-    )
-    .order("desc")
-    .first();
-
-  if (strategyAsset !== null && isVisibleAsset(strategyAsset)) {
-    return strategyAsset;
-  }
-
-  const legacyCandidates = await ctx.db
-    .query("imageAssets")
-    .withIndex("by_publicId", (q) => q.eq("publicId", assetPublicId))
-    .order("desc")
-    .take(20);
-  return (
-    legacyCandidates.find(
-      (asset) =>
-        (asset.strategyId === undefined || asset.strategyId === strategyId) &&
-        isVisibleAsset(asset),
-    ) ?? null
-  );
-}
-
-async function getViewerAssetForStrategy(
-  ctx: AnyCtx,
-  strategyId: Id<"strategies">,
-  assetPublicId: string,
-): Promise<Doc<"imageAssets"> | null> {
-  const strategyCandidates = await ctx.db
-    .query("imageAssets")
-    .withIndex("by_strategyId_and_publicId", (q) =>
-      q.eq("strategyId", strategyId).eq("publicId", assetPublicId),
-    )
-    .order("desc")
-    .take(20);
-  const strategyAsset =
-    strategyCandidates.find(
-      (asset) => inferUploadStatus(asset) !== "deleted",
-    ) ?? null;
-  if (strategyAsset !== null) {
-    return strategyAsset;
-  }
-
-  return await getActiveAssetForStrategy(ctx, strategyId, assetPublicId);
 }
 
 async function getDeletionCandidateForStrategy(
@@ -247,36 +130,6 @@ async function strategyReferencesAsset(
     strategyId,
   );
   return referencedAssetIds.has(assetPublicId);
-}
-
-async function serializeAssetForViewer(
-  ctx: QueryCtx,
-  asset: Doc<"imageAssets">,
-): Promise<SerializedAsset> {
-  const provider = inferProvider(asset);
-  const uploadStatus = inferUploadStatus(asset);
-  const url =
-    provider === "r2"
-      ? asset.objectKey === undefined || uploadStatus !== "active"
-        ? null
-        : publicR2UrlForObjectKey(asset.objectKey)
-      : asset.storageId === undefined || uploadStatus !== "active"
-        ? null
-        : await ctx.storage.getUrl(asset.storageId);
-
-  return {
-    publicId: asset.publicId,
-    provider,
-    uploadStatus,
-    fileExtension: inferFileExtension(asset),
-    mimeType: asset.mimeType ?? null,
-    width: asset.width ?? null,
-    height: asset.height ?? null,
-    byteSize: asset.byteSize ?? null,
-    uploadedAt: asset.uploadedAt ?? null,
-    url,
-    legacyStoragePath: asset.storagePath ?? null,
-  };
 }
 
 function deletionTargetForAsset(asset: Doc<"imageAssets">): DeletionTarget {
@@ -375,7 +228,7 @@ export const createR2UploadIntent = internalMutation({
       .withIndex("by_objectKey", (q) => q.eq("objectKey", args.objectKey))
       .first();
     if (existingObject !== null) {
-      throw new Error("R2 object key collision. Retry the upload.");
+      throw conflictError("R2 object key collision. Retry the upload.");
     }
 
     const now = Date.now();
@@ -436,7 +289,7 @@ export const completeUpload = action({
     }
 
     if (args.uploadId === undefined) {
-      throw new Error("Missing R2 uploadId for image completion.");
+      throw invalidPayloadError("Missing R2 uploadId for image completion.");
     }
 
     const intent: {
@@ -453,7 +306,10 @@ export const completeUpload = action({
     });
 
     if (args.objectKey !== undefined && args.objectKey !== intent.objectKey) {
-      throw new Error("R2 object key does not match upload intent.");
+      throw errorWithCode(
+        "R2_OBJECT_KEY_MISMATCH",
+        "R2 object key does not match upload intent.",
+      );
     }
     if (intent.uploadStatus === "active") {
       return {
@@ -470,7 +326,7 @@ export const completeUpload = action({
         uploadId: intent.uploadId,
         reason: "R2 object was not found during completion.",
       });
-      throw new Error("Uploaded image object was not found in R2.");
+      throw notFoundError("Uploaded image", intent.objectKey);
     }
 
     const expectedMimeType =
@@ -492,7 +348,7 @@ export const completeUpload = action({
         uploadId: intent.uploadId,
         reason: "Uploaded R2 object failed size or MIME validation.",
       });
-      throw new Error("Uploaded image failed size or MIME validation.");
+      throw invalidPayloadError("Uploaded image failed size or MIME validation.");
     }
 
     const result: { ok: true; replaced: DeletionTarget[] } =
@@ -540,13 +396,13 @@ export const getR2UploadIntentForCompletion = internalQuery({
       inferProvider(asset) !== "r2" ||
       asset.objectKey === undefined
     ) {
-      throw new Error("Upload intent not found.");
+      throw errorWithCode("UPLOAD_INTENT_NOT_FOUND", "Upload intent not found.");
     }
 
     const fileExtension = inferFileExtension(asset);
     const expectedMimeType = expectedMimeTypeForExtension(fileExtension);
     if (expectedMimeType === null || asset.mimeType === undefined) {
-      throw new Error("Upload intent has invalid image metadata.");
+      throw invalidPayloadError("Upload intent has invalid image metadata.");
     }
 
     return {
@@ -584,7 +440,7 @@ export const markR2UploadActive = internalMutation({
       inferProvider(asset) !== "r2" ||
       asset.objectKey === undefined
     ) {
-      throw new Error("Upload intent not found.");
+      throw errorWithCode("UPLOAD_INTENT_NOT_FOUND", "Upload intent not found.");
     }
 
     const now = Date.now();
@@ -652,7 +508,7 @@ export const completeLegacyUpload = internalMutation({
   },
   handler: async (ctx, args) => {
     if (args.storageId === undefined) {
-      throw new Error("Missing Convex storageId for legacy image completion.");
+      throw internalError("Missing Convex storageId for legacy image completion.");
     }
 
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
@@ -752,7 +608,7 @@ export const getAssetUrl = query({
     if (
       !(await strategyReferencesAsset(ctx, strategy._id, args.assetPublicId))
     ) {
-      throw new Error("Asset not found");
+      throw notFoundError("Asset", args.assetPublicId);
     }
 
     const asset = await getActiveAssetForStrategy(
@@ -761,7 +617,7 @@ export const getAssetUrl = query({
       args.assetPublicId,
     );
     if (asset === null) {
-      throw new Error("Asset not found");
+      throw notFoundError("Asset", args.assetPublicId);
     }
 
     return {
@@ -815,14 +671,14 @@ export const getAssetDeletionTarget = internalQuery({
       args.assetPublicId,
     );
     if (asset === null) {
-      throw new Error("Asset not found");
+      throw notFoundError("Asset", args.assetPublicId);
     }
 
     if (
       asset.strategyId === undefined &&
       !(await strategyReferencesAsset(ctx, strategy._id, args.assetPublicId))
     ) {
-      throw new Error("Asset not found");
+      throw notFoundError("Asset", args.assetPublicId);
     }
 
     return deletionTargetForAsset(asset);

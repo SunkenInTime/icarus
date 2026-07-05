@@ -6,6 +6,12 @@ import {
   requireCurrentUser,
 } from "./lib/auth";
 import { getStrategyByPublicId } from "./lib/entities";
+import {
+  forbiddenError,
+  invalidOpError,
+  notFoundError,
+  errorWithCode,
+} from "./lib/errors";
 
 export const get = query({
   args: {
@@ -62,7 +68,7 @@ export const get = query({
         }));
     }
 
-    throw new Error("Either token or strategyPublicId is required");
+    throw invalidOpError("Either token or strategyPublicId is required");
   },
 });
 
@@ -77,7 +83,7 @@ export const create = mutation({
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { user, role } = await assertStrategyRole(ctx, strategy, "owner");
     if (role !== "owner") {
-      throw new Error("Forbidden");
+      throw forbiddenError();
     }
 
     const now = Date.now();
@@ -107,20 +113,20 @@ export const redeem = mutation({
       .first();
 
     if (invite === null) {
-      throw new Error("Invite not found");
+      throw notFoundError("Invite", args.token);
     }
 
     if (invite.revokedAt !== undefined) {
-      throw new Error("Invite revoked");
+      throw errorWithCode("INVITE_REVOKED", "Invite revoked");
     }
 
     if (invite.expiresAt !== undefined && invite.expiresAt < Date.now()) {
-      throw new Error("Invite expired");
+      throw errorWithCode("INVITE_EXPIRED", "Invite expired");
     }
 
     const strategy = await ctx.db.get(invite.strategyId);
     if (strategy === null) {
-      throw new Error("Strategy not found");
+      throw notFoundError("Strategy", invite.strategyId);
     }
 
     if (strategy.ownerId !== user._id) {
@@ -170,7 +176,7 @@ export const revoke = mutation({
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { role } = await assertStrategyRole(ctx, strategy, "owner");
     if (role !== "owner") {
-      throw new Error("Forbidden");
+      throw forbiddenError();
     }
 
     const invite = await ctx.db
@@ -179,7 +185,7 @@ export const revoke = mutation({
       .first();
 
     if (invite === null || invite.strategyId !== strategy._id) {
-      throw new Error("Invite not found");
+      throw notFoundError("Invite", args.token);
     }
 
     await ctx.db.patch(invite._id, {

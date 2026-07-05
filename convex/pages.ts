@@ -1,12 +1,19 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { assertStrategyRole } from "./lib/auth";
+import { purgeDeletedPageOrphansRef } from "./maintenance";
 import {
   getPageByPublicId,
   getStrategyByPublicId,
   sortByNumberField,
 } from "./lib/entities";
 import { strategySettingsValidator } from "./lib/payloadValidators";
+import {
+  conflictError,
+  invalidOpError,
+  notFoundError,
+  errorWithCode,
+} from "./lib/errors";
 
 function settingsEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
@@ -59,7 +66,7 @@ export const add = mutation({
       .first();
     if (existingPage !== null) {
       if (existingPage.strategyId !== strategy._id) {
-        throw new Error(`Page publicId already exists: ${args.pagePublicId}`);
+        throw conflictError(`Page publicId already exists: ${args.pagePublicId}`);
       }
 
       const settingsChanged = !settingsEqual(existingPage.settings, args.settings);
@@ -121,7 +128,7 @@ export const rename = mutation({
 
     const page = await getPageByPublicId(ctx, args.pagePublicId);
     if (page.strategyId !== strategy._id) {
-      throw new Error("Page strategy mismatch");
+      throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
     }
 
     const now = Date.now();
@@ -155,31 +162,19 @@ export const deletePage = mutation({
       .collect();
 
     if (pages.length <= 1) {
-      throw new Error("Cannot delete last page");
+      throw invalidOpError("Cannot delete last page");
     }
 
     const page = await getPageByPublicId(ctx, args.pagePublicId);
     if (page.strategyId !== strategy._id) {
-      throw new Error("Page strategy mismatch");
-    }
-
-    const elements = await ctx.db
-      .query("elements")
-      .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-      .collect();
-    for (const element of elements) {
-      await ctx.db.delete(element._id);
-    }
-
-    const lineups = await ctx.db
-      .query("lineups")
-      .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
-      .collect();
-    for (const lineup of lineups) {
-      await ctx.db.delete(lineup._id);
+      throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
     }
 
     await ctx.db.delete(page._id);
+
+    await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
+      pageId: page._id,
+    });
 
     const ordered = sortByNumberField(
       pages.filter((p) => p._id !== page._id),
@@ -220,7 +215,7 @@ export const reorder = mutation({
       .collect();
 
     if (pages.length !== args.orderedPagePublicIds.length) {
-      throw new Error("Page count mismatch");
+      throw invalidOpError("Page count mismatch");
     }
 
     const pageByPublicId = new Map(pages.map((p) => [p.publicId, p]));
@@ -230,7 +225,7 @@ export const reorder = mutation({
       const publicId = args.orderedPagePublicIds[i]!;
       const page = pageByPublicId.get(publicId);
       if (!page) {
-        throw new Error(`Unknown page id: ${publicId}`);
+        throw notFoundError("Page", publicId);
       }
       if (page.sortIndex !== i) {
         await ctx.db.patch(page._id, {

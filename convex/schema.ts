@@ -78,7 +78,8 @@ export default defineSchema({
   })
     .index("by_publicId", ["publicId"])
     .index("by_pageId", ["pageId"])
-    .index("by_strategyId", ["strategyId"]),
+    .index("by_strategyId", ["strategyId"])
+    .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),
   lineups: defineTable({
     publicId: v.string(),
     strategyId: v.id("strategies"),
@@ -94,7 +95,8 @@ export default defineSchema({
   })
     .index("by_publicId", ["publicId"])
     .index("by_pageId", ["pageId"])
-    .index("by_strategyId", ["strategyId"]),
+    .index("by_strategyId", ["strategyId"])
+    .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),
   strategyCollaborators: defineTable({
     strategyId: v.id("strategies"),
     userId: v.id("users"),
@@ -197,5 +199,6 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_strategyId", ["strategyId"])
+    .index("by_createdAt", ["createdAt"])
     .index("by_strategyId_clientId_opId", ["strategyId", "clientId", "opId"]),
 });
