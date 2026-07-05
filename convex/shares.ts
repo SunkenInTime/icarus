@@ -15,7 +15,17 @@ import {
 
 const targetTypeValidator = v.union(v.literal("strategy"), v.literal("folder"));
 const collaboratorRoleValidator = v.union(v.literal("viewer"), v.literal("editor"));
+type CollaboratorRole = "viewer" | "editor";
 type AnyCtx = QueryCtx | MutationCtx;
+
+function higherCollaboratorRole(
+  currentRole: CollaboratorRole,
+  linkRole: CollaboratorRole,
+): CollaboratorRole {
+  return currentRole === "editor" || linkRole === "editor"
+    ? "editor"
+    : "viewer";
+}
 
 async function resolveTarget(
   ctx: AnyCtx,
@@ -175,6 +185,7 @@ export const redeem = mutation({
         );
       }
 
+      let redeemedRole: CollaboratorRole = link.role;
       if (strategy.ownerId !== user._id) {
         const existingMembership = await ctx.db
           .query("strategyCollaborators")
@@ -193,10 +204,16 @@ export const redeem = mutation({
             updatedAt: Date.now(),
           });
         } else {
-          await ctx.db.patch(existingMembership._id, {
-            role: link.role,
-            updatedAt: Date.now(),
-          });
+          redeemedRole = higherCollaboratorRole(
+            existingMembership.role,
+            link.role,
+          );
+          if (redeemedRole !== existingMembership.role) {
+            await ctx.db.patch(existingMembership._id, {
+              role: redeemedRole,
+              updatedAt: Date.now(),
+            });
+          }
         }
       }
 
@@ -208,7 +225,7 @@ export const redeem = mutation({
         targetType: "strategy",
         strategyPublicId: strategy.publicId,
         folderPublicId: folder?.publicId ?? null,
-        role: strategy.ownerId === user._id ? "owner" : link.role,
+        role: strategy.ownerId === user._id ? "owner" : redeemedRole,
       };
     }
 
@@ -217,6 +234,7 @@ export const redeem = mutation({
       throw notFoundError("Folder", args.token);
     }
 
+    let redeemedRole: CollaboratorRole = link.role;
     if (folder.ownerId !== user._id) {
       const existingMembership = await ctx.db
         .query("folderCollaborators")
@@ -235,10 +253,16 @@ export const redeem = mutation({
           updatedAt: Date.now(),
         });
       } else {
-        await ctx.db.patch(existingMembership._id, {
-          role: link.role,
-          updatedAt: Date.now(),
-        });
+        redeemedRole = higherCollaboratorRole(
+          existingMembership.role,
+          link.role,
+        );
+        if (redeemedRole !== existingMembership.role) {
+          await ctx.db.patch(existingMembership._id, {
+            role: redeemedRole,
+            updatedAt: Date.now(),
+          });
+        }
       }
     }
 
@@ -246,7 +270,7 @@ export const redeem = mutation({
       ok: true,
       targetType: "folder",
       folderPublicId: folder.publicId,
-      role: folder.ownerId === user._id ? "owner" : link.role,
+      role: folder.ownerId === user._id ? "owner" : redeemedRole,
     };
   },
 });
