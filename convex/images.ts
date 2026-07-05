@@ -807,14 +807,15 @@ export const listStaleUploadDeletionTargets = internalQuery({
     for (const status of ["pending", "failed"] as UploadStatus[]) {
       const candidates = await ctx.db
         .query("imageAssets")
-        .withIndex("by_uploadStatus_and_updatedAt", (q) =>
-          q.eq("uploadStatus", status).lte("updatedAt", args.staleBefore),
+        .withIndex("by_strategyId_and_uploadStatus_and_updatedAt", (q) =>
+          q
+            .eq("strategyId", strategy._id)
+            .eq("uploadStatus", status)
+            .lte("updatedAt", args.staleBefore),
         )
         .take(limit - targets.length);
       for (const asset of candidates) {
-        if (asset.strategyId === strategy._id) {
-          targets.push(deletionTargetForAsset(asset));
-        }
+        targets.push(deletionTargetForAsset(asset));
       }
       if (targets.length >= limit) {
         break;

@@ -498,6 +498,69 @@ void main() {
     }
   });
 
+  test('library backup without custom colors preserves current color library',
+      () async {
+    await container
+        .read(appPreferencesProvider.notifier)
+        .setCustomColorValues(const [0xFF22C55E, 0xFF38BDF8]);
+    await _storeStrategy(
+      name: 'Legacy Backup',
+      folderID: null,
+    );
+
+    final exportDirectory = await StrategyImportExportService(container)
+        .buildLibraryExportDirectoryForTest();
+
+    try {
+      final rootDirectory = Directory(
+        path.join(exportDirectory.path, libraryBackupRootDirectoryName),
+      );
+      final manifestFile =
+          File(path.join(rootDirectory.path, archiveMetadataFileName));
+      final decoded =
+          jsonDecode(await manifestFile.readAsString()) as Map<String, dynamic>;
+      final globals = Map<String, dynamic>.from(
+          decoded['globals'] as Map<dynamic, dynamic>);
+      final appPreferences = Map<String, dynamic>.from(
+          globals['appPreferences'] as Map<dynamic, dynamic>);
+      appPreferences.remove('customColorValues');
+      globals['appPreferences'] = appPreferences;
+      decoded['globals'] = globals;
+      await manifestFile.writeAsString(jsonEncode(decoded));
+
+      final zipFile = await _zipDirectory(
+        sourceDirectory: rootDirectory,
+        zipPath: path.join(tempDir.path, 'legacy-library-backup.zip'),
+      );
+
+      await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
+      await Hive.box<Folder>(HiveBoxNames.foldersBox).clear();
+      await Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox).clear();
+      await MapThemeProfilesProvider.bootstrap();
+      await container
+          .read(appPreferencesProvider.notifier)
+          .setCustomColorValues(const [0xFFABCDEF, 0xFF123456]);
+
+      final result =
+          await StrategyImportExportService(container).loadFromFileDrop(
+        [XFile(zipFile.path)],
+      );
+
+      expect(result.globalStateRestored, isTrue);
+      expect(result.issues, isEmpty);
+      expect(
+        Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox)
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey)
+            ?.customColorValues,
+        const [0xFFABCDEF, 0xFF123456],
+      );
+    } finally {
+      if (await exportDirectory.exists()) {
+        await exportDirectory.delete(recursive: true);
+      }
+    }
+  });
+
   test('batch import skips newer-version strategies and keeps valid siblings',
       () async {
     final sourceRoot =

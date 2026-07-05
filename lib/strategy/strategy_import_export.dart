@@ -1750,7 +1750,9 @@ class StrategyImportExportService {
         showUltOrbs: globals.showUltOrbs ?? currentPreferences.showUltOrbs,
         showRegionNames:
             globals.showRegionNames ?? currentPreferences.showRegionNames,
-        customColorValues: globals.customColorValues,
+        customColorValues: globals.hasCustomColorValues
+            ? globals.customColorValues
+            : currentPreferences.customColorValues,
       ),
     );
 

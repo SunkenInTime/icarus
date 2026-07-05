@@ -176,6 +176,11 @@ export default defineSchema({
   })
     .index("by_publicId", ["publicId"])
     .index("by_strategyId", ["strategyId"])
+    .index("by_strategyId_and_uploadStatus_and_updatedAt", [
+      "strategyId",
+      "uploadStatus",
+      "updatedAt",
+    ])
     .index("by_strategyId_and_publicId", ["strategyId", "publicId"])
     .index("by_strategyId_and_publicId_and_uploadStatus", [
       "strategyId",

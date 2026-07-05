@@ -25,6 +25,7 @@ const r2Service = "s3";
 const unsignedPayload = "UNSIGNED-PAYLOAD";
 const emptyPayloadHash =
   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+let cachedR2PublicBaseUrl: string | null = null;
 
 const mimeByExtension: Record<string, string> = {
   ".png": "image/png",
@@ -94,7 +95,11 @@ export function getR2Config(): R2Config {
 }
 
 export function getR2PublicBaseUrl(): string {
-  return requiredEnv("R2_PUBLIC_BASE_URL").replace(/\/+$/, "");
+  cachedR2PublicBaseUrl ??= requiredEnv("R2_PUBLIC_BASE_URL").replace(
+    /\/+$/,
+    "",
+  );
+  return cachedR2PublicBaseUrl;
 }
 
 export function normalizeImageExtension(extension: string | undefined): string {
