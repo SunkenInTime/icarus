@@ -4,7 +4,9 @@ import { v } from "convex/values";
 import {
   assertFolderRole,
   assertStrategyRole,
+  higherCollaboratorRole,
   requireCurrentUser,
+  type CollaboratorRole,
 } from "./lib/auth";
 import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
 import {
@@ -15,17 +17,7 @@ import {
 
 const targetTypeValidator = v.union(v.literal("strategy"), v.literal("folder"));
 const collaboratorRoleValidator = v.union(v.literal("viewer"), v.literal("editor"));
-type CollaboratorRole = "viewer" | "editor";
 type AnyCtx = QueryCtx | MutationCtx;
-
-function higherCollaboratorRole(
-  currentRole: CollaboratorRole,
-  linkRole: CollaboratorRole,
-): CollaboratorRole {
-  return currentRole === "editor" || linkRole === "editor"
-    ? "editor"
-    : "viewer";
-}
 
 async function resolveTarget(
   ctx: AnyCtx,

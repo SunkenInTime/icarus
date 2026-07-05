@@ -3,7 +3,9 @@ import { v } from "convex/values";
 import {
   assertStrategyRole,
   getStrategyRoleForUser,
+  higherCollaboratorRole,
   requireCurrentUser,
+  type CollaboratorRole,
 } from "./lib/auth";
 import { getStrategyByPublicId } from "./lib/entities";
 import {
@@ -129,6 +131,7 @@ export const redeem = mutation({
       throw notFoundError("Strategy", invite.strategyId);
     }
 
+    let redeemedRole: CollaboratorRole = invite.role;
     if (strategy.ownerId !== user._id) {
       const existingMembership = await ctx.db
         .query("strategyCollaborators")
@@ -147,10 +150,16 @@ export const redeem = mutation({
           updatedAt: Date.now(),
         });
       } else {
-        await ctx.db.patch(existingMembership._id, {
-          role: invite.role,
-          updatedAt: Date.now(),
-        });
+        redeemedRole = higherCollaboratorRole(
+          existingMembership.role,
+          invite.role,
+        );
+        if (redeemedRole !== existingMembership.role) {
+          await ctx.db.patch(existingMembership._id, {
+            role: redeemedRole,
+            updatedAt: Date.now(),
+          });
+        }
       }
     }
 
@@ -162,7 +171,7 @@ export const redeem = mutation({
     return {
       ok: true,
       strategyPublicId: strategy.publicId,
-      role: strategy.ownerId === user._id ? "owner" : invite.role,
+      role: strategy.ownerId === user._id ? "owner" : redeemedRole,
     };
   },
 });

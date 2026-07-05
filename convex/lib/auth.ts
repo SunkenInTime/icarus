@@ -7,6 +7,7 @@ import {
 } from "./errors";
 
 export type StrategyRole = "owner" | "editor" | "viewer";
+export type CollaboratorRole = Exclude<StrategyRole, "owner">;
 
 type AnyCtx = QueryCtx | MutationCtx;
 
@@ -123,6 +124,13 @@ export function higherRole(
   if (left === null) return right;
   if (right === null) return left;
   return roleRank[left] >= roleRank[right] ? left : right;
+}
+
+export function higherCollaboratorRole(
+  left: CollaboratorRole,
+  right: CollaboratorRole,
+): CollaboratorRole {
+  return higherRole(left, right) as CollaboratorRole;
 }
 
 export async function getEffectiveFolderRoleForUser(
