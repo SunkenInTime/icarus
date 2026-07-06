@@ -5,7 +5,9 @@ import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/app_navigator.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 final authProvider =
@@ -554,7 +556,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       );
 
       if (response.session == null) {
-        const message = 'Sign in did not return a session.';
+        const message = "Sign in didn't complete. Please try again.";
         state = state.copyWith(
           isLoading: false,
           isConvexUserReady: false,
@@ -573,7 +575,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         error: error,
         stackTrace: stackTrace,
       );
-      final message = 'Email/password sign-in failed: $error';
+      final message = _friendlySignInError(error);
       state = state.copyWith(
         isLoading: false,
         isConvexUserReady: false,
@@ -582,6 +584,47 @@ class AuthProvider extends Notifier<AppAuthState> {
       );
       return message;
     }
+  }
+
+  static String _friendlySignInError(Object error) {
+    final message = error.toString().toLowerCase();
+    if (message.contains('invalid login credentials') ||
+        message.contains('invalid_credentials')) {
+      return 'Incorrect email or password.';
+    }
+    if (message.contains('email not confirmed')) {
+      return 'Confirm your email first — check your inbox for the '
+          'confirmation link.';
+    }
+    if (message.contains('rate limit') || message.contains('too many')) {
+      return 'Too many attempts. Wait a moment and try again.';
+    }
+    if (message.contains('socket') ||
+        message.contains('network') ||
+        message.contains('timed out') ||
+        message.contains('failed host lookup')) {
+      return "Couldn't reach the server. Check your connection and try again.";
+    }
+    return 'Sign in failed. Please try again.';
+  }
+
+  static String _friendlySignUpError(Object error) {
+    final message = error.toString().toLowerCase();
+    if (message.contains('already registered') ||
+        message.contains('already exists')) {
+      return 'An account with this email already exists. Try signing in '
+          'instead.';
+    }
+    if (message.contains('rate limit') || message.contains('too many')) {
+      return 'Too many attempts. Wait a moment and try again.';
+    }
+    if (message.contains('socket') ||
+        message.contains('network') ||
+        message.contains('timed out') ||
+        message.contains('failed host lookup')) {
+      return "Couldn't reach the server. Check your connection and try again.";
+    }
+    return 'Sign up failed. Please try again.';
   }
 
   Future<String?> signUpWithEmailPassword({
@@ -603,7 +646,8 @@ class AuthProvider extends Notifier<AppAuthState> {
 
       if (response.session == null) {
         const message =
-            'Account created, but email confirmation is required before sign in.';
+            'Account created! Check your inbox for the confirmation link, '
+            'then sign in.';
         state = state.copyWith(
           isLoading: false,
           isConvexUserReady: false,
@@ -622,7 +666,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         error: error,
         stackTrace: stackTrace,
       );
-      final message = 'Email/password sign-up failed: $error';
+      final message = _friendlySignUpError(error);
       state = state.copyWith(
         isLoading: false,
         isConvexUserReady: false,
@@ -655,6 +699,10 @@ class AuthProvider extends Notifier<AppAuthState> {
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.signedOut,
       );
+      Settings.showToast(
+        message: 'Signed out. Your local strategies stay on this device.',
+        backgroundColor: Settings.tacticalVioletTheme.primary,
+      );
     } catch (error, stackTrace) {
       log(
         'Sign out failed: $error',
@@ -666,7 +714,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         isLoading: false,
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.incident,
-        errorMessage: 'Sign out failed: $error',
+        errorMessage: 'Sign out failed. Please try again.',
       );
     }
   }
@@ -814,7 +862,8 @@ class AuthProvider extends Notifier<AppAuthState> {
       activeAuthIncidentId: incidentId,
       lastAuthIncidentSource: source,
       errorMessage:
-          'Cloud authentication expired. Retry Convex auth or sign out.',
+          'Your cloud session expired. Reconnect to resume syncing, or '
+          'sign out.',
     );
 
     log(
@@ -1098,7 +1147,7 @@ class AuthProvider extends Notifier<AppAuthState> {
       state = state.copyWith(
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.incident,
-        errorMessage: 'Failed to configure Convex auth: $error',
+        errorMessage: "Couldn't connect to cloud sync. Please retry.",
       );
     }
   }
@@ -1130,34 +1179,38 @@ class AuthProvider extends Notifier<AppAuthState> {
     state = state.copyWith(isAuthIncidentPromptOpen: true);
 
     try {
-      final action = await showDialog<_AuthIncidentAction>(
+      final action = await showShadDialog<_AuthIncidentAction>(
         context: navCtx,
         barrierDismissible: false,
         builder: (context) {
-          return AlertDialog(
-            title: const Text('Cloud Session Needs Attention'),
-            content: const Text(
-              'Convex reported your session as unauthenticated while Supabase is signed in. '
-              'Retry Convex auth, sign out, or dismiss to keep cloud features paused.',
+          return ShadDialog.alert(
+            title: const Text('Cloud connection lost'),
+            description: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Your cloud session is no longer valid, so syncing is '
+                'paused. Reconnect to keep your cloud strategies up to '
+                'date, or sign out. Local strategies are unaffected.',
+              ),
             ),
             actions: [
-              TextButton(
+              ShadButton.ghost(
                 onPressed: () {
                   Navigator.of(context).pop(_AuthIncidentAction.dismiss);
                 },
-                child: const Text('Dismiss'),
+                child: const Text('Not Now'),
               ),
-              TextButton(
+              ShadButton.secondary(
                 onPressed: () {
                   Navigator.of(context).pop(_AuthIncidentAction.signOut);
                 },
                 child: const Text('Sign Out'),
               ),
-              FilledButton(
+              ShadButton(
                 onPressed: () {
                   Navigator.of(context).pop(_AuthIncidentAction.retry);
                 },
-                child: const Text('Retry Convex Auth'),
+                child: const Text('Reconnect'),
               ),
             ],
           );

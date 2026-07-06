@@ -5,6 +5,8 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
@@ -26,6 +28,7 @@ enum _SettingsMode {
 enum _SettingsSection {
   strategyObjects,
   strategyMapTheme,
+  globalAccount,
   globalDefaults,
   globalSaving,
   globalMapVisibility,
@@ -187,6 +190,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       case _SettingsSection.strategyObjects:
       case _SettingsSection.strategyMapTheme:
         return _SettingsMode.strategy;
+      case _SettingsSection.globalAccount:
       case _SettingsSection.globalDefaults:
       case _SettingsSection.globalSaving:
       case _SettingsSection.globalMapVisibility:
@@ -369,6 +373,12 @@ class _GlobalSettingsSections extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _AccountSettingsSection(
+          key: sectionKeys[_SettingsSection.globalAccount],
+        ),
+        const SizedBox(height: 20),
+        const _SectionDivider(),
+        const SizedBox(height: 20),
         SettingsScopeCard(
           key: sectionKeys[_SettingsSection.globalDefaults],
           title: "New strategy defaults",
@@ -1072,6 +1082,186 @@ class _ShortcutEmptySearch extends StatelessWidget {
   }
 }
 
+class _AccountSettingsSection extends ConsumerWidget {
+  const _AccountSettingsSection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authProvider);
+
+    return SettingsScopeCard(
+      title: 'Account',
+      description: authState.isAuthenticated
+          ? 'Your cloud identity and sync connection.'
+          : 'Sign in to sync strategies to the cloud and share them.',
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeOutCubic,
+        child: authState.isAuthenticated
+            ? _SignedInAccountRow(
+                key: const ValueKey('account-signed-in'),
+                authState: authState,
+              )
+            : Padding(
+                key: const ValueKey('account-signed-out'),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.cloud_off_outlined,
+                      size: 18,
+                      color: Settings.tacticalVioletTheme.mutedForeground,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Not signed in',
+                        style: TextStyle(
+                          color: Settings.tacticalVioletTheme.mutedForeground,
+                        ),
+                      ),
+                    ),
+                    ShadButton(
+                      size: ShadButtonSize.sm,
+                      onPressed: authState.isLoading
+                          ? null
+                          : () {
+                              showDialog<void>(
+                                context: context,
+                                builder: (_) => const AuthDialog(),
+                              );
+                            },
+                      child: const Text('Log In'),
+                    ),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+class _SignedInAccountRow extends ConsumerWidget {
+  const _SignedInAccountRow({super.key, required this.authState});
+
+  final AppAuthState authState;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    const theme = Settings.tacticalVioletTheme;
+    final email = authState.user?.email;
+    final avatarUrl = authState.avatarUrl;
+
+    final (String statusLabel, IconData statusIcon, Color statusColor) =
+        switch (authState.convexAuthStatus) {
+      ConvexAuthStatus.ready => (
+          'Cloud sync active',
+          Icons.cloud_done_outlined,
+          theme.mutedForeground,
+        ),
+      ConvexAuthStatus.configuring => (
+          'Connecting to cloud…',
+          Icons.cloud_sync_outlined,
+          theme.mutedForeground,
+        ),
+      ConvexAuthStatus.incident => (
+          'Cloud connection needs attention',
+          Icons.error_outline,
+          theme.destructive,
+        ),
+      ConvexAuthStatus.signedOut => (
+          'Cloud sync inactive',
+          Icons.cloud_off_outlined,
+          theme.mutedForeground,
+        ),
+    };
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: theme.muted,
+            foregroundImage:
+                avatarUrl != null ? NetworkImage(avatarUrl) : null,
+            child: Text(
+              authState.displayName.characters.first.toUpperCase(),
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: theme.foreground,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  authState.displayName,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                if (email != null && email != authState.displayName)
+                  Text(
+                    email,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: theme.mutedForeground,
+                      fontSize: 12,
+                    ),
+                  ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(statusIcon, size: 13, color: statusColor),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        statusLabel,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          if (authState.convexAuthStatus == ConvexAuthStatus.incident) ...[
+            ShadButton(
+              size: ShadButtonSize.sm,
+              onPressed: () {
+                ref
+                    .read(authProvider.notifier)
+                    .reinitializeConvexAuth(source: 'settings_account');
+              },
+              child: const Text('Reconnect'),
+            ),
+            const SizedBox(width: 8),
+          ],
+          ShadButton.outline(
+            size: ShadButtonSize.sm,
+            onPressed: authState.isLoading
+                ? null
+                : () {
+                    ref.read(authProvider.notifier).signOut();
+                  },
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SettingsNavigationRail extends StatelessWidget {
   const _SettingsNavigationRail({
     required this.mode,
@@ -1125,6 +1315,12 @@ class _SettingsNavigationRail extends StatelessWidget {
             onTap: () => onSectionSelected(_SettingsSection.globalDefaults),
           ),
           const SizedBox(height: 4),
+          _SettingsNavItem(
+            icon: Icons.person_outline,
+            label: "Account",
+            isSelected: selectedSection == _SettingsSection.globalAccount,
+            onTap: () => onSectionSelected(_SettingsSection.globalAccount),
+          ),
           _SettingsNavItem(
             icon: Icons.auto_fix_high_outlined,
             label: "Defaults",
