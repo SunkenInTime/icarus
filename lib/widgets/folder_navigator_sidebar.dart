@@ -20,6 +20,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 const _rowHoverDuration = Duration(milliseconds: 120);
 const _treeRevealDuration = Duration(milliseconds: 180);
+const _sortIconSwapDuration = Duration(milliseconds: 150);
 const _rowHeight = 34.0;
 const _rowIconSize = 16.0;
 const _chevronSlotWidth = 18.0;
@@ -170,7 +171,10 @@ class _SidebarShell extends ConsumerWidget {
                 Row(
                   children: [
                     Expanded(
+                      // Keyed so external sort-by changes (e.g. a future
+                      // "reset filters") re-seed the select's internal state.
                       child: ShadSelect<SortBy>(
+                        key: ValueKey(filterState.sortBy),
                         initialValue: filterState.sortBy,
                         selectedOptionBuilder: (context, value) => Text(
                           StrategyFilterProvider.sortByLabels[value]!,
@@ -319,7 +323,7 @@ class _SortOrderToggle extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isAscending = sortOrder == SortOrder.ascending;
     return Tooltip(
-      message: StrategyFilterProvider.sortOrderLabels[sortOrder]!,
+      message: isAscending ? 'Sort descending' : 'Sort ascending',
       child: ShadButton.outline(
         width: 36,
         height: 36,
@@ -330,7 +334,7 @@ class _SortOrderToggle extends ConsumerWidget {
               );
         },
         child: AnimatedSwitcher(
-          duration: _rowHoverDuration,
+          duration: _sortIconSwapDuration,
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeOutCubic,
           transitionBuilder: (child, animation) => FadeTransition(
