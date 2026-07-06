@@ -90,11 +90,11 @@ class StrategyTileViewData {
   static Color _attackColor(String label) {
     switch (label) {
       case 'Attack':
-        return Colors.redAccent;
+        return Settings.attackColor;
       case 'Defend':
-        return Colors.lightBlueAccent;
+        return Settings.defenderColor;
       default:
-        return Colors.orangeAccent;
+        return Settings.mixedStrategyColor;
     }
   }
 
@@ -281,7 +281,7 @@ class StrategyTileDragPreview extends StatelessWidget {
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.deepPurpleAccent, width: 2),
+        border: Border.all(color: Settings.tacticalVioletTheme.ring, width: 2),
       ),
       padding: const EdgeInsets.all(4),
       child: Row(
