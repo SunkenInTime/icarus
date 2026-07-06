@@ -29,7 +29,12 @@ class ShareLinkController extends Notifier<String?> {
     return true;
   }
 
-  Future<bool> redeemPendingIfPossible({String source = 'pending'}) async {
+  /// Set [showFailureToasts] to false when the caller (e.g. a dialog)
+  /// presents failures inline itself; success toasts always show.
+  Future<bool> redeemPendingIfPossible({
+    String source = 'pending',
+    bool showFailureToasts = true,
+  }) async {
     final token = state;
     if (token == null || token.isEmpty) {
       return false;
@@ -37,10 +42,12 @@ class ShareLinkController extends Notifier<String?> {
 
     final auth = ref.read(authProvider);
     if (!auth.isAuthenticated || !auth.isConvexUserReady) {
-      Settings.showToast(
-        message: 'Sign in to redeem shared links.',
-        backgroundColor: Settings.tacticalVioletTheme.primary,
-      );
+      if (showFailureToasts) {
+        Settings.showToast(
+          message: 'Sign in to redeem shared links.',
+          backgroundColor: Settings.tacticalVioletTheme.primary,
+        );
+      }
       return false;
     }
 
@@ -78,17 +85,19 @@ class ShareLinkController extends Notifier<String?> {
             );
         return false;
       }
-      Settings.showToast(
-        message: 'Failed to redeem share link.',
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
-      );
+      if (showFailureToasts) {
+        Settings.showToast(
+          message: 'Failed to redeem share link.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+      }
       return false;
     }
   }
 
   Future<bool> redeemToken(String token) async {
     state = token;
-    return redeemPendingIfPossible(source: 'manual');
+    return redeemPendingIfPossible(source: 'manual', showFailureToasts: false);
   }
 
   @override
