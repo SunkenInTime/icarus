@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,6 +17,13 @@ import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+const _rowHoverDuration = Duration(milliseconds: 120);
+const _treeRevealDuration = Duration(milliseconds: 180);
+const _rowHeight = 34.0;
+const _rowIconSize = 16.0;
+const _chevronSlotWidth = 18.0;
+const _depthIndent = 14.0;
 
 class FolderNavigatorSidebar extends ConsumerWidget {
   const FolderNavigatorSidebar({
@@ -111,9 +116,10 @@ class _SidebarShell extends ConsumerWidget {
     final searchQuery =
         ref.watch(strategySearchQueryProvider).trim().toLowerCase();
     final visibleRoots = _buildVisibleTree(folders, searchQuery);
+    final folderLookup = {for (final folder in folders) folder.id: folder};
 
     return Container(
-      width: 288,
+      width: 240,
       margin: const EdgeInsets.fromLTRB(12, 12, 0, 12),
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
@@ -125,34 +131,34 @@ class _SidebarShell extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (isSharedWithMe) ...[
+                if (isSharedWithMe)
                   ShadButton(
                     onPressed: () => showAddSharedItemDialog(context),
-                    leading: const Icon(LucideIcons.link),
+                    leading: const Icon(LucideIcons.link, size: 16),
                     child: const Text('Add by Link or Code'),
-                  ),
-                ] else ...[
+                  )
+                else ...[
                   ShadButton(
                     onPressed: onCreateStrategy,
-                    leading: const Icon(Icons.add),
+                    leading: const Icon(Icons.add, size: 16),
                     child: Text(
                       isCloud ? 'Create Cloud Strategy' : 'Create Strategy',
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   ShadButton.secondary(
                     onPressed: onAddFolder,
-                    leading: const Icon(LucideIcons.folderPlus),
+                    leading: const Icon(LucideIcons.folderPlus, size: 16),
                     child: const Text('Add Folder'),
                   ),
                 ],
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 const SizedBox(
-                  height: 40,
+                  height: 36,
                   child: SearchTextField(
                     collapsedWidth: double.infinity,
                     expandedWidth: double.infinity,
@@ -160,48 +166,59 @@ class _SidebarShell extends ConsumerWidget {
                     hintText: 'Search strategies and folders',
                   ),
                 ),
-                const SizedBox(height: 12),
-                _SidebarSelect<SortBy>(
-                  currentValue: filterState.sortBy,
-                  values: SortBy.values,
-                  labels: StrategyFilterProvider.sortByLabels,
-                  onChanged: (value) {
-                    ref.read(strategyFilterProvider.notifier).setSortBy(value);
-                  },
-                ),
                 const SizedBox(height: 8),
-                _SidebarSelect<SortOrder>(
-                  currentValue: filterState.sortOrder,
-                  values: SortOrder.values,
-                  labels: StrategyFilterProvider.sortOrderLabels,
-                  onChanged: (value) {
-                    ref
-                        .read(strategyFilterProvider.notifier)
-                        .setSortOrder(value);
-                  },
+                Row(
+                  children: [
+                    Expanded(
+                      child: ShadSelect<SortBy>(
+                        initialValue: filterState.sortBy,
+                        selectedOptionBuilder: (context, value) => Text(
+                          StrategyFilterProvider.sortByLabels[value]!,
+                        ),
+                        options: [
+                          for (final value in SortBy.values)
+                            ShadOption(
+                              value: value,
+                              child: Text(
+                                StrategyFilterProvider.sortByLabels[value]!,
+                              ),
+                            ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            ref
+                                .read(strategyFilterProvider.notifier)
+                                .setSortBy(value);
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    _SortOrderToggle(sortOrder: filterState.sortOrder),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                _SidebarSectionLabel(
-                  label: isCloud ? 'Cloud Tools' : 'Library Tools',
-                ),
-                const SizedBox(height: 8),
-                _SidebarActionButton(
-                  icon: Icons.file_download_outlined,
-                  label: 'Import .ica',
-                  onPressed: isCloud ? null : onImportIca,
-                ),
-                const SizedBox(height: 6),
-                _SidebarActionButton(
-                  icon: Icons.archive_outlined,
-                  label: 'Import Backup',
-                  onPressed: isCloud ? null : onImportBackup,
-                ),
-                const SizedBox(height: 6),
-                _SidebarActionButton(
-                  icon: Icons.backup_outlined,
-                  label: 'Export Library',
-                  onPressed: isCloud ? null : onExportLibrary,
-                ),
+                if (!isCloud) ...[
+                  const SizedBox(height: 12),
+                  const _SidebarSectionLabel(label: 'Library Tools'),
+                  const SizedBox(height: 6),
+                  _SidebarActionButton(
+                    icon: Icons.file_download_outlined,
+                    label: 'Import .ica',
+                    onPressed: onImportIca,
+                  ),
+                  const SizedBox(height: 4),
+                  _SidebarActionButton(
+                    icon: Icons.archive_outlined,
+                    label: 'Import Backup',
+                    onPressed: onImportBackup,
+                  ),
+                  const SizedBox(height: 4),
+                  _SidebarActionButton(
+                    icon: Icons.backup_outlined,
+                    label: 'Export Library',
+                    onPressed: onExportLibrary,
+                  ),
+                ],
               ],
             ),
           ),
@@ -211,7 +228,7 @@ class _SidebarShell extends ConsumerWidget {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
+              padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -220,20 +237,12 @@ class _SidebarShell extends ConsumerWidget {
                       padding: EdgeInsets.symmetric(horizontal: 6),
                       child: _SidebarSectionLabel(label: 'Views'),
                     ),
-                    const SizedBox(height: 8),
-                    _SidebarSpecialItem(
-                      icon: Icons.home_outlined,
-                      label: 'Home',
+                    const SizedBox(height: 6),
+                    _SidebarRootItem(
                       isSelected: cloudSection == CloudLibrarySection.home &&
                           currentFolderId == null,
-                      onTap: () {
-                        ref
-                            .read(cloudLibrarySectionProvider.notifier)
-                            .select(CloudLibrarySection.home);
-                        ref.read(folderProvider.notifier).updateID(null);
-                      },
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     _SidebarSpecialItem(
                       icon: Icons.people_outline,
                       label: 'Shared with Me',
@@ -246,22 +255,20 @@ class _SidebarShell extends ConsumerWidget {
                         ref.read(folderProvider.notifier).updateID(null);
                       },
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 10),
                   ],
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 6),
                     child: _SidebarSectionLabel(label: 'Folders'),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Expanded(
                     child: ListView(
                       children: [
-                        _SidebarRootItem(
-                          isSelected: currentFolderId == null &&
-                              (!isCloud ||
-                                  cloudSection == CloudLibrarySection.home),
-                        ),
-                        const SizedBox(height: 4),
+                        if (!isCloud) ...[
+                          _SidebarRootItem(isSelected: currentFolderId == null),
+                          const SizedBox(height: 2),
+                        ],
                         if (visibleRoots.isEmpty)
                           Padding(
                             padding: const EdgeInsets.symmetric(
@@ -282,12 +289,12 @@ class _SidebarShell extends ConsumerWidget {
                         else
                           ...visibleRoots.map(
                             (node) => _FolderSidebarItem(
+                              key: ValueKey(node.folder.id),
                               node: node,
                               depth: 0,
                               selectedFolderId: currentFolderId,
-                              folderLookup: {
-                                for (final folder in folders) folder.id: folder,
-                              },
+                              folderLookup: folderLookup,
+                              forceExpanded: searchQuery.isNotEmpty,
                             ),
                           ),
                       ],
@@ -298,6 +305,46 @@ class _SidebarShell extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SortOrderToggle extends ConsumerWidget {
+  const _SortOrderToggle({required this.sortOrder});
+
+  final SortOrder sortOrder;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isAscending = sortOrder == SortOrder.ascending;
+    return Tooltip(
+      message: StrategyFilterProvider.sortOrderLabels[sortOrder]!,
+      child: ShadButton.outline(
+        width: 36,
+        height: 36,
+        padding: EdgeInsets.zero,
+        onPressed: () {
+          ref.read(strategyFilterProvider.notifier).setSortOrder(
+                isAscending ? SortOrder.descending : SortOrder.ascending,
+              );
+        },
+        child: AnimatedSwitcher(
+          duration: _rowHoverDuration,
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeOutCubic,
+          transitionBuilder: (child, animation) => FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(scale: animation, child: child),
+          ),
+          child: Icon(
+            isAscending
+                ? LucideIcons.arrowUpNarrowWide
+                : LucideIcons.arrowDownWideNarrow,
+            key: ValueKey(isAscending),
+            size: 16,
+          ),
+        ),
       ),
     );
   }
@@ -344,8 +391,9 @@ class _SidebarRootItem extends ConsumerWidget {
           },
           child: const Row(
             children: [
-              Icon(Icons.home_outlined, size: 18),
-              SizedBox(width: 12),
+              SizedBox(width: _chevronSlotWidth),
+              Icon(Icons.home_outlined, size: _rowIconSize),
+              SizedBox(width: 10),
               Expanded(
                 child: Text(
                   'Home',
@@ -381,8 +429,9 @@ class _SidebarSpecialItem extends StatelessWidget {
       onTap: onTap,
       child: Row(
         children: [
-          Icon(icon, size: 18),
-          const SizedBox(width: 12),
+          const SizedBox(width: _chevronSlotWidth),
+          Icon(icon, size: _rowIconSize),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               label,
@@ -397,36 +446,73 @@ class _SidebarSpecialItem extends StatelessWidget {
 
 class _FolderSidebarItem extends ConsumerStatefulWidget {
   const _FolderSidebarItem({
+    super.key,
     required this.node,
     required this.depth,
     required this.selectedFolderId,
     required this.folderLookup,
+    required this.forceExpanded,
   });
 
   final _FolderTreeNode node;
   final int depth;
   final String? selectedFolderId;
   final Map<String, Folder> folderLookup;
+  final bool forceExpanded;
 
   @override
   ConsumerState<_FolderSidebarItem> createState() => _FolderSidebarItemState();
 }
 
 class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
-  static const _hoverExitDelay = Duration(milliseconds: 500);
-
   final ShadContextMenuController _menuButtonController =
       ShadContextMenuController();
   final ShadContextMenuController _rightClickMenuController =
       ShadContextMenuController();
   bool _hovered = false;
-  Timer? _hoverExitTimer;
+  bool _expanded = false;
 
   Folder get folder => widget.node.folder;
 
   @override
+  void initState() {
+    super.initState();
+    _expanded = _containsSelected(widget.node);
+    _menuButtonController.addListener(_onMenuStateChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _FolderSidebarItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.selectedFolderId != oldWidget.selectedFolderId &&
+        !_expanded &&
+        _containsSelected(widget.node)) {
+      _expanded = true;
+    }
+  }
+
+  bool _containsSelected(_FolderTreeNode node) {
+    final selectedId = widget.selectedFolderId;
+    if (selectedId == null) {
+      return false;
+    }
+    for (final child in node.children) {
+      if (child.folder.id == selectedId || _containsSelected(child)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void _onMenuStateChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
   void dispose() {
-    _hoverExitTimer?.cancel();
+    _menuButtonController.removeListener(_onMenuStateChanged);
     _menuButtonController.dispose();
     _rightClickMenuController.dispose();
     super.dispose();
@@ -438,6 +524,11 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
         Folder.folderColorMap[folder.color] ??
         Colors.white;
     final selected = widget.selectedFolderId == folder.id;
+    final hasChildren = widget.node.children.isNotEmpty;
+    final showChildren = hasChildren && (_expanded || widget.forceExpanded);
+    final showMenuButton =
+        _hovered || selected || _menuButtonController.isOpen;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -471,21 +562,10 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
           },
           builder: (context, candidateData, rejectedData) {
             return Padding(
-              padding: EdgeInsets.only(left: widget.depth * 16.0),
+              padding: EdgeInsets.only(left: widget.depth * _depthIndent),
               child: MouseRegion(
-                onEnter: (_) {
-                  _hoverExitTimer?.cancel();
-                  setState(() => _hovered = true);
-                },
-                onExit: (_) {
-                  _hoverExitTimer?.cancel();
-                  _hoverExitTimer = Timer(_hoverExitDelay, () {
-                    if (!mounted) {
-                      return;
-                    }
-                    setState(() => _hovered = false);
-                  });
-                },
+                onEnter: (_) => setState(() => _hovered = true),
+                onExit: (_) => setState(() => _hovered = false),
                 child: ShadContextMenuRegion(
                   controller: _rightClickMenuController,
                   items: _buildMenuItems(),
@@ -507,8 +587,15 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
                       },
                       child: Row(
                         children: [
-                          Icon(folder.icon, size: 18, color: color),
-                          const SizedBox(width: 12),
+                          _ChevronSlot(
+                            hasChildren: hasChildren,
+                            expanded: showChildren,
+                            onTap: hasChildren
+                                ? () => setState(() => _expanded = !_expanded)
+                                : null,
+                          ),
+                          Icon(folder.icon, size: _rowIconSize, color: color),
+                          const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               folder.name,
@@ -517,15 +604,15 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
                                   const TextStyle(fontWeight: FontWeight.w500),
                             ),
                           ),
-                          if (_hovered || selected)
+                          if (showMenuButton)
                             ShadContextMenuRegion(
                               controller: _menuButtonController,
                               items: _buildMenuItems(),
                               child: ShadIconButton.ghost(
-                                width: 26,
-                                height: 26,
+                                width: 24,
+                                height: 24,
                                 onPressed: _menuButtonController.toggle,
-                                icon: const Icon(Icons.more_horiz, size: 16),
+                                icon: const Icon(Icons.more_horiz, size: 14),
                               ),
                             ),
                         ],
@@ -537,15 +624,29 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
             );
           },
         ),
-        if (widget.node.children.isNotEmpty)
-          ...widget.node.children.map(
-            (child) => _FolderSidebarItem(
-              node: child,
-              depth: widget.depth + 1,
-              selectedFolderId: widget.selectedFolderId,
-              folderLookup: widget.folderLookup,
-            ),
+        ClipRect(
+          child: AnimatedSize(
+            duration: _treeRevealDuration,
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: showChildren
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final child in widget.node.children)
+                        _FolderSidebarItem(
+                          key: ValueKey(child.folder.id),
+                          node: child,
+                          depth: widget.depth + 1,
+                          selectedFolderId: widget.selectedFolderId,
+                          folderLookup: widget.folderLookup,
+                          forceExpanded: widget.forceExpanded,
+                        ),
+                    ],
+                  )
+                : const SizedBox(width: double.infinity),
           ),
+        ),
       ],
     );
   }
@@ -564,7 +665,6 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
     return [
       ShadContextMenuItem(
         leading: const Icon(Icons.text_fields),
-        child: const Text('Edit'),
         onPressed: !canManage
             ? null
             : () async {
@@ -573,6 +673,7 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
                   builder: (context) => FolderEditDialog(folder: folder),
                 );
               },
+        child: const Text('Edit'),
       ),
       if (isCloud && cloudRole == 'owner')
         ShadContextMenuItem(
@@ -591,16 +692,15 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
         ),
       ShadContextMenuItem(
         leading: const Icon(Icons.file_upload_outlined),
-        child: const Text('Export'),
         onPressed: () async {
           await StrategyImportExportService(ref).exportFolder(folder.id);
         },
+        child: const Text('Export'),
       ),
       ShadContextMenuItem(
-        leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-        child: const Text(
-          'Delete',
-          style: TextStyle(color: Colors.redAccent),
+        leading: Icon(
+          Icons.delete_outline,
+          color: Settings.tacticalVioletTheme.destructive,
         ),
         onPressed: !canManage
             ? null
@@ -621,6 +721,10 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
                       workspace: ref.read(libraryWorkspaceProvider),
                     );
               },
+        child: Text(
+          'Delete',
+          style: TextStyle(color: Settings.tacticalVioletTheme.destructive),
+        ),
       ),
     ];
   }
@@ -640,7 +744,44 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
   }
 }
 
-class _SidebarRowShell extends StatelessWidget {
+class _ChevronSlot extends StatelessWidget {
+  const _ChevronSlot({
+    required this.hasChildren,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final bool hasChildren;
+  final bool expanded;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!hasChildren) {
+      return const SizedBox(width: _chevronSlotWidth);
+    }
+    return SizedBox(
+      width: _chevronSlotWidth,
+      height: _rowHeight,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(4),
+        onTap: onTap,
+        child: AnimatedRotation(
+          duration: _treeRevealDuration,
+          curve: Curves.easeOutCubic,
+          turns: expanded ? 0.25 : 0,
+          child: Icon(
+            Icons.chevron_right,
+            size: 15,
+            color: Settings.tacticalVioletTheme.mutedForeground,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarRowShell extends StatefulWidget {
   const _SidebarRowShell({
     required this.child,
     required this.onTap,
@@ -654,35 +795,48 @@ class _SidebarRowShell extends StatelessWidget {
   final bool isDropTarget;
 
   @override
+  State<_SidebarRowShell> createState() => _SidebarRowShellState();
+}
+
+class _SidebarRowShellState extends State<_SidebarRowShell> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    final borderColor = isDropTarget
+    final borderColor = widget.isDropTarget
         ? Settings.tacticalVioletTheme.ring
-        : (selected
+        : (widget.selected
             ? Settings.tacticalVioletTheme.primary
             : Colors.transparent);
-    final backgroundColor = selected
+    final backgroundColor = widget.selected
         ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.18)
-        : (isDropTarget
+        : (widget.isDropTarget
             ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.10)
-            : Colors.transparent);
+            : (_hovered
+                ? Settings.tacticalVioletTheme.muted.withValues(alpha: 0.5)
+                : Colors.transparent));
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: onTap,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 120),
-            height: 38,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: backgroundColor,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: borderColor),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: _rowHoverDuration,
+              height: _rowHeight,
+              padding: const EdgeInsets.only(left: 4, right: 6),
+              decoration: BoxDecoration(
+                color: backgroundColor,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: borderColor),
+              ),
+              child: widget.child,
             ),
-            child: child,
           ),
         ),
       ),
@@ -727,44 +881,11 @@ class _SidebarActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ShadButton.ghost(
+      size: ShadButtonSize.sm,
       onPressed: onPressed,
       mainAxisAlignment: MainAxisAlignment.start,
-      leading: Icon(icon, size: 18),
+      leading: Icon(icon, size: 16),
       child: Text(label),
-    );
-  }
-}
-
-class _SidebarSelect<T> extends StatelessWidget {
-  const _SidebarSelect({
-    required this.currentValue,
-    required this.values,
-    required this.labels,
-    required this.onChanged,
-  });
-
-  final T currentValue;
-  final Iterable<T> values;
-  final Map<T, String> labels;
-  final ValueChanged<T> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return ShadSelect<T>(
-      initialValue: currentValue,
-      selectedOptionBuilder: (context, value) => Text(labels[value]!),
-      options: [
-        for (final value in values)
-          ShadOption(
-            value: value,
-            child: Text(labels[value]!),
-          ),
-      ],
-      onChanged: (value) {
-        if (value != null) {
-          onChanged(value);
-        }
-      },
     );
   }
 }
