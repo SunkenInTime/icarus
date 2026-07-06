@@ -647,7 +647,7 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
                                         'device.',
                                     confirmText: 'Sign Out',
                                   );
-                                  if (!confirmed) {
+                                  if (!confirmed || !context.mounted) {
                                     return;
                                   }
                                   unawaited(

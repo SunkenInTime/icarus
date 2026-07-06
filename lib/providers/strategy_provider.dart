@@ -942,16 +942,21 @@ class StrategyProvider extends Notifier<StrategyState> {
       try {
         await openCloudStrategy(newID);
       } catch (error, stackTrace) {
-        // The strategy exists on the server but couldn't be opened. Without
-        // this, the editor opened as a local document (no cloud sync) with
-        // no explanation.
+        // The strategy exists on the server but couldn't be opened — don't
+        // rethrow, or the create dialog would falsely report that creation
+        // failed. Creation succeeded; opening is what failed (the editor's
+        // own load path surfaces that and backs out).
         log(
           'Created cloud strategy $newID but failed to open it: $error',
           name: 'strategy',
           error: error,
           stackTrace: stackTrace,
         );
-        rethrow;
+        Settings.showToast(
+          message: 'Strategy created, but it could not be opened. '
+              'Open it from your cloud library.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
       }
       return newID;
     }
