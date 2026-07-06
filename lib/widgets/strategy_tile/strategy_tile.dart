@@ -195,9 +195,15 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
           child: const Text('Share'),
         ),
       ShadContextMenuItem(
-        leading: const Icon(LucideIcons.trash2, color: Colors.redAccent),
+        leading: Icon(
+          LucideIcons.trash2,
+          color: Settings.tacticalVioletTheme.destructive,
+        ),
         onPressed: widget.canDelete ? () => _showDeleteDialog() : null,
-        child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
+        child: Text(
+          'Delete',
+          style: TextStyle(color: Settings.tacticalVioletTheme.destructive),
+        ),
       ),
     ];
   }

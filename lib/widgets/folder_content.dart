@@ -266,14 +266,16 @@ class FolderContent extends ConsumerWidget {
                 ),
               )
             else if (folders.isNotEmpty)
-              const SliverFillRemaining(
+              SliverFillRemaining(
                 hasScrollBody: false,
                 child: Center(
                   child: Padding(
-                    padding: EdgeInsets.only(top: 48),
+                    padding: const EdgeInsets.only(top: 48),
                     child: Text(
                       'No strategies in this folder',
-                      style: TextStyle(color: Colors.grey),
+                      style: TextStyle(
+                        color: Settings.tacticalVioletTheme.mutedForeground,
+                      ),
                     ),
                   ),
                 ),

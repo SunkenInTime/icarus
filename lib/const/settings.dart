@@ -78,6 +78,10 @@ class Settings {
 
   static const Color enemyOutlineColor = Color.fromARGB(139, 255, 82, 82);
   static const Color allyOutlineColor = Color.fromARGB(106, 105, 240, 175);
+  static Color get attackColor => tacticalVioletTheme.destructive;
+  static Color get defenderColor => tacticalVioletTheme.primary;
+  static Color get mixedStrategyColor =>
+      tacticalVioletTheme.mutedForeground;
 
   static Color neutralTeamShade(Color color) {
     return HSLColor.fromColor(color).withSaturation(0).toColor();
