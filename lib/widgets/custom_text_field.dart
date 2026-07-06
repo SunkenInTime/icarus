@@ -16,6 +16,7 @@ class CustomTextField extends ConsumerWidget {
     this.autofillHints,
     this.obscureText = false,
     this.textInputAction,
+    this.hasError = false,
   });
   final TextEditingController? controller;
   final String? hintText;
@@ -28,10 +29,20 @@ class CustomTextField extends ConsumerWidget {
   final bool obscureText;
   final TextInputAction? textInputAction;
 
+  /// Draws a destructive border when true (e.g. failed validation).
+  final bool hasError;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return TextEditingShortcutScope(
       child: ShadInput(
+        decoration: hasError
+            ? ShadDecoration(
+                border: ShadBorder.all(
+                  color: ShadTheme.of(context).colorScheme.destructive,
+                ),
+              )
+            : null,
         controller: controller,
         textAlign: textAlign ?? TextAlign.start,
         minLines: minLines,
