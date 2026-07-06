@@ -559,7 +559,7 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
-        width: _expanded ? 226 : 64,
+        width: _expanded ? 184 : 64,
         margin: EdgeInsets.zero,
         decoration: BoxDecoration(
           color: Settings.tacticalVioletTheme.card.withValues(alpha: 0.96),
@@ -756,85 +756,81 @@ class _LibraryRailItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final selectedColor =
         Settings.tacticalVioletTheme.primary.withValues(alpha: 0.18);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        mouseCursor: data.onTap == null
-            ? SystemMouseCursors.basic
-            : SystemMouseCursors.click,
-        onTap: data.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          decoration: BoxDecoration(
-            color: data.selected ? selectedColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: data.selected
-                  ? Settings.tacticalVioletTheme.primary
-                  : Colors.transparent,
-            ),
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final showLabel = showDetails && constraints.maxWidth >= 96;
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: 26,
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: Icon(
-                        data.icon,
-                        size: 21,
-                        color: data.onTap == null
-                            ? Settings.tacticalVioletTheme.mutedForeground
-                            : null,
-                      ),
-                    ),
-                  ),
-                  Positioned.fill(
-                    left: 33,
-                    child: IgnorePointer(
-                      ignoring: !showLabel,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 120),
-                        opacity: expanded && showLabel ? 1 : 0,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              data.label,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 1),
-                            Text(
-                              data.description,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Settings
-                                    .tacticalVioletTheme.mutedForeground,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
+    return Tooltip(
+      message: data.description,
+      waitDuration: const Duration(milliseconds: 500),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          mouseCursor: data.onTap == null
+              ? SystemMouseCursors.basic
+              : SystemMouseCursors.click,
+          onTap: data.onTap,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 140),
+            opacity: data.onTap == null ? 0.55 : 1,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+              decoration: BoxDecoration(
+                color: data.selected ? selectedColor : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: data.selected
+                      ? Settings.tacticalVioletTheme.primary
+                      : Colors.transparent,
+                ),
+              ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final showLabel = showDetails && constraints.maxWidth >= 96;
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: 26,
+                        child: Align(
+                          alignment: Alignment.center,
+                          child: Icon(
+                            data.icon,
+                            size: 18,
+                            color: data.onTap == null
+                                ? Settings.tacticalVioletTheme.mutedForeground
+                                : null,
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
-              );
-            },
+                      Positioned.fill(
+                        left: 33,
+                        child: IgnorePointer(
+                          ignoring: !showLabel,
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 120),
+                            opacity: expanded && showLabel ? 1 : 0,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                data.label,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
           ),
         ),
       ),
