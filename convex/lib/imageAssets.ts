@@ -56,20 +56,36 @@ export function collectAssetIdsFromLineupPayload(
   payload: Doc<"lineups">["payload"],
 ): Set<string> {
   const assetIds = new Set<string>();
-  const rawImages = payload.data.images;
-  if (!Array.isArray(rawImages)) {
-    return assetIds;
-  }
 
-  for (const image of rawImages) {
-    if (
-      typeof image === "object" &&
-      image !== null &&
-      typeof image.id === "string"
-    ) {
-      assetIds.add(image.id);
+  const addImages = (rawImages: unknown) => {
+    if (!Array.isArray(rawImages)) {
+      return;
+    }
+    for (const image of rawImages) {
+      if (
+        typeof image === "object" &&
+        image !== null &&
+        typeof (image as { id?: unknown }).id === "string"
+      ) {
+        assetIds.add((image as { id: string }).id);
+      }
+    }
+  };
+
+  // Legacy lineup payloads stored images at the top level.
+  addImages(payload.data.images);
+
+  // Grouped lineup payloads (LineUpGroup) nest them per item:
+  // data.items[*].images[*].id
+  const rawItems = payload.data.items;
+  if (Array.isArray(rawItems)) {
+    for (const item of rawItems) {
+      if (typeof item === "object" && item !== null) {
+        addImages((item as { images?: unknown }).images);
+      }
     }
   }
+
   return assetIds;
 }
 
