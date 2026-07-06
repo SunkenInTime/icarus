@@ -27,6 +27,7 @@ import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
+import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
@@ -632,8 +633,23 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
                             : 'Log In',
                         onAuthAction: authState.isLoading
                             ? null
-                            : () {
+                            : () async {
                                 if (authState.isAuthenticated) {
+                                  // One accidental click on the avatar used
+                                  // to sign out instantly.
+                                  final confirmed =
+                                      await ConfirmAlertDialog.show(
+                                    context: context,
+                                    title: 'Sign out?',
+                                    content:
+                                        'Cloud strategies stay online; your '
+                                        'local strategies stay on this '
+                                        'device.',
+                                    confirmText: 'Sign Out',
+                                  );
+                                  if (!confirmed) {
+                                    return;
+                                  }
                                   unawaited(
                                     ref.read(authProvider.notifier).signOut(),
                                   );

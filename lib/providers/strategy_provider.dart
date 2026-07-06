@@ -245,9 +245,16 @@ class StrategyProvider extends Notifier<StrategyState> {
     await ref
         .read(remoteStrategySnapshotProvider.notifier)
         .openStrategy(strategyID);
-    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+    final snapshotState = ref.read(remoteStrategySnapshotProvider);
+    final snapshot = snapshotState.valueOrNull;
     if (snapshot == null) {
-      return;
+      // Returning silently here used to leave the editor on an eternal
+      // skeleton with no feedback. Throw so callers can surface the failure
+      // and back out.
+      throw StateError(
+        'Cloud strategy snapshot unavailable for $strategyID'
+        '${snapshotState.hasError ? ': ${snapshotState.error}' : ''}',
+      );
     }
 
     final storageDirectory = kIsWeb
@@ -932,7 +939,20 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
       ref.invalidate(cloudStrategiesProvider);
       ref.invalidate(cloudFoldersProvider);
-      await openCloudStrategy(newID);
+      try {
+        await openCloudStrategy(newID);
+      } catch (error, stackTrace) {
+        // The strategy exists on the server but couldn't be opened. Without
+        // this, the editor opened as a local document (no cloud sync) with
+        // no explanation.
+        log(
+          'Created cloud strategy $newID but failed to open it: $error',
+          name: 'strategy',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        rethrow;
+      }
       return newID;
     }
 

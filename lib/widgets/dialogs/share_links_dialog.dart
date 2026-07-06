@@ -231,7 +231,9 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
                 if (_status == _LinksStatus.ready && _links.isNotEmpty) ...[
                   const SizedBox(width: 8),
                   ShadBadge.secondary(
-                    child: Text('${_links.length}'),
+                    child: Text(
+                      '${_links.where((link) => !link.isRevoked).length}',
+                    ),
                   ),
                 ],
               ],

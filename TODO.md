@@ -103,9 +103,27 @@ Every box above is checked, each PR has passed greptile review, and
 
 ## Status (2026-07-06)
 
-All sections landed via PRs #88–#94, each greptile-reviewed before merge.
+All sections landed via PRs #88–#94 (+ #95 lineup image refs), each
+greptile-reviewed before merge. End-to-end verification with the real test
+account passed 8/9 checklist items (screenshots in `build/ux-verify2/`).
+
+Fixed after verification:
+
+- [x] Opening a cloud strategy could hang on the skeleton forever when the
+      snapshot fetch failed — `openCloudStrategy` now throws so the editor
+      toasts and backs out; the create path surfaces the failure too
+- [x] "Add Folder" in the cloud workspace silently created a *local* folder
+      when the server call failed — now toasts and keeps the dialog open
+- [x] Clicking the rail avatar signed out instantly — now confirms first
+- [x] "Active links" badge counted revoked links
+
 Outstanding follow-ups:
 
-- End-to-end verification of signed-in cloud flows is blocked on working test
-  credentials (the provided account was rejected with `invalid_credentials`).
+- **Root cause of the `snapshot:get` failure** observed in verification:
+  library/list/share queries all work, but the strategy snapshot fetch fails
+  against the current deployment. Likely deployment skew — this branch's
+  typed-payload Convex functions haven't been deployed. Deploy `convex/`
+  together with merging this branch, then re-verify opening cloud strategies.
 - `FolderNavigatorSidebar` remains unmounted (see §2 note).
+- Cloud "Create Cloud Strategy" goes straight to an Ascent editor with no map
+  picker (matches local create behavior — decide if a picker is wanted).
