@@ -428,7 +428,15 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           ),
           body: Padding(
             padding: const EdgeInsets.only(left: railReservedWidth),
-            child: FolderContent(folder: currentFolder),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeOutCubic,
+              child: KeyedSubtree(
+                key: ValueKey('$workspace/$cloudSection'),
+                child: FolderContent(folder: currentFolder),
+              ),
+            ),
           ),
         ),
         const Positioned(
@@ -777,77 +785,81 @@ class _LibraryRailItem extends StatelessWidget {
             ? SystemMouseCursors.basic
             : SystemMouseCursors.click,
         onTap: data.onTap,
-        child: AnimatedContainer(
+        child: AnimatedOpacity(
           duration: const Duration(milliseconds: 140),
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          decoration: BoxDecoration(
-            color: data.selected ? selectedColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: data.selected
-                  ? Settings.tacticalVioletTheme.primary
-                  : Colors.transparent,
+          opacity: data.onTap == null ? 0.55 : 1,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            decoration: BoxDecoration(
+              color: data.selected ? selectedColor : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: data.selected
+                    ? Settings.tacticalVioletTheme.primary
+                    : Colors.transparent,
+              ),
             ),
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final showLabel = showDetails && constraints.maxWidth >= 96;
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: 26,
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: Icon(
-                        data.icon,
-                        size: 21,
-                        color: data.onTap == null
-                            ? Settings.tacticalVioletTheme.mutedForeground
-                            : null,
-                      ),
-                    ),
-                  ),
-                  Positioned.fill(
-                    left: 33,
-                    child: IgnorePointer(
-                      ignoring: !showLabel,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 120),
-                        opacity: expanded && showLabel ? 1 : 0,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              data.label,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 1),
-                            Text(
-                              data.description,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Settings
-                                    .tacticalVioletTheme.mutedForeground,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final showLabel = showDetails && constraints.maxWidth >= 96;
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 26,
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: Icon(
+                          data.icon,
+                          size: 21,
+                          color: data.onTap == null
+                              ? Settings.tacticalVioletTheme.mutedForeground
+                              : null,
                         ),
                       ),
                     ),
-                  ),
-                ],
-              );
-            },
+                    Positioned.fill(
+                      left: 33,
+                      child: IgnorePointer(
+                        ignoring: !showLabel,
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 120),
+                          opacity: expanded && showLabel ? 1 : 0,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                data.label,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 1),
+                              Text(
+                                data.description,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: Settings
+                                      .tacticalVioletTheme.mutedForeground,
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),
