@@ -153,16 +153,24 @@ class AppAuthState {
 
   String get displayName {
     final metadata = user?.userMetadata ?? const <String, dynamic>{};
-    final String? name = metadata['full_name'] as String? ??
-        metadata['name'] as String? ??
-        metadata['user_name'] as String? ??
+    // Metadata values are user/provider controlled — tolerate non-string
+    // entries instead of crashing the widget build.
+    String? stringEntry(String key) {
+      final value = metadata[key];
+      return value is String && value.isNotEmpty ? value : null;
+    }
+
+    final name = stringEntry('full_name') ??
+        stringEntry('name') ??
+        stringEntry('user_name') ??
         user?.email;
     return (name?.isNotEmpty ?? false) ? name! : 'Discord user';
   }
 
   String? get avatarUrl {
     final metadata = user?.userMetadata ?? const <String, dynamic>{};
-    return metadata['avatar_url'] as String?;
+    final value = metadata['avatar_url'];
+    return value is String && value.isNotEmpty ? value : null;
   }
 
   AppAuthState copyWith({

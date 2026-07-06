@@ -125,12 +125,23 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     final busy = _submitting || authState.isLoading;
 
     // The Discord flow completes via a browser round-trip and deep link:
-    // close the dialog once the session actually lands.
+    // close the dialog once the session actually lands, and drop the pending
+    // state if the provider reports a failure instead.
     ref.listen(authProvider, (previous, next) {
-      if (_waitingForDiscord &&
-          next.isAuthenticated &&
-          previous?.isAuthenticated != true) {
+      if (!_waitingForDiscord) {
+        return;
+      }
+      if (next.isAuthenticated && previous?.isAuthenticated != true) {
         Navigator.of(context).pop(true);
+        return;
+      }
+      if (next.errorMessage != null &&
+          next.errorMessage != previous?.errorMessage) {
+        setState(() {
+          _waitingForDiscord = false;
+          _message = next.errorMessage;
+          _messageIsInfo = false;
+        });
       }
     });
 
@@ -198,9 +209,13 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
               curve: Curves.easeOutCubic,
               alignment: Alignment.topCenter,
               child: _waitingForDiscord
-                  ? const Padding(
-                      padding: EdgeInsets.only(bottom: 10),
-                      child: _DiscordPendingBanner(),
+                  ? Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _DiscordPendingBanner(
+                        onCancel: () {
+                          setState(() => _waitingForDiscord = false);
+                        },
+                      ),
                     )
                   : const SizedBox(width: double.infinity),
             ),
@@ -311,7 +326,9 @@ class _AuthMessageBanner extends StatelessWidget {
 }
 
 class _DiscordPendingBanner extends StatelessWidget {
-  const _DiscordPendingBanner();
+  const _DiscordPendingBanner({required this.onCancel});
+
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -346,6 +363,12 @@ class _DiscordPendingBanner extends StatelessWidget {
                 height: 1.35,
               ),
             ),
+          ),
+          const SizedBox(width: 8),
+          ShadButton.ghost(
+            size: ShadButtonSize.sm,
+            onPressed: onCancel,
+            child: const Text('Cancel'),
           ),
         ],
       ),
