@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,44 +47,13 @@ class FolderContent extends ConsumerWidget {
 
     final isCloud = workspace == LibraryWorkspace.cloud;
     if (isCloud) {
-      final cloudSection = ref.watch(cloudLibrarySectionProvider);
-      final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
-      if (!cloudAvailable) {
-        return _buildCloudUnavailableState(context, ref);
-      }
-      final foldersAsync = ref.watch(cloudFoldersProvider);
-      final strategiesAsync = ref.watch(cloudStrategiesProvider);
-      if (foldersAsync.hasError || strategiesAsync.hasError) {
-        return _buildCloudErrorState(context, ref);
-      }
-      // Only the very first fetch shows the skeleton; dependency changes keep
-      // the previous value, so navigating folders doesn't flash it.
-      final isInitialLoading =
-          (foldersAsync.isLoading && !foldersAsync.hasValue) ||
-              (strategiesAsync.isLoading && !strategiesAsync.hasValue);
-      if (isInitialLoading) {
-        return const _LibraryLoadingSkeleton();
-      }
-      final folders = (foldersAsync.valueOrNull ?? const [])
-          .map(FolderProvider.cloudSummaryToFolder)
-          .toList(growable: false);
-      final strategies = strategiesAsync.valueOrNull ?? const [];
-      final isSharedWithMe = cloudSection == CloudLibrarySection.sharedWithMe;
-      return _buildScaffold(
-        context,
-        ref,
-        folders: _filterFolders(ref, folders),
-        localStrategies: const [],
-        cloudStrategies: _filterCloudStrategies(ref, strategies),
-        isCloud: true,
-        showAddSharedItemAction: isSharedWithMe,
-        emptyStateIcon:
-            isSharedWithMe ? Icons.people_outline : Icons.cloud_outlined,
-        emptyStateTitle:
-            isSharedWithMe ? 'No shared items yet' : 'No cloud strategies yet',
-        emptyStateSubtitle: isSharedWithMe
-            ? 'Shared folders and strategies will appear here'
-            : 'Create a cloud strategy to start your online workspace',
+      // Wrapped in a switcher so skeleton -> content (and error transitions)
+      // cross-fade instead of hard-snapping.
+      return AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200),
+        switchInCurve: Curves.easeOutCubic,
+        switchOutCurve: Curves.easeOutCubic,
+        child: _buildCloudBody(context, ref),
       );
     }
 
@@ -114,6 +85,59 @@ class FolderContent extends ConsumerWidget {
           },
         );
       },
+    );
+  }
+
+  Widget _buildCloudBody(BuildContext context, WidgetRef ref) {
+    final cloudSection = ref.watch(cloudLibrarySectionProvider);
+    final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
+    if (!cloudAvailable) {
+      return KeyedSubtree(
+        key: const ValueKey('cloud-unavailable'),
+        child: _buildCloudUnavailableState(context, ref),
+      );
+    }
+    final foldersAsync = ref.watch(cloudFoldersProvider);
+    final strategiesAsync = ref.watch(cloudStrategiesProvider);
+    if (foldersAsync.hasError || strategiesAsync.hasError) {
+      return KeyedSubtree(
+        key: const ValueKey('cloud-error'),
+        child: _buildCloudErrorState(context, ref),
+      );
+    }
+    // Only the very first fetch shows the skeleton; dependency changes keep
+    // the previous value, so navigating folders doesn't flash it.
+    final isInitialLoading =
+        (foldersAsync.isLoading && !foldersAsync.hasValue) ||
+            (strategiesAsync.isLoading && !strategiesAsync.hasValue);
+    if (isInitialLoading) {
+      return const _LibraryLoadingSkeleton(
+        key: ValueKey('cloud-loading'),
+      );
+    }
+    final folders = (foldersAsync.valueOrNull ?? const [])
+        .map(FolderProvider.cloudSummaryToFolder)
+        .toList(growable: false);
+    final strategies = strategiesAsync.valueOrNull ?? const [];
+    final isSharedWithMe = cloudSection == CloudLibrarySection.sharedWithMe;
+    return KeyedSubtree(
+      key: const ValueKey('cloud-content'),
+      child: _buildScaffold(
+        context,
+        ref,
+        folders: _filterFolders(ref, folders),
+        localStrategies: const [],
+        cloudStrategies: _filterCloudStrategies(ref, strategies),
+        isCloud: true,
+        showAddSharedItemAction: isSharedWithMe,
+        emptyStateIcon:
+            isSharedWithMe ? Icons.people_outline : Icons.cloud_outlined,
+        emptyStateTitle:
+            isSharedWithMe ? 'No shared items yet' : 'No cloud strategies yet',
+        emptyStateSubtitle: isSharedWithMe
+            ? 'Shared folders and strategies will appear here'
+            : 'Create a cloud strategy to start your online workspace',
+      ),
     );
   }
 
@@ -237,10 +261,12 @@ class FolderContent extends ConsumerWidget {
         const double minTileWidth = 250;
         const double spacing = 20;
         const double padding = 32;
-        int crossAxisCount = ((constraints.maxWidth - padding + spacing) /
-                (minTileWidth + spacing))
-            .floor();
-        crossAxisCount = crossAxisCount.clamp(1, double.infinity).toInt();
+        final crossAxisCount = math.max(
+          1,
+          ((constraints.maxWidth - padding + spacing) /
+                  (minTileWidth + spacing))
+              .floor(),
+        );
 
         return CustomScrollView(
           slivers: [
@@ -536,7 +562,7 @@ class _LibraryMessageState extends StatelessWidget {
 /// Pulsing placeholder shown while the cloud library streams its first
 /// snapshot — previously the grid rendered the empty state during fetch.
 class _LibraryLoadingSkeleton extends StatefulWidget {
-  const _LibraryLoadingSkeleton();
+  const _LibraryLoadingSkeleton({super.key});
 
   @override
   State<_LibraryLoadingSkeleton> createState() =>
@@ -595,12 +621,12 @@ class _LibraryLoadingSkeletonState extends State<_LibraryLoadingSkeleton>
                 const double minTileWidth = 250;
                 const double spacing = 20;
                 const double padding = 32;
-                int crossAxisCount =
-                    ((constraints.maxWidth - padding + spacing) /
-                            (minTileWidth + spacing))
-                        .floor();
-                crossAxisCount =
-                    crossAxisCount.clamp(1, double.infinity).toInt();
+                final crossAxisCount = math.max(
+                  1,
+                  ((constraints.maxWidth - padding + spacing) /
+                          (minTileWidth + spacing))
+                      .floor(),
+                );
                 final tileCount = crossAxisCount * 2;
 
                 return Padding(
