@@ -343,6 +343,19 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _scheduleFlush(flushImmediately: flushImmediately);
   }
 
+  /// Clears a stale [StrategyOpQueueState.lastError] once nothing is left to
+  /// send — e.g. after ops were dropped at max attempts, where the error
+  /// would otherwise stick forever with no flush able to clear it.
+  void clearStaleError() {
+    if (state.lastError == null ||
+        state.isFlushing ||
+        state.queuedByEntityKey.isNotEmpty ||
+        state.inFlightByEntityKey.isNotEmpty) {
+      return;
+    }
+    state = state.copyWith(clearError: true);
+  }
+
   Future<void> flushNow() async {
     if (state.isFlushing) {
       return;

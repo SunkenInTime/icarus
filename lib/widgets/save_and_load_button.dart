@@ -9,6 +9,8 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
@@ -16,8 +18,10 @@ import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/widgets/settings_tab.dart';
+import 'package:icarus/widgets/cloud_sync_status_chip.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -52,6 +56,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
             ),
           ),
           const AutoSaveButton(),
+          const CloudSyncStatusChip(),
           ShadTooltip(
             builder: (context) => const Text("Export"),
             child: ShadIconButton.ghost(
@@ -201,7 +206,70 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                   : const Icon(Icons.camera_alt_outlined),
             ),
           ),
+          if (_isViewOnly()) ...[
+            const SizedBox(width: 4),
+            const _ViewOnlyChip(),
+          ],
         ],
+      ),
+    );
+  }
+
+  bool _isViewOnly() {
+    final source = ref.watch(strategyProvider.select((value) => value.source));
+    if (source != StrategySource.cloud ||
+        !ref.watch(isCloudCollabEnabledProvider)) {
+      return false;
+    }
+    // Read the cached role rather than the raw snapshot so the chip does not
+    // flicker off while the snapshot is reloading or transiently errored; it
+    // is absent only before the role has ever been known.
+    final role = ref.watch(lastKnownCloudRoleProvider);
+    return role == 'viewer';
+  }
+}
+
+/// Non-interactive chip shown in the editor top strip when the open cloud
+/// strategy is shared with view-only access.
+class _ViewOnlyChip extends StatelessWidget {
+  const _ViewOnlyChip();
+
+  @override
+  Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+
+    return ShadTooltip(
+      builder: (context) => const Text(
+        'You have view access. Ask the owner for edit access to make changes.',
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: theme.muted,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: theme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.visibility_outlined,
+              size: 14,
+              color: theme.mutedForeground,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'View only',
+              style: TextStyle(
+                color: theme.mutedForeground,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.3,
+                height: 1.2,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

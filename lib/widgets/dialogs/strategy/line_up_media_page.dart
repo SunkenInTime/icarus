@@ -56,14 +56,20 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("Youtube link", style: TextStyle(color: Colors.white)),
+        Text(
+          "Youtube link",
+          style: TextStyle(color: Settings.tacticalVioletTheme.foreground),
+        ),
         const SizedBox(height: 8),
         CustomTextField(
           controller: widget.youtubeLinkController,
           hintText: "Paste YouTube link here...",
         ),
         const SizedBox(height: 24),
-        const Text("Images", style: TextStyle(color: Colors.white)),
+        Text(
+          "Images",
+          style: TextStyle(color: Settings.tacticalVioletTheme.foreground),
+        ),
         const SizedBox(height: 8),
         Expanded(
           child: Container(
@@ -77,9 +83,12 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
                 widget.images.isEmpty ? _buildEmptyState() : _buildImageGrid(),
           ),
         ),
-        const Padding(
-          padding: EdgeInsets.symmetric(vertical: 8.0),
-          child: Text("Notes", style: TextStyle(color: Colors.white)),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8.0),
+          child: Text(
+            "Notes",
+            style: TextStyle(color: Settings.tacticalVioletTheme.foreground),
+          ),
         ),
         CustomTextField(
           hintText: "Add any notes here...",
@@ -173,7 +182,10 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
-          child: const Icon(Icons.add, color: Colors.white),
+          child: Icon(
+            Icons.add,
+            color: Settings.tacticalVioletTheme.secondaryForeground,
+          ),
         ),
       ),
     );
@@ -190,14 +202,20 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
-          child: const Column(
+          child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.content_paste, color: Colors.white),
-              SizedBox(height: 4),
+              Icon(
+                Icons.content_paste,
+                color: Settings.tacticalVioletTheme.secondaryForeground,
+              ),
+              const SizedBox(height: 4),
               Text(
                 "Paste",
-                style: TextStyle(color: Colors.white, fontSize: 12),
+                style: TextStyle(
+                  color: Settings.tacticalVioletTheme.secondaryForeground,
+                  fontSize: 12,
+                ),
               ),
             ],
           ),
@@ -218,14 +236,20 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
             borderRadius: BorderRadius.circular(6),
             border: Border.all(color: Settings.tacticalVioletTheme.border),
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.content_paste, color: Colors.white, size: 16),
-              SizedBox(width: 6),
+              Icon(
+                Icons.content_paste,
+                color: Settings.tacticalVioletTheme.secondaryForeground,
+                size: 16,
+              ),
+              const SizedBox(width: 6),
               Text(
                 "Paste from clipboard",
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(
+                  color: Settings.tacticalVioletTheme.secondaryForeground,
+                ),
               ),
             ],
           ),
@@ -262,8 +286,11 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
                   ),
           ),
           child: imageProvider == null
-              ? const Center(
-                  child: Icon(Icons.broken_image, color: Colors.white),
+              ? Center(
+                  child: Icon(
+                    Icons.broken_image,
+                    color: Settings.tacticalVioletTheme.secondaryForeground,
+                  ),
                 )
               : null,
         ),

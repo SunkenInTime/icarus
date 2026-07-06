@@ -78,6 +78,15 @@ class Settings {
 
   static const Color enemyOutlineColor = Color.fromARGB(139, 255, 82, 82);
   static const Color allyOutlineColor = Color.fromARGB(106, 105, 240, 175);
+  static Color get attackColor => tacticalVioletTheme.destructive;
+
+  /// Defend-side label color. Deliberately NOT the violet primary (reserved
+  /// for selection/command per DESIGN.md) and not ally green (reserved for
+  /// team identity) — a muted steel blue in the family of the old
+  /// lightBlueAccent, toned down for the tactical palette.
+  static const Color defenderColor = Color(0xFF6BA6C9);
+  static Color get mixedStrategyColor =>
+      tacticalVioletTheme.mutedForeground;
 
   static Color neutralTeamShade(Color color) {
     return HSLColor.fromColor(color).withSaturation(0).toColor();

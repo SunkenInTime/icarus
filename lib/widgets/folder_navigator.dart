@@ -347,9 +347,12 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                                 leading: const Icon(
                                   Icons.file_download,
                                 ),
-                                child: const Text(
+                                child: Text(
                                   'Import .ica',
-                                  style: TextStyle(color: Colors.white),
+                                  style: TextStyle(
+                                    color:
+                                        Settings.tacticalVioletTheme.foreground,
+                                  ),
                                 ),
                               ),
                               ShadButton.ghost(
@@ -358,8 +361,13 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                                 leading: const Icon(
                                   Icons.archive_outlined,
                                 ),
-                                child: const Text('Import Backup',
-                                    style: TextStyle(color: Colors.white)),
+                                child: Text(
+                                  'Import Backup',
+                                  style: TextStyle(
+                                    color:
+                                        Settings.tacticalVioletTheme.foreground,
+                                  ),
+                                ),
                               ),
                               ShadButton.ghost(
                                 onPressed: handleExportLibrary,
@@ -367,8 +375,13 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                                 leading: const Icon(
                                   Icons.backup_outlined,
                                 ),
-                                child: const Text('Export Library',
-                                    style: TextStyle(color: Colors.white)),
+                                child: Text(
+                                  'Export Library',
+                                  style: TextStyle(
+                                    color:
+                                        Settings.tacticalVioletTheme.foreground,
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -415,7 +428,15 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           ),
           body: Padding(
             padding: const EdgeInsets.only(left: railReservedWidth),
-            child: FolderContent(folder: currentFolder),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeOutCubic,
+              child: KeyedSubtree(
+                key: ValueKey('$workspace/$cloudSection'),
+                child: FolderContent(folder: currentFolder),
+              ),
+            ),
           ),
         ),
         const Positioned(
