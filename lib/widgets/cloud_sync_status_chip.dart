@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
@@ -33,9 +35,11 @@ class CloudSyncStatusChip extends ConsumerStatefulWidget {
 class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
   final ShadPopoverController _popoverController = ShadPopoverController();
   DateTime? _lastConflictToast;
+  Timer? _pendingConflictToast;
 
   @override
   void dispose() {
+    _pendingConflictToast?.cancel();
     _popoverController.dispose();
     super.dispose();
   }
@@ -45,18 +49,34 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
       return;
     }
     final now = DateTime.now();
-    final throttled = _lastConflictToast != null &&
-        now.difference(_lastConflictToast!) < _conflictToastGap;
-    if (!throttled) {
-      _lastConflictToast = now;
-      Settings.showToast(
-        message:
-            'A collaborator changed this page — your view was updated to the '
-            'latest version.',
-        backgroundColor: Settings.tacticalVioletTheme.primary,
-      );
+    final sinceLastToast = _lastConflictToast == null
+        ? _conflictToastGap
+        : now.difference(_lastConflictToast!);
+    if (sinceLastToast >= _conflictToastGap) {
+      _showConflictToast();
+    } else if (_pendingConflictToast == null) {
+      // Throttled: hold the conflicts and notify once the window expires so
+      // no rebase goes completely unannounced.
+      _pendingConflictToast = Timer(_conflictToastGap - sinceLastToast, () {
+        _pendingConflictToast = null;
+        if (!mounted) {
+          return;
+        }
+        if (ref.read(strategyConflictProvider).isNotEmpty) {
+          _showConflictToast();
+        }
+      });
     }
-    // Consume the conflicts either way so the list doesn't grow unbounded.
+  }
+
+  void _showConflictToast() {
+    _lastConflictToast = DateTime.now();
+    Settings.showToast(
+      message:
+          'A collaborator changed this page — your view was updated to the '
+          'latest version.',
+      backgroundColor: Settings.tacticalVioletTheme.primary,
+    );
     ref.read(strategyConflictProvider.notifier).clearAll();
   }
 
@@ -65,7 +85,13 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
     await ref
         .read(cloudMediaUploadQueueProvider.notifier)
         .retryNow(ignoreBackoff: true);
-    await ref.read(strategyOpQueueProvider.notifier).flushNow();
+    final opQueue = ref.read(strategyOpQueueProvider.notifier);
+    await opQueue.flushNow();
+    // If everything queued was already dropped (max attempts), flushNow is a
+    // no-op and the old error would pin the chip on "needs attention" with a
+    // Retry that does nothing — clear it; the page has since rebased onto
+    // the server state.
+    opQueue.clearStaleError();
   }
 
   @override
