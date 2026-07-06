@@ -18,6 +18,7 @@ import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/widgets/settings_tab.dart';
+import 'package:icarus/widgets/cloud_sync_status_chip.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -52,6 +53,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
             ),
           ),
           const AutoSaveButton(),
+          const CloudSyncStatusChip(),
           ShadTooltip(
             builder: (context) => const Text("Export"),
             child: ShadIconButton.ghost(
