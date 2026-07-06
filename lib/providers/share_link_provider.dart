@@ -29,10 +29,10 @@ class ShareLinkController extends Notifier<String?> {
     return true;
   }
 
-  Future<void> redeemPendingIfPossible({String source = 'pending'}) async {
+  Future<bool> redeemPendingIfPossible({String source = 'pending'}) async {
     final token = state;
     if (token == null || token.isEmpty) {
-      return;
+      return false;
     }
 
     final auth = ref.read(authProvider);
@@ -41,7 +41,7 @@ class ShareLinkController extends Notifier<String?> {
         message: 'Sign in to redeem shared links.',
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
-      return;
+      return false;
     }
 
     try {
@@ -68,6 +68,7 @@ class ShareLinkController extends Notifier<String?> {
             : 'Shared strategy added to your library.',
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
+      return true;
     } catch (error, stackTrace) {
       if (isConvexUnauthenticatedError(error)) {
         await ref.read(authProvider.notifier).reportConvexUnauthenticated(
@@ -75,18 +76,19 @@ class ShareLinkController extends Notifier<String?> {
               error: error,
               stackTrace: stackTrace,
             );
-        return;
+        return false;
       }
       Settings.showToast(
         message: 'Failed to redeem share link.',
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
+      return false;
     }
   }
 
-  Future<void> redeemToken(String token) async {
+  Future<bool> redeemToken(String token) async {
     state = token;
-    await redeemPendingIfPossible(source: 'manual');
+    return redeemPendingIfPossible(source: 'manual');
   }
 
   @override
