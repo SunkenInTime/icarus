@@ -54,10 +54,10 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
         : now.difference(_lastConflictToast!);
     if (sinceLastToast >= _conflictToastGap) {
       _showConflictToast();
-    } else if (_pendingConflictToast == null) {
+    } else {
       // Throttled: hold the conflicts and notify once the window expires so
       // no rebase goes completely unannounced.
-      _pendingConflictToast = Timer(_conflictToastGap - sinceLastToast, () {
+      _pendingConflictToast ??= Timer(_conflictToastGap - sinceLastToast, () {
         _pendingConflictToast = null;
         if (!mounted) {
           return;
