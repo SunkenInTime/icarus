@@ -87,3 +87,34 @@ final currentStrategyCapabilitiesProvider =
       ref.watch(remoteStrategySnapshotProvider).valueOrNull?.header.role;
   return StrategyCapabilities.fromCloudRole(role);
 });
+
+/// Last non-null cloud role reported for the currently open strategy.
+///
+/// [remoteStrategySnapshotProvider] transiently loses its value during
+/// reloads, refresh errors, and auth incidents, so role-dependent UI (like
+/// the editor's "View only" chip) must not read `valueOrNull` directly or it
+/// flickers off mid-session. This provider remembers the last role seen for
+/// the open strategy and only resets when a different strategy is opened.
+/// It is null only before the role has ever been known.
+final lastKnownCloudRoleProvider =
+    NotifierProvider<LastKnownCloudRoleNotifier, String?>(
+  LastKnownCloudRoleNotifier.new,
+);
+
+class LastKnownCloudRoleNotifier extends Notifier<String?> {
+  @override
+  String? build() {
+    // Rebuild (and therefore reset the cached role) whenever a different
+    // strategy is opened.
+    ref.watch(strategyProvider.select((value) => value.strategyId));
+
+    ref.listen(remoteStrategySnapshotProvider, (previous, next) {
+      final role = next.valueOrNull?.header.role;
+      if (role != null) {
+        state = role;
+      }
+    });
+
+    return ref.read(remoteStrategySnapshotProvider).valueOrNull?.header.role;
+  }
+}

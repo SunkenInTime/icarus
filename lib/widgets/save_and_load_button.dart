@@ -10,7 +10,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
-import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
@@ -219,8 +219,10 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
         !ref.watch(isCloudCollabEnabledProvider)) {
       return false;
     }
-    final role =
-        ref.watch(remoteStrategySnapshotProvider).valueOrNull?.header.role;
+    // Read the cached role rather than the raw snapshot so the chip does not
+    // flicker off while the snapshot is reloading or transiently errored; it
+    // is absent only before the role has ever been known.
+    final role = ref.watch(lastKnownCloudRoleProvider);
     return role == 'viewer';
   }
 }

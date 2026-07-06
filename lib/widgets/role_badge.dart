@@ -17,8 +17,11 @@ CloudBadgeKind? cloudBadgeKindForRole(String? role) {
     case 'viewer':
       return CloudBadgeKind.viewer;
     default:
-      // Unknown role: treat as viewer so shared items are never mistaken for
-      // owned ones.
+      // Unknown non-null roles fall back to the viewer badge. This mirrors
+      // StrategyCapabilities.fromCloudRole (strategy_capabilities_provider),
+      // which grants viewer capabilities to any role that is not exactly
+      // 'owner' or 'editor' — so the badge matches what the user can actually
+      // do, and shared items are never mistaken for owned ones.
       return role == null ? null : CloudBadgeKind.viewer;
   }
 }
