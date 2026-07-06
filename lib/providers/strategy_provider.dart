@@ -245,9 +245,16 @@ class StrategyProvider extends Notifier<StrategyState> {
     await ref
         .read(remoteStrategySnapshotProvider.notifier)
         .openStrategy(strategyID);
-    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+    final snapshotState = ref.read(remoteStrategySnapshotProvider);
+    final snapshot = snapshotState.valueOrNull;
     if (snapshot == null) {
-      return;
+      // Returning silently here used to leave the editor on an eternal
+      // skeleton with no feedback. Throw so callers can surface the failure
+      // and back out.
+      throw StateError(
+        'Cloud strategy snapshot unavailable for $strategyID'
+        '${snapshotState.hasError ? ': ${snapshotState.error}' : ''}',
+      );
     }
 
     final storageDirectory = kIsWeb
@@ -932,7 +939,25 @@ class StrategyProvider extends Notifier<StrategyState> {
       }
       ref.invalidate(cloudStrategiesProvider);
       ref.invalidate(cloudFoldersProvider);
-      await openCloudStrategy(newID);
+      try {
+        await openCloudStrategy(newID);
+      } catch (error, stackTrace) {
+        // The strategy exists on the server but couldn't be opened — don't
+        // rethrow, or the create dialog would falsely report that creation
+        // failed. Creation succeeded; opening is what failed (the editor's
+        // own load path surfaces that and backs out).
+        log(
+          'Created cloud strategy $newID but failed to open it: $error',
+          name: 'strategy',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        Settings.showToast(
+          message: 'Strategy created, but it could not be opened. '
+              'Open it from your cloud library.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+      }
       return newID;
     }
 

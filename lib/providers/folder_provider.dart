@@ -180,6 +180,14 @@ class FolderProvider extends Notifier<String?> {
           error: error,
           stackTrace: stackTrace,
         );
+        // Do NOT fall through to the local write: that silently created a
+        // local folder from the cloud view whenever the server call failed.
+        Settings.showToast(
+          message: "Couldn't create the cloud folder. Check your connection "
+              'and try again.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        rethrow;
       }
     }
 

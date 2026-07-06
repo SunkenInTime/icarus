@@ -81,14 +81,20 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                 if (context.mounted) Navigator.of(context).pop();
                 return;
               }
-              await ref.read(folderProvider.notifier).createFolder(
-                    name: _folderNameController.text.isEmpty
-                        ? "New Folder"
-                        : _folderNameController.text,
-                    iconId: _selectedIconId,
-                    color: _selectedColor,
-                    customColor: _customColor,
-                  );
+              try {
+                await ref.read(folderProvider.notifier).createFolder(
+                      name: _folderNameController.text.isEmpty
+                          ? "New Folder"
+                          : _folderNameController.text,
+                      iconId: _selectedIconId,
+                      color: _selectedColor,
+                      customColor: _customColor,
+                    );
+              } catch (_) {
+                // Cloud folder creation failed (already toasted by the
+                // provider) — keep the dialog open so the user can retry.
+                return;
+              }
 
               if (context.mounted) Navigator.of(context).pop();
             },

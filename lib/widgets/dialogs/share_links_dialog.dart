@@ -63,6 +63,9 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   String? _revokingToken;
   String _selectedRole = 'viewer';
 
+  int get _activeLinkCount =>
+      _links.where((link) => !link.isRevoked).length;
+
   Future<void> _loadLinks() async {
     setState(() => _status = _LinksStatus.loading);
     try {
@@ -228,10 +231,10 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
             Row(
               children: [
                 const _SectionLabel(label: 'Active links'),
-                if (_status == _LinksStatus.ready && _links.isNotEmpty) ...[
+                if (_status == _LinksStatus.ready && _activeLinkCount > 0) ...[
                   const SizedBox(width: 8),
                   ShadBadge.secondary(
-                    child: Text('${_links.length}'),
+                    child: Text('$_activeLinkCount'),
                   ),
                 ],
               ],
