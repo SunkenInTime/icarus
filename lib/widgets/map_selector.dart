@@ -194,34 +194,45 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
               //   width: 10,
               // ),
               Expanded(
-                child: IconButton(
-                    onPressed: () {
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
                       ref.read(mapProvider.notifier).switchSide();
                       ref.read(strategyProvider.notifier).setUnsaved();
                     },
-                    icon: Column(
-                      children: [
-                        Icon(
-                          (ref.watch(mapProvider).isAttack)
-                              ? CustomIcons.sword
-                              : Icons.shield,
-                          size: 20,
-                          color: (ref.watch(mapProvider).isAttack)
-                              ? Colors.redAccent
-                              : Colors.blueAccent,
-                        ),
-                        Text(
-                          (ref.watch(mapProvider).isAttack)
-                              ? "Attack"
-                              : "Defense",
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white,
+                    mouseCursor: SystemMouseCursors.click,
+                    borderRadius: BorderRadius.circular(8),
+                    hoverColor: Colors.white.withValues(alpha: 0.08),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            (ref.watch(mapProvider).isAttack)
+                                ? CustomIcons.sword
+                                : Icons.shield,
+                            size: 20,
+                            color: (ref.watch(mapProvider).isAttack)
+                                ? Colors.redAccent
+                                : Colors.blueAccent,
                           ),
-                        )
-                      ],
-                    )),
+                          Text(
+                            (ref.watch(mapProvider).isAttack)
+                                ? "Attack"
+                                : "Defense",
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white,
+                            ),
+                          )
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               )
             ],
           ),

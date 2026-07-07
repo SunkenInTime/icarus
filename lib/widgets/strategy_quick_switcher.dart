@@ -11,6 +11,7 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
+import 'package:icarus/widgets/overflow_tooltip_text.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Displays the current strategy name with a recent-strategies dropdown.
@@ -570,10 +571,8 @@ class _StrategyQuickSwitchItemState extends State<_StrategyQuickSwitchItem> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
+                        OverflowTooltipText(
                           widget.strategyName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: ShadTheme.of(context).textTheme.small.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600,

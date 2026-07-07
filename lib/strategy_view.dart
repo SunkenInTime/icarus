@@ -232,6 +232,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                     TextButton(
                       style: TextButton.styleFrom(
                         foregroundColor: Colors.white,
+                        enabledMouseCursor: SystemMouseCursors.click,
                       ),
                       onPressed: () async {
                         await launchUrl(Settings.dicordLink);
