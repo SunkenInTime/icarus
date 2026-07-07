@@ -4,6 +4,7 @@ import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/widgets/map_tile.dart';
 
 class MapSelector extends ConsumerStatefulWidget {
@@ -124,6 +125,10 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                                               ref
                                                   .read(mapProvider.notifier)
                                                   .updateMap(mapValue);
+                                              ref
+                                                  .read(
+                                                      strategyProvider.notifier)
+                                                  .setUnsaved();
                                               _closePortal();
                                             },
                                           ),
@@ -155,6 +160,10 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                                               ref
                                                   .read(mapProvider.notifier)
                                                   .updateMap(mapValue);
+                                              ref
+                                                  .read(
+                                                      strategyProvider.notifier)
+                                                  .setUnsaved();
                                               _closePortal();
                                             },
                                           ),
@@ -188,6 +197,7 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                 child: IconButton(
                     onPressed: () {
                       ref.read(mapProvider.notifier).switchSide();
+                      ref.read(strategyProvider.notifier).setUnsaved();
                     },
                     icon: Column(
                       children: [

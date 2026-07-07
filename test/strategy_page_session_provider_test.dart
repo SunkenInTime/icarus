@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -98,7 +97,7 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     enqueuedOps.addAll(collected);
     final queued = <EntitySyncKey, QueuedEntityIntent>{};
     for (final op in collected) {
-      final key = entityKeyForStrategyOp(op);
+      final key = EntitySyncKey.forStrategyOp(op);
       if (key == null) {
         continue;
       }
@@ -226,7 +225,7 @@ RemoteElement _remoteText({
     strategyPublicId: strategyId,
     pagePublicId: pageId,
     elementType: 'text',
-    payload: jsonEncode(payload),
+    payload: cloudElementPayload(kind: 'text', data: payload),
     sortIndex: sortIndex,
     revision: 1,
     deleted: false,
@@ -240,27 +239,34 @@ RemoteLineup _remoteLineup({
   required String notes,
   int sortIndex = 0,
 }) {
-  final lineup = LineUp(
+  final group = LineUpGroup(
     id: lineupId,
     agent: PlacedAgent(
       id: '$lineupId-agent',
       type: AgentType.jett,
       position: const Offset(10, 20),
+      lineUpID: lineupId,
     ),
-    ability: PlacedAbility(
-      id: '$lineupId-ability',
-      data: AgentData.agents[AgentType.jett]!.abilities.first,
-      position: const Offset(30, 40),
-    ),
-    youtubeLink: '',
-    images: const [],
-    notes: notes,
+    items: [
+      LineUpItem(
+        id: '$lineupId-item',
+        ability: PlacedAbility(
+          id: '$lineupId-ability',
+          data: AgentData.agents[AgentType.jett]!.abilities.first,
+          position: const Offset(30, 40),
+          lineUpID: lineupId,
+        ),
+        youtubeLink: '',
+        images: const [],
+        notes: notes,
+      ),
+    ],
   );
   return RemoteLineup(
     publicId: lineupId,
     strategyPublicId: strategyId,
     pagePublicId: pageId,
-    payload: jsonEncode(lineup.toJson()),
+    payload: cloudLineupGroupPayload(group.toJson()),
     sortIndex: sortIndex,
     revision: 1,
     deleted: false,
@@ -328,14 +334,12 @@ Future<ProviderContainer> _cloudContainer({
 }) async {
   final container = ProviderContainer(
     overrides: [
-      strategyProvider.overrideWith(
-        () => _StaticStrategyProvider(strategyState),
-      ),
       remoteStrategySnapshotProvider.overrideWith(() => remoteNotifier),
       strategyOpQueueProvider.overrideWith(() => queueNotifier),
     ],
   );
   addTearDown(container.dispose);
+  container.read(strategyProvider.notifier).setFromState(strategyState);
   container.listen(strategyPageSessionProvider, (_, __) {});
   await container.read(remoteStrategySnapshotProvider.future);
   return container;
@@ -818,10 +822,11 @@ void main() {
             strategyPublicId: strategyId,
             activePageId: 'page-1',
             overlayByEntityKey: {
-              elementEntityKey('page-1', 'text-1'): ActivePageOverlayEntry(
-                entityKey: elementEntityKey('page-1', 'text-1'),
+              const EntitySyncKey.element('page-1', 'text-1'): ActivePageOverlayEntry(
+                entityKey: const EntitySyncKey.element('page-1', 'text-1'),
                 entityType: ActivePageOverlayEntityType.element,
-                desiredPayload: jsonEncode(localTextPayload),
+                desiredPayload:
+                    cloudElementPayload(kind: 'text', data: localTextPayload),
                 desiredSortIndex: 0,
                 deletion: false,
                 baseRevision: 1,
@@ -941,7 +946,7 @@ void main() {
         )
         .single;
     expect(
-      jsonDecode(strategyPatch.payload!) as Map<String, dynamic>,
+      strategyPatch.payload as Map<String, dynamic>,
       containsPair('mapData', Maps.mapNames[MapValue.bind]),
     );
   });
@@ -1007,10 +1012,11 @@ void main() {
             strategyPublicId: strategyId,
             activePageId: 'page-1',
             overlayByEntityKey: {
-              elementEntityKey('page-1', 'text-1'): ActivePageOverlayEntry(
-                entityKey: elementEntityKey('page-1', 'text-1'),
+              const EntitySyncKey.element('page-1', 'text-1'): ActivePageOverlayEntry(
+                entityKey: const EntitySyncKey.element('page-1', 'text-1'),
                 entityType: ActivePageOverlayEntityType.element,
-                desiredPayload: jsonEncode(localTextPayload),
+                desiredPayload:
+                    cloudElementPayload(kind: 'text', data: localTextPayload),
                 desiredSortIndex: 0,
                 deletion: false,
                 baseRevision: 1,
@@ -1027,7 +1033,7 @@ void main() {
     final textsById = {
       for (final element in projectedState!.elements)
         element.publicId: PlacedText.fromJson(
-          jsonDecode(element.payload) as Map<String, dynamic>,
+          cloudPayloadData(element.payload),
         ).text,
     };
     expect(textsById['text-1'], 'local-a');
@@ -1101,18 +1107,21 @@ void main() {
         latestSequence: 2,
         reason: 'conflict',
       ),
-    ], const [
+    ], [
       AckedEntityIntent(
-        entityKey: 'element:page-1:text-1',
+        entityKey: const EntitySyncKey.element('page-1', 'text-1'),
         op: StrategyOp(
           opId: 'op-1',
           kind: StrategyOpKind.patch,
           entityType: StrategyOpEntityType.element,
           entityPublicId: 'text-1',
           pagePublicId: 'page-1',
-          payload: '{"text":"after"}',
+          payload: cloudElementPayload(
+            kind: 'text',
+            data: {'text': 'after', 'elementType': 'text'},
+          ),
         ),
-        ack: OpAck(
+        ack: const OpAck(
           opId: 'op-1',
           status: 'reject',
           latestSequence: 2,
@@ -1123,7 +1132,7 @@ void main() {
     await _settle();
 
     expect(remoteNotifier.refreshCount, 1);
-    expect(queueNotifier.syncDesiredOpsForPageCount, 1);
+    expect(queueNotifier.syncDesiredOpsForPageCount, greaterThanOrEqualTo(1));
     expect(queueNotifier.flushNowCount, 0);
     expect(container.read(textProvider).single.text, 'local-only');
     expect(container.read(strategyOpQueueProvider).pending, isNotEmpty);

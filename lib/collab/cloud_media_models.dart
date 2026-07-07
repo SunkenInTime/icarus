@@ -175,13 +175,8 @@ Map<String, dynamic> cloudImagePayloadFromPlacedImage(PlacedImage image) {
   return Map<String, dynamic>.from(image.toJson());
 }
 
-Map<String, dynamic> cloudLineupPayload(LineUp lineup) {
-  return {
-    ...lineup.toJson(),
-    'images': [
-      for (final image in lineup.images) image.toJson(),
-    ],
-  };
+Map<String, dynamic> cloudLineupPayload(LineUpGroup group) {
+  return group.toJson();
 }
 
 Set<String> collectStrategyImageAssetIds(StrategyDataLike strategy) {
@@ -190,9 +185,11 @@ Set<String> collectStrategyImageAssetIds(StrategyDataLike strategy) {
     for (final image in page.imageData) {
       assetIds.add(image.id);
     }
-    for (final lineup in page.lineUps) {
-      for (final image in lineup.images) {
-        assetIds.add(image.id);
+    for (final group in page.lineUpGroups) {
+      for (final item in group.items) {
+        for (final image in item.images) {
+          assetIds.add(image.id);
+        }
       }
     }
   }
@@ -205,7 +202,7 @@ abstract class StrategyDataLike {
 
 abstract class StrategyPageLike {
   Iterable<PlacedImage> get imageData;
-  Iterable<LineUp> get lineUps;
+  Iterable<LineUpGroup> get lineUpGroups;
 }
 
 const _noChange = Object();

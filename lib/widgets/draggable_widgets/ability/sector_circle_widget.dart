@@ -24,6 +24,7 @@ class SectorCircleWidget extends ConsumerWidget {
     required this.id,
     required this.isAlly,
     this.lineUpId,
+    this.lineUpItemId,
     this.rotation,
     this.visualState,
     this.watchMouse = true,
@@ -34,6 +35,7 @@ class SectorCircleWidget extends ConsumerWidget {
   final bool isAlly;
   final String? id;
   final String iconPath;
+  final String? lineUpItemId;
   final double size;
   final Color rangeOutlineColor;
   final double sweepAngleDegrees;
@@ -187,6 +189,7 @@ class SectorCircleWidget extends ConsumerWidget {
           alignment: Alignment.center,
           child: AbilityWidget(
             lineUpId: lineUpId,
+            lineUpItemId: lineUpItemId,
             iconPath: iconPath,
             id: id,
             isAlly: isAlly,

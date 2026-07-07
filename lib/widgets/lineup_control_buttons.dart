@@ -34,7 +34,8 @@ class LineupControlButtons extends ConsumerWidget {
                 const SizedBox(width: 8),
                 Builder(
                   builder: (context) {
-                    final hasAgent = lineUp.currentAgent != null;
+                    final hasAgent = lineUp.currentAgent != null ||
+                        lineUp.currentGroupId != null;
                     final hasAbility = lineUp.currentAbility != null;
                     final isDisabled = !hasAgent || !hasAbility;
                     final tooltipMessage = !hasAgent && !hasAbility

@@ -52,303 +52,49 @@ class ConvexStrategyRepository {
         .toList(growable: false);
   }
 
-  Future<List<CloudFolderSummary>> listFoldersForParent(
-    String? parentFolderPublicId, {
-    String scope = 'owned',
-  }) async {
-    final response = await _client.query('folders:listForParent', {
-      if (parentFolderPublicId != null)
-        'parentFolderPublicId': parentFolderPublicId,
-      'scope': scope,
-    });
-    return _decodeObjectList(response)
-        .map(CloudFolderSummary.fromJson)
-        .toList(growable: false);
-  }
-
-  Future<List<CloudFolderSummary>> listAllFolders(
-      {String scope = 'all'}) async {
-    final response = await _client.query('folders:listAll', {'scope': scope});
-    return _decodeObjectList(response)
-        .map(CloudFolderSummary.fromJson)
-        .toList(growable: false);
-  }
-
   Stream<List<CloudFolderSummary>> watchAllFolders() {
-    final controller = StreamController<List<CloudFolderSummary>>.broadcast();
-    dynamic subscription;
-
-    Future<void> start() async {
-      try {
-        controller.add(await listAllFolders());
-      } catch (error, stackTrace) {
-        controller.addError(error, stackTrace);
-      }
-
-      subscription = await _client.subscribe(
-        name: 'folders:listAll',
-        args: const {'scope': 'all'},
-        onUpdate: (value) {
-          try {
-            final mapped = _decodeObjectList(value)
-                .map(CloudFolderSummary.fromJson)
-                .toList(growable: false);
-            controller.add(mapped);
-          } catch (error, stackTrace) {
-            controller.addError(error, stackTrace);
-          }
-        },
-        onError: (message, value) {
-          controller.addError(Exception('folders:listAll error: $message'));
-        },
-      );
-    }
-
-    start();
-    controller.onCancel = () {
-      try {
-        subscription?.cancel();
-      } catch (_) {}
-    };
-
-    return controller.stream;
-  }
-
-  Future<List<CloudStrategySummary>> listStrategiesForFolder(
-    String? folderPublicId, {
-    String scope = 'owned',
-  }) async {
-    final response = await _client.query('strategies:listForFolder', {
-      if (folderPublicId != null) 'folderPublicId': folderPublicId,
-      'scope': scope,
-    });
-    return _decodeObjectList(response)
-        .map(CloudStrategySummary.fromJson)
-        .toList(growable: false);
-  }
-
-  Future<List<CloudStrategySummary>> listSharedStrategies() async {
-    final response = await _client.query('strategies:listSharedWithMe', {});
-    return _decodeObjectList(response)
-        .map(CloudStrategySummary.fromJson)
-        .toList(growable: false);
+    return _watchList(
+      name: 'folders:listAll',
+      args: const {'scope': 'all'},
+      fromJson: CloudFolderSummary.fromJson,
+    );
   }
 
   Stream<List<CloudFolderSummary>> watchFoldersForParent(
     String? parentFolderPublicId, {
     String scope = 'owned',
   }) {
-    final controller = StreamController<List<CloudFolderSummary>>.broadcast();
-    dynamic subscription;
-
-    Future<void> start() async {
-      try {
-        controller.add(
-            await listFoldersForParent(parentFolderPublicId, scope: scope));
-      } catch (error, stackTrace) {
-        controller.addError(error, stackTrace);
-      }
-
-      subscription = await _client.subscribe(
-        name: 'folders:listForParent',
-        args: {
-          if (parentFolderPublicId != null)
-            'parentFolderPublicId': parentFolderPublicId,
-          'scope': scope,
-        },
-        onUpdate: (value) {
-          try {
-            final mapped = _decodeObjectList(value)
-                .map(CloudFolderSummary.fromJson)
-                .toList(growable: false);
-            controller.add(mapped);
-          } catch (error, stackTrace) {
-            controller.addError(error, stackTrace);
-          }
-        },
-        onError: (message, value) {
-          controller
-              .addError(Exception('folders:listForParent error: $message'));
-        },
-      );
-    }
-
-    start();
-    controller.onCancel = () {
-      try {
-        subscription?.cancel();
-      } catch (_) {}
-    };
-
-    return controller.stream;
+    return _watchList(
+      name: 'folders:listForParent',
+      args: {
+        if (parentFolderPublicId != null)
+          'parentFolderPublicId': parentFolderPublicId,
+        'scope': scope,
+      },
+      fromJson: CloudFolderSummary.fromJson,
+    );
   }
 
   Stream<List<CloudStrategySummary>> watchStrategiesForFolder(
     String? folderPublicId, {
     String scope = 'owned',
   }) {
-    final controller = StreamController<List<CloudStrategySummary>>.broadcast();
-    dynamic subscription;
-
-    Future<void> start() async {
-      try {
-        controller
-            .add(await listStrategiesForFolder(folderPublicId, scope: scope));
-      } catch (error, stackTrace) {
-        controller.addError(error, stackTrace);
-      }
-
-      subscription = await _client.subscribe(
-        name: 'strategies:listForFolder',
-        args: {
-          if (folderPublicId != null) 'folderPublicId': folderPublicId,
-          'scope': scope,
-        },
-        onUpdate: (value) {
-          try {
-            final mapped = _decodeObjectList(value)
-                .map(CloudStrategySummary.fromJson)
-                .toList(growable: false);
-            controller.add(mapped);
-          } catch (error, stackTrace) {
-            controller.addError(error, stackTrace);
-          }
-        },
-        onError: (message, value) {
-          controller
-              .addError(Exception('strategies:listForFolder error: $message'));
-        },
-      );
-    }
-
-    start();
-
-    controller.onCancel = () {
-      try {
-        subscription?.cancel();
-      } catch (_) {}
-    };
-
-    return controller.stream;
+    return _watchList(
+      name: 'strategies:listForFolder',
+      args: {
+        if (folderPublicId != null) 'folderPublicId': folderPublicId,
+        'scope': scope,
+      },
+      fromJson: CloudStrategySummary.fromJson,
+    );
   }
 
   Stream<List<CloudStrategySummary>> watchSharedStrategies() {
-    final controller = StreamController<List<CloudStrategySummary>>.broadcast();
-    dynamic subscription;
-
-    Future<void> start() async {
-      try {
-        controller.add(await listSharedStrategies());
-      } catch (error, stackTrace) {
-        controller.addError(error, stackTrace);
-      }
-
-      subscription = await _client.subscribe(
-        name: 'strategies:listSharedWithMe',
-        args: const {},
-        onUpdate: (value) {
-          try {
-            final mapped = _decodeObjectList(value)
-                .map(CloudStrategySummary.fromJson)
-                .toList(growable: false);
-            controller.add(mapped);
-          } catch (error, stackTrace) {
-            controller.addError(error, stackTrace);
-          }
-        },
-        onError: (message, value) {
-          controller.addError(
-              Exception('strategies:listSharedWithMe error: $message'));
-        },
-      );
-    }
-
-    start();
-
-    controller.onCancel = () {
-      try {
-        subscription?.cancel();
-      } catch (_) {}
-    };
-
-    return controller.stream;
-  }
-
-  Stream<RemoteStrategyHeader> watchStrategyHeader(String strategyPublicId) {
-    final controller = StreamController<RemoteStrategyHeader>.broadcast();
-    dynamic subscription;
-
-    Future<void> start() async {
-      subscription = await _client.subscribe(
-        name: 'strategies:getHeader',
-        args: {'strategyPublicId': strategyPublicId},
-        onUpdate: (value) {
-          try {
-            controller.add(RemoteStrategyHeader.fromJson(_decodeObject(value)));
-          } catch (error, stackTrace) {
-            controller.addError(error, stackTrace);
-          }
-        },
-        onError: (message, value) {
-          controller
-              .addError(Exception('strategies:getHeader error: $message'));
-        },
-      );
-    }
-
-    start();
-    controller.onCancel = () {
-      try {
-        subscription?.cancel();
-      } catch (_) {}
-    };
-
-    return controller.stream;
-  }
-
-  Future<List<RemotePage>> listPagesForStrategy(String strategyPublicId) async {
-    final response = await _client.query('pages:listForStrategy', {
-      'strategyPublicId': strategyPublicId,
-    });
-    return _decodeObjectList(response)
-        .map(RemotePage.fromJson)
-        .toList(growable: false)
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-  }
-
-  Future<List<RemoteImageAsset>> listImageAssetsForStrategy(
-    String strategyPublicId,
-  ) async {
-    final response = await _client.query('images:listForStrategy', {
-      'strategyPublicId': strategyPublicId,
-    });
-    return _decodeObjectList(response)
-        .map(RemoteImageAsset.fromJson)
-        .toList(growable: false);
-  }
-
-  Future<List<RemoteElement>> listElementsForStrategy(
-    String strategyPublicId,
-  ) async {
-    final response = await _client.query('elements:listForStrategy', {
-      'strategyPublicId': strategyPublicId,
-    });
-    return _decodeObjectList(response)
-        .map(RemoteElement.fromJson)
-        .toList(growable: false)
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
-  }
-
-  Future<List<RemoteLineup>> listLineupsForStrategy(
-    String strategyPublicId,
-  ) async {
-    final response = await _client.query('lineups:listForStrategy', {
-      'strategyPublicId': strategyPublicId,
-    });
-    return _decodeObjectList(response)
-        .map(RemoteLineup.fromJson)
-        .toList(growable: false)
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    return _watchList(
+      name: 'strategies:listSharedWithMe',
+      args: const {},
+      fromJson: CloudStrategySummary.fromJson,
+    );
   }
 
   Stream<List<T>> _watchList<T>({
@@ -356,98 +102,135 @@ class ConvexStrategyRepository {
     required Map<String, dynamic> args,
     required T Function(Map<String, dynamic>) fromJson,
   }) {
-    final controller = StreamController<List<T>>.broadcast();
-    dynamic subscription;
+    return _watch<List<T>>(
+      name: name,
+      args: args,
+      decode: (value) =>
+          _decodeObjectList(value).map(fromJson).toList(growable: false),
+    );
+  }
 
-    Future<void> start() async {
-      subscription = await _client.subscribe(
-        name: name,
-        args: args,
-        onUpdate: (value) {
+  Stream<T> _watchObject<T>({
+    required String name,
+    required Map<String, dynamic> args,
+    required T Function(Map<String, dynamic>) fromJson,
+  }) {
+    return _watch<T>(
+      name: name,
+      args: args,
+      decode: (value) => fromJson(_decodeObject(value)),
+    );
+  }
+
+  Stream<T> _watch<T>({
+    required String name,
+    required Map<String, dynamic> args,
+    required T Function(dynamic) decode,
+  }) {
+    final controller = StreamController<T>.broadcast();
+    SubscriptionHandle? subscription;
+    bool isListening = false;
+    int epoch = 0;
+
+    Future<void> start(int myEpoch) async {
+      try {
+        final nextSubscription = await _client.subscribe(
+          name: name,
+          args: args,
+          onUpdate: (value) {
+            if (!isListening || epoch != myEpoch) {
+              return;
+            }
+            try {
+              controller.add(decode(value));
+            } catch (error, stackTrace) {
+              controller.addError(error, stackTrace);
+            }
+          },
+          onError: (message, _) {
+            if (!isListening || epoch != myEpoch) {
+              return;
+            }
+            controller.addError(Exception('$name error: $message'));
+          },
+        );
+
+        if (!isListening || epoch != myEpoch) {
           try {
-            final mapped =
-                _decodeObjectList(value).map(fromJson).toList(growable: false);
-            controller.add(mapped);
-          } catch (error, stackTrace) {
-            controller.addError(error, stackTrace);
-          }
-        },
-        onError: (message, value) {
-          controller.addError(Exception('$name error: $message'));
-        },
-      );
+            nextSubscription.cancel();
+          } catch (_) {}
+          return;
+        }
+
+        subscription = nextSubscription;
+      } catch (error, stackTrace) {
+        if (isListening && epoch == myEpoch) {
+          controller.addError(error, stackTrace);
+        }
+      }
     }
 
-    start();
+    controller.onListen = () {
+      if (isListening) {
+        return;
+      }
+      isListening = true;
+      final myEpoch = ++epoch;
+      start(myEpoch);
+    };
+
     controller.onCancel = () {
+      isListening = false;
       try {
         subscription?.cancel();
       } catch (_) {}
+      subscription = null;
+      epoch += 1;
     };
 
     return controller.stream;
   }
 
-  Stream<List<RemotePage>> watchPagesForStrategy(String strategyPublicId) {
-    return _watchList(
-      name: 'pages:listForStrategy',
-      args: {'strategyPublicId': strategyPublicId},
-      fromJson: RemotePage.fromJson,
-    ).map((pages) => pages..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)));
+  Future<RemoteStrategySnapshot> fetchSnapshot(String strategyPublicId) async {
+    final response = await _client.query('snapshot:get', {
+      'strategyPublicId': strategyPublicId,
+    });
+    return _decodeSnapshot(_decodeObject(response));
   }
 
-  Stream<List<RemoteImageAsset>> watchImageAssetsForStrategy(
-    String strategyPublicId,
-  ) {
-    return _watchList(
-      name: 'images:listForStrategy',
+  Stream<RemoteStrategySnapshot> watchSnapshot(String strategyPublicId) {
+    return _watchObject(
+      name: 'snapshot:get',
       args: {'strategyPublicId': strategyPublicId},
-      fromJson: RemoteImageAsset.fromJson,
+      fromJson: _decodeSnapshot,
     );
   }
 
-  Stream<List<RemoteElement>> watchElementsForStrategy(
-    String strategyPublicId,
-  ) {
-    return _watchList(
-      name: 'elements:listForStrategy',
-      args: {'strategyPublicId': strategyPublicId},
-      fromJson: RemoteElement.fromJson,
-    ).map((elements) =>
-        elements..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)));
-  }
-
-  Stream<List<RemoteLineup>> watchLineupsForStrategy(
-    String strategyPublicId,
-  ) {
-    return _watchList(
-      name: 'lineups:listForStrategy',
-      args: {'strategyPublicId': strategyPublicId},
-      fromJson: RemoteLineup.fromJson,
-    ).map((lineups) =>
-        lineups..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)));
-  }
-
-  Future<RemoteStrategySnapshot> fetchSnapshot(String strategyPublicId) async {
-    final headerRaw = await _client.query('strategies:getHeader', {
-      'strategyPublicId': strategyPublicId,
-    });
-    final header = RemoteStrategyHeader.fromJson(_decodeObject(headerRaw));
-
-    final pages = await listPagesForStrategy(strategyPublicId);
-    final assets = await listImageAssetsForStrategy(strategyPublicId);
-    final elements = await listElementsForStrategy(strategyPublicId);
-    final lineups = await listLineupsForStrategy(strategyPublicId);
-    final assetsById = <String, RemoteImageAsset>{
-      for (final asset in assets) asset.publicId: asset,
-    };
+  RemoteStrategySnapshot _decodeSnapshot(Map<String, dynamic> value) {
+    final header =
+        RemoteStrategyHeader.fromJson(_decodeObject(value['header']));
+    // snapshot:get returns pages, elements, and lineups ordered by sortIndex.
+    final pages = _decodeObjectList(value['pages'])
+        .map(RemotePage.fromJson)
+        .toList(growable: false);
+    final elements = _decodeObjectList(value['elements'])
+        .map(RemoteElement.fromJson)
+        .toList(growable: false);
+    final lineups = _decodeObjectList(value['lineups'])
+        .map(RemoteLineup.fromJson)
+        .toList(growable: false);
+    final assets = _decodeObjectList(value['assets'])
+        .map(RemoteImageAsset.fromJson)
+        .toList(growable: false);
 
     return RemoteStrategySnapshot(
       header: header,
       pages: pages,
       elementsByPage: RemoteStrategySnapshot.groupElementsByPage(elements),
       lineupsByPage: RemoteStrategySnapshot.groupLineupsByPage(lineups),
-      assetsById: assetsById,
+      assetsById: {
+        for (final asset in assets) asset.publicId: asset,
+      },
     );
   }
 
@@ -536,6 +319,7 @@ class ConvexStrategyRepository {
       args: {
         'strategyPublicId': strategyPublicId,
         'clientId': clientId,
+        'clientProtocolVersion': currentCloudProtocolVersion,
         'ops': ops.map((op) => op.toConvexJson()).toList(growable: false),
       },
     );
@@ -552,6 +336,7 @@ class ConvexStrategyRepository {
     required String publicId,
     required String name,
     String? parentFolderPublicId,
+    int? iconId,
     int? iconCodePoint,
     String? iconFontFamily,
     String? iconFontPackage,
@@ -565,6 +350,7 @@ class ConvexStrategyRepository {
         'name': name,
         if (parentFolderPublicId != null)
           'parentFolderPublicId': parentFolderPublicId,
+        if (iconId != null) 'iconId': iconId,
         if (iconCodePoint != null) 'iconCodePoint': iconCodePoint,
         if (iconFontFamily != null) 'iconFontFamily': iconFontFamily,
         if (iconFontPackage != null) 'iconFontPackage': iconFontPackage,
@@ -580,7 +366,7 @@ class ConvexStrategyRepository {
     required String mapData,
     String? folderPublicId,
     String? themeProfileId,
-    String? themeOverridePalette,
+    Map<String, dynamic>? themeOverridePalette,
   }) async {
     await _client.mutation(
       name: 'strategies:create',
@@ -605,8 +391,8 @@ class ConvexStrategyRepository {
     required bool initialPageIsAttack,
     String? folderPublicId,
     String? themeProfileId,
-    String? themeOverridePalette,
-    String? initialPageSettings,
+    Map<String, dynamic>? themeOverridePalette,
+    Map<String, dynamic>? initialPageSettings,
   }) async {
     await _client.mutation(
       name: 'strategies:createWithInitialPage',

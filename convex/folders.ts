@@ -8,6 +8,11 @@ import {
   requireCurrentUser,
 } from "./lib/auth";
 import { getFolderByPublicId } from "./lib/entities";
+import {
+  conflictError,
+  forbiddenError,
+  invalidOpError,
+} from "./lib/errors";
 
 type FolderScope = "owned" | "shared" | "all";
 type AnyCtx = QueryCtx | MutationCtx;
@@ -127,6 +132,7 @@ export const listForParent = query({
       .map(({ folder, role }) => ({
         publicId: folder.publicId,
         name: folder.name,
+        iconId: folder.iconId ?? null,
         iconCodePoint: folder.iconCodePoint ?? null,
         iconFontFamily: folder.iconFontFamily ?? null,
         iconFontPackage: folder.iconFontPackage ?? null,
@@ -148,6 +154,7 @@ export const create = mutation({
     publicId: v.string(),
     name: v.string(),
     parentFolderPublicId: v.optional(v.string()),
+    iconId: v.optional(v.number()),
     iconCodePoint: v.optional(v.number()),
     iconFontFamily: v.optional(v.string()),
     iconFontPackage: v.optional(v.string()),
@@ -163,7 +170,7 @@ export const create = mutation({
       const parent = await getFolderByPublicId(ctx, args.parentFolderPublicId);
       const { role } = await assertFolderRole(ctx, parent, "owner");
       if (role !== "owner") {
-        throw new Error("Forbidden");
+        throw forbiddenError();
       }
       parentFolderId = parent._id;
     }
@@ -177,7 +184,7 @@ export const create = mutation({
       return { ok: true, reused: true };
     }
     if (existing.length > 0) {
-      throw new Error(`Folder publicId already exists: ${args.publicId}`);
+      throw conflictError(`Folder publicId already exists: ${args.publicId}`);
     }
 
     await ctx.db.insert("folders", {
@@ -185,6 +192,7 @@ export const create = mutation({
       ownerId: user._id,
       name: args.name,
       parentFolderId,
+      iconId: args.iconId,
       iconCodePoint: args.iconCodePoint,
       iconFontFamily: args.iconFontFamily,
       iconFontPackage: args.iconFontPackage,
@@ -202,6 +210,7 @@ export const update = mutation({
   args: {
     folderPublicId: v.string(),
     name: v.optional(v.string()),
+    iconId: v.optional(v.number()),
     iconCodePoint: v.optional(v.number()),
     iconFontFamily: v.optional(v.string()),
     iconFontPackage: v.optional(v.string()),
@@ -216,11 +225,12 @@ export const update = mutation({
     const { role } = await assertFolderRole(ctx, folder, "owner");
 
     if (role !== "owner") {
-      throw new Error("Forbidden");
+      throw forbiddenError();
     }
 
     const patch: {
       name?: string;
+      iconId?: number;
       iconCodePoint?: number;
       iconFontFamily?: string;
       iconFontPackage?: string;
@@ -233,6 +243,9 @@ export const update = mutation({
 
     if (args.name !== undefined) {
       patch.name = args.name;
+    }
+    if (args.iconId !== undefined) {
+      patch.iconId = args.iconId;
     }
     if (args.iconCodePoint !== undefined) {
       patch.iconCodePoint = args.iconCodePoint;
@@ -282,6 +295,7 @@ export const listAll = query({
       .map(({ folder, role }) => ({
         publicId: folder.publicId,
         name: folder.name,
+        iconId: folder.iconId ?? null,
         iconCodePoint: folder.iconCodePoint ?? null,
         iconFontFamily: folder.iconFontFamily ?? null,
         iconFontPackage: folder.iconFontPackage ?? null,
@@ -308,7 +322,7 @@ export const move = mutation({
     const { role } = await assertFolderRole(ctx, folder, "owner");
 
     if (role !== "owner") {
-      throw new Error("Forbidden");
+      throw forbiddenError();
     }
 
     let parentFolderId: Id<"folders"> | undefined;
@@ -316,7 +330,7 @@ export const move = mutation({
       const parent = await getFolderByPublicId(ctx, args.parentFolderPublicId);
       const parentAccess = await assertFolderRole(ctx, parent, "owner");
       if (parentAccess.role !== "owner" || parent.ownerId !== folder.ownerId) {
-        throw new Error("Forbidden");
+        throw forbiddenError();
       }
       parentFolderId = parent._id;
     }
@@ -339,7 +353,7 @@ export const deleteFolder = mutation({
     const { role } = await assertFolderRole(ctx, folder, "owner");
 
     if (role !== "owner") {
-      throw new Error("Forbidden");
+      throw forbiddenError();
     }
 
     const children = await ctx.db
@@ -347,7 +361,7 @@ export const deleteFolder = mutation({
       .withIndex("by_parentFolderId", (q) => q.eq("parentFolderId", folder._id))
       .collect();
     if (children.length > 0) {
-      throw new Error("Folder has children");
+      throw invalidOpError("Folder has children");
     }
 
     const strategies = await ctx.db
@@ -355,7 +369,7 @@ export const deleteFolder = mutation({
       .withIndex("by_folderId", (q) => q.eq("folderId", folder._id))
       .collect();
     if (strategies.length > 0) {
-      throw new Error("Folder has strategies");
+      throw invalidOpError("Folder has strategies");
     }
 
     const collaborators = await ctx.db

@@ -29,19 +29,26 @@ class ShareLinkController extends Notifier<String?> {
     return true;
   }
 
-  Future<void> redeemPendingIfPossible({String source = 'pending'}) async {
+  /// Set [showFailureToasts] to false when the caller (e.g. a dialog)
+  /// presents failures inline itself; success toasts always show.
+  Future<bool> redeemPendingIfPossible({
+    String source = 'pending',
+    bool showFailureToasts = true,
+  }) async {
     final token = state;
     if (token == null || token.isEmpty) {
-      return;
+      return false;
     }
 
     final auth = ref.read(authProvider);
     if (!auth.isAuthenticated || !auth.isConvexUserReady) {
-      Settings.showToast(
-        message: 'Sign in to redeem shared links.',
-        backgroundColor: Settings.tacticalVioletTheme.primary,
-      );
-      return;
+      if (showFailureToasts) {
+        Settings.showToast(
+          message: 'Sign in to redeem shared links.',
+          backgroundColor: Settings.tacticalVioletTheme.primary,
+        );
+      }
+      return false;
     }
 
     try {
@@ -68,6 +75,7 @@ class ShareLinkController extends Notifier<String?> {
             : 'Shared strategy added to your library.',
         backgroundColor: Settings.tacticalVioletTheme.primary,
       );
+      return true;
     } catch (error, stackTrace) {
       if (isConvexUnauthenticatedError(error)) {
         await ref.read(authProvider.notifier).reportConvexUnauthenticated(
@@ -75,18 +83,21 @@ class ShareLinkController extends Notifier<String?> {
               error: error,
               stackTrace: stackTrace,
             );
-        return;
+        return false;
       }
-      Settings.showToast(
-        message: 'Failed to redeem share link.',
-        backgroundColor: Settings.tacticalVioletTheme.destructive,
-      );
+      if (showFailureToasts) {
+        Settings.showToast(
+          message: 'Failed to redeem share link.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+      }
+      return false;
     }
   }
 
-  Future<void> redeemToken(String token) async {
+  Future<bool> redeemToken(String token) async {
     state = token;
-    await redeemPendingIfPossible(source: 'manual');
+    return redeemPendingIfPossible(source: 'manual', showFailureToasts: false);
   }
 
   @override

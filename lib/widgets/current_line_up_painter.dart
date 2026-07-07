@@ -22,9 +22,13 @@ class CurrentLineUpPainter extends ConsumerWidget {
         coordinateSystem.scale(ref.watch(strategySettingsProvider).agentSize);
     final currentMap = ref.watch(mapProvider.select((state) => state.currentMap));
     final double mapScale = Maps.mapScale[currentMap] ?? 1.0;
-    final PlacedAgent? currentAgent = ref.watch(lineUpProvider).currentAgent;
-    final PlacedAbility? currentAbility =
-        ref.watch(lineUpProvider).currentAbility;
+    final lineUpState = ref.watch(lineUpProvider);
+    final PlacedAgent? currentAgent = lineUpState.currentAgent ??
+        ref
+            .read(lineUpProvider.notifier)
+            .getGroupById(lineUpState.currentGroupId ?? '')
+            ?.agent;
+    final PlacedAbility? currentAbility = lineUpState.currentAbility;
 
     return IgnorePointer(
       ignoring: true,

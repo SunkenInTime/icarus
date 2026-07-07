@@ -1,6 +1,13 @@
 // convex/schema.ts
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import {
+  elementPayloadKindValidator,
+  elementPayloadValidator,
+  lineupGroupPayloadValidator,
+  mapThemePaletteValidator,
+  strategySettingsValidator,
+} from "./lib/payloadValidators";
 
 export default defineSchema({
   users: defineTable({
@@ -15,6 +22,7 @@ export default defineSchema({
     ownerId: v.id("users"),
     name: v.string(),
     parentFolderId: v.optional(v.id("folders")),
+    iconId: v.optional(v.number()),
     iconCodePoint: v.optional(v.number()),
     iconFontFamily: v.optional(v.string()),
     iconFontPackage: v.optional(v.string()),
@@ -34,7 +42,7 @@ export default defineSchema({
     mapData: v.string(),
     sequence: v.number(),
     themeProfileId: v.optional(v.string()),
-    themeOverridePalette: v.optional(v.string()),
+    themeOverridePalette: v.optional(mapThemePaletteValidator),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -47,7 +55,7 @@ export default defineSchema({
     name: v.string(),
     sortIndex: v.number(),
     isAttack: v.boolean(),
-    settings: v.optional(v.string()),
+    settings: v.optional(strategySettingsValidator),
     revision: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -58,8 +66,10 @@ export default defineSchema({
     publicId: v.string(),
     strategyId: v.id("strategies"),
     pageId: v.id("pages"),
-    elementType: v.string(),
-    payload: v.string(),
+    elementType: elementPayloadKindValidator,
+    payloadKind: elementPayloadKindValidator,
+    payloadVersion: v.number(),
+    payload: elementPayloadValidator,
     sortIndex: v.number(),
     revision: v.number(),
     deleted: v.boolean(),
@@ -68,12 +78,15 @@ export default defineSchema({
   })
     .index("by_publicId", ["publicId"])
     .index("by_pageId", ["pageId"])
-    .index("by_strategyId", ["strategyId"]),
+    .index("by_strategyId", ["strategyId"])
+    .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),
   lineups: defineTable({
     publicId: v.string(),
     strategyId: v.id("strategies"),
     pageId: v.id("pages"),
-    payload: v.string(),
+    payloadKind: v.literal("lineupGroup"),
+    payloadVersion: v.number(),
+    payload: lineupGroupPayloadValidator,
     sortIndex: v.number(),
     revision: v.number(),
     deleted: v.boolean(),
@@ -82,7 +95,8 @@ export default defineSchema({
   })
     .index("by_publicId", ["publicId"])
     .index("by_pageId", ["pageId"])
-    .index("by_strategyId", ["strategyId"]),
+    .index("by_strategyId", ["strategyId"])
+    .index("by_deleted_and_updatedAt", ["deleted", "updatedAt"]),
   strategyCollaborators: defineTable({
     strategyId: v.id("strategies"),
     userId: v.id("users"),
@@ -162,6 +176,11 @@ export default defineSchema({
   })
     .index("by_publicId", ["publicId"])
     .index("by_strategyId", ["strategyId"])
+    .index("by_strategyId_and_uploadStatus_and_updatedAt", [
+      "strategyId",
+      "uploadStatus",
+      "updatedAt",
+    ])
     .index("by_strategyId_and_publicId", ["strategyId", "publicId"])
     .index("by_strategyId_and_publicId_and_uploadStatus", [
       "strategyId",
@@ -185,5 +204,6 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_strategyId", ["strategyId"])
+    .index("by_createdAt", ["createdAt"])
     .index("by_strategyId_clientId_opId", ["strategyId", "clientId", "opId"]),
 });

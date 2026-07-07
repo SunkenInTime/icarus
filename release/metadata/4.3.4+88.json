@@ -1,0 +1,22 @@
+{
+    "version":  "4.3.4+88",
+    "shortVersion":  88,
+    "title":  "4.3.4 Release",
+    "description":  "Desktop release metadata for Icarus.",
+    "date":  "2026-05-11",
+    "mandatory":  false,
+    "channels":  [
+                     "desktop",
+                     "prerelease",
+                     "stable"
+                 ],
+    "platforms":  [
+                      "windows"
+                  ],
+    "changes":  [
+                    {
+                        "message":  "Fixed an issue where some strategy changes could be dropped when autosave was turned off.",
+                        "type":  "bugfix"
+                    }
+                ]
+}

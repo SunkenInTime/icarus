@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
-import 'package:icarus/const/custom_icons.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -30,7 +30,7 @@ class Folder extends HiveObject {
   final String id;
   final DateTime dateCreated;
   String? parentID; // null for root folders, clearer than empty string
-  IconData icon;
+  int iconId;
   FolderColor color;
   Color? customColor;
 
@@ -38,11 +38,15 @@ class Folder extends HiveObject {
     required this.name,
     required this.id,
     required this.dateCreated,
-    required this.icon,
+    int? iconId,
+    IconData? icon,
     this.color = FolderColor.red,
     this.parentID, // Optional, defaults to null (root)
     this.customColor,
-  });
+  }) : iconId = iconId ??
+            (icon == null
+                ? FolderIconRegistry.defaultId
+                : FolderIconRegistry.idForLegacyIconData(icon));
 
   static Map<FolderColor, Color> folderColorMap = {
     FolderColor.red: Colors.red,
@@ -62,58 +66,19 @@ class Folder extends HiveObject {
     FolderColor.generic,
   ];
 
-  static List<IconData> folderIcons = [
-    // 📂 Folder & File Related
+  @Deprecated('Use iconId and FolderIconRegistry instead.')
+  IconData get icon => FolderIconRegistry.legacyIconDataForId(iconId);
 
-    Icons.star_rate_rounded,
-    Icons.ac_unit_sharp,
-    Icons.bug_report,
-    Icons.cake,
-    Icons.code,
-    Icons.add_shopping_cart_rounded,
-    Icons.airline_stops_sharp,
-    Icons.all_inclusive,
-    Icons.api_rounded,
+  @Deprecated('Use iconId and FolderIconRegistry instead.')
+  set icon(IconData icon) {
+    iconId = FolderIconRegistry.idForLegacyIconData(icon);
+  }
 
-    Icons.drive_folder_upload,
-    Icons.folder_shared,
-    Icons.folder_special,
-    Icons.workspaces,
-
-    // 🗂️ Organization & Structure
-    Icons.category,
-    Icons.collections_bookmark,
-    Icons.library_books,
-    Icons.archive,
-    Icons.assignment,
-    Icons.assignment_turned_in,
-    Icons.dashboard,
-    Icons.anchor,
-    Icons.hourglass_bottom_outlined,
-    Icons.image_search,
-    Icons.view_quilt,
-
-    // 🎯 Strategy & Planning
-    Icons.map,
-    Icons.place,
-    Icons.explore,
-    Icons.explore_off,
-    Icons.flag,
-    Icons.outlined_flag,
-    Icons.emoji_objects,
-    Icons.lightbulb,
-    Icons.track_changes,
-    Icons.timeline,
-
-    // ⚔️ Valorant / Tactical Feel
-    Icons.sports_esports,
-    CustomIcons.sword,
-    Icons.military_tech,
-    Icons.shield,
-    Icons.security,
-    Icons.bolt,
-    Icons.psychology,
-  ];
+  @Deprecated('Use FolderIconRegistry.pickerEntries instead.')
+  static List<IconData> get folderIcons => [
+        for (final entry in FolderIconRegistry.pickerEntries)
+          if (entry.iconData != null) entry.iconData!,
+      ];
 
   bool get isRoot => parentID == null;
 }
@@ -152,12 +117,20 @@ class FolderProvider extends Notifier<String?> {
     );
   }
 
+  static int decodeFolderIconId(CloudFolderSummary folder) {
+    final iconId = folder.iconId;
+    if (iconId != null && FolderIconRegistry.isKnownId(iconId)) {
+      return iconId;
+    }
+    return FolderIconRegistry.idForLegacyIconData(decodeFolderIcon(folder));
+  }
+
   static Folder cloudSummaryToFolder(CloudFolderSummary folder) {
     return Folder(
       name: folder.name,
       id: folder.publicId,
       dateCreated: folder.createdAt,
-      icon: decodeFolderIcon(folder),
+      iconId: decodeFolderIconId(folder),
       color: decodeFolderColor(folder.color),
       parentID: folder.parentFolderPublicId,
       customColor: folder.customColorValue == null
@@ -168,7 +141,7 @@ class FolderProvider extends Notifier<String?> {
 
   Future<Folder> createFolder({
     required String name,
-    required IconData icon,
+    required int iconId,
     required FolderColor color,
     Color? customColor,
     String? parentID,
@@ -176,7 +149,7 @@ class FolderProvider extends Notifier<String?> {
   }) async {
     final targetWorkspace = workspace ?? _currentWorkspace;
     final newFolder = Folder(
-      icon: icon,
+      iconId: iconId,
       name: name,
       id: const Uuid().v4(),
       dateCreated: DateTime.now(),
@@ -186,14 +159,16 @@ class FolderProvider extends Notifier<String?> {
     );
 
     if (targetWorkspace == LibraryWorkspace.cloud) {
+      final icon = FolderIconRegistry.resolve(newFolder.iconId).iconData;
       try {
         await ref.read(convexStrategyRepositoryProvider).createFolder(
               publicId: newFolder.id,
               name: name,
               parentFolderPublicId: newFolder.parentID,
-              iconCodePoint: icon.codePoint,
-              iconFontFamily: icon.fontFamily,
-              iconFontPackage: icon.fontPackage,
+              iconId: newFolder.iconId,
+              iconCodePoint: icon?.codePoint,
+              iconFontFamily: icon?.fontFamily,
+              iconFontPackage: icon?.fontPackage,
               color: color.name,
               customColorValue: customColor?.toARGB32(),
             );
@@ -205,6 +180,14 @@ class FolderProvider extends Notifier<String?> {
           error: error,
           stackTrace: stackTrace,
         );
+        // Do NOT fall through to the local write: that silently created a
+        // local folder from the cloud view whenever the server call failed.
+        Settings.showToast(
+          message: "Couldn't create the cloud folder. Check your connection "
+              'and try again.',
+          backgroundColor: Settings.tacticalVioletTheme.destructive,
+        );
+        rethrow;
       }
     }
 
@@ -321,23 +304,26 @@ class FolderProvider extends Notifier<String?> {
   void editFolder({
     required Folder folder,
     required String newName,
-    required IconData newIcon,
+    required int newIconId,
     required FolderColor newColor,
     required Color? newCustomColor,
     LibraryWorkspace? workspace,
   }) async {
     final targetWorkspace = workspace ?? _currentWorkspace;
     if (targetWorkspace == LibraryWorkspace.cloud) {
+      final newIcon = FolderIconRegistry.resolve(newIconId).iconData;
+      final iconFontFamily = newIcon?.fontFamily;
+      final iconFontPackage = newIcon?.fontPackage;
       try {
         final args = <String, Object>{
           'folderPublicId': folder.id,
           'name': newName,
-          'iconCodePoint': newIcon.codePoint,
-          if (newIcon.fontFamily != null) 'iconFontFamily': newIcon.fontFamily!,
-          if (newIcon.fontFamily == null) 'clearIconFontFamily': true,
-          if (newIcon.fontPackage != null)
-            'iconFontPackage': newIcon.fontPackage!,
-          if (newIcon.fontPackage == null) 'clearIconFontPackage': true,
+          'iconId': newIconId,
+          if (newIcon != null) 'iconCodePoint': newIcon.codePoint,
+          if (iconFontFamily != null) 'iconFontFamily': iconFontFamily,
+          if (iconFontFamily == null) 'clearIconFontFamily': true,
+          if (iconFontPackage != null) 'iconFontPackage': iconFontPackage,
+          if (iconFontPackage == null) 'clearIconFontPackage': true,
           'color': newColor.name,
           if (newCustomColor != null)
             'customColorValue': newCustomColor.toARGB32(),
@@ -358,7 +344,7 @@ class FolderProvider extends Notifier<String?> {
     }
 
     folder.name = newName;
-    folder.icon = newIcon;
+    folder.iconId = newIconId;
     folder.customColor = newCustomColor;
     folder.color = newColor;
     await folder.save();

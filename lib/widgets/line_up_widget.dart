@@ -1,43 +1,52 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
-import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 
-class LineUpAgentWidget extends ConsumerWidget {
-  const LineUpAgentWidget({super.key, required this.lineUp});
+class LineUpGroupAgentWidget extends ConsumerWidget {
+  LineUpGroupAgentWidget({
+    Key? key,
+    required this.group,
+  }) : super(key: key ?? ValueKey('lineup-agent-widget-${group.id}'));
 
-  final LineUp lineUp;
+  final LineUpGroup group;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final agentScreen =
-        coordinateSystem.coordinateToScreen(lineUp.agent.position);
+    final agentScreen = coordinateSystem.coordinateToScreen(group.agent.position);
 
     return Positioned(
-      key: ValueKey('lineup-agent-${lineUp.id}'),
+      key: ValueKey('lineup-agent-${group.id}'),
       left: agentScreen.dx,
       top: agentScreen.dy,
       child: AgentWidget(
-        lineUpId: lineUp.id,
-        agent: AgentData.agents[lineUp.agent.type]!,
-        isAlly: true,
-        id: lineUp.id,
+        lineUpId: group.id,
+        agent: AgentData.agents[group.agent.type]!,
+        isAlly: group.agent.isAlly,
+        id: group.agent.id,
       ),
     );
   }
 }
 
-class LineUpAbilityWidget extends ConsumerWidget {
-  const LineUpAbilityWidget({super.key, required this.lineUp});
+class LineUpItemAbilityWidget extends ConsumerWidget {
+  LineUpItemAbilityWidget({
+    Key? key,
+    required this.groupId,
+    required this.item,
+  }) : super(
+          key: key ?? ValueKey('lineup-ability-widget-$groupId-${item.id}'),
+        );
 
-  final LineUp lineUp;
+  final String groupId;
+  final LineUpItem item;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -46,53 +55,87 @@ class LineUpAbilityWidget extends ConsumerWidget {
         ref.watch(mapProvider.select((state) => state.currentMap));
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final abilityScreen =
-        coordinateSystem.coordinateToScreen(lineUp.ability.position);
-    final isRotatable = lineUp.ability.rotation != 0;
+        coordinateSystem.coordinateToScreen(item.ability.position);
+    final isRotatable = item.ability.rotation != 0;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
     final contextMenuItems = buildAbilityContextMenuItems(
       ref,
-      lineUp.ability,
-      lineUpId: lineUp.id,
+      item.ability,
+      lineUpGroupId: groupId,
+      lineUpItemId: item.id,
       includeDelete: true,
     );
-    final abilityChild = isRotatable
+    final rawAbilityChild = isRotatable
         ? Transform.rotate(
-            angle: lineUp.ability.rotation,
+            angle: item.ability.rotation,
             alignment: Alignment.topLeft,
-            origin: lineUp.ability.data.abilityData!
+            origin: item.ability.data.abilityData!
                 .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
                 .scale(
-                    coordinateSystem.scaleFactor, coordinateSystem.scaleFactor),
-            child: lineUp.ability.data.abilityData!.createWidget(
+                  coordinateSystem.scaleFactor,
+                  coordinateSystem.scaleFactor,
+                ),
+            child: item.ability.data.abilityData!.createWidget(
               id: null,
-              isAlly: true,
+              isAlly: item.ability.isAlly,
               mapScale: mapScale,
-              lineUpId: lineUp.id,
-              rotation: lineUp.ability.rotation,
-              length: lineUp.ability.length,
-              armLengthsMeters: lineUp.ability.armLengthsMeters,
-              visualState: lineUp.ability.visualState,
+              lineUpId: groupId,
+              lineUpItemId: item.id,
+              rotation: item.ability.rotation,
+              length: item.ability.length,
+              armLengthsMeters: item.ability.armLengthsMeters,
+              visualState: item.ability.visualState,
               watchMouse: true,
               contextMenuItems: contextMenuItems,
             ),
           )
-        : lineUp.ability.data.abilityData!.createWidget(
+        : item.ability.data.abilityData!.createWidget(
             id: null,
-            isAlly: true,
+            isAlly: item.ability.isAlly,
             mapScale: mapScale,
-            lineUpId: lineUp.id,
-            rotation: lineUp.ability.rotation,
-            length: lineUp.ability.length,
-            armLengthsMeters: lineUp.ability.armLengthsMeters,
-            visualState: lineUp.ability.visualState,
+            lineUpId: groupId,
+            lineUpItemId: item.id,
+            rotation: item.ability.rotation,
+            length: item.ability.length,
+            armLengthsMeters: item.ability.armLengthsMeters,
+            visualState: item.ability.visualState,
             watchMouse: true,
             contextMenuItems: contextMenuItems,
           );
     return Positioned(
-      key: ValueKey('lineup-ability-${lineUp.id}'),
+      key: ValueKey('lineup-ability-${item.id}'),
       left: abilityScreen.dx,
       top: abilityScreen.dy,
-      child: abilityChild,
+      child: rawAbilityChild,
+    );
+  }
+}
+
+@Deprecated('Use LineUpGroupAgentWidget instead.')
+class LineUpAgentWidget extends StatelessWidget {
+  const LineUpAgentWidget({super.key, required this.lineUp});
+
+  final LineUp lineUp;
+
+  @override
+  Widget build(BuildContext context) {
+    return LineUpGroupAgentWidget(
+      group: LineUpGroup.fromLegacyLineUp(lineUp),
+    );
+  }
+}
+
+@Deprecated('Use LineUpItemAbilityWidget instead.')
+class LineUpAbilityWidget extends StatelessWidget {
+  const LineUpAbilityWidget({super.key, required this.lineUp});
+
+  final LineUp lineUp;
+
+  @override
+  Widget build(BuildContext context) {
+    return LineUpItemAbilityWidget(
+      groupId: lineUp.id,
+      item: LineUpGroup.fromLegacyLineUp(lineUp).items.single,
     );
   }
 }

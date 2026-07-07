@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/canonical_json.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/drawing_element.dart';
@@ -18,7 +19,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
@@ -89,7 +90,7 @@ class LocalStrategyPageSource implements StrategyPageSource {
       texts: page.textData,
       images: page.imageData,
       utilities: page.utilityData,
-      lineups: page.lineUps,
+      lineUpGroups: page.lineUpGroups,
     );
   }
 
@@ -116,7 +117,11 @@ class LocalStrategyPageSource implements StrategyPageSource {
       utilityData: ref.read(utilityProvider),
       isAttack: ref.read(mapProvider).isAttack,
       settings: ref.read(strategySettingsProvider),
-      lineUps: ref.read(lineUpProvider).lineUps,
+      lineUpGroups: ref
+          .read(lineUpProvider)
+          .groups
+          .map((group) => group.deepCopy())
+          .toList(),
     );
 
     final strategyTheme = ref.read(strategyThemeProvider);
@@ -236,19 +241,15 @@ class CloudStrategyPageSource implements StrategyPageSource {
       }
     }
 
-    final parsedLineups = <LineUp>[];
+    final parsedLineUpGroups = <LineUpGroup>[];
     for (final lineup in lineups) {
       if (lineup.deleted) {
         continue;
       }
       try {
-        final decoded = jsonDecode(lineup.payload);
-        if (decoded is Map<String, dynamic>) {
-          parsedLineups.add(LineUp.fromJson(decoded));
-        } else if (decoded is Map) {
-          parsedLineups
-              .add(LineUp.fromJson(Map<String, dynamic>.from(decoded)));
-        }
+        parsedLineUpGroups.add(LineUpGroup.fromJson(
+          cloudPayloadData(lineup.payload),
+        ));
       } catch (_) {
         // Ignore malformed payloads during hydration.
       }
@@ -262,9 +263,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
     StrategySettings pageSettings = StrategySettings();
     if (page.settings != null && page.settings!.isNotEmpty) {
       try {
-        pageSettings = ref
-            .read(strategySettingsProvider.notifier)
-            .fromJson(page.settings!);
+        pageSettings = StrategySettings.fromJson(page.settings!);
       } catch (_) {
         pageSettings = StrategySettings();
       }
@@ -282,7 +281,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       texts: texts,
       images: images,
       utilities: utilities,
-      lineups: parsedLineups,
+      lineUpGroups: parsedLineUpGroups,
     );
   }
 
@@ -319,20 +318,18 @@ class CloudStrategyPageSource implements StrategyPageSource {
     }
 
     final strategyTheme = ref.read(strategyThemeProvider);
-    final desiredThemeOverride = strategyTheme.overridePalette == null
-        ? null
-        : jsonEncode(strategyTheme.overridePalette!.toJson());
+    final desiredThemeOverride = strategyTheme.overridePalette?.toJson();
     final header = snapshot.header;
 
     final mapMatches = header.mapData == currentMapData;
     final themeProfileMatches =
         header.themeProfileId == strategyTheme.profileId;
     final themeOverrideMatches =
-        header.themeOverridePalette == desiredThemeOverride;
+        cloudJsonEquivalent(header.themeOverridePalette, desiredThemeOverride);
 
     if (mapMatches && themeProfileMatches && themeOverrideMatches) {
       ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
-            entityKey: 'strategy',
+            entityKey: const EntitySyncKey.strategy(),
             desiredOp: null,
             flushImmediately: false,
           );
@@ -352,12 +349,12 @@ class CloudStrategyPageSource implements StrategyPageSource {
     };
 
     ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
-          entityKey: 'strategy',
+          entityKey: const EntitySyncKey.strategy(),
           desiredOp: StrategyOp(
             opId: const Uuid().v4(),
             kind: StrategyOpKind.patch,
             entityType: StrategyOpEntityType.strategy,
-            payload: jsonEncode(payload),
+            payload: payload,
             expectedSequence: header.sequence,
           ),
           flushImmediately: false,
@@ -377,7 +374,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
     final utilities = <PlacedUtility>[];
 
     for (final element in projected.elements) {
-      final payload = _decodeJsonObject(element.payload);
+      final payload = cloudPayloadData(element.payload);
       try {
         switch (element.elementType) {
           case 'agent':
@@ -416,16 +413,12 @@ class CloudStrategyPageSource implements StrategyPageSource {
       }
     }
 
-    final parsedLineups = <LineUp>[];
+    final parsedLineUpGroups = <LineUpGroup>[];
     for (final lineup in projected.lineups) {
       try {
-        final decoded = jsonDecode(lineup.payload);
-        if (decoded is Map<String, dynamic>) {
-          parsedLineups.add(LineUp.fromJson(decoded));
-        } else if (decoded is Map) {
-          parsedLineups
-              .add(LineUp.fromJson(Map<String, dynamic>.from(decoded)));
-        }
+        parsedLineUpGroups.add(LineUpGroup.fromJson(
+          cloudPayloadData(lineup.payload),
+        ));
       } catch (_) {
         // Ignore malformed payloads during hydration.
       }
@@ -436,7 +429,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
       orElse: () => const MapEntry(MapValue.ascent, 'ascent'),
     );
 
-    final settings = _parsePageSettings(projected.settingsJson);
+    final settings = _parsePageSettings(projected.settingsPayload);
 
     return StrategyEditorPageData(
       pageId: projected.pageId,
@@ -450,33 +443,18 @@ class CloudStrategyPageSource implements StrategyPageSource {
       texts: texts,
       images: images,
       utilities: utilities,
-      lineups: parsedLineups,
+      lineUpGroups: parsedLineUpGroups,
     );
   }
 
-  StrategySettings _parsePageSettings(String? settingsJson) {
-    if (settingsJson == null || settingsJson.isEmpty) {
+  StrategySettings _parsePageSettings(Map<String, dynamic>? settingsPayload) {
+    if (settingsPayload == null) {
       return StrategySettings();
     }
     try {
-      return ref.read(strategySettingsProvider.notifier).fromJson(settingsJson);
+      return StrategySettings.fromJson(settingsPayload);
     } catch (_) {
       return StrategySettings();
     }
-  }
-
-  Map<String, dynamic> _decodeJsonObject(String payload) {
-    try {
-      final decoded = jsonDecode(payload);
-      if (decoded is Map<String, dynamic>) {
-        return decoded;
-      }
-      if (decoded is Map) {
-        return Map<String, dynamic>.from(decoded);
-      }
-    } catch (_) {
-      // Ignore malformed payloads during hydration.
-    }
-    return <String, dynamic>{};
   }
 }

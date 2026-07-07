@@ -5,10 +5,17 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/widgets/role_badge.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _agentIconSize = 27;
 const double _agentRowSpacing = 5;
+const List<AgentRole> _strategyTileRoleOrder = [
+  AgentRole.duelist,
+  AgentRole.initiator,
+  AgentRole.controller,
+  AgentRole.sentinel,
+];
 
 class StrategyTileViewData {
   const StrategyTileViewData({
@@ -19,6 +26,7 @@ class StrategyTileViewData {
     required this.thumbnailAsset,
     required this.lastEditedLabel,
     required this.agentTypes,
+    this.cloudBadge,
   });
 
   factory StrategyTileViewData.fromStrategy(StrategyData strategy) {
@@ -52,6 +60,7 @@ class StrategyTileViewData {
           'assets/maps/thumbnails/${strategy.mapData}_thumbnail.webp',
       lastEditedLabel: _timeAgo(strategy.updatedAt),
       agentTypes: const [],
+      cloudBadge: cloudBadgeKindForRole(strategy.role),
     );
   }
 
@@ -62,6 +71,10 @@ class StrategyTileViewData {
   final String thumbnailAsset;
   final String lastEditedLabel;
   final List<AgentType> agentTypes;
+
+  /// Non-null only for cloud strategies. Local tiles leave this null so they
+  /// render exactly as before.
+  final CloudBadgeKind? cloudBadge;
 
   static String _mapName(MapValue? map) {
     final raw = map == null ? null : Maps.mapNames[map];
@@ -84,11 +97,11 @@ class StrategyTileViewData {
   static Color _attackColor(String label) {
     switch (label) {
       case 'Attack':
-        return Colors.redAccent;
+        return Settings.attackColor;
       case 'Defend':
-        return Colors.lightBlueAccent;
+        return Settings.defenderColor;
       default:
-        return Colors.orangeAccent;
+        return Settings.mixedStrategyColor;
     }
   }
 
@@ -99,7 +112,11 @@ class StrategyTileViewData {
         result.add(agent.type);
       }
     }
-    return result.toList();
+
+    return [
+      for (final role in _strategyTileRoleOrder)
+        ...result.where((type) => AgentData.agents[type]?.role == role),
+    ];
   }
 
   static String _timeAgo(DateTime date) {
@@ -183,15 +200,26 @@ class StrategyTileDetails extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 130),
-                      child: Text(
-                        data.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w500,
-                          overflow: TextOverflow.ellipsis,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Flexible(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 130),
+                            child: Text(
+                              data.name,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                        if (data.cloudBadge != null) ...[
+                          const SizedBox(width: 6),
+                          CloudRoleBadge(kind: data.cloudBadge!),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 5),
                     Text(data.mapName),
@@ -271,7 +299,7 @@ class StrategyTileDragPreview extends StatelessWidget {
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.deepPurpleAccent, width: 2),
+        border: Border.all(color: Settings.tacticalVioletTheme.ring, width: 2),
       ),
       padding: const EdgeInsets.all(4),
       child: Row(

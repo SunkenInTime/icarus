@@ -177,6 +177,12 @@ class AppErrorReporter {
       ..writeln('Icarus Debug Report')
       ..writeln('Generated: ${formatDebugLogTimestamp(DateTime.now())}')
       ..writeln(
+        'Update channel: '
+        '${updateChannelLabel(kResolvedUpdateChannel)} ($kResolvedUpdateChannel)',
+      )
+      ..writeln(
+          'Desktop updater manifest: ${Settings.desktopUpdaterArchiveUrl}')
+      ..writeln(
         'Application support directory: '
         '${_applicationSupportDirectoryPath ?? 'Unavailable'}',
       );

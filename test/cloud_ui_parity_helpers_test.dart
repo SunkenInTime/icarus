@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 
@@ -30,16 +31,14 @@ void main() {
       name: 'Execs',
       createdAt: DateTime(2026, 1, 1),
       updatedAt: DateTime(2026, 1, 2),
-      iconCodePoint: 0xe318,
-      iconFontFamily: 'MaterialIcons',
+      iconId: FolderIconRegistry.duelistRoleId,
       color: 'red',
       customColorValue: 0xFF123456,
     );
 
     final folder = FolderProvider.cloudSummaryToFolder(summary);
 
-    expect(folder.icon.codePoint, 0xe318);
-    expect(folder.icon.fontFamily, 'MaterialIcons');
+    expect(folder.iconId, FolderIconRegistry.duelistRoleId);
     expect(folder.color, FolderColor.red);
     expect(folder.customColor, const Color(0xFF123456));
   });

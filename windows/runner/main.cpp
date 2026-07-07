@@ -61,7 +61,8 @@ bool SendAppLinkToInstance(const std::wstring& title) {
           break;
     }
 
-    SetWindowPos(0, HWND_TOP, 0, 0, 0, 0, SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE);
+    SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0,
+                 SWP_SHOWWINDOW | SWP_NOSIZE | SWP_NOMOVE);
     SetForegroundWindow(hwnd);
     // END (Optional) Restore
 

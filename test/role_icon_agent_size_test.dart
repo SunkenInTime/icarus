@@ -8,7 +8,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:icarus/widgets/draggable_widgets/shared/framed_icon_shell.dart';
+import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/utility_widget_builder.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 
@@ -119,8 +119,8 @@ void main() {
         ),
       );
 
-      final framedShell =
-          tester.widget<FramedIconShell>(find.byType(FramedIconShell));
+      final framedShell = tester
+          .widget<FramedAbilityIconShell>(find.byType(FramedAbilityIconShell));
       expect(framedShell.size, agentSize);
       expect(framedShell.size, isNot(abilitySize));
     });
@@ -152,8 +152,8 @@ void main() {
         ),
       );
 
-      final framedShell =
-          tester.widget<FramedIconShell>(find.byType(FramedIconShell));
+      final framedShell = tester
+          .widget<FramedAbilityIconShell>(find.byType(FramedAbilityIconShell));
       expect(framedShell.size, agentSize);
       expect(framedShell.size, isNot(abilitySize));
     });

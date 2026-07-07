@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:path/path.dart' as path;
 
 const String archiveMetadataFileName = 'icarus-metadata.json';
@@ -75,20 +76,25 @@ class ArchiveIconDescriptor {
 }
 
 class ArchiveFolderEntry {
-  const ArchiveFolderEntry({
+  ArchiveFolderEntry({
     required this.manifestId,
     required this.name,
     required this.parentManifestId,
     required this.archivePath,
-    required this.icon,
+    required this.iconId,
+    ArchiveIconDescriptor? icon,
     required this.color,
     required this.customColorValue,
-  });
+  }) : icon = icon ??
+            ArchiveIconDescriptor.fromIconData(
+              FolderIconRegistry.legacyIconDataForId(iconId),
+            );
 
   final String manifestId;
   final String name;
   final String? parentManifestId;
   final String archivePath;
+  final int iconId;
   final ArchiveIconDescriptor icon;
   final FolderColor color;
   final int? customColorValue;
@@ -99,7 +105,7 @@ class ArchiveFolderEntry {
       'name': name,
       'parentManifestId': parentManifestId,
       'archivePath': archivePath,
-      'icon': icon.toJson(),
+      'iconId': iconId,
       'color': color.name,
       if (customColorValue != null) 'customColorValue': customColorValue,
     };
@@ -107,12 +113,22 @@ class ArchiveFolderEntry {
 
   factory ArchiveFolderEntry.fromJson(Map<String, dynamic> json) {
     final colorName = _readRequiredString(json, 'color');
+    final legacyIcon = json['icon'] == null
+        ? null
+        : ArchiveIconDescriptor.fromJson(_readRequiredMap(json, 'icon'));
     return ArchiveFolderEntry(
       manifestId: _readRequiredString(json, 'manifestId'),
       name: _readRequiredString(json, 'name'),
       parentManifestId: _readNullableString(json, 'parentManifestId'),
-      archivePath: normalizeArchivePath(_readStringAllowEmpty(json, 'archivePath')),
-      icon: ArchiveIconDescriptor.fromJson(_readRequiredMap(json, 'icon')),
+      archivePath:
+          normalizeArchivePath(_readStringAllowEmpty(json, 'archivePath')),
+      iconId: _readNullableInt(json, 'iconId') ??
+          (legacyIcon == null
+              ? FolderIconRegistry.defaultId
+              : FolderIconRegistry.idForLegacyIconData(
+                  legacyIcon.toIconData(),
+                )),
+      icon: legacyIcon,
       color: FolderColor.values.firstWhere(
         (candidate) => candidate.name == colorName,
         orElse: () => throw FormatException('Unknown folder color: $colorName'),
@@ -144,7 +160,8 @@ class ArchiveStrategyEntry {
   factory ArchiveStrategyEntry.fromJson(Map<String, dynamic> json) {
     return ArchiveStrategyEntry(
       name: _readRequiredString(json, 'name'),
-      archivePath: normalizeArchivePath(_readRequiredString(json, 'archivePath')),
+      archivePath:
+          normalizeArchivePath(_readRequiredString(json, 'archivePath')),
       folderManifestId: _readNullableString(json, 'folderManifestId'),
     );
   }
@@ -186,19 +203,34 @@ class ArchiveGlobals {
   const ArchiveGlobals({
     required this.themeProfiles,
     required this.defaultThemeProfileIdForNewStrategies,
+    required this.showSpawnBarrier,
+    required this.showUltOrbs,
+    required this.showRegionNames,
+    required this.customColorValues,
+    this.hasCustomColorValues = true,
     required this.favoriteAgents,
   });
 
   final List<ArchiveThemeProfileEntry> themeProfiles;
   final String? defaultThemeProfileIdForNewStrategies;
+  final bool? showSpawnBarrier;
+  final bool? showUltOrbs;
+  final bool? showRegionNames;
+  final List<int> customColorValues;
+  final bool hasCustomColorValues;
   final List<String> favoriteAgents;
 
   Map<String, dynamic> toJson() {
     return {
-      'themeProfiles': themeProfiles.map((profile) => profile.toJson()).toList(),
+      'themeProfiles':
+          themeProfiles.map((profile) => profile.toJson()).toList(),
       'appPreferences': {
         'defaultThemeProfileIdForNewStrategies':
             defaultThemeProfileIdForNewStrategies,
+        'showSpawnBarrier': showSpawnBarrier,
+        'showUltOrbs': showUltOrbs,
+        'showRegionNames': showRegionNames,
+        'customColorValues': customColorValues,
       },
       'favoriteAgents': favoriteAgents,
     };
@@ -206,13 +238,16 @@ class ArchiveGlobals {
 
   factory ArchiveGlobals.fromJson(Map<String, dynamic> json) {
     final appPreferences = json['appPreferences'];
-    final appPreferencesMap =
-        appPreferences is Map ? Map<String, dynamic>.from(appPreferences) : null;
+    final appPreferencesMap = appPreferences is Map
+        ? Map<String, dynamic>.from(appPreferences)
+        : null;
+    final hasCustomColorValues =
+        appPreferencesMap?.containsKey('customColorValues') ?? false;
 
     return ArchiveGlobals(
       themeProfiles: _readRequiredList(json, 'themeProfiles')
-          .map((entry) =>
-              ArchiveThemeProfileEntry.fromJson(Map<String, dynamic>.from(entry as Map)))
+          .map((entry) => ArchiveThemeProfileEntry.fromJson(
+              Map<String, dynamic>.from(entry as Map)))
           .toList(growable: false),
       defaultThemeProfileIdForNewStrategies: appPreferencesMap == null
           ? null
@@ -220,6 +255,21 @@ class ArchiveGlobals {
               appPreferencesMap,
               'defaultThemeProfileIdForNewStrategies',
             ),
+      showSpawnBarrier: appPreferencesMap == null
+          ? null
+          : _readNullableBool(appPreferencesMap, 'showSpawnBarrier'),
+      showUltOrbs: appPreferencesMap == null
+          ? null
+          : _readNullableBool(appPreferencesMap, 'showUltOrbs'),
+      showRegionNames: appPreferencesMap == null
+          ? null
+          : _readNullableBool(appPreferencesMap, 'showRegionNames'),
+      customColorValues: appPreferencesMap == null
+          ? const []
+          : _readOptionalList(appPreferencesMap, 'customColorValues')
+              .map(_readIntValue)
+              .toList(growable: false),
+      hasCustomColorValues: hasCustomColorValues,
       favoriteAgents: _readRequiredList(json, 'favoriteAgents')
           .map((entry) => entry.toString())
           .toList(growable: false),
@@ -271,7 +321,8 @@ class ArchiveManifest {
   factory ArchiveManifest.fromJson(Map<String, dynamic> json) {
     final schemaVersion = _readRequiredInt(json, 'schemaVersion');
     if (schemaVersion != archiveManifestSchemaVersion) {
-      throw FormatException('Unsupported archive schema version: $schemaVersion');
+      throw FormatException(
+          'Unsupported archive schema version: $schemaVersion');
     }
 
     return ArchiveManifest(
@@ -282,8 +333,8 @@ class ArchiveManifest {
           DateTime.parse(_readRequiredString(json, 'exportedAt')).toUtc(),
       appVersionNumber: _readRequiredInt(json, 'appVersionNumber'),
       folders: _readRequiredList(json, 'folders')
-          .map((entry) =>
-              ArchiveFolderEntry.fromJson(Map<String, dynamic>.from(entry as Map)))
+          .map((entry) => ArchiveFolderEntry.fromJson(
+              Map<String, dynamic>.from(entry as Map)))
           .toList(growable: false),
       strategies: _readRequiredList(json, 'strategies')
           .map((entry) => ArchiveStrategyEntry.fromJson(
@@ -345,6 +396,15 @@ int? _readNullableInt(Map<String, dynamic> json, String key) {
   return _readRequiredInt(json, key);
 }
 
+int _readIntValue(dynamic value) {
+  if (value is int) return value;
+  if (value is String) {
+    final parsed = int.tryParse(value);
+    if (parsed != null) return parsed;
+  }
+  throw const FormatException('Expected int value');
+}
+
 String _readRequiredString(Map<String, dynamic> json, String key) {
   final value = json[key];
   if (value is String && value.isNotEmpty) {
@@ -370,6 +430,13 @@ String? _readNullableString(Map<String, dynamic> json, String key) {
     return value;
   }
   throw FormatException('Expected string or null for $key');
+}
+
+bool? _readNullableBool(Map<String, dynamic> json, String key) {
+  if (!json.containsKey(key) || json[key] == null) {
+    return null;
+  }
+  return _readRequiredBool(json, key);
 }
 
 bool _readRequiredBool(Map<String, dynamic> json, String key) {
@@ -398,4 +465,11 @@ List<dynamic> _readRequiredList(Map<String, dynamic> json, String key) {
     return value;
   }
   throw FormatException('Expected list for $key');
+}
+
+List<dynamic> _readOptionalList(Map<String, dynamic> json, String key) {
+  if (!json.containsKey(key) || json[key] == null) {
+    return const [];
+  }
+  return _readRequiredList(json, key);
 }

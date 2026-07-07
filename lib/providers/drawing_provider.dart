@@ -203,11 +203,10 @@ class DrawingProvider extends Notifier<DrawingState> {
     }
 
     if (element is Line) {
-      const colorConverter = ColorConverter();
       const offsetConverter = OffsetConverter();
       return {
         'type': 'lineDrawing',
-        'color': colorConverter.toJson(element.color),
+        'colorValue': element.colorValue,
         'thickness': element.thickness,
         'isDotted': element.isDotted,
         'hasArrow': element.hasArrow,
@@ -221,11 +220,10 @@ class DrawingProvider extends Notifier<DrawingState> {
     }
 
     if (element is RectangleDrawing) {
-      const colorConverter = ColorConverter();
       const offsetConverter = OffsetConverter();
       return {
         'type': 'rectangleDrawing',
-        'color': colorConverter.toJson(element.color),
+        'colorValue': element.colorValue,
         'thickness': element.thickness,
         'isDotted': element.isDotted,
         'hasArrow': element.hasArrow,
@@ -237,11 +235,10 @@ class DrawingProvider extends Notifier<DrawingState> {
     }
 
     if (element is EllipseDrawing) {
-      const colorConverter = ColorConverter();
       const offsetConverter = OffsetConverter();
       return {
         'type': 'ellipseDrawing',
-        'color': colorConverter.toJson(element.color),
+        'colorValue': element.colorValue,
         'thickness': element.thickness,
         'isDotted': element.isDotted,
         'hasArrow': element.hasArrow,
@@ -274,7 +271,6 @@ class DrawingProvider extends Notifier<DrawingState> {
         (type == null &&
             json.containsKey('lineStart') &&
             json.containsKey('lineEnd'))) {
-      const colorConverter = ColorConverter();
       const offsetConverter = OffsetConverter();
 
       final lineStart = offsetConverter
@@ -294,7 +290,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       return Line(
         lineStart: lineStart,
         lineEnd: lineEnd,
-        color: colorConverter.fromJson(json['color'] as String),
+        colorValue: _readDrawingColorValue(json),
         thickness: (json['thickness'] as num?)?.toDouble() ??
             Settings.defaultStrokeThickness,
         isDotted: json['isDotted'] as bool? ?? false,
@@ -314,7 +310,6 @@ class DrawingProvider extends Notifier<DrawingState> {
         (type == null &&
             json.containsKey('start') &&
             json.containsKey('end'))) {
-      const colorConverter = ColorConverter();
       const offsetConverter = OffsetConverter();
 
       final start = offsetConverter
@@ -337,7 +332,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       return RectangleDrawing(
         start: start,
         end: end,
-        color: colorConverter.fromJson(json['color'] as String),
+        colorValue: _readDrawingColorValue(json),
         thickness: (json['thickness'] as num?)?.toDouble() ??
             Settings.defaultStrokeThickness,
         isDotted: json['isDotted'] as bool? ?? false,
@@ -348,7 +343,6 @@ class DrawingProvider extends Notifier<DrawingState> {
     }
 
     if (type == 'ellipseDrawing') {
-      const colorConverter = ColorConverter();
       const offsetConverter = OffsetConverter();
 
       final start = offsetConverter
@@ -372,7 +366,7 @@ class DrawingProvider extends Notifier<DrawingState> {
       return EllipseDrawing(
         start: start,
         end: end,
-        color: colorConverter.fromJson(json['color'] as String),
+        colorValue: _readDrawingColorValue(json),
         thickness: (json['thickness'] as num?)?.toDouble() ??
             Settings.defaultStrokeThickness,
         isDotted: json['isDotted'] as bool? ?? false,
@@ -601,7 +595,7 @@ class DrawingProvider extends Notifier<DrawingState> {
     FreeDrawing freeDrawing = FreeDrawing(
       hasArrow: hasArrow,
       isDotted: isDotted,
-      color: activeColor,
+      colorValue: activeColor.toARGB32(),
       thickness: thickness,
       boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
       id: id,
@@ -697,7 +691,7 @@ class DrawingProvider extends Notifier<DrawingState> {
     final rectangle = RectangleDrawing(
       start: normalizedStart,
       end: normalizedStart,
-      color: activeColor,
+      colorValue: activeColor.toARGB32(),
       thickness: thickness,
       isDotted: isDotted,
       hasArrow: false,
@@ -778,7 +772,7 @@ class DrawingProvider extends Notifier<DrawingState> {
     final ellipse = EllipseDrawing(
       start: normalizedStart,
       end: normalizedStart,
-      color: activeColor,
+      colorValue: activeColor.toARGB32(),
       thickness: thickness,
       isDotted: isDotted,
       hasArrow: false,
@@ -870,7 +864,7 @@ class DrawingProvider extends Notifier<DrawingState> {
     final line = Line(
       lineStart: normalizedStart,
       lineEnd: normalizedStart,
-      color: activeColor,
+      colorValue: activeColor.toARGB32(),
       thickness: thickness,
       boundingBox: BoundingBox(min: normalizedStart, max: normalizedStart),
       isDotted: isDotted,
@@ -1008,6 +1002,16 @@ class DrawingProvider extends Notifier<DrawingState> {
     state = state.copyWith(elements: newElements);
     _triggerRepaint();
   }
+}
+
+int _readDrawingColorValue(Map<String, dynamic> json) {
+  final value = json['colorValue'] ?? json['color'];
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) {
+    return const ColorConverter().fromJson(value).toARGB32();
+  }
+  return 0xFFFFFFFF;
 }
 
 BoundingBox _boundingBoxForPoints(Offset a, Offset b) {

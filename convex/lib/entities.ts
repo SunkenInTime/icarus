@@ -1,5 +1,6 @@
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
+import { notFoundError } from "./errors";
 
 type AnyCtx = QueryCtx | MutationCtx;
 
@@ -13,7 +14,7 @@ export async function getStrategyByPublicId(
     .first();
 
   if (strategy === null) {
-    throw new Error(`Strategy not found: ${strategyPublicId}`);
+    throw notFoundError("Strategy", strategyPublicId);
   }
 
   return strategy;
@@ -29,7 +30,7 @@ export async function getFolderByPublicId(
     .first();
 
   if (folder === null) {
-    throw new Error(`Folder not found: ${folderPublicId}`);
+    throw notFoundError("Folder", folderPublicId);
   }
 
   return folder;
@@ -45,7 +46,7 @@ export async function getPageByPublicId(
     .first();
 
   if (page === null) {
-    throw new Error(`Page not found: ${pagePublicId}`);
+    throw notFoundError("Page", pagePublicId);
   }
 
   return page;
@@ -61,7 +62,7 @@ export async function getElementByPublicId(
     .first();
 
   if (element === null) {
-    throw new Error(`Element not found: ${elementPublicId}`);
+    throw notFoundError("Element", elementPublicId);
   }
 
   return element;
@@ -77,7 +78,7 @@ export async function getLineupByPublicId(
     .first();
 
   if (lineup === null) {
-    throw new Error(`Lineup not found: ${lineupPublicId}`);
+    throw notFoundError("Lineup", lineupPublicId);
   }
 
   return lineup;

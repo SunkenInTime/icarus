@@ -17,12 +17,9 @@ final remoteStrategySnapshotProvider = AsyncNotifierProvider<
 class RemoteStrategySnapshotNotifier
     extends AsyncNotifier<RemoteStrategySnapshot?> {
   String? _activeStrategyPublicId;
-  StreamSubscription<RemoteStrategyHeader>? _headerSubscription;
-  StreamSubscription<List<RemotePage>>? _pagesSubscription;
-  StreamSubscription<List<RemoteImageAsset>>? _assetsSubscription;
-  StreamSubscription<List<RemoteElement>>? _elementsSubscription;
-  StreamSubscription<List<RemoteLineup>>? _lineupsSubscription;
+  StreamSubscription<RemoteStrategySnapshot>? _snapshotSubscription;
   Timer? _refreshDebounce;
+  Map<String, RemoteImageAsset>? _lastReconciledAssetsById;
 
   @override
   Future<RemoteStrategySnapshot?> build() async {
@@ -34,6 +31,7 @@ class RemoteStrategySnapshotNotifier
 
   Future<void> openStrategy(String strategyPublicId) async {
     _activeStrategyPublicId = strategyPublicId;
+    _lastReconciledAssetsById = null;
     ref
         .read(strategyOpQueueProvider.notifier)
         .setActiveStrategy(strategyPublicId);
@@ -52,6 +50,7 @@ class RemoteStrategySnapshotNotifier
 
   void clear() {
     _activeStrategyPublicId = null;
+    _lastReconciledAssetsById = null;
     _disposeSubscriptions();
     ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(null);
     state = const AsyncData(null);
@@ -97,80 +96,28 @@ class RemoteStrategySnapshotNotifier
     _disposeSubscriptions();
     final repository = ref.read(convexStrategyRepositoryProvider);
 
-    _headerSubscription = repository
-        .watchStrategyHeader(strategyPublicId)
-        .listen(
-          (header) =>
-              _replaceSnapshot((snapshot) => snapshot.replaceHeader(header)),
-          onError: (error, stackTrace) => _handleSubscriptionError(
-            source: 'remote_snapshot:header_subscription',
-            error: error,
-            stackTrace: stackTrace,
-          ),
-        );
-
-    _pagesSubscription =
-        repository.watchPagesForStrategy(strategyPublicId).listen(
-              (pages) =>
-                  _replaceSnapshot((snapshot) => snapshot.replacePages(pages)),
-              onError: (error, stackTrace) => _handleSubscriptionError(
-                source: 'remote_snapshot:pages_subscription',
-                error: error,
-                stackTrace: stackTrace,
-              ),
-            );
-
-    _assetsSubscription =
-        repository.watchImageAssetsForStrategy(strategyPublicId).listen(
-              (assets) {
-                _replaceSnapshot((snapshot) => snapshot.replaceAssets(assets));
-                unawaited(
-                  ref
-                      .read(cloudMediaUploadQueueProvider.notifier)
-                      .reconcilePageMedia(
-                        strategyPublicId: strategyPublicId,
-                        placedImages: ref.read(placedImageProvider).images,
-                        assetsById: {
-                          for (final asset in assets) asset.publicId: asset,
-                        },
-                      ),
-                );
-              },
-              onError: (error, stackTrace) => _handleSubscriptionError(
-                source: 'remote_snapshot:assets_subscription',
-                error: error,
-                stackTrace: stackTrace,
-              ),
-            );
-
-    _elementsSubscription =
-        repository.watchElementsForStrategy(strategyPublicId).listen(
-              (elements) => _replaceSnapshot(
-                (snapshot) => snapshot.replaceElements(elements),
-              ),
-              onError: (error, stackTrace) => _handleSubscriptionError(
-                source: 'remote_snapshot:elements_subscription',
-                error: error,
-                stackTrace: stackTrace,
-              ),
-            );
-
-    _lineupsSubscription =
-        repository.watchLineupsForStrategy(strategyPublicId).listen(
-              (lineups) => _replaceSnapshot(
-                (snapshot) => snapshot.replaceLineups(lineups),
-              ),
-              onError: (error, stackTrace) => _handleSubscriptionError(
-                source: 'remote_snapshot:lineups_subscription',
-                error: error,
-                stackTrace: stackTrace,
-              ),
-            );
+    _snapshotSubscription = repository.watchSnapshot(strategyPublicId).listen(
+      (snapshot) {
+        _replaceSnapshot(snapshot);
+        if (_shouldReconcilePageMedia(snapshot.assetsById)) {
+          unawaited(
+            ref.read(cloudMediaUploadQueueProvider.notifier).reconcilePageMedia(
+                  strategyPublicId: strategyPublicId,
+                  placedImages: ref.read(placedImageProvider).images,
+                  assetsById: snapshot.assetsById,
+                ),
+          );
+        }
+      },
+      onError: (error, stackTrace) => _handleSubscriptionError(
+        source: 'remote_snapshot:snapshot_subscription',
+        error: error,
+        stackTrace: stackTrace,
+      ),
+    );
   }
 
-  void _replaceSnapshot(
-    RemoteStrategySnapshot Function(RemoteStrategySnapshot snapshot) replace,
-  ) {
+  void _replaceSnapshot(RemoteStrategySnapshot snapshot) {
     if (_activeStrategyPublicId == null) {
       return;
     }
@@ -178,12 +125,41 @@ class RemoteStrategySnapshotNotifier
       return;
     }
 
-    final current = state.valueOrNull;
-    if (current == null) {
-      _scheduleRefresh();
-      return;
+    state = AsyncData(snapshot);
+  }
+
+  bool _shouldReconcilePageMedia(
+    Map<String, RemoteImageAsset> nextAssetsById,
+  ) {
+    final previous = _lastReconciledAssetsById;
+    if (previous != null && _sameReconcileAssetSet(previous, nextAssetsById)) {
+      return false;
     }
-    state = AsyncData(replace(current));
+
+    _lastReconciledAssetsById =
+        Map<String, RemoteImageAsset>.unmodifiable(nextAssetsById);
+    return true;
+  }
+
+  bool _sameReconcileAssetSet(
+    Map<String, RemoteImageAsset> previous,
+    Map<String, RemoteImageAsset> next,
+  ) {
+    if (previous.length != next.length) {
+      return false;
+    }
+
+    for (final entry in next.entries) {
+      final previousAsset = previous[entry.key];
+      final nextAsset = entry.value;
+      if (previousAsset == null ||
+          previousAsset.publicId != nextAsset.publicId ||
+          previousAsset.url != nextAsset.url ||
+          previousAsset.uploadStatus != nextAsset.uploadStatus) {
+        return false;
+      }
+    }
+    return true;
   }
 
   void _handleSubscriptionError({
@@ -231,19 +207,7 @@ class RemoteStrategySnapshotNotifier
     _refreshDebounce?.cancel();
     _refreshDebounce = null;
 
-    unawaited(_headerSubscription?.cancel());
-    _headerSubscription = null;
-
-    unawaited(_pagesSubscription?.cancel());
-    _pagesSubscription = null;
-
-    unawaited(_assetsSubscription?.cancel());
-    _assetsSubscription = null;
-
-    unawaited(_elementsSubscription?.cancel());
-    _elementsSubscription = null;
-
-    unawaited(_lineupsSubscription?.cancel());
-    _lineupsSubscription = null;
+    unawaited(_snapshotSubscription?.cancel());
+    _snapshotSubscription = null;
   }
 }

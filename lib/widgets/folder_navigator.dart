@@ -2,9 +2,10 @@ import 'dart:async';
 
 import 'package:desktop_updater/desktop_updater.dart';
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
@@ -14,9 +15,9 @@ import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_rail_hover_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
-import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
@@ -26,6 +27,7 @@ import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
+import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
@@ -202,6 +204,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         final bool isDirectWindowsInstall =
             _isWindowsDesktop && !result.isSupported;
         if (isDirectWindowsInstall && _desktopUpdaterController == null) {
+          debugPrint(
+            'Desktop updater channel: $kResolvedUpdateChannel | Manifest: ${Settings.desktopUpdaterArchiveUrl}',
+          );
           _desktopUpdaterController = WindowsDesktopUpdateController(
             appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
             localization: const DesktopUpdateLocalization(
@@ -254,42 +259,22 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 .read(folderProvider.notifier)
                 .findLocalFolderByID(currentFolderId)
         : null;
-    Future<void> navigateWithLoading(
-        BuildContext context, String strategyId) async {
-      // Show loading overlay
-      // showLoadingOverlay(context);
-
-      try {
-        await ref.read(strategyProvider.notifier).loadFromHive(strategyId);
-
-        if (!context.mounted) return;
-
-        Navigator.push(
-          context,
-          PageRouteBuilder(
-            transitionDuration: const Duration(milliseconds: 200),
-            reverseTransitionDuration:
-                const Duration(milliseconds: 200), // pop duration
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                const StrategyView(),
-            transitionsBuilder:
-                (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.9, end: 1.0)
-                      .chain(CurveTween(curve: Curves.easeOut))
-                      .animate(animation),
-                  child: child,
-                ),
-              );
-            },
-          ),
-        );
-      } catch (e) {
-        // Handle errors
-        // Show error message
-      }
+    Future<void> navigateToLocalStrategy(
+      BuildContext context,
+      String strategyId, {
+      String? strategyName,
+    }) async {
+      if (!context.mounted) return;
+      await Navigator.push(
+        context,
+        StrategyView.route(
+          initialStrategyId: strategyId,
+          initialStrategyName: strategyName,
+          initialStrategySource: StrategySource.local,
+          initialMapValue: MapValue.ascent,
+          initialIsAttack: true,
+        ),
+      );
     }
 
     void showCreateDialog() async {
@@ -305,27 +290,10 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         if (isCloudWorkspace) {
           await Navigator.push(
             context,
-            PageRouteBuilder(
-              transitionDuration: const Duration(milliseconds: 200),
-              reverseTransitionDuration: const Duration(milliseconds: 200),
-              pageBuilder: (context, animation, secondaryAnimation) =>
-                  const StrategyView(),
-              transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: ScaleTransition(
-                    scale: Tween<double>(begin: 0.9, end: 1.0)
-                        .chain(CurveTween(curve: Curves.easeOut))
-                        .animate(animation),
-                    child: child,
-                  ),
-                );
-              },
-            ),
+            StrategyView.route(),
           );
         } else {
-          await navigateWithLoading(context, strategyId);
+          await navigateToLocalStrategy(context, strategyId);
         }
       }
     }
@@ -380,9 +348,12 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                                 leading: const Icon(
                                   Icons.file_download,
                                 ),
-                                child: const Text(
+                                child: Text(
                                   'Import .ica',
-                                  style: TextStyle(color: Colors.white),
+                                  style: TextStyle(
+                                    color:
+                                        Settings.tacticalVioletTheme.foreground,
+                                  ),
                                 ),
                               ),
                               ShadButton.ghost(
@@ -391,8 +362,13 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                                 leading: const Icon(
                                   Icons.archive_outlined,
                                 ),
-                                child: const Text('Import Backup',
-                                    style: TextStyle(color: Colors.white)),
+                                child: Text(
+                                  'Import Backup',
+                                  style: TextStyle(
+                                    color:
+                                        Settings.tacticalVioletTheme.foreground,
+                                  ),
+                                ),
                               ),
                               ShadButton.ghost(
                                 onPressed: handleExportLibrary,
@@ -400,8 +376,13 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                                 leading: const Icon(
                                   Icons.backup_outlined,
                                 ),
-                                child: const Text('Export Library',
-                                    style: TextStyle(color: Colors.white)),
+                                child: Text(
+                                  'Export Library',
+                                  style: TextStyle(
+                                    color:
+                                        Settings.tacticalVioletTheme.foreground,
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -448,7 +429,15 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           ),
           body: Padding(
             padding: const EdgeInsets.only(left: railReservedWidth),
-            child: FolderContent(folder: currentFolder),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeOutCubic,
+              child: KeyedSubtree(
+                key: ValueKey('$workspace/$cloudSection'),
+                child: FolderContent(folder: currentFolder),
+              ),
+            ),
           ),
         ),
         const Positioned(
@@ -592,7 +581,7 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOutCubic,
-        width: _expanded ? 226 : 64,
+        width: _expanded ? 184 : 64,
         margin: EdgeInsets.zero,
         decoration: BoxDecoration(
           color: Settings.tacticalVioletTheme.card.withValues(alpha: 0.96),
@@ -644,8 +633,23 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
                             : 'Log In',
                         onAuthAction: authState.isLoading
                             ? null
-                            : () {
+                            : () async {
                                 if (authState.isAuthenticated) {
+                                  // One accidental click on the avatar used
+                                  // to sign out instantly.
+                                  final confirmed =
+                                      await ConfirmAlertDialog.show(
+                                    context: context,
+                                    title: 'Sign out?',
+                                    content:
+                                        'Cloud strategies stay online; your '
+                                        'local strategies stay on this '
+                                        'device.',
+                                    confirmText: 'Sign Out',
+                                  );
+                                  if (!confirmed || !context.mounted) {
+                                    return;
+                                  }
                                   unawaited(
                                     ref.read(authProvider.notifier).signOut(),
                                   );
@@ -789,85 +793,81 @@ class _LibraryRailItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final selectedColor =
         Settings.tacticalVioletTheme.primary.withValues(alpha: 0.18);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        mouseCursor: data.onTap == null
-            ? SystemMouseCursors.basic
-            : SystemMouseCursors.click,
-        onTap: data.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          decoration: BoxDecoration(
-            color: data.selected ? selectedColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: data.selected
-                  ? Settings.tacticalVioletTheme.primary
-                  : Colors.transparent,
-            ),
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final showLabel = showDetails && constraints.maxWidth >= 96;
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: 26,
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: Icon(
-                        data.icon,
-                        size: 21,
-                        color: data.onTap == null
-                            ? Settings.tacticalVioletTheme.mutedForeground
-                            : null,
-                      ),
-                    ),
-                  ),
-                  Positioned.fill(
-                    left: 33,
-                    child: IgnorePointer(
-                      ignoring: !showLabel,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 120),
-                        opacity: expanded && showLabel ? 1 : 0,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              data.label,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            const SizedBox(height: 1),
-                            Text(
-                              data.description,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: Settings
-                                    .tacticalVioletTheme.mutedForeground,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ],
+    return Tooltip(
+      message: data.description,
+      waitDuration: const Duration(milliseconds: 500),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          mouseCursor: data.onTap == null
+              ? SystemMouseCursors.basic
+              : SystemMouseCursors.click,
+          onTap: data.onTap,
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 140),
+            opacity: data.onTap == null ? 0.55 : 1,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+              decoration: BoxDecoration(
+                color: data.selected ? selectedColor : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: data.selected
+                      ? Settings.tacticalVioletTheme.primary
+                      : Colors.transparent,
+                ),
+              ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final showLabel = showDetails && constraints.maxWidth >= 96;
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: 26,
+                        child: Align(
+                          alignment: Alignment.center,
+                          child: Icon(
+                            data.icon,
+                            size: 18,
+                            color: data.onTap == null
+                                ? Settings.tacticalVioletTheme.mutedForeground
+                                : null,
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
-              );
-            },
+                      Positioned.fill(
+                        left: 33,
+                        child: IgnorePointer(
+                          ignoring: !showLabel,
+                          child: AnimatedOpacity(
+                            duration: const Duration(milliseconds: 120),
+                            opacity: expanded && showLabel ? 1 : 0,
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                data.label,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
           ),
         ),
       ),

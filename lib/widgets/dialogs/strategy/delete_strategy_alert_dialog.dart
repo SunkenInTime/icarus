@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -62,14 +63,19 @@ class DeleteStrategyAlertDialog extends ConsumerWidget {
 
             Navigator.of(context).pop();
           },
-          child: const Row(
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.delete_forever, color: Colors.white),
-              SizedBox(width: 5),
+              Icon(
+                Icons.delete_forever,
+                color: Settings.tacticalVioletTheme.destructiveForeground,
+              ),
+              const SizedBox(width: 5),
               Text(
                 "Delete",
-                style: TextStyle(color: Colors.white),
+                style: TextStyle(
+                  color: Settings.tacticalVioletTheme.destructiveForeground,
+                ),
               ),
             ],
           ),

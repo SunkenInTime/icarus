@@ -16,6 +16,8 @@ import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_w
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 
+const Curve _pageTransitionCurve = Curves.easeOutCubic;
+
 Offset _overlayScreenPosition({
   required PlacedWidget widget,
   required CoordinateSystem coordinateSystem,
@@ -69,7 +71,9 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     if (_controller == null) {
       _controller = AnimationController(vsync: this, duration: duration)
         ..addListener(() {
-          // ref.read(transitionProvider.notifier).setProgress(_controller!.value);
+          ref.read(transitionProvider.notifier).setProgress(
+                _pageTransitionCurve.transform(_controller!.value),
+              );
           setState(() {});
         })
         ..addStatusListener((status) {
@@ -261,7 +265,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       return const SizedBox.shrink();
     }
 
-    final t = Curves.easeInOutCubic.transform(_controller!.value);
+    final t = _pageTransitionCurve.transform(_controller!.value);
     final agentSize =
         _lerpRequired(state.startAgentSize, state.endAgentSize, t);
     final abilitySize =

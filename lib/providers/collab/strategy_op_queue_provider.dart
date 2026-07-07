@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:convex_flutter/convex_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -77,8 +78,11 @@ final pendingStrategyOpsProvider = Provider<List<StrategyOp>>((ref) {
 
 class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   static const int _maxBatchSize = 40;
+  static const int _maxAttempts = 8;
   static const Duration _debounceDelay = Duration(milliseconds: 180);
   Timer? _debounceTimer;
+  Timer? _retryTimer;
+  int _offlineRetryCount = 0;
 
   ConvexStrategyRepository get _repo =>
       ref.read(convexStrategyRepositoryProvider);
@@ -86,6 +90,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   @override
   StrategyOpQueueState build() {
     ref.onDispose(() {
+      _retryTimer?.cancel();
       _debounceTimer?.cancel();
     });
     return StrategyOpQueueState(clientId: const Uuid().v4());
@@ -97,6 +102,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
 
     _debounceTimer?.cancel();
+    _retryTimer?.cancel();
+    _offlineRetryCount = 0;
     state = state.copyWith(
       strategyPublicId: strategyPublicId,
       clientId: const Uuid().v4(),
@@ -109,11 +116,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   void enqueue(StrategyOp op, {bool flushImmediately = false}) {
-    final entityKey = entityKeyForStrategyOp(op);
+    final entityKey = EntitySyncKey.forStrategyOp(op);
     if (entityKey == null) {
       return;
     }
-    final pageId = pageIdForEntityKey(entityKey);
+    final pageId = entityKey.pageId;
     if (pageId != null) {
       syncDesiredOpsForPage(
         pageId: pageId,
@@ -148,11 +155,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     );
 
     for (final op in ops) {
-      final entityKey = entityKeyForStrategyOp(op);
+      final entityKey = EntitySyncKey.forStrategyOp(op);
       if (entityKey == null) {
         continue;
       }
-      final pageId = pageIdForEntityKey(entityKey);
+      final pageId = entityKey.pageId;
       if (pageId == null) {
         genericQueued[entityKey] = QueuedEntityIntent(
           entityKey: entityKey,
@@ -265,7 +272,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     );
     final pageKeys = clearMissing
         ? <EntitySyncKey>{
-            ...queued.keys.where((key) => pageIdForEntityKey(key) == pageId),
+            ...queued.keys.where((key) => key.pageId == pageId),
             ...desiredOpsByEntityKey.keys,
           }
         : desiredOpsByEntityKey.keys.toSet();
@@ -336,6 +343,19 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _scheduleFlush(flushImmediately: flushImmediately);
   }
 
+  /// Clears a stale [StrategyOpQueueState.lastError] once nothing is left to
+  /// send — e.g. after ops were dropped at max attempts, where the error
+  /// would otherwise stick forever with no flush able to clear it.
+  void clearStaleError() {
+    if (state.lastError == null ||
+        state.isFlushing ||
+        state.queuedByEntityKey.isNotEmpty ||
+        state.inFlightByEntityKey.isNotEmpty) {
+      return;
+    }
+    state = state.copyWith(clearError: true);
+  }
+
   Future<void> flushNow() async {
     if (state.isFlushing) {
       return;
@@ -362,23 +382,18 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
 
     if (!auth.isAuthenticated || !auth.isConvexUserReady || !isConnected) {
-      final incremented = <EntitySyncKey, QueuedEntityIntent>{
-        for (final entry in state.queuedByEntityKey.entries)
-          entry.key: QueuedEntityIntent(
-            entityKey: entry.key,
-            pending: entry.value.pending.incrementAttempt(),
-          ),
-      };
-      state = state.copyWith(
-        queuedByEntityKey: incremented,
-        lastError: !auth.isAuthenticated
-            ? 'Not authenticated for cloud sync.'
-            : (!auth.isConvexUserReady
-                ? 'Cloud user setup is not ready.'
-                : 'Cloud connection is offline.'),
-      );
+      final networkError = !auth.isAuthenticated
+          ? 'Not authenticated for cloud sync.'
+          : (!auth.isConvexUserReady
+              ? 'Cloud user setup is not ready.'
+              : 'Cloud connection is offline.');
       _scheduleRetry(
-          incremented.values.map((intent) => intent.pending).toList());
+        state.queuedByEntityKey.values.map((intent) => intent.pending).toList(),
+        delay: _offlineRetryDelay(),
+      );
+      state = state.copyWith(
+        lastError: networkError,
+      );
       return;
     }
 
@@ -419,6 +434,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     );
 
     try {
+      _retryTimer?.cancel();
+      _retryTimer = null;
+
+      _offlineRetryCount = 0;
       final acks = await _repo.applyBatch(
         strategyPublicId: strategyPublicId,
         clientId: state.clientId ?? const Uuid().v4(),
@@ -502,6 +521,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       state.inFlightByEntityKey,
     );
     final retried = <PendingOp>[];
+    final droppedEntityKeys = <EntitySyncKey>[];
 
     for (final sent in batch) {
       inFlight.remove(sent.entityKey);
@@ -509,6 +529,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         continue;
       }
       final retriedPending = sent.pending.incrementAttempt();
+      if (retriedPending.attempts > _maxAttempts) {
+        droppedEntityKeys.add(sent.entityKey);
+        _debugLog(
+          'queued.drop ${sent.entityKey} reason=max_attempts_reached '
+          'attempts=${retriedPending.attempts}',
+        );
+        continue;
+      }
       queued[sent.entityKey] = QueuedEntityIntent(
         entityKey: sent.entityKey,
         pending: retriedPending,
@@ -521,7 +549,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       queuedByEntityKey: queued,
       inFlightByEntityKey: inFlight,
       isFlushing: false,
-      lastError: lastError,
+      lastError: _appendDroppedAttemptError(lastError, droppedEntityKeys),
     );
     _scheduleRetry(retried);
   }
@@ -538,7 +566,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     });
   }
 
-  void _scheduleRetry(List<PendingOp> pending) {
+  void _scheduleRetry(
+    List<PendingOp> pending, {
+    Duration? delay,
+  }) {
     if (pending.isEmpty) {
       return;
     }
@@ -547,13 +578,21 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       0,
       (acc, next) => math.max(acc, next.attempts),
     );
-    final exponent = maxAttempt.clamp(0, 6);
-    final delayMs = 300 * (1 << exponent);
+    final delayMs = (delay ??
+            Duration(milliseconds: 300 * (1 << maxAttempt.clamp(0, 6))))
+        .inMilliseconds;
 
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(Duration(milliseconds: delayMs), () {
+    _retryTimer?.cancel();
+    _retryTimer = Timer(Duration(milliseconds: delayMs), () {
       unawaited(flushNow());
     });
+  }
+
+  Duration _offlineRetryDelay() {
+    final exponent = _offlineRetryCount.clamp(0, 6);
+    final delay = Duration(milliseconds: 300 * (1 << exponent));
+    _offlineRetryCount += 1;
+    return delay;
   }
 
   bool _sameIntent(StrategyOp left, StrategyOp right) {
@@ -561,10 +600,21 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         left.entityType == right.entityType &&
         left.entityPublicId == right.entityPublicId &&
         left.pagePublicId == right.pagePublicId &&
-        left.payload == right.payload &&
+        cloudJsonEquivalent(left.payload, right.payload) &&
         left.sortIndex == right.sortIndex &&
         left.expectedRevision == right.expectedRevision &&
         left.expectedSequence == right.expectedSequence;
+  }
+
+  String _appendDroppedAttemptError(
+    String baseError,
+    List<EntitySyncKey> droppedEntityKeys,
+  ) {
+    if (droppedEntityKeys.isEmpty) {
+      return baseError;
+    }
+    final entityKeys = droppedEntityKeys.join(', ');
+    return '$baseError (dropped after $_maxAttempts attempts: $entityKeys)';
   }
 
   StrategyOp? _mergeQueuedIntent(StrategyOp existing, StrategyOp desired) {

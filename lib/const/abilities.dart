@@ -10,8 +10,13 @@ import 'package:icarus/widgets/draggable_widgets/ability/deadlock_barrier_mesh_w
 import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/sector_circle_widget.dart';
-import 'package:icarus/widgets/draggable_widgets/agents/agent_icon_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/simple_image_ability_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+// Ability range inputs are gameplay measurements. CircleAbility and
+// SectorCircleAbility treat size/innerRangeSize as radii and convert them with
+// AgentData.inGameMetersDiameter; other shapes use AgentData.inGameMeters where
+// their dimensions represent direct lengths.
 
 bool isRotatable(Ability ability) {
   switch (ability) {
@@ -60,6 +65,7 @@ sealed class Ability {
     List<double>? armLengthsMeters,
     AbilityVisualState? visualState,
     String? lineUpId,
+    String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
   });
@@ -80,6 +86,7 @@ class BaseAbility extends Ability {
     List<double>? armLengthsMeters,
     AbilityVisualState? visualState,
     String? lineUpId,
+    String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
   }) {
@@ -88,6 +95,7 @@ class BaseAbility extends Ability {
       iconPath: iconPath,
       id: id,
       lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
     );
@@ -123,11 +131,13 @@ class ImageAbility extends Ability {
     List<double>? armLengthsMeters,
     AbilityVisualState? visualState,
     String? lineUpId,
+    String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
   }) {
-    return AgentIconWidget(
+    return SimpleImageAbilityWidget(
       lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       imagePath: imagePath,
       size: size * mapScale,
       id: id,
@@ -157,12 +167,15 @@ class CircleAbility extends Ability {
     this.rangeFillColor,
     this.innerRangeColor,
     this.opacity,
-    this.innerRangeSize,
+    double? innerRangeSize,
   })  : assert(
           innerRangeSize == null || innerRangeColor != null,
           'innerRangeColor is required when innerRangeSize is set',
         ),
-        size = size * AgentData.inGameMetersDiameter;
+        size = size * AgentData.inGameMetersDiameter,
+        innerRangeSize = innerRangeSize != null
+            ? innerRangeSize * AgentData.inGameMetersDiameter
+            : null;
 
   final double size;
   final Color rangeOutlineColor;
@@ -202,6 +215,7 @@ class CircleAbility extends Ability {
     List<double>? armLengthsMeters,
     AbilityVisualState? visualState,
     String? lineUpId,
+    String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
   }) {
@@ -218,6 +232,7 @@ class CircleAbility extends Ability {
       id: id,
       isAlly: isAlly,
       lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
@@ -235,12 +250,15 @@ class SectorCircleAbility extends Ability {
     this.rangeFillColor,
     this.innerRangeColor,
     this.opacity = 70,
-    this.innerRangeSize,
+    double? innerRangeSize,
   })  : assert(
           innerRangeSize == null || innerRangeColor != null,
           'innerRangeColor is required when innerRangeSize is set',
         ),
-        size = size * AgentData.inGameMetersDiameter;
+        size = size * AgentData.inGameMetersDiameter,
+        innerRangeSize = innerRangeSize != null
+            ? innerRangeSize * AgentData.inGameMetersDiameter
+            : null;
 
   final double size;
   final Color rangeOutlineColor;
@@ -287,6 +305,7 @@ class SectorCircleAbility extends Ability {
     List<double>? armLengthsMeters,
     AbilityVisualState? visualState,
     String? lineUpId,
+    String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
   }) {
@@ -304,6 +323,7 @@ class SectorCircleAbility extends Ability {
       id: id,
       isAlly: isAlly,
       lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       rotation: rotation,
       visualState: visualState,
       watchMouse: watchMouse,
@@ -391,6 +411,7 @@ class SquareAbility extends Ability {
     List<double>? armLengthsMeters,
     AbilityVisualState? visualState,
     String? lineUpId,
+    String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
   }) {
@@ -404,6 +425,7 @@ class SquareAbility extends Ability {
       rotation: rotation,
       id: id,
       isAlly: isAlly,
+      lineUpItemId: lineUpItemId,
       hasTopborder: hasTopborder,
       hasSideBorders: hasSideBorders,
       isWall: isWall,
@@ -454,6 +476,7 @@ class CenterSquareAbility extends Ability {
     List<double>? armLengthsMeters,
     AbilityVisualState? visualState,
     String? lineUpId,
+    String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
   }) {
@@ -466,6 +489,7 @@ class CenterSquareAbility extends Ability {
       id: id,
       isAlly: isAlly,
       lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
@@ -506,10 +530,13 @@ class RotatableImageAbility extends Ability {
     List<double>? armLengthsMeters,
     AbilityVisualState? visualState,
     String? lineUpId,
+    String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return RotatableImageWidget(
+      lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       imagePath: imagePath,
       height: height * mapScale,
       width: width * mapScale,
@@ -556,6 +583,7 @@ class ResizableSquareAbility extends SquareAbility {
     List<double>? armLengthsMeters,
     AbilityVisualState? visualState,
     String? lineUpId,
+    String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
   }) {
@@ -574,6 +602,7 @@ class ResizableSquareAbility extends SquareAbility {
       hasSideBorders: hasSideBorders,
       isTransparent: isTransparent,
       lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       rotation: rotation,
       visualState: visualState,
       watchMouse: watchMouse,
@@ -685,11 +714,13 @@ class DeadlockBarrierMeshAbility extends Ability {
     List<double>? armLengthsMeters,
     AbilityVisualState? visualState,
     String? lineUpId,
+    String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
   }) {
     return DeadlockBarrierMeshWidget(
       lineUpId: lineUpId,
+      lineUpItemId: lineUpItemId,
       iconPath: iconPath,
       id: id,
       isAlly: isAlly,

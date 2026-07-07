@@ -12,6 +12,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/drawing_element.dart';
+import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
@@ -25,7 +26,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -475,7 +476,9 @@ class StrategyImportExportService {
   }) {
     return ref.read(folderProvider.notifier).createFolder(
           name: name,
-          icon: Icons.drive_folder_upload,
+          iconId: FolderIconRegistry.idForLegacyIconData(
+            Icons.drive_folder_upload,
+          ),
           color: FolderColor.generic,
           parentID: parentFolderId,
         );
@@ -882,7 +885,7 @@ class StrategyImportExportService {
       final createdFolder =
           await ref.read(folderProvider.notifier).createFolder(
                 name: folderEntry.name,
-                icon: folderEntry.icon.toIconData(),
+                iconId: folderEntry.iconId,
                 color: folderEntry.color,
                 customColor: folderEntry.customColorValue == null
                     ? null
@@ -1406,7 +1409,7 @@ class StrategyImportExportService {
       final createdFolder =
           await ref.read(folderProvider.notifier).createFolder(
                 name: folderEntry.name,
-                icon: folderEntry.icon.toIconData(),
+                iconId: folderEntry.iconId,
                 color: folderEntry.color,
                 customColor: folderEntry.customColorValue == null
                     ? null
@@ -1732,16 +1735,24 @@ class StrategyImportExportService {
                 ? globals.defaultThemeProfileIdForNewStrategies!
                 : MapThemeProfilesProvider.immutableDefaultProfileId);
 
+    final currentPreferences = appPreferencesBox
+            .get(MapThemeProfilesProvider.appPreferencesSingletonKey) ??
+        AppPreferences(
+          defaultThemeProfileIdForNewStrategies:
+              MapThemeProfilesProvider.immutableDefaultProfileId,
+        );
     await appPreferencesBox.put(
       MapThemeProfilesProvider.appPreferencesSingletonKey,
-      (appPreferencesBox
-                  .get(MapThemeProfilesProvider.appPreferencesSingletonKey) ??
-              AppPreferences(
-                defaultThemeProfileIdForNewStrategies:
-                    MapThemeProfilesProvider.immutableDefaultProfileId,
-              ))
-          .copyWith(
+      currentPreferences.copyWith(
         defaultThemeProfileIdForNewStrategies: resolvedDefaultProfileId,
+        showSpawnBarrier:
+            globals.showSpawnBarrier ?? currentPreferences.showSpawnBarrier,
+        showUltOrbs: globals.showUltOrbs ?? currentPreferences.showUltOrbs,
+        showRegionNames:
+            globals.showRegionNames ?? currentPreferences.showRegionNames,
+        customColorValues: globals.hasCustomColorValues
+            ? globals.customColorValues
+            : currentPreferences.customColorValues,
       ),
     );
 
@@ -2143,6 +2154,7 @@ class StrategyImportExportService {
         name: currentFolder.name,
         parentManifestId: parentManifestId,
         archivePath: normalizeArchivePath(currentArchivePath),
+        iconId: currentFolder.iconId,
         icon: ArchiveIconDescriptor.fromIconData(currentFolder.icon),
         color: currentFolder.color,
         customColorValue: currentFolder.customColor?.toARGB32(),
@@ -2240,6 +2252,10 @@ class StrategyImportExportService {
       themeProfiles: profiles,
       defaultThemeProfileIdForNewStrategies:
           appPreferences?.defaultThemeProfileIdForNewStrategies,
+      showSpawnBarrier: appPreferences?.showSpawnBarrier,
+      showUltOrbs: appPreferences?.showUltOrbs,
+      showRegionNames: appPreferences?.showRegionNames,
+      customColorValues: appPreferences?.customColorValues ?? const [],
       favoriteAgents: favoriteAgents,
     );
   }
@@ -2306,7 +2322,6 @@ class StrategyImportExportService {
     Directory? saveDir,
     String? outputFilePath,
   }) async {
-
     final payload = {
       'versionNumber': '${Settings.versionNumber}',
       'mapData': '${Maps.mapNames[strategy.mapData]}',
@@ -2366,7 +2381,8 @@ class StrategyImportExportService {
     final strategyId = snapshot.header.publicId;
     final assetIds = <String>{};
     for (final page in snapshot.pages) {
-      for (final element in snapshot.elementsByPage[page.publicId] ?? const []) {
+      for (final element
+          in snapshot.elementsByPage[page.publicId] ?? const []) {
         if (element.deleted || element.elementType != 'image') {
           continue;
         }
@@ -2378,18 +2394,11 @@ class StrategyImportExportService {
           continue;
         }
         try {
-          final decoded = jsonDecode(lineup.payload);
-          final mapped = decoded is Map<String, dynamic>
-              ? decoded
-              : decoded is Map
-                  ? Map<String, dynamic>.from(decoded)
-                  : null;
-          if (mapped == null) {
-            continue;
-          }
-          final parsed = LineUp.fromJson(mapped);
-          for (final image in parsed.images) {
-            assetIds.add(image.id);
+          final parsed = LineUpGroup.fromJson(cloudPayloadData(lineup.payload));
+          for (final item in parsed.items) {
+            for (final image in item.images) {
+              assetIds.add(image.id);
+            }
           }
         } catch (_) {
           continue;
@@ -2412,8 +2421,9 @@ class StrategyImportExportService {
   }
 
   Future<void> exportCloudStrategy(String strategyId) async {
-    final snapshot =
-        await ref.read(convexStrategyRepositoryProvider).fetchSnapshot(strategyId);
+    final snapshot = await ref
+        .read(convexStrategyRepositoryProvider)
+        .fetchSnapshot(strategyId);
     await _ensureRemoteAssetsCached(snapshot);
     final strategy = _strategyDataFromRemoteSnapshot(snapshot);
     final outputFile = await FilePicker.platform.saveFile(
@@ -2441,14 +2451,16 @@ class StrategyImportExportService {
     await zipStrategy(id: id, outputFilePath: outputFile);
   }
 
-  StrategyData _strategyDataFromRemoteSnapshot(RemoteStrategySnapshot snapshot) {
+  StrategyData _strategyDataFromRemoteSnapshot(
+      RemoteStrategySnapshot snapshot) {
     final pages = <StrategyPage>[];
     final mapValue = Maps.mapNames.entries
         .where((entry) => entry.value == snapshot.header.mapData)
         .map((entry) => entry.key)
         .first;
 
-    for (final remotePage in snapshot.pages..sort((a, b) => a.sortIndex.compareTo(b.sortIndex))) {
+    for (final remotePage in snapshot.pages
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex))) {
       final elements = snapshot.elementsByPage[remotePage.publicId] ?? const [];
       final lineups = snapshot.lineupsByPage[remotePage.publicId] ?? const [];
       final drawingData = <DrawingElement>[];
@@ -2486,23 +2498,20 @@ class StrategyImportExportService {
         } catch (_) {}
       }
 
-      final parsedLineups = <LineUp>[];
+      final parsedLineUpGroups = <LineUpGroup>[];
       for (final lineup in lineups) {
         if (lineup.deleted) continue;
         try {
-          final decoded = jsonDecode(lineup.payload);
-          if (decoded is Map<String, dynamic>) {
-            parsedLineups.add(LineUp.fromJson(decoded));
-          } else if (decoded is Map) {
-            parsedLineups.add(LineUp.fromJson(Map<String, dynamic>.from(decoded)));
-          }
+          parsedLineUpGroups.add(
+            LineUpGroup.fromJson(cloudPayloadData(lineup.payload)),
+          );
         } catch (_) {}
       }
 
       StrategySettings settings = StrategySettings();
       if (remotePage.settings != null && remotePage.settings!.isNotEmpty) {
         try {
-          settings = StrategySettings.fromJson(jsonDecode(remotePage.settings!));
+          settings = StrategySettings.fromJson(remotePage.settings!);
         } catch (_) {}
       }
 
@@ -2519,7 +2528,7 @@ class StrategyImportExportService {
           sortIndex: remotePage.sortIndex,
           isAttack: remotePage.isAttack,
           settings: settings,
-          lineUps: parsedLineups,
+          lineUpGroups: parsedLineUpGroups,
         ),
       );
     }
@@ -2528,14 +2537,7 @@ class StrategyImportExportService {
     final rawPalette = snapshot.header.themeOverridePalette;
     if (rawPalette != null && rawPalette.isNotEmpty) {
       try {
-        final decoded = jsonDecode(rawPalette);
-        if (decoded is Map<String, dynamic>) {
-          overridePalette = MapThemePalette.fromJson(decoded);
-        } else if (decoded is Map) {
-          overridePalette = MapThemePalette.fromJson(
-            Map<String, dynamic>.from(decoded),
-          );
-        }
+        overridePalette = MapThemePalette.fromJson(rawPalette);
       } catch (_) {}
     }
 

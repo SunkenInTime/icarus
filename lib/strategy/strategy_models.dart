@@ -2,7 +2,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/providers/map_theme_provider.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';

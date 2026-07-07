@@ -1,4 +1,5 @@
 declare const process: { env: Record<string, string | undefined> };
+import { internalError, invalidPayloadError } from "./errors";
 
 export type R2Config = {
   accountId: string;
@@ -24,6 +25,7 @@ const r2Service = "s3";
 const unsignedPayload = "UNSIGNED-PAYLOAD";
 const emptyPayloadHash =
   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+let cachedR2PublicBaseUrl: string | null = null;
 
 const mimeByExtension: Record<string, string> = {
   ".png": "image/png",
@@ -37,7 +39,7 @@ const mimeByExtension: Record<string, string> = {
 function requiredEnv(name: string): string {
   const value = process.env[name];
   if (value === undefined || value.trim() === "") {
-    throw new Error(
+    throw internalError(
       `Missing Cloudflare R2 environment variable ${name}. Set R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_PUBLIC_BASE_URL on the Convex deployment.`,
     );
   }
@@ -55,13 +57,13 @@ function optionalPositiveIntEnv(
   }
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(`${name} must be a positive integer.`);
+    throw invalidPayloadError(`${name} must be a positive integer.`);
   }
   if (options.min !== undefined && parsed < options.min) {
-    throw new Error(`${name} must be at least ${options.min}.`);
+    throw invalidPayloadError(`${name} must be at least ${options.min}.`);
   }
   if (options.max !== undefined && parsed > options.max) {
-    throw new Error(`${name} must be at most ${options.max}.`);
+    throw invalidPayloadError(`${name} must be at most ${options.max}.`);
   }
   return parsed;
 }
@@ -93,7 +95,11 @@ export function getR2Config(): R2Config {
 }
 
 export function getR2PublicBaseUrl(): string {
-  return requiredEnv("R2_PUBLIC_BASE_URL").replace(/\/+$/, "");
+  cachedR2PublicBaseUrl ??= requiredEnv("R2_PUBLIC_BASE_URL").replace(
+    /\/+$/,
+    "",
+  );
+  return cachedR2PublicBaseUrl;
 }
 
 export function normalizeImageExtension(extension: string | undefined): string {
@@ -120,7 +126,7 @@ export function validateImageUploadMetadata(args: {
   const fileExtension = normalizeImageExtension(args.fileExtension);
   const expectedMimeType = expectedMimeTypeForExtension(fileExtension);
   if (expectedMimeType === null) {
-    throw new Error(
+    throw invalidPayloadError(
       `Unsupported image extension "${args.fileExtension ?? ""}". Supported extensions: ${Object.keys(
         mimeByExtension,
       ).join(", ")}.`,
@@ -129,7 +135,7 @@ export function validateImageUploadMetadata(args: {
 
   const mimeType = (args.mimeType ?? expectedMimeType).toLowerCase();
   if (mimeType !== expectedMimeType) {
-    throw new Error(
+    throw invalidPayloadError(
       `Image MIME type ${mimeType} does not match ${fileExtension} (${expectedMimeType}).`,
     );
   }
@@ -140,7 +146,7 @@ export function validateImageUploadMetadata(args: {
       args.byteSize <= 0 ||
       args.byteSize > args.maxImageBytes)
   ) {
-    throw new Error(
+    throw invalidPayloadError(
       `Image is too large. Maximum allowed size is ${args.maxImageBytes} bytes.`,
     );
   }
@@ -166,7 +172,7 @@ function safeObjectKeySegment(value: string): string {
 function randomHex(byteLength: number): string {
   const cryptoApi = globalThis.crypto;
   if (cryptoApi === undefined) {
-    throw new Error("Web Crypto is unavailable; cannot create R2 object key.");
+    throw internalError("Web Crypto is unavailable; cannot create R2 object key.");
   }
   const bytes = new Uint8Array(byteLength);
   cryptoApi.getRandomValues(bytes);
@@ -385,7 +391,7 @@ export async function headR2Object(
     return null;
   }
   if (!response.ok) {
-    throw new Error(`R2 HEAD failed with ${response.status}.`);
+    throw internalError(`R2 HEAD failed with ${response.status}.`);
   }
   const byteSize = Number.parseInt(response.headers.get("content-length") ?? "", 10);
   return {
@@ -404,6 +410,6 @@ export async function deleteR2Object(
     return;
   }
   if (!response.ok) {
-    throw new Error(`R2 DELETE failed with ${response.status}.`);
+    throw internalError(`R2 DELETE failed with ${response.status}.`);
   }
 }

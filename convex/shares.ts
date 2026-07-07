@@ -4,9 +4,16 @@ import { v } from "convex/values";
 import {
   assertFolderRole,
   assertStrategyRole,
+  higherCollaboratorRole,
   requireCurrentUser,
+  type CollaboratorRole,
 } from "./lib/auth";
 import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
+import {
+  notFoundError,
+  errorWithCode,
+  conflictError,
+} from "./lib/errors";
 
 const targetTypeValidator = v.union(v.literal("strategy"), v.literal("folder"));
 const collaboratorRoleValidator = v.union(v.literal("viewer"), v.literal("editor"));
@@ -35,15 +42,9 @@ export const list = query({
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
 
     if (resolved.strategy !== null) {
-      const { role } = await assertStrategyRole(ctx, resolved.strategy, "owner");
-      if (role !== "owner") {
-        throw new Error("Forbidden");
-      }
+      await assertStrategyRole(ctx, resolved.strategy, "owner");
     } else if (resolved.folder !== null) {
-      const { role } = await assertFolderRole(ctx, resolved.folder, "owner");
-      if (role !== "owner") {
-        throw new Error("Forbidden");
-      }
+      await assertFolderRole(ctx, resolved.folder, "owner");
     }
 
     const links =
@@ -80,15 +81,17 @@ export const create = mutation({
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
 
     if (resolved.strategy !== null) {
-      const { role } = await assertStrategyRole(ctx, resolved.strategy, "owner");
-      if (role !== "owner") {
-        throw new Error("Forbidden");
-      }
+      await assertStrategyRole(ctx, resolved.strategy, "owner");
     } else if (resolved.folder !== null) {
-      const { role } = await assertFolderRole(ctx, resolved.folder, "owner");
-      if (role !== "owner") {
-        throw new Error("Forbidden");
-      }
+      await assertFolderRole(ctx, resolved.folder, "owner");
+    }
+
+    const existingLink = await ctx.db
+      .query("shareLinks")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .first();
+    if (existingLink !== null) {
+      throw conflictError(`Share token already exists: ${args.token}`);
     }
 
     await ctx.db.insert("shareLinks", {
@@ -116,15 +119,9 @@ export const revoke = mutation({
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
 
     if (resolved.strategy !== null) {
-      const { role } = await assertStrategyRole(ctx, resolved.strategy, "owner");
-      if (role !== "owner") {
-        throw new Error("Forbidden");
-      }
+      await assertStrategyRole(ctx, resolved.strategy, "owner");
     } else if (resolved.folder !== null) {
-      const { role } = await assertFolderRole(ctx, resolved.folder, "owner");
-      if (role !== "owner") {
-        throw new Error("Forbidden");
-      }
+      await assertFolderRole(ctx, resolved.folder, "owner");
     }
 
     const link = await ctx.db
@@ -133,14 +130,14 @@ export const revoke = mutation({
       .first();
 
     if (link === null) {
-      throw new Error("Share link not found");
+      throw notFoundError("Share link", args.token);
     }
 
     if (
       (resolved.strategy !== null && link.strategyId !== resolved.strategy._id) ||
       (resolved.folder !== null && link.folderId !== resolved.folder._id)
     ) {
-      throw new Error("Share link not found");
+      throw notFoundError("Share link", args.token);
     }
 
     await ctx.db.patch(link._id, {
@@ -164,19 +161,23 @@ export const redeem = mutation({
       .first();
 
     if (link === null) {
-      throw new Error("Share link not found");
+      throw notFoundError("Share link", args.token);
     }
 
     if (link.revokedAt !== undefined) {
-      throw new Error("Share link revoked");
+      throw errorWithCode("SHARE_LINK_REVOKED", "Share link revoked");
     }
 
     if (link.targetType === "strategy") {
       const strategy = link.strategyId === undefined ? null : await ctx.db.get(link.strategyId);
       if (strategy === null) {
-        throw new Error("Strategy not found");
+        throw notFoundError(
+          "Strategy",
+          link.strategyId === undefined ? "unknown" : link.strategyId,
+        );
       }
 
+      let redeemedRole: CollaboratorRole = link.role;
       if (strategy.ownerId !== user._id) {
         const existingMembership = await ctx.db
           .query("strategyCollaborators")
@@ -195,10 +196,16 @@ export const redeem = mutation({
             updatedAt: Date.now(),
           });
         } else {
-          await ctx.db.patch(existingMembership._id, {
-            role: link.role,
-            updatedAt: Date.now(),
-          });
+          redeemedRole = higherCollaboratorRole(
+            existingMembership.role,
+            link.role,
+          );
+          if (redeemedRole !== existingMembership.role) {
+            await ctx.db.patch(existingMembership._id, {
+              role: redeemedRole,
+              updatedAt: Date.now(),
+            });
+          }
         }
       }
 
@@ -210,15 +217,16 @@ export const redeem = mutation({
         targetType: "strategy",
         strategyPublicId: strategy.publicId,
         folderPublicId: folder?.publicId ?? null,
-        role: strategy.ownerId === user._id ? "owner" : link.role,
+        role: strategy.ownerId === user._id ? "owner" : redeemedRole,
       };
     }
 
     const folder = link.folderId === undefined ? null : await ctx.db.get(link.folderId);
     if (folder === null) {
-      throw new Error("Folder not found");
+      throw notFoundError("Folder", args.token);
     }
 
+    let redeemedRole: CollaboratorRole = link.role;
     if (folder.ownerId !== user._id) {
       const existingMembership = await ctx.db
         .query("folderCollaborators")
@@ -237,10 +245,16 @@ export const redeem = mutation({
           updatedAt: Date.now(),
         });
       } else {
-        await ctx.db.patch(existingMembership._id, {
-          role: link.role,
-          updatedAt: Date.now(),
-        });
+        redeemedRole = higherCollaboratorRole(
+          existingMembership.role,
+          link.role,
+        );
+        if (redeemedRole !== existingMembership.role) {
+          await ctx.db.patch(existingMembership._id, {
+            role: redeemedRole,
+            updatedAt: Date.now(),
+          });
+        }
       }
     }
 
@@ -248,7 +262,7 @@ export const redeem = mutation({
       ok: true,
       targetType: "folder",
       folderPublicId: folder.publicId,
-      role: folder.ownerId === user._id ? "owner" : link.role,
+      role: folder.ownerId === user._id ? "owner" : redeemedRole,
     };
   },
 });
