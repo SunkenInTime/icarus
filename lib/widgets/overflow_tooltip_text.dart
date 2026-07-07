@@ -27,6 +27,7 @@ class OverflowTooltipText extends StatelessWidget {
         final painter = TextPainter(
           text: TextSpan(text: text, style: effectiveStyle),
           maxLines: 1,
+          ellipsis: '\u2026',
           textDirection: Directionality.of(context),
           textScaler: MediaQuery.textScalerOf(context),
         )..layout(maxWidth: constraints.maxWidth);
