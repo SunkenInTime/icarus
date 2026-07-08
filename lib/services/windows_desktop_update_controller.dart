@@ -14,7 +14,7 @@ import 'package:icarus/services/windows_desktop_update_restart_service.dart';
 /// Flip to true to force the desktop update dialog to appear with fake data,
 /// regardless of platform/install checks. Debug builds only; for designing
 /// the update experience without waiting for a real update.
-const bool kDebugForceDesktopUpdateDialog = false;
+const bool kDebugForceDesktopUpdateDialog = true;
 
 class WindowsDesktopUpdateController extends ChangeNotifier {
   WindowsDesktopUpdateController({

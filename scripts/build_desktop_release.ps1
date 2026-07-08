@@ -79,12 +79,12 @@ else {
 }
 
 $channelRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("{0}\updates\windows\{1}" -f $PagesStageRoot, $Channel)
+if (Test-Path $channelRoot) {
+    Remove-Item -Path $channelRoot -Recurse -Force
+}
 New-Item -ItemType Directory -Force -Path $channelRoot | Out-Null
 
 $stagedArchivePath = Join-Path $channelRoot $versionInfo.WindowsArchiveFolderName
-if (Test-Path $stagedArchivePath) {
-    Remove-Item -Path $stagedArchivePath -Recurse -Force
-}
 Copy-Item -Path $distArchivePath -Destination $stagedArchivePath -Recurse
 
 $manifestOutputPath = Join-Path $channelRoot "app-archive.json"
@@ -111,6 +111,9 @@ if (Test-Path $installerOutputDir) {
     }
 
     $downloadsRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("{0}\downloads\windows\{1}" -f $PagesStageRoot, $Channel)
+    if (Test-Path $downloadsRoot) {
+        Remove-Item -Path $downloadsRoot -Recurse -Force
+    }
     New-Item -ItemType Directory -Force -Path $downloadsRoot | Out-Null
 
     $versionedInstallerPath = Join-Path $downloadsRoot $installerFileName

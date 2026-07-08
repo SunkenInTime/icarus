@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -261,9 +263,23 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
               currentStrategyId: currentStrategy.id,
             );
 
-            return OverlayPortal(
+            return OverlayPortal.overlayChildLayoutBuilder(
               controller: _controller,
-              overlayChildBuilder: (context) {
+              overlayChildBuilder: (context, layoutInfo) {
+                final childRect = MatrixUtils.transformRect(
+                  layoutInfo.childPaintTransform,
+                  Offset.zero & layoutInfo.childSize,
+                );
+                final maxLeft = math.max(
+                  0.0,
+                  layoutInfo.overlaySize.width - _barWidth,
+                );
+                final left = childRect.left.clamp(0.0, maxLeft).toDouble();
+                final top = childRect.bottom + 6;
+                final maxHeight = math.max(
+                  0.0,
+                  math.min(280.0, layoutInfo.overlaySize.height - top - 8),
+                );
                 return Stack(
                   children: [
                     Positioned.fill(
@@ -272,67 +288,60 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                         onTap: _closePortal,
                       ),
                     ),
-                    CompositedTransformFollower(
-                      link: _layerLink,
-                      targetAnchor: Alignment.bottomLeft,
-                      followerAnchor: Alignment.topLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: Container(
-                            width: _barWidth,
-                            constraints: const BoxConstraints(maxHeight: 280),
-                            decoration: BoxDecoration(
-                              color: Settings.tacticalVioletTheme.background,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Settings.tacticalVioletTheme.border,
-                              ),
+                    Positioned(
+                      left: left,
+                      top: top,
+                      width: _barWidth,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: Container(
+                          constraints: BoxConstraints(maxHeight: maxHeight),
+                          decoration: BoxDecoration(
+                            color: Settings.tacticalVioletTheme.background,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Settings.tacticalVioletTheme.border,
                             ),
-                            child: recents.isEmpty
-                                ? Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 10,
-                                    ),
-                                    child: Text(
-                                      'No recent strategies',
-                                      style: ShadTheme.of(context)
-                                          .textTheme
-                                          .small
-                                          .copyWith(color: Colors.white70),
-                                    ),
-                                  )
-                                : ListView.separated(
-                                    shrinkWrap: true,
-                                    padding: const EdgeInsets.all(8),
-                                    itemCount: recents.length,
-                                    separatorBuilder: (_, __) =>
-                                        const SizedBox(height: 8),
-                                    itemBuilder: (context, index) {
-                                      final strategy = recents[index];
-                                      final attackLabel =
-                                          _attackLabel(strategy);
-                                      final mapName = _mapName(strategy);
-                                      final thumbnail =
-                                          'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp';
-                                      return _StrategyQuickSwitchItem(
-                                        strategyName: strategy.name,
-                                        mapName: mapName,
-                                        attackLabel: attackLabel,
-                                        attackColor: _attackColor(attackLabel),
-                                        lastEdited:
-                                            _timeAgo(strategy.lastEdited),
-                                        thumbnailPath: thumbnail,
-                                        onTap: _isSwitching || _isEditingName
-                                            ? null
-                                            : () =>
-                                                _switchStrategy(strategy.id),
-                                      );
-                                    },
-                                  ),
                           ),
+                          child: recents.isEmpty
+                              ? Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                  child: Text(
+                                    'No recent strategies',
+                                    style: ShadTheme.of(context)
+                                        .textTheme
+                                        .small
+                                        .copyWith(color: Colors.white70),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  padding: const EdgeInsets.all(8),
+                                  itemCount: recents.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 8),
+                                  itemBuilder: (context, index) {
+                                    final strategy = recents[index];
+                                    final attackLabel = _attackLabel(strategy);
+                                    final mapName = _mapName(strategy);
+                                    final thumbnail =
+                                        'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp';
+                                    return _StrategyQuickSwitchItem(
+                                      strategyName: strategy.name,
+                                      mapName: mapName,
+                                      attackLabel: attackLabel,
+                                      attackColor: _attackColor(attackLabel),
+                                      lastEdited: _timeAgo(strategy.lastEdited),
+                                      thumbnailPath: thumbnail,
+                                      onTap: _isSwitching || _isEditingName
+                                          ? null
+                                          : () => _switchStrategy(strategy.id),
+                                    );
+                                  },
+                                ),
                         ),
                       ),
                     ),
@@ -419,10 +428,12 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                                 ),
                               ),
                             )
-                          : Tooltip(
-                              message: currentStrategy.stratName == null
-                                  ? 'Load a strategy to rename it'
-                                  : 'Rename strategy',
+                          : ShadTooltip(
+                              builder: (context) => Text(
+                                currentStrategy.stratName == null
+                                    ? 'Load a strategy to rename it'
+                                    : 'Rename strategy',
+                              ),
                               child: Material(
                                 color: Colors.transparent,
                                 child: InkWell(
