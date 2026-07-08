@@ -71,6 +71,11 @@ class StrategyTileViewData {
       for (final agent in page.agentData) {
         result.add(agent.type);
       }
+      // Lineup agents live in lineUpGroups, not agentData, so collect them
+      // too or agents added via the lineup tool never show in previews.
+      for (final group in page.lineUpGroups) {
+        result.add(group.agent.type);
+      }
     }
 
     return [
