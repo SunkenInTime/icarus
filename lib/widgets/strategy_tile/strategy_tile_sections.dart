@@ -135,9 +135,14 @@ class StrategyTileThumbnail extends StatelessWidget {
 }
 
 class StrategyTileDetails extends StatelessWidget {
-  const StrategyTileDetails({super.key, required this.data});
+  const StrategyTileDetails({
+    super.key,
+    required this.data,
+    this.borderRadius = 16,
+  });
 
   final StrategyTileViewData data;
+  final double borderRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -146,7 +151,7 @@ class StrategyTileDetails extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
           color: ShadTheme.of(context).colorScheme.card,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(borderRadius),
           border: Border.all(color: Settings.tacticalVioletTheme.border),
           boxShadow: const [Settings.cardForegroundBackdrop]),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),

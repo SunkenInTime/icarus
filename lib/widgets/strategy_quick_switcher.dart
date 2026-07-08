@@ -27,6 +27,7 @@ class StrategyQuickSwitcher extends ConsumerStatefulWidget {
 
 class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   static const double _barWidth = 280;
+  static const double _barHeight = 40;
   static const EdgeInsets _displayMargin = EdgeInsets.all(16);
   final OverlayPortalController _controller = OverlayPortalController();
   final LayerLink _layerLink = LayerLink();
@@ -350,6 +351,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
               },
               child: Container(
                 width: _barWidth,
+                height: _barHeight,
                 decoration: BoxDecoration(
                   color: Settings.tacticalVioletTheme.card,
                   borderRadius: BorderRadius.circular(8),
@@ -362,68 +364,64 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                     Expanded(
                       child: _isEditingName
                           ? Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              child: Shortcuts(
-                                shortcuts: <ShortcutActivator, Intent>{
-                                  ...ShortcutInfo.textEditingOverridesFor(
-                                    ref
-                                        .watch(appPreferencesProvider)
-                                        .customShortcutBindings,
-                                  ),
-                                  const SingleActivator(
-                                    LogicalKeyboardKey.escape,
-                                  ): const DismissIntent(),
-                                },
-                                child: Actions(
-                                  actions: <Type, Action<Intent>>{
-                                    EnterTextIntent:
-                                        CallbackAction<EnterTextIntent>(
-                                      onInvoke: (_) {
-                                        _commitEditingName();
-                                        return null;
-                                      },
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              child: Center(
+                                child: Shortcuts(
+                                  shortcuts: <ShortcutActivator, Intent>{
+                                    ...ShortcutInfo.textEditingOverridesFor(
+                                      ref
+                                          .watch(appPreferencesProvider)
+                                          .customShortcutBindings,
                                     ),
-                                    DismissIntent:
-                                        CallbackAction<DismissIntent>(
-                                      onInvoke: (_) {
-                                        _cancelEditingName();
-                                        return null;
-                                      },
-                                    ),
+                                    const SingleActivator(
+                                      LogicalKeyboardKey.escape,
+                                    ): const DismissIntent(),
                                   },
-                                  child: TextField(
-                                    controller: _nameController,
-                                    focusNode: _nameFocusNode,
-                                    enabled: !_isRenaming,
-                                    textAlign: TextAlign.center,
-                                    textInputAction: TextInputAction.done,
-                                    cursorColor:
-                                        Settings.tacticalVioletTheme.primary,
-                                    style: ShadTheme.of(context)
-                                        .textTheme
-                                        .small
-                                        .copyWith(color: Colors.white),
-                                    decoration: InputDecoration(
-                                      isDense: true,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 0,
-                                        vertical: 8,
+                                  child: Actions(
+                                    actions: <Type, Action<Intent>>{
+                                      EnterTextIntent:
+                                          CallbackAction<EnterTextIntent>(
+                                        onInvoke: (_) {
+                                          _commitEditingName();
+                                          return null;
+                                        },
                                       ),
-                                      border: InputBorder.none,
-                                      hintText: 'Untitled Strategy',
-                                      hintStyle: ShadTheme.of(context)
+                                      DismissIntent:
+                                          CallbackAction<DismissIntent>(
+                                        onInvoke: (_) {
+                                          _cancelEditingName();
+                                          return null;
+                                        },
+                                      ),
+                                    },
+                                    child: TextField(
+                                      controller: _nameController,
+                                      focusNode: _nameFocusNode,
+                                      enabled: !_isRenaming,
+                                      textAlign: TextAlign.center,
+                                      textInputAction: TextInputAction.done,
+                                      cursorColor:
+                                          Settings.tacticalVioletTheme.primary,
+                                      style: ShadTheme.of(context)
                                           .textTheme
                                           .small
-                                          .copyWith(color: Colors.white54),
+                                          .copyWith(color: Colors.white),
+                                      decoration: InputDecoration(
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                        border: InputBorder.none,
+                                        hintText: 'Untitled Strategy',
+                                        hintStyle: ShadTheme.of(context)
+                                            .textTheme
+                                            .small
+                                            .copyWith(color: Colors.white54),
+                                      ),
+                                      onSubmitted: (_) => _commitEditingName(),
+                                      onTapOutside: (_) {
+                                        _nameFocusNode.unfocus();
+                                      },
                                     ),
-                                    onSubmitted: (_) => _commitEditingName(),
-                                    onTapOutside: (_) {
-                                      _nameFocusNode.unfocus();
-                                    },
                                   ),
                                 ),
                               ),
@@ -444,20 +442,21 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                                       ? SystemMouseCursors.basic
                                       : SystemMouseCursors.click,
                                   borderRadius: BorderRadius.circular(8),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
-                                    ),
-                                    child: Text(
-                                      strategyName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                      style: ShadTheme.of(context)
-                                          .textTheme
-                                          .small
-                                          .copyWith(color: Colors.white),
+                                  child: Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                      ),
+                                      child: Text(
+                                        strategyName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                        style: ShadTheme.of(context)
+                                            .textTheme
+                                            .small
+                                            .copyWith(color: Colors.white),
+                                      ),
                                     ),
                                   ),
                                 ),

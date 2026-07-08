@@ -15,6 +15,13 @@ class MapSelector extends ConsumerStatefulWidget {
 }
 
 class _MapSelectorState extends ConsumerState<MapSelector> {
+  static const double _cardWidth = 262;
+  static const double _cardHeight = 65;
+  static const double _outerRadius = 10;
+  static const double _innerGap = 4;
+  static const double _innerRadius = _outerRadius - _innerGap;
+  static const double _sideToggleWidth = 66;
+
   final OverlayPortalController _controller = OverlayPortalController();
   final _link = LayerLink();
   double _containerHeight = 0;
@@ -68,18 +75,17 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
       child: Container(
         decoration: BoxDecoration(
           color: Settings.tacticalVioletTheme.card,
-          borderRadius: const BorderRadius.all(Radius.circular(10)),
+          borderRadius: const BorderRadius.all(Radius.circular(_outerRadius)),
           border: Border.all(
             color: Settings.tacticalVioletTheme.border,
             width: 2,
           ),
         ),
-        width: 262,
-        height: 65,
+        width: _cardWidth,
+        height: _cardHeight,
         child: Padding(
-          padding: const EdgeInsets.all(4.0),
+          padding: const EdgeInsets.all(_innerGap),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               OverlayPortal(
                 controller: _controller,
@@ -112,64 +118,69 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                               crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
                                 Expanded(
-                                  child: ListView(
-                                    children: [
-                                      ...availableMaps.map((mapValue) {
-                                        String mapName =
+                                  child: ListView.separated(
+                                    padding: const EdgeInsets.all(_innerGap),
+                                    itemCount: availableMaps.length +
+                                        outOfRotationMaps.length +
+                                        1,
+                                    separatorBuilder: (_, __) =>
+                                        const SizedBox(height: _innerGap),
+                                    itemBuilder: (context, index) {
+                                      if (index < availableMaps.length) {
+                                        final mapValue = availableMaps[index];
+                                        final mapName =
                                             Maps.mapNames[mapValue]!;
-                                        return Padding(
-                                          padding: const EdgeInsets.all(4),
-                                          child: MapTile(
-                                            name: mapName,
-                                            onTap: () {
-                                              ref
-                                                  .read(mapProvider.notifier)
-                                                  .updateMap(mapValue);
-                                              ref
-                                                  .read(
-                                                      strategyProvider.notifier)
-                                                  .setUnsaved();
-                                              _closePortal();
-                                            },
-                                          ),
+                                        return MapTile(
+                                          name: mapName,
+                                          borderRadius: _innerRadius,
+                                          onTap: () {
+                                            ref
+                                                .read(mapProvider.notifier)
+                                                .updateMap(mapValue);
+                                            ref
+                                                .read(strategyProvider.notifier)
+                                                .setUnsaved();
+                                            _closePortal();
+                                          },
                                         );
-                                      }),
+                                      }
 
-                                      // Out of play maps section
-                                      const Padding(
-                                        padding: EdgeInsets.all(8.0),
-                                        child: Text(
-                                          "Out of rotation",
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w500,
-                                            color: Color.fromARGB(
-                                                255, 160, 160, 160),
+                                      if (index == availableMaps.length) {
+                                        return const Padding(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 5,
                                           ),
-                                          textAlign: TextAlign.center,
-                                        ),
-                                      ),
-                                      ...outOfRotationMaps.map((mapValue) {
-                                        String mapName =
-                                            Maps.mapNames[mapValue]!;
-                                        return Padding(
-                                          padding: const EdgeInsets.all(4),
-                                          child: MapTile(
-                                            name: mapName,
-                                            // isActive: mapValue == currentMap,
-                                            onTap: () {
-                                              ref
-                                                  .read(mapProvider.notifier)
-                                                  .updateMap(mapValue);
-                                              ref
-                                                  .read(
-                                                      strategyProvider.notifier)
-                                                  .setUnsaved();
-                                              _closePortal();
-                                            },
+                                          child: Text(
+                                            "Out of rotation",
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                              color: Color.fromARGB(
+                                                  255, 160, 160, 160),
+                                            ),
+                                            textAlign: TextAlign.center,
                                           ),
                                         );
-                                      }),
-                                    ],
+                                      }
+
+                                      final mapValue = outOfRotationMaps[
+                                          index - availableMaps.length - 1];
+                                      final mapName = Maps.mapNames[mapValue]!;
+                                      return MapTile(
+                                        name: mapName,
+                                        borderRadius: _innerRadius,
+                                        // isActive: mapValue == currentMap,
+                                        onTap: () {
+                                          ref
+                                              .read(mapProvider.notifier)
+                                              .updateMap(mapValue);
+                                          ref
+                                              .read(strategyProvider.notifier)
+                                              .setUnsaved();
+                                          _closePortal();
+                                        },
+                                      );
+                                    },
                                   ),
                                 ),
                               ],
@@ -181,19 +192,20 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                   );
                 },
                 child: MapTile(
-                    name: Maps.mapNames[currentMap]!,
-                    onTap: () {
-                      if (!_isOpen) {
-                        _openPortal();
-                      } else {
-                        _closePortal();
-                      }
-                    }),
+                  name: Maps.mapNames[currentMap]!,
+                  borderRadius: _innerRadius,
+                  onTap: () {
+                    if (!_isOpen) {
+                      _openPortal();
+                    } else {
+                      _closePortal();
+                    }
+                  },
+                ),
               ),
-              // const SizedBox(
-              //   width: 10,
-              // ),
-              Expanded(
+              const SizedBox(width: _innerGap),
+              SizedBox(
+                width: _sideToggleWidth,
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(
@@ -202,34 +214,31 @@ class _MapSelectorState extends ConsumerState<MapSelector> {
                       ref.read(strategyProvider.notifier).setUnsaved();
                     },
                     mouseCursor: SystemMouseCursors.click,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(_innerRadius),
                     hoverColor: Colors.white.withValues(alpha: 0.08),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            (ref.watch(mapProvider).isAttack)
-                                ? CustomIcons.sword
-                                : Icons.shield,
-                            size: 20,
-                            color: (ref.watch(mapProvider).isAttack)
-                                ? Colors.redAccent
-                                : Colors.blueAccent,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          (ref.watch(mapProvider).isAttack)
+                              ? CustomIcons.sword
+                              : Icons.shield,
+                          size: 20,
+                          color: (ref.watch(mapProvider).isAttack)
+                              ? Colors.redAccent
+                              : Colors.blueAccent,
+                        ),
+                        Text(
+                          (ref.watch(mapProvider).isAttack)
+                              ? "Attack"
+                              : "Defense",
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
                           ),
-                          Text(
-                            (ref.watch(mapProvider).isAttack)
-                                ? "Attack"
-                                : "Defense",
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white,
-                            ),
-                          )
-                        ],
-                      ),
+                        )
+                      ],
                     ),
                   ),
                 ),

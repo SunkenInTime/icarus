@@ -205,6 +205,10 @@ class _SkeletonTopBar extends StatelessWidget {
 class _MapSelectorSkeleton extends StatelessWidget {
   const _MapSelectorSkeleton({required this.mapValue, required this.isAttack});
 
+  static const double _outerRadius = 10;
+  static const double _innerGap = 4;
+  static const double _innerRadius = _outerRadius - _innerGap;
+
   final MapValue mapValue;
   final bool isAttack;
 
@@ -227,7 +231,7 @@ class _MapSelectorSkeleton extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(_innerRadius),
             child: SizedBox(
               width: 180,
               height: 57,
