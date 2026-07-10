@@ -752,6 +752,7 @@ class StrategyProvider extends Notifier<StrategyState> {
             position: shift(utility.position),
             id: utility.id,
             angle: utility.angle,
+          visionElevation: utility.visionElevation,
             customDiameter: utility.customDiameter,
             customWidth: utility.customWidth,
             customLength: utility.customLength,

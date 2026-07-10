@@ -25,6 +25,7 @@ void main() {
         presetType: UtilityType.viewCone90,
         rotation: 1.25,
         length: 42,
+        visionElevation: 600,
         state: AgentState.dead,
       );
       final circle = PlacedCircleAgent(
@@ -57,6 +58,7 @@ void main() {
       expect(restoredViewCone.presetType, UtilityType.viewCone90);
       expect(restoredViewCone.rotation, 1.25);
       expect(restoredViewCone.length, 42);
+      expect(restoredViewCone.visionElevation, 600);
 
       final restoredCircle = restored[2] as PlacedCircleAgent;
       expect(restoredCircle.diameterMeters, 12.5);

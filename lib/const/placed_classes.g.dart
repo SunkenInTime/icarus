@@ -103,6 +103,7 @@ PlacedViewConeAgent _$PlacedViewConeAgentFromJson(Map<String, dynamic> json) =>
           const UtilityTypeCompatConverter().fromJson(json['presetType']),
       rotation: (json['rotation'] as num?)?.toDouble() ?? 0,
       length: (json['length'] as num?)?.toDouble() ?? 0,
+      visionElevation: (json['visionElevation'] as num?)?.toDouble(),
       isAlly: json['isAlly'] as bool? ?? true,
       state: json['state'] == null
           ? AgentState.none
@@ -122,6 +123,7 @@ Map<String, dynamic> _$PlacedViewConeAgentToJson(
           const UtilityTypeCompatConverter().toJson(instance.presetType),
       'rotation': instance.rotation,
       'length': instance.length,
+      'visionElevation': instance.visionElevation,
     };
 
 PlacedCircleAgent _$PlacedCircleAgentFromJson(Map<String, dynamic> json) =>
@@ -211,6 +213,7 @@ PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
       id: json['id'] as String,
       isAlly: json['isAlly'] as bool? ?? true,
       angle: (json['angle'] as num?)?.toDouble() ?? 0.0,
+      visionElevation: (json['visionElevation'] as num?)?.toDouble(),
       customDiameter: (json['customDiameter'] as num?)?.toDouble(),
       customWidth: (json['customWidth'] as num?)?.toDouble(),
       customLength: (json['customLength'] as num?)?.toDouble(),
@@ -230,6 +233,7 @@ Map<String, dynamic> _$PlacedUtilityToJson(PlacedUtility instance) =>
       'rotation': instance.rotation,
       'length': instance.length,
       'angle': instance.angle,
+      'visionElevation': instance.visionElevation,
       'customDiameter': instance.customDiameter,
       'customWidth': instance.customWidth,
       'customLength': instance.customLength,

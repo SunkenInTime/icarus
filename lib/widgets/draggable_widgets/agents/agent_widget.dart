@@ -14,7 +14,9 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -95,7 +97,8 @@ class AgentWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1.0;
+    final mapState = ref.watch(mapProvider);
+    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
     final agentSize =
         forcedAgentSize ?? ref.watch(strategySettingsProvider).agentSize;
     final useNeutralTeamColors =
@@ -184,20 +187,26 @@ class AgentWidget extends ConsumerWidget {
         : (id?.isNotEmpty ?? false)
             ? HoveredDeleteTarget.agent(id: id!, ownerToken: Object())
             : null;
-    final plainAgent = lineUpId == null && (id?.isNotEmpty ?? false)
+    final placedAgentNode = lineUpId == null && (id?.isNotEmpty ?? false)
         ? ref.watch(
-            agentProvider.select(
-              (agents) => agents.whereType<PlacedAgent>().firstWhere(
-                    (entry) => entry.id == id,
-                    orElse: () => PlacedAgent(
-                      type: agent.type,
-                      position: Offset.zero,
-                      id: '',
-                    ),
-                  ),
-            ),
+            agentProvider.select((agents) {
+              for (final entry in agents) {
+                if (entry.id == id) return entry;
+              }
+              return null;
+            }),
           )
         : null;
+    final plainAgent = placedAgentNode is PlacedAgent ? placedAgentNode : null;
+    final viewConeAgent = placedAgentNode is PlacedViewConeAgent
+        ? placedAgentNode
+        : null;
+    final visionGeometry = viewConeAgent == null || isScreenshot
+        ? null
+        : ref
+            .watch(viewConeGeometryProvider(mapState.currentMap))
+            .asData
+            ?.value;
 
     final contextMenuItems = <ShadContextMenuItem>[
       if (!isScreenshot)
@@ -214,6 +223,17 @@ class AgentWidget extends ConsumerWidget {
             isAlly: isAlly,
             mapScale: mapScale,
           ),
+        ),
+      if (!isScreenshot && viewConeAgent != null && visionGeometry != null)
+        buildViewConeElevationMenuItem(
+          geometry: visionGeometry,
+          selectedElevation: viewConeAgent.visionElevation,
+          onChanged: (elevation) {
+            ref.read(agentProvider.notifier).updateViewConeElevation(
+                  id: viewConeAgent.id,
+                  elevation: elevation,
+                );
+          },
         ),
       if (lineUpId != null)
         ShadContextMenuItem(

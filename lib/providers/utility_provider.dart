@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -76,6 +77,24 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
         id: newState[index].id,
         group: ActionGroup.utility);
     ref.read(actionProvider.notifier).addAction(action);
+    state = newState;
+  }
+
+  void updateViewConeElevation(String id, double? elevation) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+    final utility = newState[index];
+    if (!UtilityData.isViewCone(utility.type) ||
+        utility.visionElevation == elevation) {
+      return;
+    }
+
+    utility.updateRotationHistory();
+    utility.updateVisionElevation(elevation);
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(type: ActionType.edit, id: id, group: ActionGroup.utility),
+        );
     state = newState;
   }
 
