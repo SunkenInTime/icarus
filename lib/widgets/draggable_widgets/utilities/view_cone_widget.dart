@@ -96,7 +96,13 @@ class ViewConeWidget extends ConsumerWidget {
           isAttack: mapState.isAttack,
           elevation: resolvedElevation,
         );
-        final effectiveRotation = rotation ?? 0;
+        // Placed free cones normally pass their drag-preview rotation directly,
+        // while this provider fallback keeps clipping correct for any caller
+        // that only supplies the persisted utility id.
+        final effectiveRotation = rotation ?? placedUtility?.rotation ?? 0;
+        // MapProvider.switchSide mirrors every placed item before toggling the
+        // side. The resolved origin is therefore already in the current map's
+        // display frame and pairs with the correspondingly mirrored layer.
         final worldPolygon = VisionPolygon.compute(
           layer: layer,
           origin: resolvedWorldOrigin,

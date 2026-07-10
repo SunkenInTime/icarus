@@ -126,5 +126,51 @@ void main() {
       );
       expect(nearCorner.length, greaterThanOrEqualTo(2));
     });
+
+    test('mirrored side positions and rotations produce symmetric clips', () {
+      const worldWidth = 1000 * 16 / 9;
+      const attackOrigin = Offset(50, 500);
+      const defenseOrigin = Offset(worldWidth - 50, 500);
+      final attackLayer = VisionGeometryLayer(
+        elevation: 0,
+        segments: [
+          VisionSegment(const Offset(100, 450), const Offset(100, 550)),
+        ],
+      );
+      final defenseLayer = VisionGeometryLayer(
+        elevation: 0,
+        segments: [
+          VisionSegment(
+            const Offset(worldWidth - 100, 550),
+            const Offset(worldWidth - 100, 450),
+          ),
+        ],
+      );
+
+      final attack = VisionPolygon.compute(
+        layer: attackLayer,
+        origin: attackOrigin,
+        facingAngle: 0,
+        coneAngle: math.pi / 2,
+        range: 100,
+      );
+      final defense = VisionPolygon.compute(
+        layer: defenseLayer,
+        origin: defenseOrigin,
+        facingAngle: math.pi,
+        coneAngle: math.pi / 2,
+        range: 100,
+      );
+
+      expect(defense, hasLength(attack.length));
+      for (var index = 0; index < attack.length; index += 1) {
+        final mirroredDefense = Offset(
+          worldWidth - defense[index].dx,
+          1000 - defense[index].dy,
+        );
+        expect(mirroredDefense.dx, closeTo(attack[index].dx, 1e-8));
+        expect(mirroredDefense.dy, closeTo(attack[index].dy, 1e-8));
+      }
+    });
   });
 }
