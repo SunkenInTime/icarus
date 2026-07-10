@@ -33,7 +33,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 import 'package:window_manager/window_manager.dart';
 
-late CustomMouseCursor staticDrawingCursor;
+CustomMouseCursor? staticDrawingCursor;
 WebViewEnvironment? webViewEnvironment;
 bool isWebViewInitialized = false;
 Future<void> main(List<String> args) async {

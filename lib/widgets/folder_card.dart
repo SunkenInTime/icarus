@@ -54,7 +54,7 @@ class FolderCardViewData {
   /// Distinct map thumbnail assets, most used first, capped at 2.
   final List<String> mapPeeks;
 
-  /// Agents across all strategies, most frequent first (role breaks ties).
+  /// Agents across all strategies in tactical role order, then frequency.
   final List<AgentType> agentTypes;
 
   static List<String> _collectMapPeeks(List<StrategyData> strategies) {
@@ -97,9 +97,13 @@ class FolderCardViewData {
 
     final ordered = counts.keys.toList()
       ..sort((a, b) {
+        final byRole = roleRank(a).compareTo(roleRank(b));
+        if (byRole != 0) return byRole;
         final byCount = counts[b]!.compareTo(counts[a]!);
         if (byCount != 0) return byCount;
-        return roleRank(a).compareTo(roleRank(b));
+        return AgentData.agents[a]!.name
+            .toLowerCase()
+            .compareTo(AgentData.agents[b]!.name.toLowerCase());
       });
     return ordered;
   }

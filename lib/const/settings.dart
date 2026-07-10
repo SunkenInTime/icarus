@@ -47,11 +47,13 @@ class Settings {
 
   static const Color abilityBGColor = Color(0xFF1B1B1B);
   static const double feedbackOpacity = 0.7;
+  static const double strokeThicknessThin = 2;
   static const double strokeThicknessSmall = 3;
   static const double strokeThicknessMedium = 5;
   static const double strokeThicknessLarge = 8;
   static const double defaultStrokeThickness = strokeThicknessMedium;
   static const List<double> strokeThicknessOptions = [
+    strokeThicknessThin,
     strokeThicknessSmall,
     strokeThicknessMedium,
     strokeThicknessLarge,

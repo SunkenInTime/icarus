@@ -441,7 +441,7 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 12
+    nextIndex: 16
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0
@@ -467,6 +467,14 @@ types:
         index: 10
       showRegionNames:
         index: 11
+      librarySortByName:
+        index: 12
+      librarySortOrderName:
+        index: 13
+      drawingColorValue:
+        index: 14
+      drawingThickness:
+        index: 15
   PlacedViewConeAgent:
     typeId: 29
     nextIndex: 9

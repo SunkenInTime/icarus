@@ -122,6 +122,10 @@ class AppPreferences extends HiveObject {
   final double pagesBarWidth;
   final List<int> customColorValues;
   final Map<String, String> customShortcutBindings;
+  final String librarySortByName;
+  final String librarySortOrderName;
+  final int drawingColorValue;
+  final double drawingThickness;
 
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
@@ -136,6 +140,10 @@ class AppPreferences extends HiveObject {
     this.pagesBarWidth = 224.0,
     List<int>? customColorValues,
     Map<String, String>? customShortcutBindings,
+    this.librarySortByName = 'dateCreated',
+    this.librarySortOrderName = 'ascending',
+    this.drawingColorValue = 0xFFFFFFFF,
+    this.drawingThickness = Settings.defaultStrokeThickness,
   })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
         customShortcutBindings =
             Map.unmodifiable(customShortcutBindings ?? const {});
@@ -153,6 +161,10 @@ class AppPreferences extends HiveObject {
     double? pagesBarWidth,
     List<int>? customColorValues,
     Map<String, String>? customShortcutBindings,
+    String? librarySortByName,
+    String? librarySortOrderName,
+    int? drawingColorValue,
+    double? drawingThickness,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -175,6 +187,10 @@ class AppPreferences extends HiveObject {
       customColorValues: customColorValues ?? this.customColorValues,
       customShortcutBindings:
           customShortcutBindings ?? this.customShortcutBindings,
+      librarySortByName: librarySortByName ?? this.librarySortByName,
+      librarySortOrderName: librarySortOrderName ?? this.librarySortOrderName,
+      drawingColorValue: drawingColorValue ?? this.drawingColorValue,
+      drawingThickness: drawingThickness ?? this.drawingThickness,
     );
   }
 }
@@ -622,6 +638,36 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
       updated,
     );
     state = updated;
+  }
+
+  Future<void> setLibrarySort({
+    String? sortByName,
+    String? sortOrderName,
+  }) async {
+    final updated = state.copyWith(
+      librarySortByName: sortByName,
+      librarySortOrderName: sortOrderName,
+    );
+    state = updated;
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
+  }
+
+  Future<void> setDrawingDefaults({
+    int? colorValue,
+    double? thickness,
+  }) async {
+    final updated = state.copyWith(
+      drawingColorValue: colorValue,
+      drawingThickness: thickness,
+    );
+    state = updated;
+    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+      MapThemeProfilesProvider.appPreferencesSingletonKey,
+      updated,
+    );
   }
 
   Future<void> setCustomShortcutBinding(

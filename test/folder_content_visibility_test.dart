@@ -1,8 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/folder_content.dart';
 
@@ -258,6 +262,71 @@ void main() {
       'deep',
     ]);
     expect(viewData.strategyCount, 3);
+  });
+
+  test('folder card agents follow tactical role order', () {
+    final previewFolder = folder(
+      id: 'preview',
+      name: 'Preview',
+      dateCreated: DateTime.utc(2026, 1, 1),
+    );
+    final previewStrategy = StrategyData(
+      id: 'preview-strategy',
+      name: 'Preview Strategy',
+      mapData: MapValue.ascent,
+      versionNumber: 1,
+      lastEdited: DateTime.utc(2026, 1, 2),
+      folderID: previewFolder.id,
+      pages: [
+        StrategyPage(
+          id: 'page',
+          name: 'Page',
+          drawingData: const [],
+          agentData: [
+            PlacedAgent(
+              type: AgentType.killjoy,
+              position: Offset.zero,
+              id: 'sentinel',
+            ),
+            PlacedAgent(
+              type: AgentType.omen,
+              position: Offset.zero,
+              id: 'controller',
+            ),
+            PlacedAgent(
+              type: AgentType.sova,
+              position: Offset.zero,
+              id: 'initiator',
+            ),
+            PlacedAgent(
+              type: AgentType.jett,
+              position: Offset.zero,
+              id: 'duelist',
+            ),
+          ],
+          abilityData: const [],
+          textData: const [],
+          imageData: const [],
+          utilityData: const [],
+          sortIndex: 0,
+          isAttack: true,
+          settings: StrategySettings(),
+        ),
+      ],
+    );
+
+    final viewData = FolderCardViewData(
+      folder: previewFolder,
+      strategies: [previewStrategy],
+      folderCount: 0,
+    );
+
+    expect(viewData.agentTypes, [
+      AgentType.jett,
+      AgentType.sova,
+      AgentType.omen,
+      AgentType.killjoy,
+    ]);
   });
 
   test('empty folder last updated falls back to creation date', () {

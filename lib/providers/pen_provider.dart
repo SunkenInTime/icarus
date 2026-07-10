@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +9,7 @@ import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/traversal_speed.dart';
 import 'package:icarus/main.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 
 enum PenMode { line, freeDraw, square, ellipse }
 
@@ -74,14 +77,19 @@ final penProvider = NotifierProvider<PenProvider, PenState>(PenProvider.new);
 class PenProvider extends Notifier<PenState> {
   @override
   PenState build() {
+    final preferences = ref.read(appPreferencesProvider);
     return PenState(
       listOfColors: Settings.penColors,
       penMode: PenMode.freeDraw,
-      color: Colors.white,
+      color: Color(preferences.drawingColorValue),
       hasArrow: false,
       isDotted: false,
       opacity: 1,
-      thickness: Settings.defaultStrokeThickness,
+      thickness: Settings.strokeThicknessOptions.contains(
+        preferences.drawingThickness,
+      )
+          ? preferences.drawingThickness
+          : Settings.defaultStrokeThickness,
       traversalTimeEnabled: false,
       activeTraversalSpeedProfile: TraversalSpeed.defaultProfile,
       drawingCursor: staticDrawingCursor,
@@ -135,6 +143,14 @@ class PenProvider extends Notifier<PenState> {
       traversalTimeEnabled: traversalTimeEnabled,
       activeTraversalSpeedProfile: activeTraversalSpeedProfile,
     );
+    if (color != null || thickness != null) {
+      unawaited(
+        ref.read(appPreferencesProvider.notifier).setDrawingDefaults(
+              colorValue: color?.toARGB32(),
+              thickness: thickness,
+            ),
+      );
+    }
   }
 
   void setColor(int index) async {
@@ -150,6 +166,11 @@ class PenProvider extends Notifier<PenState> {
     }
 
     state = state.copyWith(listOfColors: newColors, color: selectedColor);
+    unawaited(
+      ref
+          .read(appPreferencesProvider.notifier)
+          .setDrawingDefaults(colorValue: selectedColor.toARGB32()),
+    );
     await buildCursors();
   }
 

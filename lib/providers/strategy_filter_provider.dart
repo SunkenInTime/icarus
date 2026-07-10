@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
 
 enum SortBy {
   alphabetical,
@@ -50,18 +53,35 @@ class StrategyFilterProvider extends Notifier<StrategyFilterState> {
 
   @override
   StrategyFilterState build() {
+    final preferences = ref.read(appPreferencesProvider);
     return StrategyFilterState(
-      sortBy: SortBy.dateCreated,
-      sortOrder: SortOrder.ascending,
+      sortBy: SortBy.values.firstWhere(
+        (value) => value.name == preferences.librarySortByName,
+        orElse: () => SortBy.dateCreated,
+      ),
+      sortOrder: SortOrder.values.firstWhere(
+        (value) => value.name == preferences.librarySortOrderName,
+        orElse: () => SortOrder.ascending,
+      ),
     );
   }
 
   void setSortBy(SortBy sortBy) {
     state = state.copyWith(sortBy: sortBy);
+    unawaited(
+      ref
+          .read(appPreferencesProvider.notifier)
+          .setLibrarySort(sortByName: sortBy.name),
+    );
   }
 
   void setSortOrder(SortOrder sortOrder) {
     state = state.copyWith(sortOrder: sortOrder);
+    unawaited(
+      ref
+          .read(appPreferencesProvider.notifier)
+          .setLibrarySort(sortOrderName: sortOrder.name),
+    );
   }
 
   ({IconData icon, String label}) getCurrentSortBy() {
