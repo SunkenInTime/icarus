@@ -13,6 +13,7 @@ import 'package:icarus/widgets/drag_tilt_feedback.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
+import 'package:icarus/widgets/overflow_tooltip_text.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _cardWidth = 232;
@@ -532,15 +533,13 @@ class _FolderCardState extends ConsumerState<FolderCard>
         ),
         const SizedBox(width: 7),
         Expanded(
-          child: Text(
+          child: OverflowTooltipText(
             _folder.name,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
         ),
         if (isPinned) ...[

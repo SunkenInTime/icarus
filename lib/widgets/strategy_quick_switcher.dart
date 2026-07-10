@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +13,7 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
+import 'package:icarus/widgets/overflow_tooltip_text.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Displays the current strategy name with a recent-strategies dropdown.
@@ -24,6 +27,7 @@ class StrategyQuickSwitcher extends ConsumerStatefulWidget {
 
 class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
   static const double _barWidth = 280;
+  static const double _barHeight = 40;
   static const EdgeInsets _displayMargin = EdgeInsets.all(16);
   final OverlayPortalController _controller = OverlayPortalController();
   final LayerLink _layerLink = LayerLink();
@@ -260,9 +264,23 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
               currentStrategyId: currentStrategy.id,
             );
 
-            return OverlayPortal(
+            return OverlayPortal.overlayChildLayoutBuilder(
               controller: _controller,
-              overlayChildBuilder: (context) {
+              overlayChildBuilder: (context, layoutInfo) {
+                final childRect = MatrixUtils.transformRect(
+                  layoutInfo.childPaintTransform,
+                  Offset.zero & layoutInfo.childSize,
+                );
+                final maxLeft = math.max(
+                  0.0,
+                  layoutInfo.overlaySize.width - _barWidth,
+                );
+                final left = childRect.left.clamp(0.0, maxLeft).toDouble();
+                final top = childRect.bottom + 6;
+                final maxHeight = math.max(
+                  0.0,
+                  math.min(280.0, layoutInfo.overlaySize.height - top - 8),
+                );
                 return Stack(
                   children: [
                     Positioned.fill(
@@ -271,67 +289,60 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                         onTap: _closePortal,
                       ),
                     ),
-                    CompositedTransformFollower(
-                      link: _layerLink,
-                      targetAnchor: Alignment.bottomLeft,
-                      followerAnchor: Alignment.topLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: Container(
-                            width: _barWidth,
-                            constraints: const BoxConstraints(maxHeight: 280),
-                            decoration: BoxDecoration(
-                              color: Settings.tacticalVioletTheme.background,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Settings.tacticalVioletTheme.border,
-                              ),
+                    Positioned(
+                      left: left,
+                      top: top,
+                      width: _barWidth,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: Container(
+                          constraints: BoxConstraints(maxHeight: maxHeight),
+                          decoration: BoxDecoration(
+                            color: Settings.tacticalVioletTheme.background,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Settings.tacticalVioletTheme.border,
                             ),
-                            child: recents.isEmpty
-                                ? Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 10,
-                                    ),
-                                    child: Text(
-                                      'No recent strategies',
-                                      style: ShadTheme.of(context)
-                                          .textTheme
-                                          .small
-                                          .copyWith(color: Colors.white70),
-                                    ),
-                                  )
-                                : ListView.separated(
-                                    shrinkWrap: true,
-                                    padding: const EdgeInsets.all(8),
-                                    itemCount: recents.length,
-                                    separatorBuilder: (_, __) =>
-                                        const SizedBox(height: 8),
-                                    itemBuilder: (context, index) {
-                                      final strategy = recents[index];
-                                      final attackLabel =
-                                          _attackLabel(strategy);
-                                      final mapName = _mapName(strategy);
-                                      final thumbnail =
-                                          'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp';
-                                      return _StrategyQuickSwitchItem(
-                                        strategyName: strategy.name,
-                                        mapName: mapName,
-                                        attackLabel: attackLabel,
-                                        attackColor: _attackColor(attackLabel),
-                                        lastEdited:
-                                            _timeAgo(strategy.lastEdited),
-                                        thumbnailPath: thumbnail,
-                                        onTap: _isSwitching || _isEditingName
-                                            ? null
-                                            : () =>
-                                                _switchStrategy(strategy.id),
-                                      );
-                                    },
-                                  ),
                           ),
+                          child: recents.isEmpty
+                              ? Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                  child: Text(
+                                    'No recent strategies',
+                                    style: ShadTheme.of(context)
+                                        .textTheme
+                                        .small
+                                        .copyWith(color: Colors.white70),
+                                  ),
+                                )
+                              : ListView.separated(
+                                  shrinkWrap: true,
+                                  padding: const EdgeInsets.all(8),
+                                  itemCount: recents.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(height: 8),
+                                  itemBuilder: (context, index) {
+                                    final strategy = recents[index];
+                                    final attackLabel = _attackLabel(strategy);
+                                    final mapName = _mapName(strategy);
+                                    final thumbnail =
+                                        'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp';
+                                    return _StrategyQuickSwitchItem(
+                                      strategyName: strategy.name,
+                                      mapName: mapName,
+                                      attackLabel: attackLabel,
+                                      attackColor: _attackColor(attackLabel),
+                                      lastEdited: _timeAgo(strategy.lastEdited),
+                                      thumbnailPath: thumbnail,
+                                      onTap: _isSwitching || _isEditingName
+                                          ? null
+                                          : () => _switchStrategy(strategy.id),
+                                    );
+                                  },
+                                ),
                         ),
                       ),
                     ),
@@ -340,6 +351,7 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
               },
               child: Container(
                 width: _barWidth,
+                height: _barHeight,
                 decoration: BoxDecoration(
                   color: Settings.tacticalVioletTheme.card,
                   borderRadius: BorderRadius.circular(8),
@@ -352,76 +364,74 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                     Expanded(
                       child: _isEditingName
                           ? Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              child: Shortcuts(
-                                shortcuts: <ShortcutActivator, Intent>{
-                                  ...ShortcutInfo.textEditingOverridesFor(
-                                    ref
-                                        .watch(appPreferencesProvider)
-                                        .customShortcutBindings,
-                                  ),
-                                  const SingleActivator(
-                                    LogicalKeyboardKey.escape,
-                                  ): const DismissIntent(),
-                                },
-                                child: Actions(
-                                  actions: <Type, Action<Intent>>{
-                                    EnterTextIntent:
-                                        CallbackAction<EnterTextIntent>(
-                                      onInvoke: (_) {
-                                        _commitEditingName();
-                                        return null;
-                                      },
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
+                              child: Center(
+                                child: Shortcuts(
+                                  shortcuts: <ShortcutActivator, Intent>{
+                                    ...ShortcutInfo.textEditingOverridesFor(
+                                      ref
+                                          .watch(appPreferencesProvider)
+                                          .customShortcutBindings,
                                     ),
-                                    DismissIntent:
-                                        CallbackAction<DismissIntent>(
-                                      onInvoke: (_) {
-                                        _cancelEditingName();
-                                        return null;
-                                      },
-                                    ),
+                                    const SingleActivator(
+                                      LogicalKeyboardKey.escape,
+                                    ): const DismissIntent(),
                                   },
-                                  child: TextField(
-                                    controller: _nameController,
-                                    focusNode: _nameFocusNode,
-                                    enabled: !_isRenaming,
-                                    textAlign: TextAlign.center,
-                                    textInputAction: TextInputAction.done,
-                                    cursorColor:
-                                        Settings.tacticalVioletTheme.primary,
-                                    style: ShadTheme.of(context)
-                                        .textTheme
-                                        .small
-                                        .copyWith(color: Colors.white),
-                                    decoration: InputDecoration(
-                                      isDense: true,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 0,
-                                        vertical: 8,
+                                  child: Actions(
+                                    actions: <Type, Action<Intent>>{
+                                      EnterTextIntent:
+                                          CallbackAction<EnterTextIntent>(
+                                        onInvoke: (_) {
+                                          _commitEditingName();
+                                          return null;
+                                        },
                                       ),
-                                      border: InputBorder.none,
-                                      hintText: 'Untitled Strategy',
-                                      hintStyle: ShadTheme.of(context)
+                                      DismissIntent:
+                                          CallbackAction<DismissIntent>(
+                                        onInvoke: (_) {
+                                          _cancelEditingName();
+                                          return null;
+                                        },
+                                      ),
+                                    },
+                                    child: TextField(
+                                      controller: _nameController,
+                                      focusNode: _nameFocusNode,
+                                      enabled: !_isRenaming,
+                                      textAlign: TextAlign.center,
+                                      textInputAction: TextInputAction.done,
+                                      cursorColor:
+                                          Settings.tacticalVioletTheme.primary,
+                                      style: ShadTheme.of(context)
                                           .textTheme
                                           .small
-                                          .copyWith(color: Colors.white54),
+                                          .copyWith(color: Colors.white),
+                                      decoration: InputDecoration(
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.zero,
+                                        border: InputBorder.none,
+                                        hintText: 'Untitled Strategy',
+                                        hintStyle: ShadTheme.of(context)
+                                            .textTheme
+                                            .small
+                                            .copyWith(color: Colors.white54),
+                                      ),
+                                      onSubmitted: (_) => _commitEditingName(),
+                                      onTapOutside: (_) {
+                                        _nameFocusNode.unfocus();
+                                      },
                                     ),
-                                    onSubmitted: (_) => _commitEditingName(),
-                                    onTapOutside: (_) {
-                                      _nameFocusNode.unfocus();
-                                    },
                                   ),
                                 ),
                               ),
                             )
-                          : Tooltip(
-                              message: currentStrategy.stratName == null
-                                  ? 'Load a strategy to rename it'
-                                  : 'Rename strategy',
+                          : ShadTooltip(
+                              builder: (context) => Text(
+                                currentStrategy.stratName == null
+                                    ? 'Load a strategy to rename it'
+                                    : 'Rename strategy',
+                              ),
                               child: Material(
                                 color: Colors.transparent,
                                 child: InkWell(
@@ -432,20 +442,21 @@ class _StrategyQuickSwitcherState extends ConsumerState<StrategyQuickSwitcher> {
                                       ? SystemMouseCursors.basic
                                       : SystemMouseCursors.click,
                                   borderRadius: BorderRadius.circular(8),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
-                                    ),
-                                    child: Text(
-                                      strategyName,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                      style: ShadTheme.of(context)
-                                          .textTheme
-                                          .small
-                                          .copyWith(color: Colors.white),
+                                  child: Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                      ),
+                                      child: Text(
+                                        strategyName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                        style: ShadTheme.of(context)
+                                            .textTheme
+                                            .small
+                                            .copyWith(color: Colors.white),
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -570,10 +581,8 @@ class _StrategyQuickSwitchItemState extends State<_StrategyQuickSwitchItem> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
+                        OverflowTooltipText(
                           widget.strategyName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: ShadTheme.of(context).textTheme.small.copyWith(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600,

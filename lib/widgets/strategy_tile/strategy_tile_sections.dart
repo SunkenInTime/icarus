@@ -4,6 +4,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/overflow_tooltip_text.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _agentIconSize = 27;
@@ -139,9 +140,14 @@ class StrategyTileThumbnail extends StatelessWidget {
 }
 
 class StrategyTileDetails extends StatelessWidget {
-  const StrategyTileDetails({super.key, required this.data});
+  const StrategyTileDetails({
+    super.key,
+    required this.data,
+    this.borderRadius = 16,
+  });
 
   final StrategyTileViewData data;
+  final double borderRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +156,7 @@ class StrategyTileDetails extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
           color: ShadTheme.of(context).colorScheme.card,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(borderRadius),
           border: Border.all(color: Settings.tacticalVioletTheme.border),
           boxShadow: const [Settings.cardForegroundBackdrop]),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -167,12 +173,9 @@ class StrategyTileDetails extends StatelessWidget {
                   children: [
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 130),
-                      child: Text(
+                      child: OverflowTooltipText(
                         data.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w500,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
                     ),
                     const SizedBox(height: 5),

@@ -19,6 +19,10 @@ const double strategyTileGutterOutset = strategyTileGridSpacing / 2;
 const double strategyTileMainAxisExtent = 250;
 const double strategyTileGridMainAxisExtent =
     strategyTileMainAxisExtent + strategyTileGridSpacing;
+const double strategyTileOuterRadius = 16;
+const double strategyTileInnerPadding = 8;
+const double strategyTileInnerRadius =
+    strategyTileOuterRadius - strategyTileInnerPadding;
 
 class StrategyTile extends ConsumerStatefulWidget {
   const StrategyTile({super.key, required this.strategyData});
@@ -177,7 +181,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                               duration: const Duration(milliseconds: 100),
                               decoration: BoxDecoration(
                                 color: ShadTheme.of(context).colorScheme.card,
-                                borderRadius: BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(
+                                    strategyTileOuterRadius),
                                 border: Border.all(
                                   color: isPinDropTarget
                                       ? Settings.tacticalVioletTheme.border
@@ -191,12 +196,16 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                   Expanded(
                                     child: StrategyTileThumbnail(
                                       assetPath: viewData.thumbnailAsset,
+                                      borderRadius: strategyTileInnerRadius,
                                     ),
                                   ),
                                   const SizedBox(height: 10),
                                   Expanded(
-                                      child:
-                                          StrategyTileDetails(data: viewData)),
+                                    child: StrategyTileDetails(
+                                      data: viewData,
+                                      borderRadius: strategyTileInnerRadius,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),

@@ -10,6 +10,7 @@ import 'package:icarus/widgets/drag_tilt_feedback.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
+import 'package:icarus/widgets/overflow_tooltip_text.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _folderPillCornerRadius = 8;
@@ -265,14 +266,13 @@ class _FolderPillState extends ConsumerState<FolderPill>
                                 ConstrainedBox(
                                   constraints:
                                       const BoxConstraints(maxWidth: 140),
-                                  child: Text(
+                                  child: OverflowTooltipText(
                                     widget.folder.name,
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
                                     ),
-                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 if (isPinned) ...[
