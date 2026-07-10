@@ -77,11 +77,11 @@ class ViewConeWidget extends ConsumerWidget {
 
     final totalHeight = totalHeightVirtual * coord.scaleFactor;
     final totalWidth = totalWidthVirtual * coord.scaleFactor;
-    final resolvedWorldOrigin =
-        worldOrigin ??
+    final resolvedWorldOrigin = worldOrigin ??
         (placedUtility == null
             ? null
-            : placedUtility.position + anchorPointVirtual);
+            : placedUtility.position +
+                coord.virtualOffsetToWorld(anchorPointVirtual));
     final resolvedElevation = visionElevation ?? placedUtility?.visionElevation;
     List<Offset>? visibilityPolygon;
     VisionGeometryMap? geometry;
@@ -108,7 +108,7 @@ class ViewConeWidget extends ConsumerWidget {
           origin: resolvedWorldOrigin,
           facingAngle: effectiveRotation - pi / 2,
           coneAngle: angle * pi / 180,
-          range: currentLength,
+          range: coord.virtualLengthToWorld(currentLength),
         );
         final inverseRotation = -effectiveRotation;
         final cosine = cos(inverseRotation);
@@ -122,7 +122,7 @@ class ViewConeWidget extends ConsumerWidget {
                 delta.dx * cosine - delta.dy * sine,
                 delta.dx * sine + delta.dy * cosine,
               );
-              return apex + local * coord.scaleFactor;
+              return apex + coord.worldOffsetToScreen(local);
             }(),
         ];
       }
@@ -209,6 +209,11 @@ class ViewConePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // A non-null result means map clipping was evaluated. If the apex is
+    // outside the SVG floor (or the cone otherwise has no visible area), the
+    // geometry returns a degenerate polygon and nothing should be painted.
+    if (visibilityPolygon != null && visibilityPolygon!.length < 3) return;
+
     // Convert angle to radians
     final angleRad = angle * (pi / 180);
 

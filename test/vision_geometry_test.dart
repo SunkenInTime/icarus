@@ -3,7 +3,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/view_cone/svg_vision_boundary.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 
 void main() {
@@ -30,6 +32,38 @@ void main() {
         geometry.attackLayers.expand((layer) => layer.segments),
         isNotEmpty,
       );
+    });
+
+    test('keeps elevation metadata when SVG boundaries replace wall data',
+        () async {
+      final source = await rootBundle.loadString(
+        'assets/maps/ascent_vision.json',
+      );
+      final svg = await rootBundle.loadString('assets/maps/ascent_map.svg');
+      final defenseSvg = await rootBundle.loadString(
+        'assets/maps/ascent_map_defense.svg',
+      );
+      final geometry = VisionGeometryMap.fromCompactJson(
+        MapValue.ascent,
+        jsonDecode(source) as Map<String, dynamic>,
+      ).withSvgBoundaries(
+        attackBoundary: SvgVisionBoundary.parse(
+          map: MapValue.ascent,
+          source: svg,
+        ),
+        defenseBoundary: SvgVisionBoundary.parse(
+          map: MapValue.ascent,
+          source: defenseSvg,
+        ),
+      );
+
+      expect(geometry.attackLayers, hasLength(8));
+      expect(geometry.elevations, containsAll(<double>[300, 800]));
+      expect(
+        geometry.attackLayers.map((layer) => layer.segments),
+        everyElement(same(geometry.attackLayers.first.segments)),
+      );
+      expect(geometry.attackLayers.first.boundary, isNotNull);
     });
 
     test('mirrors attack geometry exactly for defense', () async {
@@ -65,6 +99,14 @@ void main() {
           isNotEmpty,
           reason: map.name,
         );
+        for (final suffix in ['', '_defense']) {
+          final svg = await rootBundle.loadString(
+            'assets/maps/${Maps.mapNames[map]}_map$suffix.svg',
+          );
+          final boundary = SvgVisionBoundary.parse(map: map, source: svg);
+          expect(boundary.segments, isNotEmpty, reason: '${map.name}$suffix');
+          expect(boundary.contours, isNotEmpty, reason: '${map.name}$suffix');
+        }
       }
     });
   });
@@ -172,5 +214,99 @@ void main() {
         expect(mirroredDefense.dy, closeTo(attack[index].dy, 1e-8));
       }
     });
+
+    test('clips to a square extracted from the rendered SVG', () {
+      const source = '''
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#271406" fill-rule="evenodd" d="M10 10H90V90H10Z"/>
+</svg>
+''';
+      final boundary = SvgVisionBoundary.parse(
+        map: MapValue.ascent,
+        source: source,
+      );
+      final layer = VisionGeometryLayer(
+        elevation: 0,
+        segments: boundary.segments,
+        boundary: boundary,
+      );
+      final bounds = boundary.segments.fold<Rect>(
+        Rect.fromPoints(
+          boundary.segments.first.start,
+          boundary.segments.first.end,
+        ),
+        (rect, segment) => rect.expandToInclude(
+          Rect.fromPoints(segment.start, segment.end),
+        ),
+      );
+      final origin = bounds.center;
+      final polygon = VisionPolygon.compute(
+        layer: layer,
+        origin: origin,
+        facingAngle: 0,
+        coneAngle: math.pi / 2,
+        range: bounds.width,
+      );
+      final centerPoint = polygon.skip(1).reduce(
+            (best, point) =>
+                (point.dy - origin.dy).abs() < (best.dy - origin.dy).abs()
+                    ? point
+                    : best,
+          );
+
+      expect(boundary.contains(origin), isTrue);
+      expect(centerPoint.dx, closeTo(bounds.right, 0.001));
+      expect(centerPoint.dy, closeTo(origin.dy, 0.001));
+    });
+
+    test('does not paint a cone whose apex is outside the SVG floor mask', () {
+      const source = '''
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#271406" d="M10 10H90V90H10Z"/>
+</svg>
+''';
+      final boundary = SvgVisionBoundary.parse(
+        map: MapValue.ascent,
+        source: source,
+      );
+      final origin = boundary.segments
+          .map((segment) => segment.start)
+          .reduce((left, right) => left.dx < right.dx ? left : right)
+          .translate(-10, 0);
+      final polygon = VisionPolygon.compute(
+        layer: VisionGeometryLayer(
+          elevation: 0,
+          segments: boundary.segments,
+          boundary: boundary,
+        ),
+        origin: origin,
+        facingAngle: 0,
+        coneAngle: math.pi / 2,
+        range: 100,
+      );
+
+      expect(boundary.contains(origin), isFalse);
+      expect(polygon, [origin]);
+    });
+  });
+
+  test('legacy widget offsets round-trip through normalized world space', () {
+    CoordinateSystem(playAreaSize: const Size(1600, 900));
+    const virtualOffset = Offset(300, 307.5);
+    final coordinateSystem = CoordinateSystem.instance;
+    final worldOffset = coordinateSystem.virtualOffsetToWorld(virtualOffset);
+
+    expect(
+      coordinateSystem.worldOffsetToScreen(worldOffset).dx,
+      closeTo(coordinateSystem.scale(virtualOffset.dx), 1e-9),
+    );
+    expect(
+      coordinateSystem.worldOffsetToScreen(worldOffset).dy,
+      closeTo(coordinateSystem.scale(virtualOffset.dy), 1e-9),
+    );
+    expect(
+      coordinateSystem.virtualLengthToWorld(50),
+      closeTo(50 * 1000 / 831, 1e-9),
+    );
   });
 }

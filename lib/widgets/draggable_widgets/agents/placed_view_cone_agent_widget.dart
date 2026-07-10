@@ -90,8 +90,10 @@ class ViewConeAgentComposite extends ConsumerWidget {
               angle: UtilityData.getViewConeAngle(agent.presetType),
               rotation: rotation,
               length: length,
-              worldOrigin:
-                  agent.position + Offset(agentSize / 2, agentSize / 2),
+              worldOrigin: agent.position +
+                  coordinateSystem.virtualOffsetToWorld(
+                    Offset(agentSize / 2, agentSize / 2),
+                  ),
               visionElevation: agent.visionElevation,
               showCenterMarker: false,
             ),

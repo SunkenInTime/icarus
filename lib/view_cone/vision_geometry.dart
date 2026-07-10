@@ -18,8 +18,8 @@ class VisionGeometryMap {
   final List<VisionGeometryLayer> defenseLayers;
 
   List<double> get elevations => [
-    for (final layer in attackLayers) layer.elevation,
-  ];
+        for (final layer in attackLayers) layer.elevation,
+      ];
 
   VisionGeometryLayer layerFor({required bool isAttack, double? elevation}) {
     final layers = isAttack ? attackLayers : defenseLayers;
@@ -34,6 +34,34 @@ class VisionGeometryMap {
       }
       return best;
     });
+  }
+
+  /// Keeps Riot's elevation metadata while making the rendered SVG outline
+  /// the authoritative wall geometry for every layer.
+  VisionGeometryMap withSvgBoundaries({
+    required VisionBoundary attackBoundary,
+    required VisionBoundary defenseBoundary,
+  }) {
+    List<VisionGeometryLayer> replace(
+      List<VisionGeometryLayer> layers,
+      VisionBoundary boundary,
+    ) {
+      return List.unmodifiable([
+        for (final layer in layers)
+          VisionGeometryLayer(
+            elevation: layer.elevation,
+            segments: boundary.segments,
+            boundary: boundary,
+          ),
+      ]);
+    }
+
+    return VisionGeometryMap._(
+      map: map,
+      defaultElevation: defaultElevation,
+      attackLayers: replace(attackLayers, attackBoundary),
+      defenseLayers: replace(defenseLayers, defenseBoundary),
+    );
   }
 
   factory VisionGeometryMap.fromCompactJson(
@@ -190,19 +218,86 @@ class VisionGeometryMap {
   }
 }
 
+enum VisionFillRule { nonZero, evenOdd }
+
+class VisionBoundary {
+  const VisionBoundary({
+    required this.segments,
+    required this.contours,
+    required this.fillRule,
+  });
+
+  final List<VisionSegment> segments;
+  final List<List<Offset>> contours;
+  final VisionFillRule fillRule;
+
+  bool contains(Offset point) {
+    for (final segment in segments) {
+      if (_pointIsOnSegment(point, segment)) return true;
+    }
+
+    if (fillRule == VisionFillRule.evenOdd) {
+      var inside = false;
+      for (final segment in segments) {
+        final start = segment.start;
+        final end = segment.end;
+        if ((start.dy > point.dy) == (end.dy > point.dy)) continue;
+        final intersectionX = start.dx +
+            (point.dy - start.dy) * (end.dx - start.dx) / (end.dy - start.dy);
+        if (intersectionX > point.dx) inside = !inside;
+      }
+      return inside;
+    }
+
+    var winding = 0;
+    for (final segment in segments) {
+      final start = segment.start;
+      final end = segment.end;
+      final side = VisionPolygon._cross(end - start, point - start);
+      if (start.dy <= point.dy) {
+        if (end.dy > point.dy && side > _epsilon) winding += 1;
+      } else if (end.dy <= point.dy && side < -_epsilon) {
+        winding -= 1;
+      }
+    }
+    return winding != 0;
+  }
+
+  static bool _pointIsOnSegment(Offset point, VisionSegment segment) {
+    const tolerance = 0.001;
+    if (point.dx < segment.minX - tolerance ||
+        point.dx > segment.maxX + tolerance ||
+        point.dy < segment.minY - tolerance ||
+        point.dy > segment.maxY + tolerance) {
+      return false;
+    }
+    final edge = segment.end - segment.start;
+    final toPoint = point - segment.start;
+    return VisionPolygon._cross(edge, toPoint).abs() <=
+        tolerance * math.max(1, edge.distance);
+  }
+}
+
 class VisionGeometryLayer {
-  const VisionGeometryLayer({required this.elevation, required this.segments});
+  const VisionGeometryLayer({
+    required this.elevation,
+    required this.segments,
+    this.boundary,
+  });
 
   final double elevation;
   final List<VisionSegment> segments;
+  final VisionBoundary? boundary;
+
+  bool contains(Offset point) => boundary?.contains(point) ?? true;
 }
 
 class VisionSegment {
   VisionSegment(this.start, this.end)
-    : minX = math.min(start.dx, end.dx),
-      maxX = math.max(start.dx, end.dx),
-      minY = math.min(start.dy, end.dy),
-      maxY = math.max(start.dy, end.dy);
+      : minX = math.min(start.dx, end.dx),
+        maxX = math.max(start.dx, end.dx),
+        minY = math.min(start.dy, end.dy),
+        maxY = math.max(start.dy, end.dy);
 
   final Offset start;
   final Offset end;
@@ -235,6 +330,7 @@ class VisionPolygon {
     if (safeRange <= _epsilon || safeCone <= _epsilon) {
       return <Offset>[origin];
     }
+    if (!layer.contains(origin)) return <Offset>[origin];
 
     final halfCone = safeCone / 2;
     final candidateSegments = [
