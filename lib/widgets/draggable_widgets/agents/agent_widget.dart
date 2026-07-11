@@ -14,6 +14,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/view_cone_debug_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
@@ -198,15 +199,15 @@ class AgentWidget extends ConsumerWidget {
           )
         : null;
     final plainAgent = placedAgentNode is PlacedAgent ? placedAgentNode : null;
-    final viewConeAgent = placedAgentNode is PlacedViewConeAgent
-        ? placedAgentNode
-        : null;
+    final viewConeAgent =
+        placedAgentNode is PlacedViewConeAgent ? placedAgentNode : null;
     final visionGeometry = viewConeAgent == null || isScreenshot
         ? null
         : ref
             .watch(viewConeGeometryProvider(mapState.currentMap))
             .asData
             ?.value;
+    final viewConeDebugEnabled = ref.watch(viewConeDebugProvider);
 
     final contextMenuItems = <ShadContextMenuItem>[
       if (!isScreenshot)
@@ -228,12 +229,27 @@ class AgentWidget extends ConsumerWidget {
         buildViewConeElevationMenuItem(
           geometry: visionGeometry,
           selectedElevation: viewConeAgent.visionElevation,
+          automaticElevation: visionGeometry
+              .layerForPosition(
+                isAttack: mapState.isAttack,
+                position: viewConeAgent.position +
+                    coordinateSystem.virtualOffsetToWorld(
+                      Offset(agentSize / 2, agentSize / 2),
+                    ),
+              )
+              .elevation,
           onChanged: (elevation) {
             ref.read(agentProvider.notifier).updateViewConeElevation(
                   id: viewConeAgent.id,
                   elevation: elevation,
                 );
           },
+        ),
+      if (!isScreenshot && viewConeAgent != null && visionGeometry != null)
+        buildViewConeDebugMenuItem(
+          enabled: viewConeDebugEnabled,
+          onChanged: (enabled) =>
+              ref.read(viewConeDebugProvider.notifier).state = enabled,
         ),
       if (lineUpId != null)
         ShadContextMenuItem(

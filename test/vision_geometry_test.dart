@@ -34,7 +34,7 @@ void main() {
       );
     });
 
-    test('keeps elevation metadata when SVG boundaries replace wall data',
+    test('keeps Riot blockers when SVG boundaries constrain wall data',
         () async {
       final source = await rootBundle.loadString(
         'assets/maps/ascent_vision.json',
@@ -60,10 +60,82 @@ void main() {
       expect(geometry.attackLayers, hasLength(8));
       expect(geometry.elevations, containsAll(<double>[300, 800]));
       expect(
-        geometry.attackLayers.map((layer) => layer.segments),
-        everyElement(same(geometry.attackLayers.first.segments)),
+        geometry.attackLayers.map((layer) => layer.riotSegments.length).toSet(),
+        hasLength(greaterThan(1)),
       );
-      expect(geometry.attackLayers.first.boundary, isNotNull);
+      for (final layer in geometry.attackLayers) {
+        expect(layer.riotSegments, isNotEmpty);
+        expect(layer.boundarySegments, isNotEmpty);
+        expect(
+          layer.segments.length,
+          layer.riotSegments.length + layer.boundarySegments.length,
+        );
+        expect(layer.boundary, isNotNull);
+      }
+    });
+
+    test('infers elevation from navigation height samples', () {
+      final geometry = VisionGeometryMap.fromCompactJson(
+        MapValue.ascent,
+        <String, dynamic>{
+          'version': 2,
+          'map': 'ascent',
+          'coordinateScale': 65536,
+          'defaultElevation': 300,
+          'observerHeight': 100,
+          'heightSamples': <int>[32768, 32768, 500],
+          'layers': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'elevation': 300,
+              'vertices': <int>[],
+              'edges': <int>[],
+            },
+            <String, dynamic>{
+              'elevation': 600,
+              'vertices': <int>[],
+              'edges': <int>[],
+            },
+          ],
+        },
+      );
+      final samplePosition = geometry.heightField!.samples.single.position;
+
+      expect(
+        geometry.inferredHeightAt(
+          isAttack: true,
+          position: samplePosition,
+        ),
+        600,
+      );
+      expect(
+        geometry
+            .layerForPosition(
+              isAttack: true,
+              position: samplePosition,
+            )
+            .elevation,
+        600,
+      );
+      expect(
+        geometry
+            .layerForPosition(
+              isAttack: true,
+              position: samplePosition,
+              elevationOverride: 300,
+            )
+            .elevation,
+        300,
+      );
+    });
+
+    test('chooses the topmost co-located navigation surface', () {
+      const field = VisionHeightField(<VisionHeightSample>[
+        VisionHeightSample(position: Offset.zero, elevation: 100),
+        VisionHeightSample(position: Offset(3, 0), elevation: 600),
+        VisionHeightSample(position: Offset(20, 0), elevation: 1200),
+      ]);
+
+      expect(field.heightAt(const Offset(0.1, 0)), 600);
     });
 
     test('mirrors attack geometry exactly for defense', () async {
@@ -99,6 +171,35 @@ void main() {
           isNotEmpty,
           reason: map.name,
         );
+        final heightField = geometry.heightField;
+        if (heightField != null) {
+          final svg = await rootBundle.loadString(
+            'assets/maps/${Maps.mapNames[map]}_map.svg',
+          );
+          final boundary = SvgVisionBoundary.parse(map: map, source: svg);
+          final insideCount = heightField.samples
+              .where((sample) => boundary.contains(sample.position))
+              .length;
+          expect(
+            insideCount / heightField.samples.length,
+            greaterThan(0.5),
+            reason: '${map.name} navigation samples should align with its SVG',
+          );
+          expect(
+            heightField.samples
+                .map(
+                  (sample) => geometry
+                      .layerForPosition(
+                        isAttack: true,
+                        position: sample.position,
+                      )
+                      .elevation,
+                )
+                .toSet(),
+            hasLength(greaterThan(1)),
+            reason: '${map.name} should infer more than one height slice',
+          );
+        }
         for (final suffix in ['', '_defense']) {
           final svg = await rootBundle.loadString(
             'assets/maps/${Maps.mapNames[map]}_map$suffix.svg',

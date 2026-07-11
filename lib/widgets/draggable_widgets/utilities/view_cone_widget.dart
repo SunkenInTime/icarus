@@ -10,6 +10,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/providers/view_cone_debug_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
@@ -83,7 +84,11 @@ class ViewConeWidget extends ConsumerWidget {
             : placedUtility.position +
                 coord.virtualOffsetToWorld(anchorPointVirtual));
     final resolvedElevation = visionElevation ?? placedUtility?.visionElevation;
+    final debugEnabled = ref.watch(viewConeDebugProvider);
     List<Offset>? visibilityPolygon;
+    List<VisionSegment>? debugRiotSegments;
+    List<VisionSegment>? debugBoundarySegments;
+    String? debugLabel;
     VisionGeometryMap? geometry;
     if (resolvedWorldOrigin != null) {
       final mapState = ref.watch(mapProvider);
@@ -92,9 +97,14 @@ class ViewConeWidget extends ConsumerWidget {
           .asData
           ?.value;
       if (geometry != null) {
-        final layer = geometry.layerFor(
+        final inferredHeight = geometry.inferredHeightAt(
           isAttack: mapState.isAttack,
-          elevation: resolvedElevation,
+          position: resolvedWorldOrigin,
+        );
+        final layer = geometry.layerForPosition(
+          isAttack: mapState.isAttack,
+          position: resolvedWorldOrigin,
+          elevationOverride: resolvedElevation,
         );
         // Placed free cones normally pass their drag-preview rotation directly,
         // while this provider fallback keeps clipping correct for any caller
@@ -114,17 +124,32 @@ class ViewConeWidget extends ConsumerWidget {
         final cosine = cos(inverseRotation);
         final sine = sin(inverseRotation);
         final apex = Offset(containerWidth / 2, containerHeight);
+        Offset toLocal(Offset point) {
+          final delta = point - resolvedWorldOrigin;
+          final local = Offset(
+            delta.dx * cosine - delta.dy * sine,
+            delta.dx * sine + delta.dy * cosine,
+          );
+          return apex + coord.worldOffsetToScreen(local);
+        }
+
         visibilityPolygon = [
-          for (final point in worldPolygon)
-            () {
-              final delta = point - resolvedWorldOrigin;
-              final local = Offset(
-                delta.dx * cosine - delta.dy * sine,
-                delta.dx * sine + delta.dy * cosine,
-              );
-              return apex + coord.worldOffsetToScreen(local);
-            }(),
+          for (final point in worldPolygon) toLocal(point),
         ];
+        if (debugEnabled) {
+          debugRiotSegments = [
+            for (final segment in layer.riotSegments)
+              VisionSegment(toLocal(segment.start), toLocal(segment.end)),
+          ];
+          debugBoundarySegments = [
+            for (final segment in layer.boundarySegments)
+              VisionSegment(toLocal(segment.start), toLocal(segment.end)),
+          ];
+          debugLabel = inferredHeight == null
+              ? 'fallback ${formatVisionElevation(layer.elevation)}'
+              : 'height ${formatVisionElevation(inferredHeight)}  '
+                  'slice ${formatVisionElevation(layer.elevation)}';
+        }
       }
     }
 
@@ -133,11 +158,22 @@ class ViewConeWidget extends ConsumerWidget {
             buildViewConeElevationMenuItem(
               geometry: geometry,
               selectedElevation: placedUtility.visionElevation,
+              automaticElevation: geometry
+                  .layerForPosition(
+                    isAttack: ref.read(mapProvider).isAttack,
+                    position: resolvedWorldOrigin!,
+                  )
+                  .elevation,
               onChanged: (elevation) {
                 ref
                     .read(utilityProvider.notifier)
                     .updateViewConeElevation(placedUtility!.id, elevation);
               },
+            ),
+            buildViewConeDebugMenuItem(
+              enabled: debugEnabled,
+              onChanged: (enabled) =>
+                  ref.read(viewConeDebugProvider.notifier).state = enabled,
             ),
           ]
         : null;
@@ -161,6 +197,9 @@ class ViewConeWidget extends ConsumerWidget {
                     angle: angle,
                     length: scaledLength,
                     visibilityPolygon: visibilityPolygon,
+                    debugRiotSegments: debugRiotSegments,
+                    debugBoundarySegments: debugBoundarySegments,
+                    debugLabel: debugLabel,
                   ),
                 ),
               ),
@@ -200,15 +239,25 @@ class ViewConePainter extends CustomPainter {
   final double angle;
   final double length;
   final List<Offset>? visibilityPolygon;
+  final List<VisionSegment>? debugRiotSegments;
+  final List<VisionSegment>? debugBoundarySegments;
+  final String? debugLabel;
 
   ViewConePainter({
     required this.angle,
     required this.length,
     this.visibilityPolygon,
+    this.debugRiotSegments,
+    this.debugBoundarySegments,
+    this.debugLabel,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (debugRiotSegments != null || debugBoundarySegments != null) {
+      _paintDebugGeometry(canvas, size);
+    }
+
     // A non-null result means map clipping was evaluated. If the apex is
     // outside the SVG floor (or the cone otherwise has no visible area), the
     // geometry returns a degenerate polygon and nothing should be painted.
@@ -268,10 +317,61 @@ class ViewConePainter extends CustomPainter {
     canvas.restore();
   }
 
+  void _paintDebugGeometry(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    final riotPaint = Paint()
+      ..color = const Color(0xFF22D3EE).withValues(alpha: 0.85)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    final boundaryPaint = Paint()
+      ..color = const Color(0xFFF59E0B).withValues(alpha: 0.9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.25;
+    for (final segment in debugRiotSegments ?? const <VisionSegment>[]) {
+      canvas.drawLine(segment.start, segment.end, riotPaint);
+    }
+    for (final segment in debugBoundarySegments ?? const <VisionSegment>[]) {
+      canvas.drawLine(segment.start, segment.end, boundaryPaint);
+    }
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height),
+      3,
+      Paint()..color = const Color(0xFF4ADE80),
+    );
+
+    final label = debugLabel;
+    if (label != null) {
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: const TextStyle(
+            color: Colors.white,
+            backgroundColor: Color(0xCC111827),
+            fontSize: 10,
+            height: 1.2,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: max(0.0, size.width - 12));
+      textPainter.paint(
+        canvas,
+        Offset(6, max(4.0, size.height - textPainter.height - 8)),
+      );
+    }
+    canvas.restore();
+  }
+
   @override
   bool shouldRepaint(covariant ViewConePainter oldDelegate) {
     return oldDelegate.length != length ||
         oldDelegate.angle != angle ||
-        !listEquals(oldDelegate.visibilityPolygon, visibilityPolygon);
+        !listEquals(oldDelegate.visibilityPolygon, visibilityPolygon) ||
+        !listEquals(oldDelegate.debugRiotSegments, debugRiotSegments) ||
+        !listEquals(
+          oldDelegate.debugBoundarySegments,
+          debugBoundarySegments,
+        ) ||
+        oldDelegate.debugLabel != debugLabel;
   }
 }

@@ -8,12 +8,16 @@ class VisionGeometryMap {
   const VisionGeometryMap._({
     required this.map,
     required this.defaultElevation,
+    required this.observerHeight,
+    required this.heightField,
     required this.attackLayers,
     required this.defenseLayers,
   });
 
   final MapValue map;
   final double defaultElevation;
+  final double observerHeight;
+  final VisionHeightField? heightField;
   final List<VisionGeometryLayer> attackLayers;
   final List<VisionGeometryLayer> defenseLayers;
 
@@ -36,8 +40,30 @@ class VisionGeometryMap {
     });
   }
 
-  /// Keeps Riot's elevation metadata while making the rendered SVG outline
-  /// the authoritative wall geometry for every layer.
+  double? inferredHeightAt({
+    required bool isAttack,
+    required Offset position,
+  }) {
+    final field = heightField;
+    if (field == null) return null;
+    final attackPosition = isAttack ? position : _flipForDefense(position);
+    return field.heightAt(attackPosition) + observerHeight;
+  }
+
+  VisionGeometryLayer layerForPosition({
+    required bool isAttack,
+    required Offset position,
+    double? elevationOverride,
+  }) {
+    return layerFor(
+      isAttack: isAttack,
+      elevation: elevationOverride ??
+          inferredHeightAt(isAttack: isAttack, position: position),
+    );
+  }
+
+  /// Keeps Riot's elevation-specific internal blockers and adds the rendered
+  /// SVG as the authoritative outer floor mask and boundary geometry.
   VisionGeometryMap withSvgBoundaries({
     required VisionBoundary attackBoundary,
     required VisionBoundary defenseBoundary,
@@ -46,19 +72,34 @@ class VisionGeometryMap {
       List<VisionGeometryLayer> layers,
       VisionBoundary boundary,
     ) {
+      VisionGeometryLayer constrain(VisionGeometryLayer layer) {
+        // Summit postdates the available Riot export, so its compact source
+        // is already the SVG fallback rather than a Riot slice.
+        final riotSegments = map == MapValue.summit
+            ? const <VisionSegment>[]
+            : layer.riotSegments;
+        return VisionGeometryLayer(
+          elevation: layer.elevation,
+          segments: List.unmodifiable([
+            ...riotSegments,
+            ...boundary.segments,
+          ]),
+          sourceSegments: riotSegments,
+          boundarySegments: boundary.segments,
+          boundary: boundary,
+        );
+      }
+
       return List.unmodifiable([
-        for (final layer in layers)
-          VisionGeometryLayer(
-            elevation: layer.elevation,
-            segments: boundary.segments,
-            boundary: boundary,
-          ),
+        for (final layer in layers) constrain(layer),
       ]);
     }
 
     return VisionGeometryMap._(
       map: map,
       defaultElevation: defaultElevation,
+      observerHeight: observerHeight,
+      heightField: heightField,
       attackLayers: replace(attackLayers, attackBoundary),
       defenseLayers: replace(defenseLayers, defenseBoundary),
     );
@@ -68,7 +109,8 @@ class VisionGeometryMap {
     MapValue map,
     Map<String, dynamic> json,
   ) {
-    if (json['version'] != 1) {
+    final version = json['version'];
+    if (version != 1 && version != 2) {
       throw const FormatException('Unsupported vision geometry version.');
     }
     if (json['map'] != Maps.mapNames[map]) {
@@ -76,13 +118,41 @@ class VisionGeometryMap {
     }
     final coordinateScale = json['coordinateScale'];
     final defaultElevation = json['defaultElevation'];
+    final observerHeight = json['observerHeight'] ?? 100;
+    final heightSampleValues = json['heightSamples'] ?? const <dynamic>[];
     final layerValues = json['layers'];
     if (coordinateScale is! num ||
         coordinateScale <= 0 ||
         defaultElevation is! num ||
+        observerHeight is! num ||
+        observerHeight <= 0 ||
+        heightSampleValues is! List ||
+        heightSampleValues.length % 3 != 0 ||
         layerValues is! List ||
         layerValues.isEmpty) {
       throw const FormatException('Invalid vision geometry header.');
+    }
+
+    final heightSamples = <VisionHeightSample>[];
+    for (var index = 0; index < heightSampleValues.length; index += 3) {
+      final x = heightSampleValues[index];
+      final y = heightSampleValues[index + 1];
+      final z = heightSampleValues[index + 2];
+      if (x is! num || y is! num || z is! num) {
+        throw const FormatException('Invalid navigation height sample.');
+      }
+      heightSamples.add(
+        VisionHeightSample(
+          position: _projectUv(
+            map,
+            Offset(
+              x.toDouble() / coordinateScale.toDouble(),
+              y.toDouble() / coordinateScale.toDouble(),
+            ),
+          ),
+          elevation: z.toDouble(),
+        ),
+      );
     }
 
     final attackLayers = <VisionGeometryLayer>[];
@@ -162,6 +232,10 @@ class VisionGeometryMap {
     return VisionGeometryMap._(
       map: map,
       defaultElevation: defaultElevation.toDouble(),
+      observerHeight: observerHeight.toDouble(),
+      heightField: heightSamples.isEmpty
+          ? null
+          : VisionHeightField(List.unmodifiable(heightSamples)),
       attackLayers: List.unmodifiable(attackLayers),
       defenseLayers: List.unmodifiable(defenseLayers),
     );
@@ -219,6 +293,55 @@ class VisionGeometryMap {
 }
 
 enum VisionFillRule { nonZero, evenOdd }
+
+class VisionHeightSample {
+  const VisionHeightSample({
+    required this.position,
+    required this.elevation,
+  });
+
+  final Offset position;
+  final double elevation;
+}
+
+class VisionHeightField {
+  const VisionHeightField(this.samples);
+
+  static const double _sameSurfacePositionTolerance = 4;
+
+  final List<VisionHeightSample> samples;
+
+  double heightAt(Offset position) {
+    if (samples.isEmpty) {
+      throw StateError('Cannot query an empty navigation height field.');
+    }
+
+    var nearest = samples.first;
+    var nearestDistance = (nearest.position - position).distanceSquared;
+    for (final sample in samples.skip(1)) {
+      final distance = (sample.position - position).distanceSquared;
+      if (distance < nearestDistance) {
+        nearest = sample;
+        nearestDistance = distance;
+      }
+    }
+
+    // Reciprocal nav links and vertically stacked surfaces can produce
+    // multiple samples at effectively the same map position. Prefer the
+    // highest one because a top-down planner cannot disambiguate floors.
+    var highestElevation = nearest.elevation;
+    const toleranceSquared =
+        _sameSurfacePositionTolerance * _sameSurfacePositionTolerance;
+    for (final sample in samples) {
+      if ((sample.position - nearest.position).distanceSquared <=
+              toleranceSquared &&
+          sample.elevation > highestElevation) {
+        highestElevation = sample.elevation;
+      }
+    }
+    return highestElevation;
+  }
+}
 
 class VisionBoundary {
   const VisionBoundary({
@@ -282,12 +405,18 @@ class VisionGeometryLayer {
   const VisionGeometryLayer({
     required this.elevation,
     required this.segments,
+    this.sourceSegments,
+    this.boundarySegments = const [],
     this.boundary,
   });
 
   final double elevation;
   final List<VisionSegment> segments;
+  final List<VisionSegment>? sourceSegments;
+  final List<VisionSegment> boundarySegments;
   final VisionBoundary? boundary;
+
+  List<VisionSegment> get riotSegments => sourceSegments ?? segments;
 
   bool contains(Offset point) => boundary?.contains(point) ?? true;
 }

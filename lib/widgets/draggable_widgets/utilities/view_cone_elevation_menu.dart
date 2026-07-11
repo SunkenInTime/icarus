@@ -5,26 +5,26 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 ShadContextMenuItem buildViewConeElevationMenuItem({
   required VisionGeometryMap geometry,
   required double? selectedElevation,
+  required double automaticElevation,
   required ValueChanged<double?> onChanged,
 }) {
   return ShadContextMenuItem(
     leading: const Icon(Icons.layers_outlined),
     trailing: Text(
       selectedElevation == null
-          ? 'Default'
+          ? 'Auto ${formatVisionElevation(automaticElevation)}'
           : formatVisionElevation(selectedElevation),
     ),
     items: [
       _elevationItem(
-        label: 'Default (${formatVisionElevation(geometry.defaultElevation)})',
+        label: 'Automatic (${formatVisionElevation(automaticElevation)})',
         selected: selectedElevation == null,
         onPressed: () => onChanged(null),
       ),
       for (final elevation in geometry.elevations)
         _elevationItem(
           label: formatVisionElevation(elevation),
-          selected:
-              selectedElevation != null &&
+          selected: selectedElevation != null &&
               (selectedElevation - elevation).abs() < 0.001,
           onPressed: () => onChanged(elevation),
         ),
@@ -38,6 +38,18 @@ String formatVisionElevation(double elevation) {
   final wholeMeters = meters.roundToDouble() == meters;
   return '${meters >= 0 ? '+' : ''}'
       '${meters.toStringAsFixed(wholeMeters ? 0 : 2)} m';
+}
+
+ShadContextMenuItem buildViewConeDebugMenuItem({
+  required bool enabled,
+  required ValueChanged<bool> onChanged,
+}) {
+  return ShadContextMenuItem(
+    leading: Icon(enabled ? Icons.visibility : Icons.visibility_outlined),
+    trailing: Text(enabled ? 'On' : 'Off'),
+    onPressed: () => onChanged(!enabled),
+    child: const Text('Vision calibration'),
+  );
 }
 
 ShadContextMenuItem _elevationItem({
