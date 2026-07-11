@@ -34,8 +34,7 @@ void main() {
       );
     });
 
-    test('keeps Riot blockers when SVG boundaries constrain wall data',
-        () async {
+    test('transfers matched Riot blockers onto exact SVG geometry', () async {
       final source = await rootBundle.loadString(
         'assets/maps/ascent_vision.json',
       );
@@ -63,9 +62,21 @@ void main() {
         geometry.attackLayers.map((layer) => layer.riotSegments.length).toSet(),
         hasLength(greaterThan(1)),
       );
+      expect(
+        geometry.attackLayers.expand((layer) => layer.matchedSourceSegments),
+        isNotEmpty,
+      );
+      expect(
+        geometry.attackLayers.expand((layer) => layer.matchedBoundarySegments),
+        isNotEmpty,
+      );
       for (final layer in geometry.attackLayers) {
         expect(layer.riotSegments, isNotEmpty);
         expect(layer.boundarySegments, isNotEmpty);
+        expect(
+          layer.segments,
+          containsAll(layer.matchedBoundarySegments),
+        );
         expect(
           layer.segments.length,
           layer.riotSegments.length + layer.boundarySegments.length,
@@ -231,6 +242,9 @@ void main() {
         final keptSegmentCount = constrained.attackLayers
             .map((layer) => layer.riotSegments.length)
             .reduce((left, right) => left + right);
+        final matchedSegmentCount = constrained.attackLayers
+            .map((layer) => layer.matchedSourceSegments.length)
+            .reduce((left, right) => left + right);
         final rejectedSegmentCount = constrained.attackLayers
             .map((layer) => layer.rejectedSegments.length)
             .reduce((left, right) => left + right);
@@ -239,27 +253,29 @@ void main() {
           expect(rejectedSegmentCount, 0);
         } else {
           expect(
-            keptSegmentCount + rejectedSegmentCount,
+            keptSegmentCount + matchedSegmentCount + rejectedSegmentCount,
             sourceSegmentCount,
             reason: '${map.name} should classify every Riot segment',
           );
           expect(
-            keptSegmentCount / sourceSegmentCount,
+            (keptSegmentCount + matchedSegmentCount) / sourceSegmentCount,
             greaterThan(0.8),
             reason: '${map.name} filtering should remain conservative',
           );
           expect(
-            rejectedSegmentCount,
-            greaterThan(0),
+            rejectedSegmentCount / sourceSegmentCount,
+            lessThan(0.2),
             reason: '${map.name} should reject only clear map-space outliers',
           );
-          final alignment = Maps.visionGeometryAlignmentOffset[map];
+          final alignment = Maps.visionGeometryAlignment[map];
           expect(alignment, isNotNull, reason: map.name);
           expect(
-            alignment!.distance,
+            alignment!.offset.distance,
             lessThanOrEqualTo(32),
             reason: '${map.name} calibration should stay a small correction',
           );
+          expect(alignment.scaleX, inInclusiveRange(0.94, 1.06));
+          expect(alignment.scaleY, inInclusiveRange(0.94, 1.06));
         }
       }
     });

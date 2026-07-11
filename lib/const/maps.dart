@@ -16,6 +16,18 @@ enum MapValue {
   summit,
 }
 
+class VisionGeometryAlignment {
+  const VisionGeometryAlignment({
+    this.scaleX = 1,
+    this.scaleY = 1,
+    this.offset = Offset.zero,
+  });
+
+  final double scaleX;
+  final double scaleY;
+  final Offset offset;
+}
+
 class Maps {
   static List<MapValue> availableMaps = [
     MapValue.ascent,
@@ -153,19 +165,23 @@ class Maps {
   /// Small residual corrections between Riot's minimap UV frame and the
   /// cropped SVG artwork rendered by Icarus. Values are normalized world
   /// units and were calibrated against the SVG base-fill contours.
-  static const Map<MapValue, Offset> visionGeometryAlignmentOffset = {
-    MapValue.ascent: Offset(0, 6),
-    MapValue.breeze: Offset(0, 2),
-    MapValue.lotus: Offset(0, 2),
-    MapValue.icebox: Offset(24, 8),
-    MapValue.sunset: Offset(0, 4),
-    MapValue.split: Offset(0, -4),
-    MapValue.haven: Offset(0, -6),
-    MapValue.fracture: Offset(0, -2),
-    MapValue.abyss: Offset(0, 10),
-    MapValue.pearl: Offset(0, 12),
-    MapValue.bind: Offset(0, -14),
-    MapValue.corrode: Offset(-2, 8),
+  static const Map<MapValue, VisionGeometryAlignment> visionGeometryAlignment =
+      {
+    MapValue.ascent: VisionGeometryAlignment(offset: Offset(0, 6)),
+    MapValue.breeze: VisionGeometryAlignment(offset: Offset(0, 2)),
+    MapValue.lotus: VisionGeometryAlignment(offset: Offset(0, 2)),
+    MapValue.icebox: VisionGeometryAlignment(
+      scaleY: 1.03,
+      offset: Offset(12, 0),
+    ),
+    MapValue.sunset: VisionGeometryAlignment(offset: Offset(0, 4)),
+    MapValue.split: VisionGeometryAlignment(offset: Offset(0, -4)),
+    MapValue.haven: VisionGeometryAlignment(offset: Offset(0, -6)),
+    MapValue.fracture: VisionGeometryAlignment(offset: Offset(0, -2)),
+    MapValue.abyss: VisionGeometryAlignment(offset: Offset(0, 10)),
+    MapValue.pearl: VisionGeometryAlignment(offset: Offset(0, 12)),
+    MapValue.bind: VisionGeometryAlignment(offset: Offset(0, -14)),
+    MapValue.corrode: VisionGeometryAlignment(offset: Offset(-2, 8)),
   };
 
   /// Quarter turns required to align Riot's VisionGeometry tables with the

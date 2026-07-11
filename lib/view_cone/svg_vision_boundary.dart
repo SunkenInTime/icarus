@@ -63,14 +63,38 @@ class SvgVisionBoundary {
     if (segments.isEmpty) {
       throw FormatException('No base map edges for ${map.name}.');
     }
+    final primaryContour = worldContours.reduce(
+      (best, candidate) =>
+          _signedArea(candidate).abs() > _signedArea(best).abs()
+              ? candidate
+              : best,
+    );
+    final alwaysOnSegments = List<VisionSegment>.unmodifiable([
+      for (var index = 1; index < primaryContour.length; index += 1)
+        if ((primaryContour[index] - primaryContour[index - 1])
+                .distanceSquared >
+            1e-9)
+          VisionSegment(primaryContour[index - 1], primaryContour[index]),
+    ]);
 
     return VisionBoundary(
       segments: segments,
       contours: worldContours,
+      alwaysOnSegments: alwaysOnSegments,
       fillRule: pathElement.getAttribute('fill-rule') == 'evenodd'
           ? VisionFillRule.evenOdd
           : VisionFillRule.nonZero,
     );
+  }
+
+  static double _signedArea(List<Offset> contour) {
+    var area = 0.0;
+    for (var index = 1; index < contour.length; index += 1) {
+      final previous = contour[index - 1];
+      final current = contour[index];
+      area += previous.dx * current.dy - current.dx * previous.dy;
+    }
+    return area / 2;
   }
 
   static _SvgViewBox _parseViewBox(String? value, MapValue map) {

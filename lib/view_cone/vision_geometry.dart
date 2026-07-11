@@ -72,36 +72,83 @@ class VisionGeometryMap {
       List<VisionGeometryLayer> layers,
       VisionBoundary boundary,
     ) {
-      VisionGeometryLayer constrain(VisionGeometryLayer layer) {
-        // Summit postdates the available Riot export, so its compact source
-        // is already the SVG fallback rather than a Riot slice.
-        final sourceSegments = map == MapValue.summit
-            ? const <VisionSegment>[]
-            : layer.riotSegments;
-        final riotSegments = <VisionSegment>[];
-        final rejectedSegments = <VisionSegment>[];
-        for (final segment in sourceSegments) {
-          if (_isPlausiblyOnMap(segment, boundary)) {
-            riotSegments.add(segment);
-          } else {
-            rejectedSegments.add(segment);
-          }
-        }
-        return VisionGeometryLayer(
-          elevation: layer.elevation,
-          segments: List.unmodifiable([
-            ...riotSegments,
-            ...boundary.segments,
-          ]),
-          sourceSegments: List.unmodifiable(riotSegments),
-          rejectedSegments: List.unmodifiable(rejectedSegments),
-          boundarySegments: boundary.segments,
-          boundary: boundary,
-        );
+      // Summit postdates the available Riot export, so its compact source is
+      // already the SVG fallback rather than a Riot slice.
+      if (map == MapValue.summit) {
+        return List.unmodifiable([
+          for (final layer in layers)
+            VisionGeometryLayer(
+              elevation: layer.elevation,
+              segments: boundary.segments,
+              sourceSegments: const [],
+              boundarySegments: boundary.segments,
+              boundary: boundary,
+            ),
+        ]);
       }
 
+      final matches = [
+        for (final layer in layers)
+          _matchSvgSegments(layer.riotSegments, boundary.segments),
+      ];
+      final globallyMatchedBoundary = <int>{
+        for (final match in matches) ...match.boundaryIndices,
+      };
+      final alwaysOnKeys = {
+        for (final segment in boundary.alwaysOnSegments) _segmentKey(segment),
+      };
+      final fallbackBoundaryIndices = <int>{
+        for (var index = 0; index < boundary.segments.length; index += 1)
+          if (!globallyMatchedBoundary.contains(index) ||
+              alwaysOnKeys.contains(_segmentKey(boundary.segments[index])))
+            index,
+      };
+
       return List.unmodifiable([
-        for (final layer in layers) constrain(layer),
+        for (var layerIndex = 0; layerIndex < layers.length; layerIndex += 1)
+          () {
+            final layer = layers[layerIndex];
+            final match = matches[layerIndex];
+            final retainedRiot = <VisionSegment>[];
+            final rejectedRiot = <VisionSegment>[];
+            final matchedRiot = <VisionSegment>[];
+            for (var index = 0; index < layer.riotSegments.length; index += 1) {
+              final segment = layer.riotSegments[index];
+              if (match.riotIndices.contains(index)) {
+                matchedRiot.add(segment);
+              } else if (_isPlausiblyOnMap(segment, boundary)) {
+                retainedRiot.add(segment);
+              } else {
+                rejectedRiot.add(segment);
+              }
+            }
+            final selectedBoundaryIndices = <int>{
+              ...fallbackBoundaryIndices,
+              ...match.boundaryIndices,
+            };
+            final selectedBoundary = List<VisionSegment>.unmodifiable([
+              for (var index = 0; index < boundary.segments.length; index += 1)
+                if (selectedBoundaryIndices.contains(index))
+                  boundary.segments[index],
+            ]);
+            final matchedBoundary = List<VisionSegment>.unmodifiable([
+              for (final index in match.boundaryIndices)
+                boundary.segments[index],
+            ]);
+            return VisionGeometryLayer(
+              elevation: layer.elevation,
+              segments: List.unmodifiable([
+                ...retainedRiot,
+                ...selectedBoundary,
+              ]),
+              sourceSegments: List.unmodifiable(retainedRiot),
+              matchedSourceSegments: List.unmodifiable(matchedRiot),
+              matchedBoundarySegments: matchedBoundary,
+              rejectedSegments: List.unmodifiable(rejectedRiot),
+              boundarySegments: selectedBoundary,
+              boundary: boundary,
+            );
+          }(),
       ]);
     }
 
@@ -113,6 +160,144 @@ class VisionGeometryMap {
       attackLayers: replace(attackLayers, attackBoundary),
       defenseLayers: replace(defenseLayers, defenseBoundary),
     );
+  }
+
+  static _SvgSegmentMatch _matchSvgSegments(
+    List<VisionSegment> riotSegments,
+    List<VisionSegment> svgSegments,
+  ) {
+    const exactMatchDistance = 14.0;
+    const supportedMatchDistance = 40.0;
+    final candidates = <int, _SvgMatchCandidate>{};
+    final exact = <int>{};
+    for (var svgIndex = 0; svgIndex < svgSegments.length; svgIndex += 1) {
+      final svg = svgSegments[svgIndex];
+      _SvgMatchCandidate? best;
+      for (var riotIndex = 0; riotIndex < riotSegments.length; riotIndex += 1) {
+        final riot = riotSegments[riotIndex];
+        final distance = _compatibleSegmentDistance(svg, riot);
+        if (distance == null || distance > supportedMatchDistance) continue;
+        if (best == null || distance < best.distance) {
+          best = _SvgMatchCandidate(riotIndex, distance);
+        }
+      }
+      if (best == null) continue;
+      candidates[svgIndex] = best;
+      if (best.distance <= exactMatchDistance) exact.add(svgIndex);
+    }
+
+    final accepted = <int>{...exact};
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (final entry in candidates.entries) {
+        if (accepted.contains(entry.key)) continue;
+        if (_sharesEndpointWithAccepted(
+          entry.key,
+          svgSegments,
+          accepted,
+        )) {
+          accepted.add(entry.key);
+          changed = true;
+        }
+      }
+    }
+    final matchedRiotIndices = <int>{
+      for (final index in accepted) candidates[index]!.riotIndex,
+    };
+    for (var riotIndex = 0; riotIndex < riotSegments.length; riotIndex += 1) {
+      if (matchedRiotIndices.contains(riotIndex)) continue;
+      var bestBoundaryIndex = -1;
+      var bestDistance = double.infinity;
+      for (var svgIndex = 0; svgIndex < svgSegments.length; svgIndex += 1) {
+        final distance = _directRiotMatchDistance(
+          riotSegments[riotIndex],
+          svgSegments[svgIndex],
+        );
+        if (distance != null && distance < bestDistance) {
+          bestDistance = distance;
+          bestBoundaryIndex = svgIndex;
+        }
+      }
+      if (bestBoundaryIndex >= 0 && bestDistance <= 60) {
+        accepted.add(bestBoundaryIndex);
+        matchedRiotIndices.add(riotIndex);
+      }
+    }
+    return _SvgSegmentMatch(
+      boundaryIndices: Set.unmodifiable(accepted),
+      riotIndices: Set.unmodifiable(matchedRiotIndices),
+    );
+  }
+
+  static double? _compatibleSegmentDistance(
+    VisionSegment svg,
+    VisionSegment riot,
+  ) {
+    const minimumDirectionCosine = 0.9659258262890683; // cos(15 degrees)
+    final svgDelta = svg.end - svg.start;
+    final riotDelta = riot.end - riot.start;
+    final denominator = svgDelta.distance * riotDelta.distance;
+    if (denominator <= _epsilon) return null;
+    final cosine = ((svgDelta.dx * riotDelta.dx + svgDelta.dy * riotDelta.dy) /
+            denominator)
+        .abs();
+    if (cosine < minimumDirectionCosine) return null;
+    var distanceSquared = double.infinity;
+    for (final fraction in const [0.2, 0.5, 0.8]) {
+      final point = svg.start + svgDelta * fraction;
+      distanceSquared = math.min(
+        distanceSquared,
+        _distanceSquaredToSegment(point, riot),
+      );
+    }
+    return math.sqrt(distanceSquared);
+  }
+
+  static double? _directRiotMatchDistance(
+    VisionSegment riot,
+    VisionSegment svg,
+  ) {
+    const minimumDirectionCosine = 0.9396926207859084; // cos(20 degrees)
+    final riotDelta = riot.end - riot.start;
+    final svgDelta = svg.end - svg.start;
+    final denominator = riotDelta.distance * svgDelta.distance;
+    if (denominator <= _epsilon) return null;
+    final cosine = ((riotDelta.dx * svgDelta.dx + riotDelta.dy * svgDelta.dy) /
+            denominator)
+        .abs();
+    if (cosine < minimumDirectionCosine) return null;
+    final midpoint = (riot.start + riot.end) / 2;
+    return math.sqrt(_distanceSquaredToSegment(midpoint, svg));
+  }
+
+  static bool _sharesEndpointWithAccepted(
+    int candidateIndex,
+    List<VisionSegment> segments,
+    Set<int> accepted,
+  ) {
+    final candidate = segments[candidateIndex];
+    for (final acceptedIndex in accepted) {
+      final segment = segments[acceptedIndex];
+      if (_pointsNear(candidate.start, segment.start) ||
+          _pointsNear(candidate.start, segment.end) ||
+          _pointsNear(candidate.end, segment.start) ||
+          _pointsNear(candidate.end, segment.end)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static bool _pointsNear(Offset left, Offset right) =>
+      (left - right).distanceSquared <= 0.25;
+
+  static String _segmentKey(VisionSegment segment) {
+    String pointKey(Offset point) =>
+        '${(point.dx * 10).round()},${(point.dy * 10).round()}';
+    final start = pointKey(segment.start);
+    final end = pointKey(segment.end);
+    return start.compareTo(end) <= 0 ? '$start:$end' : '$end:$start';
   }
 
   static bool _isPlausiblyOnMap(
@@ -330,7 +515,16 @@ class VisionGeometryMap {
       mapLeft + svgOffset.dx + svgPoint.dx * scale,
       svgOffset.dy + svgPoint.dy * scale,
     );
-    return projected + (Maps.visionGeometryAlignmentOffset[map] ?? Offset.zero);
+    final alignment = Maps.visionGeometryAlignment[map];
+    if (alignment == null) return projected;
+    const center = Offset(worldWidth / 2, normalizedHeight / 2);
+    final centered = projected - center;
+    return center +
+        Offset(
+          centered.dx * alignment.scaleX,
+          centered.dy * alignment.scaleY,
+        ) +
+        alignment.offset;
   }
 
   static Offset _rotateUv(Offset point, int clockwiseQuarterTurns) {
@@ -405,11 +599,13 @@ class VisionBoundary {
     required this.segments,
     required this.contours,
     required this.fillRule,
+    this.alwaysOnSegments = const [],
   });
 
   final List<VisionSegment> segments;
   final List<List<Offset>> contours;
   final VisionFillRule fillRule;
+  final List<VisionSegment> alwaysOnSegments;
 
   bool contains(Offset point) {
     for (final segment in segments) {
@@ -463,6 +659,8 @@ class VisionGeometryLayer {
     required this.elevation,
     required this.segments,
     this.sourceSegments,
+    this.matchedSourceSegments = const [],
+    this.matchedBoundarySegments = const [],
     this.rejectedSegments = const [],
     this.boundarySegments = const [],
     this.boundary,
@@ -471,6 +669,8 @@ class VisionGeometryLayer {
   final double elevation;
   final List<VisionSegment> segments;
   final List<VisionSegment>? sourceSegments;
+  final List<VisionSegment> matchedSourceSegments;
+  final List<VisionSegment> matchedBoundarySegments;
   final List<VisionSegment> rejectedSegments;
   final List<VisionSegment> boundarySegments;
   final VisionBoundary? boundary;
@@ -478,6 +678,23 @@ class VisionGeometryLayer {
   List<VisionSegment> get riotSegments => sourceSegments ?? segments;
 
   bool contains(Offset point) => boundary?.contains(point) ?? true;
+}
+
+class _SvgSegmentMatch {
+  const _SvgSegmentMatch({
+    required this.boundaryIndices,
+    required this.riotIndices,
+  });
+
+  final Set<int> boundaryIndices;
+  final Set<int> riotIndices;
+}
+
+class _SvgMatchCandidate {
+  const _SvgMatchCandidate(this.riotIndex, this.distance);
+
+  final int riotIndex;
+  final double distance;
 }
 
 class VisionSegment {

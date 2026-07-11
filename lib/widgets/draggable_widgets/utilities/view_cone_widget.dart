@@ -86,6 +86,7 @@ class ViewConeWidget extends ConsumerWidget {
     final resolvedElevation = visionElevation ?? placedUtility?.visionElevation;
     final debugEnabled = ref.watch(viewConeDebugProvider);
     List<Offset>? visibilityPolygon;
+    List<VisionSegment>? debugMatchedSegments;
     List<VisionSegment>? debugRiotSegments;
     List<VisionSegment>? debugRejectedSegments;
     List<VisionSegment>? debugBoundarySegments;
@@ -138,6 +139,10 @@ class ViewConeWidget extends ConsumerWidget {
           for (final point in worldPolygon) toLocal(point),
         ];
         if (debugEnabled) {
+          debugMatchedSegments = [
+            for (final segment in layer.matchedBoundarySegments)
+              VisionSegment(toLocal(segment.start), toLocal(segment.end)),
+          ];
           debugRiotSegments = [
             for (final segment in layer.riotSegments)
               VisionSegment(toLocal(segment.start), toLocal(segment.end)),
@@ -147,14 +152,16 @@ class ViewConeWidget extends ConsumerWidget {
               VisionSegment(toLocal(segment.start), toLocal(segment.end)),
           ];
           debugBoundarySegments = [
-            for (final segment in layer.boundarySegments)
+            for (final segment
+                in layer.boundary?.segments ?? const <VisionSegment>[])
               VisionSegment(toLocal(segment.start), toLocal(segment.end)),
           ];
           debugLabel = inferredHeight == null
               ? 'fallback ${formatVisionElevation(layer.elevation)}'
               : 'height ${formatVisionElevation(inferredHeight)}  '
                   'slice ${formatVisionElevation(layer.elevation)}  '
-                  '${layer.riotSegments.length} kept / '
+                  '${layer.matchedSourceSegments.length} matched / '
+                  '${layer.riotSegments.length} retained / '
                   '${layer.rejectedSegments.length} rejected';
         }
       }
@@ -204,6 +211,7 @@ class ViewConeWidget extends ConsumerWidget {
                     angle: angle,
                     length: scaledLength,
                     visibilityPolygon: visibilityPolygon,
+                    debugMatchedSegments: debugMatchedSegments,
                     debugRiotSegments: debugRiotSegments,
                     debugRejectedSegments: debugRejectedSegments,
                     debugBoundarySegments: debugBoundarySegments,
@@ -247,6 +255,7 @@ class ViewConePainter extends CustomPainter {
   final double angle;
   final double length;
   final List<Offset>? visibilityPolygon;
+  final List<VisionSegment>? debugMatchedSegments;
   final List<VisionSegment>? debugRiotSegments;
   final List<VisionSegment>? debugRejectedSegments;
   final List<VisionSegment>? debugBoundarySegments;
@@ -256,6 +265,7 @@ class ViewConePainter extends CustomPainter {
     required this.angle,
     required this.length,
     this.visibilityPolygon,
+    this.debugMatchedSegments,
     this.debugRiotSegments,
     this.debugRejectedSegments,
     this.debugBoundarySegments,
@@ -264,7 +274,8 @@ class ViewConePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (debugRiotSegments != null ||
+    if (debugMatchedSegments != null ||
+        debugRiotSegments != null ||
         debugRejectedSegments != null ||
         debugBoundarySegments != null) {
       _paintDebugGeometry(canvas, size);
@@ -332,10 +343,14 @@ class ViewConePainter extends CustomPainter {
   void _paintDebugGeometry(Canvas canvas, Size size) {
     canvas.save();
     canvas.clipRect(Offset.zero & size);
-    final riotPaint = Paint()
+    final matchedPaint = Paint()
       ..color = const Color(0xFF22D3EE).withValues(alpha: 0.85)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
+    final riotPaint = Paint()
+      ..color = const Color(0xFFA78BFA).withValues(alpha: 0.95)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.25;
     final boundaryPaint = Paint()
       ..color = const Color(0xFFF59E0B).withValues(alpha: 0.9)
       ..style = PaintingStyle.stroke
@@ -344,11 +359,14 @@ class ViewConePainter extends CustomPainter {
       ..color = const Color(0xFFFB7185).withValues(alpha: 0.9)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
-    for (final segment in debugRiotSegments ?? const <VisionSegment>[]) {
-      canvas.drawLine(segment.start, segment.end, riotPaint);
-    }
     for (final segment in debugBoundarySegments ?? const <VisionSegment>[]) {
       canvas.drawLine(segment.start, segment.end, boundaryPaint);
+    }
+    for (final segment in debugMatchedSegments ?? const <VisionSegment>[]) {
+      canvas.drawLine(segment.start, segment.end, matchedPaint);
+    }
+    for (final segment in debugRiotSegments ?? const <VisionSegment>[]) {
+      canvas.drawLine(segment.start, segment.end, riotPaint);
     }
     for (final segment in debugRejectedSegments ?? const <VisionSegment>[]) {
       canvas.drawLine(segment.start, segment.end, rejectedPaint);
@@ -386,6 +404,7 @@ class ViewConePainter extends CustomPainter {
     return oldDelegate.length != length ||
         oldDelegate.angle != angle ||
         !listEquals(oldDelegate.visibilityPolygon, visibilityPolygon) ||
+        !listEquals(oldDelegate.debugMatchedSegments, debugMatchedSegments) ||
         !listEquals(oldDelegate.debugRiotSegments, debugRiotSegments) ||
         !listEquals(
           oldDelegate.debugRejectedSegments,
