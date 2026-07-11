@@ -12,6 +12,7 @@ import 'package:xml/xml.dart';
 /// into the hand-cropped map artwork.
 class SvgVisionBoundary {
   static const String _mapBaseFill = '#271406';
+  static const String _mapStructuralStroke = '#B27C40';
 
   static VisionBoundary parse({
     required MapValue map,
@@ -41,50 +42,310 @@ class SvgVisionBoundary {
           ),
     );
     final pathElement = candidates.first;
-    final collector = _ContourCollector();
-    writeSvgPathDataToPath(pathElement.getAttribute('d'), collector);
-    final svgContours = collector.finish();
-    if (svgContours.isEmpty) {
+    final svgMaskContours = _collectContours(
+      pathElement,
+      closeOpenContours: true,
+    );
+    if (svgMaskContours.isEmpty) {
       throw FormatException('Empty base map path for ${map.name}.');
     }
 
-    final worldContours = List<List<Offset>>.unmodifiable([
-      for (final contour in svgContours)
+    final worldMaskContours = List<List<Offset>>.unmodifiable([
+      for (final contour in svgMaskContours)
         List<Offset>.unmodifiable([
-          for (final point in contour) _project(point, viewBox),
+          for (final point in contour.points) _project(point, viewBox),
         ]),
     ]);
-    final segments = List<VisionSegment>.unmodifiable([
-      for (final contour in worldContours)
+    final maskSegments = List<VisionSegment>.unmodifiable([
+      for (final contour in worldMaskContours)
         for (var index = 1; index < contour.length; index += 1)
           if ((contour[index] - contour[index - 1]).distanceSquared > 1e-9)
             VisionSegment(contour[index - 1], contour[index]),
     ]);
-    if (segments.isEmpty) {
+    if (maskSegments.isEmpty) {
       throw FormatException('No base map edges for ${map.name}.');
     }
-    final primaryContour = worldContours.reduce(
-      (best, candidate) =>
-          _signedArea(candidate).abs() > _signedArea(best).abs()
-              ? candidate
-              : best,
+    var primaryIndex = 0;
+    for (var index = 1; index < worldMaskContours.length; index += 1) {
+      if (_signedArea(worldMaskContours[index]).abs() >
+          _signedArea(worldMaskContours[primaryIndex]).abs()) {
+        primaryIndex = index;
+      }
+    }
+
+    final collisionGroups = <VisionCollisionGroup>[];
+    for (var index = 0; index < worldMaskContours.length; index += 1) {
+      collisionGroups.add(
+        VisionCollisionGroup.geometry(
+          points: worldMaskContours[index],
+          kind: VisionCollisionKind.maskBoundary,
+          isClosed: true,
+          isOuterBoundary: index == primaryIndex,
+          nestingDepth: _nestingDepth(
+            index,
+            primaryIndex,
+            worldMaskContours,
+          ),
+        ),
+      );
+    }
+
+    final detailElements = root.descendants.whereType<XmlElement>().where(
+          (element) =>
+              element.name.local == 'path' &&
+              element != pathElement &&
+              (element.getAttribute('d') ?? '').isNotEmpty &&
+              (_hasStructuralStroke(element) ||
+                  element.getAttribute('fill')?.toUpperCase() == _mapBaseFill),
+        );
+    final existingKeys = <String>{
+      for (final group in collisionGroups)
+        for (final segment in group.segments) visionSegmentKey(segment),
+    };
+
+    void addDetailGroup(
+      List<Offset> svgPoints, {
+      required bool isClosed,
+      required bool requiresEvidence,
+    }) {
+      final worldPoints = List<Offset>.unmodifiable([
+        for (final point in svgPoints) _project(point, viewBox),
+      ]);
+      if (worldPoints.length < 2) return;
+      VisionCollisionGroup group;
+      try {
+        group = VisionCollisionGroup.geometry(
+          points: worldPoints,
+          kind: isClosed
+              ? VisionCollisionKind.structuralObstacle
+              : VisionCollisionKind.structuralChain,
+          isClosed: isClosed,
+          requiresEvidence: requiresEvidence,
+        );
+      } on FormatException {
+        return;
+      }
+      final duplicateCount = group.segments
+          .where(
+            (segment) => existingKeys.contains(visionSegmentKey(segment)),
+          )
+          .length;
+      if (duplicateCount == group.segments.length) return;
+      collisionGroups.add(group);
+      existingKeys.addAll(group.segments.map(visionSegmentKey));
+    }
+
+    for (final element in detailElements) {
+      final isFill =
+          element.getAttribute('fill')?.toUpperCase() == _mapBaseFill;
+      final collected = _collectContours(
+        element,
+        closeOpenContours: isFill,
+      );
+      for (final contour in collected) {
+        addDetailGroup(
+          contour.points,
+          isClosed: contour.isClosed || isFill,
+          requiresEvidence: !isFill && _strokeRequiresEvidence(element),
+        );
+      }
+    }
+    for (final element in root.descendants.whereType<XmlElement>().where(
+          (element) =>
+              element.name.local != 'path' && _hasStructuralStroke(element),
+        )) {
+      for (final contour in _primitiveContours(element)) {
+        addDetailGroup(
+          contour.points,
+          isClosed: contour.isClosed,
+          requiresEvidence: _strokeRequiresEvidence(element),
+        );
+      }
+    }
+
+    final collisionSegments = <VisionSegment>[];
+    final collisionKeys = <String>{};
+    for (final group in collisionGroups) {
+      for (final segment in group.segments) {
+        if (collisionKeys.add(visionSegmentKey(segment))) {
+          collisionSegments.add(segment);
+        }
+      }
+    }
+    final outerGroup = collisionGroups.firstWhere(
+      (group) => group.isOuterBoundary,
     );
-    final alwaysOnSegments = List<VisionSegment>.unmodifiable([
-      for (var index = 1; index < primaryContour.length; index += 1)
-        if ((primaryContour[index] - primaryContour[index - 1])
-                .distanceSquared >
-            1e-9)
-          VisionSegment(primaryContour[index - 1], primaryContour[index]),
-    ]);
 
     return VisionBoundary(
-      segments: segments,
-      contours: worldContours,
-      alwaysOnSegments: alwaysOnSegments,
+      segments: List.unmodifiable(collisionSegments),
+      maskSegments: maskSegments,
+      contours: worldMaskContours,
+      collisionGroups: List.unmodifiable(collisionGroups),
+      outerGroupId: outerGroup.id,
+      alwaysOnSegments: outerGroup.segments,
       fillRule: pathElement.getAttribute('fill-rule') == 'evenodd'
           ? VisionFillRule.evenOdd
           : VisionFillRule.nonZero,
     );
+  }
+
+  static List<_CollectedContour> _collectContours(
+    XmlElement element, {
+    required bool closeOpenContours,
+  }) {
+    final collector = _ContourCollector(
+      closeOpenContours: closeOpenContours,
+    );
+    writeSvgPathDataToPath(element.getAttribute('d'), collector);
+    return collector.finish();
+  }
+
+  static bool _hasStructuralStroke(XmlElement element) =>
+      element.getAttribute('stroke')?.toUpperCase() == _mapStructuralStroke;
+
+  static bool _strokeRequiresEvidence(XmlElement element) {
+    final opacity =
+        double.tryParse(element.getAttribute('stroke-opacity') ?? '1') ?? 1;
+    final width =
+        double.tryParse(element.getAttribute('stroke-width') ?? '1') ?? 1;
+    final dashArray = element.getAttribute('stroke-dasharray');
+    return opacity < 0.5 ||
+        width < 0.75 ||
+        (dashArray != null && dashArray.toLowerCase() != 'none');
+  }
+
+  static List<_CollectedContour> _primitiveContours(XmlElement element) {
+    double? number(String name, {double? fallback}) =>
+        double.tryParse(element.getAttribute(name) ?? '') ?? fallback;
+    final name = element.name.local;
+    if (name == 'circle' || name == 'ellipse') {
+      final centerX = number('cx', fallback: 0);
+      final centerY = number('cy', fallback: 0);
+      final radiusX = name == 'circle' ? number('r') : number('rx');
+      final radiusY = name == 'circle' ? number('r') : number('ry');
+      if (centerX == null ||
+          centerY == null ||
+          radiusX == null ||
+          radiusY == null ||
+          radiusX <= 0 ||
+          radiusY <= 0) {
+        return const [];
+      }
+      const steps = 32;
+      return [
+        _CollectedContour(
+          List<Offset>.unmodifiable([
+            for (var index = 0; index <= steps; index += 1)
+              Offset(
+                centerX + radiusX * math.cos(math.pi * 2 * index / steps),
+                centerY + radiusY * math.sin(math.pi * 2 * index / steps),
+              ),
+          ]),
+          true,
+        ),
+      ];
+    }
+    if (name == 'rect') {
+      final x = number('x', fallback: 0);
+      final y = number('y', fallback: 0);
+      final width = number('width');
+      final height = number('height');
+      if (x == null ||
+          y == null ||
+          width == null ||
+          height == null ||
+          width <= 0 ||
+          height <= 0) {
+        return const [];
+      }
+      return [
+        _CollectedContour(
+          List.unmodifiable([
+            Offset(x, y),
+            Offset(x + width, y),
+            Offset(x + width, y + height),
+            Offset(x, y + height),
+            Offset(x, y),
+          ]),
+          true,
+        ),
+      ];
+    }
+    if (name == 'line') {
+      final x1 = number('x1', fallback: 0);
+      final y1 = number('y1', fallback: 0);
+      final x2 = number('x2', fallback: 0);
+      final y2 = number('y2', fallback: 0);
+      if (x1 == null || y1 == null || x2 == null || y2 == null) {
+        return const [];
+      }
+      return [
+        _CollectedContour(
+          List.unmodifiable([Offset(x1, y1), Offset(x2, y2)]),
+          false,
+        ),
+      ];
+    }
+    if (name == 'polyline' || name == 'polygon') {
+      final values = element
+          .getAttribute('points')
+          ?.trim()
+          .split(RegExp(r'[\s,]+'))
+          .where((value) => value.isNotEmpty)
+          .map(double.tryParse)
+          .toList();
+      if (values == null ||
+          values.length < 4 ||
+          values.length.isOdd ||
+          values.any((value) => value == null)) {
+        return const [];
+      }
+      final points = <Offset>[
+        for (var index = 0; index < values.length; index += 2)
+          Offset(values[index]!, values[index + 1]!),
+      ];
+      final isClosed = name == 'polygon';
+      if (isClosed && (points.first - points.last).distanceSquared > 1e-9) {
+        points.add(points.first);
+      }
+      return [
+        _CollectedContour(List.unmodifiable(points), isClosed),
+      ];
+    }
+    return const [];
+  }
+
+  static int _nestingDepth(
+    int contourIndex,
+    int primaryIndex,
+    List<List<Offset>> contours,
+  ) {
+    if (contourIndex == primaryIndex) return 0;
+    final contour = contours[contourIndex];
+    final probe = contour.first;
+    final contourArea = _signedArea(contour).abs();
+    var depth = 0;
+    for (var index = 0; index < contours.length; index += 1) {
+      if (index == contourIndex ||
+          _signedArea(contours[index]).abs() <= contourArea) {
+        continue;
+      }
+      if (_pointInContour(probe, contours[index])) depth += 1;
+    }
+    return depth;
+  }
+
+  static bool _pointInContour(Offset point, List<Offset> contour) {
+    var inside = false;
+    for (var index = 1; index < contour.length; index += 1) {
+      final start = contour[index - 1];
+      final end = contour[index];
+      if ((start.dy > point.dy) == (end.dy > point.dy)) continue;
+      final intersectionX = start.dx +
+          (point.dy - start.dy) * (end.dx - start.dx) / (end.dy - start.dy);
+      if (intersectionX > point.dx) inside = !inside;
+    }
+    return inside;
   }
 
   static double _signedArea(List<Offset> contour) {
@@ -149,15 +410,25 @@ class _SvgViewBox {
   final double height;
 }
 
+class _CollectedContour {
+  const _CollectedContour(this.points, this.isClosed);
+
+  final List<Offset> points;
+  final bool isClosed;
+}
+
 class _ContourCollector extends PathProxy {
+  _ContourCollector({required this.closeOpenContours});
+
   static const double _curveTolerance = 1.5;
 
-  final List<List<Offset>> _contours = [];
+  final bool closeOpenContours;
+  final List<_CollectedContour> _contours = [];
   List<Offset>? _current;
 
   @override
   void moveTo(double x, double y) {
-    _finishCurrent();
+    _finishCurrent(isClosed: false);
     _current = [Offset(x, y)];
   }
 
@@ -209,20 +480,25 @@ class _ContourCollector extends PathProxy {
   }
 
   @override
-  void close() => _finishCurrent();
+  void close() => _finishCurrent(isClosed: true);
 
-  List<List<Offset>> finish() {
-    _finishCurrent();
+  List<_CollectedContour> finish() {
+    _finishCurrent(isClosed: false);
     return _contours;
   }
 
-  void _finishCurrent() {
+  void _finishCurrent({required bool isClosed}) {
     final points = _current;
     _current = null;
     if (points == null || points.length < 2) return;
-    if ((points.last - points.first).distanceSquared > 1e-9) {
+    final resolvedClosed = isClosed || closeOpenContours;
+    if (resolvedClosed && (points.last - points.first).distanceSquared > 1e-9) {
       points.add(points.first);
     }
-    if (points.length >= 4) _contours.add(points);
+    if (points.length >= (resolvedClosed ? 4 : 2)) {
+      _contours.add(
+        _CollectedContour(List.unmodifiable(points), resolvedClosed),
+      );
+    }
   }
 }

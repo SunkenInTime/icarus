@@ -20,20 +20,45 @@ final viewConeGeometryProvider =
     ]);
     final decoded = await compute(_decodeVisionGeometry, sources[0]);
     final geometry = VisionGeometryMap.fromCompactJson(map, decoded);
+    var overrides = const VisionGeometryOverrides();
+    try {
+      final overrideSource = await rootBundle.loadString(
+        'assets/maps/vision_contour_overrides.json',
+      );
+      overrides = VisionGeometryOverrides.fromJson(
+        map,
+        _decodeVisionGeometry(overrideSource),
+      );
+    } on Object catch (error) {
+      debugPrint('Ignoring invalid vision contour overrides: $error');
+    }
+    late final VisionBoundary attackBoundary;
+    late final VisionBoundary defenseBoundary;
+    try {
+      attackBoundary = SvgVisionBoundary.parse(map: map, source: sources[1]);
+      defenseBoundary = SvgVisionBoundary.parse(map: map, source: sources[2]);
+    } on Object catch (error) {
+      debugPrint('Unable to load SVG vision boundary: $error');
+      // Raw Riot coordinates must never become a silent runtime fallback: the
+      // hand-authored SVG is the authoritative visual coordinate system.
+      return null;
+    }
     try {
       return geometry.withSvgBoundaries(
-        attackBoundary: SvgVisionBoundary.parse(
-          map: map,
-          source: sources[1],
-        ),
-        defenseBoundary: SvgVisionBoundary.parse(
-          map: map,
-          source: sources[2],
-        ),
+        attackBoundary: attackBoundary,
+        defenseBoundary: defenseBoundary,
+        overrides: overrides,
       );
     } on FormatException catch (error) {
-      debugPrint('Unable to load SVG vision boundary: $error');
-      return geometry;
+      if (overrides.isEmpty) {
+        debugPrint('Unable to classify SVG vision contours: $error');
+        return null;
+      }
+      debugPrint('Ignoring invalid map-specific contour overrides: $error');
+      return geometry.withSvgBoundaries(
+        attackBoundary: attackBoundary,
+        defenseBoundary: defenseBoundary,
+      );
     }
   },
 );

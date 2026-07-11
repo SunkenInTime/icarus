@@ -144,7 +144,7 @@ class ViewConeWidget extends ConsumerWidget {
               VisionSegment(toLocal(segment.start), toLocal(segment.end)),
           ];
           debugRiotSegments = [
-            for (final segment in layer.riotSegments)
+            for (final segment in layer.matchedSourceSegments)
               VisionSegment(toLocal(segment.start), toLocal(segment.end)),
           ];
           debugRejectedSegments = [
@@ -156,13 +156,53 @@ class ViewConeWidget extends ConsumerWidget {
                 in layer.boundary?.segments ?? const <VisionSegment>[])
               VisionSegment(toLocal(segment.start), toLocal(segment.end)),
           ];
-          debugLabel = inferredHeight == null
+          VisionCollisionGroup? nearestGroup;
+          var nearestGroupIsActive = false;
+          var nearestDistanceSquared = double.infinity;
+          final activeGroupsById = {
+            for (final group in layer.collisionGroups) group.id: group,
+          };
+          final observerGroupsById = {
+            for (final group in layer.observerGroups) group.id: group,
+          };
+          final debugGroups = layer.debugCollisionGroups.isNotEmpty
+              ? layer.debugCollisionGroups
+              : layer.boundary?.collisionGroups ?? layer.collisionGroups;
+          for (final candidate in debugGroups) {
+            final group = activeGroupsById[candidate.id] ??
+                observerGroupsById[candidate.id] ??
+                candidate;
+            if (group.isOuterBoundary) continue;
+            for (final segment in group.segments) {
+              final distanceSquared = visionDistanceSquaredToSegment(
+                resolvedWorldOrigin,
+                segment,
+              );
+              if (distanceSquared < nearestDistanceSquared) {
+                nearestDistanceSquared = distanceSquared;
+                nearestGroup = group;
+                nearestGroupIsActive = activeGroupsById.containsKey(group.id);
+              }
+            }
+          }
+          final nearestCoverage = nearestGroup == null ||
+                  layer.layerIndex >= nearestGroup.coverageByLayer.length
+              ? null
+              : nearestGroup.coverageByLayer[layer.layerIndex];
+          final summary = inferredHeight == null
               ? 'fallback ${formatVisionElevation(layer.elevation)}'
               : 'height ${formatVisionElevation(inferredHeight)}  '
                   'slice ${formatVisionElevation(layer.elevation)}  '
-                  '${layer.matchedSourceSegments.length} matched / '
-                  '${layer.riotSegments.length} retained / '
-                  '${layer.rejectedSegments.length} rejected';
+                  '${layer.collisionGroups.where((group) => group.hasEvidenceInLayer(layer.layerIndex)).length}/'
+                  '${layer.collisionGroups.length} contours evidenced  '
+                  '${layer.matchedSourceSegments.length}/'
+                  '${layer.matchedSourceSegments.length + layer.rejectedSegments.length} Riot edges aligned';
+          debugLabel = nearestGroup == null
+              ? summary
+              : '$summary\nnearest ${nearestGroup.id}  '
+                  '${nearestGroupIsActive ? 'active' : 'inactive candidate'}  '
+                  '${nearestGroup.confidence.name}  '
+                  '${((nearestCoverage ?? 0) * 100).round()}%';
         }
       }
     }
