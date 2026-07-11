@@ -87,6 +87,7 @@ class ViewConeWidget extends ConsumerWidget {
     final debugEnabled = ref.watch(viewConeDebugProvider);
     List<Offset>? visibilityPolygon;
     List<VisionSegment>? debugRiotSegments;
+    List<VisionSegment>? debugRejectedSegments;
     List<VisionSegment>? debugBoundarySegments;
     String? debugLabel;
     VisionGeometryMap? geometry;
@@ -141,6 +142,10 @@ class ViewConeWidget extends ConsumerWidget {
             for (final segment in layer.riotSegments)
               VisionSegment(toLocal(segment.start), toLocal(segment.end)),
           ];
+          debugRejectedSegments = [
+            for (final segment in layer.rejectedSegments)
+              VisionSegment(toLocal(segment.start), toLocal(segment.end)),
+          ];
           debugBoundarySegments = [
             for (final segment in layer.boundarySegments)
               VisionSegment(toLocal(segment.start), toLocal(segment.end)),
@@ -148,7 +153,9 @@ class ViewConeWidget extends ConsumerWidget {
           debugLabel = inferredHeight == null
               ? 'fallback ${formatVisionElevation(layer.elevation)}'
               : 'height ${formatVisionElevation(inferredHeight)}  '
-                  'slice ${formatVisionElevation(layer.elevation)}';
+                  'slice ${formatVisionElevation(layer.elevation)}  '
+                  '${layer.riotSegments.length} kept / '
+                  '${layer.rejectedSegments.length} rejected';
         }
       }
     }
@@ -198,6 +205,7 @@ class ViewConeWidget extends ConsumerWidget {
                     length: scaledLength,
                     visibilityPolygon: visibilityPolygon,
                     debugRiotSegments: debugRiotSegments,
+                    debugRejectedSegments: debugRejectedSegments,
                     debugBoundarySegments: debugBoundarySegments,
                     debugLabel: debugLabel,
                   ),
@@ -240,6 +248,7 @@ class ViewConePainter extends CustomPainter {
   final double length;
   final List<Offset>? visibilityPolygon;
   final List<VisionSegment>? debugRiotSegments;
+  final List<VisionSegment>? debugRejectedSegments;
   final List<VisionSegment>? debugBoundarySegments;
   final String? debugLabel;
 
@@ -248,13 +257,16 @@ class ViewConePainter extends CustomPainter {
     required this.length,
     this.visibilityPolygon,
     this.debugRiotSegments,
+    this.debugRejectedSegments,
     this.debugBoundarySegments,
     this.debugLabel,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (debugRiotSegments != null || debugBoundarySegments != null) {
+    if (debugRiotSegments != null ||
+        debugRejectedSegments != null ||
+        debugBoundarySegments != null) {
       _paintDebugGeometry(canvas, size);
     }
 
@@ -328,11 +340,18 @@ class ViewConePainter extends CustomPainter {
       ..color = const Color(0xFFF59E0B).withValues(alpha: 0.9)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.25;
+    final rejectedPaint = Paint()
+      ..color = const Color(0xFFFB7185).withValues(alpha: 0.9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
     for (final segment in debugRiotSegments ?? const <VisionSegment>[]) {
       canvas.drawLine(segment.start, segment.end, riotPaint);
     }
     for (final segment in debugBoundarySegments ?? const <VisionSegment>[]) {
       canvas.drawLine(segment.start, segment.end, boundaryPaint);
+    }
+    for (final segment in debugRejectedSegments ?? const <VisionSegment>[]) {
+      canvas.drawLine(segment.start, segment.end, rejectedPaint);
     }
     canvas.drawCircle(
       Offset(size.width / 2, size.height),
@@ -368,6 +387,10 @@ class ViewConePainter extends CustomPainter {
         oldDelegate.angle != angle ||
         !listEquals(oldDelegate.visibilityPolygon, visibilityPolygon) ||
         !listEquals(oldDelegate.debugRiotSegments, debugRiotSegments) ||
+        !listEquals(
+          oldDelegate.debugRejectedSegments,
+          debugRejectedSegments,
+        ) ||
         !listEquals(
           oldDelegate.debugBoundarySegments,
           debugBoundarySegments,

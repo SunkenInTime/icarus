@@ -150,6 +150,24 @@ class Maps {
     MapValue.summit: EdgeInsets.zero,
   };
 
+  /// Small residual corrections between Riot's minimap UV frame and the
+  /// cropped SVG artwork rendered by Icarus. Values are normalized world
+  /// units and were calibrated against the SVG base-fill contours.
+  static const Map<MapValue, Offset> visionGeometryAlignmentOffset = {
+    MapValue.ascent: Offset(0, 6),
+    MapValue.breeze: Offset(0, 2),
+    MapValue.lotus: Offset(0, 2),
+    MapValue.icebox: Offset(24, 8),
+    MapValue.sunset: Offset(0, 4),
+    MapValue.split: Offset(0, -4),
+    MapValue.haven: Offset(0, -6),
+    MapValue.fracture: Offset(0, -2),
+    MapValue.abyss: Offset(0, 10),
+    MapValue.pearl: Offset(0, 12),
+    MapValue.bind: Offset(0, -14),
+    MapValue.corrode: Offset(-2, 8),
+  };
+
   /// Quarter turns required to align Riot's VisionGeometry tables with the
   /// attack-side SVGs. These values were verified against the SVG wall paths.
   static const Map<MapValue, int> visionGeometryCwQuarterTurns = {

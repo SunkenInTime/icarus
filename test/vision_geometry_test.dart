@@ -208,6 +208,59 @@ void main() {
           expect(boundary.segments, isNotEmpty, reason: '${map.name}$suffix');
           expect(boundary.contours, isNotEmpty, reason: '${map.name}$suffix');
         }
+
+        final attackSvg = await rootBundle.loadString(
+          'assets/maps/${Maps.mapNames[map]}_map.svg',
+        );
+        final defenseSvg = await rootBundle.loadString(
+          'assets/maps/${Maps.mapNames[map]}_map_defense.svg',
+        );
+        final constrained = geometry.withSvgBoundaries(
+          attackBoundary: SvgVisionBoundary.parse(
+            map: map,
+            source: attackSvg,
+          ),
+          defenseBoundary: SvgVisionBoundary.parse(
+            map: map,
+            source: defenseSvg,
+          ),
+        );
+        final sourceSegmentCount = geometry.attackLayers
+            .map((layer) => layer.riotSegments.length)
+            .reduce((left, right) => left + right);
+        final keptSegmentCount = constrained.attackLayers
+            .map((layer) => layer.riotSegments.length)
+            .reduce((left, right) => left + right);
+        final rejectedSegmentCount = constrained.attackLayers
+            .map((layer) => layer.rejectedSegments.length)
+            .reduce((left, right) => left + right);
+        if (map == MapValue.summit) {
+          expect(keptSegmentCount, 0);
+          expect(rejectedSegmentCount, 0);
+        } else {
+          expect(
+            keptSegmentCount + rejectedSegmentCount,
+            sourceSegmentCount,
+            reason: '${map.name} should classify every Riot segment',
+          );
+          expect(
+            keptSegmentCount / sourceSegmentCount,
+            greaterThan(0.8),
+            reason: '${map.name} filtering should remain conservative',
+          );
+          expect(
+            rejectedSegmentCount,
+            greaterThan(0),
+            reason: '${map.name} should reject only clear map-space outliers',
+          );
+          final alignment = Maps.visionGeometryAlignmentOffset[map];
+          expect(alignment, isNotNull, reason: map.name);
+          expect(
+            alignment!.distance,
+            lessThanOrEqualTo(32),
+            reason: '${map.name} calibration should stay a small correction',
+          );
+        }
       }
     });
   });

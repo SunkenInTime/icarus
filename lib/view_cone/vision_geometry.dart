@@ -75,16 +75,26 @@ class VisionGeometryMap {
       VisionGeometryLayer constrain(VisionGeometryLayer layer) {
         // Summit postdates the available Riot export, so its compact source
         // is already the SVG fallback rather than a Riot slice.
-        final riotSegments = map == MapValue.summit
+        final sourceSegments = map == MapValue.summit
             ? const <VisionSegment>[]
             : layer.riotSegments;
+        final riotSegments = <VisionSegment>[];
+        final rejectedSegments = <VisionSegment>[];
+        for (final segment in sourceSegments) {
+          if (_isPlausiblyOnMap(segment, boundary)) {
+            riotSegments.add(segment);
+          } else {
+            rejectedSegments.add(segment);
+          }
+        }
         return VisionGeometryLayer(
           elevation: layer.elevation,
           segments: List.unmodifiable([
             ...riotSegments,
             ...boundary.segments,
           ]),
-          sourceSegments: riotSegments,
+          sourceSegments: List.unmodifiable(riotSegments),
+          rejectedSegments: List.unmodifiable(rejectedSegments),
           boundarySegments: boundary.segments,
           boundary: boundary,
         );
@@ -103,6 +113,52 @@ class VisionGeometryMap {
       attackLayers: replace(attackLayers, attackBoundary),
       defenseLayers: replace(defenseLayers, defenseBoundary),
     );
+  }
+
+  static bool _isPlausiblyOnMap(
+    VisionSegment segment,
+    VisionBoundary boundary,
+  ) {
+    const sideProbeDistance = 12.0;
+    const boundaryTolerance = 24.0;
+    const boundaryToleranceSquared = boundaryTolerance * boundaryTolerance;
+    final edge = segment.end - segment.start;
+    final length = edge.distance;
+    if (length <= _epsilon) return false;
+    final normal = Offset(-edge.dy / length, edge.dx / length);
+
+    for (final fraction in const [0.2, 0.5, 0.8]) {
+      final point = segment.start + edge * fraction;
+      if (boundary.contains(point) ||
+          boundary.contains(point + normal * sideProbeDistance) ||
+          boundary.contains(point - normal * sideProbeDistance)) {
+        return true;
+      }
+      for (final boundarySegment in boundary.segments) {
+        if (_distanceSquaredToSegment(point, boundarySegment) <=
+            boundaryToleranceSquared) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  static double _distanceSquaredToSegment(
+    Offset point,
+    VisionSegment segment,
+  ) {
+    final delta = segment.end - segment.start;
+    final lengthSquared = delta.distanceSquared;
+    if (lengthSquared <= _epsilon) {
+      return (point - segment.start).distanceSquared;
+    }
+    final relative = point - segment.start;
+    final projection =
+        (relative.dx * delta.dx + relative.dy * delta.dy) / lengthSquared;
+    final t = projection.clamp(0.0, 1.0);
+    final nearest = segment.start + delta * t;
+    return (point - nearest).distanceSquared;
   }
 
   factory VisionGeometryMap.fromCompactJson(
@@ -270,10 +326,11 @@ class VisionGeometryMap {
       (mapWidth - renderedWidth) / 2,
       (normalizedHeight - renderedHeight) / 2,
     );
-    return Offset(
+    final projected = Offset(
       mapLeft + svgOffset.dx + svgPoint.dx * scale,
       svgOffset.dy + svgPoint.dy * scale,
     );
+    return projected + (Maps.visionGeometryAlignmentOffset[map] ?? Offset.zero);
   }
 
   static Offset _rotateUv(Offset point, int clockwiseQuarterTurns) {
@@ -406,6 +463,7 @@ class VisionGeometryLayer {
     required this.elevation,
     required this.segments,
     this.sourceSegments,
+    this.rejectedSegments = const [],
     this.boundarySegments = const [],
     this.boundary,
   });
@@ -413,6 +471,7 @@ class VisionGeometryLayer {
   final double elevation;
   final List<VisionSegment> segments;
   final List<VisionSegment>? sourceSegments;
+  final List<VisionSegment> rejectedSegments;
   final List<VisionSegment> boundarySegments;
   final VisionBoundary? boundary;
 
