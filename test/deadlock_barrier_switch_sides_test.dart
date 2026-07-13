@@ -61,7 +61,7 @@ void main() {
 
     setUp(() {
       CoordinateSystem(playAreaSize: const Size(1920, 1080));
-      abilityInfo = AgentData.agents[AgentType.deadlock]!.abilities[2];
+      abilityInfo = AgentData.agents[AgentType.deadlock]!.abilities[0];
       abilityData = abilityInfo.abilityData! as DeadlockBarrierMeshAbility;
     });
 

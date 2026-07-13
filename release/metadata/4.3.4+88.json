@@ -1,0 +1,26 @@
+{
+    "version":  "4.3.4+88",
+    "shortVersion":  88,
+    "title":  "4.3.4 Release",
+    "description":  "Desktop release metadata for Icarus.",
+    "date":  "2026-05-23",
+    "mandatory":  false,
+    "channels":  [
+                     "desktop",
+                     "prerelease",
+                     "stable"
+                 ],
+    "platforms":  [
+                      "windows"
+                  ],
+    "changes":  [
+                    {
+                        "message":  "Updated Pearl's spawn barrier to better match the current in-game barrier.",
+                        "type":  "improvement"
+                    },
+                    {
+                        "message":  "Fixed pasting into text fields.",
+                        "type":  "fix"
+                    }
+                ]
+}

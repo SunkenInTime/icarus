@@ -342,6 +342,17 @@ class ShortcutInfo {
     Map<String, String> customBindings, {
     TargetPlatform? platform,
   }) {
+    final editableOverrideEntries = editableShortcuts.map((definition) {
+      final binding = effectiveBindingFor(definition.id, customBindings);
+      if (_isNativeTextEditingBinding(binding)) {
+        return null;
+      }
+      return MapEntry(
+        binding.toActivator(platform: platform),
+        const DoNothingAndStopPropagationIntent(),
+      );
+    }).whereType<MapEntry<ShortcutActivator, Intent>>();
+
     return {
       _primaryActivator(LogicalKeyboardKey.keyZ, platform: platform):
           const DoNothingAndStopPropagationIntent(),
@@ -350,15 +361,26 @@ class ShortcutInfo {
         shift: true,
         platform: platform,
       ): const DoNothingAndStopPropagationIntent(),
-      for (final definition in editableShortcuts)
-        effectiveBindingFor(definition.id, customBindings).toActivator(
-            platform: platform): const DoNothingAndStopPropagationIntent(),
+      for (final entry in editableOverrideEntries) entry.key: entry.value,
       LogicalKeySet(LogicalKeyboardKey.enter): const EnterTextIntent(),
     };
   }
 
   static final Map<ShortcutActivator, Intent> textEditingOverrides =
       textEditingOverridesFor(const {});
+
+  static bool _isNativeTextEditingBinding(IcarusKeyBinding binding) {
+    if (!binding.primary || binding.alt) return false;
+
+    return switch (binding.trigger) {
+      LogicalKeyboardKey.keyA ||
+      LogicalKeyboardKey.keyC ||
+      LogicalKeyboardKey.keyV ||
+      LogicalKeyboardKey.keyX =>
+        !binding.shift,
+      _ => false,
+    };
+  }
 
   static IcarusKeyBinding effectiveBindingFor(
     String shortcutId,

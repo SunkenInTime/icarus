@@ -1,0 +1,79 @@
+#!/usr/bin/env node
+
+import fs from 'node:fs';
+import path from 'node:path';
+
+const outputPath = process.argv[2] ?? path.resolve(
+  process.cwd(),
+  'assets/replays/ascent_demo_track.json',
+);
+
+const track = {
+  sourceLabel: 'Demo fixture: Ascent lane walk',
+  coordinateSpace: 'game',
+  mapId: '/Game/Maps/Ascent/Ascent',
+  notes:
+    'Fixture data only. The app-facing replay viewer is real, but these samples are hand-authored Valorant game coordinates until the VRF replay-controller RPC decoder emits this same JSON shape.',
+  players: [
+    {
+      id: 'attacker-jett',
+      displayName: 'A-Jett',
+      agent: 'Jett',
+      teamColor: '#3A7E5D',
+      samples: [
+        { timeMs: 0, x: 60, y: 50, z: 190, yawDegrees: -70 },
+        { timeMs: 3500, x: 2753, y: -2129, z: 400, yawDegrees: -108 },
+        { timeMs: 7000, x: 4489, y: -3014, z: 400, yawDegrees: -126 },
+        { timeMs: 11000, x: 5321, y: -4710, z: 400, yawDegrees: -95 },
+        { timeMs: 15000, x: 6153, y: -6626, z: 500, yawDegrees: -20 },
+        { timeMs: 19000, x: 6129, y: -8210, z: 806, yawDegrees: 38 },
+      ],
+    },
+    {
+      id: 'attacker-sova',
+      displayName: 'A-Sova',
+      agent: 'Sova',
+      teamColor: '#69F0AF',
+      samples: [
+        { timeMs: 0, x: 60, y: 50, z: 190, yawDegrees: -54 },
+        { timeMs: 4000, x: -1490, y: -1389, z: 200, yawDegrees: -82 },
+        { timeMs: 8000, x: -1983, y: -5840, z: 100, yawDegrees: -112 },
+        { timeMs: 12000, x: -2344, y: -7548, z: 100, yawDegrees: -24 },
+        { timeMs: 16000, x: -4484, y: -7763, z: -105, yawDegrees: 4 },
+        { timeMs: 19000, x: -2344, y: -7548, z: 100, yawDegrees: 72 },
+      ],
+    },
+    {
+      id: 'defender-killjoy',
+      displayName: 'D-Killjoy',
+      agent: 'Killjoy',
+      teamColor: '#772727',
+      samples: [
+        { timeMs: 0, x: 1995, y: -9744, z: 300, yawDegrees: 88 },
+        { timeMs: 3000, x: 1801, y: -7262, z: 300, yawDegrees: 130 },
+        { timeMs: 6500, x: 1089, y: -7363, z: 307, yawDegrees: 177 },
+        { timeMs: 11000, x: 1122, y: -5951, z: 200, yawDegrees: -167 },
+        { timeMs: 15000, x: 1222, y: -4586, z: 200, yawDegrees: -121 },
+        { timeMs: 19000, x: 2315, y: -4127, z: 416, yawDegrees: -91 },
+      ],
+    },
+    {
+      id: 'defender-omen',
+      displayName: 'D-Omen',
+      agent: 'Omen',
+      teamColor: '#FF5252',
+      samples: [
+        { timeMs: 0, x: 1995, y: -9744, z: 300, yawDegrees: 112 },
+        { timeMs: 4500, x: -2344, y: -7548, z: 100, yawDegrees: 38 },
+        { timeMs: 8500, x: -1983, y: -5840, z: 100, yawDegrees: 22 },
+        { timeMs: 12500, x: -632, y: -4280, z: 200, yawDegrees: 56 },
+        { timeMs: 16000, x: 1122, y: -5951, z: 200, yawDegrees: 145 },
+        { timeMs: 19000, x: 1089, y: -7363, z: 307, yawDegrees: 180 },
+      ],
+    },
+  ],
+};
+
+fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+fs.writeFileSync(outputPath, `${JSON.stringify(track, null, 2)}\n`);
+console.log(`wrote ${outputPath}`);

@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 enum MapValue {
   ascent,
   breeze,
@@ -60,5 +62,44 @@ class Maps {
     MapValue.abyss: 1.138, //modified
     MapValue.pearl: 1.11, //modified
     MapValue.corrode: 0.985,
+  };
+
+  static const Map<MapValue, Size> mapViewBox = {
+    MapValue.ascent: Size(411, 474),
+    MapValue.breeze: Size(447, 473),
+    MapValue.lotus: Size(493, 473),
+    MapValue.icebox: Size(387, 473),
+    MapValue.sunset: Size(416, 473),
+    MapValue.split: Size(467, 473),
+    MapValue.haven: Size(393, 473),
+    MapValue.fracture: Size(460, 473),
+    MapValue.abyss: Size(454, 473),
+    MapValue.pearl: Size(469, 473),
+    MapValue.bind: Size(416, 474),
+    MapValue.corrode: Size(387, 473),
+  };
+
+  static const Map<MapValue, EdgeInsets> valorantDisplayIconPaddingVb = {
+    MapValue.abyss: EdgeInsets.fromLTRB(6.82243, 13.64486, 5.457944, 14.099688),
+    MapValue.ascent:
+        EdgeInsets.fromLTRB(40.111579, 18.903158, 21.669474, 15.214737),
+    MapValue.bind: EdgeInsets.fromLTRB(40.92824, 5.653072, 6.33144, 19.446567),
+    MapValue.breeze:
+        EdgeInsets.fromLTRB(14.878981, 14.878981, 14.878981, 23.248408),
+    MapValue.corrode:
+        EdgeInsets.fromLTRB(36.248848, 14.320533, 36.248848, 6.936508),
+    MapValue.fracture:
+        EdgeInsets.fromLTRB(10.912599, 34.22588, 38.194098, 36.706016),
+    MapValue.haven:
+        EdgeInsets.fromLTRB(36.63356, 16.027182, 39.152117, 14.882384),
+    MapValue.icebox:
+        EdgeInsets.fromLTRB(44.838021, 28.678125, 35.733854, 0.455208),
+    MapValue.lotus:
+        EdgeInsets.fromLTRB(30.685893, 66.303448, 38.631348, 57.810031),
+    MapValue.pearl: EdgeInsets.fromLTRB(1.38, 16.56, 2.3, 17.48),
+    MapValue.split:
+        EdgeInsets.fromLTRB(13.442394, 25.907159, 22.485459, 37.638702),
+    MapValue.sunset:
+        EdgeInsets.fromLTRB(20.041874, 3.921236, 12.852941, 5.228315),
   };
 }

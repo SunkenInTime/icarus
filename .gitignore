@@ -35,6 +35,16 @@ node_modules/
 /build/
 /dist/
 release/out/
+/tmp/
+
+# Valorant replay probe output is reproducible and can be extremely large.
+/tools/valorant_replay_probe/tmp/
+/tools/valorant_replay_probe/out/
+/tools/valorant_replay_probe/static_decoder_indexes/ability_actor_index.json
+/tools/valorant_replay_probe/static_decoder_indexes/ability_identity_index.json
+/tools/valorant_replay_probe/static_decoder_indexes/ability_spawn_graph_edges.jsonl
+/tools/valorant_replay_probe/static_decoder_indexes/agent_primary_index.json
+/tools/valorant_replay_probe/static_decoder_indexes/static_decoder_index_summary.json
 
 # Symbolication related
 app.*.symbols

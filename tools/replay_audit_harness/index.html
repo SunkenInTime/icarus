@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Icarus Replay Ability Audit</title>
+    <link rel="icon" href="../../web/favicon.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">ICARUS · AGENT VIEW</p>
+        <h1>Replay ability audit</h1>
+      </div>
+      <div class="load-controls">
+        <label class="file-button" for="track-file">Load track JSON</label>
+        <input id="track-file" type="file" accept="application/json,.json" />
+        <button id="load-url" type="button">Load URL</button>
+        <input id="track-url" aria-label="Track URL" placeholder="/tools/.../track.json" />
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="viewer-panel" aria-label="Replay map viewer">
+        <div class="viewer-toolbar">
+          <div class="map-summary">
+            <div><strong id="map-name">No replay loaded</strong><span id="track-summary">Choose a replay track JSON file</span></div>
+            <p id="coverage-warning" class="coverage-warning" hidden></p>
+          </div>
+          <div class="toolbar-toggles">
+            <label><input id="show-callouts" type="checkbox" checked /> Callouts</label>
+            <label><input id="show-players" type="checkbox" /> Players</label>
+            <label><input id="show-trails" type="checkbox" checked /> Utility paths</label>
+          </div>
+        </div>
+
+        <div id="map-viewport" class="map-viewport">
+          <div id="map-stage" class="map-stage" aria-label="Icarus replay map">
+            <div id="map-art" class="map-art" aria-hidden="true"></div>
+            <div id="map-callouts" class="map-art map-callouts" aria-hidden="true"></div>
+            <svg id="trail-layer" class="trail-layer" viewBox="0 0 1777.7777778 1000" aria-hidden="true"></svg>
+            <div id="marker-layer" class="marker-layer"></div>
+            <div id="empty-state" class="empty-state">
+              <strong>Drop a replay track here</strong>
+              <span>The harness reads Icarus track JSON without converting it.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="transport" aria-label="Replay transport controls">
+          <button id="previous-event" type="button" title="Previous ability action ([)">◀ Action</button>
+          <button id="rewind" type="button" title="Rewind five seconds (J)">−5s</button>
+          <button id="play" class="primary" type="button" title="Play or pause (Space)">Play</button>
+          <button id="forward" type="button" title="Advance five seconds (L)">+5s</button>
+          <button id="next-event" type="button" title="Next ability action (])">Action ▶</button>
+          <output id="current-time">0:00.000</output>
+          <input id="timeline" type="range" min="0" max="1" value="0" step="1" aria-label="Replay time" />
+          <output id="duration">0:00.000</output>
+        </div>
+      </section>
+
+      <aside class="audit-panel" aria-label="Ability audit controls">
+        <section class="event-focus">
+          <p class="eyebrow">SELECTED EVIDENCE</p>
+          <div class="ability-heading">
+            <img id="ability-icon" alt="" />
+            <div>
+              <h2 id="event-label">No ability selected</h2>
+              <p id="event-timing">Load a replay to begin.</p>
+            </div>
+          </div>
+          <dl id="event-facts" class="event-facts"></dl>
+          <div id="spectator-callout" class="spectator-callout" hidden>
+            <span>VALORANT spectator key</span>
+            <kbd id="spectator-key">—</kbd>
+            <strong id="caster-name">Unknown caster</strong>
+          </div>
+        </section>
+
+        <section class="event-browser">
+          <div class="event-browser-heading">
+            <h2>Ability events</h2>
+            <span id="event-count">0 events</span>
+          </div>
+          <input id="event-filter" type="search" placeholder="Filter agent, ability, phase…" />
+          <div id="event-list" class="event-list" role="listbox" aria-label="Ability events"></div>
+        </section>
+
+        <section class="verdict-panel">
+          <h2>Visual verdict</h2>
+          <div class="verdict-grid">
+            <button type="button" data-verdict="correct">Confirmed</button>
+            <button type="button" data-verdict="wrongAbility">Wrong ability</button>
+            <button type="button" data-verdict="wrongPosition">Wrong position</button>
+            <button type="button" data-verdict="missing">Missing</button>
+            <button type="button" data-verdict="falsePositive">False positive</button>
+            <button type="button" data-verdict="ambiguous">Ambiguous</button>
+          </div>
+          <textarea id="audit-note" rows="3" placeholder="Optional visual observation"></textarea>
+          <div class="verdict-actions">
+            <button id="save-verdict" class="primary" type="button">Save verdict</button>
+            <button id="export-audit" type="button">Export JSON</button>
+          </div>
+        </section>
+
+        <details class="agent-snapshot">
+          <summary>Agent-readable snapshot</summary>
+          <pre id="snapshot-json">{}</pre>
+        </details>
+      </aside>
+    </main>
+
+    <div id="drop-overlay" class="drop-overlay" hidden>Drop replay track JSON</div>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

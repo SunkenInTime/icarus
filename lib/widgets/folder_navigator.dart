@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
@@ -355,6 +356,13 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                       trailing: const Icon(Icons.keyboard_arrow_down),
                       child: const Text('Import / Export'),
                     ),
+                  ),
+                  ShadButton.secondary(
+                    leading: const Icon(Icons.movie_filter_outlined),
+                    child: const Text('Replay Viewer'),
+                    onPressed: () {
+                      Navigator.pushNamed(context, Routes.replayView);
+                    },
                   ),
                   ShadButton.secondary(
                     leading: const Icon(LucideIcons.folderPlus),

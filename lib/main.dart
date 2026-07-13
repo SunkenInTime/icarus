@@ -20,9 +20,11 @@ import 'package:icarus/const/second_instance_args.dart';
 import 'package:icarus/const/settings.dart' show Settings;
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/replay_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/replay_view.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
@@ -41,13 +43,19 @@ Future<void> main(List<String> args) async {
     () async {
       WidgetsFlutterBinding.ensureInitialized();
       appProviderContainer = ProviderContainer();
-      await _initializePersistedDebugLog();
+      final startupReplayArgs = _parseStartupReplayArgs(args);
+      final isReplayCaptureLaunch = startupReplayArgs != null;
+      await _initializePersistedDebugLog(
+        isReplayCaptureLaunch: isReplayCaptureLaunch,
+      );
       _installGlobalErrorHandlers();
 
       if (!kIsWeb && Platform.isWindows) {
         await WindowsSingleInstance.ensureSingleInstance(
           args,
-          'icarus_single_instance',
+          isReplayCaptureLaunch
+              ? 'icarus_single_instance_replay_capture'
+              : 'icarus_single_instance',
           onSecondWindow: (args) {
             publishSecondInstanceArgs(args);
           },
@@ -59,7 +67,9 @@ Future<void> main(List<String> args) async {
         await Hive.initFlutter();
       } else {
         // On mobile/desktop, you can still choose an explicit directory.
-        final dir = await getApplicationSupportDirectory();
+        final dir = await _applicationSupportDirectory(
+          isReplayCaptureLaunch: isReplayCaptureLaunch,
+        );
         await getTemporaryDirectory();
         await Hive.initFlutter(dir.path);
       }
@@ -86,13 +96,16 @@ Future<void> main(List<String> args) async {
 
       // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
 
-      await _initWebViewEnvironment();
+      await _initWebViewEnvironment(
+        isReplayCaptureLaunch: isReplayCaptureLaunch,
+      );
 
       if (!kIsWeb) {
         await windowManager.ensureInitialized();
-        WindowOptions windowOptions = const WindowOptions(
-          title:
-              "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
+        final windowOptions = WindowOptions(
+          title: startupReplayArgs == null
+              ? "Icarus: Valorant Strategies & Line ups ${Settings.versionName}"
+              : "Icarus Replay Capture",
         );
         windowManager.waitUntilReadyToShow(windowOptions, () async {
           await windowManager.show();
@@ -154,11 +167,30 @@ void _installGlobalErrorHandlers() {
   };
 }
 
-Future<void> _initializePersistedDebugLog() async {
+Future<Directory> _applicationSupportDirectory({
+  required bool isReplayCaptureLaunch,
+}) async {
+  if (!isReplayCaptureLaunch) return getApplicationSupportDirectory();
+
+  final dir = Directory(path.join(
+    Directory.systemTemp.path,
+    'icarus_replay_capture_support',
+  ));
+  if (!await dir.exists()) {
+    await dir.create(recursive: true);
+  }
+  return dir;
+}
+
+Future<void> _initializePersistedDebugLog({
+  required bool isReplayCaptureLaunch,
+}) async {
   if (kIsWeb) return;
 
   try {
-    final dir = await getApplicationSupportDirectory();
+    final dir = await _applicationSupportDirectory(
+      isReplayCaptureLaunch: isReplayCaptureLaunch,
+    );
     AppErrorReporter.setApplicationSupportDirectoryPath(dir.path);
     await AppErrorReporter.initializePersistedLog(
       path.join(dir.path, 'icarus_debug.log'),
@@ -178,10 +210,14 @@ Future<void> _initializePersistedDebugLog() async {
   }
 }
 
-Future<void> _initWebViewEnvironment() async {
+Future<void> _initWebViewEnvironment({
+  required bool isReplayCaptureLaunch,
+}) async {
   if (kIsWeb) return;
   if (Platform.isWindows) {
-    final dir = await getApplicationSupportDirectory();
+    final dir = await _applicationSupportDirectory(
+      isReplayCaptureLaunch: isReplayCaptureLaunch,
+    );
     final availableVersion = await WebViewEnvironment.getAvailableVersion();
 
     if (availableVersion == null) {
@@ -210,6 +246,32 @@ class MyApp extends ConsumerStatefulWidget {
 class _MyAppState extends ConsumerState<MyApp> {
   StreamSubscription<List<String>>? _secondInstanceSub;
 
+  Future<void> _loadReplayTrackPathWithWarning(
+    String filePath, {
+    bool autoplay = false,
+    double? speed,
+  }) async {
+    try {
+      final track = await loadReplayTrackFromFile(filePath);
+      final notifier = ref.read(replayProvider.notifier);
+      notifier.setTrack(track, sourcePath: filePath);
+      if (speed != null) {
+        notifier.setPlaybackSpeed(speed);
+      }
+      if (autoplay) {
+        notifier.togglePlayback();
+      }
+      appNavigatorKey.currentState?.pushNamed(Routes.replayView);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to load replay track from startup argument.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'MyApp._loadReplayTrackPathWithWarning',
+      );
+    }
+  }
+
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
     try {
       await ref.read(strategyProvider.notifier).loadFromFilePath(filePath);
@@ -236,6 +298,17 @@ class _MyAppState extends ConsumerState<MyApp> {
           source: 'main.startupArgs',
         );
       }
+
+      final startupReplay = _parseStartupReplayArgs(widget.data);
+      if (startupReplay != null) {
+        _loadReplayTrackPathWithWarning(
+          startupReplay.path,
+          autoplay: startupReplay.autoplay,
+          speed: startupReplay.speed,
+        );
+        return;
+      }
+
       _loadFromFilePathWithWarning(widget.data.first);
     });
 
@@ -279,6 +352,7 @@ class _MyAppState extends ConsumerState<MyApp> {
         routes: {
           Routes.folderNavigator: (context) => const FolderNavigator(),
           Routes.strategyView: (context) => const StrategyView(),
+          Routes.replayView: (context) => const ReplayView(),
           Routes.settings: (context) => const SettingsTab(),
         },
         builder: (context, child) {
@@ -287,6 +361,38 @@ class _MyAppState extends ConsumerState<MyApp> {
       ),
     );
   }
+}
+
+class _StartupReplayArgs {
+  const _StartupReplayArgs({
+    required this.path,
+    required this.autoplay,
+    required this.speed,
+  });
+
+  final String path;
+  final bool autoplay;
+  final double? speed;
+}
+
+_StartupReplayArgs? _parseStartupReplayArgs(List<String> args) {
+  String? path;
+  var autoplay = false;
+  double? speed;
+
+  for (var index = 0; index < args.length; index += 1) {
+    final arg = args[index];
+    if (arg == '--replay-track' && index + 1 < args.length) {
+      path = args[++index];
+    } else if (arg == '--replay-autoplay') {
+      autoplay = true;
+    } else if (arg == '--replay-speed' && index + 1 < args.length) {
+      speed = double.tryParse(args[++index]);
+    }
+  }
+
+  if (path == null) return null;
+  return _StartupReplayArgs(path: path, autoplay: autoplay, speed: speed);
 }
 
 class MyHomePage extends ConsumerWidget {
