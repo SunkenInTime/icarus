@@ -17,6 +17,8 @@ class SvgVisionBoundary {
   static VisionBoundary parse({
     required MapValue map,
     required String source,
+    VisionBoundaryAdditions additions = const VisionBoundaryAdditions(),
+    bool isAttack = true,
   }) {
     final document = XmlDocument.parse(source);
     final root = document.rootElement;
@@ -38,8 +40,8 @@ class SvgVisionBoundary {
     // floor path. The main mask is consistently the most detailed base path.
     candidates.sort(
       (left, right) => (right.getAttribute('d') ?? '').length.compareTo(
-            (left.getAttribute('d') ?? '').length,
-          ),
+        (left.getAttribute('d') ?? '').length,
+      ),
     );
     final pathElement = candidates.first;
     final svgMaskContours = _collectContours(
@@ -81,23 +83,19 @@ class SvgVisionBoundary {
           kind: VisionCollisionKind.maskBoundary,
           isClosed: true,
           isOuterBoundary: index == primaryIndex,
-          nestingDepth: _nestingDepth(
-            index,
-            primaryIndex,
-            worldMaskContours,
-          ),
+          nestingDepth: _nestingDepth(index, primaryIndex, worldMaskContours),
         ),
       );
     }
 
     final detailElements = root.descendants.whereType<XmlElement>().where(
-          (element) =>
-              element.name.local == 'path' &&
-              element != pathElement &&
-              (element.getAttribute('d') ?? '').isNotEmpty &&
-              (_hasStructuralStroke(element) ||
-                  element.getAttribute('fill')?.toUpperCase() == _mapBaseFill),
-        );
+      (element) =>
+          element.name.local == 'path' &&
+          element != pathElement &&
+          (element.getAttribute('d') ?? '').isNotEmpty &&
+          (_hasStructuralStroke(element) ||
+              element.getAttribute('fill')?.toUpperCase() == _mapBaseFill),
+    );
     final existingKeys = <String>{
       for (final group in collisionGroups)
         for (final segment in group.segments) visionSegmentKey(segment),
@@ -105,6 +103,7 @@ class SvgVisionBoundary {
 
     void addDetailGroup(
       List<Offset> svgPoints, {
+      String? id,
       required bool isClosed,
       required bool requiresEvidence,
     }) {
@@ -115,6 +114,7 @@ class SvgVisionBoundary {
       VisionCollisionGroup group;
       try {
         group = VisionCollisionGroup.geometry(
+          id: id,
           points: worldPoints,
           kind: isClosed
               ? VisionCollisionKind.structuralObstacle
@@ -126,9 +126,7 @@ class SvgVisionBoundary {
         return;
       }
       final duplicateCount = group.segments
-          .where(
-            (segment) => existingKeys.contains(visionSegmentKey(segment)),
-          )
+          .where((segment) => existingKeys.contains(visionSegmentKey(segment)))
           .length;
       if (duplicateCount == group.segments.length) return;
       collisionGroups.add(group);
@@ -138,10 +136,7 @@ class SvgVisionBoundary {
     for (final element in detailElements) {
       final isFill =
           element.getAttribute('fill')?.toUpperCase() == _mapBaseFill;
-      final collected = _collectContours(
-        element,
-        closeOpenContours: isFill,
-      );
+      final collected = _collectContours(element, closeOpenContours: isFill);
       for (final contour in collected) {
         addDetailGroup(
           contour.points,
@@ -151,9 +146,9 @@ class SvgVisionBoundary {
       }
     }
     for (final element in root.descendants.whereType<XmlElement>().where(
-          (element) =>
-              element.name.local != 'path' && _hasStructuralStroke(element),
-        )) {
+      (element) =>
+          element.name.local != 'path' && _hasStructuralStroke(element),
+    )) {
       for (final contour in _primitiveContours(element)) {
         addDetailGroup(
           contour.points,
@@ -161,6 +156,20 @@ class SvgVisionBoundary {
           requiresEvidence: _strokeRequiresEvidence(element),
         );
       }
+    }
+    for (final entry in additions.entriesFor(map, isAttack: isAttack)) {
+      addDetailGroup(
+        [
+          for (final point in entry.points)
+            Offset(
+              viewBox.left + point.dx * viewBox.width,
+              viewBox.top + point.dy * viewBox.height,
+            ),
+        ],
+        id: entry.id,
+        isClosed: entry.isClosed,
+        requiresEvidence: false,
+      );
     }
 
     final collisionSegments = <VisionSegment>[];
@@ -193,9 +202,7 @@ class SvgVisionBoundary {
     XmlElement element, {
     required bool closeOpenContours,
   }) {
-    final collector = _ContourCollector(
-      closeOpenContours: closeOpenContours,
-    );
+    final collector = _ContourCollector(closeOpenContours: closeOpenContours);
     writeSvgPathDataToPath(element.getAttribute('d'), collector);
     return collector.finish();
   }
@@ -308,9 +315,7 @@ class SvgVisionBoundary {
       if (isClosed && (points.first - points.last).distanceSquared > 1e-9) {
         points.add(points.first);
       }
-      return [
-        _CollectedContour(List.unmodifiable(points), isClosed),
-      ];
+      return [_CollectedContour(List.unmodifiable(points), isClosed)];
     }
     return const [];
   }
@@ -341,7 +346,8 @@ class SvgVisionBoundary {
       final start = contour[index - 1];
       final end = contour[index];
       if ((start.dy > point.dy) == (end.dy > point.dy)) continue;
-      final intersectionX = start.dx +
+      final intersectionX =
+          start.dx +
           (point.dy - start.dy) * (end.dx - start.dx) / (end.dy - start.dy);
       if (intersectionX > point.dx) inside = !inside;
     }
@@ -359,8 +365,11 @@ class SvgVisionBoundary {
   }
 
   static _SvgViewBox _parseViewBox(String? value, MapValue map) {
-    final values =
-        value?.trim().split(RegExp(r'[\s,]+')).map(double.tryParse).toList();
+    final values = value
+        ?.trim()
+        .split(RegExp(r'[\s,]+'))
+        .map(double.tryParse)
+        .toList();
     if (values == null ||
         values.length != 4 ||
         values.any((value) => value == null) ||
@@ -394,6 +403,251 @@ class SvgVisionBoundary {
     return offset +
         Offset(point.dx - viewBox.left, point.dy - viewBox.top) * scale;
   }
+}
+
+/// Hand-audited collision boundaries authored once in normalized SVG space.
+///
+/// Shared entries are mirrored onto the defense artwork, so a boundary maps to
+/// every Riot elevation and both tactical orientations by default. Elevation
+/// exceptions remain explicit and are converted into normal contour overrides.
+class VisionBoundaryAdditions {
+  const VisionBoundaryAdditions({this.maps = const {}});
+
+  final Map<MapValue, VisionBoundaryAdditionSet> maps;
+
+  bool get isEmpty => maps.isEmpty;
+
+  factory VisionBoundaryAdditions.fromJson(Map<String, dynamic> json) {
+    _validateKeys(json, const {'version', 'maps'}, 'boundary additions root');
+    if (json['version'] != 1) {
+      throw const FormatException(
+        'Unsupported vision boundary additions version.',
+      );
+    }
+    final values = json['maps'];
+    if (values is! Map<String, dynamic>) {
+      throw const FormatException('Vision boundary additions maps is invalid.');
+    }
+    final mapByName = {
+      for (final entry in Maps.mapNames.entries) entry.value: entry.key,
+    };
+    final result = <MapValue, VisionBoundaryAdditionSet>{};
+    for (final entry in values.entries) {
+      final map = mapByName[entry.key];
+      if (map == null) {
+        throw FormatException(
+          'Unknown map in vision boundary additions: ${entry.key}.',
+        );
+      }
+      result[map] = VisionBoundaryAdditionSet.fromJson(entry.value);
+    }
+    return VisionBoundaryAdditions(maps: Map.unmodifiable(result));
+  }
+
+  List<VisionBoundaryAddition> entriesFor(
+    MapValue map, {
+    required bool isAttack,
+  }) {
+    final additions = maps[map];
+    if (additions == null) return const [];
+    return List.unmodifiable([
+      for (final entry in additions.shared) isAttack ? entry : entry.mirrored(),
+      ...(isAttack ? additions.attack : additions.defense),
+    ]);
+  }
+
+  Map<String, VisionCollisionOverride> overridesFor(
+    MapValue map, {
+    required bool isAttack,
+  }) => Map.unmodifiable({
+    for (final entry in entriesFor(map, isAttack: isAttack))
+      entry.id: entry.override,
+  });
+
+  static void _validateKeys(
+    Map<String, dynamic> value,
+    Set<String> allowed,
+    String context,
+  ) {
+    final unknown = value.keys.where((key) => !allowed.contains(key)).toList();
+    if (unknown.isNotEmpty) {
+      throw FormatException('Unknown $context fields: ${unknown.join(', ')}.');
+    }
+  }
+}
+
+class VisionBoundaryAdditionSet {
+  const VisionBoundaryAdditionSet({
+    this.shared = const [],
+    this.attack = const [],
+    this.defense = const [],
+  });
+
+  final List<VisionBoundaryAddition> shared;
+  final List<VisionBoundaryAddition> attack;
+  final List<VisionBoundaryAddition> defense;
+
+  factory VisionBoundaryAdditionSet.fromJson(dynamic value) {
+    if (value is! Map<String, dynamic>) {
+      throw const FormatException('Invalid map boundary additions.');
+    }
+    VisionBoundaryAdditions._validateKeys(value, const {
+      'shared',
+      'attack',
+      'defense',
+    }, 'map boundary additions');
+    List<VisionBoundaryAddition> decode(String key) {
+      final entries = value[key];
+      if (entries == null) return const [];
+      if (entries is! List) {
+        throw FormatException('$key boundary additions must be a list.');
+      }
+      return List.unmodifiable([
+        for (final entry in entries) VisionBoundaryAddition.fromJson(entry),
+      ]);
+    }
+
+    final result = VisionBoundaryAdditionSet(
+      shared: decode('shared'),
+      attack: decode('attack'),
+      defense: decode('defense'),
+    );
+    void validateUnique(
+      List<VisionBoundaryAddition> common,
+      List<VisionBoundaryAddition> side,
+      String sideName,
+    ) {
+      final ids = <String>{};
+      for (final entry in [...common, ...side]) {
+        if (!ids.add(entry.id)) {
+          throw FormatException(
+            'Duplicate $sideName vision boundary addition id ${entry.id}.',
+          );
+        }
+      }
+    }
+
+    validateUnique(result.shared, result.attack, 'attack');
+    validateUnique(result.shared, result.defense, 'defense');
+    return result;
+  }
+}
+
+class VisionBoundaryAddition {
+  const VisionBoundaryAddition({
+    required this.id,
+    required this.label,
+    required this.points,
+    required this.isClosed,
+    this.activeElevations,
+    this.inactiveElevations = const [],
+    this.observerPassableElevations,
+  });
+
+  final String id;
+  final String label;
+  final List<Offset> points;
+  final bool isClosed;
+  final List<double>? activeElevations;
+  final List<double> inactiveElevations;
+  final List<double>? observerPassableElevations;
+
+  VisionCollisionOverride get override => VisionCollisionOverride(
+    enabled: true,
+    activeElevations: activeElevations,
+    inactiveElevations: inactiveElevations,
+    observerPassableElevations: observerPassableElevations,
+  );
+
+  factory VisionBoundaryAddition.fromJson(dynamic value) {
+    if (value is! Map<String, dynamic>) {
+      throw const FormatException('Invalid vision boundary addition.');
+    }
+    VisionBoundaryAdditions._validateKeys(value, const {
+      'id',
+      'label',
+      'points',
+      'closed',
+      'activeElevations',
+      'inactiveElevations',
+      'observerPassableElevations',
+    }, 'vision boundary addition');
+    final rawId = value['id'];
+    final label = value['label'];
+    final rawPoints = value['points'];
+    final closed = value['closed'];
+    if (rawId is! String ||
+        !RegExp(r'^[a-z0-9][a-z0-9_-]{1,63}$').hasMatch(rawId)) {
+      throw const FormatException('Invalid vision boundary addition id.');
+    }
+    if (label is! String || label.trim().isEmpty || label.length > 100) {
+      throw const FormatException('Invalid vision boundary addition label.');
+    }
+    if (rawPoints is! List || rawPoints.length < (closed == true ? 3 : 2)) {
+      throw const FormatException(
+        'Vision boundary addition has too few points.',
+      );
+    }
+    if (closed is! bool) {
+      throw const FormatException('Vision boundary closed must be a boolean.');
+    }
+    final points = <Offset>[];
+    for (final rawPoint in rawPoints) {
+      if (rawPoint is! List ||
+          rawPoint.length != 2 ||
+          rawPoint[0] is! num ||
+          rawPoint[1] is! num) {
+        throw const FormatException('Invalid vision boundary point.');
+      }
+      final point = Offset(
+        (rawPoint[0] as num).toDouble(),
+        (rawPoint[1] as num).toDouble(),
+      );
+      if (point.dx < 0 || point.dx > 1 || point.dy < 0 || point.dy > 1) {
+        throw const FormatException(
+          'Vision boundary points must use normalized SVG coordinates.',
+        );
+      }
+      points.add(point);
+    }
+    List<double>? elevations(String key) {
+      final raw = value[key];
+      if (raw == null) return null;
+      if (raw is! List || raw.any((item) => item is! num)) {
+        throw FormatException('$key must contain only numbers.');
+      }
+      return List.unmodifiable(raw.cast<num>().map((item) => item.toDouble()));
+    }
+
+    final active = elevations('activeElevations');
+    final inactive = elevations('inactiveElevations') ?? const [];
+    if (active != null && active.any(inactive.contains)) {
+      throw const FormatException(
+        'Vision boundary addition has conflicting elevations.',
+      );
+    }
+    return VisionBoundaryAddition(
+      id: 'audit_$rawId',
+      label: label.trim(),
+      points: List.unmodifiable(points),
+      isClosed: closed,
+      activeElevations: active,
+      inactiveElevations: inactive,
+      observerPassableElevations: elevations('observerPassableElevations'),
+    );
+  }
+
+  VisionBoundaryAddition mirrored() => VisionBoundaryAddition(
+    id: id,
+    label: label,
+    points: List.unmodifiable([
+      for (final point in points) Offset(1 - point.dx, 1 - point.dy),
+    ]),
+    isClosed: isClosed,
+    activeElevations: activeElevations,
+    inactiveElevations: inactiveElevations,
+    observerPassableElevations: observerPassableElevations,
+  );
 }
 
 class _SvgViewBox {
@@ -459,7 +713,8 @@ class _ContourCollector extends PathProxy {
     final control1 = Offset(x1, y1);
     final control2 = Offset(x2, y2);
     final end = Offset(x3, y3);
-    final controlLength = (control1 - start).distance +
+    final controlLength =
+        (control1 - start).distance +
         (control2 - control1).distance +
         (end - control2).distance;
     final steps = (controlLength / _curveTolerance).ceil().clamp(2, 64);

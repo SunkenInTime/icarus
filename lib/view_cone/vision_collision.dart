@@ -1,11 +1,7 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
-enum VisionCollisionKind {
-  maskBoundary,
-  structuralObstacle,
-  structuralChain,
-}
+enum VisionCollisionKind { maskBoundary, structuralObstacle, structuralChain }
 
 enum VisionCollisionConfidence {
   alwaysOn,
@@ -17,10 +13,10 @@ enum VisionCollisionConfidence {
 
 class VisionSegment {
   VisionSegment(this.start, this.end)
-      : minX = math.min(start.dx, end.dx),
-        maxX = math.max(start.dx, end.dx),
-        minY = math.min(start.dy, end.dy),
-        maxY = math.max(start.dy, end.dy);
+    : minX = math.min(start.dx, end.dx),
+      maxX = math.max(start.dx, end.dx),
+      minY = math.min(start.dy, end.dy),
+      maxY = math.max(start.dy, end.dy);
 
   final Offset start;
   final Offset end;
@@ -60,6 +56,7 @@ class VisionCollisionGroup {
   });
 
   factory VisionCollisionGroup.geometry({
+    String? id,
     required List<Offset> points,
     required VisionCollisionKind kind,
     required bool isClosed,
@@ -79,22 +76,20 @@ class VisionCollisionGroup {
         if ((normalizedPoints[index] - normalizedPoints[index - 1])
                 .distanceSquared >
             1e-9)
-          VisionSegment(
-            normalizedPoints[index - 1],
-            normalizedPoints[index],
-          ),
+          VisionSegment(normalizedPoints[index - 1], normalizedPoints[index]),
     ]);
     if (segments.isEmpty) {
       throw const FormatException('Collision group has no usable segments.');
     }
-    final bounds = segments.skip(1).fold<Rect>(
+    final bounds = segments
+        .skip(1)
+        .fold<Rect>(
           Rect.fromPoints(segments.first.start, segments.first.end),
-          (rect, segment) => rect.expandToInclude(
-            Rect.fromPoints(segment.start, segment.end),
-          ),
+          (rect, segment) =>
+              rect.expandToInclude(Rect.fromPoints(segment.start, segment.end)),
         );
     return VisionCollisionGroup._(
-      id: _stableId(kind, isClosed, normalizedPoints),
+      id: id ?? _stableId(kind, isClosed, normalizedPoints),
       points: normalizedPoints,
       segments: segments,
       bounds: bounds,
@@ -161,7 +156,8 @@ class VisionCollisionGroup {
       final start = segment.start;
       final end = segment.end;
       if ((start.dy > point.dy) == (end.dy > point.dy)) continue;
-      final intersectionX = start.dx +
+      final intersectionX =
+          start.dx +
           (point.dy - start.dy) * (end.dx - start.dx) / (end.dy - start.dy);
       if (intersectionX > point.dx) inside = !inside;
     }
@@ -221,10 +217,7 @@ class VisionCollisionGroup {
 }
 
 class VisionSegmentIndex {
-  VisionSegmentIndex(
-    this.segments, {
-    this.cellSize = 64,
-  }) {
+  VisionSegmentIndex(this.segments, {this.cellSize = 64}) {
     for (var index = 0; index < segments.length; index += 1) {
       final segment = segments[index];
       final minX = (segment.minX / cellSize).floor();
@@ -260,14 +253,12 @@ class VisionSegmentIndex {
           segment.minX <= bounds.right &&
           segment.maxY >= bounds.top &&
           segment.minY <= bounds.bottom;
-    }).toList()
-      ..sort();
+    }).toList()..sort();
     return sorted;
   }
 
-  List<int> queryPoint(Offset point, double radius) => queryBounds(
-        Rect.fromCircle(center: point, radius: radius),
-      );
+  List<int> queryPoint(Offset point, double radius) =>
+      queryBounds(Rect.fromCircle(center: point, radius: radius));
 }
 
 double visionCross(Offset left, Offset right) =>
@@ -295,8 +286,10 @@ bool visionPointIsOnSegment(
       point.dy > segment.maxY + tolerance) {
     return false;
   }
-  return visionCross(segment.end - segment.start, point - segment.start)
-          .abs() <=
+  return visionCross(
+        segment.end - segment.start,
+        point - segment.start,
+      ).abs() <=
       tolerance * math.max(1, segment.length);
 }
 

@@ -25,8 +25,8 @@ class VisionGeometryMap {
   final List<VisionGeometryLayer> defenseLayers;
 
   List<double> get elevations => [
-        for (final layer in attackLayers) layer.elevation,
-      ];
+    for (final layer in attackLayers) layer.elevation,
+  ];
 
   VisionGeometryLayer layerFor({required bool isAttack, double? elevation}) {
     final layers = isAttack ? attackLayers : defenseLayers;
@@ -43,10 +43,7 @@ class VisionGeometryMap {
     });
   }
 
-  double? inferredHeightAt({
-    required bool isAttack,
-    required Offset position,
-  }) {
+  double? inferredHeightAt({required bool isAttack, required Offset position}) {
     final field = heightField;
     if (field == null) return null;
     final attackPosition = isAttack ? position : _flipForDefense(position);
@@ -60,7 +57,8 @@ class VisionGeometryMap {
   }) {
     return layerFor(
       isAttack: isAttack,
-      elevation: elevationOverride ??
+      elevation:
+          elevationOverride ??
           inferredHeightAt(isAttack: isAttack, position: position),
     );
   }
@@ -81,9 +79,7 @@ class VisionGeometryMap {
     }) {
       _validateOverrides(boundary, sideOverrides, layers);
       final allLayersMask = (1 << layers.length) - 1;
-      final navigationSamples = _topmostNavigationSamples(
-        isAttack: isAttack,
-      );
+      final navigationSamples = _topmostNavigationSamples(isAttack: isAttack);
       final sourceIndexes = [
         for (final layer in layers)
           VisionSegmentIndex(layer.riotSegments, cellSize: 32),
@@ -121,7 +117,8 @@ class VisionGeometryMap {
         // The outer footprint is a hard safety invariant. Overrides may tune
         // authored details, but can never disable or narrow map clipping.
         final override = group.isOuterBoundary ? null : sideOverrides[group.id];
-        final admitted = group.isOuterBoundary ||
+        final admitted =
+            group.isOuterBoundary ||
             (group.kind != VisionCollisionKind.structuralChain &&
                 !group.requiresEvidence) ||
             evidenceMask != 0 ||
@@ -129,8 +126,9 @@ class VisionGeometryMap {
         final collisionEnabled = admitted && override?.enabled != false;
 
         var layerMask = collisionEnabled ? allLayersMask : 0;
-        var observerExclusionMask =
-            group.isOuterBoundary ? 0 : navigationMask & allLayersMask;
+        var observerExclusionMask = group.isOuterBoundary
+            ? 0
+            : navigationMask & allLayersMask;
         if (map == MapValue.summit &&
             heightField == null &&
             group.isClosed &&
@@ -139,15 +137,9 @@ class VisionGeometryMap {
         }
         if (override != null) {
           if (layerMask != 0 && override.activeElevations != null) {
-            layerMask = _maskForElevations(
-              override.activeElevations!,
-              layers,
-            );
+            layerMask = _maskForElevations(override.activeElevations!, layers);
           }
-          layerMask &= ~_maskForElevations(
-            override.inactiveElevations,
-            layers,
-          );
+          layerMask &= ~_maskForElevations(override.inactiveElevations, layers);
           if (override.observerPassableElevations != null) {
             observerExclusionMask = _maskForElevations(
               override.observerPassableElevations!,
@@ -158,21 +150,19 @@ class VisionGeometryMap {
         final confidence = group.isOuterBoundary
             ? VisionCollisionConfidence.alwaysOn
             : override != null
-                ? VisionCollisionConfidence.overridden
-                : evidenceMask != 0
-                    ? VisionCollisionConfidence.matched
-                    : broadEvidenceMask != 0
-                        ? VisionCollisionConfidence.ambiguous
-                        : VisionCollisionConfidence.unmatchedDefault;
+            ? VisionCollisionConfidence.overridden
+            : evidenceMask != 0
+            ? VisionCollisionConfidence.matched
+            : broadEvidenceMask != 0
+            ? VisionCollisionConfidence.ambiguous
+            : VisionCollisionConfidence.unmatchedDefault;
         classifiedGroups.add(
           group.classify(
             layerMask: layerMask,
             evidenceLayerMask: evidenceMask,
             navigationLayerMask: navigationMask,
             observerExclusionLayerMask: observerExclusionMask,
-            coverageByLayer: [
-              for (final score in scores) score.strictCoverage,
-            ],
+            coverageByLayer: [for (final score in scores) score.strictCoverage],
             confidence: confidence,
             overrideApplied: override != null,
           ),
@@ -202,16 +192,20 @@ class VisionGeometryMap {
                 if (group.hasEvidenceInLayer(layerIndex)) ...group.segments,
             ]);
             final matchedSource = List<VisionSegment>.unmodifiable([
-              for (var index = 0;
-                  index < sourceLayer.riotSegments.length;
-                  index += 1)
+              for (
+                var index = 0;
+                index < sourceLayer.riotSegments.length;
+                index += 1
+              )
                 if (matchedRiotIndices[layerIndex].contains(index))
                   sourceLayer.riotSegments[index],
             ]);
             final unmatchedSource = List<VisionSegment>.unmodifiable([
-              for (var index = 0;
-                  index < sourceLayer.riotSegments.length;
-                  index += 1)
+              for (
+                var index = 0;
+                index < sourceLayer.riotSegments.length;
+                index += 1
+              )
                 if (!matchedRiotIndices[layerIndex].contains(index))
                   sourceLayer.riotSegments[index],
             ]);
@@ -325,27 +319,29 @@ class VisionGeometryMap {
       if (!group.bounds.inflate(12).contains(sample.position)) continue;
       final isRelevant = group.isClosed
           ? group.contains(sample.position) &&
-              group.segments.every(
-                (segment) =>
-                    visionDistanceSquaredToSegment(sample.position, segment) >=
-                    closedInsetSquared,
-              )
+                group.segments.every(
+                  (segment) =>
+                      visionDistanceSquaredToSegment(
+                        sample.position,
+                        segment,
+                      ) >=
+                      closedInsetSquared,
+                )
           : group.segments.any(
               (segment) =>
                   visionDistanceSquaredToSegment(sample.position, segment) <=
                   openChainToleranceSquared,
             );
       if (!isRelevant) continue;
-      counts[_nearestLayerIndex(
-        sample.elevation + observerHeight,
-        layers,
-      )] += 1;
+      counts[_nearestLayerIndex(sample.elevation + observerHeight, layers)] +=
+          1;
     }
     // One nav endpoint can sit a few pixels inside an obstacle because of the
     // independent Riot/SVG traces. Require corroboration for detail objects;
     // a nested base contour only needs one sample so small raised floors work.
-    final minimumSamples =
-        group.kind == VisionCollisionKind.maskBoundary ? 1 : 2;
+    final minimumSamples = group.kind == VisionCollisionKind.maskBoundary
+        ? 1
+        : 2;
     var result = 0;
     for (var index = 0; index < counts.length; index += 1) {
       if (counts[index] >= minimumSamples) result |= 1 << index;
@@ -353,14 +349,13 @@ class VisionGeometryMap {
     return result;
   }
 
-  List<VisionHeightSample> _topmostNavigationSamples({
-    required bool isAttack,
-  }) {
+  List<VisionHeightSample> _topmostNavigationSamples({required bool isAttack}) {
     final field = heightField;
     if (field == null || field.samples.isEmpty) return const [];
     const tolerance = VisionHeightField._sameSurfacePositionTolerance;
     const toleranceSquared = tolerance * tolerance;
-    final sorted = [...field.samples]..sort((left, right) {
+    final sorted = [...field.samples]
+      ..sort((left, right) {
         final elevation = right.elevation.compareTo(left.elevation);
         if (elevation != 0) return elevation;
         final x = left.position.dx.compareTo(right.position.dx);
@@ -441,7 +436,7 @@ class VisionGeometryMap {
     List<VisionGeometryLayer> layers,
   ) {
     final groups = {
-      for (final group in boundary.collisionGroups) group.id: group
+      for (final group in boundary.collisionGroups) group.id: group,
     };
     for (final entry in overrides.entries) {
       final group = groups[entry.key];
@@ -455,8 +450,9 @@ class VisionGeometryMap {
       }
       final override = entry.value;
       final active = override.activeElevations;
-      final activeMask =
-          active == null ? 0 : _maskForElevations(active, layers);
+      final activeMask = active == null
+          ? 0
+          : _maskForElevations(active, layers);
       final inactiveMask = _maskForElevations(
         override.inactiveElevations,
         layers,
@@ -655,10 +651,7 @@ class VisionGeometryMap {
     const center = Offset(worldWidth / 2, normalizedHeight / 2);
     final centered = projected - center;
     return center +
-        Offset(
-          centered.dx * alignment.scaleX,
-          centered.dy * alignment.scaleY,
-        ) +
+        Offset(centered.dx * alignment.scaleX, centered.dy * alignment.scaleY) +
         alignment.offset;
   }
 
@@ -696,6 +689,12 @@ class VisionGeometryOverrides {
 
   bool get isEmpty => attack.isEmpty && defense.isEmpty;
 
+  VisionGeometryOverrides merge(VisionGeometryOverrides other) =>
+      VisionGeometryOverrides(
+        attack: Map.unmodifiable({...attack, ...other.attack}),
+        defense: Map.unmodifiable({...defense, ...other.defense}),
+      );
+
   factory VisionGeometryOverrides.fromJson(
     MapValue map,
     Map<String, dynamic> json,
@@ -703,7 +702,8 @@ class VisionGeometryOverrides {
     _validateKeys(json, const {'version', 'maps'}, 'override root');
     if (json['version'] != 1) {
       throw const FormatException(
-          'Unsupported vision contour override version.');
+        'Unsupported vision contour override version.',
+      );
     }
     final maps = json['maps'];
     if (maps is! Map<String, dynamic>) {
@@ -713,7 +713,8 @@ class VisionGeometryOverrides {
     for (final entry in maps.entries) {
       if (!knownMapNames.contains(entry.key)) {
         throw FormatException(
-            'Unknown map in contour overrides: ${entry.key}.');
+          'Unknown map in contour overrides: ${entry.key}.',
+        );
       }
       if (entry.value is! Map<String, dynamic>) {
         throw FormatException('Invalid contour overrides for ${entry.key}.');
@@ -724,8 +725,10 @@ class VisionGeometryOverrides {
     if (mapValue is! Map<String, dynamic>) {
       throw FormatException('Invalid contour overrides for ${map.name}.');
     }
-    _validateKeys(
-        mapValue, const {'attack', 'defense'}, '${map.name} overrides');
+    _validateKeys(mapValue, const {
+      'attack',
+      'defense',
+    }, '${map.name} overrides');
     return VisionGeometryOverrides(
       attack: _decodeCollisionOverrides(mapValue['attack'], map),
       defense: _decodeCollisionOverrides(mapValue['defense'], map),
@@ -775,16 +778,12 @@ class VisionCollisionOverride {
     if (value is! Map<String, dynamic>) {
       throw const FormatException('Invalid vision contour override.');
     }
-    VisionGeometryOverrides._validateKeys(
-      value,
-      const {
-        'enabled',
-        'activeElevations',
-        'inactiveElevations',
-        'observerPassableElevations',
-      },
-      'contour override',
-    );
+    VisionGeometryOverrides._validateKeys(value, const {
+      'enabled',
+      'activeElevations',
+      'inactiveElevations',
+      'observerPassableElevations',
+    }, 'contour override');
     final enabled = value['enabled'];
     if (enabled != null && enabled is! bool) {
       throw const FormatException('Contour enabled must be a boolean.');
@@ -800,8 +799,10 @@ class VisionCollisionOverride {
       enabled: enabled as bool?,
       activeElevations: active,
       inactiveElevations: inactive,
-      observerPassableElevations:
-          _decodeElevations(value, 'observerPassableElevations'),
+      observerPassableElevations: _decodeElevations(
+        value,
+        'observerPassableElevations',
+      ),
     );
   }
 
@@ -828,9 +829,9 @@ class _ContourLayerScore {
   });
 
   const _ContourLayerScore.empty()
-      : strictCoverage = 0,
-        broadCoverage = 0,
-        riotIndices = const {};
+    : strictCoverage = 0,
+      broadCoverage = 0,
+      riotIndices = const {};
 
   final double strictCoverage;
   final double broadCoverage;
@@ -843,10 +844,7 @@ class _ContourLayerScore {
 }
 
 class VisionHeightSample {
-  const VisionHeightSample({
-    required this.position,
-    required this.elevation,
-  });
+  const VisionHeightSample({required this.position, required this.elevation});
 
   final Offset position;
   final double elevation;
@@ -913,9 +911,8 @@ class VisionBoundary {
   final VisionFillRule fillRule;
   final List<VisionSegment> alwaysOnSegments;
 
-  VisionCollisionGroup get outerGroup => collisionGroups.firstWhere(
-        (group) => group.id == outerGroupId,
-      );
+  VisionCollisionGroup get outerGroup =>
+      collisionGroups.firstWhere((group) => group.id == outerGroupId);
 
   bool containsOuterFootprint(Offset point) => outerGroup.contains(point);
 
@@ -930,7 +927,8 @@ class VisionBoundary {
         final start = segment.start;
         final end = segment.end;
         if ((start.dy > point.dy) == (end.dy > point.dy)) continue;
-        final intersectionX = start.dx +
+        final intersectionX =
+            start.dx +
             (point.dy - start.dy) * (end.dx - start.dx) / (end.dy - start.dy);
         if (intersectionX > point.dx) inside = !inside;
       }
@@ -1015,7 +1013,8 @@ class VisionGeometryLayer {
   }
 
   List<VisionSegment> segmentsForObserver(Offset origin, double range) {
-    final indexes = segmentIndex?.queryBounds(
+    final indexes =
+        segmentIndex?.queryBounds(
           Rect.fromCircle(center: origin, radius: range),
         ) ??
         [
