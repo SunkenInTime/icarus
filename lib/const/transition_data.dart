@@ -4,6 +4,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 
 enum TransitionKind { move, appear, disappear, none }
@@ -90,15 +91,104 @@ Offset screenPositionForWidget({
   required PlacedWidget widget,
   required CoordinateSystem coordinateSystem,
   Offset? coordinatePosition,
+  double? mapScale,
+  double? abilitySize,
 }) {
   final position = coordinatePosition ?? widget.position;
-  final screen = coordinateSystem.coordinateToScreen(position);
+  var screen = coordinateSystem.coordinateToScreen(position);
+  if (widget is PlacedAbility && mapScale != null && abilitySize != null) {
+    screen += abilityScreenPositionAdjustment(
+      ability: widget.data.abilityData!,
+      coordinateSystem: coordinateSystem,
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
+  }
   if (widget is PlacedAbility && widget.data.abilityData is CircleAbility) {
     // Pixel snapping keeps circles from visually drifting between static and
     // overlay renderers due to sub-pixel interpolation differences.
     return Offset(screen.dx.roundToDouble(), screen.dy.roundToDouble());
   }
   return screen;
+}
+
+/// The stored position of a placed ability is the top-left position it had at
+/// the historical default marker size. Keeping that serialized contract means
+/// old and new strategies remain visually identical without a migration.
+Offset storedAbilityAnchor({
+  required Ability ability,
+  required double mapScale,
+}) {
+  return ability.getAnchorPoint(
+    mapScale: mapScale,
+    abilitySize: Settings.abilitySize,
+  );
+}
+
+/// Runtime-only top-left adjustment that keeps [Ability.getAnchorPoint]
+/// visually fixed while a strategy's ability marker size changes.
+Offset abilityScreenPositionAdjustment({
+  required Ability ability,
+  required CoordinateSystem coordinateSystem,
+  required double mapScale,
+  required double abilitySize,
+}) {
+  final storedAnchor = storedAbilityAnchor(
+    ability: ability,
+    mapScale: mapScale,
+  );
+  final renderedAnchor = ability.getAnchorPoint(
+    mapScale: mapScale,
+    abilitySize: abilitySize,
+  );
+  return (storedAnchor - renderedAnchor).scale(
+    coordinateSystem.scaleFactor,
+    coordinateSystem.scaleFactor,
+  );
+}
+
+/// Converts the rendered top-left from a drag/drop back to the stable position
+/// persisted in strategy files.
+Offset storedAbilityPositionForRenderedScreenPosition({
+  required Ability ability,
+  required CoordinateSystem coordinateSystem,
+  required Offset renderedScreenPosition,
+  required double mapScale,
+  required double abilitySize,
+}) {
+  final adjustment = abilityScreenPositionAdjustment(
+    ability: ability,
+    coordinateSystem: coordinateSystem,
+    mapScale: mapScale,
+    abilitySize: abilitySize,
+  );
+  return coordinateSystem.screenToCoordinate(
+    renderedScreenPosition - adjustment,
+  );
+}
+
+/// Screen-space position of the semantic widget anchor. It intentionally does
+/// not depend on the current marker size.
+Offset screenAnchorForAbility({
+  required PlacedAbility ability,
+  required CoordinateSystem coordinateSystem,
+  required double mapScale,
+  Offset? coordinatePosition,
+}) {
+  return screenPositionForWidget(
+        widget: ability,
+        coordinateSystem: coordinateSystem,
+        coordinatePosition: coordinatePosition,
+        mapScale: mapScale,
+        abilitySize: Settings.abilitySize,
+      ) +
+      storedAbilityAnchor(
+        ability: ability.data.abilityData!,
+        mapScale: mapScale,
+      ).scale(
+        coordinateSystem.scaleFactor,
+        coordinateSystem.scaleFactor,
+      );
 }
 
 /// One entry describing how a single PlacedWidget should animate.

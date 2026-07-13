@@ -5,6 +5,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/line_up_line_painter.dart';
@@ -80,11 +81,11 @@ class _CurrentLinePainter extends CustomPainter {
         coordinateSystem.coordinateToScreen(currentAgent!.position) +
             Offset((agentSize / 2), (agentSize / 2));
 
-    final endPosition = coordinateSystem
-            .coordinateToScreen(currentAbility!.position) +
-        currentAbility!.data.abilityData!
-            .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
-            .scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
+    final endPosition = screenAnchorForAbility(
+      ability: currentAbility!,
+      coordinateSystem: coordinateSystem,
+      mapScale: mapScale,
+    );
 
     canvas.drawLine(startPosition, endPosition, highlightPaint);
   }

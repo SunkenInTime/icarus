@@ -184,10 +184,18 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                   .updateData(AgentData.agents[placedAgent.type]!);
             } else if (details.data is DraggedAbilityData) {
               final abilityData = details.data as DraggedAbilityData;
+              final abilityPosition =
+                  storedAbilityPositionForRenderedScreenPosition(
+                ability: abilityData.ability.abilityData!,
+                coordinateSystem: coordinateSystem,
+                renderedScreenPosition: localOffset,
+                mapScale: mapScale,
+                abilitySize: abilitySize,
+              );
               PlacedAbility placedAbility = PlacedAbility(
                 id: uuid.v4(),
                 data: abilityData.ability,
-                position: normalizedPosition,
+                position: abilityPosition,
                 isAlly: abilityData.isAlly,
               );
 
@@ -201,10 +209,19 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               ref.read(abilityProvider.notifier).addAbility(placedAbility);
             } else if (details.data is AbilityInfo) {
+              final abilityInfo = details.data as AbilityInfo;
+              final abilityPosition =
+                  storedAbilityPositionForRenderedScreenPosition(
+                ability: abilityInfo.abilityData!,
+                coordinateSystem: coordinateSystem,
+                renderedScreenPosition: localOffset,
+                mapScale: mapScale,
+                abilitySize: abilitySize,
+              );
               PlacedAbility placedAbility = PlacedAbility(
                 id: uuid.v4(),
-                data: details.data as AbilityInfo,
-                position: normalizedPosition,
+                data: abilityInfo,
+                position: abilityPosition,
                 isAlly: ref.read(teamProvider),
               );
 
@@ -391,9 +408,17 @@ class _AbilityList extends ConsumerWidget {
               final renderBox = context.findRenderObject() as RenderBox;
               final localOffset = renderBox.globalToLocal(details.offset);
               final virtualOffset =
-                  coordinateSystem.screenToCoordinate(localOffset);
-              final safeArea = ability.data.abilityData!
-                  .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize);
+                  storedAbilityPositionForRenderedScreenPosition(
+                ability: ability.data.abilityData!,
+                coordinateSystem: coordinateSystem,
+                renderedScreenPosition: localOffset,
+                mapScale: mapScale,
+                abilitySize: abilitySize,
+              );
+              final safeArea = storedAbilityAnchor(
+                ability: ability.data.abilityData!,
+                mapScale: mapScale,
+              );
 
               if (coordinateSystem.isOutOfBounds(
                   virtualOffset.translate(safeArea.dx, safeArea.dy))) {

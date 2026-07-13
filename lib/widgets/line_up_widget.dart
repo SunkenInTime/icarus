@@ -4,6 +4,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
@@ -54,10 +55,14 @@ class LineUpItemAbilityWidget extends ConsumerWidget {
     final currentMap =
         ref.watch(mapProvider.select((state) => state.currentMap));
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
-    final abilityScreen =
-        coordinateSystem.coordinateToScreen(item.ability.position);
     final isRotatable = item.ability.rotation != 0;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    final abilityScreen = screenPositionForWidget(
+      widget: item.ability,
+      coordinateSystem: coordinateSystem,
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
     final contextMenuItems = buildAbilityContextMenuItems(
       ref,
       item.ability,

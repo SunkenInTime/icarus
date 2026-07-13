@@ -8,6 +8,7 @@ import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/json_converters.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:json_annotation/json_annotation.dart';
 
@@ -897,8 +898,14 @@ class PlacedAbility extends PlacedWidget {
   }
 
   void switchSides({required double mapScale, required double abilitySize}) {
+    // Serialized positions are defined at the historical default marker size.
+    // Side switching must use that same geometry so the result is independent
+    // of whichever runtime size happens to be selected when the switch occurs.
     final fullAbilityWidgetSize =
-        data.abilityData!.getSize(mapScale: mapScale, abilitySize: abilitySize);
+        data.abilityData!.getSize(
+      mapScale: mapScale,
+      abilitySize: Settings.abilitySize,
+    );
     final abilityData = data.abilityData!;
     final shouldRotate = isRotatable(abilityData);
     final shouldUseRotatableFlipCompensation =
