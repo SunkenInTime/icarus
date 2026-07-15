@@ -291,6 +291,7 @@ class _StrategySettingsSections extends ConsumerWidget {
                   ref
                       .read(strategySettingsProvider.notifier)
                       .updateAgentSize(value);
+                  ref.read(strategyProvider.notifier).setUnsaved();
                 },
                 onChangeCommitted: (start, end) {
                   if (start == end) return;
@@ -318,6 +319,7 @@ class _StrategySettingsSections extends ConsumerWidget {
                   ref
                       .read(strategySettingsProvider.notifier)
                       .updateAbilitySize(value);
+                  ref.read(strategyProvider.notifier).setUnsaved();
                 },
                 onChangeCommitted: (start, end) {
                   if (start == end) return;
