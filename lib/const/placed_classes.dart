@@ -8,6 +8,7 @@ import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/json_converters.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:json_annotation/json_annotation.dart';
 
@@ -391,7 +392,10 @@ sealed class PlacedAgentNode extends PlacedWidget {
 
   void switchSides(double agentSize) {
     final coordinateSystem = CoordinateSystem.instance;
-    final agentScreenPx = coordinateSystem.scale(agentSize);
+    // Serialized positions use the historical default marker footprint.
+    // Runtime size changes are render-only, so side switching must not depend
+    // on the size selected when the command runs.
+    final agentScreenPx = coordinateSystem.scale(Settings.agentSize);
     final scaledSize = Offset(agentScreenPx, agentScreenPx);
 
     position = getFlippedPosition(position: position, scaledSize: scaledSize);
@@ -897,8 +901,13 @@ class PlacedAbility extends PlacedWidget {
   }
 
   void switchSides({required double mapScale, required double abilitySize}) {
-    final fullAbilityWidgetSize =
-        data.abilityData!.getSize(mapScale: mapScale, abilitySize: abilitySize);
+    // Serialized positions are defined at the historical default marker size.
+    // Side switching must use that same geometry so the result is independent
+    // of whichever runtime size happens to be selected when the switch occurs.
+    final fullAbilityWidgetSize = data.abilityData!.getSize(
+      mapScale: mapScale,
+      abilitySize: Settings.abilitySize,
+    );
     final abilityData = data.abilityData!;
     final shouldRotate = isRotatable(abilityData);
     final shouldUseRotatableFlipCompensation =
@@ -1185,8 +1194,8 @@ class PlacedUtility extends PlacedWidget {
   }) {
     final size = _getEffectiveUtilitySize(
       mapScale: mapScale,
-      agentSize: agentSize,
-      abilitySize: abilitySize,
+      agentSize: Settings.agentSize,
+      abilitySize: Settings.abilitySize,
     );
     final scaledSize = size.scale(CoordinateSystem.instance.scaleFactor,
         CoordinateSystem.instance.scaleFactor);

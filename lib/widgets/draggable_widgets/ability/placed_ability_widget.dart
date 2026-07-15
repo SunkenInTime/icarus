@@ -194,6 +194,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       final screenPosition = screenPositionForWidget(
         widget: widget.ability,
         coordinateSystem: coordinateSystem,
+        mapScale: mapScale,
+        abilitySize: abilitySize,
       );
       final isCenterSquare = abilityData is CenterSquareAbility;
       final isResizableSquare = abilityData is ResizableSquareAbility;
@@ -384,6 +386,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     final screenPosition = screenPositionForWidget(
       widget: widget.ability,
       coordinateSystem: coordinateSystem,
+      mapScale: mapScale,
+      abilitySize: abilitySize,
     );
     return Positioned(
       left: screenPosition.dx,

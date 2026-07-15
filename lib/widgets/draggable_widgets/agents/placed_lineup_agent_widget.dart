@@ -4,8 +4,10 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/canvas_resize_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
@@ -25,7 +27,12 @@ class PlacedLineupAgentWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(canvasResizeProvider);
     final coordinateSystem = CoordinateSystem.instance;
-    final screenPosition = coordinateSystem.coordinateToScreen(agent.position);
+    final agentSize = ref.watch(strategySettingsProvider).agentSize;
+    final screenPosition = screenPositionForWidget(
+      widget: agent,
+      coordinateSystem: coordinateSystem,
+      agentSize: agentSize,
+    );
 
     return Positioned(
       left: screenPosition.dx,

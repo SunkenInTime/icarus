@@ -9,6 +9,7 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
@@ -22,6 +23,7 @@ enum ActionGroup {
   image,
   utility,
   lineUp,
+  strategySettings,
   bulk,
 }
 
@@ -56,6 +58,7 @@ class BulkActionSnapshot {
   final PlacedImageProviderSnapshot? imageSnapshot;
   final UtilityProviderSnapshot? utilitySnapshot;
   final LineUpProviderSnapshot? lineUpSnapshot;
+  final StrategySettings? strategySettingsSnapshot;
   final Map<String, Offset> imageSizeSnapshot;
   final Map<String, Offset> textHeightSnapshot;
 
@@ -70,6 +73,7 @@ class BulkActionSnapshot {
     this.imageSnapshot,
     this.utilitySnapshot,
     this.lineUpSnapshot,
+    this.strategySettingsSnapshot,
     this.imageSizeSnapshot = const {},
     this.textHeightSnapshot = const {},
   });
@@ -104,7 +108,7 @@ final actionProvider =
     NotifierProvider<ActionProvider, List<UserAction>>(ActionProvider.new);
 
 class ActionProvider extends Notifier<List<UserAction>> {
-  static const List<ActionGroup> _undoableGroups = [
+  static const List<ActionGroup> _clearableGroups = [
     ActionGroup.agent,
     ActionGroup.ability,
     ActionGroup.drawing,
@@ -112,6 +116,10 @@ class ActionProvider extends Notifier<List<UserAction>> {
     ActionGroup.image,
     ActionGroup.utility,
     ActionGroup.lineUp,
+  ];
+  static const List<ActionGroup> _transactionGroups = [
+    ..._clearableGroups,
+    ActionGroup.strategySettings,
   ];
   static const _uuid = Uuid();
   List<UserAction> poppedItems = [];
@@ -169,6 +177,8 @@ class ActionProvider extends Notifier<List<UserAction>> {
         ref.read(utilityProvider.notifier).redoAction(poppedAction);
       case ActionGroup.lineUp:
         ref.read(lineUpProvider.notifier).redoAction(poppedAction);
+      case ActionGroup.strategySettings:
+        return;
       case ActionGroup.bulk:
         return;
     }
@@ -211,6 +221,8 @@ class ActionProvider extends Notifier<List<UserAction>> {
         ref.read(utilityProvider.notifier).undoAction(currentAction);
       case ActionGroup.lineUp:
         ref.read(lineUpProvider.notifier).undoAction(currentAction);
+      case ActionGroup.strategySettings:
+        return;
       case ActionGroup.bulk:
         return;
     }
@@ -244,11 +256,11 @@ class ActionProvider extends Notifier<List<UserAction>> {
   }
 
   void clearAllAsAction() {
-    _performBulkClear(_undoableGroups);
+    _performBulkClear(_clearableGroups);
   }
 
   void clearGroupAsAction(ActionGroup group) {
-    if (group == ActionGroup.bulk) return;
+    if (!_clearableGroups.contains(group)) return;
     _performBulkClear([group]);
   }
 
@@ -258,7 +270,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
   }) {
     final targetGroups = <ActionGroup>[];
     for (final group in groups) {
-      if (_undoableGroups.contains(group) && !targetGroups.contains(group)) {
+      if (_transactionGroups.contains(group) && !targetGroups.contains(group)) {
         targetGroups.add(group);
       }
     }
@@ -294,7 +306,7 @@ class ActionProvider extends Notifier<List<UserAction>> {
   void _performBulkClear(List<ActionGroup> groups) {
     final targetGroups = <ActionGroup>[];
     for (final group in groups) {
-      if (_undoableGroups.contains(group) && !targetGroups.contains(group)) {
+      if (_clearableGroups.contains(group) && !targetGroups.contains(group)) {
         targetGroups.add(group);
       }
     }
@@ -340,6 +352,8 @@ class ActionProvider extends Notifier<List<UserAction>> {
           if (ref.read(utilityProvider).isNotEmpty) return true;
         case ActionGroup.lineUp:
           if (ref.read(lineUpProvider).lineUps.isNotEmpty) return true;
+        case ActionGroup.strategySettings:
+          break;
         case ActionGroup.bulk:
           break;
       }
@@ -379,6 +393,9 @@ class ActionProvider extends Notifier<List<UserAction>> {
           : null,
       lineUpSnapshot: groups.contains(ActionGroup.lineUp)
           ? ref.read(lineUpProvider.notifier).takeSnapshot()
+          : null,
+      strategySettingsSnapshot: groups.contains(ActionGroup.strategySettings)
+          ? ref.read(strategySettingsProvider)
           : null,
       imageSizeSnapshot: ref
           .read(imageWidgetSizeProvider.notifier)
@@ -434,6 +451,8 @@ class ActionProvider extends Notifier<List<UserAction>> {
           ref.read(utilityProvider.notifier).clearAll();
         case ActionGroup.lineUp:
           ref.read(lineUpProvider.notifier).clearAll();
+        case ActionGroup.strategySettings:
+          break;
         case ActionGroup.bulk:
           break;
       }
@@ -484,6 +503,11 @@ class ActionProvider extends Notifier<List<UserAction>> {
       ref
           .read(lineUpProvider.notifier)
           .restoreSnapshot(snapshot.lineUpSnapshot!);
+    }
+    if (snapshot.strategySettingsSnapshot != null) {
+      ref
+          .read(strategySettingsProvider.notifier)
+          .fromHive(snapshot.strategySettingsSnapshot!);
     }
 
     if (snapshot.imageSizeSnapshot.isNotEmpty) {

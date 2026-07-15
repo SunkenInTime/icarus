@@ -6,6 +6,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
@@ -188,6 +189,11 @@ class _PlacedViewConeAgentWidgetState
       coordinateSystem: coordinateSystem,
       agentSize: agentSize,
     );
+    final agentScreenPosition = screenPositionForWidget(
+      widget: current,
+      coordinateSystem: coordinateSystem,
+      agentSize: agentSize,
+    );
 
     if (!_isDragging && _rotationOrigin == Offset.zero) {
       if (_localRotation != current.rotation) {
@@ -202,10 +208,8 @@ class _PlacedViewConeAgentWidgetState
     final localLength = _localLength ?? current.length;
 
     return Positioned(
-      left: coordinateSystem.coordinateToScreen(current.position).dx -
-          compositeAgentOffset.dx,
-      top: coordinateSystem.coordinateToScreen(current.position).dy -
-          compositeAgentOffset.dy,
+      left: agentScreenPosition.dx - compositeAgentOffset.dx,
+      top: agentScreenPosition.dy - compositeAgentOffset.dy,
       child: RotatableWidget(
         rotation: localRotation,
         isDragging: _isDragging,

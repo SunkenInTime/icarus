@@ -5,6 +5,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/line_up_line_painter.dart';
@@ -20,7 +21,8 @@ class CurrentLineUpPainter extends ConsumerWidget {
     final double abilitySize = ref.watch(strategySettingsProvider).abilitySize;
     final double agentSize =
         coordinateSystem.scale(ref.watch(strategySettingsProvider).agentSize);
-    final currentMap = ref.watch(mapProvider.select((state) => state.currentMap));
+    final currentMap =
+        ref.watch(mapProvider.select((state) => state.currentMap));
     final double mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final lineUpState = ref.watch(lineUpProvider);
     final PlacedAgent? currentAgent = lineUpState.currentAgent ??
@@ -76,15 +78,16 @@ class _CurrentLinePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..isAntiAlias = true;
 
-    final startPosition =
-        coordinateSystem.coordinateToScreen(currentAgent!.position) +
-            Offset((agentSize / 2), (agentSize / 2));
+    final startPosition = screenAnchorForAgent(
+      agent: currentAgent!,
+      coordinateSystem: coordinateSystem,
+    );
 
-    final endPosition = coordinateSystem
-            .coordinateToScreen(currentAbility!.position) +
-        currentAbility!.data.abilityData!
-            .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
-            .scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
+    final endPosition = screenAnchorForAbility(
+      ability: currentAbility!,
+      coordinateSystem: coordinateSystem,
+      mapScale: mapScale,
+    );
 
     canvas.drawLine(startPosition, endPosition, highlightPaint);
   }
