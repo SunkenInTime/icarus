@@ -31,6 +31,7 @@ Offset _overlayScreenPosition({
     coordinateSystem: coordinateSystem,
     coordinatePosition: coordinatePosition,
     mapScale: mapScale,
+    agentSize: agentSize,
     abilitySize: abilitySize,
   );
   if (widget is PlacedViewConeAgent) {
@@ -415,10 +416,13 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
         child = Transform.rotate(
           angle: angle,
           alignment: Alignment.topLeft,
-          origin: UtilityData.utilityWidgets[widget.type]!
-              .getAnchorPoint()
-              .scale(CoordinateSystem.instance.scaleFactor,
-                  CoordinateSystem.instance.scaleFactor),
+          origin: utilityAnchorForScale(
+            utility: widget,
+            mapScale: mapScale,
+            agentSize: agentSize,
+            abilitySize: abilitySize,
+          ).scale(CoordinateSystem.instance.scaleFactor,
+              CoordinateSystem.instance.scaleFactor),
           child: child,
         );
       }
@@ -648,10 +652,13 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
           child: Transform.rotate(
             angle: widget.rotation,
             alignment: Alignment.topLeft,
-            origin: UtilityData.utilityWidgets[widget.type]!
-                .getAnchorPoint()
-                .scale(CoordinateSystem.instance.scaleFactor,
-                    CoordinateSystem.instance.scaleFactor),
+            origin: utilityAnchorForScale(
+              utility: widget,
+              mapScale: mapScale,
+              agentSize: agentSize,
+              abilitySize: abilitySize,
+            ).scale(CoordinateSystem.instance.scaleFactor,
+                CoordinateSystem.instance.scaleFactor),
             child: PlacedWidgetPreview.build(
               widget,
               mapScale,

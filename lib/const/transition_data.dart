@@ -92,15 +92,34 @@ Offset screenPositionForWidget({
   required CoordinateSystem coordinateSystem,
   Offset? coordinatePosition,
   double? mapScale,
+  double? agentSize,
   double? abilitySize,
 }) {
   final position = coordinatePosition ?? widget.position;
   var screen = coordinateSystem.coordinateToScreen(position);
+  if (widget is PlacedAgentNode && agentSize != null) {
+    screen += agentScreenPositionAdjustment(
+      coordinateSystem: coordinateSystem,
+      agentSize: agentSize,
+    );
+  }
   if (widget is PlacedAbility && mapScale != null && abilitySize != null) {
     screen += abilityScreenPositionAdjustment(
       ability: widget.data.abilityData!,
       coordinateSystem: coordinateSystem,
       mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
+  }
+  if (widget is PlacedUtility &&
+      mapScale != null &&
+      agentSize != null &&
+      abilitySize != null) {
+    screen += utilityScreenPositionAdjustment(
+      utility: widget,
+      coordinateSystem: coordinateSystem,
+      mapScale: mapScale,
+      agentSize: agentSize,
       abilitySize: abilitySize,
     );
   }
@@ -110,6 +129,54 @@ Offset screenPositionForWidget({
     return Offset(screen.dx.roundToDouble(), screen.dy.roundToDouble());
   }
   return screen;
+}
+
+/// The stored position of an agent-backed icon is its top-left at the
+/// historical default marker size. Runtime scaling moves that top-left so the
+/// icon center remains fixed without rewriting serialized strategy data.
+Offset get storedAgentAnchor =>
+    const Offset(Settings.agentSize / 2, Settings.agentSize / 2);
+
+Offset agentScreenPositionAdjustment({
+  required CoordinateSystem coordinateSystem,
+  required double agentSize,
+}) {
+  final renderedAnchor = Offset(agentSize / 2, agentSize / 2);
+  return (storedAgentAnchor - renderedAnchor).scale(
+    coordinateSystem.scaleFactor,
+    coordinateSystem.scaleFactor,
+  );
+}
+
+Offset storedAgentPositionForRenderedScreenPosition({
+  required CoordinateSystem coordinateSystem,
+  required Offset renderedScreenPosition,
+  required double agentSize,
+}) {
+  final adjustment = agentScreenPositionAdjustment(
+    coordinateSystem: coordinateSystem,
+    agentSize: agentSize,
+  );
+  return coordinateSystem.screenToCoordinate(
+    renderedScreenPosition - adjustment,
+  );
+}
+
+Offset screenAnchorForAgent({
+  required PlacedAgentNode agent,
+  required CoordinateSystem coordinateSystem,
+  Offset? coordinatePosition,
+}) {
+  return screenPositionForWidget(
+        widget: agent,
+        coordinateSystem: coordinateSystem,
+        coordinatePosition: coordinatePosition,
+        agentSize: Settings.agentSize,
+      ) +
+      storedAgentAnchor.scale(
+        coordinateSystem.scaleFactor,
+        coordinateSystem.scaleFactor,
+      );
 }
 
 /// The stored position of a placed ability is the top-left position it had at
@@ -189,6 +256,80 @@ Offset screenAnchorForAbility({
         coordinateSystem.scaleFactor,
         coordinateSystem.scaleFactor,
       );
+}
+
+Offset utilityAnchorForScale({
+  required PlacedUtility utility,
+  required double mapScale,
+  required double agentSize,
+  required double abilitySize,
+}) {
+  return UtilityData.utilityWidgets[utility.type]!.getAnchorPoint(
+    id: utility.id,
+    length: utility.length,
+    rotation: utility.rotation,
+    mapScale: mapScale,
+    agentSize: agentSize,
+    abilitySize: abilitySize,
+    diameterMeters: utility.customDiameter,
+    widthMeters: utility.customWidth,
+    rectLengthMeters: utility.customLength,
+  );
+}
+
+Offset storedUtilityAnchor({
+  required PlacedUtility utility,
+  required double mapScale,
+}) {
+  return utilityAnchorForScale(
+    utility: utility,
+    mapScale: mapScale,
+    agentSize: Settings.agentSize,
+    abilitySize: Settings.abilitySize,
+  );
+}
+
+Offset utilityScreenPositionAdjustment({
+  required PlacedUtility utility,
+  required CoordinateSystem coordinateSystem,
+  required double mapScale,
+  required double agentSize,
+  required double abilitySize,
+}) {
+  final storedAnchor = storedUtilityAnchor(
+    utility: utility,
+    mapScale: mapScale,
+  );
+  final renderedAnchor = utilityAnchorForScale(
+    utility: utility,
+    mapScale: mapScale,
+    agentSize: agentSize,
+    abilitySize: abilitySize,
+  );
+  return (storedAnchor - renderedAnchor).scale(
+    coordinateSystem.scaleFactor,
+    coordinateSystem.scaleFactor,
+  );
+}
+
+Offset storedUtilityPositionForRenderedScreenPosition({
+  required PlacedUtility utility,
+  required CoordinateSystem coordinateSystem,
+  required Offset renderedScreenPosition,
+  required double mapScale,
+  required double agentSize,
+  required double abilitySize,
+}) {
+  final adjustment = utilityScreenPositionAdjustment(
+    utility: utility,
+    coordinateSystem: coordinateSystem,
+    mapScale: mapScale,
+    agentSize: agentSize,
+    abilitySize: abilitySize,
+  );
+  return coordinateSystem.screenToCoordinate(
+    renderedScreenPosition - adjustment,
+  );
 }
 
 /// One entry describing how a single PlacedWidget should animate.
@@ -280,7 +421,8 @@ class PageTransitionEntry {
 
   double? get startLength => from != null ? lengthOf(from!) : null;
   double? get endLength => to != null ? lengthOf(to!) : null;
-  List<double>? get startArmLengths => from != null ? armLengthsOf(from!) : null;
+  List<double>? get startArmLengths =>
+      from != null ? armLengthsOf(from!) : null;
   List<double>? get endArmLengths => to != null ? armLengthsOf(to!) : null;
 
   double? get startScale => from != null ? scaleOf(from!) : null;

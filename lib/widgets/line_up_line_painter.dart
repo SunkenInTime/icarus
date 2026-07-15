@@ -119,9 +119,10 @@ class LinePainter extends CustomPainter {
 
     // Current lineup highlight moved to CurrentLineUpPainter.
     for (final group in groups) {
-      final startPosition =
-          coordinateSystem.coordinateToScreen(group.agent.position) +
-              Offset((agentSize / 2), (agentSize / 2));
+      final startPosition = screenAnchorForAgent(
+        agent: group.agent,
+        coordinateSystem: coordinateSystem,
+      );
 
       for (final item in group.items) {
         final endPosition = screenAnchorForAbility(

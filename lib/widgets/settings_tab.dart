@@ -291,7 +291,16 @@ class _StrategySettingsSections extends ConsumerWidget {
                   ref
                       .read(strategySettingsProvider.notifier)
                       .updateAgentSize(value);
-                  ref.read(strategyProvider.notifier).setUnsaved();
+                },
+                onChangeCommitted: (start, end) {
+                  if (start == end) return;
+
+                  final settings = ref.read(strategySettingsProvider.notifier);
+                  settings.updateAgentSize(start);
+                  ref.read(actionProvider.notifier).performTransaction(
+                    groups: const [ActionGroup.strategySettings],
+                    mutation: () => settings.updateAgentSize(end),
+                  );
                 },
               ),
               const _SettingsItemDivider(),
@@ -313,8 +322,7 @@ class _StrategySettingsSections extends ConsumerWidget {
                 onChangeCommitted: (start, end) {
                   if (start == end) return;
 
-                  final settings =
-                      ref.read(strategySettingsProvider.notifier);
+                  final settings = ref.read(strategySettingsProvider.notifier);
                   settings.updateAbilitySize(start);
                   ref.read(actionProvider.notifier).performTransaction(
                     groups: const [ActionGroup.strategySettings],

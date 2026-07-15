@@ -21,7 +21,8 @@ class CurrentLineUpPainter extends ConsumerWidget {
     final double abilitySize = ref.watch(strategySettingsProvider).abilitySize;
     final double agentSize =
         coordinateSystem.scale(ref.watch(strategySettingsProvider).agentSize);
-    final currentMap = ref.watch(mapProvider.select((state) => state.currentMap));
+    final currentMap =
+        ref.watch(mapProvider.select((state) => state.currentMap));
     final double mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final lineUpState = ref.watch(lineUpProvider);
     final PlacedAgent? currentAgent = lineUpState.currentAgent ??
@@ -77,9 +78,10 @@ class _CurrentLinePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..isAntiAlias = true;
 
-    final startPosition =
-        coordinateSystem.coordinateToScreen(currentAgent!.position) +
-            Offset((agentSize / 2), (agentSize / 2));
+    final startPosition = screenAnchorForAgent(
+      agent: currentAgent!,
+      coordinateSystem: coordinateSystem,
+    );
 
     final endPosition = screenAnchorForAbility(
       ability: currentAbility!,

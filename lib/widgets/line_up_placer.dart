@@ -130,7 +130,11 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                         renderBox.globalToLocal(details.offset);
 
                     final virtualOffset =
-                        coordinateSystem.screenToCoordinate(localOffset);
+                        storedAgentPositionForRenderedScreenPosition(
+                      coordinateSystem: coordinateSystem,
+                      renderedScreenPosition: localOffset,
+                      agentSize: ref.read(strategySettingsProvider).agentSize,
+                    );
 
                     ref
                         .read(lineUpProvider.notifier)
@@ -143,8 +147,6 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
         onAcceptWithDetails: (details) {
           RenderBox renderBox = context.findRenderObject() as RenderBox;
           Offset localOffset = renderBox.globalToLocal(details.offset);
-          Offset normalizedPosition =
-              coordinateSystem.screenToCoordinate(localOffset);
           const uuid = Uuid();
 
           if (details.data is AgentData) {
@@ -157,10 +159,15 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
               return;
             }
 
+            final agentPosition = storedAgentPositionForRenderedScreenPosition(
+              coordinateSystem: coordinateSystem,
+              renderedScreenPosition: localOffset,
+              agentSize: ref.read(strategySettingsProvider).agentSize,
+            );
             PlacedAgent placedAgent = PlacedAgent(
               id: uuid.v4(),
               type: (details.data as AgentData).type,
-              position: normalizedPosition,
+              position: agentPosition,
               isAlly: ref.read(teamProvider),
             );
 

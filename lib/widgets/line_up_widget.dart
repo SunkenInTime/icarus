@@ -21,7 +21,12 @@ class LineUpGroupAgentWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final agentScreen = coordinateSystem.coordinateToScreen(group.agent.position);
+    final agentSize = ref.watch(strategySettingsProvider).agentSize;
+    final agentScreen = screenPositionForWidget(
+      widget: group.agent,
+      coordinateSystem: coordinateSystem,
+      agentSize: agentSize,
+    );
 
     return Positioned(
       key: ValueKey('lineup-agent-${group.id}'),
