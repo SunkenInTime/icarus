@@ -52,6 +52,7 @@ void main() {
         lineStart: const Offset(10, 20),
         lineEnd: const Offset(30, 40),
         color: Colors.red,
+        thickness: Settings.strokeThicknessThin,
         boundingBox: BoundingBox(
           min: const Offset(10, 20),
           max: const Offset(30, 40),
@@ -72,6 +73,10 @@ void main() {
       );
       expect(decodedJson.single, containsPair('isDotted', true));
       expect(decodedJson.single, containsPair('hasArrow', true));
+      expect(
+        decodedJson.single,
+        containsPair('thickness', Settings.strokeThicknessThin),
+      );
       expect(decodedJson.single, containsPair('showTraversalTime', true));
       expect(
         decodedJson.single,
@@ -82,6 +87,7 @@ void main() {
       expect(decoded.lineStart, const Offset(10, 20));
       expect(decoded.lineEnd, const Offset(30, 40));
       expect(decoded.colorValue, Colors.red.toARGB32());
+      expect(decoded.thickness, Settings.strokeThicknessThin);
       expect(decoded.boundingBox!.min, const Offset(10, 20));
       expect(decoded.boundingBox!.max, const Offset(30, 40));
       expect(decoded.isDotted, isTrue);

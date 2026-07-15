@@ -122,6 +122,10 @@ class AppPreferences extends HiveObject {
   final double pagesBarWidth;
   final List<int> customColorValues;
   final Map<String, String> customShortcutBindings;
+  final String librarySortByName;
+  final String librarySortOrderName;
+  final int drawingColorValue;
+  final double drawingThickness;
 
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
@@ -136,6 +140,10 @@ class AppPreferences extends HiveObject {
     this.pagesBarWidth = 224.0,
     List<int>? customColorValues,
     Map<String, String>? customShortcutBindings,
+    this.librarySortByName = 'dateCreated',
+    this.librarySortOrderName = 'ascending',
+    this.drawingColorValue = 0xFFFFFFFF,
+    this.drawingThickness = Settings.defaultStrokeThickness,
   })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
         customShortcutBindings =
             Map.unmodifiable(customShortcutBindings ?? const {});
@@ -153,6 +161,10 @@ class AppPreferences extends HiveObject {
     double? pagesBarWidth,
     List<int>? customColorValues,
     Map<String, String>? customShortcutBindings,
+    String? librarySortByName,
+    String? librarySortOrderName,
+    int? drawingColorValue,
+    double? drawingThickness,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -175,6 +187,10 @@ class AppPreferences extends HiveObject {
       customColorValues: customColorValues ?? this.customColorValues,
       customShortcutBindings:
           customShortcutBindings ?? this.customShortcutBindings,
+      librarySortByName: librarySortByName ?? this.librarySortByName,
+      librarySortOrderName: librarySortOrderName ?? this.librarySortOrderName,
+      drawingColorValue: drawingColorValue ?? this.drawingColorValue,
+      drawingThickness: drawingThickness ?? this.drawingThickness,
     );
   }
 }
@@ -519,149 +535,159 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
 }
 
 class AppPreferencesNotifier extends Notifier<AppPreferences> {
+  Future<void> _writeQueue = Future<void>.value();
+
   @override
   AppPreferences build() {
     return _readFromHive();
   }
 
   Future<void> refreshFromHive() async {
+    await _writeQueue;
     state = _readFromHive();
   }
 
-  Future<void> setAutosaveEnabled(bool enabled) async {
-    final updated = _readFromHive().copyWith(autosaveEnabled: enabled);
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
+  Future<void> setAutosaveEnabled(bool enabled) {
+    return _updatePreferences(
+      (current) => current.copyWith(autosaveEnabled: enabled),
     );
-    state = updated;
   }
 
-  Future<void> setShowSpawnBarrier(bool visible) async {
-    final updated = _readFromHive().copyWith(showSpawnBarrier: visible);
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
+  Future<void> setShowSpawnBarrier(bool visible) {
+    return _updatePreferences(
+      (current) => current.copyWith(showSpawnBarrier: visible),
     );
-    state = updated;
   }
 
-  Future<void> setShowUltOrbs(bool visible) async {
-    final updated = _readFromHive().copyWith(showUltOrbs: visible);
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
+  Future<void> setShowUltOrbs(bool visible) {
+    return _updatePreferences(
+      (current) => current.copyWith(showUltOrbs: visible),
     );
-    state = updated;
   }
 
-  Future<void> setShowRegionNames(bool visible) async {
-    final updated = _readFromHive().copyWith(showRegionNames: visible);
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
+  Future<void> setShowRegionNames(bool visible) {
+    return _updatePreferences(
+      (current) => current.copyWith(showRegionNames: visible),
     );
-    state = updated;
   }
 
-  Future<void> setDefaultNeutralTeamColorsForNewStrategies(bool enabled) async {
-    final updated = _readFromHive().copyWith(
-      defaultNeutralTeamColorsForNewStrategies: enabled,
+  Future<void> setDefaultNeutralTeamColorsForNewStrategies(bool enabled) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        defaultNeutralTeamColorsForNewStrategies: enabled,
+      ),
     );
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
-    );
-    state = updated;
   }
 
-  Future<void> setDefaultAgentSizeForNewStrategies(double size) async {
-    final updated =
-        _readFromHive().copyWith(defaultAgentSizeForNewStrategies: size);
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
+  Future<void> setDefaultAgentSizeForNewStrategies(double size) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        defaultAgentSizeForNewStrategies: size,
+      ),
     );
-    state = updated;
   }
 
-  Future<void> setDefaultAbilitySizeForNewStrategies(double size) async {
-    final updated =
-        _readFromHive().copyWith(defaultAbilitySizeForNewStrategies: size);
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
+  Future<void> setDefaultAbilitySizeForNewStrategies(double size) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        defaultAbilitySizeForNewStrategies: size,
+      ),
     );
-    state = updated;
   }
 
-  Future<void> setPagesBarExpandedHeight(double height) async {
-    final updated = _readFromHive().copyWith(pagesBarExpandedHeight: height);
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
+  Future<void> setPagesBarExpandedHeight(double height) {
+    return _updatePreferences(
+      (current) => current.copyWith(pagesBarExpandedHeight: height),
     );
-    state = updated;
   }
 
-  Future<void> setPagesBarWidth(double width) async {
-    final updated = _readFromHive().copyWith(pagesBarWidth: width);
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
+  Future<void> setPagesBarWidth(double width) {
+    return _updatePreferences(
+      (current) => current.copyWith(pagesBarWidth: width),
     );
-    state = updated;
   }
 
-  Future<void> setCustomColorValues(List<int> colorValues) async {
-    final updated = _readFromHive().copyWith(
-      customColorValues: colorValues.take(15).toList(growable: false),
+  Future<void> setCustomColorValues(List<int> colorValues) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        customColorValues: colorValues.take(15).toList(growable: false),
+      ),
     );
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
+  }
+
+  Future<void> setLibrarySort({
+    String? sortByName,
+    String? sortOrderName,
+  }) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        librarySortByName: sortByName,
+        librarySortOrderName: sortOrderName,
+      ),
     );
-    state = updated;
+  }
+
+  Future<void> setDrawingDefaults({
+    int? colorValue,
+    double? thickness,
+  }) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        drawingColorValue: colorValue,
+        drawingThickness: thickness,
+      ),
+    );
   }
 
   Future<void> setCustomShortcutBinding(
     String shortcutId,
     String serializedBinding,
-  ) async {
-    final current = _readFromHive();
-    final updatedBindings = {
-      ...current.customShortcutBindings,
-      shortcutId: serializedBinding,
-    };
-    final updated = current.copyWith(customShortcutBindings: updatedBindings);
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
+  ) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        customShortcutBindings: {
+          ...current.customShortcutBindings,
+          shortcutId: serializedBinding,
+        },
+      ),
     );
-    state = updated;
   }
 
-  Future<void> resetCustomShortcutBinding(String shortcutId) async {
-    final current = _readFromHive();
-    final updatedBindings = {...current.customShortcutBindings}
-      ..remove(shortcutId);
-    final updated = current.copyWith(customShortcutBindings: updatedBindings);
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
+  Future<void> resetCustomShortcutBinding(String shortcutId) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        customShortcutBindings: {...current.customShortcutBindings}
+          ..remove(shortcutId),
+      ),
     );
-    state = updated;
   }
 
-  Future<void> resetAllCustomShortcutBindings() async {
-    final updated = _readFromHive().copyWith(
-      customShortcutBindings: const {},
+  Future<void> resetAllCustomShortcutBindings() {
+    return _updatePreferences(
+      (current) => current.copyWith(customShortcutBindings: const {}),
     );
-    await Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
-      MapThemeProfilesProvider.appPreferencesSingletonKey,
-      updated,
-    );
+  }
+
+  Future<void> flushPendingWrites() => _writeQueue;
+
+  Future<void> _updatePreferences(
+    AppPreferences Function(AppPreferences current) update,
+  ) {
+    final updated = update(state);
     state = updated;
+
+    final write = _writeQueue.then<void>(
+      (_) => Hive.box<AppPreferences>(HiveBoxNames.appPreferencesBox).put(
+        MapThemeProfilesProvider.appPreferencesSingletonKey,
+        updated,
+      ),
+    );
+    // Keep later writes moving if this caller observes and handles a failure.
+    _writeQueue = write.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return write;
   }
 
   AppPreferences _readFromHive() {

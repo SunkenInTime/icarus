@@ -1312,13 +1312,22 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       pagesBarWidth: fields[7] == null ? 224.0 : (fields[7] as num).toDouble(),
       customColorValues: (fields[3] as List?)?.cast<int>(),
       customShortcutBindings: (fields[8] as Map?)?.cast<String, String>(),
+      librarySortByName:
+          fields[12] == null ? 'dateCreated' : fields[12] as String,
+      librarySortOrderName:
+          fields[13] == null ? 'ascending' : fields[13] as String,
+      drawingColorValue:
+          fields[14] == null ? 0xFFFFFFFF : (fields[14] as num).toInt(),
+      drawingThickness: fields[15] == null
+          ? Settings.defaultStrokeThickness
+          : (fields[15] as num).toDouble(),
     );
   }
 
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1342,7 +1351,15 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(10)
       ..write(obj.showUltOrbs)
       ..writeByte(11)
-      ..write(obj.showRegionNames);
+      ..write(obj.showRegionNames)
+      ..writeByte(12)
+      ..write(obj.librarySortByName)
+      ..writeByte(13)
+      ..write(obj.librarySortOrderName)
+      ..writeByte(14)
+      ..write(obj.drawingColorValue)
+      ..writeByte(15)
+      ..write(obj.drawingThickness);
   }
 
   @override
