@@ -97,7 +97,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     super.dispose();
   }
 
-  void _syncAnimation(PageTransitionState state, {required bool reduceMotion}) {
+  void _syncAnimation(PageTransitionState state) {
     _ensureController(state.duration);
     if (!state.active) {
       return;
@@ -110,10 +110,6 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       if (!mounted) return;
       final latest = ref.read(transitionProvider);
       if (!latest.active || latest.transitionId != _activeTransitionId) return;
-      if (reduceMotion) {
-        ref.read(transitionProvider.notifier).complete();
-        return;
-      }
       _controller!.forward(from: 0);
     });
   }
@@ -155,7 +151,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     required PageTransitionDirection direction,
     required double agentSize,
     required double abilitySize,
-    required double agentProgress,
+    required double progress,
   }) {
     final directionalOffset = coordinateSystem.scale(28);
     final directionSign =
@@ -206,7 +202,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
         final start = _startScreenPosition(entry, coordinateSystem, agentSize);
         final end = _endScreenPosition(entry, coordinateSystem, agentSize);
         final agentPath = ref.read(transitionProvider).agentPaths[entry.id];
-        final pathPosition = agentPath?.positionAt(agentProgress);
+        final pathPosition = agentPath?.positionAt(progress);
         final pathTopLeft = pathPosition == null
             ? null
             : pathPosition -
@@ -286,15 +282,13 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
   Widget build(BuildContext context) {
     final coord = CoordinateSystem.instance;
     final state = ref.watch(transitionProvider);
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    _syncAnimation(state, reduceMotion: reduceMotion);
+    _syncAnimation(state);
 
     if (!state.active) {
       return const SizedBox.shrink();
     }
 
-    final rawProgress = reduceMotion ? 1.0 : _controller!.value;
-    final t = _pageTransitionCurve.transform(rawProgress);
+    final t = _pageTransitionCurve.transform(_controller!.value);
     final agentSize = _lerpRequired(
       state.startAgentSize,
       state.endAgentSize,
@@ -321,7 +315,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
               direction: state.direction,
               agentSize: agentSize,
               abilitySize: abilitySize,
-              agentProgress: rawProgress,
+              progress: t,
             ),
         ],
       ),
