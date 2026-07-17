@@ -8,11 +8,8 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
-import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
-import 'package:icarus/providers/view_cone_geometry_provider.dart';
-import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_circle_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
@@ -63,10 +60,6 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     with TickerProviderStateMixin {
   AnimationController? _controller;
   int? _activeTransitionId;
-  int? _pathTransitionId;
-  VisionGeometryMap? _pathGeometry;
-  bool? _pathIsAttack;
-  Map<String, AgentTransitionPath> _agentPaths = const {};
 
   @override
   void initState() {
@@ -123,52 +116,6 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       }
       _controller!.forward(from: 0);
     });
-  }
-
-  void _syncAgentPaths(
-    PageTransitionState state,
-    VisionGeometryMap? geometry,
-    bool isAttack,
-  ) {
-    if (_pathTransitionId == state.transitionId &&
-        identical(_pathGeometry, geometry) &&
-        _pathIsAttack == isAttack) {
-      return;
-    }
-    _pathTransitionId = state.transitionId;
-    _pathGeometry = geometry;
-    _pathIsAttack = isAttack;
-    if (geometry == null) {
-      _agentPaths = const {};
-      return;
-    }
-
-    final coordinateSystem = CoordinateSystem.instance;
-    final averageAgentRadius = coordinateSystem.virtualLengthToWorld(
-      (state.startAgentSize + state.endAgentSize) / 4,
-    );
-    final pathfinder = AgentTransitionPathfinder(
-      clearance: averageAgentRadius * 0.4,
-    );
-    Offset centerFor(Offset position, double size) =>
-        position +
-        coordinateSystem.virtualOffsetToWorld(Offset(size / 2, size / 2));
-    _agentPaths = {
-      for (final entry in state.entries)
-        if (entry.kind == TransitionKind.move &&
-            entry.visualWidget is PlacedAgentNode)
-          entry.id: pathfinder.findPath(
-            start: centerFor(entry.startPos, state.startAgentSize),
-            end: centerFor(entry.endPos, state.endAgentSize),
-            layer: geometry.layerForPosition(
-              isAttack: isAttack,
-              position: centerFor(entry.startPos, state.startAgentSize),
-              elevationOverride: entry.from is PlacedViewConeAgent
-                  ? (entry.from as PlacedViewConeAgent).visionElevation
-                  : null,
-            ),
-          ),
-    };
   }
 
   Offset _startScreenPosition(
@@ -258,7 +205,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       case TransitionKind.move:
         final start = _startScreenPosition(entry, coordinateSystem, agentSize);
         final end = _endScreenPosition(entry, coordinateSystem, agentSize);
-        final agentPath = _agentPaths[entry.id];
+        final agentPath = ref.read(transitionProvider).agentPaths[entry.id];
         final pathPosition = agentPath?.positionAt(agentProgress);
         final pathTopLeft = pathPosition == null
             ? null
@@ -345,11 +292,6 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     if (!state.active) {
       return const SizedBox.shrink();
     }
-
-    final mapState = ref.watch(mapProvider);
-    final geometry =
-        ref.watch(viewConeGeometryProvider(mapState.currentMap)).asData?.value;
-    _syncAgentPaths(state, geometry, mapState.isAttack);
 
     final rawProgress = reduceMotion ? 1.0 : _controller!.value;
     final t = _pageTransitionCurve.transform(rawProgress);

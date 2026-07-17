@@ -1,6 +1,9 @@
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 
 /// A distance-normalized route used by page transitions.
@@ -42,6 +45,63 @@ class AgentTransitionPath {
       result.add(result.last + (points[index] - points[index - 1]).distance);
     }
     return List<double>.unmodifiable(result);
+  }
+}
+
+class AgentTransitionPathPlanner {
+  const AgentTransitionPathPlanner._();
+
+  static Map<String, AgentTransitionPath> plan({
+    required List<PageTransitionEntry> entries,
+    required VisionGeometryMap? geometry,
+    required bool isAttack,
+    required double startAgentSize,
+    required double endAgentSize,
+    required CoordinateSystem coordinateSystem,
+  }) {
+    if (geometry == null) return const {};
+
+    final averageAgentRadius = coordinateSystem.virtualLengthToWorld(
+      (startAgentSize + endAgentSize) / 4,
+    );
+    final pathfinder = AgentTransitionPathfinder(
+      clearance: averageAgentRadius * 0.4,
+    );
+    Offset centerFor(Offset position, double size) =>
+        position +
+        coordinateSystem.virtualOffsetToWorld(Offset(size / 2, size / 2));
+
+    double? elevationFor(PlacedWidget widget, Offset center) {
+      final override =
+          widget is PlacedViewConeAgent ? widget.visionElevation : null;
+      return override ??
+          geometry.inferredHeightAt(isAttack: isAttack, position: center);
+    }
+
+    return {
+      for (final entry in entries)
+        if (entry.kind == TransitionKind.move &&
+            entry.visualWidget is PlacedAgentNode)
+          entry.id: () {
+            final startCenter = centerFor(entry.startPos, startAgentSize);
+            final endCenter = centerFor(entry.endPos, endAgentSize);
+            final startElevation = elevationFor(entry.from!, startCenter);
+            final endElevation = elevationFor(entry.to!, endCenter);
+            final routeElevation = startElevation == null
+                ? endElevation
+                : endElevation == null
+                    ? startElevation
+                    : math.max(startElevation, endElevation);
+            return pathfinder.findPath(
+              start: startCenter,
+              end: endCenter,
+              layer: geometry.layerFor(
+                isAttack: isAttack,
+                elevation: routeElevation,
+              ),
+            );
+          }(),
+    };
   }
 }
 
@@ -183,19 +243,33 @@ class AgentTransitionPathfinder {
     final bounds = Rect.fromPoints(start, end).inflate(clearance);
     final indexes = layer.segmentIndex?.queryBounds(bounds) ??
         [for (var index = 0; index < layer.segments.length; index += 1) index];
+    final route = VisionSegment(start, end);
     for (final index in indexes) {
       final wall = layer.segments[index];
       if (_segmentsIntersect(start, end, wall.start, wall.end)) return false;
       if (clearance > 0 &&
-          math.min(
-                visionDistanceSquaredToSegment(start, wall),
-                visionDistanceSquaredToSegment(end, wall),
-              ) <
-              clearance * clearance) {
+          _segmentDistanceSquared(route, wall) < clearance * clearance) {
         return false;
       }
     }
     return true;
+  }
+
+  double _segmentDistanceSquared(VisionSegment first, VisionSegment second) {
+    if (_segmentsIntersect(
+      first.start,
+      first.end,
+      second.start,
+      second.end,
+    )) {
+      return 0;
+    }
+    return [
+      visionDistanceSquaredToSegment(first.start, second),
+      visionDistanceSquaredToSegment(first.end, second),
+      visionDistanceSquaredToSegment(second.start, first),
+      visionDistanceSquaredToSegment(second.end, first),
+    ].reduce(math.min);
   }
 
   List<Offset> _smooth(List<Offset> points, VisionGeometryLayer layer) {
