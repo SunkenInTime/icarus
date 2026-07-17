@@ -42,6 +42,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -1058,6 +1059,18 @@ class StrategyProvider extends Notifier<StrategyState> {
     // Load target page (hydrates providers)
     await setActivePage(pageID);
     final endSettings = ref.read(strategySettingsProvider);
+
+    // Page-transition routes use the same collision geometry as view cones.
+    // Resolve it while the previous page snapshot remains visible so the
+    // animation never switches from a straight line to A* partway through.
+    try {
+      await ref.read(
+        viewConeGeometryProvider(ref.read(mapProvider).currentMap).future,
+      );
+    } on Object {
+      // Geometry is an enhancement. Keep page navigation functional and let
+      // the overlay retain its direct-path fallback if an asset cannot load.
+    }
 
     // After layout, snapshot next and start transition
     WidgetsBinding.instance.addPostFrameCallback((_) {
