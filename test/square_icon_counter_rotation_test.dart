@@ -35,6 +35,7 @@ void main() {
           hasTopborder: false,
           hasSideBorders: false,
           isWall: false,
+          rotateIcon: false,
           isTransparent: false,
         ),
       );
@@ -85,6 +86,7 @@ void main() {
           id: 'resizable-square',
           isAlly: true,
           isWall: false,
+          rotateIcon: false,
           isTransparent: false,
           hasTopborder: false,
           hasSideBorders: false,
@@ -114,6 +116,7 @@ void main() {
           hasTopborder: false,
           hasSideBorders: false,
           isWall: false,
+          rotateIcon: false,
           isTransparent: false,
         ),
       );

@@ -109,12 +109,20 @@ class AgentWidget extends ConsumerWidget {
     final isLineUpHovered =
         lineUpId != null && (hoverTarget?.matchesAgent(lineUpId!) ?? false);
 
-    final agentImage = RepaintBoundary(child: Image.asset(agent.iconPath));
+    final agentImage = RepaintBoundary(
+      child: ClipOval(
+        child: Image.asset(
+          agent.iconPath,
+          fit: BoxFit.cover,
+        ),
+      ),
+    );
 
-    // Determine background color
-    Color bgColor = isAlly ? Settings.allyBGColor : Settings.enemyBGColor;
+    Color bgColor = isAlly 
+      ? (Settings.allyBGColor)
+      : Settings.enemyBGColor;
     if (useNeutralTeamColors) {
-      bgColor = ShadTheme.of(context).colorScheme.secondary;
+      bgColor = agent.color ?? Settings.neutralTeamShade(bgColor);
     }
 
     final deadBgColor = isAlly ? _mutedAllyBGColor : _mutedEnemyBGColor;
@@ -173,9 +181,7 @@ class AgentWidget extends ConsumerWidget {
       border: Border.all(
         color: outlineColor,
       ),
-      borderRadius: const BorderRadius.all(
-        Radius.circular(3),
-      ),
+      shape: BoxShape.circle,
     );
 
     final scaledSize = coordinateSystem.scale(agentSize);
@@ -275,7 +281,7 @@ class AgentWidget extends ConsumerWidget {
           height: scaledSize,
           child: InkWell(
             mouseCursor: SystemMouseCursors.click,
-            borderRadius: const BorderRadius.all(Radius.circular(3)),
+            borderRadius: const BorderRadius.all(Radius.circular(999)),
             highlightColor: Colors.white.withValues(alpha: 0.2),
             splashColor: Colors.white.withValues(alpha: 0.3),
             onLongPress: () {
@@ -396,6 +402,7 @@ class _AgentAbilityContextMenuButtonState
             id: null,
             isAlly: widget.isAlly,
             mapScale: widget.mapScale,
+            agentType: ability.type,
           ),
         ),
       ),

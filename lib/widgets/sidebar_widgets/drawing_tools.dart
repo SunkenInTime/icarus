@@ -252,7 +252,7 @@ class DrawingTools extends ConsumerWidget {
                       .read(penProvider.notifier)
                       .setTraversalMode(TraversalSpeedProfile.neonRun);
                 },
-                tooltip: "neon run",
+                tooltip: "Neon run",
               ),
             ],
           ),

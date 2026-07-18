@@ -5,6 +5,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/shared/framed_ability_icon_shell.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/const/agents.dart';
 
 class AbilityWidget extends ConsumerWidget {
   const AbilityWidget({
@@ -17,6 +18,8 @@ class AbilityWidget extends ConsumerWidget {
     this.watchMouse = true,
     this.contextMenuItems,
     this.onTapOverride,
+    this.agentType,
+    this.scaleFactor,
   });
 
   final String? lineUpId;
@@ -28,6 +31,8 @@ class AbilityWidget extends ConsumerWidget {
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
   final VoidCallback? onTapOverride;
+  final AgentType? agentType;
+  final double? scaleFactor;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -43,6 +48,8 @@ class AbilityWidget extends ConsumerWidget {
       isAlly: isAlly,
       lineUpId: lineUpId,
       lineUpItemId: lineUpItemId,
+      agentType: agentType,
+      scaleFactor: scaleFactor ?? 1.0,
       child: Image.asset(
         iconPath,
         fit: BoxFit.contain,

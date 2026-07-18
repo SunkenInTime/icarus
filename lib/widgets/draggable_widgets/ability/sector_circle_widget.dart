@@ -6,6 +6,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/const/agents.dart';
 
 class SectorCircleWidget extends ConsumerWidget {
   static const double handleTopInsetVirtual = 7.5;
@@ -29,6 +30,7 @@ class SectorCircleWidget extends ConsumerWidget {
     this.visualState,
     this.watchMouse = true,
     this.contextMenuItems,
+    this.agentType,
   });
 
   final String? lineUpId;
@@ -48,6 +50,7 @@ class SectorCircleWidget extends ConsumerWidget {
   final AbilityVisualState? visualState;
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
+  final AgentType? agentType;
 
   bool get hasInnerRange => innerRangeSize != null;
 
@@ -195,6 +198,7 @@ class SectorCircleWidget extends ConsumerWidget {
             isAlly: isAlly,
             watchMouse: watchMouse,
             contextMenuItems: contextMenuItems,
+            agentType: agentType,
           ),
         ),
       ),

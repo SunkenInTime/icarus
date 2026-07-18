@@ -101,6 +101,7 @@ class AbiilityBar extends ConsumerWidget {
                       id: null,
                       isAlly: ref.watch(teamProvider),
                       mapScale: mapScale,
+                      agentType: ability.type,
                     ),
                   ),
                 ),

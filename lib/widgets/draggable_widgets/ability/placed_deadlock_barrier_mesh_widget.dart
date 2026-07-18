@@ -31,6 +31,7 @@ class PlacedDeadlockBarrierMeshWidget extends ConsumerStatefulWidget {
     required this.data,
     this.isLineUp = false,
     this.contextMenuItems,
+    this.agentType,
   });
 
   final PlacedAbility ability;
@@ -39,6 +40,7 @@ class PlacedDeadlockBarrierMeshWidget extends ConsumerStatefulWidget {
   final PlacedWidget data;
   final bool isLineUp;
   final List<ShadContextMenuItem>? contextMenuItems;
+  final AgentType? agentType;
 
   @override
   ConsumerState<PlacedDeadlockBarrierMeshWidget> createState() =>
@@ -108,6 +110,8 @@ class _PlacedDeadlockBarrierMeshWidgetState
     final providerArmLengths =
         normalizeDeadlockBarrierMeshArmLengths(abilityRef.armLengthsMeters);
     final providerRotation = abilityRef.rotation;
+    final agent = AgentData.agents[widget.agentType ?? abilityRef.data.type];
+    final dynamicColor = agent?.color ?? barrierAbility.color;
 
     if (!_isDragging &&
         !_isRotating &&
@@ -158,12 +162,13 @@ class _PlacedDeadlockBarrierMeshWidgetState
               iconPath: abilityRef.data.iconPath,
               id: widget.id,
               isAlly: abilityRef.isAlly,
-              color: barrierAbility.color,
+              color:  dynamicColor,
               mapScale: mapScale,
               armLengthsMeters: armLengths,
               showCenterAbility: false,
               visualState: abilityRef.visualState,
               watchMouse: false,
+              agentType: widget.agentType ?? abilityRef.data.type,
             ),
           ),
           Positioned(
@@ -197,11 +202,12 @@ class _PlacedDeadlockBarrierMeshWidgetState
                       iconPath: abilityRef.data.iconPath,
                       id: widget.id,
                       isAlly: abilityRef.isAlly,
-                      color: barrierAbility.color,
+                      color: dynamicColor,
                       mapScale: mapScale,
                       armLengthsMeters: armLengths,
                       visualState: abilityRef.visualState,
                       watchMouse: false,
+                      agentType: widget.agentType ?? abilityRef.data.type,
                     ),
                   ),
                 ),
@@ -236,6 +242,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
                 isAlly: abilityRef.isAlly,
                 watchMouse: true,
                 contextMenuItems: widget.contextMenuItems,
+                agentType: widget.agentType ?? abilityRef.data.type,
               ),
             ),
           ),

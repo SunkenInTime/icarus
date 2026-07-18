@@ -34,10 +34,7 @@ enum AgentType {
   miks,
 }
 
-enum AgentState {
-  dead,
-  none,
-}
+enum AgentState { dead, none }
 
 enum AgentRole { controller, duelist, initiator, sentinel }
 
@@ -67,6 +64,7 @@ class AbilityInfo extends HiveObject implements DraggableData {
   Ability? abilityData;
   bool isTransformable = false;
   Offset? centerPoint;
+  Color get agentColor => AgentData.agents[type]?.color ?? const Color.fromARGB(255, 0, 0, 0);
 
   AbilityInfo({
     required this.name,
@@ -169,6 +167,7 @@ class AgentData implements DraggableData {
   List<AbilityInfo> abilities;
   final String name;
   final String iconPath;
+  final Color? color;
 
   static const double inGameMeters = 5.78;
   // static const double inGameMeters = 6;
@@ -179,6 +178,7 @@ class AgentData implements DraggableData {
     required this.role,
     required this.name,
     List<String>? abilityNames,
+    this.color,
   })  : assert(
           abilityNames == null || abilityNames.length == 4,
           'abilityNames must contain exactly 4 entries',
@@ -191,8 +191,10 @@ class AgentData implements DraggableData {
             iconPath: 'assets/agents/$name/${index + 1}.webp',
             type: type,
             index: index,
-            abilityData:
-                BaseAbility(iconPath: 'assets/agents/$name/${index + 1}.webp'),
+            abilityData: BaseAbility(
+              iconPath: 'assets/agents/$name/${index + 1}.webp',
+              agentType: type,
+            ),
           ),
         );
 
@@ -201,13 +203,14 @@ class AgentData implements DraggableData {
       type: AgentType.jett,
       role: AgentRole.duelist,
       name: "Jett",
+      color: const Color(0xFF92ECEF),
       abilityNames: const [
         "Cloudburst",
         "Updraft",
         "Tailwind",
         "Blade Storm",
       ],
-    )..abilities[0] =
+    )/*..abilities[0] =
           // Override the default abilities
           AbilityInfo(
         type: AgentType.jett,
@@ -215,12 +218,16 @@ class AgentData implements DraggableData {
         name: "Cloudburst",
         iconPath: 'assets/agents/Jett/1.webp',
         abilityData:
-            ImageAbility(imagePath: 'assets/agents/Jett/Smoke.webp', size: 30),
-      ),
+            BaseAbility(
+              iconPath: 'assets/agents/1/Smoke.webp', 
+              scaleFactor: 1.2
+            ),
+      ), */,
     AgentType.raze: AgentData(
       type: AgentType.raze,
       role: AgentRole.duelist,
       name: "Raze",
+      color: const Color(0xFFE66426),
       abilityNames: const [
         "Boom Bot",
         "Blast Pack",
@@ -233,6 +240,7 @@ class AgentData implements DraggableData {
         type: AgentType.pheonix,
         role: AgentRole.duelist,
         name: "Phoenix",
+        color: const Color(0xFFF08030),
         abilityNames: const [
           "Blaze",
           "Hot Hands",
@@ -240,12 +248,15 @@ class AgentData implements DraggableData {
           "Run it Back",
         ],
       );
-      agent.abilities.first.abilityData = SquareAbility(
-        width: 5,
+      agent.abilities.first.abilityData = ResizableSquareAbility(
+        width: 4,
         height: 21 * inGameMeters,
-        isWall: true,
         iconPath: agent.abilities.first.iconPath,
         color: Colors.redAccent,
+        minLength: inGameMeters * 1,
+        isWall: true,
+        defaultToMaxLength: true,
+        hasSideBorders: true,
       );
       agent.abilities[2].abilityData = CircleAbility(
         iconPath: agent.abilities[2].iconPath,
@@ -261,6 +272,7 @@ class AgentData implements DraggableData {
         type: AgentType.astra,
         role: AgentRole.controller,
         name: "Astra",
+        color: const Color(0xFF6B2D5C),
         abilityNames: const [
           "Gravity Well",
           "Nova Pulse",
@@ -272,9 +284,9 @@ class AgentData implements DraggableData {
           index: 2,
           name: "Nebula/Dissipate",
           iconPath: 'assets/agents/Astra/3.webp',
-          abilityData: ImageAbility(
-            imagePath: 'assets/agents/Astra/Smoke.webp',
-            size: 4.75 * inGameMetersDiameter,
+          abilityData: BaseAbility(
+            iconPath: 'assets/agents/Astra/3.webp',
+            scaleFactor: 1.8,
           ),
         );
 
@@ -314,6 +326,7 @@ class AgentData implements DraggableData {
         type: AgentType.breach,
         role: AgentRole.initiator,
         name: "Breach",
+        color: const Color(0xFFCD853F),
         abilityNames: const [
           "Aftershock",
           "Flashpoint",
@@ -326,6 +339,8 @@ class AgentData implements DraggableData {
         height: 10 * inGameMeters,
         iconPath: agent.abilities.first.iconPath,
         color: Colors.orangeAccent,
+        hasSideBorders: true,
+        hasTopborder: true,
       );
 
       agent.abilities[2].abilityData = ResizableSquareAbility(
@@ -335,6 +350,8 @@ class AgentData implements DraggableData {
         color: Colors.orangeAccent,
         minLength: 8 * inGameMeters,
         distanceBetweenAOE: 8 * inGameMeters,
+        hasSideBorders: true,
+        hasTopborder: true,
       );
 
       agent.abilities.last.abilityData = SquareAbility(
@@ -343,6 +360,8 @@ class AgentData implements DraggableData {
         iconPath: agent.abilities.last.iconPath,
         color: Colors.orangeAccent,
         distanceBetweenAOE: 8 * inGameMeters,
+        hasSideBorders: true,
+        hasTopborder: true,
       );
 
       return agent;
@@ -352,6 +371,7 @@ class AgentData implements DraggableData {
         type: AgentType.viper,
         role: AgentRole.controller,
         name: "Viper",
+        color: const Color(0xFF228B22),
         abilityNames: const [
           "Snake Bite",
           "Poison Cloud",
@@ -363,9 +383,9 @@ class AgentData implements DraggableData {
           index: 1,
           name: "Poison Cloud",
           iconPath: 'assets/agents/Viper/2.webp',
-          abilityData: ImageAbility(
-            imagePath: 'assets/agents/Viper/Smoke.webp',
-            size: 4.5 * inGameMetersDiameter,
+          abilityData: BaseAbility(
+            iconPath: 'assets/agents/Viper/2.webp',
+            scaleFactor: 1.7,
           ),
         );
 
@@ -375,13 +395,15 @@ class AgentData implements DraggableData {
         rangeOutlineColor: Colors.greenAccent,
         hasCenterDot: true,
       );
-
-      agent.abilities[2].abilityData = SquareAbility(
-        width: 5,
-        height: 60 * inGameMeters,
-        isWall: true,
+      agent.abilities[2].abilityData = ResizableSquareAbility(
+        width: 3,
+        height: 70 * inGameMeters,
         iconPath: agent.abilities[2].iconPath,
         color: Colors.greenAccent,
+        minLength: inGameMeters * 1,
+        isWall: true,
+        defaultToMaxLength: true,
+        hasSideBorders: true,
       );
 
       return agent;
@@ -390,6 +412,7 @@ class AgentData implements DraggableData {
       type: AgentType.yoru,
       role: AgentRole.duelist,
       name: "Yoru",
+      color: const Color(0xFF1B3A93),
       abilityNames: const [
         "Fakeout",
         "Blindside",
@@ -402,6 +425,7 @@ class AgentData implements DraggableData {
         type: AgentType.sova,
         role: AgentRole.initiator,
         name: "Sova",
+        color: const Color(0xFF4169E1),
         abilityNames: const [
           "Owl Drone",
           "Shock Bolt",
@@ -429,6 +453,8 @@ class AgentData implements DraggableData {
         height: 66 * inGameMeters,
         iconPath: agent.abilities.last.iconPath,
         color: const Color.fromARGB(255, 1, 131, 237),
+        hasSideBorders: true,
+        hasTopborder: true,
       );
 
       return agent;
@@ -438,6 +464,7 @@ class AgentData implements DraggableData {
         type: AgentType.skye,
         role: AgentRole.initiator,
         name: "Skye",
+        color: const Color(0xFF3CB371),
         abilityNames: const [
           "Regrowth",
           "Trailblazer",
@@ -461,6 +488,7 @@ class AgentData implements DraggableData {
         type: AgentType.kayo,
         role: AgentRole.initiator,
         name: "Kayo",
+        color: const Color(0xFF2F4FFF),
         abilityNames: const [
           "FRAG/ment",
           "FLASH/drive",
@@ -498,6 +526,7 @@ class AgentData implements DraggableData {
         type: AgentType.killjoy,
         role: AgentRole.sentinel,
         name: "Killjoy",
+        color: const Color(0xFFFFD200),
         abilityNames: const [
           "Nanoswarm",
           "Alarmbot",
@@ -529,8 +558,9 @@ class AgentData implements DraggableData {
         size: 40,
         rangeOutlineColor: Colors.white.withAlpha(100),
         hasCenterDot: true,
-        opacity: 0,
         rangeFillColor: Colors.transparent,
+        innerRangeSize: 0,
+        innerRangeColor: const Color.fromARGB(255, 106, 14, 182),
       );
 
       // Ultimate
@@ -548,6 +578,7 @@ class AgentData implements DraggableData {
         type: AgentType.brimstone,
         role: AgentRole.controller,
         name: "Brimstone",
+        color: const Color(0xFF8B4513),
         abilityNames: const [
           "Stim Beacon",
           "Incendiary",
@@ -559,9 +590,9 @@ class AgentData implements DraggableData {
           index: 2,
           name: "Sky Smoke",
           iconPath: 'assets/agents/Brimstone/3.webp',
-          abilityData: ImageAbility(
-            imagePath: 'assets/agents/Brimstone/Smoke.webp',
-            size: 4.15 * inGameMetersDiameter,
+          abilityData: BaseAbility(
+            iconPath: 'assets/agents/Brimstone/3_cropped.webp',
+            scaleFactor: 1.85,
           ),
         );
 
@@ -595,6 +626,7 @@ class AgentData implements DraggableData {
         type: AgentType.cypher,
         role: AgentRole.sentinel,
         name: "Cypher",
+        color: const Color(0xFFB9B9B9),
         abilityNames: const [
           "Trapwire",
           "Cyber Cage",
@@ -609,13 +641,13 @@ class AgentData implements DraggableData {
         color: Colors.white,
         minLength: inGameMeters * 1,
         isWall: true,
+        rotateIcon: true,
         defaultToMaxLength: true,
+        hasSideBorders: true,
       );
-      agent.abilities[1].abilityData = CircleAbility(
+      agent.abilities[1].abilityData = BaseAbility(
         iconPath: agent.abilities[1].iconPath,
-        size: 3.72,
-        rangeOutlineColor: Colors.white,
-        hasCenterDot: true,
+        scaleFactor: 1.4,
       );
 
       return agent;
@@ -625,6 +657,7 @@ class AgentData implements DraggableData {
         type: AgentType.chamber,
         role: AgentRole.sentinel,
         name: "Chamber",
+        color: const Color(0xFFC8A24A),
         abilityNames: const [
           "Trademark",
           "Headhunter",
@@ -654,6 +687,7 @@ class AgentData implements DraggableData {
         type: AgentType.fade,
         role: AgentRole.initiator,
         name: "Fade",
+        color: const Color(0xFF4A5D6E),
         abilityNames: const [
           "Prowler",
           "Seize",
@@ -681,6 +715,8 @@ class AgentData implements DraggableData {
         height: 40 * inGameMeters,
         iconPath: agent.abilities.last.iconPath,
         color: const Color(0xFF680A79),
+        hasSideBorders: true,
+        hasTopborder: true,
       );
 
       return agent;
@@ -690,6 +726,7 @@ class AgentData implements DraggableData {
         type: AgentType.neon,
         role: AgentRole.duelist,
         name: "Neon",
+        color: const Color(0xFF113D9E),
         abilityNames: const [
           "Fast Lane",
           "Relay Bolt",
@@ -699,7 +736,7 @@ class AgentData implements DraggableData {
       );
 
       agent.abilities.first.abilityData = ResizableSquareAbility(
-        width: 3.5 * inGameMeters,
+        width: 3 * inGameMeters,
         height: 45 * inGameMeters,
         iconPath: agent.abilities.first.iconPath,
         color: Colors.blueAccent,
@@ -723,6 +760,7 @@ class AgentData implements DraggableData {
         type: AgentType.omen,
         role: AgentRole.controller,
         name: "Omen",
+        color: const Color(0xFF354474),
         abilityNames: const [
           "Shrouded Step",
           "Paranoia",
@@ -734,17 +772,19 @@ class AgentData implements DraggableData {
           index: 2,
           name: "Dark Cover",
           iconPath: 'assets/agents/Omen/3.webp',
-          abilityData: ImageAbility(
-            imagePath: 'assets/agents/Omen/Smoke.webp',
-            size: 4.1 * inGameMetersDiameter,
+          abilityData: BaseAbility(
+            iconPath: 'assets/agents/Omen/3.webp',
+            scaleFactor: 1.7,
           ),
         );
 
       agent.abilities[1].abilityData = SquareAbility(
-        width: 4.3 * inGameMetersDiameter,
-        height: 25 * inGameMeters,
+        width: 4.4 * inGameMetersDiameter,
+        height: 31.2 * inGameMeters,
         iconPath: agent.abilities[1].iconPath,
         color: Colors.deepPurple,
+        hasSideBorders: true,
+        hasTopborder: true,
       );
 
       return agent;
@@ -754,6 +794,7 @@ class AgentData implements DraggableData {
         type: AgentType.reyna,
         role: AgentRole.duelist,
         name: "Reyna",
+        color: const Color(0xFFB444A0),
         abilityNames: const [
           "Leer",
           "Devour",
@@ -768,6 +809,7 @@ class AgentData implements DraggableData {
         type: AgentType.sage,
         role: AgentRole.sentinel,
         name: "Sage",
+        color: const Color(0xFF00FA9A),
         abilityNames: const [
           "Barrier Orb",
           "Slow Orb",
@@ -796,6 +838,7 @@ class AgentData implements DraggableData {
         type: AgentType.clove,
         role: AgentRole.controller,
         name: "Clove",
+        color: const Color(0xFFFFB3DE),
         abilityNames: const [
           "Pick-me-up",
           "Meddle",
@@ -807,9 +850,9 @@ class AgentData implements DraggableData {
           index: 2,
           name: "Ruse",
           iconPath: 'assets/agents/Clove/3.webp',
-          abilityData: ImageAbility(
-            imagePath: 'assets/agents/Clove/Smoke.webp',
-            size: 4 * inGameMetersDiameter,
+          abilityData: BaseAbility(
+            iconPath: 'assets/agents/Clove/3.webp',
+            scaleFactor: 1.7,
           ),
         );
 
@@ -827,6 +870,7 @@ class AgentData implements DraggableData {
         type: AgentType.iso,
         role: AgentRole.duelist,
         name: "Iso",
+        color: const Color(0xFF634DFF),
         abilityNames: const [
           "Contingency",
           "Undercut",
@@ -842,6 +886,7 @@ class AgentData implements DraggableData {
         color: Colors.indigo,
         hasTopborder: true,
         distanceBetweenAOE: 5 * inGameMeters,
+        
       );
 
       agent.abilities[1].abilityData = SquareAbility(
@@ -849,6 +894,8 @@ class AgentData implements DraggableData {
         height: 34.875 * inGameMeters,
         iconPath: agent.abilities[1].iconPath,
         color: Colors.indigo,
+        hasSideBorders: true,
+        hasTopborder: true,
       );
 
       agent.abilities[3].abilityData = SquareAbility(
@@ -856,6 +903,8 @@ class AgentData implements DraggableData {
         height: 36 * inGameMeters,
         iconPath: agent.abilities[3].iconPath,
         color: Colors.indigo,
+        hasSideBorders: true,
+        hasTopborder: true,
       );
 
       return agent;
@@ -865,6 +914,7 @@ class AgentData implements DraggableData {
         type: AgentType.deadlock,
         role: AgentRole.sentinel,
         name: "Deadlock",
+        color: const Color(0xFFB7C1D6),
         abilityNames: const [
           "Barrier Mesh",
           "Sonic Sensor",
@@ -885,6 +935,8 @@ class AgentData implements DraggableData {
         height: 9 * inGameMeters,
         iconPath: agent.abilities[1].iconPath,
         color: Colors.blue,
+        hasSideBorders: true,
+        hasTopborder: true,
       );
 
       agent.abilities[2].abilityData = DeadlockBarrierMeshAbility(
@@ -899,6 +951,7 @@ class AgentData implements DraggableData {
         type: AgentType.gekko,
         role: AgentRole.initiator,
         name: "Gekko",
+        color: const Color(0xFFADFF2F),
         abilityNames: const [
           "Mosh Pit",
           "Wingman",
@@ -921,6 +974,7 @@ class AgentData implements DraggableData {
         type: AgentType.harbor,
         role: AgentRole.controller,
         name: "Harbor",
+        color: const Color(0xFF20B2AA),
         abilityNames: const [
           "Storm Surge",
           "High Tide",
@@ -932,9 +986,9 @@ class AgentData implements DraggableData {
           index: 2,
           name: "Cove",
           iconPath: 'assets/agents/Harbor/3.webp',
-          abilityData: ImageAbility(
-            imagePath: 'assets/agents/Harbor/Smoke.webp',
-            size: 4.5 * inGameMetersDiameter,
+          abilityData: BaseAbility(
+            iconPath: 'assets/agents/Harbor/3.webp',
+            scaleFactor: 1.7,
           ),
         );
 
@@ -962,6 +1016,7 @@ class AgentData implements DraggableData {
         minLength: inGameMeters * 1,
         defaultToMaxLength: true,
         hasTopborder: true,
+        hasSideBorders: true,
       );
 
       return agent;
@@ -971,19 +1026,25 @@ class AgentData implements DraggableData {
         type: AgentType.vyse,
         role: AgentRole.sentinel,
         name: "Vyse",
+        color: const Color(0xFFA59BC7),
         abilityNames: const [
-          "Razorvine",
           "Shear",
+          "Razorvine",
           "Arc Rose",
           "Steel Garden",
         ],
       );
 
-      agent.abilities.first.abilityData = SquareAbility(
-        width: 1 * inGameMeters,
+      agent.abilities.first.abilityData = ResizableSquareAbility(
+        width: 3,
         height: 12 * inGameMeters,
         iconPath: agent.abilities.first.iconPath,
         color: Colors.deepPurple,
+        minLength: inGameMeters * 1,
+        isWall: true,
+        rotateIcon: true,
+        defaultToMaxLength: true,
+        hasSideBorders: true,
       );
 
       agent.abilities[1].abilityData = CircleAbility(
@@ -1007,6 +1068,7 @@ class AgentData implements DraggableData {
         type: AgentType.tejo,
         role: AgentRole.initiator,
         name: "Tejo",
+        color: const Color(0xFFD3A24A),
         abilityNames: const [
           "Stealth Drone",
           "Special Delivery",
@@ -1041,6 +1103,8 @@ class AgentData implements DraggableData {
         height: 32 * inGameMeters,
         iconPath: agent.abilities.last.iconPath,
         color: Colors.orangeAccent,
+        hasSideBorders: true,
+        hasTopborder: true,
       );
 
       return agent;
@@ -1050,6 +1114,7 @@ class AgentData implements DraggableData {
         type: AgentType.waylay,
         role: AgentRole.duelist,
         name: "Waylay",
+        color: const Color(0xFF6B3FA0),
         abilityNames: const [
           "Saturate",
           "Lightspeed",
@@ -1071,6 +1136,8 @@ class AgentData implements DraggableData {
         iconPath: agent.abilities.last.iconPath,
         distanceBetweenAOE: 3 * inGameMeters,
         color: Colors.deepPurpleAccent,
+        hasSideBorders: true,
+        hasTopborder: true,
       );
 
       return agent;
@@ -1080,6 +1147,7 @@ class AgentData implements DraggableData {
         type: AgentType.veto,
         role: AgentRole.sentinel,
         name: "Veto",
+        color: const Color(0xFF2C6BEA),
         abilityNames: const [
           "Crosscut",
           "Chokehold",
@@ -1116,6 +1184,7 @@ class AgentData implements DraggableData {
         type: AgentType.miks,
         role: AgentRole.controller,
         name: "Miks",
+        color: const Color(0xFFFFE100),
         abilityNames: const [
           "M-pulse Concuss",
           "M-pulse Healing",
@@ -1153,9 +1222,10 @@ class AgentData implements DraggableData {
         index: 2,
         name: "Harmonize",
         iconPath: 'assets/agents/Miks/3.webp',
-        abilityData: ImageAbility(
-            imagePath: 'assets/agents/Miks/Smoke.webp',
-            size: 4.1 * inGameMetersDiameter),
+        abilityData: BaseAbility(
+            iconPath: 'assets/agents/Miks/3.webp',
+            scaleFactor: 1.7
+        ),
       );
       final miksWaveform = AbilityInfo(
         type: AgentType.miks,
@@ -1175,6 +1245,7 @@ class AgentData implements DraggableData {
           size: 40,
           rangeOutlineColor: Colors.lightGreenAccent,
           sweepAngleDegrees: 60,
+          opacity: 0,
         ),
       );
       agent.abilities[0] = miksConcuss;

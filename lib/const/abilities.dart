@@ -68,13 +68,20 @@ sealed class Ability {
     String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    AgentType? agentType,
   });
 }
 
 class BaseAbility extends Ability {
   final String iconPath;
+  final AgentType? agentType;
+  final double? scaleFactor;
 
-  BaseAbility({required this.iconPath});
+  BaseAbility({
+    required this.iconPath,
+    this.agentType,
+    this.scaleFactor,
+  });
 
   @override
   Widget createWidget({
@@ -89,6 +96,7 @@ class BaseAbility extends Ability {
     String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    AgentType? agentType,
   }) {
     return AbilityWidget(
       isAlly: isAlly,
@@ -98,6 +106,8 @@ class BaseAbility extends Ability {
       lineUpItemId: lineUpItemId,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      agentType: agentType,
+      scaleFactor: scaleFactor,
     );
   }
 
@@ -118,8 +128,13 @@ class BaseAbility extends Ability {
 class ImageAbility extends Ability {
   final String imagePath;
   final double size;
+  final AgentType? agentType;
 
-  ImageAbility({required this.imagePath, required this.size});
+  ImageAbility({
+    required this.imagePath, 
+    required this.size, 
+    this.agentType
+  });
 
   @override
   Widget createWidget({
@@ -134,6 +149,7 @@ class ImageAbility extends Ability {
     String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    AgentType? agentType,
   }) {
     return SimpleImageAbilityWidget(
       lineUpId: lineUpId,
@@ -218,15 +234,17 @@ class CircleAbility extends Ability {
     String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    AgentType? agentType,
   }) {
+    Color outlineColor = AgentData.agents[agentType]?.color ??  Settings.allyOutlineColor;
     return CustomCircleWidget(
       iconPath: iconPath,
       size: size * mapScale,
-      rangeOutlineColor: rangeOutlineColor,
+      rangeOutlineColor: outlineColor,
       hasCenterDot: hasCenterDot ?? true,
       opacity: opacity,
       rangeFillColor: rangeFillColor,
-      innerRangeColor: innerRangeColor,
+      innerRangeColor: outlineColor,
       innerRangeSize:
           innerRangeSize != null ? innerRangeSize! * mapScale : null,
       id: id,
@@ -236,6 +254,7 @@ class CircleAbility extends Ability {
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      agentType: agentType,
     );
   }
 }
@@ -250,6 +269,7 @@ class SectorCircleAbility extends Ability {
     this.rangeFillColor,
     this.innerRangeColor,
     this.opacity = 70,
+    this.agentType,
     double? innerRangeSize,
   })  : assert(
           innerRangeSize == null || innerRangeColor != null,
@@ -270,6 +290,7 @@ class SectorCircleAbility extends Ability {
   final Color? innerRangeColor;
   final int? opacity;
   final double? innerRangeSize;
+  final AgentType? agentType;
 
   bool get hasInnerRange => innerRangeSize != null;
 
@@ -308,11 +329,13 @@ class SectorCircleAbility extends Ability {
     String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    AgentType? agentType,
   }) {
+    Color outlineColor = AgentData.agents[agentType]?.color ??  Settings.allyOutlineColor;
     return SectorCircleWidget(
       iconPath: iconPath,
       size: size * mapScale,
-      rangeOutlineColor: rangeOutlineColor,
+      rangeOutlineColor: outlineColor,
       sweepAngleDegrees: sweepAngleDegrees,
       hasCenterDot: hasCenterDot,
       opacity: opacity,
@@ -328,6 +351,7 @@ class SectorCircleAbility extends Ability {
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      agentType: agentType,
     );
   }
 }
@@ -340,9 +364,11 @@ class SquareAbility extends Ability {
 
   final double distanceBetweenAOE;
   final bool isWall;
+  final bool rotateIcon;
   final bool hasTopborder;
   final bool hasSideBorders;
   final bool isTransparent;
+  final AgentType? agentType;
 
   SquareAbility({
     required this.width,
@@ -351,9 +377,11 @@ class SquareAbility extends Ability {
     required this.color,
     this.distanceBetweenAOE = 0,
     this.isWall = false,
+    this.rotateIcon = false,
     this.hasTopborder = false,
     this.hasSideBorders = false,
     this.isTransparent = false,
+    this.agentType,
     double? minHeight,
   });
 
@@ -414,10 +442,12 @@ class SquareAbility extends Ability {
     String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    AgentType? agentType,
   }) {
+    Color outlineColor = AgentData.agents[agentType]?.color ?? color;
     return CustomSquareWidget(
       lineUpId: lineUpId,
-      color: color,
+      color: outlineColor,
       width: width * mapScale,
       height: height * mapScale,
       iconPath: iconPath,
@@ -429,10 +459,12 @@ class SquareAbility extends Ability {
       hasTopborder: hasTopborder,
       hasSideBorders: hasSideBorders,
       isWall: isWall,
+      rotateIcon: rotateIcon,
       isTransparent: isTransparent,
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      agentType: agentType,
     );
   }
 }
@@ -442,12 +474,14 @@ class CenterSquareAbility extends Ability {
   final double height;
   final String iconPath;
   final Color color;
+  final AgentType? agentType;
 
   CenterSquareAbility({
     required this.width,
     required this.height,
     required this.iconPath,
     required this.color,
+    this.agentType,
     double? minHeight,
   });
 
@@ -479,9 +513,11 @@ class CenterSquareAbility extends Ability {
     String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    AgentType? agentType,
   }) {
+    Color outlineColor = AgentData.agents[agentType]?.color ??  Settings.allyOutlineColor;
     return CenterSquareWidget(
-      color: color,
+      color: outlineColor,
       width: width * mapScale,
       height: height * mapScale,
       iconPath: iconPath,
@@ -493,6 +529,7 @@ class CenterSquareAbility extends Ability {
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      agentType: agentType,
     );
   }
 }
@@ -533,6 +570,7 @@ class RotatableImageAbility extends Ability {
     String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    AgentType? agentType,
   }) {
     return RotatableImageWidget(
       lineUpId: lineUpId,
@@ -557,10 +595,12 @@ class ResizableSquareAbility extends SquareAbility {
     required super.color,
     super.distanceBetweenAOE,
     super.isWall,
+    super.rotateIcon,
     super.hasTopborder,
     super.hasSideBorders,
     super.isTransparent,
     super.minHeight,
+    super.agentType,
     required this.minLength,
     this.defaultToMaxLength = false,
   });
@@ -586,10 +626,13 @@ class ResizableSquareAbility extends SquareAbility {
     String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    AgentType? agentType,
   }) {
+    Color outlineColor = AgentData.agents[agentType]?.color ?? color;
     return ResizableSquareWidget(
       isWall: isWall,
-      color: color,
+      rotateIcon: rotateIcon,
+      color: outlineColor,
       width: width * mapScale,
       length: resolveLength(length ?? 0) * mapScale,
       maxLength: height * mapScale,
@@ -607,6 +650,7 @@ class ResizableSquareAbility extends SquareAbility {
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      agentType: agentType,
     );
   }
 
@@ -717,19 +761,22 @@ class DeadlockBarrierMeshAbility extends Ability {
     String? lineUpItemId,
     bool watchMouse = true,
     List<ShadContextMenuItem>? contextMenuItems,
+    AgentType? agentType,
   }) {
+    Color outlineColor = AgentData.agents[agentType]?.color ?? color;
     return DeadlockBarrierMeshWidget(
       lineUpId: lineUpId,
       lineUpItemId: lineUpItemId,
       iconPath: iconPath,
       id: id,
       isAlly: isAlly,
-      color: color,
+      color: outlineColor,
       mapScale: mapScale,
       armLengthsMeters: normalizeArmLengths(armLengthsMeters),
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
+      agentType: agentType,
     );
   }
 }

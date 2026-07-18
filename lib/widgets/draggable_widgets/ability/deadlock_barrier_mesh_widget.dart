@@ -111,6 +111,7 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
     this.visualState,
     this.watchMouse = true,
     this.contextMenuItems,
+    this.agentType,
   });
 
   final String iconPath;
@@ -125,6 +126,7 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
   final AbilityVisualState? visualState;
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
+  final AgentType? agentType;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -181,6 +183,7 @@ class DeadlockBarrierMeshWidget extends ConsumerWidget {
                   isAlly: isAlly,
                   watchMouse: watchMouse,
                   contextMenuItems: contextMenuItems,
+                  agentType: agentType,
                 ),
               ),
             ),

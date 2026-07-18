@@ -41,9 +41,9 @@ class Settings {
   static const double agentSizeMin = 15;
   static const double agentSizeMax = 45;
 
-  static const double abilitySize = 25;
-  static const double abilitySizeMin = 15;
-  static const double abilitySizeMax = 35;
+  static const double abilitySize = 35;
+  static const double abilitySizeMin = 20;
+  static const double abilitySizeMax = 50;
 
   static const Color abilityBGColor = Color(0xFF1B1B1B);
   static const double feedbackOpacity = 0.7;

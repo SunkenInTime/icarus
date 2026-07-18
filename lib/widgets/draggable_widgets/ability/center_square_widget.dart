@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -21,6 +22,7 @@ class CenterSquareWidget extends ConsumerWidget {
     this.visualState,
     this.watchMouse = true,
     this.contextMenuItems,
+    this.agentType,
   });
   final double width;
   final double height;
@@ -34,6 +36,7 @@ class CenterSquareWidget extends ConsumerWidget {
   final AbilityVisualState? visualState;
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
+  final AgentType? agentType;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -80,6 +83,7 @@ class CenterSquareWidget extends ConsumerWidget {
                   isAlly: isAlly,
                   watchMouse: watchMouse,
                   contextMenuItems: contextMenuItems,
+                  agentType: agentType,
                 ),
               ),
             ),

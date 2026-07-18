@@ -150,6 +150,9 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
         ? (canShowStarOff ? const Color(0xFFE53935) : const Color(0xFFFF9800))
         : (_isStarHovered ? const Color(0xFFFF9800) : const Color(0xFF9AA0A6));
 
+      final agentSize = CoordinateSystem.instance
+      .scale(ref.watch(strategySettingsProvider).agentSize);
+
     return IgnorePointer(
       ignoring:
           ref.watch(dragNotifier) == true || shouldDisableForLockedAddItem,
@@ -173,7 +176,31 @@ class _AgentDragableState extends ConsumerState<AgentDragable>
         },
         feedback: Opacity(
           opacity: Settings.feedbackOpacity,
-          child: ZoomTransform(child: AgentFeedback(agent: agent)),
+          child: ZoomTransform(
+            child: Material( // Verhindert Text- und Stylingfehler beim Draggen
+              type: MaterialType.transparency,
+              child: SizedBox(
+                width: agentSize,
+                height: agentSize,
+                child: Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle, // Vollständig rundes Design
+                    color: tileColor,       // Die korrekte Theme-Farbe des Agenten
+                    border: Border.all(
+                      color: Settings.tacticalVioletTheme.primary, // Optionaler Außenring
+                      width: 2.0,
+                    ),
+                  ),
+                  child: ClipOval(
+                    child: Image.asset(
+                      agent.iconPath,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
         dragAnchorStrategy: (draggable, context, position) {
           final agentSize = CoordinateSystem.instance

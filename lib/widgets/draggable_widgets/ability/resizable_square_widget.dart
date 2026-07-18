@@ -6,6 +6,8 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/custom_border_container.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:icarus/const/agents.dart';  
+import 'dart:math' as math;
 
 class ResizableSquareWidget extends ConsumerWidget {
   const ResizableSquareWidget({
@@ -20,6 +22,7 @@ class ResizableSquareWidget extends ConsumerWidget {
     this.id,
     required this.isAlly,
     required this.isWall,
+    required this.rotateIcon,
     required this.isTransparent,
     required this.hasTopborder,
     required this.hasSideBorders,
@@ -29,6 +32,7 @@ class ResizableSquareWidget extends ConsumerWidget {
     this.visualState,
     this.watchMouse = true,
     this.contextMenuItems,
+    this.agentType,
   });
 
   final Color color;
@@ -41,6 +45,7 @@ class ResizableSquareWidget extends ConsumerWidget {
   final String? id;
   final bool isAlly;
   final bool isWall;
+  final bool rotateIcon;
   final bool isTransparent;
   final bool hasTopborder;
   final bool hasSideBorders;
@@ -50,7 +55,7 @@ class ResizableSquareWidget extends ConsumerWidget {
   final AbilityVisualState? visualState;
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
-
+  final AgentType? agentType;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
@@ -86,6 +91,14 @@ class ResizableSquareWidget extends ConsumerWidget {
     }
     final showRangeFill = visualState?.showRangeFill ?? true;
 
+    final double wallAngle = rotation ?? 0.0;
+    double iconAngle = wallAngle + (math.pi / 2); 
+    iconAngle = (iconAngle + math.pi) % (2 * math.pi) - math.pi;
+    if (iconAngle > (math.pi / 2) || iconAngle < -(math.pi / 2)) {
+      iconAngle += math.pi; 
+    }
+    final double relativeRotation = iconAngle - wallAngle;
+
     return SizedBox(
       height: totalHeight,
       width: scaledWidth,
@@ -115,10 +128,10 @@ class ResizableSquareWidget extends ConsumerWidget {
             ),
           ),
           Positioned(
-            bottom: 0,
+            bottom: (scaledAbilitySize / 2) + (scaledLength / 2) - (scaledAbilitySize / 2) + (distanceBetweenAOE),
             left: (scaledWidth - scaledAbilitySize) / 2,
             child: Transform.rotate(
-              angle: -(rotation ?? 0),
+              angle: rotateIcon? relativeRotation : -(rotation ?? 0),
               alignment: Alignment.center,
               child: AbilityWidget(
                 lineUpId: lineUpId,
@@ -128,6 +141,7 @@ class ResizableSquareWidget extends ConsumerWidget {
                 isAlly: isAlly,
                 watchMouse: watchMouse,
                 contextMenuItems: contextMenuItems,
+                agentType: agentType,
               ),
             ),
           ),
