@@ -24,12 +24,16 @@ Offset _overlayScreenPosition({
   required CoordinateSystem coordinateSystem,
   required double agentSize,
   required double mapScale,
+  required double abilitySize,
   Offset? coordinatePosition,
 }) {
   final screen = screenPositionForWidget(
     widget: widget,
     coordinateSystem: coordinateSystem,
     coordinatePosition: coordinatePosition,
+    mapScale: mapScale,
+    agentSize: agentSize,
+    abilitySize: abilitySize,
   );
   if (widget is PlacedViewConeAgent) {
     return screen -
@@ -119,6 +123,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     PageTransitionEntry entry,
     CoordinateSystem coordinateSystem,
     double agentSize,
+    double abilitySize,
   ) {
     final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0;
     return _overlayScreenPosition(
@@ -127,6 +132,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       coordinatePosition: entry.startPos,
       agentSize: agentSize,
       mapScale: mapScale,
+      abilitySize: abilitySize,
     );
   }
 
@@ -134,6 +140,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     PageTransitionEntry entry,
     CoordinateSystem coordinateSystem,
     double agentSize,
+    double abilitySize,
   ) {
     final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0;
     return _overlayScreenPosition(
@@ -142,6 +149,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
       coordinatePosition: entry.endPos,
       agentSize: agentSize,
       mapScale: mapScale,
+      abilitySize: abilitySize,
     );
   }
 
@@ -162,7 +170,12 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
         return _overlayItem(
           key: ValueKey('none_${entry.id}'),
           widget: entry.to!,
-          pos: _endScreenPosition(entry, coordinateSystem, agentSize),
+          pos: _endScreenPosition(
+            entry,
+            coordinateSystem,
+            agentSize,
+            abilitySize,
+          ),
           coordinatePosition: entry.endPos,
           opacity: 1,
           length: entry.endLength,
@@ -191,6 +204,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           entry,
           coordinateSystem,
           agentSize,
+          abilitySize,
         ).translate(screenTranslation.dx, screenTranslation.dy);
         return _overlayItem(
           key: ValueKey('disappear_${entry.id}'),
@@ -211,8 +225,18 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           abilitySize: abilitySize,
         );
       case TransitionKind.move:
-        final start = _startScreenPosition(entry, coordinateSystem, agentSize);
-        final end = _endScreenPosition(entry, coordinateSystem, agentSize);
+        final start = _startScreenPosition(
+          entry,
+          coordinateSystem,
+          agentSize,
+          abilitySize,
+        );
+        final end = _endScreenPosition(
+          entry,
+          coordinateSystem,
+          agentSize,
+          abilitySize,
+        );
         final agentPath = ref.read(transitionProvider).agentPaths[entry.id];
         final pathPosition = agentPath?.positionAt(progress);
         final pathTopLeft = pathPosition == null
@@ -232,6 +256,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
                 agentSize: agentSize,
                 mapScale:
                     Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0,
+                abilitySize: abilitySize,
               );
         return _overlayItem(
           key: ValueKey('move_${entry.id}'),
@@ -281,6 +306,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           entry,
           coordinateSystem,
           agentSize,
+          abilitySize,
         ).translate(screenTranslation.dx, screenTranslation.dy);
         return _overlayItem(
           key: ValueKey('appear_${entry.id}'),
@@ -452,11 +478,15 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
         child = Transform.rotate(
           angle: angle,
           alignment: Alignment.topLeft,
-          origin:
-              UtilityData.utilityWidgets[widget.type]!.getAnchorPoint().scale(
-                    CoordinateSystem.instance.scaleFactor,
-                    CoordinateSystem.instance.scaleFactor,
-                  ),
+          origin: utilityAnchorForScale(
+            utility: widget,
+            mapScale: mapScale,
+            agentSize: agentSize,
+            abilitySize: abilitySize,
+          ).scale(
+            CoordinateSystem.instance.scaleFactor,
+            CoordinateSystem.instance.scaleFactor,
+          ),
           child: child,
         );
       }
@@ -703,6 +733,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
       coordinateSystem: coord,
       agentSize: agentSize,
       mapScale: mapScale,
+      abilitySize: abilitySize,
     );
 
     if (widget is PlacedUtility && widget.rotation != 0) {
@@ -712,11 +743,15 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
         child: Transform.rotate(
           angle: widget.rotation,
           alignment: Alignment.topLeft,
-          origin:
-              UtilityData.utilityWidgets[widget.type]!.getAnchorPoint().scale(
-                    CoordinateSystem.instance.scaleFactor,
-                    CoordinateSystem.instance.scaleFactor,
-                  ),
+          origin: utilityAnchorForScale(
+            utility: widget,
+            mapScale: mapScale,
+            agentSize: agentSize,
+            abilitySize: abilitySize,
+          ).scale(
+            CoordinateSystem.instance.scaleFactor,
+            CoordinateSystem.instance.scaleFactor,
+          ),
           child: PlacedWidgetPreview.build(
             widget,
             mapScale,
