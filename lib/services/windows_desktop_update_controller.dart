@@ -49,22 +49,25 @@ class WindowsDesktopUpdateController extends ChangeNotifier {
     controller._needUpdate = true;
     controller._isMandatory = false;
     controller._appName = 'Icarus';
-    controller._appVersion = '4.4.0.0';
+    controller._appVersion = '4.5.0.0';
     controller._downloadSizeBytes = 52 * 1024 * 1024;
     controller._releaseNotes = <ChangeModel?>[
       ChangeModel(
         message:
-            'Dot grids now render with shaders, making strategy boards feel smoother and faster while adding a cleaner animated look.',
+            'View cones now stop at walls and account for different map elevations, making vision previews more accurate.',
       ),
       ChangeModel(
         message:
-            'Dragging items on the map now has more natural tilt feedback, making movement feel more responsive.',
+            'Agents now navigate around map geometry during page transitions for more natural movement between setups.',
       ),
       ChangeModel(
         message:
-            'Desktop update screens have a refreshed look with smoother progress animation.',
+            'Library sorting and drawing tool preferences are now remembered between sessions.',
       ),
-      ChangeModel(message: 'Media overlays can now be dismissed with Escape.'),
+      ChangeModel(
+        message:
+            'Resizing abilities and agent markers now keeps them centered on their intended map position.',
+      ),
     ];
     return controller;
   }

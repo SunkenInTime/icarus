@@ -1,0 +1,14 @@
+// Version-control internals and machine-local generated files.
+(?d).git
+(?d)**/.dart_tool
+(?d)**/.fvm
+(?d)**/build
+(?d)**/dist
+(?d)**/node_modules
+(?d)**/.gradle
+(?d)**/.pub-cache
+(?d)**/ephemeral
+(?d)**/.plugin_symlinks
+(?d)release/out
+(?d)**/tmp
+(?d)**/*.log

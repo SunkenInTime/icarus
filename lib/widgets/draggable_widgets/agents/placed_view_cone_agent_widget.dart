@@ -50,6 +50,7 @@ class ViewConeAgentComposite extends ConsumerWidget {
     required this.length,
     this.forcedAgentSize,
     this.applyRotation = true,
+    this.clipToGeometry = true,
   });
 
   final PlacedViewConeAgent agent;
@@ -57,6 +58,7 @@ class ViewConeAgentComposite extends ConsumerWidget {
   final double length;
   final double? forcedAgentSize;
   final bool applyRotation;
+  final bool clipToGeometry;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -91,10 +93,12 @@ class ViewConeAgentComposite extends ConsumerWidget {
               angle: UtilityData.getViewConeAngle(agent.presetType),
               rotation: rotation,
               length: length,
-              worldOrigin: agent.position +
-                  coordinateSystem.virtualOffsetToWorld(
-                    Offset(agentSize / 2, agentSize / 2),
-                  ),
+              worldOrigin: clipToGeometry
+                  ? agent.position +
+                      coordinateSystem.virtualOffsetToWorld(
+                        Offset(agentSize / 2, agentSize / 2),
+                      )
+                  : null,
               visionElevation: agent.visionElevation,
               showCenterMarker: false,
             ),
@@ -274,6 +278,7 @@ class _PlacedViewConeAgentWidgetState
                 rotation: localRotation,
                 length: localLength,
                 forcedAgentSize: agentSize,
+                clipToGeometry: false,
               ),
             ),
           ),
