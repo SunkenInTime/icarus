@@ -40,8 +40,8 @@ class SvgVisionBoundary {
     // floor path. The main mask is consistently the most detailed base path.
     candidates.sort(
       (left, right) => (right.getAttribute('d') ?? '').length.compareTo(
-        (left.getAttribute('d') ?? '').length,
-      ),
+            (left.getAttribute('d') ?? '').length,
+          ),
     );
     final pathElement = candidates.first;
     final svgMaskContours = _collectContours(
@@ -89,42 +89,19 @@ class SvgVisionBoundary {
     }
 
     final detailElements = root.descendants.whereType<XmlElement>().where(
-      (element) =>
-          element.name.local == 'path' &&
-          element != pathElement &&
-          (element.getAttribute('d') ?? '').isNotEmpty &&
-          (_hasStructuralStroke(element) ||
-              element.getAttribute('fill')?.toUpperCase() == _mapBaseFill),
-    );
+          (element) =>
+              element.name.local == 'path' &&
+              element != pathElement &&
+              (element.getAttribute('d') ?? '').isNotEmpty &&
+              (_hasStructuralStroke(element) ||
+                  element.getAttribute('fill')?.toUpperCase() == _mapBaseFill),
+        );
     final existingKeys = <String>{
       for (final group in collisionGroups)
         for (final segment in group.segments) visionSegmentKey(segment),
     };
 
-    void addDetailGroup(
-      List<Offset> svgPoints, {
-      String? id,
-      required bool isClosed,
-      required bool requiresEvidence,
-    }) {
-      final worldPoints = List<Offset>.unmodifiable([
-        for (final point in svgPoints) _project(point, viewBox),
-      ]);
-      if (worldPoints.length < 2) return;
-      VisionCollisionGroup group;
-      try {
-        group = VisionCollisionGroup.geometry(
-          id: id,
-          points: worldPoints,
-          kind: isClosed
-              ? VisionCollisionKind.structuralObstacle
-              : VisionCollisionKind.structuralChain,
-          isClosed: isClosed,
-          requiresEvidence: requiresEvidence,
-        );
-      } on FormatException {
-        return;
-      }
+    void addCollisionGroup(VisionCollisionGroup group) {
       final duplicateCount = group.segments
           .where((segment) => existingKeys.contains(visionSegmentKey(segment)))
           .length;
@@ -133,26 +110,103 @@ class SvgVisionBoundary {
       existingKeys.addAll(group.segments.map(visionSegmentKey));
     }
 
+    void addDetailGroup(
+      List<Offset> svgPoints, {
+      String? id,
+      required bool isClosed,
+      required bool isStructuralObstacle,
+      required bool requiresEvidence,
+    }) {
+      final worldPoints = List<Offset>.unmodifiable([
+        for (final point in svgPoints) _project(point, viewBox),
+      ]);
+      if (worldPoints.length < 2) return;
+      try {
+        addCollisionGroup(
+          VisionCollisionGroup.geometry(
+            id: id,
+            points: worldPoints,
+            kind: isStructuralObstacle
+                ? VisionCollisionKind.structuralObstacle
+                : VisionCollisionKind.structuralChain,
+            isClosed: isClosed,
+            requiresEvidence: requiresEvidence,
+          ),
+        );
+      } on FormatException {
+        return;
+      }
+    }
+
+    void addCompoundGroup(
+      Iterable<List<Offset>> svgPaths, {
+      required bool requiresEvidence,
+    }) {
+      final worldPaths = <List<Offset>>[
+        for (final path in svgPaths)
+          List<Offset>.unmodifiable([
+            for (final point in path) _project(point, viewBox),
+          ]),
+      ];
+      try {
+        addCollisionGroup(
+          VisionCollisionGroup.compoundGeometry(
+            paths: worldPaths,
+            kind: VisionCollisionKind.structuralObstacle,
+            requiresEvidence: requiresEvidence,
+          ),
+        );
+      } on FormatException {
+        return;
+      }
+    }
+
     for (final element in detailElements) {
       final isFill =
           element.getAttribute('fill')?.toUpperCase() == _mapBaseFill;
-      final collected = _collectContours(element, closeOpenContours: isFill);
+      final collected = _collectContours(
+        element,
+        closeOpenContours: isFill,
+      );
+      if (!isFill) {
+        for (final part in _partitionStructuralPaths(
+          collected,
+          closureContours: svgMaskContours,
+        )) {
+          if (part.isCompound) {
+            addCompoundGroup(
+              part.paths,
+              requiresEvidence: _strokeRequiresEvidence(element),
+            );
+            continue;
+          }
+          addDetailGroup(
+            part.paths.single,
+            isClosed: part.isClosed,
+            isStructuralObstacle: part.isClosed,
+            requiresEvidence: _strokeRequiresEvidence(element),
+          );
+        }
+        continue;
+      }
       for (final contour in collected) {
         addDetailGroup(
           contour.points,
-          isClosed: contour.isClosed || isFill,
-          requiresEvidence: !isFill && _strokeRequiresEvidence(element),
+          isClosed: true,
+          isStructuralObstacle: true,
+          requiresEvidence: false,
         );
       }
     }
     for (final element in root.descendants.whereType<XmlElement>().where(
-      (element) =>
-          element.name.local != 'path' && _hasStructuralStroke(element),
-    )) {
+          (element) =>
+              element.name.local != 'path' && _hasStructuralStroke(element),
+        )) {
       for (final contour in _primitiveContours(element)) {
         addDetailGroup(
           contour.points,
           isClosed: contour.isClosed,
+          isStructuralObstacle: contour.isClosed,
           requiresEvidence: _strokeRequiresEvidence(element),
         );
       }
@@ -168,6 +222,7 @@ class SvgVisionBoundary {
         ],
         id: entry.id,
         isClosed: entry.isClosed,
+        isStructuralObstacle: entry.isClosed,
         requiresEvidence: false,
       );
     }
@@ -219,6 +274,288 @@ class SvgVisionBoundary {
     return opacity < 0.5 ||
         width < 0.75 ||
         (dashArray != null && dashArray.toLowerCase() != 'none');
+  }
+
+  /// Partitions one structural SVG element into atomic cycle compounds and
+  /// residual open chains.
+  ///
+  /// Every consecutive authored/tessellated segment is a graph edge, so a
+  /// subpath endpoint may close through an explicit interior vertex of a
+  /// sibling subpath. A connected component may also close through an existing
+  /// base-fill contour without copying that contour into its runtime geometry.
+  /// An edge belongs to a cycle exactly when it is not a bridge. Maximal
+  /// consecutive runs are then emitted back as exact paths; neither cycle
+  /// compounds nor residual chains gain connector geometry.
+  static List<_StructuralPathPart> _partitionStructuralPaths(
+    List<_CollectedContour> contours, {
+    List<_CollectedContour> closureContours = const [],
+  }) {
+    const endpointTolerance = 0.001;
+    const endpointToleranceSquared = endpointTolerance * endpointTolerance;
+    final nodes = <Offset>[];
+    final adjacency = <List<int>>[];
+    final edges = <_ContourGraphEdge>[];
+    final edgeIndexesByContour = <List<int>>[
+      for (var index = 0; index < contours.length; index += 1) <int>[],
+    ];
+
+    int nodeFor(Offset point) {
+      for (var index = 0; index < nodes.length; index += 1) {
+        if ((nodes[index] - point).distanceSquared <=
+            endpointToleranceSquared) {
+          return index;
+        }
+      }
+      nodes.add(point);
+      adjacency.add(<int>[]);
+      return nodes.length - 1;
+    }
+
+    for (var contourIndex = 0;
+        contourIndex < contours.length;
+        contourIndex += 1) {
+      final contour = contours[contourIndex];
+      if (contour.isClosed || contour.points.length < 2) continue;
+      for (var segmentIndex = 0;
+          segmentIndex < contour.points.length - 1;
+          segmentIndex += 1) {
+        final edge = _ContourGraphEdge(
+          startNode: nodeFor(contour.points[segmentIndex]),
+          endNode: nodeFor(contour.points[segmentIndex + 1]),
+        );
+        final edgeIndex = edges.length;
+        edges.add(edge);
+        edgeIndexesByContour[contourIndex].add(edgeIndex);
+        adjacency[edge.startNode].add(edgeIndex);
+        if (edge.endNode != edge.startNode) {
+          adjacency[edge.endNode].add(edgeIndex);
+        }
+      }
+    }
+    if (edges.isEmpty) {
+      return List<_StructuralPathPart>.unmodifiable([
+        for (var contourIndex = 0;
+            contourIndex < contours.length;
+            contourIndex += 1)
+          _StructuralPathPart.contour(
+            points: contours[contourIndex].points,
+            isClosed: contours[contourIndex].isClosed,
+            sourceContourIndex: contourIndex,
+            sourceSegmentIndex: 0,
+          ),
+      ]);
+    }
+
+    // A structural detail can close against a base-fill boundary without
+    // repeating that already-authored wall in its own path data. Connect every
+    // structural vertex lying on the same closed mask contour through a
+    // topology-only hub. These virtual edges participate in bridge detection,
+    // but never become runtime collision segments.
+    final structuralNodeCount = nodes.length;
+    final structuralComponentByNode = List<int>.filled(
+      structuralNodeCount,
+      -1,
+    );
+    var nextStructuralComponent = 0;
+    for (var seed = 0; seed < structuralNodeCount; seed += 1) {
+      if (structuralComponentByNode[seed] != -1) continue;
+      final pending = <int>[seed];
+      structuralComponentByNode[seed] = nextStructuralComponent;
+      while (pending.isNotEmpty) {
+        final node = pending.removeLast();
+        for (final edgeIndex in adjacency[node]) {
+          final edge = edges[edgeIndex];
+          final neighbor =
+              edge.startNode == node ? edge.endNode : edge.startNode;
+          if (structuralComponentByNode[neighbor] != -1) continue;
+          structuralComponentByNode[neighbor] = nextStructuralComponent;
+          pending.add(neighbor);
+        }
+      }
+      nextStructuralComponent += 1;
+    }
+    for (final closure
+        in closureContours.where((contour) => contour.isClosed)) {
+      final anchoredByComponent = <int, List<int>>{};
+      for (var node = 0; node < structuralNodeCount; node += 1) {
+        if (!_pointLiesOnContour(nodes[node], closure.points)) continue;
+        (anchoredByComponent[structuralComponentByNode[node]] ??= <int>[])
+            .add(node);
+      }
+      for (final anchoredNodes in anchoredByComponent.values) {
+        if (anchoredNodes.length < 2) continue;
+        final hubNode = nodes.length;
+        nodes.add(Offset.infinite);
+        adjacency.add(<int>[]);
+        for (final node in anchoredNodes) {
+          final edgeIndex = edges.length;
+          edges.add(
+            _ContourGraphEdge(startNode: node, endNode: hubNode),
+          );
+          adjacency[node].add(edgeIndex);
+          adjacency[hubNode].add(edgeIndex);
+        }
+      }
+    }
+
+    final discovery = List<int>.filled(nodes.length, -1);
+    final low = List<int>.filled(nodes.length, -1);
+    final bridgeEdges = <int>{};
+    var nextDiscovery = 0;
+
+    void visit(int node, int parentEdge) {
+      discovery[node] = nextDiscovery;
+      low[node] = nextDiscovery;
+      nextDiscovery += 1;
+      for (final edgeIndex in adjacency[node]) {
+        if (edgeIndex == parentEdge) continue;
+        final edge = edges[edgeIndex];
+        final neighbor = edge.startNode == node ? edge.endNode : edge.startNode;
+        if (discovery[neighbor] == -1) {
+          visit(neighbor, edgeIndex);
+          low[node] = math.min(low[node], low[neighbor]);
+          if (low[neighbor] > discovery[node]) {
+            bridgeEdges.add(edgeIndex);
+          }
+        } else {
+          low[node] = math.min(low[node], discovery[neighbor]);
+        }
+      }
+    }
+
+    for (var node = 0; node < nodes.length; node += 1) {
+      if (discovery[node] == -1) visit(node, -1);
+    }
+    final componentByEdge = List<int>.filled(edges.length, -1);
+    var componentCount = 0;
+    for (var seed = 0; seed < edges.length; seed += 1) {
+      if (bridgeEdges.contains(seed) || componentByEdge[seed] != -1) continue;
+      final pending = <int>[seed];
+      componentByEdge[seed] = componentCount;
+      while (pending.isNotEmpty) {
+        final edgeIndex = pending.removeLast();
+        final edge = edges[edgeIndex];
+        for (final node in {edge.startNode, edge.endNode}) {
+          for (final neighborEdge in adjacency[node]) {
+            if (bridgeEdges.contains(neighborEdge) ||
+                componentByEdge[neighborEdge] != -1) {
+              continue;
+            }
+            componentByEdge[neighborEdge] = componentCount;
+            pending.add(neighborEdge);
+          }
+        }
+      }
+      componentCount += 1;
+    }
+
+    final parts = <_StructuralPathPart>[];
+    final compoundRuns = <List<_SourcePathRun>>[
+      for (var index = 0; index < componentCount; index += 1)
+        <_SourcePathRun>[],
+    ];
+    for (var contourIndex = 0;
+        contourIndex < contours.length;
+        contourIndex += 1) {
+      final contour = contours[contourIndex];
+      if (contour.isClosed) {
+        parts.add(
+          _StructuralPathPart.contour(
+            points: contour.points,
+            isClosed: true,
+            sourceContourIndex: contourIndex,
+            sourceSegmentIndex: 0,
+          ),
+        );
+        continue;
+      }
+      final contourEdges = edgeIndexesByContour[contourIndex];
+      if (contourEdges.isEmpty) continue;
+      var runStart = 0;
+      var runComponent = componentByEdge[contourEdges.first];
+      for (var segmentIndex = 1;
+          segmentIndex <= contourEdges.length;
+          segmentIndex += 1) {
+        final nextComponent = segmentIndex == contourEdges.length
+            ? null
+            : componentByEdge[contourEdges[segmentIndex]];
+        if (nextComponent == runComponent) continue;
+        final run = _SourcePathRun(
+          points: List<Offset>.unmodifiable(
+            contour.points.sublist(runStart, segmentIndex + 1),
+          ),
+          contourIndex: contourIndex,
+          segmentIndex: runStart,
+        );
+        if (runComponent >= 0) {
+          compoundRuns[runComponent].add(run);
+        } else {
+          parts.add(
+            _StructuralPathPart.contour(
+              points: run.points,
+              isClosed: false,
+              sourceContourIndex: contourIndex,
+              sourceSegmentIndex: runStart,
+            ),
+          );
+        }
+        runStart = segmentIndex;
+        runComponent = nextComponent ?? -1;
+      }
+    }
+    for (final runs in compoundRuns) {
+      if (runs.isEmpty) continue;
+      runs.sort(_compareSourceRuns);
+      parts.add(
+        _StructuralPathPart.compound(
+          paths: [for (final run in runs) run.points],
+          sourceContourIndex: runs.first.contourIndex,
+          sourceSegmentIndex: runs.first.segmentIndex,
+        ),
+      );
+    }
+    parts.sort(_compareStructuralParts);
+    return List<_StructuralPathPart>.unmodifiable(parts);
+  }
+
+  static bool _pointLiesOnContour(
+    Offset point,
+    List<Offset> contour,
+  ) {
+    const tolerance = 0.001;
+    const toleranceSquared = tolerance * tolerance;
+    for (var index = 1; index < contour.length; index += 1) {
+      final start = contour[index - 1];
+      final end = contour[index];
+      final delta = end - start;
+      final lengthSquared = delta.distanceSquared;
+      if (lengthSquared <= toleranceSquared) continue;
+      final projection = ((point.dx - start.dx) * delta.dx +
+              (point.dy - start.dy) * delta.dy) /
+          lengthSquared;
+      if (projection < 0 || projection > 1) continue;
+      final nearest = start + delta * projection;
+      if ((point - nearest).distanceSquared <= toleranceSquared) return true;
+    }
+    return false;
+  }
+
+  static int _compareSourceRuns(_SourcePathRun left, _SourcePathRun right) {
+    final contourComparison = left.contourIndex.compareTo(right.contourIndex);
+    return contourComparison != 0
+        ? contourComparison
+        : left.segmentIndex.compareTo(right.segmentIndex);
+  }
+
+  static int _compareStructuralParts(
+    _StructuralPathPart left,
+    _StructuralPathPart right,
+  ) {
+    final contourComparison =
+        left.sourceContourIndex.compareTo(right.sourceContourIndex);
+    return contourComparison != 0
+        ? contourComparison
+        : left.sourceSegmentIndex.compareTo(right.sourceSegmentIndex);
   }
 
   static List<_CollectedContour> _primitiveContours(XmlElement element) {
@@ -346,8 +683,7 @@ class SvgVisionBoundary {
       final start = contour[index - 1];
       final end = contour[index];
       if ((start.dy > point.dy) == (end.dy > point.dy)) continue;
-      final intersectionX =
-          start.dx +
+      final intersectionX = start.dx +
           (point.dy - start.dy) * (end.dx - start.dx) / (end.dy - start.dy);
       if (intersectionX > point.dx) inside = !inside;
     }
@@ -365,11 +701,8 @@ class SvgVisionBoundary {
   }
 
   static _SvgViewBox _parseViewBox(String? value, MapValue map) {
-    final values = value
-        ?.trim()
-        .split(RegExp(r'[\s,]+'))
-        .map(double.tryParse)
-        .toList();
+    final values =
+        value?.trim().split(RegExp(r'[\s,]+')).map(double.tryParse).toList();
     if (values == null ||
         values.length != 4 ||
         values.any((value) => value == null) ||
@@ -459,10 +792,11 @@ class VisionBoundaryAdditions {
   Map<String, VisionCollisionOverride> overridesFor(
     MapValue map, {
     required bool isAttack,
-  }) => Map.unmodifiable({
-    for (final entry in entriesFor(map, isAttack: isAttack))
-      entry.id: entry.override,
-  });
+  }) =>
+      Map.unmodifiable({
+        for (final entry in entriesFor(map, isAttack: isAttack))
+          entry.id: entry.override,
+      });
 
   static void _validateKeys(
     Map<String, dynamic> value,
@@ -491,11 +825,14 @@ class VisionBoundaryAdditionSet {
     if (value is! Map<String, dynamic>) {
       throw const FormatException('Invalid map boundary additions.');
     }
-    VisionBoundaryAdditions._validateKeys(value, const {
-      'shared',
-      'attack',
-      'defense',
-    }, 'map boundary additions');
+    VisionBoundaryAdditions._validateKeys(
+        value,
+        const {
+          'shared',
+          'attack',
+          'defense',
+        },
+        'map boundary additions');
     List<VisionBoundaryAddition> decode(String key) {
       final entries = value[key];
       if (entries == null) return const [];
@@ -553,25 +890,28 @@ class VisionBoundaryAddition {
   final List<double>? observerPassableElevations;
 
   VisionCollisionOverride get override => VisionCollisionOverride(
-    enabled: true,
-    activeElevations: activeElevations,
-    inactiveElevations: inactiveElevations,
-    observerPassableElevations: observerPassableElevations,
-  );
+        enabled: true,
+        activeElevations: activeElevations,
+        inactiveElevations: inactiveElevations,
+        observerPassableElevations: observerPassableElevations,
+      );
 
   factory VisionBoundaryAddition.fromJson(dynamic value) {
     if (value is! Map<String, dynamic>) {
       throw const FormatException('Invalid vision boundary addition.');
     }
-    VisionBoundaryAdditions._validateKeys(value, const {
-      'id',
-      'label',
-      'points',
-      'closed',
-      'activeElevations',
-      'inactiveElevations',
-      'observerPassableElevations',
-    }, 'vision boundary addition');
+    VisionBoundaryAdditions._validateKeys(
+        value,
+        const {
+          'id',
+          'label',
+          'points',
+          'closed',
+          'activeElevations',
+          'inactiveElevations',
+          'observerPassableElevations',
+        },
+        'vision boundary addition');
     final rawId = value['id'];
     final label = value['label'];
     final rawPoints = value['points'];
@@ -638,16 +978,16 @@ class VisionBoundaryAddition {
   }
 
   VisionBoundaryAddition mirrored() => VisionBoundaryAddition(
-    id: id,
-    label: label,
-    points: List.unmodifiable([
-      for (final point in points) Offset(1 - point.dx, 1 - point.dy),
-    ]),
-    isClosed: isClosed,
-    activeElevations: activeElevations,
-    inactiveElevations: inactiveElevations,
-    observerPassableElevations: observerPassableElevations,
-  );
+        id: id,
+        label: label,
+        points: List.unmodifiable([
+          for (final point in points) Offset(1 - point.dx, 1 - point.dy),
+        ]),
+        isClosed: isClosed,
+        activeElevations: activeElevations,
+        inactiveElevations: inactiveElevations,
+        observerPassableElevations: observerPassableElevations,
+      );
 }
 
 class _SvgViewBox {
@@ -669,6 +1009,71 @@ class _CollectedContour {
 
   final List<Offset> points;
   final bool isClosed;
+}
+
+class _ContourGraphEdge {
+  const _ContourGraphEdge({
+    required this.startNode,
+    required this.endNode,
+  });
+
+  final int startNode;
+  final int endNode;
+}
+
+class _SourcePathRun {
+  const _SourcePathRun({
+    required this.points,
+    required this.contourIndex,
+    required this.segmentIndex,
+  });
+
+  final List<Offset> points;
+  final int contourIndex;
+  final int segmentIndex;
+}
+
+class _StructuralPathPart {
+  const _StructuralPathPart._({
+    required this.paths,
+    required this.isCompound,
+    required this.isClosed,
+    required this.sourceContourIndex,
+    required this.sourceSegmentIndex,
+  });
+
+  factory _StructuralPathPart.contour({
+    required List<Offset> points,
+    required bool isClosed,
+    required int sourceContourIndex,
+    required int sourceSegmentIndex,
+  }) =>
+      _StructuralPathPart._(
+        paths: List<List<Offset>>.unmodifiable([points]),
+        isCompound: false,
+        isClosed: isClosed,
+        sourceContourIndex: sourceContourIndex,
+        sourceSegmentIndex: sourceSegmentIndex,
+      );
+
+  factory _StructuralPathPart.compound({
+    required List<List<Offset>> paths,
+    required int sourceContourIndex,
+    required int sourceSegmentIndex,
+  }) =>
+      _StructuralPathPart._(
+        paths: List<List<Offset>>.unmodifiable(paths),
+        isCompound: true,
+        isClosed: false,
+        sourceContourIndex: sourceContourIndex,
+        sourceSegmentIndex: sourceSegmentIndex,
+      );
+
+  final List<List<Offset>> paths;
+  final bool isCompound;
+  final bool isClosed;
+  final int sourceContourIndex;
+  final int sourceSegmentIndex;
 }
 
 class _ContourCollector extends PathProxy {
@@ -713,8 +1118,7 @@ class _ContourCollector extends PathProxy {
     final control1 = Offset(x1, y1);
     final control2 = Offset(x2, y2);
     final end = Offset(x3, y3);
-    final controlLength =
-        (control1 - start).distance +
+    final controlLength = (control1 - start).distance +
         (control2 - control1).distance +
         (end - control2).distance;
     final steps = (controlLength / _curveTolerance).ceil().clamp(2, 64);
