@@ -255,7 +255,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
               clipBehavior: Clip.none,
               children: [
                 Positioned.fill(child: DeleteCapture()),
-                Align(alignment: Alignment.centerLeft, child: InteractiveMap()),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: RepaintBoundary(child: InteractiveMap()),
+                ),
                 Align(alignment: Alignment.topLeft, child: SaveAndLoadButton()),
                 Align(
                   alignment: Alignment.bottomLeft,

@@ -13,10 +13,10 @@ enum VisionCollisionConfidence {
 
 class VisionSegment {
   VisionSegment(this.start, this.end)
-    : minX = math.min(start.dx, end.dx),
-      maxX = math.max(start.dx, end.dx),
-      minY = math.min(start.dy, end.dy),
-      maxY = math.max(start.dy, end.dy);
+      : minX = math.min(start.dx, end.dx),
+        maxX = math.max(start.dx, end.dx),
+        minY = math.min(start.dy, end.dy),
+        maxY = math.max(start.dy, end.dy);
 
   final Offset start;
   final Offset end;
@@ -39,6 +39,7 @@ class VisionCollisionGroup {
   VisionCollisionGroup._({
     required this.id,
     required this.points,
+    required this.paths,
     required this.segments,
     required this.bounds,
     required this.kind,
@@ -46,6 +47,7 @@ class VisionCollisionGroup {
     required this.isOuterBoundary,
     required this.nestingDepth,
     required this.requiresEvidence,
+    required this.removesOwnEdgesWhenInside,
     required this.layerMask,
     required this.evidenceLayerMask,
     required this.navigationLayerMask,
@@ -63,6 +65,7 @@ class VisionCollisionGroup {
     bool isOuterBoundary = false,
     int nestingDepth = 0,
     bool requiresEvidence = false,
+    bool removesOwnEdgesWhenInside = false,
   }) {
     final normalized = <Offset>[...points];
     if (isClosed &&
@@ -81,9 +84,7 @@ class VisionCollisionGroup {
     if (segments.isEmpty) {
       throw const FormatException('Collision group has no usable segments.');
     }
-    final bounds = segments
-        .skip(1)
-        .fold<Rect>(
+    final bounds = segments.skip(1).fold<Rect>(
           Rect.fromPoints(segments.first.start, segments.first.end),
           (rect, segment) =>
               rect.expandToInclude(Rect.fromPoints(segment.start, segment.end)),
@@ -91,6 +92,7 @@ class VisionCollisionGroup {
     return VisionCollisionGroup._(
       id: id ?? _stableId(kind, isClosed, normalizedPoints),
       points: normalizedPoints,
+      paths: List<List<Offset>>.unmodifiable([normalizedPoints]),
       segments: segments,
       bounds: bounds,
       kind: kind,
@@ -98,6 +100,7 @@ class VisionCollisionGroup {
       isOuterBoundary: isOuterBoundary,
       nestingDepth: nestingDepth,
       requiresEvidence: requiresEvidence,
+      removesOwnEdgesWhenInside: removesOwnEdgesWhenInside,
       layerMask: 0,
       evidenceLayerMask: 0,
       navigationLayerMask: 0,
@@ -110,8 +113,72 @@ class VisionCollisionGroup {
     );
   }
 
+  /// Creates one atomic collision group from multiple exact authored paths.
+  ///
+  /// Segments are built within each path only. No connector or closing edge is
+  /// ever synthesized between sibling paths, even though evidence, overrides,
+  /// and runtime admission operate once on their aggregate group.
+  factory VisionCollisionGroup.compoundGeometry({
+    required List<List<Offset>> paths,
+    required VisionCollisionKind kind,
+    bool requiresEvidence = false,
+  }) {
+    final normalizedPaths = <List<Offset>>[];
+    final segments = <VisionSegment>[];
+    for (final path in paths) {
+      final normalized = List<Offset>.unmodifiable(path);
+      final pathSegments = <VisionSegment>[
+        for (var index = 1; index < normalized.length; index += 1)
+          if ((normalized[index] - normalized[index - 1]).distanceSquared >
+              1e-9)
+            VisionSegment(normalized[index - 1], normalized[index]),
+      ];
+      if (pathSegments.isEmpty) continue;
+      normalizedPaths.add(normalized);
+      segments.addAll(pathSegments);
+    }
+    if (segments.isEmpty) {
+      throw const FormatException('Collision group has no usable segments.');
+    }
+    final immutablePaths = List<List<Offset>>.unmodifiable(normalizedPaths);
+    final immutableSegments = List<VisionSegment>.unmodifiable(segments);
+    final bounds = immutableSegments.skip(1).fold<Rect>(
+          Rect.fromPoints(
+            immutableSegments.first.start,
+            immutableSegments.first.end,
+          ),
+          (rect, segment) => rect.expandToInclude(
+            Rect.fromPoints(segment.start, segment.end),
+          ),
+        );
+    return VisionCollisionGroup._(
+      id: _stableCompoundId(kind, immutablePaths),
+      points: List<Offset>.unmodifiable(immutablePaths.expand((path) => path)),
+      paths: immutablePaths,
+      segments: immutableSegments,
+      bounds: bounds,
+      kind: kind,
+      isClosed: false,
+      isOuterBoundary: false,
+      nestingDepth: 0,
+      requiresEvidence: requiresEvidence,
+      removesOwnEdgesWhenInside: false,
+      layerMask: 0,
+      evidenceLayerMask: 0,
+      navigationLayerMask: 0,
+      observerExclusionLayerMask: 0,
+      coverageByLayer: const [],
+      confidence: VisionCollisionConfidence.unmatchedDefault,
+      overrideApplied: false,
+    );
+  }
+
   final String id;
+
+  /// Flattened for backward-compatible diagnostics. [paths] retains authored
+  /// subpath boundaries and is the authoritative source for compounds.
   final List<Offset> points;
+  final List<List<Offset>> paths;
   final List<VisionSegment> segments;
   final Rect bounds;
   final VisionCollisionKind kind;
@@ -119,6 +186,7 @@ class VisionCollisionGroup {
   final bool isOuterBoundary;
   final int nestingDepth;
   final bool requiresEvidence;
+  final bool removesOwnEdgesWhenInside;
   final int layerMask;
   final int evidenceLayerMask;
   final int navigationLayerMask;
@@ -156,8 +224,7 @@ class VisionCollisionGroup {
       final start = segment.start;
       final end = segment.end;
       if ((start.dy > point.dy) == (end.dy > point.dy)) continue;
-      final intersectionX =
-          start.dx +
+      final intersectionX = start.dx +
           (point.dy - start.dy) * (end.dx - start.dx) / (end.dy - start.dy);
       if (intersectionX > point.dx) inside = !inside;
     }
@@ -176,6 +243,7 @@ class VisionCollisionGroup {
     return VisionCollisionGroup._(
       id: id,
       points: points,
+      paths: paths,
       segments: segments,
       bounds: bounds,
       kind: kind,
@@ -183,6 +251,7 @@ class VisionCollisionGroup {
       isOuterBoundary: isOuterBoundary,
       nestingDepth: nestingDepth,
       requiresEvidence: requiresEvidence,
+      removesOwnEdgesWhenInside: removesOwnEdgesWhenInside,
       layerMask: layerMask,
       evidenceLayerMask: evidenceLayerMask,
       navigationLayerMask: navigationLayerMask,
@@ -213,6 +282,61 @@ class VisionCollisionGroup {
       mix((point.dy * 10).round());
     }
     return '${kind.name}_${hash.toRadixString(16).padLeft(8, '0')}';
+  }
+
+  static String _stableCompoundId(
+    VisionCollisionKind kind,
+    List<List<Offset>> paths,
+  ) {
+    final canonicalPaths = <List<(int, int)>>[
+      for (final path in paths)
+        () {
+          final forward = <(int, int)>[
+            for (final point in path)
+              ((point.dx * 10).round(), (point.dy * 10).round()),
+          ];
+          final reverse = forward.reversed.toList(growable: false);
+          return _compareQuantizedPaths(forward, reverse) <= 0
+              ? forward
+              : reverse;
+        }(),
+    ]..sort(_compareQuantizedPaths);
+
+    // 32-bit FNV-1a, with explicit path separators and lengths so flattened
+    // point sequences cannot alias different subpath layouts.
+    var hash = 0x811c9dc5;
+    const prime = 0x01000193;
+    void mix(int value) {
+      hash ^= value & 0xffffffff;
+      hash = (hash * prime) & 0xffffffff;
+    }
+
+    mix(kind.index);
+    mix(0x434f4d50); // "COMP"
+    mix(canonicalPaths.length);
+    for (final path in canonicalPaths) {
+      mix(0x50415448); // "PATH"
+      mix(path.length);
+      for (final point in path) {
+        mix(point.$1);
+        mix(point.$2);
+      }
+    }
+    return '${kind.name}_${hash.toRadixString(16).padLeft(8, '0')}';
+  }
+
+  static int _compareQuantizedPaths(
+    List<(int, int)> left,
+    List<(int, int)> right,
+  ) {
+    final commonLength = math.min(left.length, right.length);
+    for (var index = 0; index < commonLength; index += 1) {
+      final xComparison = left[index].$1.compareTo(right[index].$1);
+      if (xComparison != 0) return xComparison;
+      final yComparison = left[index].$2.compareTo(right[index].$2);
+      if (yComparison != 0) return yComparison;
+    }
+    return left.length.compareTo(right.length);
   }
 }
 
@@ -253,7 +377,8 @@ class VisionSegmentIndex {
           segment.minX <= bounds.right &&
           segment.maxY >= bounds.top &&
           segment.minY <= bounds.bottom;
-    }).toList()..sort();
+    }).toList()
+      ..sort();
     return sorted;
   }
 

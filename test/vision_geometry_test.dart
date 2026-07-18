@@ -83,6 +83,167 @@ void main() {
       expect(details[4].isClosed, isTrue);
       expect(details[4].requiresEvidence, isTrue);
     });
+
+    test('reconstructs split cycles only within one structural path', () {
+      const source = '''
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#271406" d="M5 5H95V95H5Z"/>
+  <path stroke="#B27C40"
+      d="M20 20H40V40 M40.0004 40.0003H20V20.0002 M20 20H10"/>
+  <path stroke="#B27C40" d="M60 20H80V40"/>
+  <path stroke="#B27C40" d="M80 40H60V20"/>
+</svg>
+''';
+      final boundary = SvgVisionBoundary.parse(
+        map: MapValue.ascent,
+        source: source,
+      );
+      final details = boundary.collisionGroups
+          .where((group) => group.kind != VisionCollisionKind.maskBoundary)
+          .toList();
+      final obstacles = details
+          .where(
+            (group) => group.kind == VisionCollisionKind.structuralObstacle,
+          )
+          .toList();
+      final chains = details
+          .where(
+            (group) => group.kind == VisionCollisionKind.structuralChain,
+          )
+          .toList();
+
+      expect(obstacles, hasLength(1));
+      expect(obstacles.single.isClosed, isFalse);
+      expect(obstacles.single.paths, hasLength(2));
+      expect(obstacles.single.segments, hasLength(4));
+      expect(chains, hasLength(3));
+      expect(
+        chains.map((group) => group.segments.length),
+        unorderedEquals([1, 2, 2]),
+        reason: 'one-ended and cross-element chains must not join the cycle',
+      );
+      expect(
+        details.expand((group) => group.segments).any(
+              (segment) => segment.length < 0.01,
+            ),
+        isFalse,
+        reason: 'tight endpoint snapping must not add a synthetic ray edge',
+      );
+    });
+
+    test('split cycles keep thin-stroke evidence requirements', () {
+      const source = '''
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#271406" d="M5 5H95V95H5Z"/>
+  <path stroke="#B27C40" stroke-width="0.5"
+      d="M20 20H40V40 M40 40H20V20"/>
+</svg>
+''';
+      final boundary = SvgVisionBoundary.parse(
+        map: MapValue.ascent,
+        source: source,
+      );
+      final obstacles = boundary.collisionGroups.where(
+        (group) => group.kind == VisionCollisionKind.structuralObstacle,
+      );
+
+      expect(obstacles, hasLength(1));
+      expect(obstacles.single.paths, hasLength(2));
+      expect(obstacles.single.requiresEvidence, isTrue);
+    });
+
+    test('uses a closed mask contour to complete a structural cycle', () {
+      const source = '''
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#271406" d="M5 5H95V95H5Z"/>
+  <path stroke="#B27C40"
+      d="M5 20H20V30V40H5 M20 30H30"/>
+</svg>
+''';
+      final boundary = SvgVisionBoundary.parse(
+        map: MapValue.ascent,
+        source: source,
+      );
+      final details = boundary.collisionGroups
+          .where((group) => group.kind != VisionCollisionKind.maskBoundary)
+          .toList();
+      final obstacle = details.singleWhere(
+        (group) => group.kind == VisionCollisionKind.structuralObstacle,
+      );
+      final tail = details.singleWhere(
+        (group) => group.kind == VisionCollisionKind.structuralChain,
+      );
+
+      expect(obstacle.paths, hasLength(1));
+      expect(obstacle.segments, hasLength(4));
+      expect(tail.segments, hasLength(1));
+      expect(
+        details.expand((group) => group.segments),
+        hasLength(5),
+        reason: 'the mask is topology-only and must not add connector edges',
+      );
+    });
+
+    test('closes at an authored interior vertex and preserves bridge tails',
+        () {
+      const source = '''
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#271406" d="M5 5H95V95H5Z"/>
+  <path stroke="#B27C40"
+      d="M20 20H40V40H20 M20 50V40V20V10"/>
+</svg>
+''';
+      final boundary = SvgVisionBoundary.parse(
+        map: MapValue.ascent,
+        source: source,
+      );
+      final details = boundary.collisionGroups
+          .where((group) => group.kind != VisionCollisionKind.maskBoundary)
+          .toList();
+      final compound = details.singleWhere(
+        (group) => group.kind == VisionCollisionKind.structuralObstacle,
+      );
+      final tails = details
+          .where((group) => group.kind == VisionCollisionKind.structuralChain)
+          .toList();
+
+      expect(compound.paths, hasLength(2));
+      expect(compound.segments, hasLength(4));
+      expect(tails, hasLength(2));
+      expect(tails.every((group) => group.segments.length == 1), isTrue);
+      expect(
+        details.expand((group) => group.segments),
+        hasLength(6),
+        reason: 'the six authored segments must neither disappear nor grow',
+      );
+    });
+
+    test('compound IDs ignore sibling path order and orientation', () {
+      const first = <Offset>[
+        Offset(20, 20),
+        Offset(40, 20),
+        Offset(40, 40),
+      ];
+      const second = <Offset>[
+        Offset(40, 40),
+        Offset(20, 40),
+        Offset(20, 20),
+      ];
+      final forward = VisionCollisionGroup.compoundGeometry(
+        paths: const [first, second],
+        kind: VisionCollisionKind.structuralObstacle,
+      );
+      final reordered = VisionCollisionGroup.compoundGeometry(
+        paths: [second.reversed.toList(), first.reversed.toList()],
+        kind: VisionCollisionKind.structuralObstacle,
+      );
+
+      expect(reordered.id, forward.id);
+      expect(
+        _segmentKeys(reordered.segments),
+        _segmentKeys(forward.segments),
+      );
+    });
   });
 
   group('VisionGeometryMap', () {
@@ -223,6 +384,51 @@ void main() {
           reason: 'unsupported open SVG chains must not become walls',
         );
       }
+    });
+
+    test('admits or rejects a thin split cycle as one runtime group', () {
+      const source = '''
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <path fill="#271406" d="M5 5H95V95H5Z"/>
+  <path stroke="#B27C40" stroke-width="0.5"
+      d="M20 20H40V40 M40 40H20V20"/>
+</svg>
+''';
+      final boundary = SvgVisionBoundary.parse(
+        map: MapValue.ascent,
+        source: source,
+      );
+      final compound = boundary.collisionGroups.singleWhere(
+        (group) => group.kind == VisionCollisionKind.structuralObstacle,
+      );
+      final rejected = _oneLayerGeometry(MapValue.ascent).withSvgBoundaries(
+        attackBoundary: boundary,
+        defenseBoundary: boundary,
+      );
+      final admitted = _oneLayerGeometry(MapValue.ascent).withSvgBoundaries(
+        attackBoundary: boundary,
+        defenseBoundary: boundary,
+        overrides: VisionGeometryOverrides(
+          attack: {
+            compound.id: const VisionCollisionOverride(enabled: true),
+          },
+        ),
+      );
+
+      expect(compound.paths, hasLength(2));
+      expect(compound.segments, hasLength(4));
+      expect(
+        rejected.attackLayers.single.collisionGroups.map((group) => group.id),
+        isNot(contains(compound.id)),
+      );
+      final active = admitted.attackLayers.single.collisionGroups.singleWhere(
+        (group) => group.id == compound.id,
+      );
+      expect(active.overrideApplied, isTrue);
+      expect(
+        _segmentKeys(admitted.attackLayers.single.segments),
+        containsAll(_segmentKeys(compound.segments)),
+      );
     });
 
     test('rejects outer, unknown-contour, and unknown-elevation overrides', () {
@@ -641,6 +847,279 @@ void main() {
         }
       }
     });
+
+    test('keeps every side of the split Icebox B box collision-active',
+        () async {
+      final source = await rootBundle.loadString(
+        'assets/maps/icebox_vision.json',
+      );
+      final attackSvg = await rootBundle.loadString(
+        'assets/maps/icebox_map.svg',
+      );
+      final boundary = SvgVisionBoundary.parse(
+        map: MapValue.icebox,
+        source: attackSvg,
+      );
+      final geometry = VisionGeometryMap.fromCompactJson(
+        MapValue.icebox,
+        jsonDecode(source) as Map<String, dynamic>,
+      ).withSvgBoundaries(
+        attackBoundary: boundary,
+        defenseBoundary: boundary,
+      );
+      const expectedId = 'structuralObstacle_9a5d6569';
+      final compound = boundary.collisionGroups.singleWhere(
+        (group) => group.id == expectedId,
+      );
+
+      expect(
+        compound.kind,
+        VisionCollisionKind.structuralObstacle,
+      );
+      expect(compound.isClosed, isFalse);
+      expect(compound.requiresEvidence, isFalse);
+      expect(compound.paths, hasLength(3));
+      expect(compound.segments, hasLength(9));
+      final oneEndedCurve = boundary.collisionGroups.singleWhere(
+        (group) =>
+            group.kind == VisionCollisionKind.structuralChain &&
+            group.bounds.left > 677 &&
+            group.bounds.left < 679 &&
+            group.bounds.right > 683 &&
+            group.bounds.right < 685 &&
+            group.bounds.top > 591 &&
+            group.bounds.top < 593 &&
+            group.bounds.bottom > 599 &&
+            group.bounds.bottom < 601,
+      );
+      expect(oneEndedCurve.isClosed, isFalse);
+      expect(
+        boundary.collisionGroups.map((group) => group.id),
+        isNot(
+          contains(anyOf(
+            'structuralChain_175beb4e',
+            'structuralChain_1edf19ab',
+            'structuralChain_227d3db2',
+          )),
+        ),
+      );
+
+      final layer = geometry.layerFor(isAttack: true, elevation: 320);
+      expect(
+        layer.collisionGroups.map((group) => group.id),
+        contains(expectedId),
+      );
+      expect(
+        layer.collisionGroups.map((group) => group.id),
+        isNot(contains(oneEndedCurve.id)),
+        reason: 'the one-ended curve must remain evidence-gated',
+      );
+      for (final ray in const <(Offset, double)>[
+        (Offset(653.9081278, 599.6913319), 0),
+        (Offset(670.8633075, 617.2262156), -math.pi / 2),
+        (Offset(687.8184872, 599.6913319), math.pi),
+      ]) {
+        expect(
+          _centerRayDistance(
+            layer: layer,
+            origin: ray.$1,
+            facingAngle: ray.$2,
+            range: 20,
+          ),
+          closeTo(10, 0.1),
+          reason: 'Icebox B ray from ${ray.$1} crossed a box side',
+        );
+      }
+    });
+
+    test('keeps the Split B-site box collision-active', () async {
+      final source = await rootBundle.loadString(
+        'assets/maps/split_vision.json',
+      );
+      final attackSvg = await rootBundle.loadString(
+        'assets/maps/split_map.svg',
+      );
+      final boundary = SvgVisionBoundary.parse(
+        map: MapValue.split,
+        source: attackSvg,
+      );
+      final geometry = VisionGeometryMap.fromCompactJson(
+        MapValue.split,
+        jsonDecode(source) as Map<String, dynamic>,
+      ).withSvgBoundaries(
+        attackBoundary: boundary,
+        defenseBoundary: boundary,
+      );
+      const oldChainId = 'structuralChain_2bb9c03e';
+      expect(
+        boundary.collisionGroups.map((group) => group.id),
+        isNot(contains(oldChainId)),
+      );
+      final box = boundary.collisionGroups.singleWhere(
+        (group) =>
+            group.kind == VisionCollisionKind.structuralObstacle &&
+            _rectNear(
+              group.bounds,
+              const Rect.fromLTRB(446.9, 224.6, 464.9, 249.4),
+              tolerance: 0.2,
+            ),
+      );
+
+      expect(box.isClosed, isFalse);
+      expect(box.paths, hasLength(3));
+      expect(box.segments, hasLength(5));
+      for (final layer in geometry.attackLayers) {
+        expect(
+            layer.collisionGroups.map((group) => group.id), contains(box.id));
+        expect(_segmentKeys(layer.segments),
+            containsAll(_segmentKeys(box.segments)));
+      }
+    });
+
+    test('keeps the reported Split left box collision-active', () async {
+      final source = await rootBundle.loadString(
+        'assets/maps/split_vision.json',
+      );
+      final attackSvg = await rootBundle.loadString(
+        'assets/maps/split_map.svg',
+      );
+      final boundary = SvgVisionBoundary.parse(
+        map: MapValue.split,
+        source: attackSvg,
+      );
+      final geometry = VisionGeometryMap.fromCompactJson(
+        MapValue.split,
+        jsonDecode(source) as Map<String, dynamic>,
+      ).withSvgBoundaries(
+        attackBoundary: boundary,
+        defenseBoundary: boundary,
+      );
+      final box = boundary.collisionGroups.singleWhere(
+        (group) =>
+            group.kind == VisionCollisionKind.maskBoundary &&
+            _rectNear(
+              group.bounds,
+              const Rect.fromLTRB(480.6, 357.3, 559.3, 394.8),
+              tolerance: 0.2,
+            ),
+      );
+      final origin = Offset(
+        box.bounds.center.dx + 100,
+        box.bounds.bottom + 300,
+      );
+      final facingAngle = math.atan2(
+        box.bounds.center.dy - origin.dy,
+        box.bounds.center.dx - origin.dx,
+      );
+
+      expect(box.isClosed, isTrue);
+      for (final layer in geometry.attackLayers) {
+        expect(
+          layer.collisionGroups.map((group) => group.id),
+          contains(box.id),
+        );
+        expect(
+          _centerRayDistance(
+            layer: layer,
+            origin: origin,
+            facingAngle: facingAngle,
+            range: 500,
+          ),
+          closeTo(185.33, 0.1),
+          reason: 'Split ray crossed the reported left-side box',
+        );
+      }
+    });
+
+    for (final fixture in const <({
+      MapValue map,
+      String asset,
+      String oldChainId,
+      String compoundId,
+      Rect compoundBounds,
+      Rect leakedChainBounds,
+      int pathCount,
+      int segmentCount,
+    })>[
+      (
+        map: MapValue.fracture,
+        asset: 'fracture',
+        oldChainId: 'structuralChain_e2f0b69b',
+        compoundId: 'structuralObstacle_9f91a55c',
+        compoundBounds: Rect.fromLTRB(902.16, 911.39, 936.34, 934.96),
+        leakedChainBounds: Rect.fromLTRB(916.31, 911.39, 925.73, 921.68),
+        pathCount: 9,
+        segmentCount: 18,
+      ),
+      (
+        map: MapValue.summit,
+        asset: 'summit',
+        oldChainId: 'structuralChain_38757ff3',
+        compoundId: 'structuralObstacle_37c33174',
+        compoundBounds: Rect.fromLTRB(430.1, 38.1, 1346.8, 961.9),
+        leakedChainBounds: Rect.fromLTRB(444.11, 319.49, 459.61, 326.20),
+        pathCount: 16,
+        segmentCount: 229,
+      ),
+    ]) {
+      test(
+          'promotes the ${fixture.asset} endpoint-to-interior cycle atomically',
+          () async {
+        final visionSource = await rootBundle.loadString(
+          'assets/maps/${fixture.asset}_vision.json',
+        );
+        final svgSource = await rootBundle.loadString(
+          'assets/maps/${fixture.asset}_map.svg',
+        );
+        final boundary = SvgVisionBoundary.parse(
+          map: fixture.map,
+          source: svgSource,
+        );
+        final compound = boundary.collisionGroups.singleWhere(
+          (group) => group.id == fixture.compoundId,
+        );
+        final geometry = VisionGeometryMap.fromCompactJson(
+          fixture.map,
+          jsonDecode(visionSource) as Map<String, dynamic>,
+        ).withSvgBoundaries(
+          attackBoundary: boundary,
+          defenseBoundary: boundary,
+        );
+
+        expect(
+          boundary.collisionGroups.map((group) => group.id),
+          isNot(contains(fixture.oldChainId)),
+        );
+        expect(compound.paths, hasLength(fixture.pathCount));
+        expect(compound.segments, hasLength(fixture.segmentCount));
+        expect(
+          _rectNear(compound.bounds, fixture.compoundBounds, tolerance: 0.15),
+          isTrue,
+        );
+        expect(
+          compound.segments
+              .where(
+                (segment) => _segmentBoundsInside(
+                  segment,
+                  fixture.leakedChainBounds.inflate(0.15),
+                ),
+              )
+              .length,
+          greaterThanOrEqualTo(2),
+          reason: 'the formerly rejected T-junction chain must be included',
+        );
+        for (final layer in geometry.attackLayers) {
+          expect(
+            layer.collisionGroups.map((group) => group.id),
+            contains(compound.id),
+          );
+          expect(
+            _segmentKeys(layer.segments),
+            containsAll(_segmentKeys(compound.segments)),
+          );
+        }
+      });
+    }
 
     test('keeps the reported Breeze boxes as complete SVG obstacles', () async {
       final source = await rootBundle.loadString(
@@ -1279,6 +1758,19 @@ void _expectExactSvgRuntime({
   required String reason,
 }) {
   final allowedKeys = _segmentKeys(boundary.segments);
+  for (final group in boundary.collisionGroups) {
+    final exactPathKeys = <String>{
+      for (final path in group.paths)
+        for (var index = 1; index < path.length; index += 1)
+          if ((path[index] - path[index - 1]).distanceSquared > 1e-9)
+            visionSegmentKey(VisionSegment(path[index - 1], path[index])),
+    };
+    expect(
+      _segmentKeys(group.segments),
+      unorderedEquals(exactPathKeys),
+      reason: '$reason ${group.id} synthesized a cross-path edge',
+    );
+  }
   for (final layer in layers) {
     final runtimeKeys = _segmentKeys(layer.segments);
     final groupedKeys = _segmentKeys(
@@ -1455,6 +1947,22 @@ bool _segmentBoundsOverlap(VisionSegment segment, Rect bounds) =>
     segment.minX <= bounds.right &&
     segment.maxY >= bounds.top &&
     segment.minY <= bounds.bottom;
+
+bool _segmentBoundsInside(VisionSegment segment, Rect bounds) =>
+    segment.minX >= bounds.left &&
+    segment.maxX <= bounds.right &&
+    segment.minY >= bounds.top &&
+    segment.maxY <= bounds.bottom;
+
+bool _rectNear(
+  Rect actual,
+  Rect expected, {
+  required double tolerance,
+}) =>
+    (actual.left - expected.left).abs() <= tolerance &&
+    (actual.top - expected.top).abs() <= tolerance &&
+    (actual.right - expected.right).abs() <= tolerance &&
+    (actual.bottom - expected.bottom).abs() <= tolerance;
 
 double _centerRayDistance({
   required VisionGeometryLayer layer,
