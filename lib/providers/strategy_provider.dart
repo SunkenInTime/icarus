@@ -1060,12 +1060,10 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     // Load target page (hydrates providers)
     await setActivePage(pageID);
-    final endSettings = ref.read(strategySettingsProvider);
-
     // After layout, snapshot next and start transition
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final next = _snapshotAllPlaced();
-      final entries = _diffToTransitions(prev, next);
+      var next = _snapshotAllPlaced();
+      var entries = _diffToTransitions(prev, next);
       if (entries.isEmpty) {
         transitionNotifier.complete();
         return;
@@ -1102,6 +1100,18 @@ class StrategyProvider extends Notifier<StrategyState> {
         return;
       }
 
+      // Geometry loading yields to the event loop. Re-snapshot the target so
+      // edits made while it was loading become the actual transition end state.
+      if (needsAgentRouting) {
+        next = _snapshotAllPlaced();
+        entries = _diffToTransitions(prev, next);
+        if (entries.isEmpty) {
+          transitionNotifier.complete();
+          return;
+        }
+      }
+
+      final endSettings = ref.read(strategySettingsProvider);
       final agentPaths = AgentTransitionPathPlanner.plan(
         entries: entries,
         geometry: transitionGeometry,
