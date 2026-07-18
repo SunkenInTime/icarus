@@ -3,6 +3,32 @@
     "description":  "Desktop release metadata for Icarus.",
     "items":  [
                   {
+                      "version":  "4.5.0+93",
+                      "shortVersion":  93,
+                      "changes":  [
+                                      {
+                                          "message":  "View cones now stop at walls and account for different map elevations, making vision previews more accurate.",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Agents now navigate around map geometry during page transitions for more natural movement between setups.",
+                                          "type":  "feature"
+                                      },
+                                      {
+                                          "message":  "Library sorting and drawing tool preferences are now remembered between sessions.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Resizing abilities and agent markers now keeps them centered on their intended map position.",
+                                          "type":  "bugfix"
+                                      }
+                                  ],
+                      "date":  "2026-07-18",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.5.0%2B93-windows",
+                      "platform":  "windows"
+                  },
+                  {
                       "version":  "4.4.0+92",
                       "shortVersion":  92,
                       "changes":  [
