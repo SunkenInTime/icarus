@@ -1,13 +1,20 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/providers/view_cone_debug_provider.dart';
+import 'package:icarus/providers/view_cone_geometry_provider.dart';
+import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
 
 class ViewConeWidget extends ConsumerWidget {
   static const Offset anchorPointVirtual = Offset(
@@ -22,6 +29,8 @@ class ViewConeWidget extends ConsumerWidget {
   final double angle;
   final double? rotation;
   final double? length;
+  final Offset? worldOrigin;
+  final double? visionElevation;
   final bool showCenterMarker;
 
   const ViewConeWidget({
@@ -30,6 +39,8 @@ class ViewConeWidget extends ConsumerWidget {
     required this.angle,
     this.rotation,
     this.length,
+    this.worldOrigin,
+    this.visionElevation,
     this.showCenterMarker = true,
   });
 
@@ -37,20 +48,18 @@ class ViewConeWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final coord = CoordinateSystem.instance;
 
-    double currentLength = 50; // Default short length
+    double currentLength = 50;
+    PlacedUtility? placedUtility;
 
     if (id != null) {
-      try {
-        final utility = ref
-            .watch(utilityProvider)
-            .firstWhere((element) => element.id == id);
-        currentLength = utility.length > 0 ? utility.length : 50;
-      } catch (_) {
-        // Utility not found, use defaults
+      for (final utility in ref.watch(utilityProvider)) {
+        if (utility.id == id) {
+          placedUtility = utility;
+          currentLength = utility.length > 0 ? utility.length : 50;
+          break;
+        }
       }
     }
-
-    // Override with passed values if available (for feedback/transitions)
 
     if (length != null && length! > 0) currentLength = length!;
 
@@ -69,17 +78,166 @@ class ViewConeWidget extends ConsumerWidget {
 
     final totalHeight = totalHeightVirtual * coord.scaleFactor;
     final totalWidth = totalWidthVirtual * coord.scaleFactor;
+    final resolvedWorldOrigin = worldOrigin ??
+        (placedUtility == null
+            ? null
+            : placedUtility.position +
+                coord.virtualOffsetToWorld(anchorPointVirtual));
+    final resolvedElevation = visionElevation ?? placedUtility?.visionElevation;
+    final debugEnabled = ref.watch(viewConeDebugProvider);
+    List<Offset>? visibilityPolygon;
+    List<VisionSegment>? debugMatchedSegments;
+    List<VisionSegment>? debugRiotSegments;
+    List<VisionSegment>? debugRejectedSegments;
+    List<VisionSegment>? debugBoundarySegments;
+    String? debugLabel;
+    VisionGeometryMap? geometry;
+    if (resolvedWorldOrigin != null) {
+      final mapState = ref.watch(mapProvider);
+      geometry = ref
+          .watch(viewConeGeometryProvider(mapState.currentMap))
+          .asData
+          ?.value;
+      if (geometry != null) {
+        final inferredHeight = geometry.inferredHeightAt(
+          isAttack: mapState.isAttack,
+          position: resolvedWorldOrigin,
+        );
+        final layer = geometry.layerForPosition(
+          isAttack: mapState.isAttack,
+          position: resolvedWorldOrigin,
+          elevationOverride: resolvedElevation,
+        );
+        // Placed free cones normally pass their drag-preview rotation directly,
+        // while this provider fallback keeps clipping correct for any caller
+        // that only supplies the persisted utility id.
+        final effectiveRotation = rotation ?? placedUtility?.rotation ?? 0;
+        // MapProvider.switchSide mirrors every placed item before toggling the
+        // side. The resolved origin is therefore already in the current map's
+        // display frame and pairs with the correspondingly mirrored layer.
+        final worldPolygon = VisionPolygon.compute(
+          layer: layer,
+          origin: resolvedWorldOrigin,
+          facingAngle: effectiveRotation - pi / 2,
+          coneAngle: angle * pi / 180,
+          range: coord.virtualLengthToWorld(currentLength),
+        );
+        final inverseRotation = -effectiveRotation;
+        final cosine = cos(inverseRotation);
+        final sine = sin(inverseRotation);
+        final apex = Offset(containerWidth / 2, containerHeight);
+        Offset toLocal(Offset point) {
+          final delta = point - resolvedWorldOrigin;
+          final local = Offset(
+            delta.dx * cosine - delta.dy * sine,
+            delta.dx * sine + delta.dy * cosine,
+          );
+          return apex + coord.worldOffsetToScreen(local);
+        }
+
+        visibilityPolygon = [
+          for (final point in worldPolygon) toLocal(point),
+        ];
+        if (debugEnabled) {
+          debugMatchedSegments = [
+            for (final segment in layer.matchedBoundarySegments)
+              VisionSegment(toLocal(segment.start), toLocal(segment.end)),
+          ];
+          debugRiotSegments = [
+            for (final segment in layer.matchedSourceSegments)
+              VisionSegment(toLocal(segment.start), toLocal(segment.end)),
+          ];
+          debugRejectedSegments = [
+            for (final segment in layer.rejectedSegments)
+              VisionSegment(toLocal(segment.start), toLocal(segment.end)),
+          ];
+          debugBoundarySegments = [
+            for (final segment
+                in layer.boundary?.segments ?? const <VisionSegment>[])
+              VisionSegment(toLocal(segment.start), toLocal(segment.end)),
+          ];
+          VisionCollisionGroup? nearestGroup;
+          var nearestGroupIsActive = false;
+          var nearestDistanceSquared = double.infinity;
+          final activeGroupsById = {
+            for (final group in layer.collisionGroups) group.id: group,
+          };
+          final observerGroupsById = {
+            for (final group in layer.observerGroups) group.id: group,
+          };
+          final debugGroups = layer.debugCollisionGroups.isNotEmpty
+              ? layer.debugCollisionGroups
+              : layer.boundary?.collisionGroups ?? layer.collisionGroups;
+          for (final candidate in debugGroups) {
+            final group = activeGroupsById[candidate.id] ??
+                observerGroupsById[candidate.id] ??
+                candidate;
+            if (group.isOuterBoundary) continue;
+            for (final segment in group.segments) {
+              final distanceSquared = visionDistanceSquaredToSegment(
+                resolvedWorldOrigin,
+                segment,
+              );
+              if (distanceSquared < nearestDistanceSquared) {
+                nearestDistanceSquared = distanceSquared;
+                nearestGroup = group;
+                nearestGroupIsActive = activeGroupsById.containsKey(group.id);
+              }
+            }
+          }
+          final nearestCoverage = nearestGroup == null ||
+                  layer.layerIndex >= nearestGroup.coverageByLayer.length
+              ? null
+              : nearestGroup.coverageByLayer[layer.layerIndex];
+          final summary = inferredHeight == null
+              ? 'fallback ${formatVisionElevation(layer.elevation)}'
+              : 'height ${formatVisionElevation(inferredHeight)}  '
+                  'slice ${formatVisionElevation(layer.elevation)}  '
+                  '${layer.collisionGroups.where((group) => group.hasEvidenceInLayer(layer.layerIndex)).length}/'
+                  '${layer.collisionGroups.length} contours evidenced  '
+                  '${layer.matchedSourceSegments.length}/'
+                  '${layer.matchedSourceSegments.length + layer.rejectedSegments.length} Riot edges aligned';
+          debugLabel = nearestGroup == null
+              ? summary
+              : '$summary\nnearest ${nearestGroup.id}  '
+                  '${nearestGroupIsActive ? 'active' : 'inactive candidate'}  '
+                  '${nearestGroup.confidence.name}  '
+                  '${((nearestCoverage ?? 0) * 100).round()}%';
+        }
+      }
+    }
+
+    final elevationMenuItems = placedUtility != null && geometry != null
+        ? [
+            buildViewConeElevationMenuItem(
+              geometry: geometry,
+              selectedElevation: placedUtility.visionElevation,
+              automaticElevation: geometry
+                  .layerForPosition(
+                    isAttack: ref.read(mapProvider).isAttack,
+                    position: resolvedWorldOrigin!,
+                  )
+                  .elevation,
+              onChanged: (elevation) {
+                ref
+                    .read(utilityProvider.notifier)
+                    .updateViewConeElevation(placedUtility!.id, elevation);
+              },
+            ),
+            buildViewConeDebugMenuItem(
+              enabled: debugEnabled,
+              onChanged: (enabled) =>
+                  ref.read(viewConeDebugProvider.notifier).state = enabled,
+            ),
+          ]
+        : null;
 
     return SizedBox(
       width: totalWidth,
       height: totalHeight,
       child: Stack(
         children: [
-          const Positioned.fill(
-            child: IgnorePointer(
-              child: SizedBox(),
-            ),
-          ),
+          const Positioned.fill(child: IgnorePointer(child: SizedBox())),
           Positioned(
             top: scaledAnchor.dy - containerHeight,
             left: scaledAnchor.dx - (containerWidth / 2),
@@ -92,6 +250,12 @@ class ViewConeWidget extends ConsumerWidget {
                   painter: ViewConePainter(
                     angle: angle,
                     length: scaledLength,
+                    visibilityPolygon: visibilityPolygon,
+                    debugMatchedSegments: debugMatchedSegments,
+                    debugRiotSegments: debugRiotSegments,
+                    debugRejectedSegments: debugRejectedSegments,
+                    debugBoundarySegments: debugBoundarySegments,
+                    debugLabel: debugLabel,
                   ),
                 ),
               ),
@@ -105,6 +269,7 @@ class ViewConeWidget extends ConsumerWidget {
                 deleteTarget: (id?.isNotEmpty ?? false)
                     ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
                     : null,
+                contextMenuItems: elevationMenuItems,
                 cursor: SystemMouseCursors.click,
                 child: Container(
                   decoration: BoxDecoration(
@@ -129,14 +294,38 @@ class ViewConeWidget extends ConsumerWidget {
 class ViewConePainter extends CustomPainter {
   final double angle;
   final double length;
+  final List<Offset>? visibilityPolygon;
+  final List<VisionSegment>? debugMatchedSegments;
+  final List<VisionSegment>? debugRiotSegments;
+  final List<VisionSegment>? debugRejectedSegments;
+  final List<VisionSegment>? debugBoundarySegments;
+  final String? debugLabel;
 
   ViewConePainter({
     required this.angle,
     required this.length,
+    this.visibilityPolygon,
+    this.debugMatchedSegments,
+    this.debugRiotSegments,
+    this.debugRejectedSegments,
+    this.debugBoundarySegments,
+    this.debugLabel,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (debugMatchedSegments != null ||
+        debugRiotSegments != null ||
+        debugRejectedSegments != null ||
+        debugBoundarySegments != null) {
+      _paintDebugGeometry(canvas, size);
+    }
+
+    // A non-null result means map clipping was evaluated. If the apex is
+    // outside the SVG floor (or the cone otherwise has no visible area), the
+    // geometry returns a degenerate polygon and nothing should be painted.
+    if (visibilityPolygon != null && visibilityPolygon!.length < 3) return;
+
     // Convert angle to radians
     final angleRad = angle * (pi / 180);
 
@@ -163,6 +352,15 @@ class ViewConePainter extends CustomPainter {
     // Save canvas state and apply clip
     canvas.save();
     canvas.clipPath(clipPath);
+    if (visibilityPolygon != null && visibilityPolygon!.length >= 3) {
+      final visibilityPath = Path()
+        ..moveTo(visibilityPolygon!.first.dx, visibilityPolygon!.first.dy);
+      for (final point in visibilityPolygon!.skip(1)) {
+        visibilityPath.lineTo(point.dx, point.dy);
+      }
+      visibilityPath.close();
+      canvas.clipPath(visibilityPath);
+    }
 
     // Draw radial gradient circle (will be clipped to wedge)
     final gradientPaint = Paint()
@@ -182,8 +380,80 @@ class ViewConePainter extends CustomPainter {
     canvas.restore();
   }
 
+  void _paintDebugGeometry(Canvas canvas, Size size) {
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
+    final matchedPaint = Paint()
+      ..color = const Color(0xFF22D3EE).withValues(alpha: 0.85)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    final riotPaint = Paint()
+      ..color = const Color(0xFFA78BFA).withValues(alpha: 0.95)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.25;
+    final boundaryPaint = Paint()
+      ..color = const Color(0xFFF59E0B).withValues(alpha: 0.9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.25;
+    final rejectedPaint = Paint()
+      ..color = const Color(0xFFFB7185).withValues(alpha: 0.9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+    for (final segment in debugBoundarySegments ?? const <VisionSegment>[]) {
+      canvas.drawLine(segment.start, segment.end, boundaryPaint);
+    }
+    for (final segment in debugMatchedSegments ?? const <VisionSegment>[]) {
+      canvas.drawLine(segment.start, segment.end, matchedPaint);
+    }
+    for (final segment in debugRiotSegments ?? const <VisionSegment>[]) {
+      canvas.drawLine(segment.start, segment.end, riotPaint);
+    }
+    for (final segment in debugRejectedSegments ?? const <VisionSegment>[]) {
+      canvas.drawLine(segment.start, segment.end, rejectedPaint);
+    }
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height),
+      3,
+      Paint()..color = const Color(0xFF4ADE80),
+    );
+
+    final label = debugLabel;
+    if (label != null) {
+      final textPainter = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: const TextStyle(
+            color: Colors.white,
+            backgroundColor: Color(0xCC111827),
+            fontSize: 10,
+            height: 1.2,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: max(0.0, size.width - 12));
+      textPainter.paint(
+        canvas,
+        Offset(6, max(4.0, size.height - textPainter.height - 8)),
+      );
+    }
+    canvas.restore();
+  }
+
   @override
   bool shouldRepaint(covariant ViewConePainter oldDelegate) {
-    return oldDelegate.length != length;
+    return oldDelegate.length != length ||
+        oldDelegate.angle != angle ||
+        !listEquals(oldDelegate.visibilityPolygon, visibilityPolygon) ||
+        !listEquals(oldDelegate.debugMatchedSegments, debugMatchedSegments) ||
+        !listEquals(oldDelegate.debugRiotSegments, debugRiotSegments) ||
+        !listEquals(
+          oldDelegate.debugRejectedSegments,
+          debugRejectedSegments,
+        ) ||
+        !listEquals(
+          oldDelegate.debugBoundarySegments,
+          debugBoundarySegments,
+        ) ||
+        oldDelegate.debugLabel != debugLabel;
   }
 }

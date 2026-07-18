@@ -503,10 +503,12 @@ class PlacedAgent extends PlacedAgentNode {
 class ViewConeAgentGeometryAction extends WidgetAction {
   final double rotation;
   final double length;
+  final double? visionElevation;
 
   ViewConeAgentGeometryAction({
     required this.rotation,
     required this.length,
+    required this.visionElevation,
   });
 
   ViewConeAgentGeometryAction copyWith({
@@ -516,6 +518,7 @@ class ViewConeAgentGeometryAction extends WidgetAction {
     return ViewConeAgentGeometryAction(
       rotation: rotation ?? this.rotation,
       length: length ?? this.length,
+      visionElevation: visionElevation,
     );
   }
 }
@@ -538,6 +541,8 @@ class PlacedViewConeAgent extends PlacedAgentNode {
   final UtilityType presetType;
   double rotation;
   double length;
+  @JsonKey(defaultValue: null)
+  double? visionElevation;
 
   PlacedViewConeAgent({
     required super.type,
@@ -546,6 +551,7 @@ class PlacedViewConeAgent extends PlacedAgentNode {
     required this.presetType,
     this.rotation = 0,
     this.length = 0,
+    this.visionElevation,
     super.isAlly = true,
     super.state = AgentState.none,
   }) : assert(
@@ -567,7 +573,11 @@ class PlacedViewConeAgent extends PlacedAgentNode {
 
   void updateGeometryHistory() {
     _actionHistory.add(
-      ViewConeAgentGeometryAction(rotation: rotation, length: length),
+      ViewConeAgentGeometryAction(
+        rotation: rotation,
+        length: length,
+        visionElevation: visionElevation,
+      ),
     );
   }
 
@@ -579,23 +589,35 @@ class PlacedViewConeAgent extends PlacedAgentNode {
     length = newLength;
   }
 
+  void updateVisionElevation(double? newElevation) {
+    visionElevation = newElevation;
+  }
+
   void _undoGeometry() {
-    final action =
-        ViewConeAgentGeometryAction(rotation: rotation, length: length);
+    final action = ViewConeAgentGeometryAction(
+      rotation: rotation,
+      length: length,
+      visionElevation: visionElevation,
+    );
     _poppedAction.add(action);
     final previous = _actionHistory.last as ViewConeAgentGeometryAction;
     rotation = previous.rotation;
     length = previous.length;
+    visionElevation = previous.visionElevation;
     _actionHistory.removeLast();
   }
 
   void _redoGeometry() {
-    final action =
-        ViewConeAgentGeometryAction(rotation: rotation, length: length);
+    final action = ViewConeAgentGeometryAction(
+      rotation: rotation,
+      length: length,
+      visionElevation: visionElevation,
+    );
     _actionHistory.add(action);
     final next = _poppedAction.last as ViewConeAgentGeometryAction;
     rotation = next.rotation;
     length = next.length;
+    visionElevation = next.visionElevation;
     _poppedAction.removeLast();
   }
 
@@ -640,6 +662,8 @@ class PlacedViewConeAgent extends PlacedAgentNode {
     }
   }
 
+  static const Object _noChange = Object();
+
   PlacedViewConeAgent copyWith({
     AgentType? type,
     Offset? position,
@@ -649,6 +673,7 @@ class PlacedViewConeAgent extends PlacedAgentNode {
     UtilityType? presetType,
     double? rotation,
     double? length,
+    Object? visionElevation = _noChange,
   }) {
     final copied = PlacedViewConeAgent(
       type: type ?? this.type,
@@ -659,6 +684,9 @@ class PlacedViewConeAgent extends PlacedAgentNode {
       presetType: presetType ?? this.presetType,
       rotation: rotation ?? this.rotation,
       length: length ?? this.length,
+      visionElevation: identical(visionElevation, _noChange)
+          ? this.visionElevation
+          : visionElevation as double?,
     );
     copied.isDeleted = isDeleted;
     return copied;
@@ -1084,11 +1112,17 @@ class AbilityGeometryAction extends WidgetAction {
 class RotationAction extends WidgetAction {
   final double rotation;
   final double length;
-  RotationAction({required this.rotation, required this.length});
+  final double? visionElevation;
+  RotationAction({
+    required this.rotation,
+    required this.length,
+    required this.visionElevation,
+  });
   RotationAction copyWith({double? rotation, double? length}) {
     return RotationAction(
       rotation: rotation ?? this.rotation,
       length: length ?? this.length,
+      visionElevation: visionElevation,
     );
   }
 }
@@ -1148,6 +1182,10 @@ class PlacedUtility extends PlacedWidget {
   void updateRotation(double newRotation, double newLength) {
     rotation = newRotation;
     length = newLength;
+  }
+
+  void updateVisionElevation(double? newElevation) {
+    visionElevation = newElevation;
   }
 
   _getIsRotationUtility(UtilityType type) {
@@ -1253,27 +1291,41 @@ class PlacedUtility extends PlacedWidget {
   }
 
   void updateRotationHistory() {
-    final action = RotationAction(rotation: rotation, length: length);
+    final action = RotationAction(
+      rotation: rotation,
+      length: length,
+      visionElevation: visionElevation,
+    );
     _actionHistory.add(action);
   }
 
   void _undoRotation() {
-    final action = RotationAction(rotation: rotation, length: length);
+    final action = RotationAction(
+      rotation: rotation,
+      length: length,
+      visionElevation: visionElevation,
+    );
 
     _poppedAction.add(action);
     rotation = (_actionHistory.last as RotationAction).rotation;
     length = (_actionHistory.last as RotationAction).length;
+    visionElevation = (_actionHistory.last as RotationAction).visionElevation;
     _actionHistory.removeLast();
   }
 
   void _redoRotation() {
     if (_poppedAction.isEmpty) return;
 
-    final action = RotationAction(rotation: rotation, length: length);
+    final action = RotationAction(
+      rotation: rotation,
+      length: length,
+      visionElevation: visionElevation,
+    );
 
     _actionHistory.add(action);
     rotation = (_poppedAction.last as RotationAction).rotation;
     length = (_poppedAction.last as RotationAction).length;
+    visionElevation = (_poppedAction.last as RotationAction).visionElevation;
     _poppedAction.removeLast();
   }
 
@@ -1374,6 +1426,9 @@ class PlacedUtility extends PlacedWidget {
   double angle;
 
   @JsonKey(defaultValue: null)
+  double? visionElevation;
+
+  @JsonKey(defaultValue: null)
   double? customDiameter;
 
   @JsonKey(defaultValue: null)
@@ -1397,6 +1452,7 @@ class PlacedUtility extends PlacedWidget {
     required super.id,
     this.isAlly = true,
     this.angle = 0.0,
+    this.visionElevation,
     this.customDiameter,
     this.customWidth,
     this.customLength,
@@ -1421,6 +1477,7 @@ class PlacedUtility extends PlacedWidget {
     Object? customLength = _noChange,
     Object? customColorValue = _noChange,
     Object? customOpacityPercent = _noChange,
+    Object? visionElevation = _noChange,
     double? rotation,
     double? length,
     bool? isAlly,
@@ -1432,6 +1489,9 @@ class PlacedUtility extends PlacedWidget {
       id: id ?? this.id,
       isAlly: isAlly ?? this.isAlly,
       angle: angle ?? this.angle,
+      visionElevation: identical(visionElevation, _noChange)
+          ? this.visionElevation
+          : visionElevation as double?,
       customDiameter: identical(customDiameter, _noChange)
           ? this.customDiameter
           : customDiameter as double?,
@@ -1517,6 +1577,7 @@ extension PlacedWidgetCopy on PlacedWidget {
       return ViewConeAgentGeometryAction(
         rotation: action.rotation,
         length: action.length,
+        visionElevation: action.visionElevation,
       );
     } else if (action is CircleAgentGeometryAction) {
       return CircleAgentGeometryAction(
@@ -1525,7 +1586,11 @@ extension PlacedWidgetCopy on PlacedWidget {
         opacityPercent: action.opacityPercent,
       );
     } else if (action is RotationAction) {
-      return RotationAction(rotation: action.rotation, length: action.length);
+      return RotationAction(
+        rotation: action.rotation,
+        length: action.length,
+        visionElevation: action.visionElevation,
+      );
     } else if (action is CustomShapeGeometryAction) {
       return CustomShapeGeometryAction(
         position: action.position,

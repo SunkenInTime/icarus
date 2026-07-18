@@ -94,6 +94,29 @@ class CoordinateSystem {
     );
   }
 
+  /// Converts a legacy widget-space offset into normalized world units.
+  ///
+  /// Most draggable widget dimensions are authored against [_baseHeight],
+  /// while persisted positions and map geometry use [normalizedHeight].
+  Offset virtualOffsetToWorld(Offset virtualOffset) {
+    final screenOffset = virtualOffset.scale(_scaleFactor, _scaleFactor);
+    return Offset(
+      screenWidthToWorld(screenOffset.dx),
+      screenHeightToWorld(screenOffset.dy),
+    );
+  }
+
+  double virtualLengthToWorld(double virtualLength) {
+    return screenHeightToWorld(scale(virtualLength));
+  }
+
+  Offset worldOffsetToScreen(Offset worldOffset) {
+    return Offset(
+      worldWidthToScreen(worldOffset.dx),
+      worldHeightToScreen(worldOffset.dy),
+    );
+  }
+
   final double _baseHeight = 831.0;
   // Get the scale factor based on screen height
   double get _scaleFactor => _effectiveSize.height / _baseHeight;

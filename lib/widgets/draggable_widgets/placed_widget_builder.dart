@@ -370,6 +370,7 @@ bool _convertFreeUtilityToComposite({
               presetType: utility.type,
               rotation: utility.rotation,
               length: utility.length,
+              visionElevation: utility.visionElevation,
             );
       },
     );

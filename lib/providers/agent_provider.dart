@@ -153,6 +153,26 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     state = newState;
   }
 
+  void updateViewConeElevation({
+    required String id,
+    required double? elevation,
+  }) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+    final node = newState[index];
+    if (node is! PlacedViewConeAgent || node.visionElevation == elevation) {
+      return;
+    }
+
+    node.updateGeometryHistory();
+    node.updateVisionElevation(elevation);
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
+        );
+    state = newState;
+  }
+
   void updateCircleGeometry({
     required String id,
     required double diameterMeters,
@@ -185,6 +205,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     required UtilityType presetType,
     required double rotation,
     required double length,
+    double? visionElevation,
   }) {
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -201,6 +222,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       presetType: presetType,
       rotation: rotation,
       length: length,
+      visionElevation: visionElevation,
     )..isDeleted = node.isDeleted;
 
     ref.read(actionProvider.notifier).addAction(

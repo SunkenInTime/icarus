@@ -42,7 +42,10 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/providers/view_cone_geometry_provider.dart';
+import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/services/archive_manifest.dart';
+import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -752,6 +755,7 @@ class StrategyProvider extends Notifier<StrategyState> {
             position: shift(utility.position),
             id: utility.id,
             angle: utility.angle,
+          visionElevation: utility.visionElevation,
             customDiameter: utility.customDiameter,
             customWidth: utility.customWidth,
             customLength: utility.customLength,
@@ -1058,11 +1062,32 @@ class StrategyProvider extends Notifier<StrategyState> {
     await setActivePage(pageID);
     final endSettings = ref.read(strategySettingsProvider);
 
+    // Page-transition routes use the same collision geometry as view cones.
+    // Resolve it while the previous page snapshot remains visible so the
+    // animation never switches from a straight line to A* partway through.
+    VisionGeometryMap? transitionGeometry;
+    try {
+      transitionGeometry = await ref.read(
+        viewConeGeometryProvider(ref.read(mapProvider).currentMap).future,
+      );
+    } on Object {
+      // Geometry is an enhancement. Keep page navigation functional and let
+      // the overlay retain its direct-path fallback if an asset cannot load.
+    }
+
     // After layout, snapshot next and start transition
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final next = _snapshotAllPlaced();
       final entries = _diffToTransitions(prev, next);
       if (entries.isNotEmpty) {
+        final agentPaths = AgentTransitionPathPlanner.plan(
+          entries: entries,
+          geometry: transitionGeometry,
+          isAttack: ref.read(mapProvider).isAttack,
+          startAgentSize: startSettings.agentSize,
+          endAgentSize: endSettings.agentSize,
+          coordinateSystem: CoordinateSystem.instance,
+        );
         transitionNotifier.start(
           entries,
           duration: duration,
@@ -1073,6 +1098,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           endAbilitySize: endSettings.abilitySize,
           sourcePageId: sourcePageId,
           targetPageId: targetPageId,
+          agentPaths: agentPaths,
         );
       } else {
         transitionNotifier.complete();
