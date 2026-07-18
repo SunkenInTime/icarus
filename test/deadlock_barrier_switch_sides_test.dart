@@ -8,6 +8,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -111,7 +112,7 @@ void main() {
       final fullSize = abilityData
           .getSize(
             mapScale: explicitMapScale,
-            abilitySize: explicitAbilitySize,
+            abilitySize: Settings.abilitySize,
           )
           .scale(
             CoordinateSystem.instance.scaleFactor,

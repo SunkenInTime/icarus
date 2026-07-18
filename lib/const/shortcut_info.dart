@@ -337,7 +337,8 @@ class ShortcutInfo {
   static final Map<ShortcutActivator, Intent> globalShortcuts =
       globalShortcutsFor(const {});
 
-  // New map to disable global shortcuts when typing
+  // Fallback blockers for app shortcuts that native text editing does not own.
+  // TextEditingShortcutScope places DefaultTextEditingShortcuts inside these.
   static Map<ShortcutActivator, Intent> textEditingOverridesFor(
     Map<String, String> customBindings, {
     TargetPlatform? platform,

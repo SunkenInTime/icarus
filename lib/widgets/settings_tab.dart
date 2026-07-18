@@ -5,6 +5,7 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
@@ -292,6 +293,16 @@ class _StrategySettingsSections extends ConsumerWidget {
                       .updateAgentSize(value);
                   ref.read(strategyProvider.notifier).setUnsaved();
                 },
+                onChangeCommitted: (start, end) {
+                  if (start == end) return;
+
+                  final settings = ref.read(strategySettingsProvider.notifier);
+                  settings.updateAgentSize(start);
+                  ref.read(actionProvider.notifier).performTransaction(
+                    groups: const [ActionGroup.strategySettings],
+                    mutation: () => settings.updateAgentSize(end),
+                  );
+                },
               ),
               const _SettingsItemDivider(),
               _SettingsSliderTile(
@@ -309,6 +320,16 @@ class _StrategySettingsSections extends ConsumerWidget {
                       .read(strategySettingsProvider.notifier)
                       .updateAbilitySize(value);
                   ref.read(strategyProvider.notifier).setUnsaved();
+                },
+                onChangeCommitted: (start, end) {
+                  if (start == end) return;
+
+                  final settings = ref.read(strategySettingsProvider.notifier);
+                  settings.updateAbilitySize(start);
+                  ref.read(actionProvider.notifier).performTransaction(
+                    groups: const [ActionGroup.strategySettings],
+                    mutation: () => settings.updateAbilitySize(end),
+                  );
                 },
               ),
               const _SettingsItemDivider(),
@@ -1280,7 +1301,7 @@ class _SettingsNavItem extends StatelessWidget {
   }
 }
 
-class _SettingsSliderTile extends StatelessWidget {
+class _SettingsSliderTile extends StatefulWidget {
   const _SettingsSliderTile({
     required this.icon,
     required this.title,
@@ -1291,6 +1312,7 @@ class _SettingsSliderTile extends StatelessWidget {
     required this.divisions,
     required this.accentColor,
     required this.onChanged,
+    this.onChangeCommitted,
   });
 
   final IconData icon;
@@ -1302,6 +1324,14 @@ class _SettingsSliderTile extends StatelessWidget {
   final int divisions;
   final Color accentColor;
   final ValueChanged<double> onChanged;
+  final void Function(double start, double end)? onChangeCommitted;
+
+  @override
+  State<_SettingsSliderTile> createState() => _SettingsSliderTileState();
+}
+
+class _SettingsSliderTileState extends State<_SettingsSliderTile> {
+  double? _dragStartValue;
 
   @override
   Widget build(BuildContext context) {
@@ -1314,8 +1344,8 @@ class _SettingsSliderTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               _SettingLeadingIcon(
-                icon: icon,
-                accentColor: accentColor,
+                icon: widget.icon,
+                accentColor: widget.accentColor,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1323,12 +1353,12 @@ class _SettingsSliderTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      title,
+                      widget.title,
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      description,
+                      widget.description,
                       style: ShadTheme.of(context).textTheme.small.copyWith(
                             color: Settings.tacticalVioletTheme.mutedForeground,
                             height: 1.3,
@@ -1339,26 +1369,34 @@ class _SettingsSliderTile extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               _SettingValuePill(
-                value: value.toStringAsFixed(0),
-                accentColor: accentColor,
+                value: widget.value.toStringAsFixed(0),
+                accentColor: widget.accentColor,
               ),
             ],
           ),
           const SizedBox(height: 8),
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              activeTrackColor: accentColor,
-              thumbColor: accentColor,
-              overlayColor: accentColor.withValues(alpha: 0.12),
+              activeTrackColor: widget.accentColor,
+              thumbColor: widget.accentColor,
+              overlayColor: widget.accentColor.withValues(alpha: 0.12),
               inactiveTrackColor: Settings.tacticalVioletTheme.secondary,
               trackHeight: 2.8,
             ),
             child: Slider(
-              min: min,
-              max: max,
-              divisions: divisions,
-              value: value,
-              onChanged: onChanged,
+              min: widget.min,
+              max: widget.max,
+              divisions: widget.divisions,
+              value: widget.value,
+              onChangeStart: (value) => _dragStartValue = value,
+              onChangeEnd: (value) {
+                widget.onChangeCommitted?.call(
+                  _dragStartValue ?? widget.value,
+                  value,
+                );
+                _dragStartValue = null;
+              },
+              onChanged: widget.onChanged,
             ),
           ),
         ],

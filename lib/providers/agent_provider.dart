@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/const/utilities.dart';
@@ -88,10 +89,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
     final index = PlacedWidget.getIndexByID(id, newState);
 
-    final agentSize = ref.read(strategySettingsProvider).agentSize;
-
-    final centerPosition =
-        Offset(position.dx + agentSize / 2, position.dy + agentSize / 2);
+    final centerPosition = position + storedAgentAnchor;
     final coordinateSystem = CoordinateSystem.instance;
 
     if (coordinateSystem.isOutOfBounds(centerPosition)) {
@@ -114,9 +112,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     required String sourceId,
     required Offset position,
   }) {
-    final agentSize = ref.read(strategySettingsProvider).agentSize;
-    final centerPosition =
-        Offset(position.dx + agentSize / 2, position.dy + agentSize / 2);
+    final centerPosition = position + storedAgentAnchor;
     final coordinateSystem = CoordinateSystem.instance;
     if (coordinateSystem.isOutOfBounds(centerPosition)) return null;
 
