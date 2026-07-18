@@ -1062,14 +1062,14 @@ class StrategyProvider extends Notifier<StrategyState> {
     await setActivePage(pageID);
     // After layout, snapshot next and start transition
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      var next = _snapshotAllPlaced();
-      var entries = _diffToTransitions(prev, next);
-      if (entries.isEmpty) {
+      final preliminaryNext = _snapshotAllPlaced();
+      final preliminaryEntries = _diffToTransitions(prev, preliminaryNext);
+      if (preliminaryEntries.isEmpty) {
         transitionNotifier.complete();
         return;
       }
 
-      final needsAgentRouting = entries.any(
+      final needsAgentRouting = preliminaryEntries.any(
         (entry) =>
             entry.kind == TransitionKind.move &&
             entry.visualWidget is PlacedAgentNode,
@@ -1100,15 +1100,14 @@ class StrategyProvider extends Notifier<StrategyState> {
         return;
       }
 
-      // Geometry loading yields to the event loop. Re-snapshot the target so
-      // edits made while it was loading become the actual transition end state.
-      if (needsAgentRouting) {
-        next = _snapshotAllPlaced();
-        entries = _diffToTransitions(prev, next);
-        if (entries.isEmpty) {
-          transitionNotifier.complete();
-          return;
-        }
+      // The preliminary entries only decide whether geometry is needed. Build
+      // a distinct final snapshot after the possible await so stale entries
+      // can never reach start(), even when page IDs did not change.
+      final next = _snapshotAllPlaced();
+      final entries = _diffToTransitions(prev, next);
+      if (entries.isEmpty) {
+        transitionNotifier.complete();
+        return;
       }
 
       final endSettings = ref.read(strategySettingsProvider);
