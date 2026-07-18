@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/page_transition/agent_path.dart';
 
 enum PageTransitionPhase { idle, preparing, animating }
 
@@ -21,6 +22,7 @@ class PageTransitionState {
     required this.endAgentSize,
     required this.startAbilitySize,
     required this.endAbilitySize,
+    this.agentPaths = const {},
     this.sourcePageId,
     this.targetPageId,
   });
@@ -37,6 +39,7 @@ class PageTransitionState {
   final double endAgentSize;
   final double startAbilitySize;
   final double endAbilitySize;
+  final Map<String, AgentTransitionPath> agentPaths;
   final String? sourcePageId;
   final String? targetPageId;
 
@@ -54,6 +57,7 @@ class PageTransitionState {
     double? endAgentSize,
     double? startAbilitySize,
     double? endAbilitySize,
+    Map<String, AgentTransitionPath>? agentPaths,
     String? sourcePageId,
     String? targetPageId,
     bool clearPageIds = false,
@@ -72,6 +76,7 @@ class PageTransitionState {
         endAgentSize: endAgentSize ?? this.endAgentSize,
         startAbilitySize: startAbilitySize ?? this.startAbilitySize,
         endAbilitySize: endAbilitySize ?? this.endAbilitySize,
+        agentPaths: agentPaths ?? this.agentPaths,
         sourcePageId: clearPageIds ? null : (sourcePageId ?? this.sourcePageId),
         targetPageId: clearPageIds ? null : (targetPageId ?? this.targetPageId),
       );
@@ -90,6 +95,7 @@ class PageTransitionState {
       endAgentSize: 0,
       startAbilitySize: 0,
       endAbilitySize: 0,
+      agentPaths: {},
       sourcePageId: null,
       targetPageId: null);
 }
@@ -131,6 +137,7 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       endAbilitySize: startAbilitySize,
       sourcePageId: sourcePageId,
       targetPageId: targetPageId,
+      agentPaths: const {},
     );
   }
 
@@ -141,6 +148,7 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       required double endAgentSize,
       required double startAbilitySize,
       required double endAbilitySize,
+      Map<String, AgentTransitionPath> agentPaths = const {},
       String? sourcePageId,
       String? targetPageId}) {
     state = state.copyWith(
@@ -158,6 +166,7 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       endAbilitySize: endAbilitySize,
       sourcePageId: sourcePageId,
       targetPageId: targetPageId,
+      agentPaths: agentPaths,
     );
   }
 
@@ -178,6 +187,7 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       allWidgets: const [],
       phase: PageTransitionPhase.idle,
       clearPageIds: true,
+      agentPaths: const {},
     );
   }
 }
