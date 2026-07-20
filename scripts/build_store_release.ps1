@@ -19,16 +19,23 @@ if (-not $SkipPubGet) {
 
 $dartDefinesPath = $null
 try {
-    $msixArguments = @("dart", "run", "msix:create")
+    $flutterBuildArguments = @("flutter", "build", "windows", "--release")
     if (-not [string]::IsNullOrWhiteSpace($PostHogProjectToken)) {
         $dartDefinesPath = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-dart-defines-{0}.json" -f [guid]::NewGuid())
         Write-JsonFileUtf8 -Path $dartDefinesPath -Value @{
             POSTHOG_PROJECT_TOKEN = $PostHogProjectToken
             POSTHOG_HOST = $PostHogHost
         }
-        $msixArguments += "--windows-build-args=--dart-define-from-file=`"$dartDefinesPath`""
+        $flutterBuildArguments += "--dart-define-from-file=$dartDefinesPath"
     }
-    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments $msixArguments
+    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments $flutterBuildArguments
+    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @(
+        "dart",
+        "run",
+        "msix:create",
+        "--build-windows",
+        "false"
+    )
 }
 finally {
     if ($null -ne $dartDefinesPath -and (Test-Path -LiteralPath $dartDefinesPath)) {
