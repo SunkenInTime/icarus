@@ -12,6 +12,7 @@ Set-StrictMode -Version Latest
 
 $repoRoot = Get-RepoRoot -ScriptDirectory $PSScriptRoot
 $env:FLUTTER_ROOT = Get-FlutterRoot -RepoRoot $repoRoot
+$windowsBuildRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath "build\windows"
 
 if (-not $SkipPubGet) {
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("flutter", "pub", "get")
@@ -19,6 +20,10 @@ if (-not $SkipPubGet) {
 
 $dartDefinesPath = $null
 try {
+    if (Test-Path -LiteralPath $windowsBuildRoot) {
+        Remove-Item -LiteralPath $windowsBuildRoot -Recurse -Force
+    }
+
     $flutterBuildArguments = @("flutter", "build", "windows", "--release")
     if (-not [string]::IsNullOrWhiteSpace($PostHogProjectToken)) {
         $dartDefinesPath = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-dart-defines-{0}.json" -f [guid]::NewGuid())
