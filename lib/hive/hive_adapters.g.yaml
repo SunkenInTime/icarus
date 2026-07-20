@@ -443,7 +443,7 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 16
+    nextIndex: 17
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0

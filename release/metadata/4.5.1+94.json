@@ -1,0 +1,26 @@
+{
+  "version": "4.5.1+94",
+  "shortVersion": 94,
+  "title": "4.5.1 Update",
+  "description": "Desktop release metadata for Icarus.",
+  "date": "2026-07-19",
+  "mandatory": false,
+  "channels": [
+    "desktop",
+    "prerelease",
+    "stable"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "changes": [
+    {
+      "message": "Added anonymous analytics to help improve Icarus. No strategy content or personal information is collected, and analytics can be turned off under Settings > Privacy.",
+      "type": "feature"
+    },
+    {
+      "message": "Updated Veto's Crosscut range to match its latest 30-meter in-game range.",
+      "type": "bugfix"
+    }
+  ]
+}

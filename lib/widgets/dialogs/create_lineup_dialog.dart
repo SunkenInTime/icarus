@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +9,7 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/services/clipboard_service.dart';
+import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -68,18 +71,18 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       );
       if (existingItem != null) {
         ref.read(actionProvider.notifier).performTransaction(
-              groups: const [ActionGroup.lineUp],
-              mutation: () {
-                notifier.updateItem(
-                  groupId: widget.lineUpGroupId!,
-                  item: existingItem.copyWith(
-                    youtubeLink: _youtubeLinkController.text,
-                    notes: _notesController.text,
-                    images: _imagePaths,
-                  ),
-                );
-              },
+          groups: const [ActionGroup.lineUp],
+          mutation: () {
+            notifier.updateItem(
+              groupId: widget.lineUpGroupId!,
+              item: existingItem.copyWith(
+                youtubeLink: _youtubeLinkController.text,
+                notes: _notesController.text,
+                images: _imagePaths,
+              ),
             );
+          },
+        );
       }
     } else {
       final currentAbility = lineUpState.currentAbility;
@@ -97,18 +100,18 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
 
       if (lineUpState.currentGroupId != null) {
         ref.read(actionProvider.notifier).performTransaction(
-              groups: const [ActionGroup.lineUp],
-              mutation: () {
-                notifier.addItemToGroup(
-                  groupId: lineUpState.currentGroupId!,
-                  item: item.copyWith(
-                    ability: item.ability.copyWith(
-                      lineUpID: lineUpState.currentGroupId,
-                    ),
-                  ),
-                );
-              },
+          groups: const [ActionGroup.lineUp],
+          mutation: () {
+            notifier.addItemToGroup(
+              groupId: lineUpState.currentGroupId!,
+              item: item.copyWith(
+                ability: item.ability.copyWith(
+                  lineUpID: lineUpState.currentGroupId,
+                ),
+              ),
             );
+          },
+        );
       } else {
         final currentAgent = lineUpState.currentAgent;
         if (currentAgent == null) {
@@ -128,6 +131,17 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
           ),
         );
       }
+
+      unawaited(
+        AnalyticsService.instance.capture(
+          'lineup_created',
+          properties: {
+            'has_video': _youtubeLinkController.text.trim().isNotEmpty,
+            'has_notes': _notesController.text.trim().isNotEmpty,
+            'has_images': _imagePaths.isNotEmpty,
+          },
+        ),
+      );
     }
 
     ref
