@@ -11,6 +11,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
@@ -29,6 +30,7 @@ enum _SettingsSection {
   globalSaving,
   globalMapVisibility,
   globalMapProfiles,
+  globalPrivacy,
   shortcuts,
 }
 
@@ -190,6 +192,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       case _SettingsSection.globalSaving:
       case _SettingsSection.globalMapVisibility:
       case _SettingsSection.globalMapProfiles:
+      case _SettingsSection.globalPrivacy:
         return _SettingsMode.global;
       case _SettingsSection.shortcuts:
         return _SettingsMode.shortcuts;
@@ -514,6 +517,27 @@ class _GlobalSettingsSections extends ConsumerWidget {
                 },
               ),
             ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const _SectionDivider(),
+        const SizedBox(height: 20),
+        SettingsScopeCard(
+          key: sectionKeys[_SettingsSection.globalPrivacy],
+          title: "Privacy",
+          description:
+              "Control anonymous, privacy-preserving product analytics.",
+          child: _SettingsToggleTile(
+            icon: Icons.analytics_outlined,
+            title: "Anonymous analytics",
+            description:
+                "Share app opens and a few feature-use events. Icarus never sends strategy names or content, personal details, screen recordings, or crash reports.",
+            value: ref.watch(analyticsEnabledProvider),
+            onChanged: (value) async {
+              await ref
+                  .read(analyticsEnabledProvider.notifier)
+                  .setEnabled(value);
+            },
           ),
         ),
         const SizedBox(height: 20),
@@ -1168,6 +1192,12 @@ class _SettingsNavigationRail extends StatelessWidget {
             label: "Theme profiles",
             isSelected: selectedSection == _SettingsSection.globalMapProfiles,
             onTap: () => onSectionSelected(_SettingsSection.globalMapProfiles),
+          ),
+          _SettingsNavItem(
+            icon: Icons.privacy_tip_outlined,
+            label: "Privacy",
+            isSelected: selectedSection == _SettingsSection.globalPrivacy,
+            onTap: () => onSectionSelected(_SettingsSection.globalPrivacy),
           ),
           _SettingsNavItem(
             icon: Icons.keyboard_alt_outlined,

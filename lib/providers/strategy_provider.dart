@@ -36,6 +36,7 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/analytics_service.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/maps.dart';
@@ -3057,6 +3058,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
       await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
           .put(newStrategy.id, newStrategy);
+      unawaited(AnalyticsService.instance.capture('strategy_imported'));
     } finally {
       if (isZip) {
         try {
@@ -3130,6 +3132,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put(newStrategy.id, newStrategy);
 
+    unawaited(AnalyticsService.instance.capture('strategy_created'));
+
     return newStrategy.id;
   }
 
@@ -3179,6 +3183,12 @@ class StrategyProvider extends Notifier<StrategyState> {
       encoder.create(outputFile);
       await encoder.addDirectory(stagingDirectory, includeDirName: false);
       await encoder.close();
+      unawaited(
+        AnalyticsService.instance.capture(
+          'content_exported',
+          properties: const {'content_type': 'folder'},
+        ),
+      );
     } finally {
       try {
         await stagingDirectory.delete(recursive: true);
@@ -3204,6 +3214,12 @@ class StrategyProvider extends Notifier<StrategyState> {
       encoder.create(outputFile);
       await encoder.addDirectory(stagingDirectory, includeDirName: false);
       await encoder.close();
+      unawaited(
+        AnalyticsService.instance.capture(
+          'content_exported',
+          properties: const {'content_type': 'library'},
+        ),
+      );
     } finally {
       try {
         await stagingDirectory.delete(recursive: true);
@@ -3567,6 +3583,12 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     if (outputFile == null) return;
     await zipStrategy(id: id, outputFilePath: outputFile);
+    unawaited(
+      AnalyticsService.instance.capture(
+        'content_exported',
+        properties: const {'content_type': 'strategy'},
+      ),
+    );
   }
 
   Future<void> renameStrategy(String strategyID, String newName) async {

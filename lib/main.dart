@@ -23,6 +23,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
@@ -80,10 +81,13 @@ Future<void> main(List<String> args) async {
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
       await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
       await Hive.openBox<int>(HiveBoxNames.pinnedItemsBox);
+      await Hive.openBox<dynamic>(AnalyticsService.storageBoxName);
 
       await MapThemeProfilesProvider.bootstrap();
 
       await StrategyProvider.migrateAllStrategies();
+
+      await AnalyticsService.instance.initialize();
 
       // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
 

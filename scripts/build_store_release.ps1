@@ -1,5 +1,7 @@
 param(
     [string]$OutputDir = "release\out\store",
+    [string]$PostHogProjectToken = $env:POSTHOG_PROJECT_TOKEN,
+    [string]$PostHogHost = $(if ($env:POSTHOG_HOST) { $env:POSTHOG_HOST } else { "https://us.i.posthog.com" }),
     [switch]$SkipPubGet
 )
 
@@ -10,12 +12,41 @@ Set-StrictMode -Version Latest
 
 $repoRoot = Get-RepoRoot -ScriptDirectory $PSScriptRoot
 $env:FLUTTER_ROOT = Get-FlutterRoot -RepoRoot $repoRoot
+$windowsBuildRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath "build\windows"
 
 if (-not $SkipPubGet) {
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("flutter", "pub", "get")
 }
 
-Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("dart", "run", "msix:create")
+$dartDefinesPath = $null
+try {
+    if (Test-Path -LiteralPath $windowsBuildRoot) {
+        Remove-Item -LiteralPath $windowsBuildRoot -Recurse -Force
+    }
+
+    $flutterBuildArguments = @("flutter", "build", "windows", "--release")
+    if (-not [string]::IsNullOrWhiteSpace($PostHogProjectToken)) {
+        $dartDefinesPath = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-dart-defines-{0}.json" -f [guid]::NewGuid())
+        Write-JsonFileUtf8 -Path $dartDefinesPath -Value @{
+            POSTHOG_PROJECT_TOKEN = $PostHogProjectToken
+            POSTHOG_HOST = $PostHogHost
+        }
+        $flutterBuildArguments += "--dart-define-from-file=$dartDefinesPath"
+    }
+    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments $flutterBuildArguments
+    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @(
+        "dart",
+        "run",
+        "msix:create",
+        "--build-windows",
+        "false"
+    )
+}
+finally {
+    if ($null -ne $dartDefinesPath -and (Test-Path -LiteralPath $dartDefinesPath)) {
+        Remove-Item -LiteralPath $dartDefinesPath -Force
+    }
+}
 
 $outputRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath $OutputDir
 if (Test-Path $outputRoot) {

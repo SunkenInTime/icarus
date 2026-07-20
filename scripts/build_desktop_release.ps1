@@ -8,6 +8,8 @@ param(
     [string]$AppArchiveBaseUrl = "https://sunkenintime.github.io/icarus/updates/windows/stable",
     [string]$MetadataTitle,
     [string]$InitialChangeMessage = "Describe this release before publishing.",
+    [string]$PostHogProjectToken = $env:POSTHOG_PROJECT_TOKEN,
+    [string]$PostHogHost = $(if ($env:POSTHOG_HOST) { $env:POSTHOG_HOST } else { "https://us.i.posthog.com" }),
     [switch]$SkipPubGet
 )
 
@@ -23,14 +25,31 @@ if (-not $SkipPubGet) {
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("flutter", "pub", "get")
 }
 
-Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @(
-    "dart",
-    "run",
-    "desktop_updater:release",
-    "windows",
-    "--release",
-    "--dart-define=ICARUS_UPDATE_CHANNEL=$Channel"
-)
+$dartDefinesPath = $null
+try {
+    $releaseArguments = @(
+        "dart",
+        "run",
+        "desktop_updater:release",
+        "windows",
+        "--release",
+        "--dart-define=ICARUS_UPDATE_CHANNEL=$Channel"
+    )
+    if (-not [string]::IsNullOrWhiteSpace($PostHogProjectToken)) {
+        $dartDefinesPath = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-dart-defines-{0}.json" -f [guid]::NewGuid())
+        Write-JsonFileUtf8 -Path $dartDefinesPath -Value @{
+            POSTHOG_PROJECT_TOKEN = $PostHogProjectToken
+            POSTHOG_HOST = $PostHogHost
+        }
+        $releaseArguments += "--dart-define-from-file=$dartDefinesPath"
+    }
+    Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments $releaseArguments
+}
+finally {
+    if ($null -ne $dartDefinesPath -and (Test-Path -LiteralPath $dartDefinesPath)) {
+        Remove-Item -LiteralPath $dartDefinesPath -Force
+    }
+}
 Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("dart", "run", "desktop_updater:archive", "windows")
 Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @("-ExecutionPolicy", "Bypass", "-File", "installer/build_installer.ps1", "-Configuration", "Release")
 
