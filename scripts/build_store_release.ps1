@@ -26,7 +26,7 @@ try {
             POSTHOG_PROJECT_TOKEN = $PostHogProjectToken
             POSTHOG_HOST = $PostHogHost
         }
-        $msixArguments += "--windows-build-args=--dart-define-from-file=$dartDefinesPath"
+        $msixArguments += "--windows-build-args=--dart-define-from-file=`"$dartDefinesPath`""
     }
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments $msixArguments
 }
