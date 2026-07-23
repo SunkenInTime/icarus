@@ -65,6 +65,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.2"
+  buffer:
+    dependency: transitive
+    description:
+      name: buffer
+      sha256: "389da2ec2c16283c8787e0adaede82b1842102f8c8aae2f49003a766c5c6b3d1"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.3"
   build:
     dependency: transitive
     description:
@@ -297,6 +305,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
+  discord_rich_presence:
+    dependency: "direct main"
+    description:
+      name: discord_rich_presence
+      sha256: ed30f3aa310fb96afe1d410ac0263f4f3013943981935332db08a037f340f4fd
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.1"
   equatable:
     dependency: transitive
     description:

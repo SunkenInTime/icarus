@@ -126,6 +126,7 @@ class AppPreferences extends HiveObject {
   final String librarySortOrderName;
   final int drawingColorValue;
   final double drawingThickness;
+  final bool discordPresenceEnabled;
 
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
@@ -144,6 +145,7 @@ class AppPreferences extends HiveObject {
     this.librarySortOrderName = 'ascending',
     this.drawingColorValue = 0xFFFFFFFF,
     this.drawingThickness = Settings.defaultStrokeThickness,
+    this.discordPresenceEnabled = true,
   })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
         customShortcutBindings =
             Map.unmodifiable(customShortcutBindings ?? const {});
@@ -165,6 +167,7 @@ class AppPreferences extends HiveObject {
     String? librarySortOrderName,
     int? drawingColorValue,
     double? drawingThickness,
+    bool? discordPresenceEnabled,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -191,6 +194,8 @@ class AppPreferences extends HiveObject {
       librarySortOrderName: librarySortOrderName ?? this.librarySortOrderName,
       drawingColorValue: drawingColorValue ?? this.drawingColorValue,
       drawingThickness: drawingThickness ?? this.drawingThickness,
+      discordPresenceEnabled:
+          discordPresenceEnabled ?? this.discordPresenceEnabled,
     );
   }
 }
@@ -550,6 +555,12 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
   Future<void> setAutosaveEnabled(bool enabled) {
     return _updatePreferences(
       (current) => current.copyWith(autosaveEnabled: enabled),
+    );
+  }
+
+  Future<void> setDiscordPresenceEnabled(bool enabled) {
+    return _updatePreferences(
+      (current) => current.copyWith(discordPresenceEnabled: enabled),
     );
   }
 

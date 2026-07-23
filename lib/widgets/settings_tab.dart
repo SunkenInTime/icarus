@@ -474,6 +474,19 @@ class _GlobalSettingsSections extends ConsumerWidget {
                       .refreshAutosaveScheduling();
                 },
               ),
+              const _SettingsItemDivider(),
+              _SettingsToggleTile(
+                icon: Icons.sports_esports_outlined,
+                title: "Discord Rich Presence",
+                description:
+                    "Show the current map and attack or defense side on your Discord profile. Strategy names are never shared.",
+                value: appPreferences.discordPresenceEnabled,
+                onChanged: (value) {
+                  ref
+                      .read(appPreferencesProvider.notifier)
+                      .setDiscordPresenceEnabled(value);
+                },
+              ),
             ],
           ),
         ),
