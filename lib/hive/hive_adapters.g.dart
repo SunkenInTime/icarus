@@ -1324,13 +1324,14 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       drawingThickness: fields[15] == null
           ? Settings.defaultStrokeThickness
           : (fields[15] as num).toDouble(),
+      discordPresenceEnabled: fields[17] == null ? true : fields[17] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(16)
+      ..writeByte(17)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1362,7 +1363,9 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(14)
       ..write(obj.drawingColorValue)
       ..writeByte(15)
-      ..write(obj.drawingThickness);
+      ..write(obj.drawingThickness)
+      ..writeByte(17)
+      ..write(obj.discordPresenceEnabled);
   }
 
   @override

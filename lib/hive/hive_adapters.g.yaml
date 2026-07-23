@@ -443,7 +443,7 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 17
+    nextIndex: 18
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0
@@ -477,6 +477,8 @@ types:
         index: 14
       drawingThickness:
         index: 15
+      discordPresenceEnabled:
+        index: 17
   PlacedViewConeAgent:
     typeId: 29
     nextIndex: 10

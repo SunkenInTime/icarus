@@ -19,11 +19,16 @@ import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/second_instance_args.dart';
 import 'package:icarus/const/settings.dart' show Settings;
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
@@ -217,6 +222,13 @@ class MyApp extends ConsumerStatefulWidget {
 
 class _MyAppState extends ConsumerState<MyApp> {
   StreamSubscription<List<String>>? _secondInstanceSub;
+  late final DiscordPresenceService _discordPresence;
+  ProviderSubscription<StrategyState>? _discordStrategySub;
+  ProviderSubscription<MapState>? _discordMapSub;
+  ProviderSubscription<AppPreferences>? _discordPreferencesSub;
+  ProviderSubscription<List<PlacedAgentNode>>? _discordAgentSub;
+  ProviderSubscription<List<PlacedAbility>>? _discordAbilitySub;
+  Timer? _discordSyncDebounce;
 
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
     try {
@@ -234,6 +246,30 @@ class _MyAppState extends ConsumerState<MyApp> {
   @override
   void initState() {
     super.initState();
+
+    _discordPresence = DiscordPresenceService();
+    _discordStrategySub = ref.listenManual(
+      strategyProvider,
+      (_, __) => _scheduleDiscordSync(),
+    );
+    _discordMapSub = ref.listenManual(
+      mapProvider,
+      (_, __) => _scheduleDiscordSync(),
+    );
+    _discordAgentSub = ref.listenManual(
+      agentProvider,
+      (_, __) => _scheduleDiscordSync(),
+    );
+    _discordAbilitySub = ref.listenManual(
+      abilityProvider,
+      (_, __) => _scheduleDiscordSync(),
+    );
+    _discordPreferencesSub = ref.listenManual(
+      appPreferencesProvider,
+      (_, __) => _syncDiscordPresence(),
+    );
+
+    unawaited(_syncDiscordPresence());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.data.isEmpty) return;
@@ -263,7 +299,43 @@ class _MyAppState extends ConsumerState<MyApp> {
   @override
   void dispose() {
     _secondInstanceSub?.cancel();
+    _discordSyncDebounce?.cancel();
+    _discordStrategySub?.close();
+    _discordMapSub?.close();
+    _discordAgentSub?.close();
+    _discordAbilitySub?.close();
+    _discordPreferencesSub?.close();
+    unawaited(_discordPresence.dispose());
     super.dispose();
+  }
+
+  /// Coalesces rapid state changes (e.g. placing several agents in a row)
+  /// into one presence update, keeping well under Discord's rate limit.
+  void _scheduleDiscordSync() {
+    _discordSyncDebounce?.cancel();
+    _discordSyncDebounce = Timer(
+      const Duration(seconds: 2),
+      () => unawaited(_syncDiscordPresence()),
+    );
+  }
+
+  Future<void> _syncDiscordPresence() async {
+    if (!mounted) return;
+
+    final preferences = ref.read(appPreferencesProvider);
+    if (!preferences.discordPresenceEnabled) {
+      await _discordPresence.clear();
+      return;
+    }
+
+    await _discordPresence.update(
+      DiscordPresenceData.fromAppState(
+        strategy: ref.read(strategyProvider),
+        map: ref.read(mapProvider),
+        agentCount: ref.read(agentProvider).length,
+        abilityCount: ref.read(abilityProvider).length,
+      ),
+    );
   }
 
   @override
