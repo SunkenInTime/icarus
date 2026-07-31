@@ -25,7 +25,7 @@ class FfmpegVideoEncoder {
       RegExp(r'time=(\d+):(\d{2}):(\d{2})\.(\d+)');
 
   /// The packaged binary ships next to the executable (ADR 0004); a PATH
-  /// install is the local-development fallback.
+  /// install is the local-development fallback on non-Windows platforms.
   static Future<String?> resolveBinary() async {
     if (Platform.isWindows) {
       final exeDir = File(Platform.resolvedExecutable).parent.path;
@@ -36,12 +36,13 @@ class FfmpegVideoEncoder {
       for (final candidate in candidates) {
         if (File(candidate).existsSync()) return candidate;
       }
+      // No PATH fallback on Windows: `where` resolves the working directory
+      // first, so a planted ffmpeg.exe could be launched. Stage the bundled
+      // binary instead (scripts/fetch_ffmpeg.ps1).
+      return null;
     }
     try {
-      final probe = await Process.run(
-        Platform.isWindows ? 'where' : 'which',
-        ['ffmpeg'],
-      );
+      final probe = await Process.run('which', ['ffmpeg']);
       if (probe.exitCode == 0) {
         final line = (probe.stdout as String)
             .split(RegExp(r'\r?\n'))
@@ -91,9 +92,23 @@ class FfmpegVideoEncoder {
             ['-c:v', 'mpeg4', '-q:v', '3'],
           ];
 
+    // `-y` truncates the user-chosen path immediately, so a failed or
+    // cancelled encode must not leave a broken .mp4 behind.
+    Future<void> removePartialOutput() async {
+      try {
+        final output = File(outputPath);
+        if (await output.exists()) await output.delete();
+      } on Object {
+        // Best effort only.
+      }
+    }
+
     var lastLog = '';
     for (final codec in codecAttempts) {
-      if (_cancelled) throw VideoExportCancelled();
+      if (_cancelled) {
+        await removePartialOutput();
+        throw VideoExportCancelled();
+      }
       final args = [...baseArgs, ...codec, outputPath];
       final stderrBuffer = StringBuffer();
       final process = await Process.start(
@@ -120,7 +135,10 @@ class FfmpegVideoEncoder {
       final exitCode = await process.exitCode;
       await stderrDone;
       _process = null;
-      if (_cancelled) throw VideoExportCancelled();
+      if (_cancelled) {
+        await removePartialOutput();
+        throw VideoExportCancelled();
+      }
       if (exitCode == 0) {
         onProgress?.call(1.0);
         return;
@@ -128,6 +146,7 @@ class FfmpegVideoEncoder {
       lastLog = stderrBuffer.toString();
       log('ffmpeg (${codec.join(' ')}) exited with $exitCode');
     }
+    await removePartialOutput();
     final tail = lastLog.split('\n').where((l) => l.trim().isNotEmpty).toList();
     throw VideoExportException(
       'ffmpeg failed: ${tail.isEmpty ? 'unknown error' : tail.last}',

@@ -37,7 +37,16 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   VideoExporter? _exporter;
   double _progress = 0;
   String _progressLabel = '';
+  bool _exportRunning = false;
   bool get _isExporting => _exporter != null;
+
+  @override
+  void dispose() {
+    // Closing the dialog mid-export must not leave frames rendering and
+    // ffmpeg encoding in the background.
+    _exporter?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -54,7 +63,21 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   }
 
   Future<void> _export() async {
-    if (_selectedPageIds.isEmpty) return;
+    // The Export button stays enabled while the file picker is open; a
+    // second tap must not start a second export.
+    if (_exportRunning || _selectedPageIds.isEmpty) return;
+    _exportRunning = true;
+    try {
+      await _runExport();
+    } finally {
+      _exportRunning = false;
+    }
+  }
+
+  Future<void> _runExport() async {
+    // The root container outlives this dialog, so cleanup after a
+    // mid-export dismissal can still reach the live providers.
+    final container = ProviderScope.containerOf(context, listen: false);
 
     final stepDuration =
         Duration(milliseconds: (_stepDurationSeconds * 1000).round());
@@ -164,11 +187,11 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       );
     } finally {
       CoordinateSystem.instance.setIsScreenshot(false);
+      container.read(screenshotProvider.notifier).setIsScreenShot(false);
+      container
+          .read(drawingProvider.notifier)
+          .rebuildAllPaths(CoordinateSystem.instance);
       if (mounted) {
-        ref.read(screenshotProvider.notifier).setIsScreenShot(false);
-        ref
-            .read(drawingProvider.notifier)
-            .rebuildAllPaths(CoordinateSystem.instance);
         setState(() {
           _exporter = null;
         });
