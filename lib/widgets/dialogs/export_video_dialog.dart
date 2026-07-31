@@ -54,9 +54,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   }
 
   Future<void> _export() async {
-    final selectedPages =
-        _pages.where((p) => _selectedPageIds.contains(p.id)).toList();
-    if (selectedPages.isEmpty) return;
+    if (_selectedPageIds.isEmpty) return;
 
     final stepDuration =
         Duration(milliseconds: (_stepDurationSeconds * 1000).round());
@@ -90,6 +88,14 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     final doc =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
     if (doc == null || !mounted) return;
+
+    // Resolve pages from the freshly saved document — the dialog's initial
+    // snapshot may predate unsaved edits on the active page.
+    final selectedPages = ([...doc.pages]
+          ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex)))
+        .where((p) => _selectedPageIds.contains(p.id))
+        .toList();
+    if (selectedPages.isEmpty) return;
 
     final mapState = ref.read(mapProvider);
     VisionGeometryMap? geometry;

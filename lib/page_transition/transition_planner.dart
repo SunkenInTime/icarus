@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 
 /// Shared page-transition planning used by both the live page switch and the
@@ -101,15 +102,16 @@ class TransitionPlanner {
   }
 
   /// Whether the drawing layer changes between two pages, and therefore
-  /// whether it should fade in early during the transition.
+  /// whether it should fade in early during the transition. Compares the
+  /// serialized form so geometry/style edits count, not just added or
+  /// removed strokes.
   static bool drawingsChanged(
     List<DrawingElement> prev,
     List<DrawingElement> next,
   ) {
+    if (identical(prev, next)) return false;
     if (prev.length != next.length) return true;
-    for (var i = 0; i < prev.length; i++) {
-      if (prev[i].id != next[i].id) return true;
-    }
-    return false;
+    return DrawingProvider.objectToJson(prev) !=
+        DrawingProvider.objectToJson(next);
   }
 }
