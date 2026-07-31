@@ -1325,13 +1325,15 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
           ? Settings.defaultStrokeThickness
           : (fields[15] as num).toDouble(),
       discordPresenceEnabled: fields[17] == null ? true : fields[17] as bool,
+      videoExportStepDurationSeconds:
+          fields[18] == null ? 3.0 : (fields[18] as num).toDouble(),
     );
   }
 
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(17)
+      ..writeByte(18)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1365,7 +1367,9 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(15)
       ..write(obj.drawingThickness)
       ..writeByte(17)
-      ..write(obj.discordPresenceEnabled);
+      ..write(obj.discordPresenceEnabled)
+      ..writeByte(18)
+      ..write(obj.videoExportStepDurationSeconds);
   }
 
   @override

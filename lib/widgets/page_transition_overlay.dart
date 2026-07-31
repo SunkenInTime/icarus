@@ -8,6 +8,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/page_transition/agent_path.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
@@ -16,8 +17,6 @@ import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_w
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
-
-const Curve _pageTransitionCurve = Curves.easeOutCubic;
 
 Offset _overlayScreenPosition({
   required PlacedWidget widget,
@@ -53,79 +52,77 @@ Offset _overlayScreenPosition({
   return screen;
 }
 
-class PageTransitionOverlay extends ConsumerStatefulWidget {
-  const PageTransitionOverlay({super.key});
+/// Pure, progress-parameterized rendering of a set of transition entries.
+/// Shared by the live [PageTransitionOverlay] and the video exporter, so the
+/// exported frames can never drift from the in-app page switch.
+class TransitionEntriesLayer extends ConsumerWidget {
+  const TransitionEntriesLayer({
+    super.key,
+    required this.entries,
+    required this.agentPaths,
+    required this.t,
+    required this.direction,
+    required this.agentSize,
+    required this.abilitySize,
+  });
+
+  final List<PageTransitionEntry> entries;
+  final Map<String, AgentTransitionPath> agentPaths;
+
+  /// Curved progress in [0, 1].
+  final double t;
+  final PageTransitionDirection direction;
+
+  /// Marker sizes already interpolated for [t].
+  final double agentSize;
+  final double abilitySize;
 
   @override
-  ConsumerState<ConsumerStatefulWidget> createState() =>
-      _PageTransitionOverlayState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1.0;
+    final orderedEntries = [...entries]..sort(PageLayering.compareEntries);
+    final renderer = _EntryRenderer(
+      coordinateSystem: CoordinateSystem.instance,
+      mapScale: mapScale,
+      direction: direction,
+      agentSize: agentSize,
+      abilitySize: abilitySize,
+      agentPaths: agentPaths,
+      t: t,
+    );
+
+    return IgnorePointer(
+      ignoring: true,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          for (final entry in orderedEntries) renderer.buildEntry(entry),
+        ],
+      ),
+    );
+  }
 }
 
-class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
-    with TickerProviderStateMixin {
-  AnimationController? _controller;
-  int? _activeTransitionId;
+class _EntryRenderer {
+  const _EntryRenderer({
+    required this.coordinateSystem,
+    required this.mapScale,
+    required this.direction,
+    required this.agentSize,
+    required this.abilitySize,
+    required this.agentPaths,
+    required this.t,
+  });
 
-  @override
-  void initState() {
-    super.initState();
-    _ensureController(kPageTransitionDuration);
-  }
+  final CoordinateSystem coordinateSystem;
+  final double mapScale;
+  final PageTransitionDirection direction;
+  final double agentSize;
+  final double abilitySize;
+  final Map<String, AgentTransitionPath> agentPaths;
+  final double t;
 
-  void _ensureController(Duration duration) {
-    if (_controller == null) {
-      _controller = AnimationController(vsync: this, duration: duration)
-        ..addListener(() {
-          ref
-              .read(transitionProvider.notifier)
-              .setProgress(_pageTransitionCurve.transform(_controller!.value));
-          setState(() {});
-        })
-        ..addStatusListener((status) {
-          if (status == AnimationStatus.completed) {
-            final notifier = ref.read(transitionProvider.notifier);
-            Future.microtask(() {
-              notifier.complete();
-            });
-          }
-        });
-      return;
-    }
-    if (_controller!.duration != duration) {
-      _controller!.duration = duration;
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller?.dispose();
-    super.dispose();
-  }
-
-  void _syncAnimation(PageTransitionState state) {
-    _ensureController(state.duration);
-    if (!state.active) {
-      return;
-    }
-    if (_activeTransitionId == state.transitionId) {
-      return;
-    }
-    _activeTransitionId = state.transitionId;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final latest = ref.read(transitionProvider);
-      if (!latest.active || latest.transitionId != _activeTransitionId) return;
-      _controller!.forward(from: 0);
-    });
-  }
-
-  Offset _startScreenPosition(
-    PageTransitionEntry entry,
-    CoordinateSystem coordinateSystem,
-    double agentSize,
-    double abilitySize,
-  ) {
-    final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0;
+  Offset _startScreenPosition(PageTransitionEntry entry) {
     return _overlayScreenPosition(
       widget: entry.from ?? entry.to!,
       coordinateSystem: coordinateSystem,
@@ -136,13 +133,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     );
   }
 
-  Offset _endScreenPosition(
-    PageTransitionEntry entry,
-    CoordinateSystem coordinateSystem,
-    double agentSize,
-    double abilitySize,
-  ) {
-    final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0;
+  Offset _endScreenPosition(PageTransitionEntry entry) {
     return _overlayScreenPosition(
       widget: entry.to ?? entry.from!,
       coordinateSystem: coordinateSystem,
@@ -153,15 +144,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     );
   }
 
-  Widget _buildEntry({
-    required PageTransitionEntry entry,
-    required double t,
-    required CoordinateSystem coordinateSystem,
-    required PageTransitionDirection direction,
-    required double agentSize,
-    required double abilitySize,
-    required double progress,
-  }) {
+  Widget buildEntry(PageTransitionEntry entry) {
     final directionalOffset = coordinateSystem.scale(28);
     final directionSign =
         direction == PageTransitionDirection.forward ? 1.0 : -1.0;
@@ -170,12 +153,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
         return _overlayItem(
           key: ValueKey('none_${entry.id}'),
           widget: entry.to!,
-          pos: _endScreenPosition(
-            entry,
-            coordinateSystem,
-            agentSize,
-            abilitySize,
-          ),
+          pos: _endScreenPosition(entry),
           coordinatePosition: entry.endPos,
           opacity: 1,
           length: entry.endLength,
@@ -187,8 +165,6 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           customWidth: entry.endCustomWidth,
           customLength: entry.endCustomLength,
           deadStateProgress: _deadStateProgressForEntry(entry, 1),
-          agentSize: agentSize,
-          abilitySize: abilitySize,
         );
       case TransitionKind.disappear:
         final screenTranslation = Offset(
@@ -200,12 +176,8 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
               coordinateSystem.screenWidthToWorld(screenTranslation.dx),
               0,
             );
-        final start = _startScreenPosition(
-          entry,
-          coordinateSystem,
-          agentSize,
-          abilitySize,
-        ).translate(screenTranslation.dx, screenTranslation.dy);
+        final start = _startScreenPosition(entry)
+            .translate(screenTranslation.dx, screenTranslation.dy);
         return _overlayItem(
           key: ValueKey('disappear_${entry.id}'),
           widget: entry.from!,
@@ -221,24 +193,12 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           customWidth: entry.startCustomWidth,
           customLength: entry.startCustomLength,
           deadStateProgress: _deadStateProgressForEntry(entry, 0),
-          agentSize: agentSize,
-          abilitySize: abilitySize,
         );
       case TransitionKind.move:
-        final start = _startScreenPosition(
-          entry,
-          coordinateSystem,
-          agentSize,
-          abilitySize,
-        );
-        final end = _endScreenPosition(
-          entry,
-          coordinateSystem,
-          agentSize,
-          abilitySize,
-        );
-        final agentPath = ref.read(transitionProvider).agentPaths[entry.id];
-        final pathPosition = agentPath?.positionAt(progress);
+        final start = _startScreenPosition(entry);
+        final end = _endScreenPosition(entry);
+        final agentPath = agentPaths[entry.id];
+        final pathPosition = agentPath?.positionAt(t);
         final pathTopLeft = pathPosition == null
             ? null
             : pathPosition -
@@ -254,8 +214,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
                 coordinateSystem: coordinateSystem,
                 coordinatePosition: coordinatePosition,
                 agentSize: agentSize,
-                mapScale:
-                    Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0,
+                mapScale: mapScale,
                 abilitySize: abilitySize,
               );
         return _overlayItem(
@@ -289,8 +248,6 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
             entry.endCustomLength,
             t,
           ),
-          agentSize: agentSize,
-          abilitySize: abilitySize,
         );
       case TransitionKind.appear:
         final screenTranslation = Offset(
@@ -302,18 +259,17 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
               coordinateSystem.screenWidthToWorld(screenTranslation.dx),
               0,
             );
-        final end = _endScreenPosition(
-          entry,
-          coordinateSystem,
-          agentSize,
-          abilitySize,
-        ).translate(screenTranslation.dx, screenTranslation.dy);
+        final end = _endScreenPosition(entry)
+            .translate(screenTranslation.dx, screenTranslation.dy);
+        // Images fade in early (front-loaded), like the drawing layer.
+        final appearOpacity =
+            entry.to is PlacedImage ? earlyFadeInOpacity(t) : t;
         return _overlayItem(
           key: ValueKey('appear_${entry.id}'),
           widget: entry.to!,
           pos: end,
           coordinatePosition: coordinatePosition,
-          opacity: t,
+          opacity: appearOpacity,
           length: entry.endLength,
           armLengthsMeters: entry.endArmLengths,
           rotation: entry.endRotation,
@@ -323,54 +279,8 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
           customWidth: entry.endCustomWidth,
           customLength: entry.endCustomLength,
           deadStateProgress: _deadStateProgressForEntry(entry, 1),
-          agentSize: agentSize,
-          abilitySize: abilitySize,
         );
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final coord = CoordinateSystem.instance;
-    final state = ref.watch(transitionProvider);
-    _syncAnimation(state);
-
-    if (!state.active) {
-      return const SizedBox.shrink();
-    }
-
-    final t = _pageTransitionCurve.transform(_controller!.value);
-    final agentSize = _lerpRequired(
-      state.startAgentSize,
-      state.endAgentSize,
-      t,
-    );
-    final abilitySize = _lerpRequired(
-      state.startAbilitySize,
-      state.endAbilitySize,
-      t,
-    );
-    final orderedEntries = [...state.entries]
-      ..sort(PageLayering.compareEntries);
-
-    return IgnorePointer(
-      ignoring: true,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          for (final entry in orderedEntries)
-            _buildEntry(
-              entry: entry,
-              t: t,
-              coordinateSystem: coord,
-              direction: state.direction,
-              agentSize: agentSize,
-              abilitySize: abilitySize,
-              progress: t,
-            ),
-        ],
-      ),
-    );
   }
 
   double? _lerpAngle(double? a, double? b, double t) {
@@ -438,10 +348,7 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     double? customWidth,
     double? customLength,
     double? deadStateProgress,
-    required double agentSize,
-    required double abilitySize,
   }) {
-    final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap]!;
     Widget child = PlacedWidgetPreview.build(
       widget,
       mapScale,
@@ -469,8 +376,8 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
               .abilityData!
               .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
               .scale(
-                CoordinateSystem.instance.scaleFactor,
-                CoordinateSystem.instance.scaleFactor,
+                coordinateSystem.scaleFactor,
+                coordinateSystem.scaleFactor,
               ),
           child: child,
         );
@@ -484,8 +391,8 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
             agentSize: agentSize,
             abilitySize: abilitySize,
           ).scale(
-            CoordinateSystem.instance.scaleFactor,
-            CoordinateSystem.instance.scaleFactor,
+            coordinateSystem.scaleFactor,
+            coordinateSystem.scaleFactor,
           ),
           child: child,
         );
@@ -512,6 +419,106 @@ class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
     }
     return widget is PlacedUtility;
   }
+}
+
+class PageTransitionOverlay extends ConsumerStatefulWidget {
+  const PageTransitionOverlay({super.key});
+
+  @override
+  ConsumerState<ConsumerStatefulWidget> createState() =>
+      _PageTransitionOverlayState();
+}
+
+class _PageTransitionOverlayState extends ConsumerState<PageTransitionOverlay>
+    with TickerProviderStateMixin {
+  AnimationController? _controller;
+  int? _activeTransitionId;
+
+  @override
+  void initState() {
+    super.initState();
+    _ensureController(kPageTransitionDuration);
+  }
+
+  void _ensureController(Duration duration) {
+    if (_controller == null) {
+      _controller = AnimationController(vsync: this, duration: duration)
+        ..addListener(() {
+          ref
+              .read(transitionProvider.notifier)
+              .setProgress(kPageTransitionCurve.transform(_controller!.value));
+          setState(() {});
+        })
+        ..addStatusListener((status) {
+          if (status == AnimationStatus.completed) {
+            final notifier = ref.read(transitionProvider.notifier);
+            Future.microtask(() {
+              notifier.complete();
+            });
+          }
+        });
+      return;
+    }
+    if (_controller!.duration != duration) {
+      _controller!.duration = duration;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  void _syncAnimation(PageTransitionState state) {
+    _ensureController(state.duration);
+    if (!state.active) {
+      return;
+    }
+    if (_activeTransitionId == state.transitionId) {
+      return;
+    }
+    _activeTransitionId = state.transitionId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final latest = ref.read(transitionProvider);
+      if (!latest.active || latest.transitionId != _activeTransitionId) return;
+      _controller!.forward(from: 0);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(transitionProvider);
+    _syncAnimation(state);
+
+    if (!state.active) {
+      return const SizedBox.shrink();
+    }
+
+    final t = kPageTransitionCurve.transform(_controller!.value);
+    final agentSize = _lerpRequired(
+      state.startAgentSize,
+      state.endAgentSize,
+      t,
+    );
+    final abilitySize = _lerpRequired(
+      state.startAbilitySize,
+      state.endAbilitySize,
+      t,
+    );
+
+    return TransitionEntriesLayer(
+      entries: state.entries,
+      agentPaths: state.agentPaths,
+      t: t,
+      direction: state.direction,
+      agentSize: agentSize,
+      abilitySize: abilitySize,
+    );
+  }
+
+  double _lerpRequired(double a, double b, double t) => a + (b - a) * t;
 }
 
 class PlacedWidgetPreview {

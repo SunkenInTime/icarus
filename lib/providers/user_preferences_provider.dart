@@ -127,6 +127,7 @@ class AppPreferences extends HiveObject {
   final int drawingColorValue;
   final double drawingThickness;
   final bool discordPresenceEnabled;
+  final double videoExportStepDurationSeconds;
 
   AppPreferences({
     required this.defaultThemeProfileIdForNewStrategies,
@@ -146,6 +147,7 @@ class AppPreferences extends HiveObject {
     this.drawingColorValue = 0xFFFFFFFF,
     this.drawingThickness = Settings.defaultStrokeThickness,
     this.discordPresenceEnabled = true,
+    this.videoExportStepDurationSeconds = 3.0,
   })  : customColorValues = List.unmodifiable(customColorValues ?? const []),
         customShortcutBindings =
             Map.unmodifiable(customShortcutBindings ?? const {});
@@ -168,6 +170,7 @@ class AppPreferences extends HiveObject {
     int? drawingColorValue,
     double? drawingThickness,
     bool? discordPresenceEnabled,
+    double? videoExportStepDurationSeconds,
   }) {
     return AppPreferences(
       defaultThemeProfileIdForNewStrategies:
@@ -196,6 +199,8 @@ class AppPreferences extends HiveObject {
       drawingThickness: drawingThickness ?? this.drawingThickness,
       discordPresenceEnabled:
           discordPresenceEnabled ?? this.discordPresenceEnabled,
+      videoExportStepDurationSeconds: videoExportStepDurationSeconds ??
+          this.videoExportStepDurationSeconds,
     );
   }
 }
@@ -634,6 +639,14 @@ class AppPreferencesNotifier extends Notifier<AppPreferences> {
       (current) => current.copyWith(
         librarySortByName: sortByName,
         librarySortOrderName: sortOrderName,
+      ),
+    );
+  }
+
+  Future<void> setVideoExportStepDurationSeconds(double seconds) {
+    return _updatePreferences(
+      (current) => current.copyWith(
+        videoExportStepDurationSeconds: seconds.clamp(1.0, 30.0),
       ),
     );
   }

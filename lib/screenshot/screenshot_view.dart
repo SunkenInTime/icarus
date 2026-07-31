@@ -65,6 +65,8 @@ class ScreenshotView extends ConsumerWidget {
     @Deprecated('Use lineUpGroups instead') List<LineUp> lineUps = const [],
     required this.themeProfileId,
     required this.themeOverridePalette,
+    this.placedWidgetsOverride,
+    this.drawingsOpacity = 1.0,
   }) : lineUpGroups = lineUpGroups.isNotEmpty
             ? lineUpGroups
             : lineUps.map(LineUpGroup.fromLegacyLineUp).toList();
@@ -85,6 +87,13 @@ class ScreenshotView extends ConsumerWidget {
   final List<LineUpGroup> lineUpGroups;
   final String? themeProfileId;
   final MapThemePalette? themeOverridePalette;
+
+  /// Video export renders transition frames by swapping the placed-widget
+  /// layer for a [TransitionEntriesLayer] at a fixed progress.
+  final Widget? placedWidgetsOverride;
+
+  /// Video export fades the drawing layer in early during transitions.
+  final double drawingsOpacity;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -205,19 +214,22 @@ class ScreenshotView extends ConsumerWidget {
                 ),
               ),
             ),
-          const Positioned.fill(
-            child: PlacedWidgetBuilder(),
+          Positioned.fill(
+            child: placedWidgetsOverride ?? const PlacedWidgetBuilder(),
           ),
 
           //Painting
           Positioned.fill(
             // Mirror the live map so defense-side screenshots flip drawings too.
-            child: Transform.flip(
-              flipX: !isAttack,
-              flipY: !isAttack,
-              child: InteractivePainter(
-                mapScaleOverride: Maps.mapScale[mapValue] ?? 1.0,
-                isAttackOverride: isAttack,
+            child: Opacity(
+              opacity: drawingsOpacity,
+              child: Transform.flip(
+                flipX: !isAttack,
+                flipY: !isAttack,
+                child: InteractivePainter(
+                  mapScaleOverride: Maps.mapScale[mapValue] ?? 1.0,
+                  isAttackOverride: isAttack,
+                ),
               ),
             ),
           ),

@@ -1,5 +1,4 @@
-import 'dart:ui';
-
+import 'package:flutter/animation.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -8,6 +7,18 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 
 enum TransitionKind { move, appear, disappear, none }
+
+/// Easing shared by the live page-transition overlay and the video exporter,
+/// so exported frames sample the exact motion users see in the editor.
+const Curve kPageTransitionCurve = Curves.easeOutCubic;
+
+/// Drawings and images fade in during the early portion of a page
+/// transition; they are fully visible once the (curved) progress reaches
+/// this fraction.
+const double kEarlyFadeInEnd = 0.5;
+
+double earlyFadeInOpacity(double progress) =>
+    (progress / kEarlyFadeInEnd).clamp(0.0, 1.0);
 
 enum PageTransitionDirection { forward, backward }
 

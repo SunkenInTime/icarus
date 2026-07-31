@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, listEquals, visibleForTesting;
+    show kIsWeb, visibleForTesting;
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -45,6 +45,7 @@ import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/page_transition/agent_path.dart';
+import 'package:icarus/page_transition/transition_planner.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:path/path.dart' as path;
@@ -1051,13 +1052,23 @@ class StrategyProvider extends Notifier<StrategyState> {
     final targetPageId = pageID;
     final startSettings = ref.read(strategySettingsProvider);
 
+    final targetPage = orderedPages.firstWhere(
+      (p) => p.id == pageID,
+      orElse: () => orderedPages.first,
+    );
+    final fadeInDrawings = TransitionPlanner.drawingsChanged(
+      ref.read(drawingProvider).elements,
+      targetPage.drawingData,
+    );
+
     final prev = _snapshotAllPlaced();
     transitionNotifier.prepare(prev.values.toList(),
         direction: resolvedDirection,
         startAgentSize: startSettings.agentSize,
         startAbilitySize: startSettings.abilitySize,
         sourcePageId: sourcePageId,
-        targetPageId: targetPageId);
+        targetPageId: targetPageId,
+        fadeInDrawings: fadeInDrawings);
 
     // Load target page (hydrates providers)
     await setActivePage(pageID);
@@ -1065,7 +1076,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final preliminaryNext = _snapshotAllPlaced();
       final preliminaryEntries = _diffToTransitions(prev, preliminaryNext);
-      if (preliminaryEntries.isEmpty) {
+      if (preliminaryEntries.isEmpty && !fadeInDrawings) {
         transitionNotifier.complete();
         return;
       }
@@ -1106,7 +1117,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       // can never reach start(), even when page IDs did not change.
       final next = _snapshotAllPlaced();
       final entries = _diffToTransitions(prev, next);
-      if (entries.isEmpty) {
+      if (entries.isEmpty && !fadeInDrawings) {
         transitionNotifier.complete();
         return;
       }
@@ -1131,6 +1142,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         sourcePageId: sourcePageId,
         targetPageId: targetPageId,
         agentPaths: agentPaths,
+        fadeInDrawings: fadeInDrawings,
       );
     });
   }
@@ -1148,57 +1160,8 @@ class StrategyProvider extends Notifier<StrategyState> {
   List<PageTransitionEntry> _diffToTransitions(
     Map<String, PlacedWidget> prev,
     Map<String, PlacedWidget> next,
-  ) {
-    final entries = <PageTransitionEntry>[];
-    var order = 0;
-
-    // Move / appear
-    next.forEach((id, to) {
-      final from = prev[id];
-      if (from != null) {
-        if (from.position != to.position ||
-            PageTransitionEntry.rotationOf(from) !=
-                PageTransitionEntry.rotationOf(to) ||
-            PageTransitionEntry.lengthOf(from) !=
-                PageTransitionEntry.lengthOf(to) ||
-            !listEquals(
-              PageTransitionEntry.armLengthsOf(from),
-              PageTransitionEntry.armLengthsOf(to),
-            ) ||
-            PageTransitionEntry.scaleOf(from) !=
-                PageTransitionEntry.scaleOf(to) ||
-            PageTransitionEntry.textSizeOf(from) !=
-                PageTransitionEntry.textSizeOf(to) ||
-            PageTransitionEntry.agentStateOf(from) !=
-                PageTransitionEntry.agentStateOf(to) ||
-            PageTransitionEntry.customDiameterOf(from) !=
-                PageTransitionEntry.customDiameterOf(to) ||
-            PageTransitionEntry.customWidthOf(from) !=
-                PageTransitionEntry.customWidthOf(to) ||
-            PageTransitionEntry.customLengthOf(from) !=
-                PageTransitionEntry.customLengthOf(to)) {
-          entries
-              .add(PageTransitionEntry.move(from: from, to: to, order: order));
-        } else {
-          // Unchanged: include as 'none' so it stays visible while base view is hidden
-          entries.add(PageTransitionEntry.none(to: to, order: order));
-        }
-      } else {
-        entries.add(PageTransitionEntry.appear(to: to, order: order));
-      }
-      order++;
-    });
-
-    // Disappear
-    prev.forEach((id, from) {
-      if (!next.containsKey(id)) {
-        entries.add(PageTransitionEntry.disappear(from: from, order: order));
-        order++;
-      }
-    });
-
-    return entries;
-  }
+  ) =>
+      TransitionPlanner.diff(prev, next);
 
   Future<void> addPage([String? name]) async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
