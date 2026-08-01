@@ -80,6 +80,11 @@ class FfmpegVideoEncoder {
       '-safe', '0',
       '-i', concatListFileName,
       '-vf', 'fps=60,format=yuv420p',
+      // The concat playlist repeats its final still so FFmpeg honors that
+      // entry's duration. Some FFmpeg builds inherit the duration on the
+      // repeated file and hold the final page twice, so cap the output to the
+      // duration planned by VideoExporter.
+      '-t', totalSeconds.toStringAsFixed(6),
       '-movflags', '+faststart',
     ];
     final codecAttempts = Platform.isWindows
