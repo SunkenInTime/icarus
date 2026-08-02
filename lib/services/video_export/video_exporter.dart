@@ -37,6 +37,20 @@ class VideoExporter {
 
   static const int fps = 60;
 
+  static int get transitionFrameCount =>
+      (kPageTransitionDuration.inMilliseconds * fps / 1000).round();
+
+  /// Duration the 60 fps video can represent for one page transition.
+  static double get encodedTransitionSeconds => transitionFrameCount / fps;
+
+  static double plannedDurationSeconds({
+    required int pageCount,
+    required double stepSeconds,
+  }) {
+    if (pageCount <= 0) return 0;
+    return pageCount * stepSeconds + (pageCount - 1) * encodedTransitionSeconds;
+  }
+
   /// Frame-rendering dominates wall time; encoding is the short tail.
   static const double _renderWeight = 0.85;
 
@@ -61,13 +75,14 @@ class VideoExporter {
       throw VideoExportException('No pages selected.');
     }
 
-    final transitionFrames =
-        (kPageTransitionDuration.inMilliseconds * fps / 1000).round();
+    final transitionFrames = transitionFrameCount;
     const frameInterval = 1.0 / fps;
     final stepSeconds = stepDuration.inMilliseconds / 1000.0;
     final totalFrames = pages.length + (pages.length - 1) * transitionFrames;
-    final totalSeconds = pages.length * stepSeconds +
-        (pages.length - 1) * kPageTransitionDuration.inMilliseconds / 1000.0;
+    final totalSeconds = plannedDurationSeconds(
+      pageCount: pages.length,
+      stepSeconds: stepSeconds,
+    );
 
     final tempDir =
         await Directory.systemTemp.createTemp('icarus_video_export_');
