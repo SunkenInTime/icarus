@@ -9,28 +9,33 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 /// `ScreenshotController.captureFromWidget` needs to render it offscreen at
 /// [CoordinateSystem.screenShotSize]. Shared by the PNG screenshot flow and
 /// the video exporter.
-Widget wrapForOffscreenCapture(Widget child) {
-  return ProviderScope(
-    child: MediaQuery(
-      data: const MediaQueryData(size: CoordinateSystem.screenShotSize),
-      child: ShadApp.custom(
-        themeMode: ThemeMode.dark,
-        darkTheme: ShadThemeData(
-          brightness: Brightness.dark,
-          colorScheme: Settings.tacticalVioletTheme,
-          breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
-        ),
-        appBuilder: (context) {
-          return MaterialApp(
-            theme: Theme.of(context),
-            debugShowCheckedModeBanner: false,
-            home: child,
-            builder: (context, child) {
-              return Portal(child: ShadAppBuilder(child: child!));
-            },
-          );
-        },
+Widget wrapForOffscreenCapture(
+  Widget child, {
+  ProviderContainer? container,
+}) {
+  final app = MediaQuery(
+    data: const MediaQueryData(size: CoordinateSystem.screenShotSize),
+    child: ShadApp.custom(
+      themeMode: ThemeMode.dark,
+      darkTheme: ShadThemeData(
+        brightness: Brightness.dark,
+        colorScheme: Settings.tacticalVioletTheme,
+        breadcrumbTheme: const ShadBreadcrumbTheme(separatorSize: 18),
       ),
+      appBuilder: (context) {
+        return MaterialApp(
+          theme: Theme.of(context),
+          debugShowCheckedModeBanner: false,
+          home: child,
+          builder: (context, child) {
+            return Portal(child: ShadAppBuilder(child: child!));
+          },
+        );
+      },
     ),
   );
+  if (container != null) {
+    return UncontrolledProviderScope(container: container, child: app);
+  }
+  return ProviderScope(child: app);
 }

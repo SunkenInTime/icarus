@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
@@ -40,6 +41,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
   bool _hoverCleanupScheduled = false;
   bool _hitboxMeasurementScheduled = false;
   bool _hitboxCleanupScheduled = false;
+  bool _allowCleanupAfterUnmount = false;
   Rect? _lastRegisteredHitbox;
   String? _registeredGroupId;
   String? _registeredItemId;
@@ -67,12 +69,15 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
 
   @override
   void dispose() {
-    _scheduleHitboxUnregister(
-      groupId: _registeredGroupId,
-      itemId: _registeredItemId,
-      container: _container,
-    );
-    _scheduleHoverCleanup(container: _container);
+    if (!CoordinateSystem.instance.isScreenshot) {
+      _allowCleanupAfterUnmount = true;
+      _scheduleHitboxUnregister(
+        groupId: _registeredGroupId,
+        itemId: _registeredItemId,
+        container: _container,
+      );
+      _scheduleHoverCleanup(container: _container);
+    }
     super.dispose();
   }
 
@@ -108,6 +113,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     _hoverCleanupScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _hoverCleanupScheduled = false;
+      if (!mounted && !_allowCleanupAfterUnmount) return;
       _clearHoveredLineUpIfOwned(container: activeContainer);
       _clearHoveredDeleteTargetIfOwned(container: activeContainer);
     });
@@ -120,9 +126,10 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
       widget.lineUpId != null &&
       widget.lineUpItemId != null &&
       ref.read(lineUpProvider.notifier).getItemById(
-            groupId: widget.lineUpId!,
-            itemId: widget.lineUpItemId!,
-          ) != null;
+                groupId: widget.lineUpId!,
+                itemId: widget.lineUpItemId!,
+              ) !=
+          null;
 
   void _performHitboxUnregister({
     String? groupId,
@@ -140,7 +147,8 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
         ?.read(lineUpAbilityHitboxRegistryProvider.notifier)
         .unregister(groupId: activeGroupId, itemId: activeItemId);
 
-    if (_registeredGroupId == activeGroupId && _registeredItemId == activeItemId) {
+    if (_registeredGroupId == activeGroupId &&
+        _registeredItemId == activeItemId) {
       _registeredGroupId = null;
       _registeredItemId = null;
     }
@@ -164,6 +172,7 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     _hitboxCleanupScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _hitboxCleanupScheduled = false;
+      if (!mounted && !_allowCleanupAfterUnmount) return;
       _performHitboxUnregister(
         groupId: activeGroupId,
         itemId: activeItemId,
@@ -217,7 +226,8 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     });
   }
 
-  List<LineUpAbilityStackCandidate> _resolveStackCandidates(Offset globalPosition) {
+  List<LineUpAbilityStackCandidate> _resolveStackCandidates(
+      Offset globalPosition) {
     return resolveLineUpAbilityStackCandidates(
       lineUpState: ref.read(lineUpProvider),
       hitboxes: ref.read(lineUpAbilityHitboxRegistryProvider),
@@ -276,7 +286,8 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
   }
 
   Future<void> _handleStackAwarePrimaryTap(TapUpDetails details) async {
-    final candidate = await _selectLineUpAbilityCandidate(details.globalPosition);
+    final candidate =
+        await _selectLineUpAbilityCandidate(details.globalPosition);
     if (candidate == null) {
       return;
     }
@@ -288,7 +299,8 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
   }
 
   Future<void> _handleStackAwareSecondaryTap(TapUpDetails details) async {
-    final candidate = await _selectLineUpAbilityCandidate(details.globalPosition);
+    final candidate =
+        await _selectLineUpAbilityCandidate(details.globalPosition);
     if (candidate == null || !mounted) {
       return;
     }
@@ -307,6 +319,10 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
 
   @override
   Widget build(BuildContext context) {
+    if (CoordinateSystem.instance.isScreenshot) {
+      return RepaintBoundary(child: widget.child);
+    }
+
     final LineUpItem? lineUpItem = ref.watch(
       lineUpProvider.select((state) {
         final groupId = widget.lineUpId;

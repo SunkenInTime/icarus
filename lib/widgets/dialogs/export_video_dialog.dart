@@ -97,14 +97,15 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       return;
     }
 
-    final outputPath = await FilePicker.platform.saveFile(
+    final selectedOutputPath = await FilePicker.platform.saveFile(
       type: FileType.custom,
       dialogTitle: 'Please select an output file:',
       fileName:
           "${StrategyProvider.sanitizeFileName(ref.read(strategyProvider).stratName ?? "new video")}.mp4",
       allowedExtensions: ['mp4'],
     );
-    if (outputPath == null || !mounted) return;
+    if (selectedOutputPath == null || !mounted) return;
+    final outputPath = ensureMp4Extension(selectedOutputPath);
 
     final strategyId = ref.read(strategyProvider).id;
     await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
@@ -210,16 +211,19 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
             child: const Text('Cancel'),
           ),
         ],
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(_progressLabel),
-              const SizedBox(height: 12),
-              LinearProgressIndicator(value: _progress),
-            ],
+        child: Material(
+          color: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_progressLabel),
+                const SizedBox(height: 12),
+                LinearProgressIndicator(value: _progress),
+              ],
+            ),
           ),
         ),
       );
@@ -242,69 +246,72 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
           child: const Text('Export'),
         ),
       ],
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Text('Step duration'),
-                const Spacer(),
-                Text('${_stepDurationSeconds.toStringAsFixed(0)}s'),
-              ],
-            ),
-            Slider(
-              value: _stepDurationSeconds,
-              min: 1,
-              max: 30,
-              divisions: 29,
-              onChanged: (value) {
-                setState(() => _stepDurationSeconds = value);
-              },
-            ),
-            const SizedBox(height: 8),
-            Text('Pages ($selectedCount/${_pages.length})'),
-            const SizedBox(height: 4),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 240),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final page in _pages)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Row(
-                          children: [
-                            ShadCheckbox(
-                              value: _selectedPageIds.contains(page.id),
-                              onChanged: (checked) {
-                                setState(() {
-                                  if (checked) {
-                                    _selectedPageIds.add(page.id);
-                                  } else {
-                                    _selectedPageIds.remove(page.id);
-                                  }
-                                });
-                              },
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                page.name,
-                                overflow: TextOverflow.ellipsis,
+      child: Material(
+        color: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text('Step duration'),
+                  const Spacer(),
+                  Text('${_stepDurationSeconds.toStringAsFixed(0)}s'),
+                ],
+              ),
+              Slider(
+                value: _stepDurationSeconds,
+                min: 1,
+                max: 30,
+                divisions: 29,
+                onChanged: (value) {
+                  setState(() => _stepDurationSeconds = value);
+                },
+              ),
+              const SizedBox(height: 8),
+              Text('Pages ($selectedCount/${_pages.length})'),
+              const SizedBox(height: 4),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 240),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (final page in _pages)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            children: [
+                              ShadCheckbox(
+                                value: _selectedPageIds.contains(page.id),
+                                onChanged: (checked) {
+                                  setState(() {
+                                    if (checked) {
+                                      _selectedPageIds.add(page.id);
+                                    } else {
+                                      _selectedPageIds.remove(page.id);
+                                    }
+                                  });
+                                },
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  page.name,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

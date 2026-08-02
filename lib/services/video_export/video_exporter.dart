@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/page_transition/agent_path.dart';
@@ -10,12 +11,13 @@ import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/screenshot/offscreen_capture.dart';
+import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
+import 'package:icarus/services/video_export/ffmpeg_png_sequence_writer.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:path/path.dart' as p;
-import 'package:screenshot/screenshot.dart';
 
 /// Renders a strategy's selected pages into an .mp4 slideshow: each page is
 /// held for the step duration, with full-fidelity page transitions between
@@ -40,9 +42,11 @@ class VideoExporter {
 
   bool _cancelled = false;
   final FfmpegVideoEncoder _encoder = FfmpegVideoEncoder();
+  FfmpegPngSequenceWriter? _frameWriter;
 
   void cancel() {
     _cancelled = true;
+    _frameWriter?.cancel();
     _encoder.cancel();
   }
 
@@ -63,33 +67,44 @@ class VideoExporter {
     final stepSeconds = stepDuration.inMilliseconds / 1000.0;
     final totalFrames = pages.length + (pages.length - 1) * transitionFrames;
     final totalSeconds = pages.length * stepSeconds +
-        (pages.length - 1) *
-            kPageTransitionDuration.inMilliseconds /
-            1000.0;
+        (pages.length - 1) * kPageTransitionDuration.inMilliseconds / 1000.0;
 
     final tempDir =
         await Directory.systemTemp.createTemp('icarus_video_export_');
+    ProviderContainer? captureContainer;
+    PersistentOffscreenRenderer? renderer;
+    FfmpegPngSequenceWriter? frameWriter;
     try {
+      final offscreenContainer = ProviderContainer();
+      captureContainer = offscreenContainer;
+      renderer = PersistentOffscreenRenderer(
+        targetSize: CoordinateSystem.screenShotSize,
+        wrapWidget: (child) => wrapForOffscreenCapture(
+          child,
+          container: offscreenContainer,
+        ),
+      );
+      frameWriter = FfmpegPngSequenceWriter();
+      _frameWriter = frameWriter;
+      await frameWriter.start(
+        binary: ffmpegBinary,
+        workingDirectory: tempDir.path,
+        width: CoordinateSystem.screenShotSize.width.round(),
+        height: CoordinateSystem.screenShotSize.height.round(),
+        fps: fps,
+        totalFrames: totalFrames,
+      );
       final concatLines = <String>['ffconcat version 1.0'];
       var frameIndex = 0;
       var renderedFrames = 0;
-      // The very first offscreen build parses map SVGs from scratch; later
-      // frames hit flutter_svg's cache and settle much faster.
-      var captureDelay = const Duration(milliseconds: 800);
       String? lastFrameFile;
 
       Future<void> renderFrame(Widget view, double durationSeconds) async {
         if (_cancelled) throw VideoExportCancelled();
-        final bytes = await ScreenshotController().captureFromWidget(
-          wrapForOffscreenCapture(view),
-          targetSize: CoordinateSystem.screenShotSize,
-          delay: captureDelay,
-        );
-        captureDelay = const Duration(milliseconds: 120);
-        final fileName =
-            'frame_${frameIndex.toString().padLeft(5, '0')}.png';
+        final bytes = await renderer!.captureRawRgba(view);
+        final fileName = 'frame_${frameIndex.toString().padLeft(5, '0')}.png';
+        await frameWriter!.writeFrame(bytes);
         frameIndex++;
-        await File(p.join(tempDir.path, fileName)).writeAsBytes(bytes);
         concatLines
           ..add("file '$fileName'")
           ..add('duration ${durationSeconds.toStringAsFixed(6)}');
@@ -100,6 +115,14 @@ class VideoExporter {
           'Rendering frames ($renderedFrames/$totalFrames)',
         );
       }
+
+      // Warm the first page's SVGs and image streams once. Later pages get a
+      // shorter warm-up immediately before their transition begins; the 60
+      // fps transition frames themselves never pay a fixed settling delay.
+      await renderer.prepare(
+        _stillView(pages.first),
+        settleDuration: const Duration(milliseconds: 800),
+      );
 
       for (var i = 0; i < pages.length; i++) {
         final page = pages[i];
@@ -123,6 +146,10 @@ class VideoExporter {
           endAgentSize: nextPage.settings.agentSize,
           coordinateSystem: CoordinateSystem.instance,
         );
+        await renderer.prepare(
+          _stillView(nextPage),
+          settleDuration: const Duration(milliseconds: 120),
+        );
         for (var f = 1; f <= transitionFrames; f++) {
           final t = kPageTransitionCurve.transform(f / transitionFrames);
           await renderFrame(
@@ -138,6 +165,9 @@ class VideoExporter {
           );
         }
       }
+
+      await frameWriter.finish();
+      _frameWriter = null;
 
       // The concat demuxer ignores the duration of the final entry unless the
       // last file is repeated.
@@ -161,11 +191,18 @@ class VideoExporter {
         ),
       );
     } finally {
+      frameWriter?.cancel();
+      _frameWriter = null;
       try {
-        await tempDir.delete(recursive: true);
-      } on Object {
-        // Leaving orphaned temp frames behind is preferable to masking the
-        // original export result.
+        await renderer?.dispose();
+      } finally {
+        captureContainer?.dispose();
+        try {
+          await tempDir.delete(recursive: true);
+        } on Object {
+          // Leaving orphaned temp frames behind is preferable to masking the
+          // original export result.
+        }
       }
     }
   }

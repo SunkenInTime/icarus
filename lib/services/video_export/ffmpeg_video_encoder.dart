@@ -15,6 +15,11 @@ class VideoExportException implements Exception {
   String toString() => 'VideoExportException: $message';
 }
 
+/// Windows' save dialog does not guarantee that the selected extension is
+/// appended, even when FilePicker is restricted to MP4 files.
+String ensureMp4Extension(String path) =>
+    path.toLowerCase().endsWith('.mp4') ? path : '$path.mp4';
+
 /// Encodes a rendered frame sequence into an .mp4 by invoking a bundled (or
 /// PATH-installed) ffmpeg binary as a child process (ADR 0001).
 class FfmpegVideoEncoder {
@@ -109,12 +114,15 @@ class FfmpegVideoEncoder {
     }
 
     var lastLog = '';
+    var lastExitCode = 0;
     for (final codec in codecAttempts) {
       if (_cancelled) {
         await removePartialOutput();
         throw VideoExportCancelled();
       }
-      final args = [...baseArgs, ...codec, outputPath];
+      // This encoder always produces MP4. Declaring the muxer explicitly
+      // avoids relying on FFmpeg to infer it from the user-selected path.
+      final args = [...baseArgs, ...codec, '-f', 'mp4', outputPath];
       final stderrBuffer = StringBuffer();
       final process = await Process.start(
         binary,
@@ -149,12 +157,25 @@ class FfmpegVideoEncoder {
         return;
       }
       lastLog = stderrBuffer.toString();
-      log('ffmpeg (${codec.join(' ')}) exited with $exitCode');
+      lastExitCode = exitCode;
+      log(
+        'ffmpeg (${codec.join(' ')}) exited with $exitCode',
+        error: lastLog,
+      );
     }
     await removePartialOutput();
     final tail = lastLog.split('\n').where((l) => l.trim().isNotEmpty).toList();
+    final detail = tail.reversed.firstWhere(
+      (line) {
+        final trimmed = line.trim();
+        return trimmed != 'Conversion failed!' &&
+            !trimmed.startsWith('Error opening output file') &&
+            !trimmed.startsWith('Error opening output files:');
+      },
+      orElse: () => tail.isEmpty ? 'unknown error' : tail.last,
+    );
     throw VideoExportException(
-      'ffmpeg failed: ${tail.isEmpty ? 'unknown error' : tail.last}',
+      'ffmpeg failed (exit $lastExitCode): ${detail.trim()}',
     );
   }
 }
