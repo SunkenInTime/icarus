@@ -12,6 +12,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/services/analytics_service.dart';
@@ -200,6 +201,21 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     }
   }
 
+  /// Estimated length of the exported video for the current selection:
+  /// one step-duration hold per page plus a transition between each pair.
+  double get _estimatedVideoSeconds {
+    final n = _selectedPageIds.length;
+    if (n == 0) return 0;
+    final transitionSeconds = kPageTransitionDuration.inMilliseconds / 1000.0;
+    return n * _stepDurationSeconds + (n - 1) * transitionSeconds;
+  }
+
+  static String _formatSeconds(double seconds) {
+    final total = seconds.round();
+    if (total < 60) return '${total}s';
+    return '${total ~/ 60}m ${(total % 60).toString().padLeft(2, '0')}s';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isExporting) {
@@ -270,7 +286,20 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                   setState(() => _stepDurationSeconds = value);
                 },
               ),
-              const SizedBox(height: 8),
+              Text(
+                'How long each page stays on screen before moving to the '
+                'next one.',
+                style: ShadTheme.of(context).textTheme.muted,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                selectedCount == 0
+                    ? 'Video length: —'
+                    : 'Video length: ~${_formatSeconds(_estimatedVideoSeconds)} '
+                        '($selectedCount ${selectedCount == 1 ? "page" : "pages"})',
+                style: ShadTheme.of(context).textTheme.muted,
+              ),
+              const SizedBox(height: 12),
               Text('Pages ($selectedCount/${_pages.length})'),
               const SizedBox(height: 4),
               ConstrainedBox(
