@@ -360,8 +360,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Timer? _saveTimer;
 
-  bool _saveInProgress = false;
-  bool _pendingSave = false;
+  Future<void>? _activeSave;
+  String? _pendingSaveId;
 
   bool get _hasLoadedStrategy =>
       state.stratName != null && state.id != 'testID';
@@ -389,7 +389,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   void cancelPendingSave() {
     _saveTimer?.cancel();
     _saveTimer = null;
-    _pendingSave = false;
+    _pendingSaveId = null;
   }
 
   void refreshAutosaveScheduling() {
@@ -431,27 +431,24 @@ class StrategyProvider extends Notifier<StrategyState> {
     return true;
   }
 
-  // Ensures only one save runs at a time; coalesces a pending one
-  Future<void> _performSave(String id) async {
-    if (_saveInProgress) {
-      _pendingSave = true;
-      return;
-    }
+  // Ensures only one save runs at a time. Calls made during that save wait for
+  // one coalesced follow-up save, so returning means the latest state reached
+  // Hive.
+  Future<void> _performSave(String id) {
+    _pendingSaveId = id;
+    return _activeSave ??= _drainPendingSaves();
+  }
 
-    _saveInProgress = true;
+  Future<void> _drainPendingSaves() async {
     try {
-      ref.read(autoSaveProvider.notifier).ping(); // UI: “Saving…”
-      await saveToHive(id);
-    } finally {
-      _saveInProgress = false;
-      if (_pendingSave) {
-        _pendingSave = false;
-        // Small debounce to coalesce rapid edits during the previous save
-        _saveTimer?.cancel();
-        // _saveTimer = Timer(const Duration(milliseconds: 500), () {
-        //   _performSave(id);
-        // });
+      while (_pendingSaveId != null) {
+        final id = _pendingSaveId!;
+        _pendingSaveId = null;
+        ref.read(autoSaveProvider.notifier).ping(); // UI: “Saving…”
+        await saveToHive(id);
       }
+    } finally {
+      _activeSave = null;
     }
   }
 
