@@ -375,16 +375,27 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                 ),
                                 // Painting
                                 Positioned.fill(
-                                  child: Opacity(
-                                    opacity:
-                                        ref.watch(interactionStateProvider) ==
-                                                InteractionState.lineUpPlacing
-                                            ? 0.2
-                                            : 1.0,
-                                    child: Transform.flip(
-                                        flipX: !isAttack,
-                                        flipY: !isAttack,
-                                        child: InteractivePainter()),
+                                  // Nested Consumer so the per-frame fade-in
+                                  // progress only rebuilds the drawing layer.
+                                  child: Consumer(
+                                    builder: (context, ref, _) {
+                                      final transitionOpacity = ref.watch(
+                                        drawingsTransitionOpacityProvider,
+                                      );
+                                      final lineUpOpacity = ref.watch(
+                                                  interactionStateProvider) ==
+                                              InteractionState.lineUpPlacing
+                                          ? 0.2
+                                          : 1.0;
+                                      return Opacity(
+                                        opacity:
+                                            transitionOpacity * lineUpOpacity,
+                                        child: Transform.flip(
+                                            flipX: !isAttack,
+                                            flipY: !isAttack,
+                                            child: InteractivePainter()),
+                                      );
+                                    },
                                   ),
                                 ),
                                 if (ref.watch(interactionStateProvider) ==

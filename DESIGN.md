@@ -123,157 +123,33 @@ components:
     size: "232px x 64px"
 ---
 
-# Design System: Icarus
+# Design: Icarus
 
-## 1. Overview
+Icarus is a tactical workbench: dark, dense, map-first. The canvas and the tactical objects on it stay visually dominant; everything else is hardware around the bench. Polish comes from order, not ornament.
 
-**Creative North Star: "The Tactical Workbench"**
+## Building UI
 
-Icarus should feel like a disciplined workbench for planning Valorant rounds: dark, compact, map-first, and deliberate. The UI is allowed to be dense because the work is dense, but every cluster needs an obvious job and a stable place. Panels, toolbars, filter controls, and strategy cards should support tactical thinking without asking for attention.
+- shadcn_ui is the component library. Reach for `Shad*` widgets first — `ShadDialog`, `ShadButton`, `ShadIconButton`, `ShadInput`, `ShadSelect`, `ShadTooltip`, `ShadContextMenu*`, `ShadPopover` — before Material equivalents or custom widgets. Read theme values through `ShadTheme.of(context)`.
+- `ShadDialog` does not provide a `Material` ancestor. Material-dependent children (`TextField`, `InkWell`, `LinearProgressIndicator`, `Slider`) throw "No Material widget found" inside one. Wrap the dialog's `child` in `Material(color: Colors.transparent, child: ...)` — see `lib/widgets/dialogs/export_video_dialog.dart` for the idiom.
+- Color, theme, and sizing constants live in `lib/const/settings.dart` (including the `tacticalVioletTheme` ShadColorScheme). Use them; never hardcode a hex that already has a name. The frontmatter above mirrors these values for reference.
+- Spacing uses the 8/10/12/16/24px steps from the frontmatter. Radii: 8px controls, 12px panels, 16px cards, 22px dialogs.
+- Transitions run 150-250ms and must communicate a state change (hover, selection, reveal, loading). No motion for its own sake.
 
-The current system is a dark Shad UI foundation with a restrained violet accent, cool zinc surfaces, image-rich map and agent assets, and small, fast transitions. The product direction is minimal, intuitive, tasteful, and fast; polish comes from order, not ornament.
+## Named rules
 
-This system explicitly rejects disorganized layouts, flashy color, novelty effects, cluttered panels, and features that look shoehorned into the interface. If a control cannot explain why it sits where it sits, it is not refined enough.
+**The One Command Color Rule.** Violet marks current action, selection, focus, and primary commands — nothing else. If violet appears somewhere that isn't actionable or active, it's wrong.
 
-**Key Characteristics:**
-- Canvas-first: map, agents, abilities, drawings, and lineups stay visually dominant.
-- Restrained tactical color: violet marks primary action and selection only.
-- Dense but calm: tool surfaces are compact, predictable, and grouped by task.
-- Native product typography: system sans, practical weights, no decorative type.
-- Fast state feedback: transitions are short and communicate hover, selection, reveal, or loading.
+**The Tactical Semantics Rule.** Ally green, enemy red, favorite amber, and the map ember hues carry game meaning. Never reuse them for unrelated UI emphasis.
 
-## 2. Colors
+**The Tonal First Rule.** Depth comes from surface steps (background → panel → raised) and 1px zinc borders. A shadow is only allowed where it explains stacking: drag previews, floating menus, card foreground details (`0 4px 12px rgba(0,0,0,0.54)` / `0 8px 24px rgba(0,0,0,0.28)`).
 
-The palette is a restrained tactical dark system: near-black workspace surfaces, zinc panels, one violet action accent, and semantic colors reserved for tactical meaning.
+**The Native Tool Rule.** System sans stack for everything. Hierarchy comes from the five frontmatter type roles (headline/title/body/label/micro), not from display fonts or hero-scale type.
 
-### Primary
-- **Command Violet**: The primary action and selection color. Use it for current tool state, primary buttons, active segmented tabs, focus rings, and success toasts. It should remain rare enough that it keeps command value.
-- **Deep Selection Violet**: The deeper selected-region color. Use it for selection backgrounds or lower-emphasis active areas, never as a decorative gradient.
+**Every control earns its position.** If you can't say why a control sits where it sits, it isn't done. Never fill spare space with a feature.
 
-### Secondary
-- **Ally Green**: Tactical ally marker color. Use for player-side identity and team state, not general positive UI.
-- **Enemy Red**: Tactical enemy marker color. Use for opponent identity and destructive warnings only when context makes the distinction clear.
-- **Favorite Amber**: Favorite state and favorites-only filter indicator. Use sparingly; it is a utility state, not a brand accent.
+## Don't
 
-### Tertiary
-- **Map Ember Base**: The warm base hue used by map recoloring.
-- **Map Callout Bronze**: The warm detail hue used for map geometry and callout texture.
-- **Map Highlight Orange**: The map highlight hue used for tactically relevant map contrast.
-
-### Neutral
-- **Workbench Black**: App background and deepest canvas environment.
-- **Sidebar Charcoal**: Legacy sidebar, menu, and dialog foundation.
-- **Panel Zinc**: Primary card, popover, and sidebar panel surface.
-- **Raised Zinc**: Secondary, muted, input, border, and hover surface.
-- **Muted Text Zinc**: Secondary labels, helper text, inactive controls, and compact metadata.
-- **Tactical White**: Foreground and high-contrast text.
-
-### Named Rules
-
-**The One Command Color Rule.** Violet is for current action, selection, focus, and primary commands. It is not decoration.
-
-**The Tactical Semantics Rule.** Ally, enemy, favorite, and map colors carry game meaning. Do not reuse them for unrelated UI emphasis.
-
-## 3. Typography
-
-**Display Font:** System UI sans stack.
-**Body Font:** System UI sans stack.
-**Label/Mono Font:** System UI sans stack.
-
-**Character:** Typography should feel native, quiet, and utilitarian. Scale and weight do the hierarchy work; the app does not need a decorative display face.
-
-### Hierarchy
-- **Display**: Not a standard Icarus role. Avoid hero-scale type inside the product.
-- **Headline** (500, 20px, 1.2): Section headings such as Tools and Agents.
-- **Title** (600, 16px, 1.25): Dialog titles, settings group titles, compact card titles, and primary row labels.
-- **Body** (400, 14px, 1.35): Normal controls, option labels, strategy metadata, and helper text.
-- **Label** (600, 12px, 0.3px letter spacing): Section labels, filter state text, compact state descriptions, and setting captions.
-- **Micro** (600, 9-10px, 0.5-0.8px letter spacing): Badges such as DEFAULT and CUSTOM OVERRIDE.
-
-### Named Rules
-
-**The Native Tool Rule.** Use the system sans stack for all product UI. Display fonts, novelty fonts, and over-styled labels are forbidden.
-
-**The Compact Legibility Rule.** Dense panels may use small text, but labels must keep enough weight, contrast, and spacing to scan at desktop distance.
-
-## 4. Elevation
-
-Icarus is flat by default and uses tonal layering first: background, panel, raised control, border, and selected state. Shadows are reserved for foregrounded content like strategy tile detail panels, drag previews, folder drag cards, delete menus, and popover-like controls. Depth should clarify stacking or interaction, never decorate an otherwise flat surface.
-
-### Shadow Vocabulary
-- **Card Foreground Backdrop** (`0 4px 12px rgba(0,0,0,0.54)`): Used on card foreground details and select controls to separate them from dark textured surroundings.
-- **Folder Drag Lift** (`0 4px 12px rgba(0,0,0,0.54)`): Used only on draggable folder card previews to separate them from the dotted canvas.
-- **Delete Menu Lift** (`0 8px 24px rgba(0,0,0,0.28)`): Used on floating destructive-control panels.
-
-### Named Rules
-
-**The Tonal First Rule.** Prefer surface changes and borders before shadows. If a shadow does not explain stacking, remove it.
-
-## 5. Components
-
-### Buttons
-
-Buttons are compact, icon-led, and stateful. Primary buttons use Command Violet for decisive actions such as Create Strategy or Save, secondary buttons use Raised Zinc for utility actions, and ghost icon buttons stay transparent over the canvas.
-
-- **Shape:** Soft product corners (8px) for standard buttons; compact icon buttons inherit the same control language.
-- **Primary:** Command Violet background, Tactical White text, icon-leading when the action has a familiar symbol.
-- **Hover / Focus:** Hover uses the Shad state layer; focus uses the violet ring. Keep transitions around 150-250ms.
-- **Secondary / Ghost:** Secondary buttons sit on Raised Zinc. Ghost buttons are reserved for canvas chrome and toolbar actions where a filled button would compete with the map.
-
-### Chips
-
-Chips are functional state markers, not decoration. Folder cards may show user-authored color, but color lives inside the icon swatch rather than flooding the entire surface; state badges use tinted violet surfaces and small uppercase type.
-
-- **Style:** Folder cards are 232px wide, 64px tall, 12px radius, zinc surface, 1px zinc border, a 40px tinted icon swatch, title text, muted metadata, and a compact menu button.
-- **State:** Hover changes the border to Command Violet without scaling. Drop-target state uses a 2px Command Violet border and faint violet surface tint.
-
-### Cards / Containers
-
-Cards and panels are used for actual grouped tools or repeated objects, not as generic section wrappers.
-
-- **Corner Style:** Sidebar panels use 12px radius. Strategy tiles and thumbnails use 16px radius. Dialogs use 22px radius.
-- **Background:** Panel Zinc for cards and sidebars; Raised Zinc for controls within panels.
-- **Shadow Strategy:** Flat at rest except foreground card detail blocks and floating controls.
-- **Border:** 1-2px zinc borders define edges in dark space. Avoid colored side-stripe borders.
-- **Internal Padding:** Tool panels use 16px grouping; settings sheets use 24px outer padding; cards use 8-16px.
-
-### Inputs / Fields
-
-Inputs are dark, bordered, and compact. Search is a signature interaction: it collapses to an icon at rest and expands on hover, focus, or text entry.
-
-- **Style:** Panel Zinc fill, 8px radius, 1px zinc border.
-- **Focus:** Command Violet cursor and 2px ring/border.
-- **Error / Disabled:** Use destructive red for true errors only; disabled controls stay muted rather than saturated.
-
-### Navigation
-
-Navigation is practical and spatial. The library uses a top app bar with breadcrumbs and action buttons; the strategy editor uses a compact top strip plus canvas overlays for map selection, settings, save, export, screenshots, pages, and the right-side tool panel.
-
-- **Style:** Keep navigation predictable: top row for global context, right panel for creation tools, left/overlay controls for strategy-level actions.
-- **Motion:** Route changes use 200ms fade/scale transitions. Reveals use 150-250ms easing and must communicate state.
-
-### Signature Component
-
-The strategy editor right sidebar is the signature product component. It combines a tool grid, contextual tool bar, filters, team selection, role filters, draggable agent tiles, and an ability rail. Its job is to keep strategy creation fast without cluttering the map.
-
-## 6. Do's and Don'ts
-
-### Do:
-
-- **Do** keep the map and tactical objects visually dominant; supporting UI should feel like workbench hardware around the canvas.
-- **Do** use Command Violet for selected tools, primary actions, focus rings, and current assignments.
-- **Do** group tools by task and reveal contextual controls only when the current interaction mode needs them.
-- **Do** keep dense panels orderly with consistent 8px, 10px, 12px, 16px, and 24px spacing steps.
-- **Do** use icons for familiar tool actions, with tooltips for compact controls.
-- **Do** preserve tactical color meaning for ally, enemy, favorite, destructive, and map states.
-- **Do** keep transitions short: 150-250ms for hover, reveal, route, and state changes.
-
-### Don't:
-
-- **Don't** make Icarus look disorganized, noisy, or arbitrary.
-- **Don't** add flashy colors, loud gradients, glow-heavy treatments, glassmorphism, or decorative effects.
-- **Don't** shoehorn features into spare space; every control needs a clear reason for its position.
-- **Don't** reuse ally, enemy, favorite, or map colors for unrelated UI decoration.
-- **Don't** introduce marketing-page composition, hero typography, decorative dashboards, or generic gamer overlay styling.
-- **Don't** use colored side-stripe borders, gradient text, nested cards, or identical decorative card grids.
-- **Don't** invent custom affordances where standard Shad, Flutter, or desktop patterns already communicate the action clearly.
+- No gradients, glow, glassmorphism, or decorative effects — the anti-reference is the generic gamer overlay.
+- No marketing-page composition inside the product: no hero typography, no decorative dashboards.
+- No colored side-stripe borders, gradient text, or nested cards.
+- No custom affordance where a standard Shad or desktop pattern already communicates the action.

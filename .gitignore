@@ -55,3 +55,6 @@ app.*.map.json
 # Local environment files
 .env
 .env.local
+
+# Cached ffmpeg download for video export packaging (scripts/fetch_ffmpeg.ps1)
+windows/.ffmpeg-cache/

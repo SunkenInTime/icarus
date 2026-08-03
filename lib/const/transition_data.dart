@@ -1,5 +1,5 @@
-import 'dart:ui';
-
+import 'package:flutter/animation.dart';
+import 'package:flutter/foundation.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -8,6 +8,18 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 
 enum TransitionKind { move, appear, disappear, none }
+
+/// Easing shared by the live page-transition overlay and the video exporter,
+/// so exported frames sample the exact motion users see in the editor.
+const Curve kPageTransitionCurve = Curves.easeOutCubic;
+
+/// Drawings and images fade in during the early portion of a page
+/// transition; they are fully visible once the (curved) progress reaches
+/// this fraction.
+const double kEarlyFadeInEnd = 0.5;
+
+double earlyFadeInOpacity(double progress) =>
+    (progress / kEarlyFadeInEnd).clamp(0.0, 1.0);
 
 enum PageTransitionDirection { forward, backward }
 
@@ -415,6 +427,27 @@ class PageTransitionEntry {
     if (w is PlacedAgent) return w.state;
     return null;
   }
+
+  /// Every property a [PageTransitionEntry.move] can tween, as one comparable
+  /// list. Kept next to the `*Of` helpers so adding a tweened property means
+  /// updating both in the same place.
+  static List<Object?> _tweenedPropsOf(PlacedWidget w) => [
+        w.position,
+        rotationOf(w),
+        lengthOf(w),
+        scaleOf(w),
+        textSizeOf(w),
+        agentStateOf(w),
+        customDiameterOf(w),
+        customWidthOf(w),
+        customLengthOf(w),
+      ];
+
+  /// True when [from] and [to] differ in any tweened property, i.e. the
+  /// widget needs a move transition rather than a plain hold.
+  static bool visualsDiffer(PlacedWidget from, PlacedWidget to) =>
+      !listEquals(_tweenedPropsOf(from), _tweenedPropsOf(to)) ||
+      !listEquals(armLengthsOf(from), armLengthsOf(to));
 
   double? get startRotation => from != null ? rotationOf(from!) : null;
   double? get endRotation => to != null ? rotationOf(to!) : null;

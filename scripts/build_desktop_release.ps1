@@ -50,6 +50,10 @@ finally {
         Remove-Item -LiteralPath $dartDefinesPath -Force
     }
 }
+# Stage the video-export encoder into the build output before archiving.
+Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
+    "-ExecutionPolicy", "Bypass", "-File", "scripts/fetch_ffmpeg.ps1"
+)
 Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("dart", "run", "desktop_updater:archive", "windows")
 Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @("-ExecutionPolicy", "Bypass", "-File", "installer/build_installer.ps1", "-Configuration", "Release")
 

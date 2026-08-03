@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/foundation.dart'
-    show kIsWeb, listEquals, visibleForTesting;
+    show kIsWeb, visibleForTesting;
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -45,6 +45,7 @@ import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/page_transition/agent_path.dart';
+import 'package:icarus/page_transition/transition_planner.dart';
 import 'package:icarus/services/archive_manifest.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:path/path.dart' as path;
@@ -359,8 +360,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Timer? _saveTimer;
 
-  bool _saveInProgress = false;
-  bool _pendingSave = false;
+  Future<void>? _activeSave;
+  String? _pendingSaveId;
 
   bool get _hasLoadedStrategy =>
       state.stratName != null && state.id != 'testID';
@@ -388,7 +389,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   void cancelPendingSave() {
     _saveTimer?.cancel();
     _saveTimer = null;
-    _pendingSave = false;
+    _pendingSaveId = null;
   }
 
   void refreshAutosaveScheduling() {
@@ -430,27 +431,24 @@ class StrategyProvider extends Notifier<StrategyState> {
     return true;
   }
 
-  // Ensures only one save runs at a time; coalesces a pending one
-  Future<void> _performSave(String id) async {
-    if (_saveInProgress) {
-      _pendingSave = true;
-      return;
-    }
+  // Ensures only one save runs at a time. Calls made during that save wait for
+  // one coalesced follow-up save, so returning means the latest state reached
+  // Hive.
+  Future<void> _performSave(String id) {
+    _pendingSaveId = id;
+    return _activeSave ??= _drainPendingSaves();
+  }
 
-    _saveInProgress = true;
+  Future<void> _drainPendingSaves() async {
     try {
-      ref.read(autoSaveProvider.notifier).ping(); // UI: “Saving…”
-      await saveToHive(id);
-    } finally {
-      _saveInProgress = false;
-      if (_pendingSave) {
-        _pendingSave = false;
-        // Small debounce to coalesce rapid edits during the previous save
-        _saveTimer?.cancel();
-        // _saveTimer = Timer(const Duration(milliseconds: 500), () {
-        //   _performSave(id);
-        // });
+      while (_pendingSaveId != null) {
+        final id = _pendingSaveId!;
+        _pendingSaveId = null;
+        ref.read(autoSaveProvider.notifier).ping(); // UI: “Saving…”
+        await saveToHive(id);
       }
+    } finally {
+      _activeSave = null;
     }
   }
 
@@ -1051,13 +1049,23 @@ class StrategyProvider extends Notifier<StrategyState> {
     final targetPageId = pageID;
     final startSettings = ref.read(strategySettingsProvider);
 
+    final targetPage = orderedPages.firstWhere(
+      (p) => p.id == pageID,
+      orElse: () => orderedPages.first,
+    );
+    final fadeInDrawings = TransitionPlanner.drawingsChanged(
+      ref.read(drawingProvider).elements,
+      targetPage.drawingData,
+    );
+
     final prev = _snapshotAllPlaced();
     transitionNotifier.prepare(prev.values.toList(),
         direction: resolvedDirection,
         startAgentSize: startSettings.agentSize,
         startAbilitySize: startSettings.abilitySize,
         sourcePageId: sourcePageId,
-        targetPageId: targetPageId);
+        targetPageId: targetPageId,
+        fadeInDrawings: fadeInDrawings);
 
     // Load target page (hydrates providers)
     await setActivePage(pageID);
@@ -1065,7 +1073,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final preliminaryNext = _snapshotAllPlaced();
       final preliminaryEntries = _diffToTransitions(prev, preliminaryNext);
-      if (preliminaryEntries.isEmpty) {
+      if (preliminaryEntries.isEmpty && !fadeInDrawings) {
         transitionNotifier.complete();
         return;
       }
@@ -1106,7 +1114,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       // can never reach start(), even when page IDs did not change.
       final next = _snapshotAllPlaced();
       final entries = _diffToTransitions(prev, next);
-      if (entries.isEmpty) {
+      if (entries.isEmpty && !fadeInDrawings) {
         transitionNotifier.complete();
         return;
       }
@@ -1131,6 +1139,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         sourcePageId: sourcePageId,
         targetPageId: targetPageId,
         agentPaths: agentPaths,
+        fadeInDrawings: fadeInDrawings,
       );
     });
   }
@@ -1148,57 +1157,8 @@ class StrategyProvider extends Notifier<StrategyState> {
   List<PageTransitionEntry> _diffToTransitions(
     Map<String, PlacedWidget> prev,
     Map<String, PlacedWidget> next,
-  ) {
-    final entries = <PageTransitionEntry>[];
-    var order = 0;
-
-    // Move / appear
-    next.forEach((id, to) {
-      final from = prev[id];
-      if (from != null) {
-        if (from.position != to.position ||
-            PageTransitionEntry.rotationOf(from) !=
-                PageTransitionEntry.rotationOf(to) ||
-            PageTransitionEntry.lengthOf(from) !=
-                PageTransitionEntry.lengthOf(to) ||
-            !listEquals(
-              PageTransitionEntry.armLengthsOf(from),
-              PageTransitionEntry.armLengthsOf(to),
-            ) ||
-            PageTransitionEntry.scaleOf(from) !=
-                PageTransitionEntry.scaleOf(to) ||
-            PageTransitionEntry.textSizeOf(from) !=
-                PageTransitionEntry.textSizeOf(to) ||
-            PageTransitionEntry.agentStateOf(from) !=
-                PageTransitionEntry.agentStateOf(to) ||
-            PageTransitionEntry.customDiameterOf(from) !=
-                PageTransitionEntry.customDiameterOf(to) ||
-            PageTransitionEntry.customWidthOf(from) !=
-                PageTransitionEntry.customWidthOf(to) ||
-            PageTransitionEntry.customLengthOf(from) !=
-                PageTransitionEntry.customLengthOf(to)) {
-          entries
-              .add(PageTransitionEntry.move(from: from, to: to, order: order));
-        } else {
-          // Unchanged: include as 'none' so it stays visible while base view is hidden
-          entries.add(PageTransitionEntry.none(to: to, order: order));
-        }
-      } else {
-        entries.add(PageTransitionEntry.appear(to: to, order: order));
-      }
-      order++;
-    });
-
-    // Disappear
-    prev.forEach((id, from) {
-      if (!next.containsKey(id)) {
-        entries.add(PageTransitionEntry.disappear(from: from, order: order));
-        order++;
-      }
-    });
-
-    return entries;
-  }
+  ) =>
+      TransitionPlanner.diff(prev, next);
 
   Future<void> addPage([String? name]) async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
