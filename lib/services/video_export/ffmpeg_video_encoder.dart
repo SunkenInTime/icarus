@@ -102,12 +102,15 @@ class FfmpegVideoEncoder {
             ['-c:v', 'mpeg4', '-q:v', '3'],
           ];
 
-    // `-y` truncates the user-chosen path immediately, so a failed or
-    // cancelled encode must not leave a broken .mp4 behind.
+    // `-y` truncates its target immediately, so ffmpeg never writes to the
+    // user-chosen path directly: a failed or cancelled encode must not
+    // destroy a video that already existed there. The destination is only
+    // replaced once an encode has succeeded.
+    final partialPath = '$outputPath.icarus-partial.mp4';
     Future<void> removePartialOutput() async {
       try {
-        final output = File(outputPath);
-        if (await output.exists()) await output.delete();
+        final partial = File(partialPath);
+        if (await partial.exists()) await partial.delete();
       } on Object {
         // Best effort only.
       }
@@ -122,7 +125,7 @@ class FfmpegVideoEncoder {
       }
       // This encoder always produces MP4. Declaring the muxer explicitly
       // avoids relying on FFmpeg to infer it from the user-selected path.
-      final args = [...baseArgs, ...codec, '-f', 'mp4', outputPath];
+      final args = [...baseArgs, ...codec, '-f', 'mp4', partialPath];
       final stderrBuffer = StringBuffer();
       final process = await Process.start(
         binary,
@@ -153,6 +156,14 @@ class FfmpegVideoEncoder {
         throw VideoExportCancelled();
       }
       if (exitCode == 0) {
+        try {
+          await _replaceDestination(partialPath, outputPath);
+        } on Object catch (error) {
+          await removePartialOutput();
+          throw VideoExportException(
+            'Could not write the video to the selected location: $error',
+          );
+        }
         onProgress?.call(1.0);
         return;
       }
@@ -177,5 +188,18 @@ class FfmpegVideoEncoder {
     throw VideoExportException(
       'ffmpeg failed (exit $lastExitCode): ${detail.trim()}',
     );
+  }
+
+  /// Moves the finished encode over the destination. The partial file lives
+  /// in the destination's directory, so rename normally succeeds in place;
+  /// copy-then-delete covers filesystems that refuse the rename.
+  static Future<void> _replaceDestination(String from, String to) async {
+    final partial = File(from);
+    try {
+      await partial.rename(to);
+    } on FileSystemException {
+      await partial.copy(to);
+      await partial.delete();
+    }
   }
 }
