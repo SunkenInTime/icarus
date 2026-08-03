@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
@@ -57,27 +56,7 @@ class TransitionPlanner {
     next.forEach((id, to) {
       final from = prev[id];
       if (from != null) {
-        if (from.position != to.position ||
-            PageTransitionEntry.rotationOf(from) !=
-                PageTransitionEntry.rotationOf(to) ||
-            PageTransitionEntry.lengthOf(from) !=
-                PageTransitionEntry.lengthOf(to) ||
-            !listEquals(
-              PageTransitionEntry.armLengthsOf(from),
-              PageTransitionEntry.armLengthsOf(to),
-            ) ||
-            PageTransitionEntry.scaleOf(from) !=
-                PageTransitionEntry.scaleOf(to) ||
-            PageTransitionEntry.textSizeOf(from) !=
-                PageTransitionEntry.textSizeOf(to) ||
-            PageTransitionEntry.agentStateOf(from) !=
-                PageTransitionEntry.agentStateOf(to) ||
-            PageTransitionEntry.customDiameterOf(from) !=
-                PageTransitionEntry.customDiameterOf(to) ||
-            PageTransitionEntry.customWidthOf(from) !=
-                PageTransitionEntry.customWidthOf(to) ||
-            PageTransitionEntry.customLengthOf(from) !=
-                PageTransitionEntry.customLengthOf(to)) {
+        if (PageTransitionEntry.visualsDiffer(from, to)) {
           entries
               .add(PageTransitionEntry.move(from: from, to: to, order: order));
         } else {
