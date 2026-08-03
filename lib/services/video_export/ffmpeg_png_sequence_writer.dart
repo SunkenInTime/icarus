@@ -88,11 +88,14 @@ class FfmpegPngSequenceWriter {
       await process.stdin.flush();
     } on Object {
       if (_cancelled) throw VideoExportCancelled();
-      final exitCode = await process.exitCode;
+      _finished = true;
+      process.kill();
+      final exitCode = await _awaitExit(process);
       await _drainOutput();
       _process = null;
       throw VideoExportException(
-        'Frame preparation failed (ffmpeg exit $exitCode): ${_lastError()}',
+        'Frame preparation failed (ffmpeg exit ${exitCode ?? 'unknown'}): '
+        '${_lastError()}',
       );
     }
   }
@@ -105,21 +108,44 @@ class FfmpegPngSequenceWriter {
     _finished = true;
 
     await process.stdin.close();
-    final exitCode = await process.exitCode;
+    final exitCode = await _awaitExit(process);
     await _drainOutput();
     _process = null;
 
     if (_cancelled) throw VideoExportCancelled();
     if (exitCode != 0) {
       throw VideoExportException(
-        'Frame preparation failed (ffmpeg exit $exitCode): ${_lastError()}',
+        'Frame preparation failed (ffmpeg exit ${exitCode ?? 'unknown'}): '
+        '${_lastError()}',
       );
     }
   }
 
+  /// Waits for [process] to exit, escalating to SIGKILL when it stalls, so a
+  /// hung ffmpeg can never freeze the export with no error and no progress.
+  /// Returns null when the process refused to die within the grace period.
+  Future<int?> _awaitExit(Process process) async {
+    try {
+      return await process.exitCode.timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      process.kill(ProcessSignal.sigkill);
+      try {
+        return await process.exitCode.timeout(const Duration(seconds: 2));
+      } on TimeoutException {
+        return null;
+      }
+    }
+  }
+
   Future<void> _drainOutput() async {
-    await _stdoutDone;
-    await _stderrDone;
+    try {
+      await Future.wait<void>([
+        if (_stdoutDone != null) _stdoutDone!,
+        if (_stderrDone != null) _stderrDone!,
+      ]).timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      // The pipes outlive a process that refused to die; stop waiting.
+    }
   }
 
   String _lastError() {
@@ -131,8 +157,16 @@ class FfmpegPngSequenceWriter {
     return lines.isEmpty ? 'unknown error' : lines.last;
   }
 
-  void cancel() {
+  /// Stops accepting frames and terminates ffmpeg. Completes once the process
+  /// has exited (or the grace period elapsed), so callers can safely delete
+  /// the frame directory it was writing into.
+  Future<void> cancel() async {
     _cancelled = true;
-    _process?.kill();
+    final process = _process;
+    if (process == null) return;
+    process.kill();
+    await _awaitExit(process);
+    await _drainOutput();
+    _process = null;
   }
 }

@@ -186,35 +186,42 @@ class PersistentOffscreenRenderer {
 
   Future<void> dispose({
     Future<void> Function()? waitForFrame,
+    Duration drainTimeout = const Duration(seconds: 2),
   }) async {
     if (_disposed) return;
     _disposed = true;
-    final drainFrame = waitForFrame ?? () => WidgetsBinding.instance.endOfFrame;
+    // `endOfFrame` never completes while the engine is not producing frames
+    // (e.g. the window is minimized), so each drain is best-effort and bounded.
+    final rawDrain = waitForFrame ?? () => WidgetsBinding.instance.endOfFrame;
+    Future<void> drainFrame() =>
+        rawDrain().timeout(drainTimeout, onTimeout: () {});
 
-    // Flush callbacks registered by the last captured frame while its
-    // providers and focus tree are still alive.
-    await drainFrame();
+    try {
+      // Flush callbacks registered by the last captured frame while its
+      // providers and focus tree are still alive.
+      await drainFrame();
 
-    _rootElement = RenderObjectToWidgetAdapter<RenderBox>(
-      container: _repaintBoundary,
-      debugShortDescription: '[Icarus video export root]',
-    ).attachToRenderTree(_buildOwner, _rootElement);
-    _flushFrame();
-    _rootElement = null;
+      _rootElement = RenderObjectToWidgetAdapter<RenderBox>(
+        container: _repaintBoundary,
+        debugShortDescription: '[Icarus video export root]',
+      ).attachToRenderTree(_buildOwner, _rootElement);
+      _flushFrame();
+      _rootElement = null;
 
-    // Unmounting can schedule focus microtasks and widget cleanup callbacks.
-    // Let both queues drain before releasing the objects they reference.
-    await Future<void>.microtask(() {});
-    await drainFrame();
-
-    _pipelineOwner.rootNode = null;
-    _renderView.child = null;
-    _positionedBox.child = null;
-    _repaintBoundary.dispose();
-    _positionedBox.dispose();
-    _renderView.dispose();
-    _pipelineOwner.dispose();
-    _frame.dispose();
-    _focusManager.dispose();
+      // Unmounting can schedule focus microtasks and widget cleanup callbacks.
+      // Let both queues drain before releasing the objects they reference.
+      await Future<void>.microtask(() {});
+      await drainFrame();
+    } finally {
+      _pipelineOwner.rootNode = null;
+      _renderView.child = null;
+      _positionedBox.child = null;
+      _repaintBoundary.dispose();
+      _positionedBox.dispose();
+      _renderView.dispose();
+      _pipelineOwner.dispose();
+      _frame.dispose();
+      _focusManager.dispose();
+    }
   }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -60,7 +61,9 @@ class VideoExporter {
 
   void cancel() {
     _cancelled = true;
-    _frameWriter?.cancel();
+    // export()'s cleanup awaits the writer's termination; here we only need
+    // to interrupt the processes.
+    unawaited(_frameWriter?.cancel());
     _encoder.cancel();
   }
 
@@ -206,7 +209,9 @@ class VideoExporter {
         ),
       );
     } finally {
-      frameWriter?.cancel();
+      // Wait for ffmpeg to exit before deleting the directory it writes into;
+      // on Windows the delete races a still-exiting process otherwise.
+      await frameWriter?.cancel();
       _frameWriter = null;
       try {
         await renderer?.dispose();

@@ -176,7 +176,9 @@ void main() {
   testWidgets('teardown drains focus and provider callbacks before disposal',
       (tester) async {
     CoordinateSystem.instance.setIsScreenshot(true);
+    addTearDown(() => CoordinateSystem.instance.setIsScreenshot(false));
     final container = ProviderContainer();
+    addTearDown(container.dispose);
     final renderer = PersistentOffscreenRenderer(
       targetSize: const Size(8, 8),
       wrapWidget: (child) => UncontrolledProviderScope(
@@ -200,8 +202,6 @@ void main() {
       );
     });
     await _disposeRenderer(tester, renderer);
-    container.dispose();
     await tester.pump();
-    CoordinateSystem.instance.setIsScreenshot(false);
   });
 }

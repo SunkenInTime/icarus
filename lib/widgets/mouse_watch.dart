@@ -5,6 +5,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
+import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/lineup_ability_stack_selector.dart';
 import 'package:icarus/widgets/line_up_media_carousel.dart';
@@ -69,7 +70,11 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
 
   @override
   void dispose() {
-    if (!CoordinateSystem.instance.isScreenshot) {
+    // The scoped provider distinguishes the offscreen capture tree from the
+    // live tree; the global CoordinateSystem flag cannot, so gating on it
+    // would also skip cleanup for live instances disposed during an export.
+    final isOffscreenCapture = _container?.read(screenshotProvider) ?? false;
+    if (!isOffscreenCapture) {
       _allowCleanupAfterUnmount = true;
       _scheduleHitboxUnregister(
         groupId: _registeredGroupId,
