@@ -191,15 +191,12 @@ class FfmpegVideoEncoder {
   }
 
   /// Moves the finished encode over the destination. The partial file lives
-  /// in the destination's directory, so rename normally succeeds in place;
-  /// copy-then-delete covers filesystems that refuse the rename.
-  static Future<void> _replaceDestination(String from, String to) async {
-    final partial = File(from);
-    try {
-      await partial.rename(to);
-    } on FileSystemException {
-      await partial.copy(to);
-      await partial.delete();
-    }
-  }
+  /// in the destination's directory, so this is a same-volume rename, which
+  /// replaces the destination atomically. There is deliberately no copy
+  /// fallback: a copy truncates the destination before it completes, so a
+  /// mid-copy failure would damage the very video the partial file protects.
+  /// If the rename fails the caller surfaces the error and the existing
+  /// destination is left untouched.
+  static Future<void> _replaceDestination(String from, String to) =>
+      File(from).rename(to);
 }
