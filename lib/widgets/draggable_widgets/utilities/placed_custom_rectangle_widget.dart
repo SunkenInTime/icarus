@@ -13,11 +13,11 @@ import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_resize_tooltip.dart';
-import 'package:icarus/widgets/draggable_widgets/utilities/rectangle_corner_resize_geometry.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/rectangle_axis_resize_geometry.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
-enum _RectangleResizeHandle { none, length, width, corner }
+enum _RectangleResizeHandle { none, left, right, top, bottom }
 
 class PlacedCustomRectangleWidget extends ConsumerStatefulWidget {
   const PlacedCustomRectangleWidget({
@@ -51,28 +51,31 @@ class _PlacedCustomRectangleWidgetState
     Offset(0, 1),
     Offset(1, 1),
   ];
+  static const List<_RectangleResizeHandle> _resizeHandles = [
+    _RectangleResizeHandle.left,
+    _RectangleResizeHandle.right,
+    _RectangleResizeHandle.top,
+    _RectangleResizeHandle.bottom,
+  ];
 
-  /// Render box of the unrotated shape itself, used to translate global
-  /// pointer positions into shape-local space regardless of rotation.
+  /// Render box of the unrotated shape itself, used to capture exact global
+  /// edge anchors before a resize begins.
   final GlobalKey _shapeKey = GlobalKey();
 
   double? _localWidthMeters;
   double? _localLengthMeters;
   double? _localRotation;
-  double _widthDragOffsetMeters = 0;
-  double _lengthDragOffsetMeters = 0;
-  Offset _cornerPositionDeltaScreen = Offset.zero;
-  Offset _cornerStartTopLeftGlobal = Offset.zero;
-  Offset _cornerFixedGlobal = Offset.zero;
-  Offset _cornerStartStoredPosition = Offset.zero;
-  double _cornerGlobalScale = 1;
+  Offset _resizePointerStartGlobal = Offset.zero;
+  Offset _resizeStartTopLeftGlobal = Offset.zero;
+  Offset _resizeFixedEdgeCenterGlobal = Offset.zero;
+  Offset _resizeStartStoredPosition = Offset.zero;
+  Offset _resizePositionDeltaScreen = Offset.zero;
+  Size _resizeStartSizeGlobal = Size.zero;
+  double _resizeGlobalScale = 1;
   bool _isDragging = false;
   bool _isShapeHovered = false;
   _RectangleResizeHandle _activeHandle = _RectangleResizeHandle.none;
-  bool _isLengthHandleHovered = false;
-  bool _isWidthHandleHovered = false;
-  Offset? _activeResizeCorner;
-  Offset? _hoveredResizeCorner;
+  _RectangleResizeHandle _hoveredResizeHandle = _RectangleResizeHandle.none;
   bool _isRotating = false;
   Offset? _rotatingCorner;
   Offset? _hoveredRotationCorner;
@@ -133,9 +136,7 @@ class _PlacedCustomRectangleWidgetState
     // It is centered on the shape via the translate below, which keeps the
     // shape's unrotated top-left exactly at the stored position.
     final handlePad = coordinateSystem.scale(
-      Settings.shapeRotationHandleOffset +
-          (Settings.shapeRotationHandleSize / 2) +
-          Settings.shapeHandleHitPadding,
+      (Settings.shapeRotationHandleSize / 2) + Settings.shapeHandleHitPadding,
     );
     final diagonal = math.sqrt(
       (scaledLength * scaledLength) + (scaledWidth * scaledWidth),
@@ -151,7 +152,7 @@ class _PlacedCustomRectangleWidgetState
             _activeHandle != _RectangleResizeHandle.none);
 
     return Transform.translate(
-      offset: Offset(-insetX, -insetY) + _cornerPositionDeltaScreen,
+      offset: Offset(-insetX, -insetY) + _resizePositionDeltaScreen,
       child: SizedBox(
         width: outerSize,
         height: outerSize,
@@ -215,30 +216,10 @@ class _PlacedCustomRectangleWidgetState
                       ),
                     ),
                     if (!_isDragging && !isScreenshot) ...[
-                      _buildLengthHandle(
-                        coordinateSystem: coordinateSystem,
-                        scaledWidth: scaledWidth,
-                        scaledLength: scaledLength,
-                        insetX: insetX,
-                        insetY: insetY,
-                        mapScale: mapScale,
-                        lengthMeters: lengthMeters,
-                        showIndicators: showIndicators,
-                      ),
-                      _buildWidthHandle(
-                        coordinateSystem: coordinateSystem,
-                        scaledWidth: scaledWidth,
-                        scaledLength: scaledLength,
-                        insetX: insetX,
-                        insetY: insetY,
-                        mapScale: mapScale,
-                        widthMeters: widthMeters,
-                        showIndicators: showIndicators,
-                      ),
-                      for (final corner in _corners)
-                        _buildCornerResizeHandle(
+                      for (final handle in _resizeHandles)
+                        _buildResizeHandle(
                           coordinateSystem: coordinateSystem,
-                          corner: corner,
+                          handle: handle,
                           scaledWidth: scaledWidth,
                           scaledLength: scaledLength,
                           insetX: insetX,
@@ -309,147 +290,9 @@ class _PlacedCustomRectangleWidgetState
     );
   }
 
-  Widget _buildLengthHandle({
+  Widget _buildResizeHandle({
     required CoordinateSystem coordinateSystem,
-    required double scaledWidth,
-    required double scaledLength,
-    required double insetX,
-    required double insetY,
-    required double mapScale,
-    required double lengthMeters,
-    required bool showIndicators,
-  }) {
-    final pillThickness = coordinateSystem.scale(Settings.shapeHandleThickness);
-    final pillLength = coordinateSystem.scale(Settings.shapeHandleLength);
-    final hitPadding = coordinateSystem.scale(Settings.shapeHandleHitPadding);
-    final hitWidth = pillThickness + (2 * hitPadding);
-    final hitHeight = pillLength + (2 * hitPadding);
-    final handleCenterX = _computeLengthHandleCenterX(
-      coordinateSystem: coordinateSystem,
-      scaledLength: scaledLength,
-    );
-
-    return Positioned(
-      left: insetX + handleCenterX - (hitWidth / 2),
-      top: insetY + ((scaledWidth - hitHeight) / 2),
-      child: ShapeIndicatorFade(
-        visible: showIndicators,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.resizeLeftRight,
-          onEnter: (_) {
-            setState(() {
-              _isLengthHandleHovered = true;
-            });
-          },
-          onExit: (_) {
-            setState(() {
-              _isLengthHandleHovered = false;
-            });
-          },
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanStart: (details) {
-              setState(() {
-                _activeHandle = _RectangleResizeHandle.length;
-                _isLengthHandleHovered = true;
-                _lengthDragOffsetMeters = lengthMeters -
-                    _estimateLengthMeters(details.globalPosition, mapScale);
-              });
-            },
-            onPanUpdate: (details) =>
-                _updateLength(details.globalPosition, mapScale),
-            onPanEnd: (_) => _commitRectangleResize(),
-            onPanCancel: _resetActiveHandle,
-            child: SizedBox(
-              width: hitWidth,
-              height: hitHeight,
-              child: Center(
-                child: _ResizePill(
-                  width: pillThickness,
-                  height: pillLength,
-                  isActive: _activeHandle == _RectangleResizeHandle.length ||
-                      _isLengthHandleHovered,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildWidthHandle({
-    required CoordinateSystem coordinateSystem,
-    required double scaledWidth,
-    required double scaledLength,
-    required double insetX,
-    required double insetY,
-    required double mapScale,
-    required double widthMeters,
-    required bool showIndicators,
-  }) {
-    final pillThickness = coordinateSystem.scale(Settings.shapeHandleThickness);
-    final pillLength = coordinateSystem.scale(Settings.shapeHandleLength);
-    final hitPadding = coordinateSystem.scale(Settings.shapeHandleHitPadding);
-    final hitWidth = pillLength + (2 * hitPadding);
-    final hitHeight = pillThickness + (2 * hitPadding);
-    final handleCenterY = _computeWidthHandleCenterY(
-      coordinateSystem: coordinateSystem,
-      scaledWidth: scaledWidth,
-    );
-
-    return Positioned(
-      left: insetX + ((scaledLength - hitWidth) / 2),
-      top: insetY + handleCenterY - (hitHeight / 2),
-      child: ShapeIndicatorFade(
-        visible: showIndicators,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.resizeUpDown,
-          onEnter: (_) {
-            setState(() {
-              _isWidthHandleHovered = true;
-            });
-          },
-          onExit: (_) {
-            setState(() {
-              _isWidthHandleHovered = false;
-            });
-          },
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onPanStart: (details) {
-              setState(() {
-                _activeHandle = _RectangleResizeHandle.width;
-                _isWidthHandleHovered = true;
-                _widthDragOffsetMeters = widthMeters -
-                    _estimateWidthMeters(details.globalPosition, mapScale);
-              });
-            },
-            onPanUpdate: (details) =>
-                _updateWidth(details.globalPosition, mapScale),
-            onPanEnd: (_) => _commitRectangleResize(),
-            onPanCancel: _resetActiveHandle,
-            child: SizedBox(
-              width: hitWidth,
-              height: hitHeight,
-              child: Center(
-                child: _ResizePill(
-                  width: pillLength,
-                  height: pillThickness,
-                  isActive: _activeHandle == _RectangleResizeHandle.width ||
-                      _isWidthHandleHovered,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCornerResizeHandle({
-    required CoordinateSystem coordinateSystem,
-    required Offset corner,
+    required _RectangleResizeHandle handle,
     required double scaledWidth,
     required double scaledLength,
     required double insetX,
@@ -458,73 +301,62 @@ class _PlacedCustomRectangleWidgetState
     required double rotation,
     required bool showIndicators,
   }) {
-    final gripSize =
-        coordinateSystem.scale(Settings.shapeCornerResizeHandleSize);
+    final pillThickness = coordinateSystem.scale(Settings.shapeHandleThickness);
+    final pillLength = coordinateSystem.scale(Settings.shapeHandleLength);
     final hitPadding = coordinateSystem.scale(Settings.shapeHandleHitPadding);
-    final hitSize = gripSize + (2 * hitPadding);
-    final cornerLocal = Offset(
-      corner.dx * scaledLength,
-      corner.dy * scaledWidth,
+    final isLengthAxis = _isLengthHandle(handle);
+    final hitWidth =
+        (isLengthAxis ? pillThickness : pillLength) + (2 * hitPadding);
+    final hitHeight =
+        (isLengthAxis ? pillLength : pillThickness) + (2 * hitPadding);
+    final handleCenter = _resizeHandleCenter(
+      handle: handle,
+      coordinateSystem: coordinateSystem,
+      scaledLength: scaledLength,
+      scaledWidth: scaledWidth,
     );
-    final isActive = (_activeHandle == _RectangleResizeHandle.corner &&
-            _activeResizeCorner == corner) ||
-        _hoveredResizeCorner == corner;
 
     return Positioned(
-      left: insetX + cornerLocal.dx - (hitSize / 2),
-      top: insetY + cornerLocal.dy - (hitSize / 2),
+      left: insetX + handleCenter.dx - (hitWidth / 2),
+      top: insetY + handleCenter.dy - (hitHeight / 2),
       child: ShapeIndicatorFade(
         visible: showIndicators,
         child: MouseRegion(
-          cursor: _cornerResizeCursor(corner: corner, rotation: rotation),
+          cursor: _resizeCursor(handle: handle, rotation: rotation),
           onEnter: (_) {
             setState(() {
-              _hoveredResizeCorner = corner;
+              _hoveredResizeHandle = handle;
             });
           },
           onExit: (_) {
             setState(() {
-              if (_hoveredResizeCorner == corner) {
-                _hoveredResizeCorner = null;
+              if (_hoveredResizeHandle == handle) {
+                _hoveredResizeHandle = _RectangleResizeHandle.none;
               }
             });
           },
           child: GestureDetector(
+            key: ValueKey('custom-rectangle-resize-${handle.name}'),
             behavior: HitTestBehavior.opaque,
-            onPanStart: (_) => _startCornerResize(corner),
-            onPanUpdate: (details) => _updateCornerResize(
+            onPanStart: (details) =>
+                _startAxisResize(details.globalPosition, handle),
+            onPanUpdate: (details) => _updateAxisResize(
               globalPosition: details.globalPosition,
-              corner: corner,
+              handle: handle,
               mapScale: mapScale,
               rotation: rotation,
             ),
             onPanEnd: (_) => _commitRectangleResize(),
             onPanCancel: _resetActiveHandle,
             child: SizedBox(
-              width: hitSize,
-              height: hitSize,
+              width: hitWidth,
+              height: hitHeight,
               child: Center(
-                child: AnimatedScale(
-                  duration: const Duration(milliseconds: 160),
-                  curve: Curves.easeOutCubic,
-                  scale: isActive ? 1.0 : 0.9,
-                  child: Container(
-                    width: gripSize,
-                    height: gripSize,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(
-                        coordinateSystem.scale(2),
-                      ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Colors.black26,
-                          blurRadius: 3,
-                          offset: Offset(0, 1),
-                        ),
-                      ],
-                    ),
-                  ),
+                child: _ResizePill(
+                  width: isLengthAxis ? pillThickness : pillLength,
+                  height: isLengthAxis ? pillLength : pillThickness,
+                  isActive:
+                      _activeHandle == handle || _hoveredResizeHandle == handle,
                 ),
               ),
             ),
@@ -534,85 +366,35 @@ class _PlacedCustomRectangleWidgetState
     );
   }
 
-  void _startCornerResize(Offset corner) {
-    final shapeBox = _shapeKey.currentContext?.findRenderObject() as RenderBox?;
-    if (shapeBox == null || shapeBox.size.isEmpty) return;
+  bool _isLengthHandle(_RectangleResizeHandle handle) =>
+      handle == _RectangleResizeHandle.left ||
+      handle == _RectangleResizeHandle.right;
 
-    final originGlobal = shapeBox.localToGlobal(Offset.zero);
-    final horizontalEndGlobal =
-        shapeBox.localToGlobal(Offset(shapeBox.size.width, 0));
-    final globalScale =
-        (horizontalEndGlobal - originGlobal).distance / shapeBox.size.width;
-    final centerGlobal =
-        shapeBox.localToGlobal(shapeBox.size.center(Offset.zero));
-    final oppositeCornerLocal = Offset(
-      (1 - corner.dx) * shapeBox.size.width,
-      (1 - corner.dy) * shapeBox.size.height,
-    );
-    final utilities = ref.read(utilityProvider);
-    final index = PlacedWidget.getIndexByID(widget.id, utilities);
-    if (index < 0) return;
-
-    setState(() {
-      _activeHandle = _RectangleResizeHandle.corner;
-      _activeResizeCorner = corner;
-      _hoveredResizeCorner = corner;
-      _cornerFixedGlobal = shapeBox.localToGlobal(oppositeCornerLocal);
-      _cornerGlobalScale = globalScale;
-      _cornerStartTopLeftGlobal = centerGlobal -
-          Offset(
-            shapeBox.size.width * globalScale / 2,
-            shapeBox.size.height * globalScale / 2,
-          );
-      _cornerStartStoredPosition = utilities[index].position;
-    });
+  Offset _resizeHandleCenter({
+    required _RectangleResizeHandle handle,
+    required CoordinateSystem coordinateSystem,
+    required double scaledLength,
+    required double scaledWidth,
+  }) {
+    final halfStroke = _computeRectangleBorderStrokeWidth(coordinateSystem) / 2;
+    return switch (handle) {
+      _RectangleResizeHandle.left => Offset(halfStroke, scaledWidth / 2),
+      _RectangleResizeHandle.right =>
+        Offset(scaledLength - halfStroke, scaledWidth / 2),
+      _RectangleResizeHandle.top => Offset(scaledLength / 2, halfStroke),
+      _RectangleResizeHandle.bottom =>
+        Offset(scaledLength / 2, scaledWidth - halfStroke),
+      _RectangleResizeHandle.none => Offset(scaledLength / 2, scaledWidth / 2),
+    };
   }
 
-  void _updateCornerResize({
-    required Offset globalPosition,
-    required Offset corner,
-    required double mapScale,
+  MouseCursor _resizeCursor({
+    required _RectangleResizeHandle handle,
     required double rotation,
   }) {
-    if (_activeHandle != _RectangleResizeHandle.corner ||
-        _activeResizeCorner != corner) {
-      return;
-    }
-
-    final coordinateSystem = CoordinateSystem.instance;
-    final meterScale = AgentData.inGameMetersDiameter * mapScale;
-    final globalScale = _cornerGlobalScale;
-    final result = calculateRectangleCornerResize(
-      draggedCorner: corner,
-      pointer: globalPosition,
-      fixedCorner: _cornerFixedGlobal,
-      rotation: rotation,
-      minimumSize: Size(
-        coordinateSystem.scale(_minLengthMeters * meterScale) * globalScale,
-        coordinateSystem.scale(_minWidthMeters * meterScale) * globalScale,
-      ),
-      maximumSize: Size(
-        coordinateSystem.scale(_maxLengthMeters * meterScale) * globalScale,
-        coordinateSystem.scale(_maxWidthMeters * meterScale) * globalScale,
-      ),
-    );
-    final localLength = result.size.width / globalScale;
-    final localWidth = result.size.height / globalScale;
-    final globalPositionDelta = result.topLeft - _cornerStartTopLeftGlobal;
-
-    setState(() {
-      _localLengthMeters = coordinateSystem.normalize(localLength) / meterScale;
-      _localWidthMeters = coordinateSystem.normalize(localWidth) / meterScale;
-      _cornerPositionDeltaScreen = globalPositionDelta / globalScale;
-    });
-  }
-
-  MouseCursor _cornerResizeCursor({
-    required Offset corner,
-    required double rotation,
-  }) {
-    final baseAngle = corner.dx == corner.dy ? math.pi / 4 : -math.pi / 4;
-    final normalized = ((baseAngle + rotation) % math.pi + math.pi) % math.pi;
+    final axisAngle =
+        _isLengthHandle(handle) ? rotation : rotation + (math.pi / 2);
+    final normalized = ((axisAngle % math.pi) + math.pi) % math.pi;
     final direction = (normalized / (math.pi / 4)).round() % 4;
     return switch (direction) {
       0 => SystemMouseCursors.resizeLeftRight,
@@ -620,25 +402,6 @@ class _PlacedCustomRectangleWidgetState
       2 => SystemMouseCursors.resizeUpDown,
       _ => SystemMouseCursors.resizeUpRightDownLeft,
     };
-  }
-
-  Offset _rotationHandleCenterLocal({
-    required CoordinateSystem coordinateSystem,
-    required Offset corner,
-    required double scaledWidth,
-    required double scaledLength,
-  }) {
-    final outward = Offset(
-      corner.dx == 0 ? -1 : 1,
-      corner.dy == 0 ? -1 : 1,
-    );
-    final radialOffset =
-        coordinateSystem.scale(Settings.shapeRotationHandleOffset) / math.sqrt2;
-    return Offset(
-          corner.dx * scaledLength,
-          corner.dy * scaledWidth,
-        ) +
-        (outward * radialOffset);
   }
 
   Widget _buildRotationHandle({
@@ -653,11 +416,9 @@ class _PlacedCustomRectangleWidgetState
     final dotSize = coordinateSystem.scale(Settings.shapeRotationHandleSize);
     final hitPadding = coordinateSystem.scale(Settings.shapeHandleHitPadding);
     final hitSize = dotSize + (2 * hitPadding);
-    final cornerLocal = _rotationHandleCenterLocal(
-      coordinateSystem: coordinateSystem,
-      corner: corner,
-      scaledWidth: scaledWidth,
-      scaledLength: scaledLength,
+    final cornerLocal = Offset(
+      corner.dx * scaledLength,
+      corner.dy * scaledWidth,
     );
     final isActive = (_isRotating && _rotatingCorner == corner) ||
         _hoveredRotationCorner == corner;
@@ -793,82 +554,121 @@ class _PlacedCustomRectangleWidgetState
     return shapeBox.localToGlobal(shapeBox.size.center(Offset.zero));
   }
 
-  Offset? _shapeLocalFromGlobal(Offset globalPosition) {
+  void _startAxisResize(
+    Offset globalPosition,
+    _RectangleResizeHandle handle,
+  ) {
     final shapeBox = _shapeKey.currentContext?.findRenderObject() as RenderBox?;
-    if (shapeBox == null) return null;
-    // Inverts the full transform chain (zoom + rotation), so the result is in
-    // unrotated shape space with the origin at the shape's top-left.
-    return shapeBox.globalToLocal(globalPosition);
-  }
+    if (shapeBox == null || shapeBox.size.isEmpty) return;
 
-  void _updateLength(Offset globalPosition, double mapScale) {
-    final nextLength = (_estimateLengthMeters(globalPosition, mapScale) +
-            _lengthDragOffsetMeters)
-        .clamp(_minLengthMeters, _maxLengthMeters);
+    final originGlobal = shapeBox.localToGlobal(Offset.zero);
+    final horizontalEndGlobal =
+        shapeBox.localToGlobal(Offset(shapeBox.size.width, 0));
+    final globalScale =
+        (horizontalEndGlobal - originGlobal).distance / shapeBox.size.width;
+    final centerGlobal =
+        shapeBox.localToGlobal(shapeBox.size.center(Offset.zero));
+    final fixedEdgeLocal = switch (handle) {
+      _RectangleResizeHandle.left =>
+        Offset(shapeBox.size.width, shapeBox.size.height / 2),
+      _RectangleResizeHandle.right => Offset(0, shapeBox.size.height / 2),
+      _RectangleResizeHandle.top =>
+        Offset(shapeBox.size.width / 2, shapeBox.size.height),
+      _RectangleResizeHandle.bottom => Offset(shapeBox.size.width / 2, 0),
+      _RectangleResizeHandle.none => shapeBox.size.center(Offset.zero),
+    };
+    final utilities = ref.read(utilityProvider);
+    final index = PlacedWidget.getIndexByID(widget.id, utilities);
+    if (index < 0) return;
 
     setState(() {
-      _localLengthMeters = nextLength.toDouble();
+      _activeHandle = handle;
+      _hoveredResizeHandle = handle;
+      _resizePointerStartGlobal = globalPosition;
+      _resizeFixedEdgeCenterGlobal = shapeBox.localToGlobal(fixedEdgeLocal);
+      _resizeGlobalScale = globalScale;
+      _resizeStartSizeGlobal = Size(
+        shapeBox.size.width * globalScale,
+        shapeBox.size.height * globalScale,
+      );
+      _resizeStartTopLeftGlobal = centerGlobal -
+          Offset(
+            shapeBox.size.width * globalScale / 2,
+            shapeBox.size.height * globalScale / 2,
+          );
+      _resizeStartStoredPosition = utilities[index].position;
     });
   }
 
-  void _updateWidth(Offset globalPosition, double mapScale) {
-    final nextWidth = (_estimateWidthMeters(globalPosition, mapScale) +
-            _widthDragOffsetMeters)
-        .clamp(_minWidthMeters, _maxWidthMeters);
+  void _updateAxisResize({
+    required Offset globalPosition,
+    required _RectangleResizeHandle handle,
+    required double mapScale,
+    required double rotation,
+  }) {
+    if (_activeHandle != handle) return;
+
+    final coordinateSystem = CoordinateSystem.instance;
+    final meterScale = AgentData.inGameMetersDiameter * mapScale;
+    final result = calculateRectangleAxisResize(
+      side: _toResizeSide(handle),
+      pointerDelta: globalPosition - _resizePointerStartGlobal,
+      fixedEdgeCenter: _resizeFixedEdgeCenterGlobal,
+      rotation: rotation,
+      startingSize: _resizeStartSizeGlobal,
+      minimumSize: Size(
+        coordinateSystem.scale(_minLengthMeters * meterScale) *
+            _resizeGlobalScale,
+        coordinateSystem.scale(_minWidthMeters * meterScale) *
+            _resizeGlobalScale,
+      ),
+      maximumSize: Size(
+        coordinateSystem.scale(_maxLengthMeters * meterScale) *
+            _resizeGlobalScale,
+        coordinateSystem.scale(_maxWidthMeters * meterScale) *
+            _resizeGlobalScale,
+      ),
+    );
 
     setState(() {
-      _localWidthMeters = nextWidth.toDouble();
+      _localLengthMeters = coordinateSystem.normalize(
+            result.size.width / _resizeGlobalScale,
+          ) /
+          meterScale;
+      _localWidthMeters = coordinateSystem.normalize(
+            result.size.height / _resizeGlobalScale,
+          ) /
+          meterScale;
+      _resizePositionDeltaScreen =
+          (result.topLeft - _resizeStartTopLeftGlobal) / _resizeGlobalScale;
     });
   }
 
-  double _estimateLengthMeters(Offset globalPosition, double mapScale) {
-    final localPosition = _shapeLocalFromGlobal(globalPosition);
-    if (localPosition == null) return _localLengthMeters ?? _minLengthMeters;
-
-    final coordinateSystem = CoordinateSystem.instance;
-    final meterScale = AgentData.inGameMetersDiameter * mapScale;
-    final lengthVirtual =
-        coordinateSystem.normalize(math.max(localPosition.dx, 0));
-    return (lengthVirtual / meterScale).toDouble();
-  }
-
-  double _estimateWidthMeters(Offset globalPosition, double mapScale) {
-    final localPosition = _shapeLocalFromGlobal(globalPosition);
-    if (localPosition == null) return _localWidthMeters ?? _minWidthMeters;
-
-    final coordinateSystem = CoordinateSystem.instance;
-    final meterScale = AgentData.inGameMetersDiameter * mapScale;
-    final widthVirtual =
-        coordinateSystem.normalize(math.max(localPosition.dy, 0));
-    return (widthVirtual / meterScale).toDouble();
-  }
+  RectangleResizeSide _toResizeSide(_RectangleResizeHandle handle) =>
+      switch (handle) {
+        _RectangleResizeHandle.left => RectangleResizeSide.left,
+        _RectangleResizeHandle.right => RectangleResizeSide.right,
+        _RectangleResizeHandle.top => RectangleResizeSide.top,
+        _RectangleResizeHandle.bottom => RectangleResizeSide.bottom,
+        _RectangleResizeHandle.none => throw StateError('No active handle'),
+      };
 
   void _commitRectangleResize() {
     final widthMeters = _localWidthMeters;
     final lengthMeters = _localLengthMeters;
     if (widthMeters != null && lengthMeters != null) {
-      if (_activeHandle == _RectangleResizeHandle.corner) {
-        final coordinateSystem = CoordinateSystem.instance;
-        final nextPosition = _cornerStartStoredPosition +
-            Offset(
-              coordinateSystem
-                  .screenWidthToWorld(_cornerPositionDeltaScreen.dx),
-              coordinateSystem
-                  .screenHeightToWorld(_cornerPositionDeltaScreen.dy),
-            );
-        ref.read(utilityProvider.notifier).updateCustomShapeGeometry(
-              id: widget.id,
-              position: nextPosition,
-              widthMeters: widthMeters,
-              lengthMeters: lengthMeters,
-            );
-      } else {
-        ref.read(utilityProvider.notifier).updateCustomRectangleSize(
-              id: widget.id,
-              widthMeters: widthMeters,
-              lengthMeters: lengthMeters,
-            );
-      }
+      final coordinateSystem = CoordinateSystem.instance;
+      final nextPosition = _resizeStartStoredPosition +
+          Offset(
+            coordinateSystem.screenWidthToWorld(_resizePositionDeltaScreen.dx),
+            coordinateSystem.screenHeightToWorld(_resizePositionDeltaScreen.dy),
+          );
+      ref.read(utilityProvider.notifier).updateCustomShapeGeometry(
+            id: widget.id,
+            position: nextPosition,
+            widthMeters: widthMeters,
+            lengthMeters: lengthMeters,
+          );
     }
 
     _resetActiveHandle();
@@ -877,13 +677,8 @@ class _PlacedCustomRectangleWidgetState
   void _resetActiveHandle() {
     setState(() {
       _activeHandle = _RectangleResizeHandle.none;
-      _lengthDragOffsetMeters = 0;
-      _widthDragOffsetMeters = 0;
-      _cornerPositionDeltaScreen = Offset.zero;
-      _isLengthHandleHovered = false;
-      _isWidthHandleHovered = false;
-      _activeResizeCorner = null;
-      _hoveredResizeCorner = null;
+      _hoveredResizeHandle = _RectangleResizeHandle.none;
+      _resizePositionDeltaScreen = Offset.zero;
     });
   }
 
@@ -896,27 +691,12 @@ class _PlacedCustomRectangleWidgetState
     required double rotation,
     required double outerSize,
   }) {
-    final handleCenterLocal = switch (_activeHandle) {
-      _RectangleResizeHandle.length => Offset(
-          _computeLengthHandleCenterX(
-            coordinateSystem: coordinateSystem,
-            scaledLength: scaledLength,
-          ),
-          scaledWidth / 2,
-        ),
-      _RectangleResizeHandle.width => Offset(
-          scaledLength / 2,
-          _computeWidthHandleCenterY(
-            coordinateSystem: coordinateSystem,
-            scaledWidth: scaledWidth,
-          ),
-        ),
-      _RectangleResizeHandle.corner => Offset(
-          (_activeResizeCorner?.dx ?? 1) * scaledLength,
-          (_activeResizeCorner?.dy ?? 1) * scaledWidth,
-        ),
-      _RectangleResizeHandle.none => Offset(scaledLength / 2, scaledWidth / 2),
-    };
+    final handleCenterLocal = _resizeHandleCenter(
+      handle: _activeHandle,
+      coordinateSystem: coordinateSystem,
+      scaledLength: scaledLength,
+      scaledWidth: scaledWidth,
+    );
     final anchor = _rotatedOverlayPosition(
       shapeLocal: handleCenterLocal,
       rotation: rotation,
@@ -924,6 +704,9 @@ class _PlacedCustomRectangleWidgetState
       scaledLength: scaledLength,
       outerSize: outerSize,
     );
+    final isLengthAxis = _isLengthHandle(_activeHandle);
+    final label = isLengthAxis ? 'L' : 'W';
+    final valueMeters = isLengthAxis ? lengthMeters : widthMeters;
     final gap = coordinateSystem.scale(16);
 
     return Positioned(
@@ -931,19 +714,10 @@ class _PlacedCustomRectangleWidgetState
       top: anchor.dy - gap,
       child: FractionalTranslation(
         translation: const Offset(-0.5, -1.0),
-        child: _activeHandle == _RectangleResizeHandle.corner
-            ? CustomShapeResizeTooltip(
-                label: 'Size',
-                valueText:
-                    '${lengthMeters.toStringAsFixed(1)} × ${widthMeters.toStringAsFixed(1)} m',
-              )
-            : CustomShapeResizeTooltip(
-                label:
-                    _activeHandle == _RectangleResizeHandle.length ? 'L' : 'W',
-                valueMeters: _activeHandle == _RectangleResizeHandle.length
-                    ? lengthMeters
-                    : widthMeters,
-              ),
+        child: CustomShapeResizeTooltip(
+          label: label,
+          valueMeters: valueMeters,
+        ),
       ),
     );
   }
@@ -957,12 +731,7 @@ class _PlacedCustomRectangleWidgetState
   }) {
     final corner = _rotatingCorner ?? const Offset(1, 0);
     final anchor = _rotatedOverlayPosition(
-      shapeLocal: _rotationHandleCenterLocal(
-        coordinateSystem: coordinateSystem,
-        corner: corner,
-        scaledWidth: scaledWidth,
-        scaledLength: scaledLength,
-      ),
+      shapeLocal: Offset(corner.dx * scaledLength, corner.dy * scaledWidth),
       rotation: rotation,
       scaledWidth: scaledWidth,
       scaledLength: scaledLength,
@@ -999,22 +768,6 @@ class _PlacedCustomRectangleWidgetState
       (delta.dx * math.sin(rotation)) + (delta.dy * math.cos(rotation)),
     );
     return Offset(outerSize / 2, outerSize / 2) + rotated;
-  }
-
-  double _computeLengthHandleCenterX({
-    required CoordinateSystem coordinateSystem,
-    required double scaledLength,
-  }) {
-    return scaledLength -
-        (_computeRectangleBorderStrokeWidth(coordinateSystem) / 2);
-  }
-
-  double _computeWidthHandleCenterY({
-    required CoordinateSystem coordinateSystem,
-    required double scaledWidth,
-  }) {
-    return scaledWidth -
-        (_computeRectangleBorderStrokeWidth(coordinateSystem) / 2);
   }
 
   double _computeRectangleBorderStrokeWidth(CoordinateSystem coordinateSystem) {

@@ -10,19 +10,14 @@ class CustomShapeResizeTooltip extends StatelessWidget {
     required this.label,
     this.valueMeters,
     this.valueDegrees,
-    this.valueText,
   }) : assert(
-          (valueMeters != null ? 1 : 0) +
-                  (valueDegrees != null ? 1 : 0) +
-                  (valueText != null ? 1 : 0) ==
-              1,
-          'Provide exactly one value.',
+          (valueMeters == null) != (valueDegrees == null),
+          'Provide exactly one of valueMeters or valueDegrees.',
         );
 
   final String label;
   final double? valueMeters;
   final double? valueDegrees;
-  final String? valueText;
 
   @override
   Widget build(BuildContext context) {
@@ -44,11 +39,9 @@ class CustomShapeResizeTooltip extends StatelessWidget {
                 boxShadow: const [Settings.cardForegroundBackdrop],
               ),
               child: Text(
-                valueText != null
-                    ? '$label $valueText'
-                    : valueMeters != null
-                        ? '$label ${valueMeters!.toStringAsFixed(1)} m'
-                        : '$label ${valueDegrees!.toStringAsFixed(0)}°',
+                valueMeters != null
+                    ? '$label ${valueMeters!.toStringAsFixed(1)} m'
+                    : '$label ${valueDegrees!.toStringAsFixed(0)}°',
                 style: theme.textTheme.small.copyWith(
                   color: scheme.popoverForeground,
                   fontWeight: FontWeight.w600,

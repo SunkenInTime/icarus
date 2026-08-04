@@ -8,7 +8,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:icarus/widgets/draggable_widgets/utilities/rectangle_corner_resize_geometry.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/rectangle_axis_resize_geometry.dart';
 
 class _NoopStrategyProvider extends StrategyProvider {
   @override
@@ -16,7 +16,7 @@ class _NoopStrategyProvider extends StrategyProvider {
     return StrategyState(
       isSaved: true,
       stratName: null,
-      id: 'corner-resize-test',
+      id: 'axis-resize-test',
       storageDirectory: null,
       activePageId: null,
     );
@@ -29,99 +29,101 @@ class _NoopStrategyProvider extends StrategyProvider {
 }
 
 void main() {
-  const corners = [
-    Offset(0, 0),
-    Offset(1, 0),
-    Offset(0, 1),
-    Offset(1, 1),
-  ];
-
-  test('each corner resize keeps its opposite corner fixed when rotated', () {
+  test('all four axes keep the opposite edge fixed when rotated', () {
     const originalTopLeft = Offset(120, 90);
     const originalSize = Size(220, 110);
-    const nextSize = Size(280, 145);
     const rotation = math.pi / 6;
 
-    for (final draggedCorner in corners) {
-      final fixedCorner = _globalCorner(
+    for (final side in RectangleResizeSide.values) {
+      final nextSize = switch (side) {
+        RectangleResizeSide.left ||
+        RectangleResizeSide.right =>
+          const Size(280, 110),
+        RectangleResizeSide.top ||
+        RectangleResizeSide.bottom =>
+          const Size(220, 145),
+      };
+      final fixedEdgeCenter = _globalEdgeCenter(
         topLeft: originalTopLeft,
         size: originalSize,
-        corner: Offset(1 - draggedCorner.dx, 1 - draggedCorner.dy),
+        side: _opposite(side),
         rotation: rotation,
       );
-      final pointer = _draggedCornerForSize(
-        fixedCorner: fixedCorner,
-        draggedCorner: draggedCorner,
-        size: nextSize,
+      final result = calculateRectangleAxisResize(
+        side: side,
+        pointerDelta: _pointerDeltaForSize(
+          side: side,
+          originalSize: originalSize,
+          nextSize: nextSize,
+          rotation: rotation,
+        ),
+        fixedEdgeCenter: fixedEdgeCenter,
         rotation: rotation,
-      );
-
-      final result = calculateRectangleCornerResize(
-        draggedCorner: draggedCorner,
-        pointer: pointer,
-        fixedCorner: fixedCorner,
-        rotation: rotation,
+        startingSize: originalSize,
         minimumSize: const Size(10, 10),
         maximumSize: const Size(500, 500),
       );
 
       expect(result.size.width, closeTo(nextSize.width, 0.0001));
       expect(result.size.height, closeTo(nextSize.height, 0.0001));
-      final anchoredCorner = _globalCorner(
+      final anchoredEdgeCenter = _globalEdgeCenter(
         topLeft: result.topLeft,
         size: result.size,
-        corner: Offset(1 - draggedCorner.dx, 1 - draggedCorner.dy),
+        side: _opposite(side),
         rotation: rotation,
       );
-      expect(anchoredCorner.dx, closeTo(fixedCorner.dx, 0.0001));
-      expect(anchoredCorner.dy, closeTo(fixedCorner.dy, 0.0001));
+      expect(anchoredEdgeCenter.dx, closeTo(fixedEdgeCenter.dx, 0.0001));
+      expect(anchoredEdgeCenter.dy, closeTo(fixedEdgeCenter.dy, 0.0001));
     }
   });
 
-  test('minimum size clamp does not let a corner cross its anchor', () {
-    const fixedCorner = Offset(300, 240);
+  test('minimum size clamp prevents an axis crossing its fixed edge', () {
+    const fixedEdgeCenter = Offset(300, 240);
 
-    final result = calculateRectangleCornerResize(
-      draggedCorner: const Offset(0, 0),
-      pointer: const Offset(400, 340),
-      fixedCorner: fixedCorner,
+    final result = calculateRectangleAxisResize(
+      side: RectangleResizeSide.left,
+      pointerDelta: const Offset(500, 0),
+      fixedEdgeCenter: fixedEdgeCenter,
       rotation: 0,
+      startingSize: const Size(200, 80),
       minimumSize: const Size(60, 40),
       maximumSize: const Size(500, 500),
     );
 
-    expect(result.size, const Size(60, 40));
+    expect(result.size, const Size(60, 80));
     expect(result.topLeft, const Offset(240, 200));
   });
 
-  test('maximum size clamp preserves a rotated fixed corner', () {
-    const draggedCorner = Offset(1, 1);
-    const fixedCorner = Offset(80, 70);
+  test('maximum size clamp preserves a rotated fixed edge', () {
+    const originalSize = Size(200, 80);
+    const originalTopLeft = Offset(90, 70);
     const rotation = math.pi / 4;
-
-    final result = calculateRectangleCornerResize(
-      draggedCorner: draggedCorner,
-      pointer: _draggedCornerForSize(
-        fixedCorner: fixedCorner,
-        draggedCorner: draggedCorner,
-        size: const Size(900, 900),
-        rotation: rotation,
-      ),
-      fixedCorner: fixedCorner,
+    final fixedEdgeCenter = _globalEdgeCenter(
+      topLeft: originalTopLeft,
+      size: originalSize,
+      side: RectangleResizeSide.left,
       rotation: rotation,
+    );
+
+    final result = calculateRectangleAxisResize(
+      side: RectangleResizeSide.right,
+      pointerDelta: _rotate(const Offset(900, 0), rotation),
+      fixedEdgeCenter: fixedEdgeCenter,
+      rotation: rotation,
+      startingSize: originalSize,
       minimumSize: const Size(10, 10),
       maximumSize: const Size(250, 120),
     );
 
-    expect(result.size, const Size(250, 120));
-    final anchoredCorner = _globalCorner(
+    expect(result.size, const Size(250, 80));
+    final anchoredEdgeCenter = _globalEdgeCenter(
       topLeft: result.topLeft,
       size: result.size,
-      corner: const Offset(0, 0),
+      side: RectangleResizeSide.left,
       rotation: rotation,
     );
-    expect(anchoredCorner.dx, closeTo(fixedCorner.dx, 0.0001));
-    expect(anchoredCorner.dy, closeTo(fixedCorner.dy, 0.0001));
+    expect(anchoredEdgeCenter.dx, closeTo(fixedEdgeCenter.dx, 0.0001));
+    expect(anchoredEdgeCenter.dy, closeTo(fixedEdgeCenter.dy, 0.0001));
   });
 
   test('position and size commit as one undoable geometry edit', () {
@@ -169,29 +171,45 @@ void main() {
   });
 }
 
-Offset _draggedCornerForSize({
-  required Offset fixedCorner,
-  required Offset draggedCorner,
-  required Size size,
+RectangleResizeSide _opposite(RectangleResizeSide side) => switch (side) {
+      RectangleResizeSide.left => RectangleResizeSide.right,
+      RectangleResizeSide.right => RectangleResizeSide.left,
+      RectangleResizeSide.top => RectangleResizeSide.bottom,
+      RectangleResizeSide.bottom => RectangleResizeSide.top,
+    };
+
+Offset _pointerDeltaForSize({
+  required RectangleResizeSide side,
+  required Size originalSize,
+  required Size nextSize,
   required double rotation,
 }) {
-  final localDelta = Offset(
-    size.width * (draggedCorner.dx == 1 ? 1 : -1),
-    size.height * (draggedCorner.dy == 1 ? 1 : -1),
-  );
-  return fixedCorner + _rotate(localDelta, rotation);
+  final localDelta = switch (side) {
+    RectangleResizeSide.left => Offset(originalSize.width - nextSize.width, 0),
+    RectangleResizeSide.right => Offset(nextSize.width - originalSize.width, 0),
+    RectangleResizeSide.top => Offset(0, originalSize.height - nextSize.height),
+    RectangleResizeSide.bottom =>
+      Offset(0, nextSize.height - originalSize.height),
+  };
+  return _rotate(localDelta, rotation);
 }
 
-Offset _globalCorner({
+Offset _globalEdgeCenter({
   required Offset topLeft,
   required Size size,
-  required Offset corner,
+  required RectangleResizeSide side,
   required double rotation,
 }) {
+  final normalized = switch (side) {
+    RectangleResizeSide.left => const Offset(0, 0.5),
+    RectangleResizeSide.right => const Offset(1, 0.5),
+    RectangleResizeSide.top => const Offset(0.5, 0),
+    RectangleResizeSide.bottom => const Offset(0.5, 1),
+  };
   final center = topLeft + Offset(size.width / 2, size.height / 2);
   final fromCenter = Offset(
-    (corner.dx - 0.5) * size.width,
-    (corner.dy - 0.5) * size.height,
+    (normalized.dx - 0.5) * size.width,
+    (normalized.dy - 0.5) * size.height,
   );
   return center + _rotate(fromCenter, rotation);
 }
