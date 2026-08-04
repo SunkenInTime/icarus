@@ -13,10 +13,11 @@ import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_resize_tooltip.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/rectangle_corner_resize_geometry.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
-enum _RectangleResizeHandle { none, length, width }
+enum _RectangleResizeHandle { none, length, width, corner }
 
 class PlacedCustomRectangleWidget extends ConsumerStatefulWidget {
   const PlacedCustomRectangleWidget({
@@ -60,11 +61,18 @@ class _PlacedCustomRectangleWidgetState
   double? _localRotation;
   double _widthDragOffsetMeters = 0;
   double _lengthDragOffsetMeters = 0;
+  Offset _cornerPositionDeltaScreen = Offset.zero;
+  Offset _cornerStartTopLeftGlobal = Offset.zero;
+  Offset _cornerFixedGlobal = Offset.zero;
+  Offset _cornerStartStoredPosition = Offset.zero;
+  double _cornerGlobalScale = 1;
   bool _isDragging = false;
   bool _isShapeHovered = false;
   _RectangleResizeHandle _activeHandle = _RectangleResizeHandle.none;
   bool _isLengthHandleHovered = false;
   bool _isWidthHandleHovered = false;
+  Offset? _activeResizeCorner;
+  Offset? _hoveredResizeCorner;
   bool _isRotating = false;
   Offset? _rotatingCorner;
   Offset? _hoveredRotationCorner;
@@ -125,7 +133,9 @@ class _PlacedCustomRectangleWidgetState
     // It is centered on the shape via the translate below, which keeps the
     // shape's unrotated top-left exactly at the stored position.
     final handlePad = coordinateSystem.scale(
-      (Settings.shapeRotationHandleSize / 2) + Settings.shapeHandleHitPadding,
+      Settings.shapeRotationHandleOffset +
+          (Settings.shapeRotationHandleSize / 2) +
+          Settings.shapeHandleHitPadding,
     );
     final diagonal = math.sqrt(
       (scaledLength * scaledLength) + (scaledWidth * scaledWidth),
@@ -141,7 +151,7 @@ class _PlacedCustomRectangleWidgetState
             _activeHandle != _RectangleResizeHandle.none);
 
     return Transform.translate(
-      offset: Offset(-insetX, -insetY),
+      offset: Offset(-insetX, -insetY) + _cornerPositionDeltaScreen,
       child: SizedBox(
         width: outerSize,
         height: outerSize,
@@ -225,6 +235,18 @@ class _PlacedCustomRectangleWidgetState
                         widthMeters: widthMeters,
                         showIndicators: showIndicators,
                       ),
+                      for (final corner in _corners)
+                        _buildCornerResizeHandle(
+                          coordinateSystem: coordinateSystem,
+                          corner: corner,
+                          scaledWidth: scaledWidth,
+                          scaledLength: scaledLength,
+                          insetX: insetX,
+                          insetY: insetY,
+                          mapScale: mapScale,
+                          rotation: rotation,
+                          showIndicators: showIndicators,
+                        ),
                       for (final corner in _corners)
                         _buildRotationHandle(
                           coordinateSystem: coordinateSystem,
@@ -425,6 +447,200 @@ class _PlacedCustomRectangleWidgetState
     );
   }
 
+  Widget _buildCornerResizeHandle({
+    required CoordinateSystem coordinateSystem,
+    required Offset corner,
+    required double scaledWidth,
+    required double scaledLength,
+    required double insetX,
+    required double insetY,
+    required double mapScale,
+    required double rotation,
+    required bool showIndicators,
+  }) {
+    final gripSize =
+        coordinateSystem.scale(Settings.shapeCornerResizeHandleSize);
+    final hitPadding = coordinateSystem.scale(Settings.shapeHandleHitPadding);
+    final hitSize = gripSize + (2 * hitPadding);
+    final cornerLocal = Offset(
+      corner.dx * scaledLength,
+      corner.dy * scaledWidth,
+    );
+    final isActive = (_activeHandle == _RectangleResizeHandle.corner &&
+            _activeResizeCorner == corner) ||
+        _hoveredResizeCorner == corner;
+
+    return Positioned(
+      left: insetX + cornerLocal.dx - (hitSize / 2),
+      top: insetY + cornerLocal.dy - (hitSize / 2),
+      child: ShapeIndicatorFade(
+        visible: showIndicators,
+        child: MouseRegion(
+          cursor: _cornerResizeCursor(corner: corner, rotation: rotation),
+          onEnter: (_) {
+            setState(() {
+              _hoveredResizeCorner = corner;
+            });
+          },
+          onExit: (_) {
+            setState(() {
+              if (_hoveredResizeCorner == corner) {
+                _hoveredResizeCorner = null;
+              }
+            });
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanStart: (_) => _startCornerResize(corner),
+            onPanUpdate: (details) => _updateCornerResize(
+              globalPosition: details.globalPosition,
+              corner: corner,
+              mapScale: mapScale,
+              rotation: rotation,
+            ),
+            onPanEnd: (_) => _commitRectangleResize(),
+            onPanCancel: _resetActiveHandle,
+            child: SizedBox(
+              width: hitSize,
+              height: hitSize,
+              child: Center(
+                child: AnimatedScale(
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOutCubic,
+                  scale: isActive ? 1.0 : 0.9,
+                  child: Container(
+                    width: gripSize,
+                    height: gripSize,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(
+                        coordinateSystem.scale(2),
+                      ),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black26,
+                          blurRadius: 3,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _startCornerResize(Offset corner) {
+    final shapeBox = _shapeKey.currentContext?.findRenderObject() as RenderBox?;
+    if (shapeBox == null || shapeBox.size.isEmpty) return;
+
+    final originGlobal = shapeBox.localToGlobal(Offset.zero);
+    final horizontalEndGlobal =
+        shapeBox.localToGlobal(Offset(shapeBox.size.width, 0));
+    final globalScale =
+        (horizontalEndGlobal - originGlobal).distance / shapeBox.size.width;
+    final centerGlobal =
+        shapeBox.localToGlobal(shapeBox.size.center(Offset.zero));
+    final oppositeCornerLocal = Offset(
+      (1 - corner.dx) * shapeBox.size.width,
+      (1 - corner.dy) * shapeBox.size.height,
+    );
+    final utilities = ref.read(utilityProvider);
+    final index = PlacedWidget.getIndexByID(widget.id, utilities);
+    if (index < 0) return;
+
+    setState(() {
+      _activeHandle = _RectangleResizeHandle.corner;
+      _activeResizeCorner = corner;
+      _hoveredResizeCorner = corner;
+      _cornerFixedGlobal = shapeBox.localToGlobal(oppositeCornerLocal);
+      _cornerGlobalScale = globalScale;
+      _cornerStartTopLeftGlobal = centerGlobal -
+          Offset(
+            shapeBox.size.width * globalScale / 2,
+            shapeBox.size.height * globalScale / 2,
+          );
+      _cornerStartStoredPosition = utilities[index].position;
+    });
+  }
+
+  void _updateCornerResize({
+    required Offset globalPosition,
+    required Offset corner,
+    required double mapScale,
+    required double rotation,
+  }) {
+    if (_activeHandle != _RectangleResizeHandle.corner ||
+        _activeResizeCorner != corner) {
+      return;
+    }
+
+    final coordinateSystem = CoordinateSystem.instance;
+    final meterScale = AgentData.inGameMetersDiameter * mapScale;
+    final globalScale = _cornerGlobalScale;
+    final result = calculateRectangleCornerResize(
+      draggedCorner: corner,
+      pointer: globalPosition,
+      fixedCorner: _cornerFixedGlobal,
+      rotation: rotation,
+      minimumSize: Size(
+        coordinateSystem.scale(_minLengthMeters * meterScale) * globalScale,
+        coordinateSystem.scale(_minWidthMeters * meterScale) * globalScale,
+      ),
+      maximumSize: Size(
+        coordinateSystem.scale(_maxLengthMeters * meterScale) * globalScale,
+        coordinateSystem.scale(_maxWidthMeters * meterScale) * globalScale,
+      ),
+    );
+    final localLength = result.size.width / globalScale;
+    final localWidth = result.size.height / globalScale;
+    final globalPositionDelta = result.topLeft - _cornerStartTopLeftGlobal;
+
+    setState(() {
+      _localLengthMeters = coordinateSystem.normalize(localLength) / meterScale;
+      _localWidthMeters = coordinateSystem.normalize(localWidth) / meterScale;
+      _cornerPositionDeltaScreen = globalPositionDelta / globalScale;
+    });
+  }
+
+  MouseCursor _cornerResizeCursor({
+    required Offset corner,
+    required double rotation,
+  }) {
+    final baseAngle = corner.dx == corner.dy ? math.pi / 4 : -math.pi / 4;
+    final normalized = ((baseAngle + rotation) % math.pi + math.pi) % math.pi;
+    final direction = (normalized / (math.pi / 4)).round() % 4;
+    return switch (direction) {
+      0 => SystemMouseCursors.resizeLeftRight,
+      1 => SystemMouseCursors.resizeUpLeftDownRight,
+      2 => SystemMouseCursors.resizeUpDown,
+      _ => SystemMouseCursors.resizeUpRightDownLeft,
+    };
+  }
+
+  Offset _rotationHandleCenterLocal({
+    required CoordinateSystem coordinateSystem,
+    required Offset corner,
+    required double scaledWidth,
+    required double scaledLength,
+  }) {
+    final outward = Offset(
+      corner.dx == 0 ? -1 : 1,
+      corner.dy == 0 ? -1 : 1,
+    );
+    final radialOffset =
+        coordinateSystem.scale(Settings.shapeRotationHandleOffset) / math.sqrt2;
+    return Offset(
+          corner.dx * scaledLength,
+          corner.dy * scaledWidth,
+        ) +
+        (outward * radialOffset);
+  }
+
   Widget _buildRotationHandle({
     required CoordinateSystem coordinateSystem,
     required Offset corner,
@@ -437,9 +653,11 @@ class _PlacedCustomRectangleWidgetState
     final dotSize = coordinateSystem.scale(Settings.shapeRotationHandleSize);
     final hitPadding = coordinateSystem.scale(Settings.shapeHandleHitPadding);
     final hitSize = dotSize + (2 * hitPadding);
-    final cornerLocal = Offset(
-      corner.dx * scaledLength,
-      corner.dy * scaledWidth,
+    final cornerLocal = _rotationHandleCenterLocal(
+      coordinateSystem: coordinateSystem,
+      corner: corner,
+      scaledWidth: scaledWidth,
+      scaledLength: scaledLength,
     );
     final isActive = (_isRotating && _rotatingCorner == corner) ||
         _hoveredRotationCorner == corner;
@@ -629,11 +847,28 @@ class _PlacedCustomRectangleWidgetState
     final widthMeters = _localWidthMeters;
     final lengthMeters = _localLengthMeters;
     if (widthMeters != null && lengthMeters != null) {
-      ref.read(utilityProvider.notifier).updateCustomRectangleSize(
-            id: widget.id,
-            widthMeters: widthMeters,
-            lengthMeters: lengthMeters,
-          );
+      if (_activeHandle == _RectangleResizeHandle.corner) {
+        final coordinateSystem = CoordinateSystem.instance;
+        final nextPosition = _cornerStartStoredPosition +
+            Offset(
+              coordinateSystem
+                  .screenWidthToWorld(_cornerPositionDeltaScreen.dx),
+              coordinateSystem
+                  .screenHeightToWorld(_cornerPositionDeltaScreen.dy),
+            );
+        ref.read(utilityProvider.notifier).updateCustomShapeGeometry(
+              id: widget.id,
+              position: nextPosition,
+              widthMeters: widthMeters,
+              lengthMeters: lengthMeters,
+            );
+      } else {
+        ref.read(utilityProvider.notifier).updateCustomRectangleSize(
+              id: widget.id,
+              widthMeters: widthMeters,
+              lengthMeters: lengthMeters,
+            );
+      }
     }
 
     _resetActiveHandle();
@@ -644,8 +879,11 @@ class _PlacedCustomRectangleWidgetState
       _activeHandle = _RectangleResizeHandle.none;
       _lengthDragOffsetMeters = 0;
       _widthDragOffsetMeters = 0;
+      _cornerPositionDeltaScreen = Offset.zero;
       _isLengthHandleHovered = false;
       _isWidthHandleHovered = false;
+      _activeResizeCorner = null;
+      _hoveredResizeCorner = null;
     });
   }
 
@@ -658,21 +896,27 @@ class _PlacedCustomRectangleWidgetState
     required double rotation,
     required double outerSize,
   }) {
-    final handleCenterLocal = _activeHandle == _RectangleResizeHandle.length
-        ? Offset(
-            _computeLengthHandleCenterX(
-              coordinateSystem: coordinateSystem,
-              scaledLength: scaledLength,
-            ),
-            scaledWidth / 2,
-          )
-        : Offset(
-            scaledLength / 2,
-            _computeWidthHandleCenterY(
-              coordinateSystem: coordinateSystem,
-              scaledWidth: scaledWidth,
-            ),
-          );
+    final handleCenterLocal = switch (_activeHandle) {
+      _RectangleResizeHandle.length => Offset(
+          _computeLengthHandleCenterX(
+            coordinateSystem: coordinateSystem,
+            scaledLength: scaledLength,
+          ),
+          scaledWidth / 2,
+        ),
+      _RectangleResizeHandle.width => Offset(
+          scaledLength / 2,
+          _computeWidthHandleCenterY(
+            coordinateSystem: coordinateSystem,
+            scaledWidth: scaledWidth,
+          ),
+        ),
+      _RectangleResizeHandle.corner => Offset(
+          (_activeResizeCorner?.dx ?? 1) * scaledLength,
+          (_activeResizeCorner?.dy ?? 1) * scaledWidth,
+        ),
+      _RectangleResizeHandle.none => Offset(scaledLength / 2, scaledWidth / 2),
+    };
     final anchor = _rotatedOverlayPosition(
       shapeLocal: handleCenterLocal,
       rotation: rotation,
@@ -680,10 +924,6 @@ class _PlacedCustomRectangleWidgetState
       scaledLength: scaledLength,
       outerSize: outerSize,
     );
-    final label = _activeHandle == _RectangleResizeHandle.length ? 'L' : 'W';
-    final valueMeters = _activeHandle == _RectangleResizeHandle.length
-        ? lengthMeters
-        : widthMeters;
     final gap = coordinateSystem.scale(16);
 
     return Positioned(
@@ -691,10 +931,19 @@ class _PlacedCustomRectangleWidgetState
       top: anchor.dy - gap,
       child: FractionalTranslation(
         translation: const Offset(-0.5, -1.0),
-        child: CustomShapeResizeTooltip(
-          label: label,
-          valueMeters: valueMeters,
-        ),
+        child: _activeHandle == _RectangleResizeHandle.corner
+            ? CustomShapeResizeTooltip(
+                label: 'Size',
+                valueText:
+                    '${lengthMeters.toStringAsFixed(1)} × ${widthMeters.toStringAsFixed(1)} m',
+              )
+            : CustomShapeResizeTooltip(
+                label:
+                    _activeHandle == _RectangleResizeHandle.length ? 'L' : 'W',
+                valueMeters: _activeHandle == _RectangleResizeHandle.length
+                    ? lengthMeters
+                    : widthMeters,
+              ),
       ),
     );
   }
@@ -708,7 +957,12 @@ class _PlacedCustomRectangleWidgetState
   }) {
     final corner = _rotatingCorner ?? const Offset(1, 0);
     final anchor = _rotatedOverlayPosition(
-      shapeLocal: Offset(corner.dx * scaledLength, corner.dy * scaledWidth),
+      shapeLocal: _rotationHandleCenterLocal(
+        coordinateSystem: coordinateSystem,
+        corner: corner,
+        scaledWidth: scaledWidth,
+        scaledLength: scaledLength,
+      ),
       rotation: rotation,
       scaledWidth: scaledWidth,
       scaledLength: scaledLength,

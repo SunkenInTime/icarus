@@ -746,7 +746,9 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
       abilitySize: abilitySize,
     );
 
-    if (widget is PlacedUtility && widget.rotation != 0) {
+    if (widget is PlacedUtility &&
+        widget.rotation != 0 &&
+        widget.type != UtilityType.customRectangle) {
       return Positioned(
         left: scaledPosition.dx,
         top: scaledPosition.dy,
