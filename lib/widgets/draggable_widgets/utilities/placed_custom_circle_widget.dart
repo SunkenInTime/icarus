@@ -122,6 +122,7 @@ class _PlacedCustomCircleWidgetState
       colorValue: utilityRef.customColorValue,
       opacityPercent: utilityRef.customOpacityPercent,
       mapScale: mapScale,
+      showCenterMarker: !isScreenshot,
       centerMarkerVisible: showIndicators,
     );
 
@@ -190,6 +191,7 @@ class _PlacedCustomCircleWidgetState
             height: scaledDiameter + (2 * hoverPad),
             child: MouseRegion(
               opaque: false,
+              hitTestBehavior: HitTestBehavior.translucent,
               onEnter: (_) {
                 setState(() {
                   _isShapeHovered = true;

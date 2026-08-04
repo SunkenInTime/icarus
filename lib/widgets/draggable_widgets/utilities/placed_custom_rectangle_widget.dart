@@ -210,6 +210,7 @@ class _PlacedCustomRectangleWidgetState
                             colorValue: utilityRef.customColorValue,
                             opacityPercent: utilityRef.customOpacityPercent,
                             mapScale: mapScale,
+                            showCenterMarker: !isScreenshot,
                             centerMarkerVisible: showIndicators,
                           ),
                         ),
