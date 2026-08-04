@@ -2,9 +2,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/app_cursors.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
@@ -14,6 +16,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_util
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_circle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_rectangle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 class _FixedMapProvider extends MapProvider {
   @override
@@ -154,6 +157,75 @@ void main() {
       isFalse,
     );
   });
+
+  testWidgets('rectangle rotation handles communicate hover and active states',
+      (tester) async {
+    final utility = _rectangle();
+    final container = _containerWith(utility);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: PlacedCustomRectangleWidget(
+          utility: utility,
+          id: utility.id,
+          onDragEnd: (_) {},
+        ),
+      ),
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(
+      location: tester.getCenter(find.byType(CustomRectangleUtilityWidget)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(
+      tester
+          .widgetList<ShapeIndicatorFade>(find.byType(ShapeIndicatorFade))
+          .every((indicator) => indicator.visible),
+      isTrue,
+    );
+    expect(find.byIcon(Icons.rotate_right_rounded), findsNWidgets(4));
+
+    final handle = find.byKey(
+      const ValueKey('custom-rectangle-rotate-top-right'),
+    );
+    final handleMouseRegion =
+        find.ancestor(of: handle, matching: find.byType(MouseRegion)).first;
+    expect(
+      tester.widget<MouseRegion>(handleMouseRegion).cursor,
+      shapeRotationMouseCursor(active: false),
+    );
+
+    final handleCenter = tester.getCenter(handle);
+    await mouse.moveTo(handleCenter);
+    await mouse.down(handleCenter);
+    await mouse.moveBy(const Offset(0, 12));
+    await tester.pump();
+
+    expect(
+      tester.widgetList<MouseRegion>(find.byType(MouseRegion)).any(
+            (region) => region.cursor == shapeRotationMouseCursor(active: true),
+          ),
+      isTrue,
+    );
+    final activeBadgeIcon = tester.widget<Icon>(
+      find.descendant(
+        of: handle,
+        matching: find.byIcon(Icons.rotate_right_rounded),
+      ),
+    );
+    expect(
+      activeBadgeIcon.color,
+      Settings.tacticalVioletTheme.primary,
+    );
+
+    await mouse.up();
+    await tester.pump();
+  });
 }
 
 ProviderContainer _containerWith(PlacedUtility utility) {
@@ -170,7 +242,14 @@ Widget _harness({
 }) {
   return UncontrolledProviderScope(
     container: container,
-    child: MaterialApp(home: Scaffold(body: Center(child: child))),
+    child: ShadApp(
+      themeMode: ThemeMode.dark,
+      darkTheme: ShadThemeData(
+        brightness: Brightness.dark,
+        colorScheme: Settings.tacticalVioletTheme,
+      ),
+      home: Scaffold(body: Center(child: child)),
+    ),
   );
 }
 

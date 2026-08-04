@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 
 import 'package:windows_single_instance/windows_single_instance.dart';
+import 'package:icarus/const/app_cursors.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/app_navigator.dart';
@@ -77,6 +78,7 @@ Future<void> main(List<String> args) async {
         hotY: 6,
         color: Colors.white,
       );
+      await initializeShapeRotationCursors();
 
       registerIcarusAdapters(Hive);
 

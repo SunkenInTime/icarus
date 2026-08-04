@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/app_cursors.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -136,7 +137,9 @@ class _PlacedCustomRectangleWidgetState
     // It is centered on the shape via the translate below, which keeps the
     // shape's unrotated top-left exactly at the stored position.
     final handlePad = coordinateSystem.scale(
-      (Settings.shapeRotationHandleSize / 2) + Settings.shapeHandleHitPadding,
+      Settings.shapeRotationHandleOffset +
+          (Settings.shapeRotationHandleSize / 2) +
+          Settings.shapeHandleHitPadding,
     );
     final diagonal = math.sqrt(
       (scaledLength * scaledLength) + (scaledWidth * scaledWidth),
@@ -237,6 +240,7 @@ class _PlacedCustomRectangleWidgetState
                           scaledLength: scaledLength,
                           insetX: insetX,
                           insetY: insetY,
+                          rotation: rotation,
                           showIndicators: showIndicators,
                         ),
                     ],
@@ -284,6 +288,14 @@ class _PlacedCustomRectangleWidgetState
                 scaledLength: scaledLength,
                 rotation: rotation,
                 outerSize: outerSize,
+              ),
+            if (_isRotating)
+              Positioned.fill(
+                child: MouseRegion(
+                  cursor: shapeRotationMouseCursor(active: true),
+                  opaque: false,
+                  child: const SizedBox.expand(),
+                ),
               ),
           ],
         ),
@@ -412,27 +424,28 @@ class _PlacedCustomRectangleWidgetState
     required double scaledLength,
     required double insetX,
     required double insetY,
+    required double rotation,
     required bool showIndicators,
   }) {
-    final dotSize = coordinateSystem.scale(Settings.shapeRotationHandleSize);
+    final badgeSize = coordinateSystem.scale(Settings.shapeRotationHandleSize);
     final hitPadding = coordinateSystem.scale(Settings.shapeHandleHitPadding);
-    final hitSize = dotSize + (2 * hitPadding);
-    final cornerLocal = Offset(
-      corner.dx * scaledLength,
-      corner.dy * scaledWidth,
+    final hitSize = badgeSize + (2 * hitPadding);
+    final handleCenter = _rotationHandleCenter(
+      coordinateSystem: coordinateSystem,
+      corner: corner,
+      scaledLength: scaledLength,
+      scaledWidth: scaledWidth,
     );
-    final isActive = (_isRotating && _rotatingCorner == corner) ||
-        _hoveredRotationCorner == corner;
+    final isThisHandleActive = _isRotating && _rotatingCorner == corner;
+    final isEmphasized = isThisHandleActive || _hoveredRotationCorner == corner;
 
     return Positioned(
-      left: insetX + cornerLocal.dx - (hitSize / 2),
-      top: insetY + cornerLocal.dy - (hitSize / 2),
+      left: insetX + handleCenter.dx - (hitSize / 2),
+      top: insetY + handleCenter.dy - (hitSize / 2),
       child: ShapeIndicatorFade(
         visible: showIndicators,
         child: MouseRegion(
-          cursor: _isRotating
-              ? SystemMouseCursors.grabbing
-              : SystemMouseCursors.grab,
+          cursor: shapeRotationMouseCursor(active: _isRotating),
           onEnter: (_) {
             setState(() {
               _hoveredRotationCorner = corner;
@@ -446,6 +459,9 @@ class _PlacedCustomRectangleWidgetState
             });
           },
           child: GestureDetector(
+            key: ValueKey(
+              'custom-rectangle-rotate-${_rotationCornerName(corner)}',
+            ),
             behavior: HitTestBehavior.opaque,
             onPanStart: (details) =>
                 _startRotationDrag(details.globalPosition, corner),
@@ -457,24 +473,12 @@ class _PlacedCustomRectangleWidgetState
               width: hitSize,
               height: hitSize,
               child: Center(
-                child: AnimatedScale(
-                  duration: const Duration(milliseconds: 160),
-                  curve: Curves.easeOutCubic,
-                  scale: isActive ? 1.0 : 0.9,
-                  child: Container(
-                    width: dotSize,
-                    height: dotSize,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black26,
-                          blurRadius: 3,
-                          offset: Offset(0, 1),
-                        ),
-                      ],
-                    ),
+                child: Transform.rotate(
+                  angle: -rotation,
+                  child: _RotationBadge(
+                    size: badgeSize,
+                    isActive: isThisHandleActive,
+                    isEmphasized: isEmphasized,
                   ),
                 ),
               ),
@@ -483,6 +487,34 @@ class _PlacedCustomRectangleWidgetState
         ),
       ),
     );
+  }
+
+  Offset _rotationHandleCenter({
+    required CoordinateSystem coordinateSystem,
+    required Offset corner,
+    required double scaledLength,
+    required double scaledWidth,
+  }) {
+    final radialOffset = coordinateSystem.scale(
+          Settings.shapeRotationHandleOffset,
+        ) /
+        math.sqrt2;
+    final outward = Offset(
+      corner.dx == 0 ? -1 : 1,
+      corner.dy == 0 ? -1 : 1,
+    );
+    return Offset(
+          corner.dx * scaledLength,
+          corner.dy * scaledWidth,
+        ) +
+        (outward * radialOffset);
+  }
+
+  String _rotationCornerName(Offset corner) {
+    if (corner == const Offset(0, 0)) return 'top-left';
+    if (corner == const Offset(1, 0)) return 'top-right';
+    if (corner == const Offset(0, 1)) return 'bottom-left';
+    return 'bottom-right';
   }
 
   void _startRotationDrag(Offset globalPosition, Offset corner) {
@@ -732,7 +764,12 @@ class _PlacedCustomRectangleWidgetState
   }) {
     final corner = _rotatingCorner ?? const Offset(1, 0);
     final anchor = _rotatedOverlayPosition(
-      shapeLocal: Offset(corner.dx * scaledLength, corner.dy * scaledWidth),
+      shapeLocal: _rotationHandleCenter(
+        coordinateSystem: coordinateSystem,
+        corner: corner,
+        scaledLength: scaledLength,
+        scaledWidth: scaledWidth,
+      ),
       rotation: rotation,
       scaledWidth: scaledWidth,
       scaledLength: scaledLength,
@@ -773,6 +810,36 @@ class _PlacedCustomRectangleWidgetState
 
   double _computeRectangleBorderStrokeWidth(CoordinateSystem coordinateSystem) {
     return coordinateSystem.scale(_rectangleBorderStrokeVirtual);
+  }
+}
+
+class _RotationBadge extends StatelessWidget {
+  const _RotationBadge({
+    required this.size,
+    required this.isActive,
+    required this.isEmphasized,
+  });
+
+  final double size;
+  final bool isActive;
+  final bool isEmphasized;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedScale(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOutCubic,
+      scale: isEmphasized ? 1.0 : 0.9,
+      child: Icon(
+        Icons.rotate_right_rounded,
+        size: size,
+        color: isActive ? Settings.tacticalVioletTheme.primary : Colors.white,
+        shadows: const [
+          Shadow(color: Colors.black87, blurRadius: 4),
+          Shadow(color: Colors.black87, blurRadius: 1),
+        ],
+      ),
+    );
   }
 }
 

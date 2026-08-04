@@ -51,11 +51,13 @@ class Settings {
   // Custom shape edit handles (virtual units). Tune here, not in the widgets:
   // - thickness/length size the visible resize pills and the circle's arc,
   // - hitPadding is the extra invisible grab area added around every handle,
-  // - rotationHandleSize is the diameter of the corner rotation dots.
+  // - rotationHandleSize is the diameter of the corner rotation badges,
+  // - rotationHandleOffset places those badges beyond the shape's corners.
   static const double shapeHandleThickness = 6;
   static const double shapeHandleLength = 24;
   static const double shapeHandleHitPadding = 8;
-  static const double shapeRotationHandleSize = 9;
+  static const double shapeRotationHandleSize = 24;
+  static const double shapeRotationHandleOffset = 20;
 
   static const double strokeThicknessThin = 2;
   static const double strokeThicknessSmall = 3;
