@@ -14,6 +14,7 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Tracks the live route stack so [MouseNavigation] can tell what is on top:
 /// the library, the strategy view, a dialog, or an auxiliary screen.
@@ -154,6 +155,18 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     _currentLocation = next;
   }
 
+  bool _hasOpenShadMenu() {
+    final focusContext = FocusManager.instance.primaryFocus?.context;
+    if (focusContext == null) return false;
+
+    final contextMenu =
+        focusContext.findAncestorStateOfType<ShadContextMenuState>();
+    if (contextMenu?.controller.isOpen ?? false) return true;
+
+    final popover = focusContext.findAncestorWidgetOfExactType<ShadPopover>();
+    return popover?.controller?.isOpen ?? popover?.visible ?? false;
+  }
+
   void _handlePointerDown(PointerDownEvent event) {
     if (event.kind != PointerDeviceKind.mouse) return;
     final bool isBack = event.buttons & kBackMouseButton != 0;
@@ -161,7 +174,7 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
     if (!isBack && !isForward) return;
 
     final topRoute = mouseNavigationRouteObserver.topRoute;
-    if (topRoute is PopupRoute) {
+    if (topRoute is PopupRoute || _hasOpenShadMenu()) {
       // A dialog or menu owns the screen; never navigate underneath it.
       return;
     }
