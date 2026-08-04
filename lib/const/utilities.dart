@@ -562,13 +562,19 @@ class CustomRectangleUtility extends Utilities {
     assert(rectLengthMeters != null, 'rectLengthMeters must be provided');
     assert(colorValue != null, 'colorValue must be provided');
     assert(opacityPercent != null, 'opacityPercent must be provided');
-    return CustomRectangleUtilityWidget(
-      id: id,
-      mapScale: mapScale,
-      widthMeters: widthMeters,
-      rectLengthMeters: rectLengthMeters,
-      colorValue: colorValue,
-      opacityPercent: opacityPercent,
+    // Rotation happens about the shape's center, matching the interactive
+    // widget's transform.
+    return Transform.rotate(
+      angle: rotation ?? 0,
+      child: CustomRectangleUtilityWidget(
+        id: id,
+        mapScale: mapScale,
+        widthMeters: widthMeters,
+        rectLengthMeters: rectLengthMeters,
+        colorValue: colorValue,
+        opacityPercent: opacityPercent,
+        showCenterMarker: showCenterMarker,
+      ),
     );
   }
 

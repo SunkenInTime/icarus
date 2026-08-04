@@ -47,6 +47,16 @@ class Settings {
 
   static const Color abilityBGColor = Color(0xFF1B1B1B);
   static const double feedbackOpacity = 0.7;
+
+  // Custom shape edit handles (virtual units). Tune here, not in the widgets:
+  // - thickness/length size the visible resize pills and the circle's arc,
+  // - hitPadding is the extra invisible grab area added around every handle,
+  // - rotationHandleSize is the diameter of the corner rotation dots.
+  static const double shapeHandleThickness = 6;
+  static const double shapeHandleLength = 24;
+  static const double shapeHandleHitPadding = 8;
+  static const double shapeRotationHandleSize = 9;
+
   static const double strokeThicknessThin = 2;
   static const double strokeThicknessSmall = 3;
   static const double strokeThicknessMedium = 5;

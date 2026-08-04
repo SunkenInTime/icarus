@@ -17,6 +17,7 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
     this.opacityPercent,
     this.mapScale,
     this.showCenterMarker = true,
+    this.centerMarkerVisible = true,
   });
 
   final String? id;
@@ -25,6 +26,10 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
   final int? opacityPercent;
   final double? mapScale;
   final bool showCenterMarker;
+
+  /// When false the center marker fades out but keeps its hit area, so the
+  /// shape can still be grabbed the moment hover reveals it.
+  final bool centerMarkerVisible;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -86,14 +91,19 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
                 deleteTarget: (id?.isNotEmpty ?? false)
                     ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
                     : null,
-                child: Container(
-                  width: iconSize * 0.8,
-                  height: iconSize * 0.8,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.9),
-                    border:
-                        Border.all(color: Colors.white, width: coord.scale(2)),
+                child: AnimatedOpacity(
+                  opacity: centerMarkerVisible ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 150),
+                  curve: Curves.easeOutCubic,
+                  child: Container(
+                    width: iconSize * 0.8,
+                    height: iconSize * 0.8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.9),
+                      border: Border.all(
+                          color: Colors.white, width: coord.scale(2)),
+                    ),
                   ),
                 ),
               ),

@@ -14,6 +14,7 @@ import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_resize_tooltip.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 
 class PlacedCustomCircleWidget extends ConsumerStatefulWidget {
@@ -40,9 +41,9 @@ class _PlacedCustomCircleWidgetState
       CustomCircleUtility.maxDiameterMeters;
   static const double _handleAngle = math.pi / 4;
   static const double _maxHandleSweep = math.pi / 7;
-  static const double _handleArcLengthVirtual = 18.0;
+  static const double _handleArcLengthVirtual = Settings.shapeHandleLength;
   static const double _circleBorderStrokeVirtual = 2.0;
-  static const double _handleStrokeWidthVirtual = 8.0;
+  static const double _handleStrokeWidthVirtual = Settings.shapeHandleThickness;
 
   double? _localDiameterMeters;
   double? _resizeStartDiameterMeters;
@@ -50,6 +51,7 @@ class _PlacedCustomCircleWidgetState
   bool _isDragging = false;
   bool _isResizing = false;
   bool _isHandleHovered = false;
+  bool _isShapeHovered = false;
 
   @override
   void initState() {
@@ -90,7 +92,9 @@ class _PlacedCustomCircleWidgetState
       CustomCircleUtility.maxDiameterInVirtual(mapScale),
     );
     final circleInset = (scaledMaxDiameter - scaledDiameter) / 2;
-    final arcRegionSize = coordinateSystem.scale(32);
+    final arcRegionSize = coordinateSystem.scale(
+      Settings.shapeHandleLength + (2 * Settings.shapeHandleHitPadding),
+    );
     final handleCenter = _computeHandleCenter(
       coordinateSystem: coordinateSystem,
       scaledDiameter: scaledDiameter,
@@ -107,12 +111,18 @@ class _PlacedCustomCircleWidgetState
       (arcRegionTop + arcRegionSize) - scaledMaxDiameter,
     );
 
+    final showIndicators = !_isDragging &&
+        !isScreenshot &&
+        (_isShapeHovered || _isHandleHovered || _isResizing);
+    final hoverPad = coordinateSystem.scale(Settings.shapeHandleHitPadding);
+
     final circleChild = CustomCircleUtilityWidget(
       id: widget.id,
       diameterMeters: diameterMeters,
       colorValue: utilityRef.customColorValue,
       opacityPercent: utilityRef.customOpacityPercent,
       mapScale: mapScale,
+      centerMarkerVisible: showIndicators,
     );
 
     return SizedBox(
@@ -162,6 +172,7 @@ class _PlacedCustomCircleWidgetState
               arcRegionLeft: arcRegionLeft,
               arcRegionTop: arcRegionTop,
               diameterMeters: diameterMeters,
+              showIndicators: showIndicators,
             ),
           if (!isScreenshot && _isResizing)
             _buildResizeTooltip(
@@ -170,6 +181,28 @@ class _PlacedCustomCircleWidgetState
               scaledMaxDiameter: scaledMaxDiameter,
               diameterMeters: diameterMeters,
             ),
+          // Topmost and translucent: reveals the handle when the pointer is
+          // over the circle without stealing events from anything below.
+          Positioned(
+            left: circleInset - hoverPad,
+            top: circleInset - hoverPad,
+            width: scaledDiameter + (2 * hoverPad),
+            height: scaledDiameter + (2 * hoverPad),
+            child: MouseRegion(
+              opaque: false,
+              onEnter: (_) {
+                setState(() {
+                  _isShapeHovered = true;
+                });
+              },
+              onExit: (_) {
+                setState(() {
+                  _isShapeHovered = false;
+                });
+              },
+              child: const SizedBox.expand(),
+            ),
+          ),
         ],
       ),
     );
@@ -185,6 +218,7 @@ class _PlacedCustomCircleWidgetState
     required double arcRegionLeft,
     required double arcRegionTop,
     required double diameterMeters,
+    required bool showIndicators,
   }) {
     final strokeWidth = coordinateSystem.scale(_handleStrokeWidthVirtual);
     final circleBorderStrokeWidth =
@@ -197,48 +231,51 @@ class _PlacedCustomCircleWidgetState
     return Positioned(
       left: arcRegionLeft,
       top: arcRegionTop,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.resizeUpLeftDownRight,
-        onEnter: (_) {
-          setState(() {
-            _isHandleHovered = true;
-          });
-        },
-        onExit: (_) {
-          setState(() {
-            _isHandleHovered = false;
-          });
-        },
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onPanStart: (details) => _startCircleResize(
-            globalPosition: details.globalPosition,
-            mapScale: mapScale,
-            diameterMeters: diameterMeters,
-          ),
-          onPanUpdate: (details) =>
-              _updateDiameter(details.globalPosition, mapScale),
-          onPanEnd: (_) => _finishCircleResize(),
-          onPanCancel: _cancelCircleResize,
-          child: SizedBox(
-            width: arcRegionSize,
-            height: arcRegionSize,
-            child: Center(
-              child: IgnorePointer(
-                child: AnimatedScale(
-                  duration: const Duration(milliseconds: 160),
-                  curve: Curves.easeOutCubic,
-                  scale: _isResizing || _isHandleHovered ? 1.0 : 0.9,
-                  child: CustomPaint(
-                    size: Size(arcRegionSize, arcRegionSize),
-                    painter: _CircleResizeArcPainter(
-                      color: Colors.white,
-                      strokeWidth: strokeWidth,
-                      circleDiameter: scaledDiameter,
-                      circleOffset: Offset(circleInset - arcRegionLeft,
-                          circleInset - arcRegionTop),
-                      circleBorderStrokeWidth: circleBorderStrokeWidth,
-                      handleSweep: handleSweep,
+      child: ShapeIndicatorFade(
+        visible: showIndicators,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.resizeUpLeftDownRight,
+          onEnter: (_) {
+            setState(() {
+              _isHandleHovered = true;
+            });
+          },
+          onExit: (_) {
+            setState(() {
+              _isHandleHovered = false;
+            });
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanStart: (details) => _startCircleResize(
+              globalPosition: details.globalPosition,
+              mapScale: mapScale,
+              diameterMeters: diameterMeters,
+            ),
+            onPanUpdate: (details) =>
+                _updateDiameter(details.globalPosition, mapScale),
+            onPanEnd: (_) => _finishCircleResize(),
+            onPanCancel: _cancelCircleResize,
+            child: SizedBox(
+              width: arcRegionSize,
+              height: arcRegionSize,
+              child: Center(
+                child: IgnorePointer(
+                  child: AnimatedScale(
+                    duration: const Duration(milliseconds: 160),
+                    curve: Curves.easeOutCubic,
+                    scale: _isResizing || _isHandleHovered ? 1.0 : 0.9,
+                    child: CustomPaint(
+                      size: Size(arcRegionSize, arcRegionSize),
+                      painter: _CircleResizeArcPainter(
+                        color: Colors.white,
+                        strokeWidth: strokeWidth,
+                        circleDiameter: scaledDiameter,
+                        circleOffset: Offset(circleInset - arcRegionLeft,
+                            circleInset - arcRegionTop),
+                        circleBorderStrokeWidth: circleBorderStrokeWidth,
+                        handleSweep: handleSweep,
+                      ),
                     ),
                   ),
                 ),
