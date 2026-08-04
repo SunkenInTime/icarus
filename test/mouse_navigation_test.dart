@@ -10,7 +10,9 @@ void main() {
   testWidgets('mouse back does not navigate under an open Shad popover',
       (tester) async {
     final popoverController = ShadPopoverController();
+    final unrelatedFocusNode = FocusNode();
     addTearDown(popoverController.dispose);
+    addTearDown(unrelatedFocusNode.dispose);
 
     await tester.pumpWidget(
       ProviderScope(
@@ -27,10 +29,15 @@ void main() {
       MaterialPageRoute<void>(
         settings: const RouteSettings(name: '/auxiliary'),
         builder: (_) => Scaffold(
-          body: ShadPopover(
-            controller: popoverController,
-            popover: (_) => const Text('menu'),
-            child: const SizedBox.expand(child: Text('auxiliary')),
+          body: Stack(
+            children: [
+              TextField(focusNode: unrelatedFocusNode),
+              ShadPopover(
+                controller: popoverController,
+                popover: (_) => const Text('menu'),
+                child: const SizedBox.expand(child: Text('auxiliary')),
+              ),
+            ],
           ),
         ),
       ),
@@ -40,6 +47,9 @@ void main() {
     popoverController.show();
     await tester.pumpAndSettle();
     expect(find.text('menu'), findsOneWidget);
+    unrelatedFocusNode.requestFocus();
+    await tester.pump();
+    expect(unrelatedFocusNode.hasFocus, isTrue);
 
     await tester.sendEventToBinding(
       const PointerDownEvent(
@@ -57,7 +67,9 @@ void main() {
   testWidgets('mouse back does not navigate under an open Shad context menu',
       (tester) async {
     final menuController = ShadContextMenuController();
+    final unrelatedFocusNode = FocusNode();
     addTearDown(menuController.dispose);
+    addTearDown(unrelatedFocusNode.dispose);
 
     await tester.pumpWidget(
       ProviderScope(
@@ -74,10 +86,15 @@ void main() {
       MaterialPageRoute<void>(
         settings: const RouteSettings(name: '/auxiliary'),
         builder: (_) => Scaffold(
-          body: ShadContextMenu(
-            controller: menuController,
-            items: const [ShadContextMenuItem(child: Text('menu item'))],
-            child: const SizedBox.expand(child: Text('auxiliary')),
+          body: Stack(
+            children: [
+              TextField(focusNode: unrelatedFocusNode),
+              ShadContextMenu(
+                controller: menuController,
+                items: const [ShadContextMenuItem(child: Text('menu item'))],
+                child: const SizedBox.expand(child: Text('auxiliary')),
+              ),
+            ],
           ),
         ),
       ),
@@ -87,6 +104,9 @@ void main() {
     menuController.show();
     await tester.pumpAndSettle();
     expect(find.text('menu item'), findsOneWidget);
+    unrelatedFocusNode.requestFocus();
+    await tester.pump();
+    expect(unrelatedFocusNode.hasFocus, isTrue);
 
     await tester.sendEventToBinding(
       const PointerDownEvent(

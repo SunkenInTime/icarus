@@ -156,15 +156,24 @@ class _MouseNavigationState extends ConsumerState<MouseNavigation> {
   }
 
   bool _hasOpenShadMenu() {
-    final focusContext = FocusManager.instance.primaryFocus?.context;
-    if (focusContext == null) return false;
+    bool found = false;
 
-    final contextMenu =
-        focusContext.findAncestorStateOfType<ShadContextMenuState>();
-    if (contextMenu?.controller.isOpen ?? false) return true;
+    void visit(Element element) {
+      if (found) return;
 
-    final popover = focusContext.findAncestorWidgetOfExactType<ShadPopover>();
-    return popover?.controller?.isOpen ?? popover?.visible ?? false;
+      final widget = element.widget;
+      if (widget is ShadPopover &&
+          (widget.controller?.isOpen ?? widget.visible ?? false)) {
+        found = true;
+        return;
+      }
+
+      element.visitChildren(visit);
+    }
+
+    final root = WidgetsBinding.instance.rootElement;
+    if (root != null) visit(root);
+    return found;
   }
 
   void _handlePointerDown(PointerDownEvent event) {
