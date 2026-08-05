@@ -158,7 +158,7 @@ void main() {
     );
   });
 
-  testWidgets('rectangle rotation handles communicate hover and active states',
+  testWidgets('rectangle rotation handle communicates hover and active states',
       (tester) async {
     final utility = _rectangle();
     final container = _containerWith(utility);
@@ -188,10 +188,10 @@ void main() {
           .every((indicator) => indicator.visible),
       isTrue,
     );
-    expect(find.byIcon(Icons.rotate_right_rounded), findsNWidgets(4));
+    expect(find.byIcon(Icons.rotate_right_rounded), findsOneWidget);
 
     final handle = find.byKey(
-      const ValueKey('custom-rectangle-rotate-top-right'),
+      const ValueKey('custom-rectangle-rotate-top-center'),
     );
     final handleMouseRegion =
         find.ancestor(of: handle, matching: find.byType(MouseRegion)).first;
@@ -203,7 +203,7 @@ void main() {
     final handleCenter = tester.getCenter(handle);
     await mouse.moveTo(handleCenter);
     await mouse.down(handleCenter);
-    await mouse.moveBy(const Offset(0, 12));
+    await mouse.moveBy(const Offset(30, 8));
     await tester.pump();
 
     expect(
@@ -225,6 +225,8 @@ void main() {
 
     await mouse.up();
     await tester.pump();
+
+    expect(container.read(utilityProvider).single.rotation, greaterThan(0));
   });
 }
 

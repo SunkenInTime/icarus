@@ -46,12 +46,6 @@ class _PlacedCustomRectangleWidgetState
   static const double _rectangleBorderStrokeVirtual = 2.0;
   static const double _rotationSnapStep = math.pi / 4;
   static const double _rotationSnapTolerance = 3 * math.pi / 180;
-  static const List<Offset> _corners = [
-    Offset(0, 0),
-    Offset(1, 0),
-    Offset(0, 1),
-    Offset(1, 1),
-  ];
   static const List<_RectangleResizeHandle> _resizeHandles = [
     _RectangleResizeHandle.left,
     _RectangleResizeHandle.right,
@@ -78,8 +72,7 @@ class _PlacedCustomRectangleWidgetState
   _RectangleResizeHandle _activeHandle = _RectangleResizeHandle.none;
   _RectangleResizeHandle _hoveredResizeHandle = _RectangleResizeHandle.none;
   bool _isRotating = false;
-  Offset? _rotatingCorner;
-  Offset? _hoveredRotationCorner;
+  bool _isRotationHandleHovered = false;
   Offset _rotationCenterGlobal = Offset.zero;
   double _rotationPointerStartAngle = 0;
   double _rotationStartValue = 0;
@@ -232,17 +225,14 @@ class _PlacedCustomRectangleWidgetState
                           rotation: rotation,
                           showIndicators: showIndicators,
                         ),
-                      for (final corner in _corners)
-                        _buildRotationHandle(
-                          coordinateSystem: coordinateSystem,
-                          corner: corner,
-                          scaledWidth: scaledWidth,
-                          scaledLength: scaledLength,
-                          insetX: insetX,
-                          insetY: insetY,
-                          rotation: rotation,
-                          showIndicators: showIndicators,
-                        ),
+                      _buildRotationHandle(
+                        coordinateSystem: coordinateSystem,
+                        scaledLength: scaledLength,
+                        insetX: insetX,
+                        insetY: insetY,
+                        rotation: rotation,
+                        showIndicators: showIndicators,
+                      ),
                     ],
                     // Topmost and translucent: reveals the handles when the
                     // pointer is anywhere over the shape without stealing
@@ -419,8 +409,6 @@ class _PlacedCustomRectangleWidgetState
 
   Widget _buildRotationHandle({
     required CoordinateSystem coordinateSystem,
-    required Offset corner,
-    required double scaledWidth,
     required double scaledLength,
     required double insetX,
     required double insetY,
@@ -432,12 +420,8 @@ class _PlacedCustomRectangleWidgetState
     final hitSize = badgeSize + (2 * hitPadding);
     final handleCenter = _rotationHandleCenter(
       coordinateSystem: coordinateSystem,
-      corner: corner,
       scaledLength: scaledLength,
-      scaledWidth: scaledWidth,
     );
-    final isThisHandleActive = _isRotating && _rotatingCorner == corner;
-    final isEmphasized = isThisHandleActive || _hoveredRotationCorner == corner;
 
     return Positioned(
       left: insetX + handleCenter.dx - (hitSize / 2),
@@ -448,23 +432,18 @@ class _PlacedCustomRectangleWidgetState
           cursor: shapeRotationMouseCursor(active: _isRotating),
           onEnter: (_) {
             setState(() {
-              _hoveredRotationCorner = corner;
+              _isRotationHandleHovered = true;
             });
           },
           onExit: (_) {
             setState(() {
-              if (_hoveredRotationCorner == corner) {
-                _hoveredRotationCorner = null;
-              }
+              _isRotationHandleHovered = false;
             });
           },
           child: GestureDetector(
-            key: ValueKey(
-              'custom-rectangle-rotate-${_rotationCornerName(corner)}',
-            ),
+            key: const ValueKey('custom-rectangle-rotate-top-center'),
             behavior: HitTestBehavior.opaque,
-            onPanStart: (details) =>
-                _startRotationDrag(details.globalPosition, corner),
+            onPanStart: (details) => _startRotationDrag(details.globalPosition),
             onPanUpdate: (details) =>
                 _updateRotationDrag(details.globalPosition),
             onPanEnd: (_) => _commitRotation(),
@@ -477,8 +456,8 @@ class _PlacedCustomRectangleWidgetState
                   angle: -rotation,
                   child: _RotationBadge(
                     size: badgeSize,
-                    isActive: isThisHandleActive,
-                    isEmphasized: isEmphasized,
+                    isActive: _isRotating,
+                    isEmphasized: _isRotating || _isRotationHandleHovered,
                   ),
                 ),
               ),
@@ -491,39 +470,20 @@ class _PlacedCustomRectangleWidgetState
 
   Offset _rotationHandleCenter({
     required CoordinateSystem coordinateSystem,
-    required Offset corner,
     required double scaledLength,
-    required double scaledWidth,
   }) {
-    final radialOffset = coordinateSystem.scale(
-          Settings.shapeRotationHandleOffset,
-        ) /
-        math.sqrt2;
-    final outward = Offset(
-      corner.dx == 0 ? -1 : 1,
-      corner.dy == 0 ? -1 : 1,
-    );
     return Offset(
-          corner.dx * scaledLength,
-          corner.dy * scaledWidth,
-        ) +
-        (outward * radialOffset);
+      scaledLength / 2,
+      -coordinateSystem.scale(Settings.shapeRotationHandleOffset),
+    );
   }
 
-  String _rotationCornerName(Offset corner) {
-    if (corner == const Offset(0, 0)) return 'top-left';
-    if (corner == const Offset(1, 0)) return 'top-right';
-    if (corner == const Offset(0, 1)) return 'bottom-left';
-    return 'bottom-right';
-  }
-
-  void _startRotationDrag(Offset globalPosition, Offset corner) {
+  void _startRotationDrag(Offset globalPosition) {
     final centerGlobal = _shapeCenterGlobal();
     if (centerGlobal == null) return;
 
     setState(() {
       _isRotating = true;
-      _rotatingCorner = corner;
       _rotationCenterGlobal = centerGlobal;
       _rotationPointerStartAngle = math.atan2(
         globalPosition.dy - centerGlobal.dy,
@@ -567,7 +527,6 @@ class _PlacedCustomRectangleWidgetState
 
     setState(() {
       _isRotating = false;
-      _rotatingCorner = null;
     });
   }
 
@@ -575,7 +534,6 @@ class _PlacedCustomRectangleWidgetState
     setState(() {
       _localRotation = _rotationStartValue;
       _isRotating = false;
-      _rotatingCorner = null;
     });
   }
 
@@ -762,13 +720,10 @@ class _PlacedCustomRectangleWidgetState
     required double rotation,
     required double outerSize,
   }) {
-    final corner = _rotatingCorner ?? const Offset(1, 0);
     final anchor = _rotatedOverlayPosition(
       shapeLocal: _rotationHandleCenter(
         coordinateSystem: coordinateSystem,
-        corner: corner,
         scaledLength: scaledLength,
-        scaledWidth: scaledWidth,
       ),
       rotation: rotation,
       scaledWidth: scaledWidth,
