@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
+import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
@@ -50,7 +51,19 @@ List<ShadContextMenuItem> _buildVisibilityItems(
   String? lineUpGroupId,
   String? lineUpItemId,
 }) {
-  final controls = _buildVisibilityControls(abilityData, ability.visualState);
+  final controls = [
+    ..._buildVisibilityControls(abilityData, ability.visualState),
+    if (lineUpGroupId == null &&
+        lineUpItemId == null &&
+        AbilityVisionConeSpec.forAbility(ability.data) != null)
+      _AbilityVisibilityControl(
+        label: 'Vision Cone',
+        isEnabled: ability.visualState.showVisionCone,
+        toggle: (state) => state.copyWith(
+          showVisionCone: !state.showVisionCone,
+        ),
+      ),
+  ];
   return controls
       .map(
         (control) => _buildToggleItem(

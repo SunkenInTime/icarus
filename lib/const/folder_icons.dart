@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/custom_icons.dart';
 
-const int folderIconRegistryVersion = 94;
+const int folderIconRegistryVersion = 95;
 
 enum FolderIconRenderKind {
   material,

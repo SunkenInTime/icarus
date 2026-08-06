@@ -8,6 +8,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -186,6 +187,52 @@ void main() {
           CoordinateSystem.instance.virtualOffsetToWorld(
             ViewConeWidget.anchorPointVirtual,
           ),
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const SizedBox.shrink(),
+      ),
+    );
+    await tester.pump();
+  });
+
+  testWidgets('ability vision-cone previews use animated geometry',
+      (tester) async {
+    final container = _createContainer();
+    addTearDown(container.dispose);
+    final turret = PlacedAbility(
+      id: 'moving-turret',
+      data: AgentData.agents[AgentType.killjoy]!.abilities[2],
+      position: const Offset(25, 35),
+      rotation: 0.3,
+      length: 90,
+    );
+    const animatedPosition = Offset(500, 250);
+
+    await tester.pumpWidget(
+      _previewHarness(
+        container: container,
+        widget: turret,
+        coordinatePosition: animatedPosition,
+        rotation: 1.1,
+        length: 120,
+      ),
+    );
+
+    final preview = tester.widget<ViewConeWidget>(find.byType(ViewConeWidget));
+    final storedAnchor = storedAbilityAnchor(
+      ability: turret.data.abilityData!,
+      mapScale: 1,
+    );
+    expect(preview.angle, 100);
+    expect(preview.rotation, 1.1);
+    expect(preview.length, 120);
+    expect(
+      preview.worldOrigin,
+      animatedPosition +
+          CoordinateSystem.instance.virtualOffsetToWorld(storedAnchor),
     );
 
     await tester.pumpWidget(

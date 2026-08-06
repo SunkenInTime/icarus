@@ -326,6 +326,83 @@ void main() {
   });
 
   group('Strategy round-trip integrity', () {
+    test('legacy Hive ability visual state defaults vision cones on', () {
+      final writer = BinaryWriterImpl(Hive)
+        ..writeByte(4)
+        ..writeByte(2)
+        ..write(true)
+        ..writeByte(3)
+        ..write(false)
+        ..writeByte(4)
+        ..write(true)
+        ..writeByte(5)
+        ..write(false);
+      final reader = BinaryReaderImpl(
+        Uint8List.fromList(writer.toBytes()),
+        Hive,
+      );
+
+      final restored = AbilityVisualStateAdapter().read(reader);
+
+      expect(restored.showRangeOutline, isTrue);
+      expect(restored.showRangeFill, isFalse);
+      expect(restored.showInnerOutline, isTrue);
+      expect(restored.showInnerFill, isFalse);
+      expect(restored.showVisionCone, isTrue);
+    });
+
+    test('vision cone visibility survives current .ica export and import',
+        () async {
+      final source = StrategyData(
+        id: 'vision-cone-source',
+        name: 'Vision cone source',
+        mapData: MapValue.ascent,
+        versionNumber: Settings.versionNumber,
+        lastEdited: DateTime.utc(2026, 1, 1),
+        folderID: null,
+        pages: [
+          StrategyPage(
+            id: 'page-1',
+            sortIndex: 0,
+            name: 'Page 1',
+            drawingData: const [],
+            agentData: const [],
+            abilityData: [
+              PlacedAbility(
+                id: 'hidden-turret',
+                data: AgentData.agents[AgentType.killjoy]!.abilities[2],
+                position: const Offset(100, 200),
+                rotation: 0.75,
+                length: 80,
+                visualState: const AbilityVisualState(
+                  showVisionCone: false,
+                ),
+              ),
+            ],
+            textData: const [],
+            imageData: const [],
+            utilityData: const [],
+            isAttack: true,
+            settings: StrategySettings(),
+          ),
+        ],
+      );
+      final exported = _buildExportPayload(source);
+
+      final imported = await _importStrategyFromDecoded(
+        decoded: exported,
+        strategyName: 'Vision cone imported',
+        strategyId: 'vision-cone-imported',
+        isZip: true,
+      );
+      final ability = imported.pages.single.abilityData.single;
+
+      expect(ability.visualState.showVisionCone, isFalse);
+      expect(ability.rotation, 0.75);
+      expect(ability.length, 80);
+      expect(_buildExportPayload(imported)['pages'], exported['pages']);
+    });
+
     test('legacy Hive field 11 lineUps still deserialize into lineUpGroups',
         () {
       _ensureAdaptersRegistered();

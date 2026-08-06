@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/abilities.dart';
+import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/json_converters.dart';
@@ -937,9 +938,10 @@ class PlacedAbility extends PlacedWidget {
       abilitySize: Settings.abilitySize,
     );
     final abilityData = data.abilityData!;
-    final shouldRotate = isRotatable(abilityData);
+    final hasVisionCone = AbilityVisionConeSpec.forAbility(data) != null;
+    final shouldRotate = isRotatable(abilityData) || hasVisionCone;
     final shouldUseRotatableFlipCompensation =
-        shouldRotate && abilityData is! DeadlockBarrierMeshAbility;
+        isRotatable(abilityData) && abilityData is! DeadlockBarrierMeshAbility;
 
     final scaledAbilitySize = fullAbilityWidgetSize.scale(
         CoordinateSystem.instance.scaleFactor,
@@ -1047,6 +1049,7 @@ class AbilityVisualState {
     this.showRangeFill = true,
     this.showInnerOutline = true,
     this.showInnerFill = true,
+    this.showVisionCone = true,
   });
 
   @JsonKey(defaultValue: true)
@@ -1061,17 +1064,22 @@ class AbilityVisualState {
   @JsonKey(defaultValue: true)
   final bool showInnerFill;
 
+  @JsonKey(defaultValue: true)
+  final bool showVisionCone;
+
   AbilityVisualState copyWith({
     bool? showRangeOutline,
     bool? showRangeFill,
     bool? showInnerOutline,
     bool? showInnerFill,
+    bool? showVisionCone,
   }) {
     return AbilityVisualState(
       showRangeOutline: showRangeOutline ?? this.showRangeOutline,
       showRangeFill: showRangeFill ?? this.showRangeFill,
       showInnerOutline: showInnerOutline ?? this.showInnerOutline,
       showInnerFill: showInnerFill ?? this.showInnerFill,
+      showVisionCone: showVisionCone ?? this.showVisionCone,
     );
   }
 

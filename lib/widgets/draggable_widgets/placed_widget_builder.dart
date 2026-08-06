@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -27,6 +28,7 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_circle_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_vision_cone_composite.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
@@ -427,7 +429,21 @@ class _AbilityList extends ConsumerWidget {
             length: ability.length,
             onDragEnd: (details, draggedId) {
               final renderBox = context.findRenderObject() as RenderBox;
-              final localOffset = renderBox.globalToLocal(details.offset);
+              final visionSpec = AbilityVisionConeSpec.forAbility(ability.data);
+              final coneChildOffset = visionSpec != null &&
+                      ability.visualState.showVisionCone
+                  ? abilityVisionConeChildOffsetScreen(
+                      coordinateSystem: coordinateSystem,
+                      ability: ability.data.abilityData!,
+                      mapScale: mapScale,
+                      abilitySize: abilitySize,
+                    )
+                  : Offset.zero;
+              final screenZoom = ref.read(screenZoomProvider);
+              final localOffset = renderBox.globalToLocal(
+                details.offset +
+                    coneChildOffset.scale(screenZoom, screenZoom),
+              );
               final virtualOffset =
                   storedAbilityPositionForRenderedScreenPosition(
                 ability: ability.data.abilityData!,

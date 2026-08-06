@@ -1515,13 +1515,14 @@ class AbilityVisualStateAdapter extends TypeAdapter<AbilityVisualState> {
       showRangeFill: fields[3] == null ? true : fields[3] as bool,
       showInnerOutline: fields[4] == null ? true : fields[4] as bool,
       showInnerFill: fields[5] == null ? true : fields[5] as bool,
+      showVisionCone: fields[6] == null ? true : fields[6] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, AbilityVisualState obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(5)
       ..writeByte(2)
       ..write(obj.showRangeOutline)
       ..writeByte(3)
@@ -1529,7 +1530,9 @@ class AbilityVisualStateAdapter extends TypeAdapter<AbilityVisualState> {
       ..writeByte(4)
       ..write(obj.showInnerOutline)
       ..writeByte(5)
-      ..write(obj.showInnerFill);
+      ..write(obj.showInnerFill)
+      ..writeByte(6)
+      ..write(obj.showVisionCone);
   }
 
   @override

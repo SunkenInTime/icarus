@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
+import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 
@@ -14,6 +15,7 @@ import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_circle_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_vision_cone_composite.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
@@ -47,6 +49,18 @@ Offset _overlayScreenPosition({
           coordinateSystem: coordinateSystem,
           agentSize: agentSize,
           mapScale: mapScale,
+        );
+  }
+  if (widget is PlacedAbility &&
+      widget.visualState.showVisionCone &&
+      AbilityVisionConeSpec.forAbility(widget.data) != null &&
+      widget.data.abilityData != null) {
+    return screen -
+        abilityVisionConeChildOffsetScreen(
+          coordinateSystem: coordinateSystem,
+          ability: widget.data.abilityData!,
+          mapScale: mapScale,
+          abilitySize: abilitySize,
         );
   }
   return screen;
@@ -415,6 +429,10 @@ class _EntryRenderer {
       if (ability == null) {
         return false;
       }
+      if (widget.visualState.showVisionCone &&
+          AbilityVisionConeSpec.forAbility(widget.data) != null) {
+        return false;
+      }
       return isRotatable(ability);
     }
     return widget is PlacedUtility;
@@ -573,6 +591,29 @@ class PlacedWidgetPreview {
         return const SizedBox.shrink();
       }
       final ability = w.data.abilityData!;
+      final visionSpec = AbilityVisionConeSpec.forAbility(w.data);
+      if (visionSpec != null && w.visualState.showVisionCone) {
+        final child = ability.createWidget(
+          id: w.id,
+          isAlly: w.isAlly,
+          mapScale: mapScale,
+          rotation: rotation ?? w.rotation,
+          length: length ?? w.length,
+          armLengthsMeters: armLengthsMeters ?? w.armLengthsMeters,
+          visualState: w.visualState,
+          watchMouse: false,
+        );
+        return AbilityVisionConeComposite(
+          ability: w,
+          spec: visionSpec,
+          rotation: rotation ?? w.rotation,
+          length: length ?? w.length,
+          mapScale: mapScale,
+          abilitySize: abilitySize,
+          coordinatePosition: coordinatePosition,
+          child: child,
+        );
+      }
 
       switch (ability) {
         case BaseAbility():
@@ -777,6 +818,8 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
     } else if (widget is PlacedAbility &&
         widget.rotation != 0 &&
         widget.data.abilityData != null &&
+        !(widget.visualState.showVisionCone &&
+            AbilityVisionConeSpec.forAbility(widget.data) != null) &&
         isRotatable(widget.data.abilityData!)) {
       return Positioned(
         left: scaledPosition.dx,
@@ -806,6 +849,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
         child: PlacedWidgetPreview.build(
           widget,
           mapScale,
+          length: widget is PlacedAbility ? widget.length : null,
           armLengthsMeters:
               widget is PlacedAbility ? widget.armLengthsMeters : null,
           agentSize: agentSize,

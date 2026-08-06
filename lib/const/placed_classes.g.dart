@@ -195,6 +195,7 @@ AbilityVisualState _$AbilityVisualStateFromJson(Map<String, dynamic> json) =>
       showRangeFill: json['showRangeFill'] as bool? ?? true,
       showInnerOutline: json['showInnerOutline'] as bool? ?? true,
       showInnerFill: json['showInnerFill'] as bool? ?? true,
+      showVisionCone: json['showVisionCone'] as bool? ?? true,
     );
 
 Map<String, dynamic> _$AbilityVisualStateToJson(AbilityVisualState instance) =>
@@ -203,6 +204,7 @@ Map<String, dynamic> _$AbilityVisualStateToJson(AbilityVisualState instance) =>
       'showRangeFill': instance.showRangeFill,
       'showInnerOutline': instance.showInnerOutline,
       'showInnerFill': instance.showInnerFill,
+      'showVisionCone': instance.showVisionCone,
     };
 
 PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>

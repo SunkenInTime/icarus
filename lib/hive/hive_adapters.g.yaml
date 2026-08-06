@@ -529,7 +529,7 @@ types:
         index: 8
   AbilityVisualState:
     typeId: 32
-    nextIndex: 6
+    nextIndex: 7
     fields:
       showRangeOutline:
         index: 2
@@ -539,6 +539,8 @@ types:
         index: 4
       showInnerFill:
         index: 5
+      showVisionCone:
+        index: 6
   LineUpGroup:
     typeId: 33
     nextIndex: 3

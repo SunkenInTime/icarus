@@ -44,6 +44,7 @@ void main() {
       expect(decoded.visualState.showRangeFill, isTrue);
       expect(decoded.visualState.showInnerOutline, isTrue);
       expect(decoded.visualState.showInnerFill, isTrue);
+      expect(decoded.visualState.showVisionCone, isTrue);
     });
 
     test('visual state round-trips through json', () {
@@ -56,6 +57,7 @@ void main() {
           showRangeFill: false,
           showInnerOutline: false,
           showInnerFill: false,
+          showVisionCone: false,
         ),
       );
 
@@ -65,6 +67,7 @@ void main() {
       expect(decoded.visualState.showRangeFill, isFalse);
       expect(decoded.visualState.showInnerOutline, isFalse);
       expect(decoded.visualState.showInnerFill, isFalse);
+      expect(decoded.visualState.showVisionCone, isFalse);
     });
   });
 
