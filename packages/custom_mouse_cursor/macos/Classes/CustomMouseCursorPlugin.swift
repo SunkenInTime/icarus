@@ -49,7 +49,10 @@ public class CustomMouseCursorPlugin: NSObject, FlutterPlugin {
     let height = arguments["height"] as! Int
     // ICARUS PATCH: `scale` is how many bitmap pixels represent one logical
     // point (the devicePixelRatio the Dart side rendered the image at).
-    let scale = arguments["scale"] as? Double ?? 1.0
+    var scale = arguments["scale"] as? Double ?? 1.0
+    if (!scale.isFinite || scale <= 0) {
+        scale = 1.0
+    }
     let image = memoryFromImage(data: Data(buffer))
     if (image == nil) {
         return nil;

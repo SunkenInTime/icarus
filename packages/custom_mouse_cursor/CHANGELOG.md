@@ -1,3 +1,19 @@
+## 1.1.3+icarus.1 (vendored)
+
+Vendored into Icarus with local patches:
+
+- macOS cursors render at the real devicePixelRatio. The Dart side no longer
+  clamps macOS to 1.0 DPR, passes a `scale` argument over the channel, and the
+  Swift plugin sets the NSImage point size so Retina displays get
+  full-resolution cursors.
+- Icon glyphs are rasterized at 4x and downscaled with high-quality filtering
+  for smooth edges at any DPR.
+- `exactAsset()` forwards `package`; asset loads honor the caller-supplied
+  bundle; DPR updates await platform registration; `registerCursor()` throws a
+  descriptive error on native failure and validates `scale`.
+- Linux platform support removed: Icarus ships Windows and macOS only.
+  Restore from upstream if ever needed.
+
 
 # Changelog for custom_mouse_cursor package
 

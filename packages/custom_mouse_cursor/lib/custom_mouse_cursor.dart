@@ -60,15 +60,15 @@ class CustomMouseCursor extends MouseCursor {
   /// The origin story for this cursor, whether it was created from an exact asset,
   /// a DPI aware AssetImage, an icon or an image.  This is used to decide how to
   /// RE-create the cursor when the DPI/DevicePixelRatio changes.
-  /// If [originStory]==[_CustomMouseCursorCreationType.asset] then [_assetBundleImageProvider]
+  /// If [originStory]==[CustomMouseCursorCreationType.asset] then [_assetBundleImageProvider]
   /// contains the [AssetImage] used in its creation (and used for updating on DevicePixelRatio changes).
-  /// If [originStory]==[_CustomMouseCursorCreationType.exactasset] then [_assetBundleImageProvider]
+  /// If [originStory]==[CustomMouseCursorCreationType.exactasset] then [_assetBundleImageProvider]
   /// contains the [ExactAssetImage] used in its creation (and used for updating on DevicePixelRatio changes).
-  /// If [originStory]==[_CustomMouseCursorCreationType.icon] then [_iconCreationInfo] will hold
+  /// If [originStory]==[CustomMouseCursorCreationType.icon] then [_iconCreationInfo] will hold
   /// information on how to regenerate the icon cursor on DevicePixelRatio changes.
-  /// If [originStory]==[_CustomMouseCursorCreationType.image] then there will be
+  /// If [originStory]==[CustomMouseCursorCreationType.image] then there will be
   /// no automatic handling of the cursore for DevicePixelRatio changes.
-  final _CustomMouseCursorCreationType originStory;
+  final CustomMouseCursorCreationType originStory;
 
   /// When the DevicePixelRatio is different or changes from this size
   /// the the pointer will be scaled accordingly when
@@ -101,9 +101,9 @@ class CustomMouseCursor extends MouseCursor {
   /// that was last encountered.
   double currentCursorDevicePixelRatio;
 
-  /// If [originStory]==[_CustomMouseCursorCreationType.asset] then this contains the
+  /// If [originStory]==[CustomMouseCursorCreationType.asset] then this contains the
   /// [AssetImage] used in its created (and used for updating on DevicePixelRatio changes).
-  /// If [originStory]==[_CustomMouseCursorCreationType.exactasset] then this contains the
+  /// If [originStory]==[CustomMouseCursorCreationType.exactasset] then this contains the
   /// [ExactAssetImage] used in its created (and used for updating on DevicePixelRatio changes).
   AssetBundleImageProvider? _assetBundleImageProvider;
 
@@ -222,6 +222,7 @@ class CustomMouseCursor extends MouseCursor {
         existingCursorToUpdate: existingCursorToUpdate,
         context: context,
         bundle: bundle,
+        package: package,
         useExactAssetImage: true);
   }
 
@@ -429,8 +430,8 @@ class CustomMouseCursor extends MouseCursor {
       return _cursorCacheOfAllCreatedCursors[assetName]!;
     }
 
-    // and load the asset
-    final rawAssetImageBytes = await rootBundle.load(assetName);
+    // and load the asset from the caller-supplied bundle when given
+    final rawAssetImageBytes = await (bundle ?? rootBundle).load(assetName);
 
     final rawUint8 = rawAssetImageBytes.buffer.asUint8List();
 
@@ -446,8 +447,8 @@ class CustomMouseCursor extends MouseCursor {
         uiImage, hotX, hotY, nativeDevicePixelRatio,
         key: assetName,
         originStory: useExactAssetImage
-            ? _CustomMouseCursorCreationType.exactasset
-            : _CustomMouseCursorCreationType.asset,
+            ? CustomMouseCursorCreationType.exactasset
+            : CustomMouseCursorCreationType.asset,
         existingCursorToUpdate: existingCursorToUpdate);
 
     cursor._assetBundleImageProvider = assetBundleImageProvider;
@@ -473,8 +474,8 @@ class CustomMouseCursor extends MouseCursor {
   /// necessary.
   Future<void> _updateAssetToNewDpi(double newDevicePixelRatio) async {
     assert(
-        originStory == _CustomMouseCursorCreationType.asset ||
-            originStory == _CustomMouseCursorCreationType.exactasset,
+        originStory == CustomMouseCursorCreationType.asset ||
+            originStory == CustomMouseCursorCreationType.exactasset,
         '_updateAssetToNewDpi() called on non asset cursor ($originStory key=$key)');
     assert(_assetBundleImageProvider != null);
 
@@ -483,7 +484,7 @@ class CustomMouseCursor extends MouseCursor {
           'ENTERING _updateAssetToNewDpi( newDevicePixelRatio=$newDevicePixelRatio )   nativeDevicePixelRatio=$nativeDevicePixelRatio _exactAssetDevicePixelRatio=$_exactAssetDevicePixelRatio'));
     }
     bool useExactAssetImage =
-        (originStory == _CustomMouseCursorCreationType.exactasset);
+        (originStory == CustomMouseCursorCreationType.exactasset);
 
     late final double rescaleRatioRequiredForImage;
     // call and get an ImageConfiguration if we don't have one yet
@@ -533,7 +534,8 @@ class CustomMouseCursor extends MouseCursor {
       _Logger.log(
           '  _updateAssetToNewDpi() updating by LOADING asset ${assetAwareKey.name} scale=${assetAwareKey.scale} rescaleRatioRequiredForImage=$rescaleRatioRequiredForImage adjusted adjustHotSpotRatio=$adjustHotSpotRatio hotX=$hotX hotY=$hotY');
     }
-    final rawAssetImageBytes = await rootBundle.load(assetAwareKey.name);
+    final rawAssetImageBytes =
+        await (assetAwareKey.bundle).load(assetAwareKey.name);
 
     final rawUint8 = rawAssetImageBytes.buffer.asUint8List();
 
@@ -724,7 +726,7 @@ class CustomMouseCursor extends MouseCursor {
 
     final cursor = await _commonCursorImageInstaller(iconImage, hotX, hotY,
         currentDevicePixelRatio /* WE MADE image/hotX/hotY match currentDevicePixelRatio!*/,
-        originStory: _CustomMouseCursorCreationType.icon,
+        originStory: CustomMouseCursorCreationType.icon,
         existingCursorToUpdate: existingCursorToUpdate);
 
     cursor._iconCreationInfo = iconCreationInfo;
@@ -744,7 +746,7 @@ class CustomMouseCursor extends MouseCursor {
 
   /// Internal handler for updating custom icon cursors in response to changes to the system's devicePixelRatio.
   Future<void> _updateIconToNewDpi(double newDevicePixelRatio) async {
-    assert(originStory == _CustomMouseCursorCreationType.icon,
+    assert(originStory == CustomMouseCursorCreationType.icon,
         '_updateIconToNewDpi() called on non icon cursor');
 
     if (_iconCreationInfo != null) {
@@ -771,9 +773,9 @@ class CustomMouseCursor extends MouseCursor {
         _Logger.log(
             '  CALLING image with EXISTING ICON IMAGE TO UPDATE WITH NEW icon Image newDevicePixelRatio=$newDevicePixelRatio');
       }
-      _commonCursorImageInstaller(
+      await _commonCursorImageInstaller(
           iconImage, newHotX, newHotY, newDevicePixelRatio,
-          originStory: _CustomMouseCursorCreationType.icon,
+          originStory: CustomMouseCursorCreationType.icon,
           existingCursorToUpdate: this);
     }
   }
@@ -797,6 +799,11 @@ class CustomMouseCursor extends MouseCursor {
     bool finalizeForCurrentDPR = true,
     String? key,
   }) async {
+    if (!thisImagesDevicePixelRatio.isFinite || thisImagesDevicePixelRatio <= 0) {
+      throw ArgumentError.value(thisImagesDevicePixelRatio,
+          'thisImagesDevicePixelRatio',
+          'must be a finite, positive devicePixelRatio');
+    }
     if (_Logger.logging) {
       _Logger.log(chalk.color.teal(
           'image() - creating custom cursor from ${thisImagesDevicePixelRatio}x image'));
@@ -829,7 +836,7 @@ class CustomMouseCursor extends MouseCursor {
     ui.Image uiImage, {
     double thisImagesDevicePixelRatio = 1.0,
   }) async {
-    if (originStory != _CustomMouseCursorCreationType.image) {
+    if (originStory != CustomMouseCursorCreationType.image) {
       throw ('addImage() called on CustomMouseCursor that was not created via image() ($originStory)');
     }
     if (_Logger.logging) {
@@ -878,7 +885,7 @@ class CustomMouseCursor extends MouseCursor {
   /// other DevicePixelRatios.
   /// This can also replace existing dpr images previously set for this cursor.
   Future<void> finalizeImages() async {
-    if (originStory != _CustomMouseCursorCreationType.image) {
+    if (originStory != CustomMouseCursorCreationType.image) {
       throw ('finalizeImages() called on CustomMouseCursor that was not created via image() ($originStory)');
     }
     double currentDevicePixelRatio =
@@ -894,7 +901,7 @@ class CustomMouseCursor extends MouseCursor {
 
   /// Internal handler for updating custom image cursors in response to changes to the system's devicePixelRatio.
   Future<void> _updateImageToNewDpi(double newDevicePixelRatio) async {
-    assert(originStory == _CustomMouseCursorCreationType.image,
+    assert(originStory == CustomMouseCursorCreationType.image,
         '_updateImageToNewDpi() called on non image cursor ($originStory key=$key)');
 
     if (_Logger.logging) {
@@ -907,7 +914,7 @@ class CustomMouseCursor extends MouseCursor {
     }
 
     // Check to see if we have THIS DPR available in the cache and switch if possible...
-    if (!switchToCachedDevicePixelRatioIfPossible(newDevicePixelRatio)) {
+    if (!await switchToCachedDevicePixelRatioIfPossible(newDevicePixelRatio)) {
       // OTHERWISE we were NOT able to find the DPR in the cache so create it
 
       // HOT SPOTS where orginally STORED at [nativeDevicePixelRatio] DPR (which may have changed from what user
@@ -981,7 +988,7 @@ class CustomMouseCursor extends MouseCursor {
       await _commonCursorImageInstaller(
           uiImage, hotX.round(), hotY.round(), newDevicePixelRatio,
           key: key,
-          originStory: _CustomMouseCursorCreationType.image,
+          originStory: CustomMouseCursorCreationType.image,
           existingCursorToUpdate: this);
     }
   }
@@ -996,7 +1003,7 @@ class CustomMouseCursor extends MouseCursor {
   /// [key] optionally specifies the key of this image - this may be completely disregard on some platforms,
   ///   on web platforms it will dynmically be replaces as this is the cursor definition.
   ///   This can be left null and the system will handle it's assignment.
-  /// [originStory] is used to specify how this image was originally created.  The [_CustomMouseCursorCreationType] class
+  /// [originStory] is used to specify how this image was originally created.  The [CustomMouseCursorCreationType] class
   /// is private so external users can not change this parameter from the default.
   static Future<CustomMouseCursor> _commonCursorImageInstaller(
     ui.Image uiImage,
@@ -1004,8 +1011,8 @@ class CustomMouseCursor extends MouseCursor {
     int hotY,
     double thisImagesDevicePixelRatio, {
     String? key,
-    _CustomMouseCursorCreationType originStory =
-        _CustomMouseCursorCreationType.image,
+    CustomMouseCursorCreationType originStory =
+        CustomMouseCursorCreationType.image,
 
     /// An existing cursor that should be updated instead of creating a new cursor.
     /// This is used on DevicePixelRatio changes to update the cursors backing
@@ -1157,12 +1164,12 @@ class CustomMouseCursor extends MouseCursor {
       _Logger.log(
           '    UPDATING $originStory CURSOR dpr - CALLING cursor.updateXXXXToNewDpi( $newDevicePixelRatio );');
     }
-    if (originStory == _CustomMouseCursorCreationType.asset ||
-        originStory == _CustomMouseCursorCreationType.exactasset) {
+    if (originStory == CustomMouseCursorCreationType.asset ||
+        originStory == CustomMouseCursorCreationType.exactasset) {
       await _updateAssetToNewDpi(newDevicePixelRatio);
-    } else if (originStory == _CustomMouseCursorCreationType.icon) {
+    } else if (originStory == CustomMouseCursorCreationType.icon) {
       await _updateIconToNewDpi(newDevicePixelRatio);
-    } else if (originStory == _CustomMouseCursorCreationType.image) {
+    } else if (originStory == CustomMouseCursorCreationType.image) {
       await _updateImageToNewDpi(newDevicePixelRatio);
     }
   }
@@ -1170,8 +1177,8 @@ class CustomMouseCursor extends MouseCursor {
   // Switch this cursor to a different DPR if it is found in the cache.  Returns
   // true if [desiredDevicePixelRatio] is in the cache and the switch is made.
   // false if [desiredDevicePixelRatio] is not found in the cache.
-  bool switchToCachedDevicePixelRatioIfPossible(
-      double desiredDevicePixelRatio) {
+  Future<bool> switchToCachedDevicePixelRatioIfPossible(
+      double desiredDevicePixelRatio) async {
     if (false && _Logger.logging) {
       _Logger.log(chalk.red(
           'switchToCachedDevicePixelRatioIfPossible($desiredDevicePixelRatio) _dprBitmapCache.containsKey($_dprBitmapCache.containsKey(desiredDevicePixelRatio))=${_dprBitmapCache.containsKey(desiredDevicePixelRatio)}'));
@@ -1186,9 +1193,9 @@ class CustomMouseCursor extends MouseCursor {
         }
         final cachedInfo = _dprBitmapCache[desiredDevicePixelRatio]!;
         // WE ARE UPDATING an existing cursor's backing image, so delete previous image and
-        _CustomMouseCursorPlatformInterface.deleteCursor(key);
+        await _CustomMouseCursorPlatformInterface.deleteCursor(key);
         // get new version with new dpi image
-        _CustomMouseCursorPlatformInterface.registerCursor(
+        await _CustomMouseCursorPlatformInterface.registerCursor(
             key,
             cachedInfo.imageBuffer,
             cachedInfo.width,
@@ -1481,7 +1488,7 @@ class CustomMouseCursor extends MouseCursor {
           _Logger.log(
               '    Current DPI is different than cursors DPI!!!    cursor.currentCursorDevicePixelRatio=${cursor.currentCursorDevicePixelRatio} != currentDevicePixelRatio=$currentDevicePixelRatio');
         }
-        if (cursor.switchToCachedDevicePixelRatioIfPossible(
+        if (await cursor.switchToCachedDevicePixelRatioIfPossible(
             currentDevicePixelRatio)) {
           // found in cache
           continue;
@@ -1617,9 +1624,6 @@ class CustomMouseCursor extends MouseCursor {
       // without image-set.
       return 1.0;
     }
-    // ICARUS PATCH: macOS is no longer clamped to 1.0 DPR. The macOS plugin
-    // now accepts a `scale` argument and sets the NSImage point size, so
-    // Retina displays get full-resolution cursors.
 
     //DEPRECATED WAY//if (_usePreFlutter39) {
     //DEPRECATED WAY//  // deprecated way to get pixel ratio
@@ -1897,8 +1901,7 @@ class CustomMouseCursor extends MouseCursor {
 }
 
 class _CustomMouseCursorSession extends MouseCursorSession {
-  _CustomMouseCursorSession(CustomMouseCursor cursor, int device)
-      : super(cursor, device);
+  _CustomMouseCursorSession(CustomMouseCursor super.cursor, super.device);
 
   @override
   CustomMouseCursor get cursor => super.cursor as CustomMouseCursor;
@@ -1946,6 +1949,10 @@ class _CustomMouseCursorPlatformInterface {
     double hotY, {
     double scale = 1.0,
   }) async {
+    if (!scale.isFinite || scale <= 0) {
+      throw ArgumentError.value(
+          scale, 'scale', 'must be a finite, positive devicePixelRatio');
+    }
     final cursorName = await _getMethodChannel()
         .invokeMethod<String>(_getMethod(createCursorKey), <String, dynamic>{
       'name': name,
@@ -1958,8 +1965,13 @@ class _CustomMouseCursorPlatformInterface {
       // plugin to set the NSImage point size; ignored on Windows/Linux.
       'scale': scale,
     });
+    if (cursorName == null) {
+      throw StateError(
+          'The platform failed to create custom cursor "$name" (the native '
+          'side returned null; the image data may be undecodable).');
+    }
     assert(cursorName == name);
-    return cursorName!;
+    return cursorName;
   }
 
   static Future<void> deleteCursor(String name) async {
@@ -1989,7 +2001,7 @@ class _CustomMouseCursorPlatformInterface {
   }
 }
 
-enum _CustomMouseCursorCreationType { exactasset, asset, image, icon }
+enum CustomMouseCursorCreationType { exactasset, asset, image, icon }
 
 /// This class is used to remember the parameters originally passed to icon() method so regeneration
 /// of the icon based cursor's image is possible when the devicePixelRatio changes.

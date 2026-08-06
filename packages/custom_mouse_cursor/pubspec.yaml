@@ -3,8 +3,8 @@ description: Custom mouse cursors for Flutter which are devicePixelRatio aware.
 version: 1.1.3
 homepage: https://github.com/timmaffett/custom_mouse_cursor
 environment:
-  sdk: ">=2.15.0 <4.0.0"
-  flutter: ">=2.5.0"
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
 
 dependencies:
   chalkdart: ^3.0.4
@@ -20,6 +20,4 @@ flutter:
   plugin:
     platforms:
       macos:
-        pluginClass: CustomMouseCursorPlugin
-      linux:
         pluginClass: CustomMouseCursorPlugin
