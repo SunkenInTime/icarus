@@ -95,6 +95,11 @@ Future<void> savePng(ui.Image image, String path, {int zoom = 1}) async {
 }
 
 void main() {
+  // Developer diagnostic: renders zoomed glyph previews to /tmp/cursor_debug.
+  // Requires a local Flutter SDK with the Material icons font; skips on CI.
+  final materialFont = File(
+      '/opt/homebrew/share/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf');
+
   testWidgets('render cursor glyphs for inspection', (tester) async {
     await tester.runAsync(() async {
       // Load the real fonts (tests default to the Ahem placeholder font).
@@ -108,7 +113,7 @@ void main() {
 
       final materialLoader = FontLoader('MaterialIcons');
       materialLoader.addFont(
-        File('/opt/homebrew/share/flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf')
+        materialFont
             .readAsBytes()
             .then((b) => ByteData.view(Uint8List.fromList(b).buffer)),
       );
@@ -157,5 +162,5 @@ void main() {
             zoom: (192 / size).round());
       }
     });
-  });
+  }, skip: !materialFont.existsSync());
 }
