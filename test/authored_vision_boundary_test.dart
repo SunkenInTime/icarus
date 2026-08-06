@@ -29,6 +29,26 @@ void main() {
     MapValue.summit: (13, 31),
   };
 
+  // These are the authored walls that overlap Riot navigation samples. The
+  // overlap is useful evidence for selecting an elevation, but must never
+  // turn the whole enclosing wall into a passable floor. Icebox is the most
+  // sensitive case: the old behavior could remove seven of its nine walls.
+  const navigationOverlapCounts = <MapValue, int>{
+    MapValue.bind: 6,
+    MapValue.haven: 2,
+    MapValue.split: 4,
+    MapValue.ascent: 1,
+    MapValue.icebox: 7,
+    MapValue.breeze: 2,
+    MapValue.fracture: 3,
+    MapValue.pearl: 4,
+    MapValue.lotus: 0,
+    MapValue.sunset: 3,
+    MapValue.abyss: 2,
+    MapValue.corrode: 3,
+    MapValue.summit: 0,
+  };
+
   test('loads the complete authored collision manifest for every map',
       () async {
     final manifest = jsonDecode(
@@ -217,6 +237,36 @@ void main() {
       );
       final counts = expectedCounts[map]!;
       final expectedGroupCount = 1 + counts.$1 + counts.$2;
+
+      for (final side in <(String, List<VisionGeometryLayer>)>[
+        ('attack', geometry.attackLayers),
+        ('defense', geometry.defenseLayers),
+      ]) {
+        final authoredInteriors = side.$2.first.debugCollisionGroups.where(
+          (group) =>
+              group.kind == VisionCollisionKind.maskBoundary &&
+              !group.isOuterBoundary,
+        );
+        expect(
+          authoredInteriors.where(
+            (group) => group.navigationLayerMask != 0,
+          ),
+          hasLength(navigationOverlapCounts[map]!),
+          reason: '${map.name} ${side.$1} navigation overlap audit',
+        );
+        expect(
+          authoredInteriors,
+          everyElement(
+            predicate<VisionCollisionGroup>(
+              (group) =>
+                  !group.inferObserverPassability &&
+                  group.observerExclusionLayerMask == 0,
+              'an authored wall that cannot become observer-passable',
+            ),
+          ),
+          reason: '${map.name} ${side.$1} authored wall semantics',
+        );
+      }
 
       for (final layer in [
         ...geometry.attackLayers,
