@@ -52,10 +52,12 @@ class CircleAgentComposite extends ConsumerWidget {
     super.key,
     required this.agent,
     this.forcedAgentSize,
+    this.isInteractive = true,
   });
 
   final PlacedCircleAgent agent;
   final double? forcedAgentSize;
+  final bool isInteractive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -100,6 +102,7 @@ class CircleAgentComposite extends ConsumerWidget {
               id: agent.id,
               agent: AgentData.agents[agent.type]!,
               forcedAgentSize: agentSize,
+              isInteractive: isInteractive,
             ),
           ),
         ],
@@ -228,6 +231,7 @@ class _PlacedCircleAgentWidgetState
                   child: CircleAgentComposite(
                     agent: current.copyWith(diameterMeters: diameterMeters),
                     forcedAgentSize: agentSize,
+                    isInteractive: false,
                   ),
                 ),
               ),

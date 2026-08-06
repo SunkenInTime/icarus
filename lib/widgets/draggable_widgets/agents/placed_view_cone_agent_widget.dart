@@ -51,6 +51,7 @@ class ViewConeAgentComposite extends ConsumerWidget {
     this.forcedAgentSize,
     this.applyRotation = true,
     this.clipToGeometry = true,
+    this.isInteractive = true,
   });
 
   final PlacedViewConeAgent agent;
@@ -59,6 +60,7 @@ class ViewConeAgentComposite extends ConsumerWidget {
   final double? forcedAgentSize;
   final bool applyRotation;
   final bool clipToGeometry;
+  final bool isInteractive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -115,6 +117,7 @@ class ViewConeAgentComposite extends ConsumerWidget {
                 id: agent.id,
                 agent: AgentData.agents[agent.type]!,
                 forcedAgentSize: agentSize,
+                isInteractive: isInteractive,
               ),
             ),
           ),
@@ -279,6 +282,7 @@ class _PlacedViewConeAgentWidgetState
                 length: localLength,
                 forcedAgentSize: agentSize,
                 clipToGeometry: false,
+                isInteractive: false,
               ),
             ),
           ),

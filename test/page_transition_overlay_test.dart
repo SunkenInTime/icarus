@@ -12,6 +12,7 @@ import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
+import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -70,6 +71,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ColorFiltered), findsOneWidget);
+    expect(find.byType(MouseWatch), findsNothing);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -127,8 +129,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final ink = tester.widget<Ink>(find.byType(Ink));
-    final decoration = ink.decoration! as BoxDecoration;
+    final agentContainer = tester
+        .widgetList<Container>(find.byType(Container))
+        .singleWhere((widget) => widget.decoration is BoxDecoration);
+    final decoration = agentContainer.decoration! as BoxDecoration;
     expect(
       decoration.color,
       Color.lerp(Settings.allyBGColor, _expectedMutedAllyBgColor, 0.5),

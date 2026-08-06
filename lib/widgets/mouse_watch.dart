@@ -322,6 +322,14 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
     );
   }
 
+  void _updateLineUpHoverState(bool isHovered) {
+    // Only lineup widgets use this local state to control their notes portal.
+    // Regular map widgets still publish their hovered delete target, but do
+    // not need to rebuild just because a drag crossed their hitbox.
+    if (widget.lineUpId == null || isMouseInRegion == isHovered) return;
+    setState(() => isMouseInRegion = isHovered);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (CoordinateSystem.instance.isScreenshot) {
@@ -389,15 +397,11 @@ class _MouseWatchState extends ConsumerState<MouseWatch> {
           }
         }
         _publishHoveredDeleteTarget();
-        setState(() {
-          isMouseInRegion = true;
-        });
+        _updateLineUpHoverState(true);
       },
       onExit: (_) {
         _scheduleHoverCleanup();
-        setState(() {
-          isMouseInRegion = false;
-        });
+        _updateLineUpHoverState(false);
       },
       child: KeyedSubtree(
         key: _hitboxKey,
