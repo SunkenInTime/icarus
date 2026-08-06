@@ -20,7 +20,9 @@ import 'package:integration_test/integration_test.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const _viewportSize = Size(1200, 675);
-const _dragSourceKey = ValueKey('performance-drag-source');
+const _leftDragSourceKey = ValueKey('performance-left-drag-source');
+const _rightDragSourceKey = ValueKey('performance-right-drag-source');
+const _dragFeedbackKey = ValueKey('performance-drag-feedback');
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -77,7 +79,12 @@ void main() {
                   Positioned(
                     left: 50,
                     top: 315,
-                    child: _BenchmarkDragSource(key: _dragSourceKey),
+                    child: _BenchmarkDragSource(key: _leftDragSourceKey),
+                  ),
+                  Positioned(
+                    right: 50,
+                    top: 315,
+                    child: _BenchmarkDragSource(key: _rightDragSourceKey),
                   ),
                 ],
               ),
@@ -88,8 +95,18 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Decode and raster-cache the feedback before collecting timings.
-    await _dragAcrossAgents(tester, leftToRight: true);
+    // Verify and raster-cache feedback from both sources before collecting
+    // timings. This keeps every measured pass representative of a real drag.
+    await _dragAcrossAgents(
+      tester,
+      leftToRight: true,
+      verifyFeedback: true,
+    );
+    await _dragAcrossAgents(
+      tester,
+      leftToRight: false,
+      verifyFeedback: true,
+    );
     await tester.pumpAndSettle();
 
     await binding.watchPerformance(
@@ -137,16 +154,23 @@ void _printPerformanceSummary(
 Future<void> _dragAcrossAgents(
   WidgetTester tester, {
   required bool leftToRight,
+  bool verifyFeedback = false,
 }) async {
-  final source = tester.getCenter(find.byKey(_dragSourceKey));
-  final start = leftToRight ? source : const Offset(1100, 337.5);
-  final end = leftToRight ? const Offset(1100, 337.5) : source;
+  final start = tester.getCenter(
+    find.byKey(leftToRight ? _leftDragSourceKey : _rightDragSourceKey),
+  );
+  final end = tester.getCenter(
+    find.byKey(leftToRight ? _rightDragSourceKey : _leftDragSourceKey),
+  );
   final gesture =
       await tester.startGesture(start, kind: PointerDeviceKind.mouse);
 
   for (var step = 1; step <= 72; step++) {
     await gesture.moveTo(Offset.lerp(start, end, step / 72)!);
     await tester.pump(const Duration(milliseconds: 16));
+    if (verifyFeedback && step == 2) {
+      expect(find.byKey(_dragFeedbackKey), findsOneWidget);
+    }
   }
 
   await gesture.up();
@@ -161,6 +185,7 @@ class _BenchmarkDragSource extends StatelessWidget {
     return Draggable<Object>(
       data: const Object(),
       feedback: Opacity(
+        key: _dragFeedbackKey,
         opacity: Settings.feedbackOpacity,
         child: ZoomTransform(
           child: AgentWidget(
