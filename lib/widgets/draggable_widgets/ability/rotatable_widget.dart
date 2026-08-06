@@ -75,6 +75,9 @@ class _RotatableWidgetState extends ConsumerState<RotatableWidget>
 
     return MouseRegion(
       opaque: false,
+      // Keep spatially separated handles reachable across transparent parts
+      // of a view cone without blocking pointer targets underneath.
+      hitTestBehavior: HitTestBehavior.translucent,
       onEnter: (_) {
         setState(() {
           _isTargetHovered = true;

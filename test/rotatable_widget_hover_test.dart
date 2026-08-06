@@ -121,4 +121,82 @@ void main() {
 
     expect(targetDragStarted, isTrue);
   });
+
+  testWidgets(
+    'transparent gap keeps a separated rotation handle reachable',
+    (tester) async {
+      var handleDragStarted = false;
+
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: RotatableWidget(
+                  rotation: 0,
+                  origin: const Offset(100, 120),
+                  buttonLeft: 92.5,
+                  buttonTop: 0,
+                  isDragging: false,
+                  onPanStart: (_) => handleDragStarted = true,
+                  onPanUpdate: (_) {},
+                  onPanEnd: (_) {},
+                  child: const SizedBox(
+                    key: ValueKey('separated-control-bounds'),
+                    width: 200,
+                    height: 140,
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          left: 92.5,
+                          bottom: 0,
+                          child: SizedBox(
+                            key: ValueKey('separated-control-target'),
+                            width: 15,
+                            height: 15,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      ShapeIndicatorFade indicator() =>
+          tester.widget<ShapeIndicatorFade>(find.byType(ShapeIndicatorFade));
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(
+        location: tester.getCenter(
+          find.byKey(const ValueKey('separated-control-target')),
+        ),
+      );
+      await tester.pump();
+
+      expect(indicator().visible, isTrue);
+
+      await mouse.moveTo(
+        tester.getCenter(
+          find.byKey(const ValueKey('separated-control-bounds')),
+        ),
+      );
+      await tester.pump();
+
+      expect(indicator().visible, isTrue);
+
+      final handleCenter = tester.getCenter(find.byType(ShapeIndicatorFade));
+      await mouse.moveTo(handleCenter);
+      await mouse.down(handleCenter);
+      await mouse.moveBy(const Offset(10, 0));
+      await tester.pump();
+
+      expect(handleDragStarted, isTrue);
+
+      await mouse.up();
+    },
+  );
 }
