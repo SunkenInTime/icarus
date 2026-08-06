@@ -972,6 +972,7 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
     return StrategyPage(
       id: fields[0] as String,
       name: fields[2] as String,
+      isAutoNamed: fields[14] == null ? false : fields[14] as bool,
       drawingData: (fields[3] as List).cast<DrawingElement>(),
       agentData: (fields[4] as List).cast<PlacedAgentNode>(),
       abilityData: (fields[5] as List).cast<PlacedAbility>(),
@@ -992,7 +993,7 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
   @override
   void write(BinaryWriter writer, StrategyPage obj) {
     writer
-      ..writeByte(13)
+      ..writeByte(14)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -1018,7 +1019,9 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(11)
       ..write(obj.lineUps)
       ..writeByte(12)
-      ..write(obj.lineUpGroups);
+      ..write(obj.lineUpGroups)
+      ..writeByte(14)
+      ..write(obj.isAutoNamed);
   }
 
   @override

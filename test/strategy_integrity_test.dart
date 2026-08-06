@@ -346,6 +346,7 @@ void main() {
       expect(restored.lineUps, hasLength(1));
       expect(restored.lineUps.single.id, legacyLineUp.id);
       expect(restored.lineUpGroups, hasLength(1));
+      expect(restored.isAutoNamed, isFalse);
       expect(restored.lineUpGroups.single.id, legacyLineUp.id);
       expect(restored.lineUpGroups.single.items, hasLength(1));
       expect(
@@ -405,6 +406,32 @@ void main() {
           ]));
     });
 
+    test('custom Page N provenance round-trips through export JSON', () async {
+      final page = StrategyPage(
+        id: 'custom-page-2',
+        sortIndex: 1,
+        name: 'Page 2',
+        isAutoNamed: false,
+        drawingData: const [],
+        agentData: const [],
+        abilityData: const [],
+        textData: const [],
+        imageData: const [],
+        utilityData: const [],
+        isAttack: true,
+        settings: StrategySettings(),
+      );
+
+      final restored = await StrategyPage.fromJson(
+        json: page.toJson('strategy-id'),
+        strategyID: 'strategy-id',
+        isZip: true,
+      );
+
+      expect(restored.name, 'Page 2');
+      expect(restored.isAutoNamed, isFalse);
+    });
+
     test('current schema export -> import preserves canonical structure',
         () async {
       final currentPayload = <String, dynamic>{
@@ -415,6 +442,7 @@ void main() {
             'id': 'page-1',
             'sortIndex': '0',
             'name': 'Page 1',
+            'isAutoNamed': true,
             'drawingData': [
               {
                 'type': 'lineDrawing',
@@ -932,6 +960,7 @@ void main() {
             id: 'page-1',
             sortIndex: 0,
             name: 'Page 1',
+            isAutoNamed: true,
             drawingData: const [],
             agentData: const [],
             abilityData: const [],
@@ -952,6 +981,7 @@ void main() {
       final page = restored.pages.single;
 
       expect(page.lineUpGroups, hasLength(1));
+      expect(page.isAutoNamed, isTrue);
       expect(page.lineUpGroups.single.items, hasLength(1));
       expect(page.lineUps, hasLength(1));
       expect(page.lineUps.single.id, 'item-1');

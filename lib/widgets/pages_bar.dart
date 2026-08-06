@@ -227,12 +227,19 @@ class _PagesBarState extends ConsumerState<PagesBar> {
         ),
       ),
     );
-    if (newName == null || newName.isEmpty || newName == page.name) return;
+    if (newName == null ||
+        newName.isEmpty ||
+        (newName == page.name && !page.isAutoNamed)) {
+      return;
+    }
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final updatedPages = [
       for (final p in strat.pages)
-        if (p.id == page.id) p.copyWith(name: newName) else p,
+        if (p.id == page.id)
+          p.copyWith(name: newName, isAutoNamed: false)
+        else
+          p,
     ];
     final updated =
         strat.copyWith(pages: updatedPages, lastEdited: DateTime.now());

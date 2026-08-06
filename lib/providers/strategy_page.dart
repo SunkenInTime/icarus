@@ -18,6 +18,7 @@ class StrategyPage extends HiveObject {
   final String id;
   final int sortIndex;
   final String name;
+  final bool isAutoNamed;
   final List<DrawingElement> drawingData;
   final List<PlacedAgentNode> agentData;
   final List<PlacedAbility> abilityData;
@@ -53,6 +54,7 @@ class StrategyPage extends HiveObject {
   StrategyPage({
     required this.id,
     required this.name,
+    this.isAutoNamed = false,
     required this.drawingData,
     required this.agentData,
     required this.abilityData,
@@ -79,6 +81,7 @@ class StrategyPage extends HiveObject {
     String? id,
     int? sortIndex,
     String? name,
+    bool? isAutoNamed,
     List<DrawingElement>? drawingData,
     List<PlacedAgentNode>? agentData,
     List<PlacedAbility>? abilityData,
@@ -99,6 +102,7 @@ class StrategyPage extends HiveObject {
       id: id ?? this.id,
       sortIndex: sortIndex ?? this.sortIndex,
       name: name ?? this.name,
+      isAutoNamed: isAutoNamed ?? this.isAutoNamed,
       drawingData: DrawingProvider.fromJson(
           DrawingProvider.objectToJson(drawingData ?? this.drawingData)),
       agentData: AgentProvider.fromJson(AgentProvider.objectToJson(
@@ -128,6 +132,7 @@ class StrategyPage extends HiveObject {
                "id": "$id",
                "sortIndex": "$sortIndex",
                "name": "$name",
+               "isAutoNamed": $isAutoNamed,
                "drawingData": ${DrawingProvider.objectToJson(drawingData)},
                "agentData": ${AgentProvider.objectToJson(agentData)},
                "abilityData": ${AbilityProvider.objectToJson(abilityData)},
@@ -190,6 +195,8 @@ class StrategyPage extends HiveObject {
       id: json['id'],
       sortIndex: int.parse(json['sortIndex']),
       name: json['name'],
+      isAutoNamed:
+          json['isAutoNamed'] == true || json['isAutoNamed'] == 'true',
       drawingData: DrawingProvider.fromJson(jsonEncode(json['drawingData'])),
       agentData: AgentProvider.fromJson(jsonEncode(json['agentData'])),
       abilityData: AbilityProvider.fromJson(jsonEncode(json['abilityData'])),

@@ -124,6 +124,56 @@ void main() {
     ]);
   });
 
+  test('a custom name matching Page N is never automatically renumbered', () {
+    final pages = [
+      _page(id: 'page-1', name: 'Page 1', sortIndex: 0),
+      _page(
+        id: 'custom-page-2',
+        name: 'Page 2',
+        sortIndex: 1,
+        isAutoNamed: false,
+      ),
+      _page(id: 'page-3', name: 'Page 3', sortIndex: 2),
+    ];
+
+    final reindexed = StrategyProvider.reindexPagesAfterStructuralChange([
+      pages[1],
+      pages[0],
+      pages[2],
+    ]);
+
+    expect(reindexed.map((page) => page.name), [
+      'Page 2',
+      'Page 2',
+      'Page 3',
+    ]);
+    expect(reindexed.first.isAutoNamed, isFalse);
+    expect(reindexed[1].isAutoNamed, isTrue);
+  });
+
+  test('page-name migration records provenance for historical pages', () {
+    final oldStrategy = _strategy([
+      _page(
+        id: 'page-1',
+        name: 'Page 1',
+        sortIndex: 0,
+        isAutoNamed: false,
+      ),
+      _page(
+        id: 'custom-page',
+        name: 'Site Execute',
+        sortIndex: 1,
+        isAutoNamed: false,
+      ),
+    ]).copyWith(versionNumber: Settings.versionNumber - 1);
+
+    final migrated = StrategyProvider.migrateToCurrentVersion(oldStrategy);
+
+    expect(migrated.versionNumber, Settings.versionNumber);
+    expect(migrated.pages[0].isAutoNamed, isTrue);
+    expect(migrated.pages[1].isAutoNamed, isFalse);
+  });
+
   test('delete renumbering closes gaps without changing custom names', () {
     final pages = [
       _page(id: 'page-1', name: 'Page 1', sortIndex: 0),
@@ -288,6 +338,7 @@ StrategyPage _page({
   required String id,
   required String name,
   required int sortIndex,
+  bool? isAutoNamed,
   List<PlacedAgentNode> agents = const [],
   List<PlacedAbility> abilities = const [],
   List<PlacedText> text = const [],
@@ -297,6 +348,7 @@ StrategyPage _page({
   return StrategyPage(
     id: id,
     name: name,
+    isAutoNamed: isAutoNamed ?? name == 'Page ${sortIndex + 1}',
     sortIndex: sortIndex,
     drawingData: const [],
     agentData: agents,

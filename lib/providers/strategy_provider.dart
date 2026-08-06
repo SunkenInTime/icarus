@@ -22,6 +22,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/migrations/lineup_group_migration.dart';
+import 'package:icarus/migrations/page_name_provenance_migration.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -598,7 +599,28 @@ class StrategyProvider extends Notifier<StrategyState> {
         migrateAbilityScale(worldMigrated, force: forceAbilityScale);
     final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
     final customCircleMigrated = migrateCustomCircleWrapper(squareAoeMigrated);
-    return migrateLineUpGroups(customCircleMigrated);
+    final lineUpGroupMigrated = migrateLineUpGroups(customCircleMigrated);
+    return migratePageNameProvenance(
+      lineUpGroupMigrated,
+      force: strat.versionNumber < PageNameProvenanceMigration.version,
+    );
+  }
+
+  static StrategyData migratePageNameProvenance(StrategyData strat,
+      {bool force = false}) {
+    if (!force &&
+        strat.versionNumber >= PageNameProvenanceMigration.version) {
+      return strat;
+    }
+
+    final migratedPages =
+        PageNameProvenanceMigration.migratePages(pages: strat.pages);
+
+    return strat.copyWith(
+      pages: migratedPages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
   }
 
   static StrategyData migrateLineUpGroups(StrategyData strat,
@@ -647,6 +669,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final firstPage = StrategyPage(
       id: const Uuid().v4(),
       name: "Page 1",
+      isAutoNamed: true,
       // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       drawingData: [...strat.drawingData],
       // ignore: deprecated_member_use, deprecated_member_use_from_same_package
@@ -980,8 +1003,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       for (var i = 0; i < orderedPages.length; i++)
         orderedPages[i].copyWith(
           sortIndex: i,
-          name: orderedPages[i].name ==
-                  'Page ${orderedPages[i].sortIndex + 1}'
+          name: orderedPages[i].isAutoNamed
               ? 'Page ${i + 1}'
               : orderedPages[i].name,
         ),
@@ -1335,10 +1357,12 @@ class StrategyProvider extends Notifier<StrategyState> {
     final sourceIndex =
         currentIndex >= 0 ? currentIndex : orderedPages.length - 1;
     final insertionIndex = sourceIndex + 1;
+    final isAutoNamed = name == null;
     name ??= "Page ${insertionIndex + 1}";
     final newPage = orderedPages[sourceIndex].copyWith(
       id: const Uuid().v4(),
       name: name,
+      isAutoNamed: isAutoNamed,
       sortIndex: insertionIndex,
     );
 
@@ -3225,6 +3249,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         StrategyPage(
           id: pageID,
           name: "Page 1",
+          isAutoNamed: true,
           drawingData: [],
           agentData: [],
           abilityData: [],
