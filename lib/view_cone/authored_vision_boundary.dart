@@ -68,9 +68,32 @@ class AuthoredVisionBoundary {
       ]);
     }
 
+    List<Offset> polyline(Object? encoded, String label) {
+      if (encoded is! List || encoded.length < 2) {
+        throw FormatException('Invalid $label polyline for ${map.name}.');
+      }
+      return List<Offset>.unmodifiable([
+        for (final point in encoded) project(_point(point, label)),
+      ]);
+    }
+
+    List<List<Offset>> polylines(Object? encoded, String label) {
+      if (encoded is! List) {
+        throw FormatException('Invalid $label list for ${map.name}.');
+      }
+      return List<List<Offset>>.unmodifiable([
+        for (var index = 0; index < encoded.length; index += 1)
+          polyline(encoded[index], '$label[$index]'),
+      ]);
+    }
+
     final outer = polygon(value['outer'], 'outer');
     final interiors = polygons(value['interiors'], 'interiors');
     final heightBoxes = polygons(value['heightBoxes'], 'heightBoxes');
+    final structuralChains = polylines(
+      value['structuralChains'] ?? const <dynamic>[],
+      'structuralChains',
+    );
     final maskContours = List<List<Offset>>.unmodifiable([
       outer,
       ...interiors,
@@ -99,6 +122,15 @@ class AuthoredVisionBoundary {
           kind: VisionCollisionKind.structuralObstacle,
           isClosed: true,
           removesOwnEdgesWhenInside: true,
+          inferObserverPassability: false,
+        ),
+      for (final chain in structuralChains)
+        VisionCollisionGroup.geometry(
+          points: chain,
+          kind: VisionCollisionKind.structuralChain,
+          isClosed: false,
+          requiresEvidence: false,
+          isAuthoritative: true,
           inferObserverPassability: false,
         ),
     ];

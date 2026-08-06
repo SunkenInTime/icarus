@@ -141,36 +141,173 @@ void main() {
     expect(box.bounds.bottom, closeTo(393.8, 1));
   });
 
-  test('provider selects the authored Split boundary at runtime', () async {
+  test('provider selects the exact rendered Split boundary at runtime',
+      () async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
+    final svg = SvgVisionBoundary.parse(
+      map: MapValue.split,
+      source: await rootBundle.loadString('assets/maps/split_map.svg'),
+    );
 
     final geometry =
         await container.read(viewConeGeometryProvider(MapValue.split).future);
 
     expect(geometry, isNotNull);
-    expect(geometry!.attackLayers.first.collisionGroups, hasLength(27));
+    final runtimeBoundary = geometry!.attackLayers.first.boundary!;
     expect(
-      geometry.attackLayers.first.collisionGroups.any(
-        (group) =>
-            group.kind == VisionCollisionKind.maskBoundary &&
-            !group.isOuterBoundary &&
-            (group.bounds.center - const Offset(520, 376)).distance < 10,
-      ),
-      isTrue,
+      runtimeBoundary.segments.map(visionSegmentKey).toSet(),
+      svg.segments.map(visionSegmentKey).toSet(),
     );
   });
 
-  test('provider enables authored collision geometry for Summit', () async {
+  test('provider enables exact rendered collision geometry for Summit',
+      () async {
     final container = ProviderContainer();
     addTearDown(container.dispose);
+    final svg = SvgVisionBoundary.parse(
+      map: MapValue.summit,
+      source: await rootBundle.loadString('assets/maps/summit_map.svg'),
+    );
 
     final geometry =
         await container.read(viewConeGeometryProvider(MapValue.summit).future);
 
     expect(geometry, isNotNull);
     expect(geometry!.attackLayers, isNotEmpty);
-    expect(geometry.attackLayers.first.collisionGroups, hasLength(45));
+    expect(
+      geometry.attackLayers.first.boundary!.segments
+          .map(visionSegmentKey)
+          .toSet(),
+      svg.segments.map(visionSegmentKey).toSet(),
+    );
+  });
+
+  test('runtime walls exactly match rendered SVG strokes on every map',
+      () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    for (final map in MapValue.values) {
+      final attackSvg = SvgVisionBoundary.parse(
+        map: map,
+        source: await rootBundle.loadString(
+          'assets/maps/${map.name}_map.svg',
+        ),
+      );
+      final defenseSvg = SvgVisionBoundary.parse(
+        map: map,
+        source: await rootBundle.loadString(
+          'assets/maps/${map.name}_map_defense.svg',
+        ),
+        isAttack: false,
+      );
+      final exactDraft = VisionBoundaryMapDraft.fromBoundary(
+        map: map,
+        boundary: attackSvg,
+      );
+      final editorBoundary = AuthoredVisionBoundary.parse(
+        map: map,
+        document: <String, dynamic>{
+          'version': 1,
+          'maps': <String, dynamic>{map.name: exactDraft.toJson()},
+        },
+        attackTargetBounds: attackSvg.outerGroup.bounds,
+      );
+      expect(
+        editorBoundary.segments.map(visionSegmentKey).toSet(),
+        attackSvg.segments.map(visionSegmentKey).toSet(),
+        reason: '${map.name} editor round-trip fidelity',
+      );
+      expect(
+        editorBoundary.collisionGroups.where(
+          (group) => group.kind == VisionCollisionKind.structuralChain,
+        ),
+        everyElement(
+          predicate<VisionCollisionGroup>(
+            (group) => group.isAuthoritative,
+            'a manually editable wall chain that bypasses evidence admission',
+          ),
+        ),
+        reason: '${map.name} edited wall authority',
+      );
+      final geometry =
+          await container.read(viewConeGeometryProvider(map).future);
+      expect(geometry, isNotNull, reason: map.name);
+
+      for (final side in <(String, VisionBoundary, List<VisionGeometryLayer>)>[
+        ('attack', attackSvg, geometry!.attackLayers),
+        ('defense', defenseSvg, geometry.defenseLayers),
+      ]) {
+        final exactKeys = side.$2.segments.map(visionSegmentKey).toSet();
+        expect(
+          side.$2.collisionGroups.where(
+            (group) => group.kind == VisionCollisionKind.maskBoundary,
+          ),
+          everyElement(
+            predicate<VisionCollisionGroup>(
+              (group) => !group.inferObserverPassability,
+              'an exact SVG mask that cannot disappear around the observer',
+            ),
+          ),
+          reason: '${map.name} ${side.$1} mask semantics',
+        );
+        expect(
+          side.$3.first.boundary!.segments.map(visionSegmentKey).toSet(),
+          exactKeys,
+          reason: '${map.name} ${side.$1} boundary source',
+        );
+        for (final layer in side.$3) {
+          final activeKeys = layer.segments.map(visionSegmentKey).toSet();
+          expect(
+            activeKeys,
+            everyElement(isIn(exactKeys)),
+            reason:
+                '${map.name} ${side.$1} elevation ${layer.elevation} fidelity',
+          );
+          expect(
+            layer.observerGroups.where(
+              (group) => group.kind == VisionCollisionKind.maskBoundary,
+            ),
+            isEmpty,
+            reason:
+                '${map.name} ${side.$1} masks must remain walls on every elevation',
+          );
+        }
+      }
+    }
+  });
+
+  test('Ascent B wall clips on the rendered stroke instead of beside it',
+      () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final geometry =
+        await container.read(viewConeGeometryProvider(MapValue.ascent).future);
+    final wall = geometry!.attackLayers.first.debugCollisionGroups.singleWhere(
+      (group) =>
+          group.kind == VisionCollisionKind.structuralChain &&
+          (group.bounds.left - 636.8).abs() < 0.1 &&
+          (group.bounds.top - 234.2).abs() < 0.1,
+    );
+    final visibleVertical = wall.segments.singleWhere(
+      (segment) =>
+          (segment.start.dx - segment.end.dx).abs() < 0.001 &&
+          (segment.start.dx - 636.8).abs() < 0.1,
+    );
+
+    for (final layer in geometry.attackLayers) {
+      expect(
+        layer.collisionGroups.map((group) => group.id),
+        contains(wall.id),
+        reason: 'Ascent elevation ${layer.elevation}',
+      );
+      expect(
+        layer.segments.map(visionSegmentKey),
+        contains(visionSegmentKey(visibleVertical)),
+        reason: 'Ascent elevation ${layer.elevation}',
+      );
+    }
   });
 
   test('saved boundary edits remain valid authored geometry', () async {

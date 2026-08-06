@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/vision_boundary_editor_provider.dart';
 import 'package:icarus/view_cone/vision_boundary_edit_document.dart';
+import 'package:icarus/view_cone/svg_vision_boundary.dart';
 import 'package:icarus/widgets/vision_boundary_editor.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -27,12 +29,16 @@ void main() {
       overrides: [mapProvider.overrideWith(_AscentMapProvider.new)],
     );
     addTearDown(container.dispose);
-    await tester.runAsync(
-      () => container.read(visionBoundaryEditorProvider.notifier).open(
+    await tester.runAsync(() async {
+      await container.read(visionBoundaryEditorProvider.notifier).open(
             map: MapValue.ascent,
             attackTargetBounds: const Rect.fromLTRB(100, 50, 1100, 950),
-          ),
-    );
+            boundary: SvgVisionBoundary.parse(
+              map: MapValue.ascent,
+              source: await rootBundle.loadString('assets/maps/ascent_map.svg'),
+            ),
+          );
+    });
 
     await tester.pumpWidget(
       UncontrolledProviderScope(

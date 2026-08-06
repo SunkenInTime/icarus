@@ -32,7 +32,6 @@ Future<VisionGeometryMap?> _loadViewConeGeometry(
     rootBundle.loadString('assets/maps/${mapName}_map.svg'),
     rootBundle.loadString('assets/maps/${mapName}_map_defense.svg'),
     rootBundle.loadString('assets/maps/vision_boundary_additions.json'),
-    rootBundle.loadString(visionBoundaryReferenceAsset),
     rootBundle.loadString(visionBoundaryEditsAsset),
   ]);
   final decoded = await compute(_decodeVisionGeometry, sources[0]);
@@ -89,35 +88,33 @@ Future<VisionGeometryMap?> _loadViewConeGeometry(
   var attackBoundary = svgAttackBoundary;
   var defenseBoundary = svgDefenseBoundary;
   try {
-    var reference = await compute(_decodeVisionGeometry, sources[4]);
-    try {
-      reference = mergeVisionBoundaryDocuments(
-        reference: reference,
-        edits: await compute(_decodeVisionGeometry, sources[5]),
-      );
-    } on Object catch (error) {
-      debugPrint('Ignoring invalid vision boundary edits: $error');
-    }
+    var edits = await compute(_decodeVisionGeometry, sources[4]);
     if (editorDraft != null) {
-      reference = withVisionBoundaryDraft(
-        document: reference,
+      edits = withVisionBoundaryDraft(
+        document: edits,
         draft: editorDraft,
       );
     }
-    attackBoundary = AuthoredVisionBoundary.parse(
-      map: map,
-      document: reference,
-      attackTargetBounds: svgAttackBoundary.outerGroup.bounds,
-    );
-    defenseBoundary = AuthoredVisionBoundary.parse(
-      map: map,
-      document: reference,
-      attackTargetBounds: svgAttackBoundary.outerGroup.bounds,
-      isDefense: true,
-    );
+    final maps = edits['maps'];
+    if (maps is! Map<String, dynamic>) {
+      throw const FormatException('Invalid collision edit manifest.');
+    }
+    if (maps.containsKey(map.name)) {
+      attackBoundary = AuthoredVisionBoundary.parse(
+        map: map,
+        document: edits,
+        attackTargetBounds: svgAttackBoundary.outerGroup.bounds,
+      );
+      defenseBoundary = AuthoredVisionBoundary.parse(
+        map: map,
+        document: edits,
+        attackTargetBounds: svgAttackBoundary.outerGroup.bounds,
+        isDefense: true,
+      );
+    }
   } on Object catch (error) {
     debugPrint(
-      'Unable to load authored collision reference; using SVG boundary: '
+      'Unable to load manual boundary edits; using exact SVG boundary: '
       '$error',
     );
   }

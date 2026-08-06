@@ -84,6 +84,10 @@ class SvgVisionBoundary {
           isClosed: true,
           isOuterBoundary: index == primaryIndex,
           nestingDepth: _nestingDepth(index, primaryIndex, worldMaskContours),
+          // Base-fill contours are the exact visible map walls. Navigation
+          // samples may select an elevation, but may never erase one of these
+          // rendered boundaries around the observer.
+          inferObserverPassability: false,
         ),
       );
     }

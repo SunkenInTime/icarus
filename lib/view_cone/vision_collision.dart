@@ -47,6 +47,7 @@ class VisionCollisionGroup {
     required this.isOuterBoundary,
     required this.nestingDepth,
     required this.requiresEvidence,
+    required this.isAuthoritative,
     required this.removesOwnEdgesWhenInside,
     required this.inferObserverPassability,
     required this.layerMask,
@@ -66,6 +67,7 @@ class VisionCollisionGroup {
     bool isOuterBoundary = false,
     int nestingDepth = 0,
     bool requiresEvidence = false,
+    bool isAuthoritative = false,
     bool removesOwnEdgesWhenInside = false,
     bool inferObserverPassability = true,
   }) {
@@ -102,6 +104,7 @@ class VisionCollisionGroup {
       isOuterBoundary: isOuterBoundary,
       nestingDepth: nestingDepth,
       requiresEvidence: requiresEvidence,
+      isAuthoritative: isAuthoritative,
       removesOwnEdgesWhenInside: removesOwnEdgesWhenInside,
       inferObserverPassability: inferObserverPassability,
       layerMask: 0,
@@ -125,6 +128,7 @@ class VisionCollisionGroup {
     required List<List<Offset>> paths,
     required VisionCollisionKind kind,
     bool requiresEvidence = false,
+    bool isAuthoritative = false,
   }) {
     final normalizedPaths = <List<Offset>>[];
     final segments = <VisionSegment>[];
@@ -165,6 +169,7 @@ class VisionCollisionGroup {
       isOuterBoundary: false,
       nestingDepth: 0,
       requiresEvidence: requiresEvidence,
+      isAuthoritative: isAuthoritative,
       removesOwnEdgesWhenInside: false,
       inferObserverPassability: false,
       layerMask: 0,
@@ -190,6 +195,7 @@ class VisionCollisionGroup {
   final bool isOuterBoundary;
   final int nestingDepth;
   final bool requiresEvidence;
+  final bool isAuthoritative;
   final bool removesOwnEdgesWhenInside;
   final bool inferObserverPassability;
   final int layerMask;
@@ -256,6 +262,7 @@ class VisionCollisionGroup {
       isOuterBoundary: isOuterBoundary,
       nestingDepth: nestingDepth,
       requiresEvidence: requiresEvidence,
+      isAuthoritative: isAuthoritative,
       removesOwnEdgesWhenInside: removesOwnEdgesWhenInside,
       inferObserverPassability: inferObserverPassability,
       layerMask: layerMask,

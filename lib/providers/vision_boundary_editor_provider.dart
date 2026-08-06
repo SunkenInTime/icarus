@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/services/vision_boundary_asset_writer.dart';
 import 'package:icarus/view_cone/vision_boundary_edit_document.dart';
+import 'package:icarus/view_cone/vision_geometry.dart';
 
 final visionBoundaryEditorProvider =
     NotifierProvider<VisionBoundaryEditorProvider, VisionBoundaryEditorState>(
@@ -92,6 +93,7 @@ class VisionBoundaryEditorProvider extends Notifier<VisionBoundaryEditorState> {
   Future<void> open({
     required MapValue map,
     required Rect attackTargetBounds,
+    required VisionBoundary boundary,
   }) async {
     if (state.isOpen && state.map == map && state.draft != null) return;
     if (state.isDirty) {
@@ -104,21 +106,22 @@ class VisionBoundaryEditorProvider extends Notifier<VisionBoundaryEditorState> {
       attackTargetBounds: attackTargetBounds,
     );
     try {
-      final sources = await Future.wait([
-        rootBundle.loadString(visionBoundaryReferenceAsset),
-        rootBundle.loadString(visionBoundaryEditsAsset),
-      ]);
-      final reference = _decodeDocument(sources[0]);
-      final edits = _decodeDocument(sources[1]);
-      final merged = mergeVisionBoundaryDocuments(
-        reference: reference,
-        edits: edits,
+      final edits = _decodeDocument(
+        await rootBundle.loadString(visionBoundaryEditsAsset),
       );
-      final maps = merged['maps']! as Map<String, dynamic>;
-      final draft = VisionBoundaryMapDraft.fromJson(
-        map: map,
-        value: maps[map.name],
-      );
+      final maps = edits['maps'];
+      if (maps is! Map<String, dynamic>) {
+        throw const FormatException('Invalid collision edit manifest.');
+      }
+      final draft = maps.containsKey(map.name)
+          ? VisionBoundaryMapDraft.fromJson(
+              map: map,
+              value: maps[map.name],
+            )
+          : VisionBoundaryMapDraft.fromBoundary(
+              map: map,
+              boundary: boundary,
+            );
       _editDocument = edits;
       _persistedDraft = draft;
       _undo.clear();

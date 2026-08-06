@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/vision_boundary_editor_provider.dart';
 import 'package:icarus/view_cone/vision_boundary_edit_document.dart';
+import 'package:icarus/view_cone/svg_vision_boundary.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +32,12 @@ void main() {
             [40, 50],
             [50, 50],
             [50, 60],
+          ],
+        ],
+        'structuralChains': [
+          [
+            [60, 70],
+            [70, 80],
           ],
         ],
       },
@@ -109,6 +116,7 @@ void main() {
       expect(allMoved.outer.first, const Offset(3, -2));
       expect(allMoved.interiors.single.first, const Offset(13, 18));
       expect(allMoved.heightBoxes.single.first, const Offset(43, 48));
+      expect(allMoved.structuralChains.single.first, const Offset(63, 68));
     });
 
     test('merges per-map edits without changing other reference maps', () {
@@ -143,6 +151,10 @@ void main() {
     await notifier.open(
       map: MapValue.ascent,
       attackTargetBounds: const Rect.fromLTRB(100, 50, 1100, 950),
+      boundary: SvgVisionBoundary.parse(
+        map: MapValue.ascent,
+        source: await rootBundle.loadString('assets/maps/ascent_map.svg'),
+      ),
     );
     final initial = container.read(visionBoundaryEditorProvider).draft!;
     notifier.setScope(VisionBoundaryEditScope.all);

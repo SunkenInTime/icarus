@@ -118,6 +118,7 @@ class VisionGeometryMap {
         // authored details, but can never disable or narrow map clipping.
         final override = group.isOuterBoundary ? null : sideOverrides[group.id];
         final admitted = group.isOuterBoundary ||
+            group.isAuthoritative ||
             (group.kind != VisionCollisionKind.structuralChain &&
                 !group.requiresEvidence) ||
             evidenceMask != 0 ||

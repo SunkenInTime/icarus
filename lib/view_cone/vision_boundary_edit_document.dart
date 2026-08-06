@@ -3,13 +3,19 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/view_cone/vision_geometry.dart';
 
 const String visionBoundaryReferenceAsset =
     'assets/maps/vision_collision_reference.json';
 const String visionBoundaryEditsAsset =
     'assets/maps/vision_boundary_edits.json';
 
-enum VisionBoundaryContourKind { outer, interior, heightBox }
+enum VisionBoundaryContourKind {
+  outer,
+  interior,
+  heightBox,
+  structuralChain,
+}
 
 enum VisionBoundaryEditScope { point, contour, all }
 
@@ -21,10 +27,11 @@ class VisionBoundaryContourRef {
   final int index;
 
   String get label => switch (kind) {
-    VisionBoundaryContourKind.outer => 'Outer boundary',
-    VisionBoundaryContourKind.interior => 'Interior ${index + 1}',
-    VisionBoundaryContourKind.heightBox => 'Height box ${index + 1}',
-  };
+        VisionBoundaryContourKind.outer => 'Outer boundary',
+        VisionBoundaryContourKind.interior => 'Interior ${index + 1}',
+        VisionBoundaryContourKind.heightBox => 'Height box ${index + 1}',
+        VisionBoundaryContourKind.structuralChain => 'Wall chain ${index + 1}',
+      };
 
   @override
   bool operator ==(Object other) =>
@@ -71,9 +78,11 @@ class VisionBoundaryMapDraft {
     required List<Offset> outer,
     required List<List<Offset>> interiors,
     required List<List<Offset>> heightBoxes,
-  }) : outer = List<Offset>.unmodifiable(outer),
-       interiors = _immutableContours(interiors),
-       heightBoxes = _immutableContours(heightBoxes);
+    List<List<Offset>> structuralChains = const [],
+  })  : outer = List<Offset>.unmodifiable(outer),
+        interiors = _immutableContours(interiors),
+        heightBoxes = _immutableContours(heightBoxes),
+        structuralChains = _immutableContours(structuralChains);
 
   factory VisionBoundaryMapDraft.fromJson({
     required MapValue map,
@@ -92,6 +101,40 @@ class VisionBoundaryMapDraft {
       outer: _contour(value['outer'], 'outer'),
       interiors: _contours(value['interiors'], 'interiors'),
       heightBoxes: _contours(value['heightBoxes'], 'heightBoxes'),
+      structuralChains: value['structuralChains'] == null
+          ? const []
+          : _chains(value['structuralChains'], 'structuralChains'),
+    );
+  }
+
+  factory VisionBoundaryMapDraft.fromBoundary({
+    required MapValue map,
+    required VisionBoundary boundary,
+  }) {
+    final outer = boundary.outerGroup;
+    return VisionBoundaryMapDraft(
+      map: map,
+      sourceBounds: outer.bounds,
+      outer: _withoutClosingPoint(outer.points),
+      interiors: [
+        for (final group in boundary.collisionGroups)
+          if (group.kind == VisionCollisionKind.maskBoundary &&
+              !group.isOuterBoundary)
+            _withoutClosingPoint(group.points),
+      ],
+      heightBoxes: [
+        for (final group in boundary.collisionGroups)
+          if (group.kind != VisionCollisionKind.maskBoundary &&
+              group.isClosed &&
+              !group.requiresEvidence)
+            _withoutClosingPoint(group.points),
+      ],
+      structuralChains: [
+        for (final group in boundary.collisionGroups)
+          if (group.kind != VisionCollisionKind.maskBoundary &&
+              (!group.isClosed || group.requiresEvidence))
+            for (final path in group.paths) List<Offset>.unmodifiable(path),
+      ],
     );
   }
 
@@ -100,6 +143,7 @@ class VisionBoundaryMapDraft {
   final List<Offset> outer;
   final List<List<Offset>> interiors;
   final List<List<Offset>> heightBoxes;
+  final List<List<Offset>> structuralChains;
 
   Iterable<VisionBoundaryContourRef> get contourRefs sync* {
     yield const VisionBoundaryContourRef(VisionBoundaryContourKind.outer);
@@ -112,13 +156,24 @@ class VisionBoundaryMapDraft {
         index,
       );
     }
+    for (var index = 0; index < structuralChains.length; index += 1) {
+      yield VisionBoundaryContourRef(
+        VisionBoundaryContourKind.structuralChain,
+        index,
+      );
+    }
   }
 
   List<Offset> contour(VisionBoundaryContourRef ref) => switch (ref.kind) {
-    VisionBoundaryContourKind.outer => outer,
-    VisionBoundaryContourKind.interior => interiors[ref.index],
-    VisionBoundaryContourKind.heightBox => heightBoxes[ref.index],
-  };
+        VisionBoundaryContourKind.outer => outer,
+        VisionBoundaryContourKind.interior => interiors[ref.index],
+        VisionBoundaryContourKind.heightBox => heightBoxes[ref.index],
+        VisionBoundaryContourKind.structuralChain =>
+          structuralChains[ref.index],
+      };
+
+  bool isClosed(VisionBoundaryContourRef ref) =>
+      ref.kind != VisionBoundaryContourKind.structuralChain;
 
   Offset project(
     Offset sourcePoint, {
@@ -170,8 +225,8 @@ class VisionBoundaryMapDraft {
     if (scope != VisionBoundaryEditScope.all && selection == null) return this;
 
     List<Offset> shifted(List<Offset> points) => List<Offset>.unmodifiable([
-      for (final point in points) point + sourceDelta,
-    ]);
+          for (final point in points) point + sourceDelta,
+        ]);
 
     if (scope == VisionBoundaryEditScope.all) {
       return VisionBoundaryMapDraft(
@@ -180,6 +235,9 @@ class VisionBoundaryMapDraft {
         outer: shifted(outer),
         interiors: [for (final points in interiors) shifted(points)],
         heightBoxes: [for (final points in heightBoxes) shifted(points)],
+        structuralChains: [
+          for (final points in structuralChains) shifted(points),
+        ],
       );
     }
 
@@ -188,11 +246,9 @@ class VisionBoundaryMapDraft {
       final pointIndex = selected.pointIndex;
       if (pointIndex == null) return this;
       return _replaceContour(selected.contour, [
-        for (
-          var index = 0;
-          index < contour(selected.contour).length;
-          index += 1
-        )
+        for (var index = 0;
+            index < contour(selected.contour).length;
+            index += 1)
           index == pointIndex
               ? contour(selected.contour)[index] + sourceDelta
               : contour(selected.contour)[index],
@@ -217,6 +273,7 @@ class VisionBoundaryMapDraft {
           outer: replacement,
           interiors: interiors,
           heightBoxes: heightBoxes,
+          structuralChains: structuralChains,
         );
       case VisionBoundaryContourKind.interior:
         return VisionBoundaryMapDraft(
@@ -228,6 +285,7 @@ class VisionBoundaryMapDraft {
               index == ref.index ? replacement : interiors[index],
           ],
           heightBoxes: heightBoxes,
+          structuralChains: structuralChains,
         );
       case VisionBoundaryContourKind.heightBox:
         return VisionBoundaryMapDraft(
@@ -239,21 +297,39 @@ class VisionBoundaryMapDraft {
             for (var index = 0; index < heightBoxes.length; index += 1)
               index == ref.index ? replacement : heightBoxes[index],
           ],
+          structuralChains: structuralChains,
+        );
+      case VisionBoundaryContourKind.structuralChain:
+        return VisionBoundaryMapDraft(
+          map: map,
+          sourceBounds: sourceBounds,
+          outer: outer,
+          interiors: interiors,
+          heightBoxes: heightBoxes,
+          structuralChains: [
+            for (var index = 0; index < structuralChains.length; index += 1)
+              index == ref.index ? replacement : structuralChains[index],
+          ],
         );
     }
   }
 
   Map<String, dynamic> toJson() => {
-    'sourceBounds': [
-      _encodedNumber(sourceBounds.left),
-      _encodedNumber(sourceBounds.top),
-      _encodedNumber(sourceBounds.right),
-      _encodedNumber(sourceBounds.bottom),
-    ],
-    'outer': _encodedContour(outer),
-    'interiors': [for (final points in interiors) _encodedContour(points)],
-    'heightBoxes': [for (final points in heightBoxes) _encodedContour(points)],
-  };
+        'sourceBounds': [
+          _encodedNumber(sourceBounds.left),
+          _encodedNumber(sourceBounds.top),
+          _encodedNumber(sourceBounds.right),
+          _encodedNumber(sourceBounds.bottom),
+        ],
+        'outer': _encodedContour(outer),
+        'interiors': [for (final points in interiors) _encodedContour(points)],
+        'heightBoxes': [
+          for (final points in heightBoxes) _encodedContour(points)
+        ],
+        'structuralChains': [
+          for (final points in structuralChains) _encodedContour(points),
+        ],
+      };
 
   String get signature => jsonEncode(toJson());
 
@@ -278,6 +354,14 @@ class VisionBoundaryMapDraft {
     ]);
   }
 
+  static List<List<Offset>> _chains(Object? value, String label) {
+    if (value is! List) throw FormatException('Invalid $label list.');
+    return List<List<Offset>>.unmodifiable([
+      for (var index = 0; index < value.length; index += 1)
+        _chain(value[index], '$label[$index]'),
+    ]);
+  }
+
   static List<Offset> _contour(Object? value, String label) {
     if (value is! List || value.length < 3) {
       throw FormatException('Invalid $label contour.');
@@ -288,6 +372,23 @@ class VisionBoundaryMapDraft {
     if (points.length > 3 &&
         (points.first - points.last).distanceSquared < 1e-9) {
       points.removeLast();
+    }
+    return List<Offset>.unmodifiable(points);
+  }
+
+  static List<Offset> _chain(Object? value, String label) {
+    if (value is! List || value.length < 2) {
+      throw FormatException('Invalid $label chain.');
+    }
+    return List<Offset>.unmodifiable([
+      for (final encoded in value) _point(encoded, label),
+    ]);
+  }
+
+  static List<Offset> _withoutClosingPoint(List<Offset> points) {
+    if (points.length > 2 &&
+        (points.first - points.last).distanceSquared < 1e-9) {
+      return List<Offset>.unmodifiable(points.sublist(0, points.length - 1));
     }
     return List<Offset>.unmodifiable(points);
   }
@@ -307,12 +408,15 @@ class VisionBoundaryMapDraft {
   }
 
   static List<List<num>> _encodedContour(List<Offset> points) => [
-    for (final point in points)
-      [_encodedNumber(point.dx), _encodedNumber(point.dy)],
-  ];
+        for (final point in points)
+          [_encodedNumber(point.dx), _encodedNumber(point.dy)],
+      ];
 
   static num _encodedNumber(double value) {
-    final rounded = (value * 1000).round() / 1000;
+    // Preserve the rendered SVG coordinates below a tenth of a world unit;
+    // coarser three-decimal source bounds can rescale an otherwise exact wall
+    // onto the neighboring pixel at high zoom.
+    final rounded = (value * 1000000).round() / 1000000;
     return rounded == rounded.roundToDouble() ? rounded.toInt() : rounded;
   }
 }

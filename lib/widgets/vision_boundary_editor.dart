@@ -80,6 +80,11 @@ class _VisionBoundaryEditorOverlayState
               pointIndex: index,
             );
           }
+        }
+        final segmentCount = draft.isClosed(contourRef)
+            ? points.length
+            : math.max(0, points.length - 1);
+        for (var index = 0; index < segmentCount; index += 1) {
           final next = (index + 1) % points.length;
           final lineDistance = _distanceToSegment(
             local,
@@ -188,6 +193,7 @@ class VisionBoundaryEditorHud extends ConsumerWidget {
                     await ref.read(visionBoundaryEditorProvider.notifier).open(
                           map: mapState.currentMap,
                           attackTargetBounds: boundary.outerGroup.bounds,
+                          boundary: boundary,
                         );
                     ref.read(viewConeDebugProvider.notifier).state = true;
                   } on Object catch (error) {
@@ -588,7 +594,7 @@ class VisionBoundaryEditorPainter extends CustomPainter {
         final screen = toScreen(point);
         path.lineTo(screen.dx, screen.dy);
       }
-      path.close();
+      if (draft.isClosed(contourRef)) path.close();
       final isSelected = scope == VisionBoundaryEditScope.all ||
           selection?.contour == contourRef;
       canvas.drawPath(path, isSelected ? selectedPaint : normalPaint);
