@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_fill.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -337,8 +338,11 @@ class _SectorCircleStyle {
     }
 
     return _SectorCircleStyle(
-      fillColor:
-          rangeFillColor ?? rangeOutlineColor.withAlpha(opacity ?? 70),
+      fillColor: resolveAbilityRangeFillColor(
+        rangeOutlineColor: rangeOutlineColor,
+        rangeFillColor: rangeFillColor,
+        opacity: opacity,
+      ),
       strokeColor: rangeOutlineColor,
       strokeWidth: coordinateSystem.scale(hasCenterDot ? 2 : 5),
     );

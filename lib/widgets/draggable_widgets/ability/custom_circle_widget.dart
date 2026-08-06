@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_fill.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -81,7 +82,11 @@ class CustomCircleWidget extends ConsumerWidget {
     double scaledSize, {
     required bool showRangeFill,
   }) {
-    final fillColor = rangeFillColor ?? rangeOutlineColor.withAlpha(opacity ?? 70);
+    final fillColor = resolveAbilityRangeFillColor(
+      rangeOutlineColor: rangeOutlineColor,
+      rangeFillColor: rangeFillColor,
+      opacity: opacity,
+    );
     return Opacity(
       key: const ValueKey('circle-range-fill-layer'),
       opacity: showRangeFill ? 1 : 0,

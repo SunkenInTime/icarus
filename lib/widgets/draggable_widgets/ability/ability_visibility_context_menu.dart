@@ -6,6 +6,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_fill.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 bool supportsAbilityVisibilityMenu(Ability? ability) {
@@ -107,13 +108,14 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
           showRangeOutline: !state.showRangeOutline,
         ),
       ),
-      _AbilityVisibilityControl(
-        label: 'Range Fill',
-        isEnabled: visualState.showRangeFill,
-        toggle: (state) => state.copyWith(
-          showRangeFill: !state.showRangeFill,
+      if (_hasVisibleRangeFill(abilityData))
+        _AbilityVisibilityControl(
+          label: 'Range Fill',
+          isEnabled: visualState.showRangeFill,
+          toggle: (state) => state.copyWith(
+            showRangeFill: !state.showRangeFill,
+          ),
         ),
-      ),
     ];
   }
 
@@ -148,6 +150,22 @@ bool _hasInnerRange(Ability? ability) {
   return switch (ability) {
     CircleAbility() => ability.hasInnerRange,
     SectorCircleAbility() => ability.hasInnerRange,
+    _ => false,
+  };
+}
+
+bool _hasVisibleRangeFill(Ability? ability) {
+  return switch (ability) {
+    CircleAbility() => hasVisibleAbilityRangeFill(
+        rangeOutlineColor: ability.rangeOutlineColor,
+        rangeFillColor: ability.rangeFillColor,
+        opacity: ability.opacity,
+      ),
+    SectorCircleAbility() => hasVisibleAbilityRangeFill(
+        rangeOutlineColor: ability.rangeOutlineColor,
+        rangeFillColor: ability.rangeFillColor,
+        opacity: ability.opacity,
+      ),
     _ => false,
   };
 }
