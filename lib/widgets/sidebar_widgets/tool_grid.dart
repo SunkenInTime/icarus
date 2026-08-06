@@ -115,7 +115,7 @@ class ToolGrid extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Padding(
-          padding: EdgeInsets.all(16.0),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Text(
             "Tools",
             style: TextStyle(fontSize: 20),
