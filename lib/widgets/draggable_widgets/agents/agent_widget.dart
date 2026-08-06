@@ -86,6 +86,7 @@ class AgentWidget extends ConsumerWidget {
     this.state = AgentState.none,
     this.forcedAgentSize,
     this.deadStateProgress,
+    this.isInteractive = true,
   });
 
   final String? lineUpId;
@@ -95,21 +96,27 @@ class AgentWidget extends ConsumerWidget {
   final AgentState state;
   final double? forcedAgentSize;
   final double? deadStateProgress;
+  final bool isInteractive;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final mapState = ref.watch(mapProvider);
-    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
-    final agentSize =
-        forcedAgentSize ?? ref.watch(strategySettingsProvider).agentSize;
-    final useNeutralTeamColors =
-        ref.watch(strategySettingsProvider).useNeutralTeamColors;
+    final strategySettings = ref.watch(strategySettingsProvider);
+    final agentSize = forcedAgentSize ?? strategySettings.agentSize;
+    final useNeutralTeamColors = strategySettings.useNeutralTeamColors;
     final isScreenshot = ref.watch(screenshotProvider);
+    final canInteract = isInteractive &&
+        !isScreenshot &&
+        (lineUpId != null || (id?.isNotEmpty ?? false));
+    final mapState = canInteract ? ref.watch(mapProvider) : null;
+    final mapScale =
+        mapState == null ? 1.0 : (Maps.mapScale[mapState.currentMap] ?? 1.0);
     final deadProgress =
         (deadStateProgress ?? (state == AgentState.dead ? 1.0 : 0.0))
             .clamp(0.0, 1.0);
     final hasDeadStyling = deadProgress > 0;
-    final hoverTarget = ref.watch(hoveredLineUpTargetProvider);
+    final hoverTarget = canInteract && lineUpId != null
+        ? ref.watch(hoveredLineUpTargetProvider)
+        : null;
     final isLineUpHovered =
         lineUpId != null && (hoverTarget?.matchesAgent(lineUpId!) ?? false);
 
@@ -183,34 +190,38 @@ class AgentWidget extends ConsumerWidget {
     );
 
     final scaledSize = coordinateSystem.scale(agentSize);
-    final deleteTarget = lineUpId != null
-        ? HoveredDeleteTarget.lineup(id: lineUpId!, ownerToken: Object())
-        : (id?.isNotEmpty ?? false)
-            ? HoveredDeleteTarget.agent(id: id!, ownerToken: Object())
+    final deleteTarget = !canInteract
+        ? null
+        : lineUpId != null
+            ? HoveredDeleteTarget.lineup(id: lineUpId!, ownerToken: Object())
+            : (id?.isNotEmpty ?? false)
+                ? HoveredDeleteTarget.agent(id: id!, ownerToken: Object())
+                : null;
+    final placedAgentNode =
+        canInteract && lineUpId == null && (id?.isNotEmpty ?? false)
+            ? ref.watch(
+                agentProvider.select((agents) {
+                  for (final entry in agents) {
+                    if (entry.id == id) return entry;
+                  }
+                  return null;
+                }),
+              )
             : null;
-    final placedAgentNode = lineUpId == null && (id?.isNotEmpty ?? false)
-        ? ref.watch(
-            agentProvider.select((agents) {
-              for (final entry in agents) {
-                if (entry.id == id) return entry;
-              }
-              return null;
-            }),
-          )
-        : null;
     final plainAgent = placedAgentNode is PlacedAgent ? placedAgentNode : null;
     final viewConeAgent =
         placedAgentNode is PlacedViewConeAgent ? placedAgentNode : null;
-    final visionGeometry = viewConeAgent == null || isScreenshot
+    final visionGeometry = viewConeAgent == null || mapState == null
         ? null
         : ref
             .watch(viewConeGeometryProvider(mapState.currentMap))
             .asData
             ?.value;
-    final viewConeDebugEnabled = ref.watch(viewConeDebugProvider);
+    final viewConeDebugEnabled =
+        viewConeAgent == null ? false : ref.watch(viewConeDebugProvider);
 
     final contextMenuItems = <ShadContextMenuItem>[
-      if (!isScreenshot)
+      if (canInteract)
         ShadContextMenuItem.raw(
           variant: ShadContextMenuItemVariant.primary,
           height: 36,
@@ -225,13 +236,13 @@ class AgentWidget extends ConsumerWidget {
             mapScale: mapScale,
           ),
         ),
-      if (!isScreenshot && viewConeAgent != null && visionGeometry != null)
+      if (canInteract && viewConeAgent != null && visionGeometry != null)
         buildViewConeElevationMenuItem(
           geometry: visionGeometry,
           selectedElevation: viewConeAgent.visionElevation,
           automaticElevation: visionGeometry
               .layerForPosition(
-                isAttack: mapState.isAttack,
+                isAttack: mapState!.isAttack,
                 position: viewConeAgent.position +
                     coordinateSystem.virtualOffsetToWorld(
                       Offset(agentSize / 2, agentSize / 2),
@@ -245,13 +256,13 @@ class AgentWidget extends ConsumerWidget {
                 );
           },
         ),
-      if (!isScreenshot && viewConeAgent != null && visionGeometry != null)
+      if (canInteract && viewConeAgent != null && visionGeometry != null)
         buildViewConeDebugMenuItem(
           enabled: viewConeDebugEnabled,
           onChanged: (enabled) =>
               ref.read(viewConeDebugProvider.notifier).state = enabled,
         ),
-      if (lineUpId != null)
+      if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.plus),
           child: const Text('Add Lineup Item'),
@@ -268,7 +279,7 @@ class AgentWidget extends ConsumerWidget {
             ref.read(lineUpProvider.notifier).startNewItemForGroup(lineUpId!);
           },
         ),
-      if (lineUpId != null)
+      if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: Icon(
             Icons.delete,
@@ -279,7 +290,10 @@ class AgentWidget extends ConsumerWidget {
             ref.read(lineUpProvider.notifier).deleteGroupById(lineUpId!);
           },
         ),
-      if (lineUpId == null && plainAgent != null && plainAgent.id.isNotEmpty)
+      if (canInteract &&
+          lineUpId == null &&
+          plainAgent != null &&
+          plainAgent.id.isNotEmpty)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.plus),
           child: const Text('Create Lineup'),
@@ -295,7 +309,7 @@ class AgentWidget extends ConsumerWidget {
     Widget agentCard;
     // Use Ink + InkWell so the ripple shows on top of the background
 
-    if (isLineUp || isScreenshot) {
+    if (isLineUp || !canInteract) {
       agentCard = Container(
         decoration: decoration,
         width: scaledSize,
@@ -322,6 +336,10 @@ class AgentWidget extends ConsumerWidget {
           ),
         ),
       );
+    }
+
+    if (!canInteract) {
+      return RepaintBoundary(child: agentCard);
     }
 
     return MouseWatch(

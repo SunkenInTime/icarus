@@ -25,7 +25,6 @@ class _HoveredMapItemNameCardState
 
   Timer? _hideTimer;
   String? _visibleName;
-  int _visibleNameVersion = 0;
   late final List<ProviderSubscription<dynamic>> _subscriptions;
 
   @override
@@ -148,7 +147,6 @@ class _HoveredMapItemNameCardState
       _hideTimer = null;
       if (_visibleName != nextName) {
         setState(() {
-          _visibleNameVersion++;
           _visibleName = nextName;
         });
       }
@@ -176,7 +174,10 @@ class _HoveredMapItemNameCardState
         switchOutCurve: Curves.easeOutCubic,
         child: shouldShow
             ? IntrinsicWidth(
-                key: ValueKey('hovered-map-item-$_visibleNameVersion'),
+                // Keep the same child across name changes. AnimatedSwitcher
+                // should animate the card appearing and disappearing, not
+                // stack outgoing cards while a drag crosses several items.
+                key: const ValueKey('hovered-map-item-name'),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(
                     minWidth: 48,

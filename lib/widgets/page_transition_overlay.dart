@@ -546,6 +546,7 @@ class PlacedWidgetPreview {
         state: w.state,
         deadStateProgress: deadStateProgress,
         forcedAgentSize: agentSize,
+        isInteractive: false,
       );
     }
     if (w is PlacedViewConeAgent) {
@@ -557,12 +558,14 @@ class PlacedWidgetPreview {
         rotation: rotation ?? w.rotation,
         length: length ?? w.length,
         forcedAgentSize: agentSize,
+        isInteractive: false,
       );
     }
     if (w is PlacedCircleAgent) {
       return CircleAgentComposite(
         agent: w.copyWith(diameterMeters: customDiameter ?? w.diameterMeters),
         forcedAgentSize: agentSize,
+        isInteractive: false,
       );
     }
     if (w is PlacedAbility) {
