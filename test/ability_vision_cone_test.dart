@@ -68,6 +68,11 @@ void main() {
         spec.resolveLength(storedLength: stored, mapScale: mapScale),
         renderedMaximum,
       );
+      const otherMapScale = 1.0;
+      expect(
+        spec.resolveLength(storedLength: stored, mapScale: otherMapScale),
+        spec.maximumLength(otherMapScale),
+      );
     });
 
     test('Turret and Spycam retain adjustable line-of-sight range', () {
