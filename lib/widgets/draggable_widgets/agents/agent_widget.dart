@@ -16,6 +16,7 @@ import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/view_cone_debug_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
@@ -304,6 +305,8 @@ class AgentWidget extends ConsumerWidget {
             ref.read(lineUpProvider.notifier).startNewGroup(plainAgent);
           },
         ),
+      if (canInteract && lineUpId == null && placedAgentNode != null)
+        ...buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id),
     ];
 
     Widget agentCard;

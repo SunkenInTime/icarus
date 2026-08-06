@@ -13,6 +13,7 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/view_cone_debug_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
+import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
 
@@ -207,30 +208,33 @@ class ViewConeWidget extends ConsumerWidget {
       }
     }
 
-    final elevationMenuItems = placedUtility != null && geometry != null
-        ? [
-            buildViewConeElevationMenuItem(
-              geometry: geometry,
-              selectedElevation: placedUtility.visionElevation,
-              automaticElevation: geometry
-                  .layerForPosition(
-                    isAttack: ref.read(mapProvider).isAttack,
-                    position: resolvedWorldOrigin!,
-                  )
-                  .elevation,
-              onChanged: (elevation) {
-                ref
-                    .read(utilityProvider.notifier)
-                    .updateViewConeElevation(placedUtility!.id, elevation);
-              },
-            ),
-            buildViewConeDebugMenuItem(
-              enabled: debugEnabled,
-              onChanged: (enabled) =>
-                  ref.read(viewConeDebugProvider.notifier).state = enabled,
-            ),
-          ]
-        : null;
+    final elevationMenuItems = placedUtility == null
+        ? null
+        : [
+            if (geometry != null)
+              buildViewConeElevationMenuItem(
+                geometry: geometry,
+                selectedElevation: placedUtility.visionElevation,
+                automaticElevation: geometry
+                    .layerForPosition(
+                      isAttack: ref.read(mapProvider).isAttack,
+                      position: resolvedWorldOrigin!,
+                    )
+                    .elevation,
+                onChanged: (elevation) {
+                  ref
+                      .read(utilityProvider.notifier)
+                      .updateViewConeElevation(placedUtility!.id, elevation);
+                },
+              ),
+            if (geometry != null)
+              buildViewConeDebugMenuItem(
+                enabled: debugEnabled,
+                onChanged: (enabled) =>
+                    ref.read(viewConeDebugProvider.notifier).state = enabled,
+              ),
+            ...buildAdjacentPageCopyMenuItems(ref, placedUtility.id),
+          ];
 
     return SizedBox(
       width: totalWidth,
