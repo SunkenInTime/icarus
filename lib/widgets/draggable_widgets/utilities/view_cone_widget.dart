@@ -211,7 +211,6 @@ class ViewConeWidget extends ConsumerWidget {
     final elevationMenuItems = placedUtility == null
         ? null
         : [
-            ...buildAdjacentPageCopyMenuItems(ref, placedUtility.id),
             if (geometry != null)
               buildViewConeElevationMenuItem(
                 geometry: geometry,
@@ -234,6 +233,7 @@ class ViewConeWidget extends ConsumerWidget {
                 onChanged: (enabled) =>
                     ref.read(viewConeDebugProvider.notifier).state = enabled,
               ),
+            ...buildAdjacentPageCopyMenuItems(ref, placedUtility.id),
           ];
 
     return SizedBox(

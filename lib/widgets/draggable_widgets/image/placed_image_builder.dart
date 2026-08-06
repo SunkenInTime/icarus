@@ -145,7 +145,6 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
 
   List<ShadContextMenuItem> _buildTagColorItems(WidgetRef ref) {
     return [
-      ...buildAdjacentPageCopyMenuItems(ref, widget.placedImage.id),
       ShadContextMenuItem(
         child: const Text('Reset tag to gray'),
         onPressed: () {
@@ -173,6 +172,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
               },
             ),
           ),
+      ...buildAdjacentPageCopyMenuItems(ref, widget.placedImage.id),
     ];
   }
 

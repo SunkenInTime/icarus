@@ -263,8 +263,6 @@ class AgentWidget extends ConsumerWidget {
           onChanged: (enabled) =>
               ref.read(viewConeDebugProvider.notifier).state = enabled,
         ),
-      if (canInteract && lineUpId == null && placedAgentNode != null)
-        ...buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id),
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.plus),
@@ -307,6 +305,8 @@ class AgentWidget extends ConsumerWidget {
             ref.read(lineUpProvider.notifier).startNewGroup(plainAgent);
           },
         ),
+      if (canInteract && lineUpId == null && placedAgentNode != null)
+        ...buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id),
     ];
 
     Widget agentCard;

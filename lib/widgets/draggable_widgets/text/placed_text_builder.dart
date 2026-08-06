@@ -150,7 +150,6 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
 
   List<ShadContextMenuItem> _buildTagColorItems() {
     return [
-      ...buildAdjacentPageCopyMenuItems(ref, widget.placedText.id),
       ShadContextMenuItem(
         child: const Text('Reset tag to gray'),
         onPressed: () {
@@ -179,6 +178,7 @@ class _PlacedTextBuilderState extends ConsumerState<PlacedTextBuilder> {
           },
         ),
       ),
+      ...buildAdjacentPageCopyMenuItems(ref, widget.placedText.id),
     ];
   }
 
