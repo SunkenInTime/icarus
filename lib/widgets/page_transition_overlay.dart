@@ -694,6 +694,9 @@ class PlacedWidgetPreview {
         rectLengthMeters: customLength ?? w.customLength,
         colorValue: w.customColorValue,
         opacityPercent: w.customOpacityPercent,
+        // Custom shapes only show their center marker on hover; the
+        // non-interactive transition overlay matches the unhovered state.
+        showCenterMarker: !UtilityData.isCustomShape(w.type),
       );
     }
     return const SizedBox.shrink();

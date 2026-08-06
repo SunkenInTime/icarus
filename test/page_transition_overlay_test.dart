@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +10,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -234,6 +237,45 @@ void main() {
       ),
     );
     await tester.pump();
+  });
+
+  testWidgets('temporary rectangle preview applies saved rotation once',
+      (tester) async {
+    final container = _createContainer();
+    addTearDown(container.dispose);
+    const rotation = math.pi / 5;
+    final rectangle = PlacedUtility(
+      id: 'rotated-rectangle',
+      type: UtilityType.customRectangle,
+      position: const Offset(500, 350),
+      customWidth: 8,
+      customLength: 16,
+      customColorValue: 0xff8b5cf6,
+      customOpacityPercent: 40,
+    )..rotation = rotation;
+    container.read(transitionProvider.notifier).prepare(
+      [rectangle],
+      startAgentSize: 40,
+      startAbilitySize: 40,
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home: Scaffold(body: TemporaryWidgetBuilder()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final matchingTransforms =
+        tester.widgetList<Transform>(find.byType(Transform)).where((transform) {
+      final matrix = transform.transform.storage;
+      final renderedRotation = math.atan2(matrix[1], matrix[0]);
+      return (renderedRotation - rotation).abs() < 0.0001;
+    });
+    expect(matchingTransforms, hasLength(1));
   });
 }
 
