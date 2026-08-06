@@ -54,7 +54,18 @@ class AbilityVisionConeSpec {
     final maximum = maximumLength(mapScale);
     final minimum = math.min(ViewConeUtility.minLength, maximum);
     final fallback = maxRangeMeters == null ? _defaultLength : maximum;
-    final requested = storedLength > 0 ? storedLength : fallback;
-    return requested.clamp(minimum, maximum);
+    final storedScale = maxRangeMeters == null ? 1.0 : mapScale;
+    final requested = storedLength > 0 ? storedLength * storedScale : fallback;
+    return requested.clamp(minimum, maximum).toDouble();
+  }
+
+  double storedLengthFromRendered({
+    required double renderedLength,
+    required double mapScale,
+  }) {
+    final maximum = maximumLength(mapScale);
+    final minimum = math.min(ViewConeUtility.minLength, maximum);
+    final clamped = renderedLength.clamp(minimum, maximum).toDouble();
+    return maxRangeMeters == null ? clamped : clamped / mapScale;
   }
 }

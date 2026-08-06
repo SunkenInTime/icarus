@@ -526,8 +526,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
 
           final delta = details.globalPosition - rotationOrigin;
           final nextRotation = math.atan2(delta.dy, delta.dx) + (math.pi / 2);
-          final nextLength = visionSpec.resolveLength(
-            storedLength: coordinateSystem.normalize(delta.distance) /
+          final nextLength = visionSpec.storedLengthFromRendered(
+            renderedLength: coordinateSystem.normalize(delta.distance) /
                 ref.watch(screenZoomProvider),
             mapScale: mapScale,
           );

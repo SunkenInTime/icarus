@@ -53,6 +53,23 @@ void main() {
       }
     });
 
+    test('fixed-range cones persist map-independent lengths', () {
+      final ability = AgentData.agents[AgentType.raze]!.abilities.first;
+      final spec = AbilityVisionConeSpec.forAbility(ability)!;
+      const mapScale = 0.5;
+      final renderedMaximum = spec.maximumLength(mapScale);
+      final stored = spec.storedLengthFromRendered(
+        renderedLength: renderedMaximum,
+        mapScale: mapScale,
+      );
+
+      expect(stored, renderedMaximum / mapScale);
+      expect(
+        spec.resolveLength(storedLength: stored, mapScale: mapScale),
+        renderedMaximum,
+      );
+    });
+
     test('Turret and Spycam retain adjustable line-of-sight range', () {
       for (final (agentType, index) in [
         (AgentType.killjoy, 2),
