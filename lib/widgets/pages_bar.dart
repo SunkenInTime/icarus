@@ -12,7 +12,12 @@ import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _pagesBarCornerRadius = 12;
-const double _pagesBarInnerButtonRadius = 6;
+const double _pagesBarFooterHeight = 48;
+const double _pagesBarControlInset = 8;
+const double _pagesBarControlSize =
+    _pagesBarFooterHeight - (2 * _pagesBarControlInset);
+const double _pagesBarInnerButtonRadius =
+    _pagesBarCornerRadius - _pagesBarControlInset;
 
 class PagesBar extends ConsumerStatefulWidget {
   const PagesBar({super.key});
@@ -382,10 +387,10 @@ class _CollapsedPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return SizedBox(
-      height: 48,
+      height: _pagesBarFooterHeight,
       child: Row(
         children: [
-          const SizedBox(width: 8),
+          const SizedBox(width: _pagesBarControlInset),
           _SquareIconButton(
             icon: Icons.add,
             onTap: onAdd,
@@ -405,9 +410,17 @@ class _CollapsedPill extends StatelessWidget {
             ),
           ),
           ShadIconButton.ghost(
+            width: _pagesBarControlSize,
+            height: _pagesBarControlSize,
+            padding: EdgeInsets.zero,
             foregroundColor: Colors.white,
             onPressed: onToggle,
             icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+            decoration: ShadDecoration(
+              border: ShadBorder(
+                radius: BorderRadius.circular(_pagesBarInnerButtonRadius),
+              ),
+            ),
           ),
         ],
       ),
@@ -450,7 +463,8 @@ class _ExpandedPanel extends ConsumerWidget {
   static const double _rowHeight = 40; // each page tile height
   static const double _verticalSpacing = 10; // separator height
   static const double _resizeHandleHeight = 8;
-  static const double _headerFooterHeight = 48 + 1; // bottom bar + divider
+  static const double _headerFooterHeight =
+      _pagesBarFooterHeight + 1; // bottom bar + divider
   static const double _topPadding = 0; // handle + gap should match side inset
   static const double _bottomPadding = 0; // list bottom padding inside Expanded
 
@@ -576,10 +590,10 @@ class _ExpandedPanel extends ConsumerWidget {
           ),
           Divider(height: 1, color: Settings.tacticalVioletTheme.border),
           SizedBox(
-            height: 48,
+            height: _pagesBarFooterHeight,
             child: Row(
               children: [
-                const SizedBox(width: 8),
+                const SizedBox(width: _pagesBarControlInset),
                 _SquareIconButton(
                   icon: Icons.add,
                   onTap: onAdd,
@@ -589,10 +603,20 @@ class _ExpandedPanel extends ConsumerWidget {
                 ),
                 const Spacer(),
                 ShadIconButton.ghost(
+                  width: _pagesBarControlSize,
+                  height: _pagesBarControlSize,
+                  padding: EdgeInsets.zero,
                   foregroundColor: Colors.white,
                   onPressed: onCollapse,
                   icon:
                       const Icon(Icons.keyboard_arrow_up, color: Colors.white),
+                  decoration: ShadDecoration(
+                    border: ShadBorder(
+                      radius: BorderRadius.circular(
+                        _pagesBarInnerButtonRadius,
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -938,8 +962,9 @@ class _SquareIconButton extends StatelessWidget {
         hoverBackgroundColor: color,
         foregroundColor: Colors.white,
         icon: Icon(icon),
-        width: 36,
-        height: 36,
+        width: _pagesBarControlSize,
+        height: _pagesBarControlSize,
+        padding: EdgeInsets.zero,
         onPressed: onTap,
         decoration: ShadDecoration(
           border: ShadBorder(
@@ -954,8 +979,8 @@ class _SquareIconButton extends StatelessWidget {
     }
 
     return SizedBox(
-      width: 36,
-      height: 36,
+      width: _pagesBarControlSize,
+      height: _pagesBarControlSize,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
