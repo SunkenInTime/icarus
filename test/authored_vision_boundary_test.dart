@@ -7,6 +7,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/view_cone/svg_vision_boundary.dart';
 import 'package:icarus/view_cone/authored_vision_boundary.dart';
+import 'package:icarus/view_cone/vision_boundary_edit_document.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 
 void main() {
@@ -140,6 +141,46 @@ void main() {
     );
   });
 
+  test('provider enables authored collision geometry for Summit', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    final geometry =
+        await container.read(viewConeGeometryProvider(MapValue.summit).future);
+
+    expect(geometry, isNotNull);
+    expect(geometry!.attackLayers, isNotEmpty);
+    expect(geometry.attackLayers.first.collisionGroups, hasLength(45));
+  });
+
+  test('saved boundary edits remain valid authored geometry', () async {
+    final reference = jsonDecode(
+      await rootBundle.loadString(visionBoundaryReferenceAsset),
+    ) as Map<String, dynamic>;
+    final edits = jsonDecode(
+      await rootBundle.loadString(visionBoundaryEditsAsset),
+    ) as Map<String, dynamic>;
+    final merged = mergeVisionBoundaryDocuments(
+      reference: reference,
+      edits: edits,
+    );
+
+    for (final map in MapValue.values) {
+      final svg = SvgVisionBoundary.parse(
+        map: map,
+        source: await rootBundle.loadString(
+          'assets/maps/${map.name}_map.svg',
+        ),
+      );
+      final boundary = AuthoredVisionBoundary.parse(
+        map: map,
+        document: merged,
+        attackTargetBounds: svg.outerGroup.bounds,
+      );
+      expect(boundary.collisionGroups, isNotEmpty, reason: map.name);
+    }
+  });
+
   test('keeps every authored group active when merged with Riot layers',
       () async {
     final manifest = jsonDecode(
@@ -185,6 +226,21 @@ void main() {
           layer.collisionGroups,
           hasLength(expectedGroupCount),
           reason: '${map.name} elevation ${layer.elevation}',
+        );
+        expect(
+          layer.collisionGroups.where(
+            (group) =>
+                group.kind == VisionCollisionKind.maskBoundary &&
+                !group.isOuterBoundary,
+          ),
+          everyElement(
+            predicate<VisionCollisionGroup>(
+              (group) => !group.excludesObserverInLayer(layer.layerIndex),
+              'an authored interior that always remains a wall',
+            ),
+          ),
+          reason:
+              '${map.name} interiors must not be inferred as passable floors',
         );
       }
       if (counts.$2 > 0) {

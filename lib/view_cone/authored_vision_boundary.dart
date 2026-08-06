@@ -81,6 +81,7 @@ class AuthoredVisionBoundary {
       kind: VisionCollisionKind.maskBoundary,
       isClosed: true,
       isOuterBoundary: true,
+      inferObserverPassability: false,
     );
     final groups = <VisionCollisionGroup>[
       outerGroup,
@@ -90,6 +91,7 @@ class AuthoredVisionBoundary {
           kind: VisionCollisionKind.maskBoundary,
           isClosed: true,
           nestingDepth: 1,
+          inferObserverPassability: false,
         ),
       for (final box in heightBoxes)
         VisionCollisionGroup.geometry(
@@ -97,6 +99,7 @@ class AuthoredVisionBoundary {
           kind: VisionCollisionKind.structuralObstacle,
           isClosed: true,
           removesOwnEdgesWhenInside: true,
+          inferObserverPassability: false,
         ),
     ];
 

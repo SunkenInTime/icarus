@@ -48,6 +48,7 @@ class VisionCollisionGroup {
     required this.nestingDepth,
     required this.requiresEvidence,
     required this.removesOwnEdgesWhenInside,
+    required this.inferObserverPassability,
     required this.layerMask,
     required this.evidenceLayerMask,
     required this.navigationLayerMask,
@@ -66,6 +67,7 @@ class VisionCollisionGroup {
     int nestingDepth = 0,
     bool requiresEvidence = false,
     bool removesOwnEdgesWhenInside = false,
+    bool inferObserverPassability = true,
   }) {
     final normalized = <Offset>[...points];
     if (isClosed &&
@@ -101,6 +103,7 @@ class VisionCollisionGroup {
       nestingDepth: nestingDepth,
       requiresEvidence: requiresEvidence,
       removesOwnEdgesWhenInside: removesOwnEdgesWhenInside,
+      inferObserverPassability: inferObserverPassability,
       layerMask: 0,
       evidenceLayerMask: 0,
       navigationLayerMask: 0,
@@ -163,6 +166,7 @@ class VisionCollisionGroup {
       nestingDepth: 0,
       requiresEvidence: requiresEvidence,
       removesOwnEdgesWhenInside: false,
+      inferObserverPassability: false,
       layerMask: 0,
       evidenceLayerMask: 0,
       navigationLayerMask: 0,
@@ -187,6 +191,7 @@ class VisionCollisionGroup {
   final int nestingDepth;
   final bool requiresEvidence;
   final bool removesOwnEdgesWhenInside;
+  final bool inferObserverPassability;
   final int layerMask;
   final int evidenceLayerMask;
   final int navigationLayerMask;
@@ -252,6 +257,7 @@ class VisionCollisionGroup {
       nestingDepth: nestingDepth,
       requiresEvidence: requiresEvidence,
       removesOwnEdgesWhenInside: removesOwnEdgesWhenInside,
+      inferObserverPassability: inferObserverPassability,
       layerMask: layerMask,
       evidenceLayerMask: evidenceLayerMask,
       navigationLayerMask: navigationLayerMask,

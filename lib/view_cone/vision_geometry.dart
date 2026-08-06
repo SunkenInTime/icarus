@@ -125,13 +125,19 @@ class VisionGeometryMap {
         final collisionEnabled = admitted && override?.enabled != false;
 
         var layerMask = collisionEnabled ? allLayersMask : 0;
-        var observerExclusionMask = group.isOuterBoundary
-            ? 0
-            : group.removesOwnEdgesWhenInside
-                ? allLayersMask
-                : navigationMask & allLayersMask;
+        // Authored mask contours are walls/voids, not candidates for inferred
+        // walkable floors. Dropping an enclosing mask contour removes every
+        // side of that wall and creates the long spill rays seen on Summit and
+        // Ascent. Only an explicitly authored height box may remove its own
+        // edges when the observer stands inside it.
+        var observerExclusionMask = group.removesOwnEdgesWhenInside
+            ? allLayersMask
+            : group.inferObserverPassability
+                ? navigationMask & allLayersMask
+                : 0;
         if (map == MapValue.summit &&
             heightField == null &&
+            group.inferObserverPassability &&
             group.isClosed &&
             !group.isOuterBoundary) {
           observerExclusionMask = allLayersMask;

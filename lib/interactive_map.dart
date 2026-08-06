@@ -23,6 +23,7 @@ import 'package:icarus/widgets/lineup_control_buttons.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
+import 'package:icarus/widgets/vision_boundary_editor.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class _MapSvgColorMapper extends ColorMapper {
@@ -403,6 +404,9 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                   const Positioned.fill(
                                     child: LineupPositionWidget(),
                                   ),
+                                const Positioned.fill(
+                                  child: VisionBoundaryEditorOverlay(),
+                                ),
                               ],
                             ),
                           ),
@@ -423,6 +427,13 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                       Align(
                         alignment: Alignment.bottomRight,
                         child: const LineupControlButtons(),
+                      ),
+                      const Align(
+                        alignment: Alignment.topCenter,
+                        child: Padding(
+                          padding: EdgeInsets.all(12),
+                          child: VisionBoundaryEditorHud(),
+                        ),
                       ),
                     ],
                   ),
