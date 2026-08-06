@@ -12,26 +12,43 @@ enum VisionCollisionConfidence {
 }
 
 class VisionSegment {
-  VisionSegment(this.start, this.end)
-      : minX = math.min(start.dx, end.dx),
+  VisionSegment(
+    this.start,
+    this.end, {
+    double collisionRadius = 0,
+  })  : collisionRadius = _validatedRadius(collisionRadius),
+        minX = math.min(start.dx, end.dx),
         maxX = math.max(start.dx, end.dx),
         minY = math.min(start.dy, end.dy),
         maxY = math.max(start.dy, end.dy);
 
   final Offset start;
   final Offset end;
+  final double collisionRadius;
   final double minX;
   final double maxX;
   final double minY;
   final double maxY;
 
+  double get collisionMinX => minX - collisionRadius;
+  double get collisionMaxX => maxX + collisionRadius;
+  double get collisionMinY => minY - collisionRadius;
+  double get collisionMaxY => maxY + collisionRadius;
+
   double get length => (end - start).distance;
 
   bool intersectsRangeBounds(Offset origin, double range) {
-    return maxX >= origin.dx - range &&
-        minX <= origin.dx + range &&
-        maxY >= origin.dy - range &&
-        minY <= origin.dy + range;
+    return collisionMaxX >= origin.dx - range &&
+        collisionMinX <= origin.dx + range &&
+        collisionMaxY >= origin.dy - range &&
+        collisionMinY <= origin.dy + range;
+  }
+
+  static double _validatedRadius(double radius) {
+    if (!radius.isFinite || radius < 0) {
+      throw ArgumentError.value(radius, 'collisionRadius');
+    }
+    return radius;
   }
 }
 
@@ -70,6 +87,7 @@ class VisionCollisionGroup {
     bool isAuthoritative = false,
     bool removesOwnEdgesWhenInside = false,
     bool inferObserverPassability = true,
+    double collisionRadius = 0,
   }) {
     final normalized = <Offset>[...points];
     if (isClosed &&
@@ -83,7 +101,11 @@ class VisionCollisionGroup {
         if ((normalizedPoints[index] - normalizedPoints[index - 1])
                 .distanceSquared >
             1e-9)
-          VisionSegment(normalizedPoints[index - 1], normalizedPoints[index]),
+          VisionSegment(
+            normalizedPoints[index - 1],
+            normalizedPoints[index],
+            collisionRadius: collisionRadius,
+          ),
     ]);
     if (segments.isEmpty) {
       throw const FormatException('Collision group has no usable segments.');
@@ -129,6 +151,7 @@ class VisionCollisionGroup {
     required VisionCollisionKind kind,
     bool requiresEvidence = false,
     bool isAuthoritative = false,
+    double collisionRadius = 0,
   }) {
     final normalizedPaths = <List<Offset>>[];
     final segments = <VisionSegment>[];
@@ -138,7 +161,11 @@ class VisionCollisionGroup {
         for (var index = 1; index < normalized.length; index += 1)
           if ((normalized[index] - normalized[index - 1]).distanceSquared >
               1e-9)
-            VisionSegment(normalized[index - 1], normalized[index]),
+            VisionSegment(
+              normalized[index - 1],
+              normalized[index],
+              collisionRadius: collisionRadius,
+            ),
       ];
       if (pathSegments.isEmpty) continue;
       normalizedPaths.add(normalized);
@@ -357,10 +384,10 @@ class VisionSegmentIndex {
   VisionSegmentIndex(this.segments, {this.cellSize = 64}) {
     for (var index = 0; index < segments.length; index += 1) {
       final segment = segments[index];
-      final minX = (segment.minX / cellSize).floor();
-      final maxX = (segment.maxX / cellSize).floor();
-      final minY = (segment.minY / cellSize).floor();
-      final maxY = (segment.maxY / cellSize).floor();
+      final minX = (segment.collisionMinX / cellSize).floor();
+      final maxX = (segment.collisionMaxX / cellSize).floor();
+      final minY = (segment.collisionMinY / cellSize).floor();
+      final maxY = (segment.collisionMaxY / cellSize).floor();
       for (var x = minX; x <= maxX; x += 1) {
         for (var y = minY; y <= maxY; y += 1) {
           (_cells[(x, y)] ??= <int>[]).add(index);
@@ -386,10 +413,10 @@ class VisionSegmentIndex {
     }
     final sorted = result.where((index) {
       final segment = segments[index];
-      return segment.maxX >= bounds.left &&
-          segment.minX <= bounds.right &&
-          segment.maxY >= bounds.top &&
-          segment.minY <= bounds.bottom;
+      return segment.collisionMaxX >= bounds.left &&
+          segment.collisionMinX <= bounds.right &&
+          segment.collisionMaxY >= bounds.top &&
+          segment.collisionMinY <= bounds.bottom;
     }).toList()
       ..sort();
     return sorted;

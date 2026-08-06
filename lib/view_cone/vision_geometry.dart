@@ -1181,6 +1181,14 @@ class VisionPolygon {
     required double maxDistance,
   }) {
     final direction = Offset(math.cos(angle), math.sin(angle));
+    if (segment.collisionRadius > _epsilon) {
+      return _rayStrokeDistance(
+        origin: origin,
+        direction: direction,
+        segment: segment,
+        maxDistance: maxDistance,
+      );
+    }
     final edge = segment.end - segment.start;
     final originToStart = segment.start - origin;
     final denominator = _cross(direction, edge);
@@ -1197,8 +1205,69 @@ class VisionPolygon {
     return distance;
   }
 
+  static double? _rayStrokeDistance({
+    required Offset origin,
+    required Offset direction,
+    required VisionSegment segment,
+    required double maxDistance,
+  }) {
+    final radius = segment.collisionRadius;
+    final edge = segment.end - segment.start;
+    final edgeLength = edge.distance;
+    if (edgeLength <= _epsilon) return null;
+    final tangent = edge / edgeLength;
+    final normal = Offset(-tangent.dy, tangent.dx);
+    final fromStart = origin - segment.start;
+    var entry = 0.0;
+    var exit = maxDistance;
+
+    bool clipAxis({
+      required double position,
+      required double rate,
+      required double minimum,
+      required double maximum,
+    }) {
+      if (rate.abs() <= _epsilon) {
+        return position >= minimum - _epsilon && position <= maximum + _epsilon;
+      }
+      var first = (minimum - position) / rate;
+      var second = (maximum - position) / rate;
+      if (first > second) {
+        final swap = first;
+        first = second;
+        second = swap;
+      }
+      entry = math.max(entry, first);
+      exit = math.min(exit, second);
+      return entry <= exit + _epsilon;
+    }
+
+    // SVG strokes use butt caps by default, so one segment occupies this
+    // exact oriented rectangle. Adjacent path segments supply their joins.
+    if (!clipAxis(
+          position: _dot(fromStart, tangent),
+          rate: _dot(direction, tangent),
+          minimum: 0,
+          maximum: edgeLength,
+        ) ||
+        !clipAxis(
+          position: _dot(fromStart, normal),
+          rate: _dot(direction, normal),
+          minimum: -radius,
+          maximum: radius,
+        ) ||
+        exit <= _epsilon ||
+        entry > maxDistance + _epsilon) {
+      return null;
+    }
+    return entry <= _epsilon ? 0 : entry;
+  }
+
   static double _cross(Offset left, Offset right) =>
       left.dx * right.dy - left.dy * right.dx;
+
+  static double _dot(Offset left, Offset right) =>
+      left.dx * right.dx + left.dy * right.dy;
 
   static double _normalizeSigned(double angle) {
     var normalized = (angle + math.pi) % (math.pi * 2);

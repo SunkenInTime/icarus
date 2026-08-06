@@ -219,6 +219,17 @@ void main() {
         attackSvg.segments.map(visionSegmentKey).toSet(),
         reason: '${map.name} editor round-trip fidelity',
       );
+      final editorSegments = {
+        for (final segment in editorBoundary.segments)
+          visionSegmentKey(segment): segment,
+      };
+      for (final exactSegment in attackSvg.segments) {
+        expect(
+          editorSegments[visionSegmentKey(exactSegment)]!.collisionRadius,
+          closeTo(exactSegment.collisionRadius, 0.00001),
+          reason: '${map.name} editor stroke-width fidelity',
+        );
+      }
       expect(
         editorBoundary.collisionGroups.where(
           (group) => group.kind == VisionCollisionKind.structuralChain,
@@ -294,6 +305,12 @@ void main() {
       (segment) =>
           (segment.start.dx - segment.end.dx).abs() < 0.001 &&
           (segment.start.dx - 636.8).abs() < 0.1,
+    );
+
+    expect(
+      visibleVertical.collisionRadius,
+      closeTo(1000 / 474 / 2, 0.00001),
+      reason: 'LOS must stop at the near edge of Ascent’s 1-unit wall stroke',
     );
 
     for (final layer in geometry.attackLayers) {

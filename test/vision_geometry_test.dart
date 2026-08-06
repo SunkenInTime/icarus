@@ -926,7 +926,7 @@ void main() {
             facingAngle: ray.$2,
             range: 20,
           ),
-          closeTo(10, 0.1),
+          closeTo(10 - compound.segments.first.collisionRadius, 0.1),
           reason: 'Icebox B ray from ${ray.$1} crossed a box side',
         );
       }
@@ -1018,16 +1018,18 @@ void main() {
           layer.collisionGroups.map((group) => group.id),
           contains(box.id),
         );
+        final hit = _centerRayPoint(
+          layer: layer,
+          origin: origin,
+          facingAngle: facingAngle,
+          range: 500,
+        );
         expect(
-          _centerRayDistance(
-            layer: layer,
-            origin: origin,
-            facingAngle: facingAngle,
-            range: 500,
-          ),
-          closeTo(185.33, 0.1),
+          (hit - origin).distance,
+          lessThan(185.33),
           reason: 'Split ray crossed the reported left-side box',
         );
+        _expectOnVisibleStroke(hit, layer.segments);
       }
     });
 
@@ -1185,7 +1187,7 @@ void main() {
           facingAngle: 0,
           range: 100,
         ),
-        closeTo(34.6, 1),
+        closeTo(34.6 - leftBox.segments.first.collisionRadius, 1),
       );
       expect(
         _centerRayDistance(
@@ -1197,7 +1199,7 @@ void main() {
           facingAngle: 0,
           range: 100,
         ),
-        closeTo(27.9, 1),
+        closeTo(27.9 - rightBox.segments.first.collisionRadius, 1),
       );
       expect(
         _centerRayDistance(
@@ -1276,7 +1278,7 @@ void main() {
           facingAngle: -math.pi / 2,
           range: 100,
         ),
-        closeTo(28.6, 1),
+        closeTo(28.6 - topStroke.segments.first.collisionRadius, 1),
       );
     });
   });
@@ -1301,6 +1303,35 @@ void main() {
 
       expect(centerPoint.dx, closeTo(5, 0.001));
       expect(centerPoint.dy, closeTo(0, 0.001));
+    });
+
+    test('clips to the visible near edge of a thick wall stroke', () {
+      final wall = VisionSegment(
+        const Offset(5, -10),
+        const Offset(5, 10),
+        collisionRadius: 1.25,
+      );
+      final layer = VisionGeometryLayer(elevation: 0, segments: [wall]);
+
+      final hit = _centerRayPoint(
+        layer: layer,
+        origin: Offset.zero,
+        facingAngle: 0,
+        range: 20,
+      );
+
+      expect(hit, const Offset(3.75, 0));
+      _expectOnVisibleStroke(hit, [wall]);
+
+      final angledHit = _centerRayPoint(
+        layer: layer,
+        origin: Offset.zero,
+        facingAngle: math.atan2(4, 5),
+        range: 20,
+      );
+      expect(angledHit.dx, closeTo(3.75, 0.000001));
+      expect(angledHit.dy, closeTo(3, 0.000001));
+      _expectOnVisibleStroke(angledHit, [wall]);
     });
 
     test('uses the range arc when no wall blocks a ray', () {
@@ -1656,7 +1687,13 @@ void main() {
           );
 
       expect(boundary.contains(origin), isTrue);
-      expect(centerPoint.dx, closeTo(bounds.right, 0.001));
+      expect(
+        centerPoint.dx,
+        closeTo(
+          bounds.right - boundary.segments.first.collisionRadius,
+          0.001,
+        ),
+      );
       expect(centerPoint.dy, closeTo(origin.dy, 0.001));
     });
 
@@ -1692,6 +1729,20 @@ void main() {
   });
 
   group('VisionSegmentIndex', () {
+    test('indexes the full visible wall stroke envelope', () {
+      final segment = VisionSegment(
+        const Offset(10, 0),
+        const Offset(10, 20),
+        collisionRadius: 2,
+      );
+      final index = VisionSegmentIndex([segment], cellSize: 5);
+
+      expect(
+        index.queryBounds(const Rect.fromLTRB(11.5, 8, 12, 12)),
+        [0],
+      );
+    });
+
     test('matches brute-force segment bounding-box candidates', () {
       final segments = <VisionSegment>[
         VisionSegment(const Offset(-25, -5), const Offset(-15, 5)),
@@ -1969,6 +2020,21 @@ double _centerRayDistance({
   required Offset origin,
   required double facingAngle,
   required double range,
+}) =>
+    (_centerRayPoint(
+              layer: layer,
+              origin: origin,
+              facingAngle: facingAngle,
+              range: range,
+            ) -
+            origin)
+        .distance;
+
+Offset _centerRayPoint({
+  required VisionGeometryLayer layer,
+  required Offset origin,
+  required double facingAngle,
+  required double range,
 }) {
   final polygon = VisionPolygon.compute(
     layer: layer,
@@ -1990,5 +2056,21 @@ double _centerRayDistance({
             angularError(point) < angularError(best) ? point : best,
       );
   expect(angularError(centerPoint), lessThan(1e-8));
-  return (centerPoint - origin).distance;
+  return centerPoint;
+}
+
+void _expectOnVisibleStroke(
+  Offset point,
+  Iterable<VisionSegment> segments,
+) {
+  final error = segments
+      .where((segment) => segment.collisionRadius > 0)
+      .map(
+        (segment) =>
+            (math.sqrt(visionDistanceSquaredToSegment(point, segment)) -
+                    segment.collisionRadius)
+                .abs(),
+      )
+      .reduce(math.min);
+  expect(error, lessThan(0.001));
 }
