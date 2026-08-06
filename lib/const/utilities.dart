@@ -562,19 +562,20 @@ class CustomRectangleUtility extends Utilities {
     assert(rectLengthMeters != null, 'rectLengthMeters must be provided');
     assert(colorValue != null, 'colorValue must be provided');
     assert(opacityPercent != null, 'opacityPercent must be provided');
-    // Rotation happens about the shape's center, matching the interactive
-    // widget's transform.
-    return Transform.rotate(
-      angle: rotation ?? 0,
-      child: CustomRectangleUtilityWidget(
-        id: id,
-        mapScale: mapScale,
-        widthMeters: widthMeters,
-        rectLengthMeters: rectLengthMeters,
-        colorValue: colorValue,
-        opacityPercent: opacityPercent,
-        showCenterMarker: showCenterMarker,
-      ),
+    // Rotation is deliberately NOT applied here. Like every other utility,
+    // callers rotate this widget externally about getAnchorPoint — which for
+    // the rectangle is its center. Rotating here as well would double-rotate
+    // in the transition overlay paths. The interactive
+    // PlacedCustomRectangleWidget is the one exception: it applies its own
+    // center rotation so its edit handles rotate with the shape.
+    return CustomRectangleUtilityWidget(
+      id: id,
+      mapScale: mapScale,
+      widthMeters: widthMeters,
+      rectLengthMeters: rectLengthMeters,
+      colorValue: colorValue,
+      opacityPercent: opacityPercent,
+      showCenterMarker: showCenterMarker,
     );
   }
 
