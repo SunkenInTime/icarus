@@ -9,6 +9,7 @@ import 'package:icarus/providers/image_provider.dart';
 
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/image/scalable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -144,6 +145,7 @@ class _PlacedImageBuilderState extends State<PlacedImageBuilder> {
 
   List<ShadContextMenuItem> _buildTagColorItems(WidgetRef ref) {
     return [
+      ...buildAdjacentPageCopyMenuItems(ref, widget.placedImage.id),
       ShadContextMenuItem(
         child: const Text('Reset tag to gray'),
         onPressed: () {

@@ -6,6 +6,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
 class CustomCircleUtilityWidget extends ConsumerWidget {
@@ -90,6 +91,9 @@ class CustomCircleUtilityWidget extends ConsumerWidget {
                 cursor: SystemMouseCursors.click,
                 deleteTarget: (id?.isNotEmpty ?? false)
                     ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
+                    : null,
+                contextMenuItems: (id?.isNotEmpty ?? false)
+                    ? buildAdjacentPageCopyMenuItems(ref, id!)
                     : null,
                 child: AnimatedOpacity(
                   opacity: centerMarkerVisible ? 1.0 : 0.0,

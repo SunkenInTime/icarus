@@ -6,6 +6,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 bool supportsAbilityVisibilityMenu(Ability? ability) {
@@ -31,13 +32,17 @@ List<ShadContextMenuItem>? buildAbilityContextMenuItems(
     lineUpGroupId: lineUpGroupId,
     lineUpItemId: lineUpItemId,
   );
+  final adjacentPageItems = lineUpGroupId == null && lineUpItemId == null
+      ? buildAdjacentPageCopyMenuItems(ref, ability.id)
+      : const <ShadContextMenuItem>[];
 
-  if (visibilityItems.isEmpty && !includeDelete) {
+  if (visibilityItems.isEmpty && adjacentPageItems.isEmpty && !includeDelete) {
     return null;
   }
 
   return [
     ...visibilityItems,
+    ...adjacentPageItems,
     if (includeDelete && lineUpGroupId != null && lineUpItemId != null)
       _buildDeleteItem(ref, lineUpGroupId, lineUpItemId),
   ];

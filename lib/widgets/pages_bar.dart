@@ -256,12 +256,11 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     if (confirm != true) return;
 
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
-    final remaining = [...strat.pages]..removeWhere((p) => p.id == page.id);
-    // Reindex sortIndex to keep dense ordering
-    final reindexed = [
-      for (var i = 0; i < remaining.length; i++)
-        remaining[i].copyWith(sortIndex: i),
-    ];
+    final remaining = [...strat.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex))
+      ..removeWhere((p) => p.id == page.id);
+    final reindexed =
+        StrategyProvider.reindexPagesAfterStructuralChange(remaining);
     final activeId = ref.read(strategyProvider.notifier).activePageID;
     final newActive = (activeId == page.id) ? reindexed.first.id : activeId;
 
