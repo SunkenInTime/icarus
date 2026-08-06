@@ -46,6 +46,12 @@ dependencies:
   discord_rich_presence: ^1.1.1
 
 
+dependency_overrides:
+  # Vendored with macOS Retina + rasterization-quality patches.
+  # See packages/custom_mouse_cursor/README.md.
+  custom_mouse_cursor:
+    path: packages/custom_mouse_cursor
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
