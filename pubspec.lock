@@ -268,10 +268,9 @@ packages:
   custom_mouse_cursor:
     dependency: "direct main"
     description:
-      name: custom_mouse_cursor
-      sha256: f0e0c1e8170670d6f2a7635bdbafd3b3e1ab5702978dfc35dc26aee7a8a29b8b
-      url: "https://pub.dev"
-    source: hosted
+      path: "packages/custom_mouse_cursor"
+      relative: true
+    source: path
     version: "1.1.3"
   dart_style:
     dependency: transitive
