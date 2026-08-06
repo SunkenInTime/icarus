@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -37,8 +39,12 @@ class RotatableWidget extends ConsumerStatefulWidget {
 
 class _RotatableWidgetState extends ConsumerState<RotatableWidget>
     with SingleTickerProviderStateMixin {
+  static const _hoverExitDelay = Duration(milliseconds: 150);
+
   late final AnimationController _animationController;
   late final Animation<double> _scaleAnimation;
+  Timer? _hoverExitTimer;
+  bool _isExitGraceActive = false;
   bool _isTargetHovered = false;
   bool _isHandleHovered = false;
   bool _isHandleDragging = false;
@@ -57,8 +63,34 @@ class _RotatableWidgetState extends ConsumerState<RotatableWidget>
 
   @override
   void dispose() {
+    _hoverExitTimer?.cancel();
     _animationController.dispose();
     super.dispose();
+  }
+
+  void _showTargetHandle() {
+    _hoverExitTimer?.cancel();
+    if (_isTargetHovered && !_isExitGraceActive) return;
+
+    setState(() {
+      _isTargetHovered = true;
+      _isExitGraceActive = false;
+    });
+  }
+
+  void _scheduleTargetHandleHide() {
+    _hoverExitTimer?.cancel();
+    setState(() {
+      _isTargetHovered = false;
+      _isExitGraceActive = true;
+    });
+    _hoverExitTimer = Timer(_hoverExitDelay, () {
+      if (!mounted) return;
+
+      setState(() {
+        _isExitGraceActive = false;
+      });
+    });
   }
 
   @override
@@ -70,24 +102,18 @@ class _RotatableWidgetState extends ConsumerState<RotatableWidget>
     );
     final isScreenshot = ref.watch(screenshotProvider);
     final buttonSize = coordinateSystem.scale(15);
-    final showHandle =
-        _isTargetHovered || _isHandleHovered || _isHandleDragging;
+    final showHandle = _isTargetHovered ||
+        _isExitGraceActive ||
+        _isHandleHovered ||
+        _isHandleDragging;
 
     return MouseRegion(
       opaque: false,
       // Keep spatially separated handles reachable across transparent parts
       // of a view cone without blocking pointer targets underneath.
       hitTestBehavior: HitTestBehavior.translucent,
-      onEnter: (_) {
-        setState(() {
-          _isTargetHovered = true;
-        });
-      },
-      onExit: (_) {
-        setState(() {
-          _isTargetHovered = false;
-        });
-      },
+      onEnter: (_) => _showTargetHandle(),
+      onExit: (_) => _scheduleTargetHandleHide(),
       child: Transform.rotate(
         angle: widget.rotation,
         alignment: Alignment.topLeft,
@@ -106,7 +132,9 @@ class _RotatableWidgetState extends ConsumerState<RotatableWidget>
                   visible: showHandle,
                   child: MouseRegion(
                     onEnter: (_) {
+                      _hoverExitTimer?.cancel();
                       setState(() {
+                        _isExitGraceActive = false;
                         _isHandleHovered = true;
                       });
                       _animationController.forward();

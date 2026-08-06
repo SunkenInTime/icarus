@@ -80,6 +80,9 @@ void main() {
       await mouse.up();
       await mouse.moveTo(const Offset(10, 10));
       await tester.pump();
+
+      expect(indicator().visible, isTrue);
+
       await tester.pump(const Duration(milliseconds: 200));
 
       expect(indicator().visible, isFalse);
