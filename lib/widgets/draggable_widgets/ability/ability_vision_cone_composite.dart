@@ -15,6 +15,10 @@ Offset abilityVisionConeChildOffsetVirtual({
     mapScale: mapScale,
     abilitySize: abilitySize,
   );
+  // This puts the ability anchor exactly on the cone pivot. The composite
+  // counter-rotates the icon around that anchor, so the icon's rendered
+  // top-left (and therefore its drag-end correction) stays fixed at every
+  // cone rotation.
   return ViewConeWidget.anchorPointVirtual - abilityAnchor;
 }
 
