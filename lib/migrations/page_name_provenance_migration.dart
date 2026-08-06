@@ -6,11 +6,11 @@ class PageNameProvenanceMigration {
   static List<StrategyPage> migratePages({
     required List<StrategyPage> pages,
   }) {
+    // Historical pages have no trusted signal that distinguishes an automatic
+    // "Page N" from a custom name with the same text. Preserve null provenance
+    // so structural changes never rewrite a name based on a guess.
     return [
-      for (final page in pages)
-        page.copyWith(
-          isAutoNamed: page.name == 'Page ${page.sortIndex + 1}',
-        ),
+      for (final page in pages) page.copyWith(),
     ];
   }
 }

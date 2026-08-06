@@ -972,7 +972,7 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
     return StrategyPage(
       id: fields[0] as String,
       name: fields[2] as String,
-      isAutoNamed: fields[14] == null ? false : fields[14] as bool,
+      isAutoNamed: fields[14] as bool?,
       drawingData: (fields[3] as List).cast<DrawingElement>(),
       agentData: (fields[4] as List).cast<PlacedAgentNode>(),
       abilityData: (fields[5] as List).cast<PlacedAbility>(),

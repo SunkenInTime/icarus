@@ -229,7 +229,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
     );
     if (newName == null ||
         newName.isEmpty ||
-        (newName == page.name && !page.isAutoNamed)) {
+        (newName == page.name && page.isAutoNamed == false)) {
       return;
     }
 

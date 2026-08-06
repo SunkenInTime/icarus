@@ -18,7 +18,9 @@ class StrategyPage extends HiveObject {
   final String id;
   final int sortIndex;
   final String name;
-  final bool isAutoNamed;
+  // Null means this page predates persisted name provenance. Treat it as
+  // custom so structural changes never overwrite a name we cannot classify.
+  final bool? isAutoNamed;
   final List<DrawingElement> drawingData;
   final List<PlacedAgentNode> agentData;
   final List<PlacedAbility> abilityData;
@@ -54,7 +56,7 @@ class StrategyPage extends HiveObject {
   StrategyPage({
     required this.id,
     required this.name,
-    this.isAutoNamed = false,
+    this.isAutoNamed,
     required this.drawingData,
     required this.agentData,
     required this.abilityData,
@@ -145,7 +147,11 @@ class StrategyPage extends HiveObject {
                }
              ''';
 
-    return jsonDecode(data);
+    final result = jsonDecode(data) as Map<String, dynamic>;
+    if (isAutoNamed == null) {
+      result.remove('isAutoNamed');
+    }
+    return result;
   }
 
   static Future<List<StrategyPage>> listFromJson(
@@ -172,6 +178,17 @@ class StrategyPage extends HiveObject {
       {required Map<String, dynamic> json,
       required String strategyID,
       required bool isZip}) async {
+    final bool? isAutoNamed;
+    if (!json.containsKey('isAutoNamed')) {
+      isAutoNamed = null;
+    } else if (json['isAutoNamed'] is bool) {
+      isAutoNamed = json['isAutoNamed'] as bool;
+    } else {
+      throw const FormatException(
+        'Strategy page isAutoNamed must be a boolean',
+      );
+    }
+
     List<PlacedImage> imageData = [];
 
     if (!kIsWeb) {
@@ -191,12 +208,12 @@ class StrategyPage extends HiveObject {
     } else {
       isAttack = false;
     }
+
     return StrategyPage(
       id: json['id'],
       sortIndex: int.parse(json['sortIndex']),
       name: json['name'],
-      isAutoNamed:
-          json['isAutoNamed'] == true || json['isAutoNamed'] == 'true',
+      isAutoNamed: isAutoNamed,
       drawingData: DrawingProvider.fromJson(jsonEncode(json['drawingData'])),
       agentData: AgentProvider.fromJson(jsonEncode(json['agentData'])),
       abilityData: AbilityProvider.fromJson(jsonEncode(json['abilityData'])),

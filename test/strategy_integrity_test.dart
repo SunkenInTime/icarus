@@ -346,7 +346,7 @@ void main() {
       expect(restored.lineUps, hasLength(1));
       expect(restored.lineUps.single.id, legacyLineUp.id);
       expect(restored.lineUpGroups, hasLength(1));
-      expect(restored.isAutoNamed, isFalse);
+      expect(restored.isAutoNamed, isNull);
       expect(restored.lineUpGroups.single.id, legacyLineUp.id);
       expect(restored.lineUpGroups.single.items, hasLength(1));
       expect(
@@ -430,6 +430,78 @@ void main() {
 
       expect(restored.name, 'Page 2');
       expect(restored.isAutoNamed, isFalse);
+    });
+
+    test('legacy custom Page N stays unresolved and is never renumbered',
+        () async {
+      final page = StrategyPage(
+        id: 'legacy-custom-page-2',
+        sortIndex: 1,
+        name: 'Page 2',
+        drawingData: const [],
+        agentData: const [],
+        abilityData: const [],
+        textData: const [],
+        imageData: const [],
+        utilityData: const [],
+        isAttack: true,
+        settings: StrategySettings(),
+      );
+      final legacyJson = page.toJson('strategy-id');
+      expect(legacyJson, isNot(contains('isAutoNamed')));
+      final restored = await StrategyPage.fromJson(
+        json: legacyJson,
+        strategyID: 'strategy-id',
+        isZip: true,
+      );
+      final oldStrategy = StrategyData(
+        id: 'legacy-strategy',
+        name: 'Legacy Strategy',
+        mapData: MapValue.ascent,
+        versionNumber: Settings.versionNumber - 1,
+        lastEdited: DateTime.utc(2026, 1, 1),
+        folderID: null,
+        pages: [restored],
+      );
+
+      final migrated = StrategyProvider.migrateToCurrentVersion(oldStrategy);
+      final reindexed = StrategyProvider.reindexPagesAfterStructuralChange(
+        migrated.pages,
+      );
+
+      expect(migrated.pages.single.isAutoNamed, isNull);
+      expect(reindexed.single.name, 'Page 2');
+    });
+
+    test('page-name provenance rejects non-boolean export values', () async {
+      final page = StrategyPage(
+        id: 'invalid-provenance',
+        sortIndex: 0,
+        name: 'Page 1',
+        drawingData: const [],
+        agentData: const [],
+        abilityData: const [],
+        textData: const [],
+        imageData: const [],
+        utilityData: const [],
+        isAttack: true,
+        settings: StrategySettings(),
+      );
+
+      for (final invalidValue in <Object?>['true', 'yes', 1, null]) {
+        final json = page.toJson('strategy-id')
+          ..['isAutoNamed'] = invalidValue;
+
+        await expectLater(
+          StrategyPage.fromJson(
+            json: json,
+            strategyID: 'strategy-id',
+            isZip: true,
+          ),
+          throwsFormatException,
+          reason: 'accepted invalid isAutoNamed value: $invalidValue',
+        );
+      }
     });
 
     test('current schema export -> import preserves canonical structure',

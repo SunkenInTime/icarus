@@ -151,18 +151,24 @@ void main() {
     expect(reindexed[1].isAutoNamed, isTrue);
   });
 
-  test('page-name migration records provenance for historical pages', () {
+  test('page-name migration leaves historical provenance unresolved', () {
     final oldStrategy = _strategy([
       _page(
         id: 'page-1',
         name: 'Page 1',
         sortIndex: 0,
-        isAutoNamed: false,
+        hasNameProvenance: false,
       ),
       _page(
         id: 'custom-page',
         name: 'Site Execute',
         sortIndex: 1,
+        hasNameProvenance: false,
+      ),
+      _page(
+        id: 'explicit-custom-page',
+        name: 'Page 3',
+        sortIndex: 2,
         isAutoNamed: false,
       ),
     ]).copyWith(versionNumber: Settings.versionNumber - 1);
@@ -170,8 +176,9 @@ void main() {
     final migrated = StrategyProvider.migrateToCurrentVersion(oldStrategy);
 
     expect(migrated.versionNumber, Settings.versionNumber);
-    expect(migrated.pages[0].isAutoNamed, isTrue);
-    expect(migrated.pages[1].isAutoNamed, isFalse);
+    expect(migrated.pages[0].isAutoNamed, isNull);
+    expect(migrated.pages[1].isAutoNamed, isNull);
+    expect(migrated.pages[2].isAutoNamed, isFalse);
   });
 
   test('delete renumbering closes gaps without changing custom names', () {
@@ -339,6 +346,7 @@ StrategyPage _page({
   required String name,
   required int sortIndex,
   bool? isAutoNamed,
+  bool hasNameProvenance = true,
   List<PlacedAgentNode> agents = const [],
   List<PlacedAbility> abilities = const [],
   List<PlacedText> text = const [],
@@ -348,7 +356,9 @@ StrategyPage _page({
   return StrategyPage(
     id: id,
     name: name,
-    isAutoNamed: isAutoNamed ?? name == 'Page ${sortIndex + 1}',
+    isAutoNamed: hasNameProvenance
+        ? isAutoNamed ?? name == 'Page ${sortIndex + 1}'
+        : null,
     sortIndex: sortIndex,
     drawingData: const [],
     agentData: agents,

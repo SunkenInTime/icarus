@@ -1003,7 +1003,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       for (var i = 0; i < orderedPages.length; i++)
         orderedPages[i].copyWith(
           sortIndex: i,
-          name: orderedPages[i].isAutoNamed
+          name: orderedPages[i].isAutoNamed == true
               ? 'Page ${i + 1}'
               : orderedPages[i].name,
         ),
