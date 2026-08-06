@@ -836,6 +836,12 @@ class CustomMouseCursor extends MouseCursor {
     ui.Image uiImage, {
     double thisImagesDevicePixelRatio = 1.0,
   }) async {
+    if (!thisImagesDevicePixelRatio.isFinite ||
+        thisImagesDevicePixelRatio <= 0) {
+      throw ArgumentError.value(thisImagesDevicePixelRatio,
+          'thisImagesDevicePixelRatio',
+          'must be a finite, positive devicePixelRatio');
+    }
     if (originStory != CustomMouseCursorCreationType.image) {
       throw ('addImage() called on CustomMouseCursor that was not created via image() ($originStory)');
     }
