@@ -166,9 +166,12 @@ class _PlacedCustomRectangleWidgetState
                       top: insetY,
                       child: Draggable<PlacedUtility>(
                         data: utilityRef,
-                        dragAnchorStrategy: ref
-                            .read(screenZoomProvider.notifier)
-                            .zoomDragAnchorStrategy,
+                        dragAnchorStrategy: (draggable, context, position) =>
+                            _rotatedDragAnchor(
+                          context: context,
+                          position: position,
+                          rotation: rotation,
+                        ),
                         feedback: Opacity(
                           opacity: Settings.feedbackOpacity,
                           child: ZoomTransform(
@@ -291,6 +294,28 @@ class _PlacedCustomRectangleWidgetState
         ),
       ),
     );
+  }
+
+  /// Drag anchor that keeps the grabbed point under the cursor. The child
+  /// lives inside this widget's rotation transform, so globalToLocal gives an
+  /// unrotated shape-space point — but the feedback re-applies the rotation
+  /// about its own center in upright overlay space, so the anchor must be the
+  /// grabbed point's rotated offset from center, not the raw local point.
+  Offset _rotatedDragAnchor({
+    required BuildContext context,
+    required Offset position,
+    required double rotation,
+  }) {
+    final zoom = ref.read(screenZoomProvider);
+    final renderBox = context.findRenderObject()! as RenderBox;
+    final local = renderBox.globalToLocal(position);
+    final center = renderBox.size.center(Offset.zero);
+    final delta = local - center;
+    final rotated = Offset(
+      (delta.dx * math.cos(rotation)) - (delta.dy * math.sin(rotation)),
+      (delta.dx * math.sin(rotation)) + (delta.dy * math.cos(rotation)),
+    );
+    return (center + rotated).scale(zoom, zoom);
   }
 
   Widget _buildResizeHandle({
