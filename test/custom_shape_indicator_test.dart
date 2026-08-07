@@ -8,6 +8,8 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
+import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
@@ -16,6 +18,7 @@ import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_util
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_circle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_rectangle_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/shape_indicator_fade.dart';
+import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class _FixedMapProvider extends MapProvider {
@@ -228,11 +231,78 @@ void main() {
 
     expect(container.read(utilityProvider).single.rotation, greaterThan(0));
   });
+
+  testWidgets('shape center menu changes the placed shape color',
+      (tester) async {
+    final utility = _circle();
+    final container = _containerWith(utility);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: PlacedCustomCircleWidget(
+          utility: utility,
+          id: utility.id,
+          onDragEnd: (_) {},
+        ),
+      ),
+    );
+
+    final mouseWatch = tester.widget<MouseWatch>(find.byType(MouseWatch));
+    final colorItem = mouseWatch.contextMenuItems!.first;
+    expect((colorItem.child as Text).data, 'Color');
+
+    final redItem = colorItem.items.firstWhere(
+      (item) =>
+          item is ShadContextMenuItem &&
+          (item.child as Text).data == 'Red',
+    ) as ShadContextMenuItem;
+    redItem.onPressed!();
+    await tester.pump();
+
+    expect(
+      container.read(utilityProvider).single.customColorValue,
+      Colors.red.toARGB32(),
+    );
+    expect(container.read(actionProvider), hasLength(1));
+
+    final updatedMouseWatch =
+        tester.widget<MouseWatch>(find.byType(MouseWatch));
+    final updatedColorItem = updatedMouseWatch.contextMenuItems!.first;
+    final selectedRedItem = updatedColorItem.items.firstWhere(
+      (item) =>
+          item is ShadContextMenuItem &&
+          (item.child as Text).data == 'Red',
+    ) as ShadContextMenuItem;
+    expect(selectedRedItem.trailing, isA<Icon>());
+
+    final customColorItem = updatedColorItem.items.firstWhere(
+      (item) =>
+          item is ShadContextMenuItem &&
+          (item.child as Text).data == 'Custom color…',
+    ) as ShadContextMenuItem;
+    customColorItem.onPressed!();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Custom color'), findsOneWidget);
+    expect(find.text('Apply'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+  });
 }
 
 ProviderContainer _containerWith(PlacedUtility utility) {
   final container = ProviderContainer(
-    overrides: [mapProvider.overrideWith(_FixedMapProvider.new)],
+    overrides: [
+      mapProvider.overrideWith(_FixedMapProvider.new),
+      colorLibraryProvider.overrideWith(
+        (ref) => const [
+          ColorLibraryEntry(color: Colors.white, isCustom: false),
+          ColorLibraryEntry(color: Colors.red, isCustom: false),
+        ],
+      ),
+    ],
   );
   container.read(utilityProvider.notifier).fromHive([utility]);
   return container;
