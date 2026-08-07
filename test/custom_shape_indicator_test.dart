@@ -272,8 +272,18 @@ void main() {
 
     expect(find.text('Custom color'), findsOneWidget);
     expect(find.text('Apply'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
+    await tester.enterText(find.byType(TextField).at(0), '120');
+    await tester.enterText(find.byType(TextField).at(1), '100');
+    await tester.enterText(find.byType(TextField).at(2), '100');
+    await tester.pump();
+    await tester.tap(find.text('Apply'));
     await tester.pumpAndSettle();
+
+    expect(
+      container.read(utilityProvider).single.customColorValue,
+      const Color(0xFF00FF00).toARGB32(),
+    );
+    expect(container.read(actionProvider), hasLength(2));
   });
 }
 

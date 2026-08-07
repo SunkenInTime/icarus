@@ -57,6 +57,7 @@ class _CustomShapeColorItems extends ConsumerWidget {
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.palette, size: 14),
           onPressed: () async {
+            final utilityNotifier = ref.read(utilityProvider.notifier);
             final picked = await showIcarusColorPickerDialog(
               context: context,
               initialColor: currentColorValue == null
@@ -64,11 +65,11 @@ class _CustomShapeColorItems extends ConsumerWidget {
                   : Color(currentColorValue),
               title: 'Custom color',
             );
-            if (picked == null || !context.mounted) return;
-            ref.read(utilityProvider.notifier).updateCustomShapeColor(
-                  id: utility.id,
-                  colorValue: picked.toARGB32(),
-                );
+            if (picked == null) return;
+            utilityNotifier.updateCustomShapeColor(
+              id: utility.id,
+              colorValue: picked.toARGB32(),
+            );
           },
           child: const Text('Custom color…'),
         ),
