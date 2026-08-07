@@ -1116,19 +1116,31 @@ class VisionPolygon {
 
     final rangeSquared = safeRange * safeRange;
     for (final segment in candidateSegments) {
-      for (final endpoint in [segment.start, segment.end]) {
-        final delta = endpoint - origin;
+      final collisionVertices = segment.collisionVertices;
+      final hasStrokeArea = segment.collisionRadius > _epsilon;
+      final eventVertices = hasStrokeArea
+          ? _strokeSilhouetteVertices(segment, origin)
+          : collisionVertices;
+      for (final vertex in eventVertices) {
+        final delta = vertex - origin;
         if (delta.distanceSquared <= rangeSquared + _epsilon) {
           addEventAngle(math.atan2(delta.dy, delta.dx));
         }
       }
-      for (final intersection in _segmentCircleIntersections(
-        segment,
-        origin,
-        safeRange,
-      )) {
-        final delta = intersection - origin;
-        addEventAngle(math.atan2(delta.dy, delta.dx));
+
+      final collisionEdgeCount = hasStrokeArea ? collisionVertices.length : 1;
+      for (var index = 0; index < collisionEdgeCount; index += 1) {
+        final nextIndex =
+            hasStrokeArea ? (index + 1) % collisionVertices.length : 1;
+        for (final intersection in _lineSegmentCircleIntersections(
+          collisionVertices[index],
+          collisionVertices[nextIndex],
+          origin,
+          safeRange,
+        )) {
+          final delta = intersection - origin;
+          addEventAngle(math.atan2(delta.dy, delta.dx));
+        }
       }
     }
 
@@ -1164,6 +1176,41 @@ class VisionPolygon {
     return points;
   }
 
+  static List<Offset> _strokeSilhouetteVertices(
+    VisionSegment segment,
+    Offset origin,
+  ) {
+    final verticesByAngle = [
+      for (final vertex in segment.collisionVertices)
+        (
+          angle: _normalizePositive(
+            math.atan2(vertex.dy - origin.dy, vertex.dx - origin.dx),
+          ),
+          vertex: vertex,
+        ),
+    ]..sort((left, right) => left.angle.compareTo(right.angle));
+
+    // The visible rectangle occupies the complement of its largest angular
+    // gap. The two vertices bordering that gap are its exact silhouette.
+    var largestGap = -1.0;
+    var gapStart = 0;
+    for (var index = 0; index < verticesByAngle.length; index += 1) {
+      final next = (index + 1) % verticesByAngle.length;
+      final nextAngle =
+          verticesByAngle[next].angle + (next == 0 ? math.pi * 2 : 0);
+      final gap = nextAngle - verticesByAngle[index].angle;
+      if (gap > largestGap) {
+        largestGap = gap;
+        gapStart = index;
+      }
+    }
+
+    return [
+      verticesByAngle[(gapStart + 1) % verticesByAngle.length].vertex,
+      verticesByAngle[gapStart].vertex,
+    ];
+  }
+
   static _VisionRayCandidate _rayCandidate(
     Offset origin,
     VisionSegment segment,
@@ -1179,14 +1226,15 @@ class VisionPolygon {
         segment: segment,
       );
 
-  static List<Offset> _segmentCircleIntersections(
-    VisionSegment segment,
+  static List<Offset> _lineSegmentCircleIntersections(
+    Offset segmentStart,
+    Offset segmentEnd,
     Offset center,
     double radius,
   ) {
-    final start = segment.start - center;
-    final delta = segment.delta;
-    final a = segment.lengthSquared;
+    final start = segmentStart - center;
+    final delta = segmentEnd - segmentStart;
+    final a = delta.distanceSquared;
     if (a <= _epsilon) return const [];
     final b = 2 * (start.dx * delta.dx + start.dy * delta.dy);
     final c = start.distanceSquared - radius * radius;
@@ -1197,7 +1245,7 @@ class VisionPolygon {
     final values = <Offset>[];
     for (final t in [(-b - root) / (2 * a), (-b + root) / (2 * a)]) {
       if (t >= 0 && t <= 1) {
-        final point = segment.start + delta * t;
+        final point = segmentStart + delta * t;
         if (values.isEmpty ||
             (point - values.first).distanceSquared > _epsilon) {
           values.add(point);
@@ -1304,6 +1352,11 @@ class VisionPolygon {
     var normalized = (angle + math.pi) % (math.pi * 2);
     if (normalized < 0) normalized += math.pi * 2;
     return normalized - math.pi;
+  }
+
+  static double _normalizePositive(double angle) {
+    final normalized = angle % (math.pi * 2);
+    return normalized < 0 ? normalized + math.pi * 2 : normalized;
   }
 }
 

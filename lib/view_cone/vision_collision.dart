@@ -22,6 +22,17 @@ class VisionSegment {
     final lengthSquared = delta.distanceSquared;
     final length = math.sqrt(lengthSquared);
     final tangent = length <= 1e-9 ? Offset.zero : delta / length;
+    final normal = Offset(-tangent.dy, tangent.dx);
+    final collisionVertices = List<Offset>.unmodifiable(
+      radius <= 1e-9
+          ? [start, end]
+          : [
+              start + normal * radius,
+              end + normal * radius,
+              end - normal * radius,
+              start - normal * radius,
+            ],
+    );
     return VisionSegment._(
       start,
       end,
@@ -30,6 +41,8 @@ class VisionSegment {
       lengthSquared: lengthSquared,
       length: length,
       tangent: tangent,
+      normal: normal,
+      collisionVertices: collisionVertices,
     );
   }
 
@@ -41,8 +54,9 @@ class VisionSegment {
     required this.lengthSquared,
     required this.length,
     required this.tangent,
-  })  : normal = Offset(-tangent.dy, tangent.dx),
-        minX = math.min(start.dx, end.dx),
+    required this.normal,
+    required this.collisionVertices,
+  })  : minX = math.min(start.dx, end.dx),
         maxX = math.max(start.dx, end.dx),
         minY = math.min(start.dy, end.dy),
         maxY = math.max(start.dy, end.dy);
@@ -55,6 +69,7 @@ class VisionSegment {
   final double length;
   final Offset tangent;
   final Offset normal;
+  final List<Offset> collisionVertices;
   final double minX;
   final double maxX;
   final double minY;

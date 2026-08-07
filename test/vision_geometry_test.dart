@@ -1334,6 +1334,33 @@ void main() {
       _expectOnVisibleStroke(angledHit, [wall]);
     });
 
+    test('emits thick wall corners instead of cutting through the stroke', () {
+      final wall = VisionSegment(
+        const Offset(5, -2),
+        const Offset(5, 2),
+        collisionRadius: 1,
+      );
+      final polygon = VisionPolygon.compute(
+        layer: VisionGeometryLayer(elevation: 0, segments: [wall]),
+        origin: Offset.zero,
+        facingAngle: 0,
+        coneAngle: math.pi / 2,
+        range: 10,
+      );
+
+      for (final visibleCorner in const [Offset(4, -2), Offset(4, 2)]) {
+        expect(
+          polygon,
+          contains(
+            predicate<Offset>(
+              (point) => (point - visibleCorner).distanceSquared < 1e-8,
+              'the visible stroke corner $visibleCorner',
+            ),
+          ),
+        );
+      }
+    });
+
     test('uses the range arc when no wall blocks a ray', () {
       const origin = Offset(12, 18);
       const range = 30.0;
