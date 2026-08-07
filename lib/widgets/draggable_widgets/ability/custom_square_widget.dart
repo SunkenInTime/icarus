@@ -75,7 +75,7 @@ class CustomSquareWidget extends ConsumerWidget {
       child: Container(
         width: width,
         height: scaledHeight,
-        color: color.withAlpha(100),
+        color: abilityWallDisplayColor(color),
       ),
     );
 

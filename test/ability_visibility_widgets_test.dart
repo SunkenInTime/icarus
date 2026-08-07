@@ -165,6 +165,13 @@ void main() {
       );
       expect(find.byType(InactiveCircleAbilityTrace), findsOneWidget);
       expect(find.byKey(const ValueKey('inactive-circle-trace')), findsOneWidget);
+      final trace = tester.widget<CustomPaint>(
+        find.byKey(const ValueKey('inactive-circle-trace')),
+      );
+      expect(
+        (trace.painter! as InactiveCircleAbilityTracePainter).color,
+        Colors.greenAccent.withAlpha(100),
+      );
     });
 
     testWidgets('inactive Viper wall keeps its path and hides its handle',
@@ -225,6 +232,13 @@ void main() {
       );
       expect(find.byType(InactiveWallAbilityTrace), findsOneWidget);
       expect(find.byKey(const ValueKey('inactive-wall-trace')), findsOneWidget);
+      final trace = tester.widget<CustomPaint>(
+        find.byKey(const ValueKey('inactive-wall-trace')),
+      );
+      expect(
+        (trace.painter! as InactiveWallAbilityTracePainter).color,
+        Colors.greenAccent.withAlpha(100),
+      );
       expect(
         tester.widget<RotatableWidget>(find.byType(RotatableWidget)).showHandle,
         isFalse,

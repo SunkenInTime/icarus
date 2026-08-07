@@ -4,13 +4,7 @@ import 'package:flutter/material.dart';
 
 const abilityStateTransitionDuration = Duration(milliseconds: 180);
 
-Color inactiveAbilityTraceColor(Color activeColor) {
-  final hsl = HSLColor.fromColor(activeColor);
-  return hsl
-      .withSaturation((hsl.saturation * 0.7).clamp(0.0, 1.0))
-      .toColor()
-      .withValues(alpha: 1);
-}
+Color abilityWallDisplayColor(Color color) => color.withAlpha(100);
 
 class InactiveCircleAbilityTrace extends StatelessWidget {
   const InactiveCircleAbilityTrace({super.key, required this.color});
@@ -22,7 +16,7 @@ class InactiveCircleAbilityTrace extends StatelessWidget {
     return CustomPaint(
       key: const ValueKey('inactive-circle-trace'),
       painter: InactiveCircleAbilityTracePainter(
-        color: inactiveAbilityTraceColor(color),
+        color: abilityWallDisplayColor(color),
       ),
     );
   }
@@ -38,7 +32,7 @@ class InactiveWallAbilityTrace extends StatelessWidget {
     return CustomPaint(
       key: const ValueKey('inactive-wall-trace'),
       painter: InactiveWallAbilityTracePainter(
-        color: inactiveAbilityTraceColor(color),
+        color: abilityWallDisplayColor(color),
       ),
     );
   }
