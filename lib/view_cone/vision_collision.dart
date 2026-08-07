@@ -12,11 +12,36 @@ enum VisionCollisionConfidence {
 }
 
 class VisionSegment {
-  VisionSegment(
+  factory VisionSegment(
+    Offset start,
+    Offset end, {
+    double collisionRadius = 0,
+  }) {
+    final radius = _validatedRadius(collisionRadius);
+    final delta = end - start;
+    final lengthSquared = delta.distanceSquared;
+    final length = math.sqrt(lengthSquared);
+    final tangent = length <= 1e-9 ? Offset.zero : delta / length;
+    return VisionSegment._(
+      start,
+      end,
+      collisionRadius: radius,
+      delta: delta,
+      lengthSquared: lengthSquared,
+      length: length,
+      tangent: tangent,
+    );
+  }
+
+  VisionSegment._(
     this.start,
     this.end, {
-    double collisionRadius = 0,
-  })  : collisionRadius = _validatedRadius(collisionRadius),
+    required this.collisionRadius,
+    required this.delta,
+    required this.lengthSquared,
+    required this.length,
+    required this.tangent,
+  })  : normal = Offset(-tangent.dy, tangent.dx),
         minX = math.min(start.dx, end.dx),
         maxX = math.max(start.dx, end.dx),
         minY = math.min(start.dy, end.dy),
@@ -25,6 +50,11 @@ class VisionSegment {
   final Offset start;
   final Offset end;
   final double collisionRadius;
+  final Offset delta;
+  final double lengthSquared;
+  final double length;
+  final Offset tangent;
+  final Offset normal;
   final double minX;
   final double maxX;
   final double minY;
@@ -34,8 +64,6 @@ class VisionSegment {
   double get collisionMaxX => maxX + collisionRadius;
   double get collisionMinY => minY - collisionRadius;
   double get collisionMaxY => maxY + collisionRadius;
-
-  double get length => (end - start).distance;
 
   bool intersectsRangeBounds(Offset origin, double range) {
     return collisionMaxX >= origin.dx - range &&
@@ -430,13 +458,15 @@ double visionCross(Offset left, Offset right) =>
     left.dx * right.dy - left.dy * right.dx;
 
 double visionDistanceSquaredToSegment(Offset point, VisionSegment segment) {
-  final delta = segment.end - segment.start;
-  final lengthSquared = delta.distanceSquared;
-  if (lengthSquared <= 1e-9) return (point - segment.start).distanceSquared;
+  if (segment.lengthSquared <= 1e-9) {
+    return (point - segment.start).distanceSquared;
+  }
   final relative = point - segment.start;
   final projection =
-      (relative.dx * delta.dx + relative.dy * delta.dy) / lengthSquared;
-  final nearest = segment.start + delta * projection.clamp(0.0, 1.0).toDouble();
+      (relative.dx * segment.delta.dx + relative.dy * segment.delta.dy) /
+          segment.lengthSquared;
+  final nearest =
+      segment.start + segment.delta * projection.clamp(0.0, 1.0).toDouble();
   return (point - nearest).distanceSquared;
 }
 
@@ -452,7 +482,7 @@ bool visionPointIsOnSegment(
     return false;
   }
   return visionCross(
-        segment.end - segment.start,
+        segment.delta,
         point - segment.start,
       ).abs() <=
       tolerance * math.max(1, segment.length);

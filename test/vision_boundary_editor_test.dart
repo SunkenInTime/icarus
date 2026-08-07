@@ -81,6 +81,34 @@ void main() {
       );
     });
 
+    test('normalizes legacy empty stroke-radius lists by contour', () {
+      final restored = VisionBoundaryMapDraft.fromJson(
+        map: MapValue.ascent,
+        value: {
+          ...draft.toJson(),
+          'collisionRadii': const {
+            'outer': 6.5,
+            'interiors': <double>[],
+            'heightBoxes': <double>[],
+            'structuralChains': <double>[],
+          },
+        },
+      );
+
+      expect(
+        restored.collisionRadius(
+          const VisionBoundaryContourRef(VisionBoundaryContourKind.outer),
+        ),
+        6.5,
+      );
+      expect(restored.toJson()['collisionRadii'], {
+        'outer': 6.5,
+        'interiors': [0],
+        'heightBoxes': [0],
+        'structuralChains': [0],
+      });
+    });
+
     test('moves a point, a contour, or every contour independently', () {
       const interior = VisionBoundaryContourRef(
         VisionBoundaryContourKind.interior,

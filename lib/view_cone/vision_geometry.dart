@@ -266,8 +266,8 @@ class VisionGeometryMap {
     var broadLength = 0.0;
     final riotIndices = <int>{};
     for (final svg in group.segments) {
-      final svgDelta = svg.end - svg.start;
-      final svgLength = svgDelta.distance;
+      final svgDelta = svg.delta;
+      final svgLength = svg.length;
       if (svgLength <= _epsilon) continue;
       final steps = math.max(1, (svgLength / sampleSpacing).ceil());
       final sampleWeight = svgLength / steps;
@@ -963,7 +963,7 @@ class VisionBoundary {
         point.dy > segment.maxY + tolerance) {
       return false;
     }
-    final edge = segment.end - segment.start;
+    final edge = segment.delta;
     final toPoint = point - segment.start;
     return VisionPolygon._cross(edge, toPoint).abs() <=
         tolerance * math.max(1, edge.distance);
@@ -1056,6 +1056,12 @@ class VisionGeometryLayer {
   }
 }
 
+typedef _VisionRayCandidate = ({
+  int index,
+  double minimumDistance,
+  VisionSegment segment,
+});
+
 class VisionPolygon {
   static const double _eventAngleEpsilon = 0.00001;
   static const double _maxArcStep = math.pi / 90;
@@ -1076,6 +1082,15 @@ class VisionPolygon {
 
     final halfCone = safeCone / 2;
     final candidateSegments = layer.segmentsForObserver(origin, safeRange);
+    // A segment's shortest possible hit cannot be nearer than this radial
+    // bound. Nearest-first ordering lets every ray stop after a proven hit.
+    final orderedCandidates = <_VisionRayCandidate>[
+      for (var index = 0; index < candidateSegments.length; index += 1)
+        _rayCandidate(origin, candidateSegments[index], index),
+    ]..sort((left, right) {
+        final distance = left.minimumDistance.compareTo(right.minimumDistance);
+        return distance != 0 ? distance : left.index.compareTo(right.index);
+      });
     final relativeAngles = <double>[];
     final arcSteps = math.max(1, (safeCone / _maxArcStep).ceil());
     for (var index = 0; index <= arcSteps; index += 1) {
@@ -1129,11 +1144,14 @@ class VisionPolygon {
     final points = <Offset>[origin];
     for (final relativeAngle in uniqueAngles) {
       final angle = facingAngle + relativeAngle;
+      final direction = Offset(math.cos(angle), math.sin(angle));
       var distance = safeRange;
-      for (final segment in candidateSegments) {
+      for (final candidate in orderedCandidates) {
+        if (candidate.minimumDistance > distance + _epsilon) break;
+        final segment = candidate.segment;
         final hitDistance = _raySegmentDistance(
           origin: origin,
-          angle: angle,
+          direction: direction,
           segment: segment,
           maxDistance: distance,
         );
@@ -1141,10 +1159,25 @@ class VisionPolygon {
           distance = hitDistance;
         }
       }
-      points.add(origin + Offset(math.cos(angle), math.sin(angle)) * distance);
+      points.add(origin + direction * distance);
     }
     return points;
   }
+
+  static _VisionRayCandidate _rayCandidate(
+    Offset origin,
+    VisionSegment segment,
+    int index,
+  ) =>
+      (
+        index: index,
+        minimumDistance: math.max(
+          0,
+          math.sqrt(visionDistanceSquaredToSegment(origin, segment)) -
+              segment.collisionRadius,
+        ),
+        segment: segment,
+      );
 
   static List<Offset> _segmentCircleIntersections(
     VisionSegment segment,
@@ -1152,8 +1185,8 @@ class VisionPolygon {
     double radius,
   ) {
     final start = segment.start - center;
-    final delta = segment.end - segment.start;
-    final a = delta.distanceSquared;
+    final delta = segment.delta;
+    final a = segment.lengthSquared;
     if (a <= _epsilon) return const [];
     final b = 2 * (start.dx * delta.dx + start.dy * delta.dy);
     final c = start.distanceSquared - radius * radius;
@@ -1176,11 +1209,10 @@ class VisionPolygon {
 
   static double? _raySegmentDistance({
     required Offset origin,
-    required double angle,
+    required Offset direction,
     required VisionSegment segment,
     required double maxDistance,
   }) {
-    final direction = Offset(math.cos(angle), math.sin(angle));
     if (segment.collisionRadius > _epsilon) {
       return _rayStrokeDistance(
         origin: origin,
@@ -1189,7 +1221,7 @@ class VisionPolygon {
         maxDistance: maxDistance,
       );
     }
-    final edge = segment.end - segment.start;
+    final edge = segment.delta;
     final originToStart = segment.start - origin;
     final denominator = _cross(direction, edge);
     if (denominator.abs() <= _epsilon) return null;
@@ -1212,11 +1244,10 @@ class VisionPolygon {
     required double maxDistance,
   }) {
     final radius = segment.collisionRadius;
-    final edge = segment.end - segment.start;
-    final edgeLength = edge.distance;
+    final edgeLength = segment.length;
     if (edgeLength <= _epsilon) return null;
-    final tangent = edge / edgeLength;
-    final normal = Offset(-tangent.dy, tangent.dx);
+    final tangent = segment.tangent;
+    final normal = segment.normal;
     final fromStart = origin - segment.start;
     var entry = 0.0;
     var exit = maxDistance;

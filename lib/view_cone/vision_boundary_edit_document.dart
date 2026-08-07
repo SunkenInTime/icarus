@@ -80,34 +80,20 @@ class VisionBoundaryMapDraft {
     required List<List<Offset>> interiors,
     required List<List<Offset>> heightBoxes,
     List<List<Offset>> structuralChains = const [],
-    this.outerCollisionRadius = 0,
-    List<double> interiorCollisionRadii = const [],
-    List<double> heightBoxCollisionRadii = const [],
-    List<double> structuralChainCollisionRadii = const [],
+    Map<VisionBoundaryContourRef, double> collisionRadii = const {},
   })  : outer = List<Offset>.unmodifiable(outer),
         interiors = _immutableContours(interiors),
         heightBoxes = _immutableContours(heightBoxes),
         structuralChains = _immutableContours(structuralChains),
-        interiorCollisionRadii = _immutableRadii(
-          interiorCollisionRadii,
-          interiors.length,
-          'interiorCollisionRadii',
-        ),
-        heightBoxCollisionRadii = _immutableRadii(
-          heightBoxCollisionRadii,
-          heightBoxes.length,
-          'heightBoxCollisionRadii',
-        ),
-        structuralChainCollisionRadii = _immutableRadii(
-          structuralChainCollisionRadii,
-          structuralChains.length,
-          'structuralChainCollisionRadii',
+        collisionRadii = Map<VisionBoundaryContourRef, double>.unmodifiable(
+          collisionRadii,
         ) {
-    if (!outerCollisionRadius.isFinite || outerCollisionRadius < 0) {
-      throw ArgumentError.value(
-        outerCollisionRadius,
-        'outerCollisionRadius',
-      );
+    for (final entry in collisionRadii.entries) {
+      if (!_isValidContourRef(entry.key) ||
+          !entry.value.isFinite ||
+          entry.value < 0) {
+        throw ArgumentError.value(collisionRadii, 'collisionRadii');
+      }
     }
   }
 
@@ -127,10 +113,6 @@ class VisionBoundaryMapDraft {
     final structuralChains = value['structuralChains'] == null
         ? const <List<Offset>>[]
         : _chains(value['structuralChains'], 'structuralChains');
-    final radii = value['collisionRadii'];
-    if (radii != null && radii is! Map<String, dynamic>) {
-      throw const FormatException('Invalid collisionRadii.');
-    }
     return VisionBoundaryMapDraft(
       map: map,
       sourceBounds: sourceBounds,
@@ -138,20 +120,12 @@ class VisionBoundaryMapDraft {
       interiors: interiors,
       heightBoxes: heightBoxes,
       structuralChains: structuralChains,
-      outerCollisionRadius:
-          radii == null ? 0 : _radius(radii['outer'], 'collisionRadii.outer'),
-      interiorCollisionRadii: radii == null
-          ? const []
-          : _radii(radii['interiors'], 'collisionRadii.interiors'),
-      heightBoxCollisionRadii: radii == null
-          ? const []
-          : _radii(radii['heightBoxes'], 'collisionRadii.heightBoxes'),
-      structuralChainCollisionRadii: radii == null
-          ? const []
-          : _radii(
-              radii['structuralChains'],
-              'collisionRadii.structuralChains',
-            ),
+      collisionRadii: _decodeCollisionRadii(
+        value['collisionRadii'],
+        interiorCount: interiors.length,
+        heightBoxCount: heightBoxes.length,
+        structuralChainCount: structuralChains.length,
+      ),
     );
   }
 
@@ -182,6 +156,14 @@ class VisionBoundaryMapDraft {
               (!group.isClosed || group.requiresEvidence),
         )
         .toList(growable: false);
+    final structuralPaths = [
+      for (final group in structuralGroups)
+        for (final path in group.paths)
+          (
+            points: List<Offset>.unmodifiable(path),
+            radius: _groupCollisionRadius(group),
+          ),
+    ];
     return VisionBoundaryMapDraft(
       map: map,
       sourceBounds: outer.bounds,
@@ -193,20 +175,27 @@ class VisionBoundaryMapDraft {
         for (final group in heightBoxes) _withoutClosingPoint(group.points),
       ],
       structuralChains: [
-        for (final group in structuralGroups)
-          for (final path in group.paths) List<Offset>.unmodifiable(path),
+        for (final path in structuralPaths) path.points,
       ],
-      outerCollisionRadius: _groupCollisionRadius(outer),
-      interiorCollisionRadii: [
-        for (final group in interiors) _groupCollisionRadius(group),
-      ],
-      heightBoxCollisionRadii: [
-        for (final group in heightBoxes) _groupCollisionRadius(group),
-      ],
-      structuralChainCollisionRadii: [
-        for (final group in structuralGroups)
-          for (final _ in group.paths) _groupCollisionRadius(group),
-      ],
+      collisionRadii: {
+        const VisionBoundaryContourRef(VisionBoundaryContourKind.outer):
+            _groupCollisionRadius(outer),
+        for (var index = 0; index < interiors.length; index += 1)
+          VisionBoundaryContourRef(
+            VisionBoundaryContourKind.interior,
+            index,
+          ): _groupCollisionRadius(interiors[index]),
+        for (var index = 0; index < heightBoxes.length; index += 1)
+          VisionBoundaryContourRef(
+            VisionBoundaryContourKind.heightBox,
+            index,
+          ): _groupCollisionRadius(heightBoxes[index]),
+        for (var index = 0; index < structuralPaths.length; index += 1)
+          VisionBoundaryContourRef(
+            VisionBoundaryContourKind.structuralChain,
+            index,
+          ): structuralPaths[index].radius,
+      },
     );
   }
 
@@ -216,10 +205,7 @@ class VisionBoundaryMapDraft {
   final List<List<Offset>> interiors;
   final List<List<Offset>> heightBoxes;
   final List<List<Offset>> structuralChains;
-  final double outerCollisionRadius;
-  final List<double> interiorCollisionRadii;
-  final List<double> heightBoxCollisionRadii;
-  final List<double> structuralChainCollisionRadii;
+  final Map<VisionBoundaryContourRef, double> collisionRadii;
 
   Iterable<VisionBoundaryContourRef> get contourRefs sync* {
     yield const VisionBoundaryContourRef(VisionBoundaryContourKind.outer);
@@ -250,6 +236,19 @@ class VisionBoundaryMapDraft {
 
   bool isClosed(VisionBoundaryContourRef ref) =>
       ref.kind != VisionBoundaryContourKind.structuralChain;
+
+  double collisionRadius(VisionBoundaryContourRef ref) =>
+      collisionRadii[ref] ?? 0;
+
+  bool _isValidContourRef(VisionBoundaryContourRef ref) => switch (ref.kind) {
+        VisionBoundaryContourKind.outer => ref.index == 0,
+        VisionBoundaryContourKind.interior =>
+          ref.index >= 0 && ref.index < interiors.length,
+        VisionBoundaryContourKind.heightBox =>
+          ref.index >= 0 && ref.index < heightBoxes.length,
+        VisionBoundaryContourKind.structuralChain =>
+          ref.index >= 0 && ref.index < structuralChains.length,
+      };
 
   Offset project(
     Offset sourcePoint, {
@@ -314,10 +313,7 @@ class VisionBoundaryMapDraft {
         structuralChains: [
           for (final points in structuralChains) shifted(points),
         ],
-        outerCollisionRadius: outerCollisionRadius,
-        interiorCollisionRadii: interiorCollisionRadii,
-        heightBoxCollisionRadii: heightBoxCollisionRadii,
-        structuralChainCollisionRadii: structuralChainCollisionRadii,
+        collisionRadii: collisionRadii,
       );
     }
 
@@ -354,10 +350,7 @@ class VisionBoundaryMapDraft {
           interiors: interiors,
           heightBoxes: heightBoxes,
           structuralChains: structuralChains,
-          outerCollisionRadius: outerCollisionRadius,
-          interiorCollisionRadii: interiorCollisionRadii,
-          heightBoxCollisionRadii: heightBoxCollisionRadii,
-          structuralChainCollisionRadii: structuralChainCollisionRadii,
+          collisionRadii: collisionRadii,
         );
       case VisionBoundaryContourKind.interior:
         return VisionBoundaryMapDraft(
@@ -370,10 +363,7 @@ class VisionBoundaryMapDraft {
           ],
           heightBoxes: heightBoxes,
           structuralChains: structuralChains,
-          outerCollisionRadius: outerCollisionRadius,
-          interiorCollisionRadii: interiorCollisionRadii,
-          heightBoxCollisionRadii: heightBoxCollisionRadii,
-          structuralChainCollisionRadii: structuralChainCollisionRadii,
+          collisionRadii: collisionRadii,
         );
       case VisionBoundaryContourKind.heightBox:
         return VisionBoundaryMapDraft(
@@ -386,10 +376,7 @@ class VisionBoundaryMapDraft {
               index == ref.index ? replacement : heightBoxes[index],
           ],
           structuralChains: structuralChains,
-          outerCollisionRadius: outerCollisionRadius,
-          interiorCollisionRadii: interiorCollisionRadii,
-          heightBoxCollisionRadii: heightBoxCollisionRadii,
-          structuralChainCollisionRadii: structuralChainCollisionRadii,
+          collisionRadii: collisionRadii,
         );
       case VisionBoundaryContourKind.structuralChain:
         return VisionBoundaryMapDraft(
@@ -402,10 +389,7 @@ class VisionBoundaryMapDraft {
             for (var index = 0; index < structuralChains.length; index += 1)
               index == ref.index ? replacement : structuralChains[index],
           ],
-          outerCollisionRadius: outerCollisionRadius,
-          interiorCollisionRadii: interiorCollisionRadii,
-          heightBoxCollisionRadii: heightBoxCollisionRadii,
-          structuralChainCollisionRadii: structuralChainCollisionRadii,
+          collisionRadii: collisionRadii,
         );
     }
   }
@@ -425,20 +409,7 @@ class VisionBoundaryMapDraft {
         'structuralChains': [
           for (final points in structuralChains) _encodedContour(points),
         ],
-        'collisionRadii': {
-          'outer': _encodedNumber(outerCollisionRadius),
-          'interiors': [
-            for (final radius in interiorCollisionRadii) _encodedNumber(radius),
-          ],
-          'heightBoxes': [
-            for (final radius in heightBoxCollisionRadii)
-              _encodedNumber(radius),
-          ],
-          'structuralChains': [
-            for (final radius in structuralChainCollisionRadii)
-              _encodedNumber(radius),
-          ],
-        },
+        'collisionRadii': _encodedCollisionRadii(),
       };
 
   String get signature => jsonEncode(toJson());
@@ -448,24 +419,85 @@ class VisionBoundaryMapDraft {
         for (final contour in contours) List<Offset>.unmodifiable(contour),
       ]);
 
-  static List<double> _immutableRadii(
-    List<double> values,
-    int expectedLength,
-    String label,
-  ) {
-    final normalized = values.isEmpty
-        ? List<double>.filled(expectedLength, 0)
-        : List<double>.of(values);
-    if (normalized.length != expectedLength ||
-        normalized.any((value) => !value.isFinite || value < 0)) {
-      throw ArgumentError.value(values, label);
+  static Map<VisionBoundaryContourRef, double> _decodeCollisionRadii(
+    Object? value, {
+    required int interiorCount,
+    required int heightBoxCount,
+    required int structuralChainCount,
+  }) {
+    if (value == null) return const {};
+    if (value is! Map<String, dynamic>) {
+      throw const FormatException('Invalid collisionRadii.');
     }
-    return List<double>.unmodifiable(normalized);
+    final interiors = _radii(
+      value['interiors'],
+      interiorCount,
+      'collisionRadii.interiors',
+    );
+    final heightBoxes = _radii(
+      value['heightBoxes'],
+      heightBoxCount,
+      'collisionRadii.heightBoxes',
+    );
+    final structuralChains = _radii(
+      value['structuralChains'],
+      structuralChainCount,
+      'collisionRadii.structuralChains',
+    );
+    return {
+      const VisionBoundaryContourRef(VisionBoundaryContourKind.outer):
+          value['outer'] == null
+              ? 0
+              : _radius(value['outer'], 'collisionRadii.outer'),
+      for (var index = 0; index < interiors.length; index += 1)
+        VisionBoundaryContourRef(VisionBoundaryContourKind.interior, index):
+            interiors[index],
+      for (var index = 0; index < heightBoxes.length; index += 1)
+        VisionBoundaryContourRef(VisionBoundaryContourKind.heightBox, index):
+            heightBoxes[index],
+      for (var index = 0; index < structuralChains.length; index += 1)
+        VisionBoundaryContourRef(
+          VisionBoundaryContourKind.structuralChain,
+          index,
+        ): structuralChains[index],
+    };
   }
 
-  static List<double> _radii(Object? value, String label) {
-    if (value == null) return const [];
-    if (value is! List) throw FormatException('Invalid $label list.');
+  Map<String, dynamic> _encodedCollisionRadii() {
+    List<num> encode(VisionBoundaryContourKind kind, int count) => [
+          for (var index = 0; index < count; index += 1)
+            _encodedNumber(
+              collisionRadius(VisionBoundaryContourRef(kind, index)),
+            ),
+        ];
+    return {
+      'outer': _encodedNumber(
+        collisionRadius(
+          const VisionBoundaryContourRef(VisionBoundaryContourKind.outer),
+        ),
+      ),
+      'interiors': encode(
+        VisionBoundaryContourKind.interior,
+        interiors.length,
+      ),
+      'heightBoxes': encode(
+        VisionBoundaryContourKind.heightBox,
+        heightBoxes.length,
+      ),
+      'structuralChains': encode(
+        VisionBoundaryContourKind.structuralChain,
+        structuralChains.length,
+      ),
+    };
+  }
+
+  static List<double> _radii(Object? value, int count, String label) {
+    if (value == null || (value is List && value.isEmpty)) {
+      return List<double>.filled(count, 0);
+    }
+    if (value is! List || value.length != count) {
+      throw FormatException('Invalid $label list.');
+    }
     return List<double>.unmodifiable([
       for (final encoded in value) _radius(encoded, label),
     ]);
