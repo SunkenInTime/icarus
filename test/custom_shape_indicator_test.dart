@@ -249,17 +249,9 @@ void main() {
       ),
     );
 
-    final mouseWatch = tester.widget<MouseWatch>(find.byType(MouseWatch));
-    final colorItem = mouseWatch.contextMenuItems!.first;
-    expect((colorItem.child as Text).data, 'Color');
-
-    final redItem = colorItem.items.firstWhere(
-      (item) =>
-          item is ShadContextMenuItem &&
-          (item.child as Text).data == 'Red',
-    ) as ShadContextMenuItem;
-    redItem.onPressed!();
-    await tester.pump();
+    await _openShapeColorSubmenu(tester);
+    await tester.tap(find.text('Red'));
+    await tester.pumpAndSettle();
 
     expect(
       container.read(utilityProvider).single.customColorValue,
@@ -267,22 +259,15 @@ void main() {
     );
     expect(container.read(actionProvider), hasLength(1));
 
-    final updatedMouseWatch =
-        tester.widget<MouseWatch>(find.byType(MouseWatch));
-    final updatedColorItem = updatedMouseWatch.contextMenuItems!.first;
-    final selectedRedItem = updatedColorItem.items.firstWhere(
-      (item) =>
-          item is ShadContextMenuItem &&
-          (item.child as Text).data == 'Red',
-    ) as ShadContextMenuItem;
+    await _openShapeColorSubmenu(tester);
+    final selectedRedItem = tester
+        .widgetList<ShadContextMenuItem>(find.byType(ShadContextMenuItem))
+        .firstWhere(
+          (item) => item.child is Text && (item.child as Text).data == 'Red',
+        );
     expect(selectedRedItem.trailing, isA<Icon>());
 
-    final customColorItem = updatedColorItem.items.firstWhere(
-      (item) =>
-          item is ShadContextMenuItem &&
-          (item.child as Text).data == 'Custom color…',
-    ) as ShadContextMenuItem;
-    customColorItem.onPressed!();
+    await tester.tap(find.text('Custom color…'));
     await tester.pumpAndSettle();
 
     expect(find.text('Custom color'), findsOneWidget);
@@ -290,6 +275,23 @@ void main() {
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
   });
+}
+
+Future<void> _openShapeColorSubmenu(WidgetTester tester) async {
+  final centerHandle = find.byType(MouseWatch).first;
+  await tester.tapAt(
+    tester.getCenter(centerHandle),
+    buttons: kSecondaryMouseButton,
+  );
+  await tester.pumpAndSettle();
+
+  final colorItem = find.text('Color');
+  expect(colorItem, findsOneWidget);
+  await tester.sendEventToBinding(
+    PointerHoverEvent(position: tester.getCenter(colorItem)),
+  );
+  await tester.pump(const Duration(milliseconds: 150));
+  await tester.pumpAndSettle();
 }
 
 ProviderContainer _containerWith(PlacedUtility utility) {

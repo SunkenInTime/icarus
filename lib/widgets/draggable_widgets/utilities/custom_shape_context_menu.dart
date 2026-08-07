@@ -8,12 +8,10 @@ import 'package:icarus/widgets/sidebar_widgets/color_library.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 List<ShadContextMenuItem> buildCustomShapeContextMenuItems(
-  BuildContext context,
   WidgetRef ref,
   PlacedUtility utility,
 ) {
   final currentColorValue = utility.customColorValue;
-  final colors = ref.watch(colorLibraryProvider);
 
   return [
     ShadContextMenuItem(
@@ -22,7 +20,26 @@ List<ShadContextMenuItem> buildCustomShapeContextMenuItems(
             ? Colors.transparent
             : Color(currentColorValue),
       ),
-      items: [
+      items: [_CustomShapeColorItems(utility: utility)],
+      child: const Text('Color'),
+    ),
+    ...buildAdjacentPageCopyMenuItems(ref, utility.id),
+  ];
+}
+
+class _CustomShapeColorItems extends ConsumerWidget {
+  const _CustomShapeColorItems({required this.utility});
+
+  final PlacedUtility utility;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentColorValue = utility.customColorValue;
+    final colors = ref.watch(colorLibraryProvider);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
         for (final entry in colors)
           ShadContextMenuItem(
             leading: _ColorSwatch(color: entry.color),
@@ -56,10 +73,8 @@ List<ShadContextMenuItem> buildCustomShapeContextMenuItems(
           child: const Text('Custom color…'),
         ),
       ],
-      child: const Text('Color'),
-    ),
-    ...buildAdjacentPageCopyMenuItems(ref, utility.id),
-  ];
+    );
+  }
 }
 
 String _colorLabel(ColorLibraryEntry entry) {
