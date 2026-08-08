@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
@@ -255,6 +256,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         Navigator.push(
           context,
           PageRouteBuilder(
+            settings: const RouteSettings(name: Routes.strategyView),
             transitionDuration: const Duration(milliseconds: 200),
             reverseTransitionDuration:
                 const Duration(milliseconds: 200), // pop duration
