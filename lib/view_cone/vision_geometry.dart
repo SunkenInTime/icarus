@@ -193,11 +193,12 @@ class VisionGeometryMap {
                 if (group.excludesObserverInLayer(layerIndex)) group,
             ]);
             final selectedBoundary = _deduplicateSegments([
-              for (final group in activeGroups) ...group.segments,
+              for (final group in activeGroups) ...group.collisionSegments,
             ]);
             final matchedBoundary = _deduplicateSegments([
               for (final group in activeGroups)
-                if (group.hasEvidenceInLayer(layerIndex)) ...group.segments,
+                if (group.hasEvidenceInLayer(layerIndex))
+                  ...group.collisionSegments,
             ]);
             final matchedSource = List<VisionSegment>.unmodifiable([
               for (var index = 0;
@@ -1039,13 +1040,14 @@ class VisionGeometryLayer {
     final excludedKeys = <String>{
       for (final group in collisionGroups)
         if (excludedGroupIds.contains(group.id))
-          for (final segment in group.segments) visionSegmentKey(segment),
+          for (final segment in group.collisionSegments)
+            visionSegmentKey(segment),
     };
     // A deduplicated runtime segment can be owned by more than one contour.
     // Keep it whenever any non-excluded owner still needs that wall.
     for (final group in collisionGroups) {
       if (excludedGroupIds.contains(group.id)) continue;
-      excludedKeys.removeAll(group.segments.map(visionSegmentKey));
+      excludedKeys.removeAll(group.collisionSegments.map(visionSegmentKey));
     }
     return List<VisionSegment>.unmodifiable([
       for (final index in indexes)
@@ -1072,9 +1074,12 @@ class VisionPolygon {
     required double facingAngle,
     required double coneAngle,
     required double range,
+    double surfaceClearance = 0,
   }) {
     final safeRange = math.max(0.0, range);
     final safeCone = coneAngle.clamp(0.0, math.pi * 2).toDouble();
+    final safeClearance =
+        surfaceClearance.isFinite ? math.max(0.0, surfaceClearance) : 0.0;
     if (safeRange <= _epsilon || safeCone <= _epsilon) {
       return <Offset>[origin];
     }
@@ -1118,28 +1123,30 @@ class VisionPolygon {
     for (final segment in candidateSegments) {
       final collisionVertices = segment.collisionVertices;
       final hasStrokeArea = segment.collisionRadius > _epsilon;
-      final eventVertices = hasStrokeArea
-          ? _strokeSilhouetteVertices(segment, origin)
-          : collisionVertices;
-      for (final vertex in eventVertices) {
-        final delta = vertex - origin;
-        if (delta.distanceSquared <= rangeSquared + _epsilon) {
-          addEventAngle(math.atan2(delta.dy, delta.dx));
+      final collisionShapes =
+          hasStrokeArea ? segment.collisionPolygons : [collisionVertices];
+      for (final shape in collisionShapes) {
+        final eventVertices =
+            hasStrokeArea ? _polygonSilhouetteVertices(shape, origin) : shape;
+        for (final vertex in eventVertices) {
+          final delta = vertex - origin;
+          if (delta.distanceSquared <= rangeSquared + _epsilon) {
+            addEventAngle(math.atan2(delta.dy, delta.dx));
+          }
         }
-      }
 
-      final collisionEdgeCount = hasStrokeArea ? collisionVertices.length : 1;
-      for (var index = 0; index < collisionEdgeCount; index += 1) {
-        final nextIndex =
-            hasStrokeArea ? (index + 1) % collisionVertices.length : 1;
-        for (final intersection in _lineSegmentCircleIntersections(
-          collisionVertices[index],
-          collisionVertices[nextIndex],
-          origin,
-          safeRange,
-        )) {
-          final delta = intersection - origin;
-          addEventAngle(math.atan2(delta.dy, delta.dx));
+        final collisionEdgeCount = hasStrokeArea ? shape.length : 1;
+        for (var index = 0; index < collisionEdgeCount; index += 1) {
+          final nextIndex = hasStrokeArea ? (index + 1) % shape.length : 1;
+          for (final intersection in _lineSegmentCircleIntersections(
+            shape[index],
+            shape[nextIndex],
+            origin,
+            safeRange,
+          )) {
+            final delta = intersection - origin;
+            addEventAngle(math.atan2(delta.dy, delta.dx));
+          }
         }
       }
     }
@@ -1168,7 +1175,7 @@ class VisionPolygon {
           maxDistance: distance,
         );
         if (hitDistance != null && hitDistance < distance) {
-          distance = hitDistance;
+          distance = math.max(0, hitDistance - safeClearance);
         }
       }
       points.add(origin + direction * distance);
@@ -1176,12 +1183,12 @@ class VisionPolygon {
     return points;
   }
 
-  static List<Offset> _strokeSilhouetteVertices(
-    VisionSegment segment,
+  static List<Offset> _polygonSilhouetteVertices(
+    List<Offset> vertices,
     Offset origin,
   ) {
     final verticesByAngle = [
-      for (final vertex in segment.collisionVertices)
+      for (final vertex in vertices)
         (
           angle: _normalizePositive(
             math.atan2(vertex.dy - origin.dy, vertex.dx - origin.dx),
@@ -1190,7 +1197,7 @@ class VisionPolygon {
         ),
     ]..sort((left, right) => left.angle.compareTo(right.angle));
 
-    // The visible rectangle occupies the complement of its largest angular
+    // The visible convex shape occupies the complement of its largest angular
     // gap. The two vertices bordering that gap are its exact silhouette.
     var largestGap = -1.0;
     var gapStart = 0;
@@ -1218,11 +1225,7 @@ class VisionPolygon {
   ) =>
       (
         index: index,
-        minimumDistance: math.max(
-          0,
-          math.sqrt(visionDistanceSquaredToSegment(origin, segment)) -
-              segment.collisionRadius,
-        ),
+        minimumDistance: segment.minimumCollisionDistance(origin),
         segment: segment,
       );
 
@@ -1269,8 +1272,24 @@ class VisionPolygon {
         maxDistance: maxDistance,
       );
     }
-    final edge = segment.delta;
-    final originToStart = segment.start - origin;
+    return _rayLineSegmentDistance(
+      origin: origin,
+      direction: direction,
+      start: segment.start,
+      end: segment.end,
+      maxDistance: maxDistance,
+    );
+  }
+
+  static double? _rayLineSegmentDistance({
+    required Offset origin,
+    required Offset direction,
+    required Offset start,
+    required Offset end,
+    required double maxDistance,
+  }) {
+    final edge = end - start;
+    final originToStart = start - origin;
     final denominator = _cross(direction, edge);
     if (denominator.abs() <= _epsilon) return null;
 
@@ -1286,6 +1305,79 @@ class VisionPolygon {
   }
 
   static double? _rayStrokeDistance({
+    required Offset origin,
+    required Offset direction,
+    required VisionSegment segment,
+    required double maxDistance,
+  }) {
+    var nearest = _rayStrokeRectangleDistance(
+      origin: origin,
+      direction: direction,
+      segment: segment,
+      maxDistance: maxDistance,
+    );
+    for (final polygon in segment.additionalCollisionPolygons) {
+      final distance = _rayPolygonDistance(
+        origin: origin,
+        direction: direction,
+        polygon: polygon,
+        maxDistance: nearest ?? maxDistance,
+      );
+      if (distance != null && (nearest == null || distance < nearest)) {
+        nearest = distance;
+      }
+    }
+    return nearest;
+  }
+
+  static double? _rayPolygonDistance({
+    required Offset origin,
+    required Offset direction,
+    required List<Offset> polygon,
+    required double maxDistance,
+  }) {
+    var inside = false;
+    var nearest = double.infinity;
+    for (var index = 0; index < polygon.length; index += 1) {
+      final start = polygon[index];
+      final end = polygon[(index + 1) % polygon.length];
+      if (_pointIsOnLineSegment(origin, start, end)) return 0;
+      if ((start.dy > origin.dy) != (end.dy > origin.dy)) {
+        final intersectionX = start.dx +
+            (origin.dy - start.dy) * (end.dx - start.dx) / (end.dy - start.dy);
+        if (intersectionX > origin.dx) inside = !inside;
+      }
+      final distance = _rayLineSegmentDistance(
+        origin: origin,
+        direction: direction,
+        start: start,
+        end: end,
+        maxDistance: math.min(maxDistance, nearest),
+      );
+      if (distance != null && distance < nearest) nearest = distance;
+    }
+    if (inside) return 0;
+    return nearest.isFinite ? nearest : null;
+  }
+
+  static bool _pointIsOnLineSegment(
+    Offset point,
+    Offset start,
+    Offset end,
+  ) {
+    const tolerance = 0.001;
+    if (point.dx < math.min(start.dx, end.dx) - tolerance ||
+        point.dx > math.max(start.dx, end.dx) + tolerance ||
+        point.dy < math.min(start.dy, end.dy) - tolerance ||
+        point.dy > math.max(start.dy, end.dy) + tolerance) {
+      return false;
+    }
+    final edge = end - start;
+    return _cross(edge, point - start).abs() <=
+        tolerance * math.max(1, edge.distance);
+  }
+
+  static double? _rayStrokeRectangleDistance({
     required Offset origin,
     required Offset direction,
     required VisionSegment segment,
@@ -1321,8 +1413,6 @@ class VisionPolygon {
       return entry <= exit + _epsilon;
     }
 
-    // SVG strokes use butt caps by default, so one segment occupies this
-    // exact oriented rectangle. Adjacent path segments supply their joins.
     if (!clipAxis(
           position: _dot(fromStart, tangent),
           rate: _dot(direction, tangent),

@@ -9,6 +9,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/view_cone_debug_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
@@ -112,6 +113,7 @@ class ViewConeWidget extends ConsumerWidget {
         // while this provider fallback keeps clipping correct for any caller
         // that only supplies the persisted utility id.
         final effectiveRotation = rotation ?? placedUtility?.rotation ?? 0;
+        final screenZoom = ref.watch(screenZoomProvider).clamp(1.0, 8.0);
         // MapProvider.switchSide mirrors every placed item before toggling the
         // side. The resolved origin is therefore already in the current map's
         // display frame and pairs with the correspondingly mirrored layer.
@@ -121,6 +123,10 @@ class ViewConeWidget extends ConsumerWidget {
           facingAngle: effectiveRotation - pi / 2,
           coneAngle: angle * pi / 180,
           range: coord.virtualLengthToWorld(currentLength),
+          // Leave half a physical pixel between the antialiased cone clip and
+          // the authored wall surface. This prevents their coverage fringes
+          // from blending without creating a zoom-dependent visible gap.
+          surfaceClearance: coord.screenHeightToWorld(0.5 / screenZoom),
         );
         final inverseRotation = -effectiveRotation;
         final cosine = cos(inverseRotation);

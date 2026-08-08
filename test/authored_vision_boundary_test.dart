@@ -251,6 +251,10 @@ void main() {
         ('defense', defenseSvg, geometry.defenseLayers),
       ]) {
         final exactKeys = side.$2.segments.map(visionSegmentKey).toSet();
+        final exactCollisionKeys = side.$2.collisionGroups
+            .expand((group) => group.collisionSegments)
+            .map(visionSegmentKey)
+            .toSet();
         expect(
           side.$2.collisionGroups.where(
             (group) => group.kind == VisionCollisionKind.maskBoundary,
@@ -272,7 +276,7 @@ void main() {
           final activeKeys = layer.segments.map(visionSegmentKey).toSet();
           expect(
             activeKeys,
-            everyElement(isIn(exactKeys)),
+            everyElement(isIn(exactCollisionKeys)),
             reason:
                 '${map.name} ${side.$1} elevation ${layer.elevation} fidelity',
           );

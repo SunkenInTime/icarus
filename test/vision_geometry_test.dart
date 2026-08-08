@@ -310,7 +310,11 @@ void main() {
             _segmentKeys(layer.segments), _segmentKeys(layer.boundarySegments));
         expect(
           _segmentKeys(layer.segments),
-          _segmentKeys(layer.collisionGroups.expand((group) => group.segments)),
+          _segmentKeys(
+            layer.collisionGroups.expand(
+              (group) => group.collisionSegments,
+            ),
+          ),
         );
         for (final group in layer.collisionGroups) {
           expect(
@@ -1361,6 +1365,33 @@ void main() {
       }
     });
 
+    test('clips at the rendered miter edge where thick wall segments turn', () {
+      final group = VisionCollisionGroup.geometry(
+        points: const [
+          Offset(-5, 0),
+          Offset.zero,
+          Offset(0, 5),
+        ],
+        kind: VisionCollisionKind.structuralChain,
+        isClosed: false,
+        collisionRadius: 1,
+      );
+      final layer = VisionGeometryLayer(
+        elevation: 0,
+        segments: group.collisionSegments,
+      );
+
+      final hit = _centerRayPoint(
+        layer: layer,
+        origin: const Offset(5, -0.5),
+        facingAngle: math.pi,
+        range: 10,
+      );
+
+      expect(hit.dx, closeTo(1, 0.000001));
+      expect(hit.dy, closeTo(-0.5, 0.000001));
+    });
+
     test('uses the range arc when no wall blocks a ray', () {
       const origin = Offset(12, 18);
       const range = 30.0;
@@ -1835,7 +1866,9 @@ void _expectExactSvgRuntime({
   required VisionBoundary boundary,
   required String reason,
 }) {
-  final allowedKeys = _segmentKeys(boundary.segments);
+  final allowedKeys = _segmentKeys(
+    boundary.collisionGroups.expand((group) => group.collisionSegments),
+  );
   for (final group in boundary.collisionGroups) {
     final exactPathKeys = <String>{
       for (final path in group.paths)
@@ -1852,7 +1885,7 @@ void _expectExactSvgRuntime({
   for (final layer in layers) {
     final runtimeKeys = _segmentKeys(layer.segments);
     final groupedKeys = _segmentKeys(
-      layer.collisionGroups.expand((group) => group.segments),
+      layer.collisionGroups.expand((group) => group.collisionSegments),
     );
 
     expect(layer.sourceSegments, isEmpty, reason: '$reason source geometry');
@@ -1875,7 +1908,7 @@ void _expectExactSvgRuntime({
       );
       expect(
         runtimeKeys,
-        containsAll(_segmentKeys(group.segments)),
+        containsAll(_segmentKeys(group.collisionSegments)),
         reason: '$reason ${group.id} is not atomically present',
       );
     }
