@@ -4,20 +4,35 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/providers/vision_boundary_editor_provider.dart';
 import 'package:icarus/view_cone/authored_vision_boundary.dart';
 import 'package:icarus/view_cone/svg_vision_boundary.dart';
+import 'package:icarus/view_cone/vision_boundary_edit_document.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 
 final viewConeGeometryProvider =
-    FutureProvider.family<VisionGeometryMap?, MapValue>((ref, map) async {
+    FutureProvider.family<VisionGeometryMap?, MapValue>(
+  _loadViewConeGeometry,
+);
+
+Future<VisionGeometryMap?> _loadViewConeGeometry(
+  Ref ref,
+  MapValue map,
+) async {
   if (!Maps.hasVisionGeometry(map)) return null;
 
+  final editorDraft = ref.watch(
+    visionBoundaryEditorProvider.select(
+      (state) => state.map == map ? state.committedDraft : null,
+    ),
+  );
   final mapName = Maps.mapNames[map]!;
   final sources = await Future.wait([
     rootBundle.loadString('assets/maps/${mapName}_vision.json'),
     rootBundle.loadString('assets/maps/${mapName}_map.svg'),
     rootBundle.loadString('assets/maps/${mapName}_map_defense.svg'),
     rootBundle.loadString('assets/maps/vision_boundary_additions.json'),
+    rootBundle.loadString(visionBoundaryEditsAsset),
   ]);
   final decoded = await compute(_decodeVisionGeometry, sources[0]);
   final geometry = VisionGeometryMap.fromCompactJson(map, decoded);
@@ -73,24 +88,33 @@ final viewConeGeometryProvider =
   var attackBoundary = svgAttackBoundary;
   var defenseBoundary = svgDefenseBoundary;
   try {
-    final referenceSource = await rootBundle.loadString(
-      'assets/maps/vision_collision_reference.json',
-    );
-    final reference = await compute(_decodeVisionGeometry, referenceSource);
-    attackBoundary = AuthoredVisionBoundary.parse(
-      map: map,
-      document: reference,
-      attackTargetBounds: svgAttackBoundary.outerGroup.bounds,
-    );
-    defenseBoundary = AuthoredVisionBoundary.parse(
-      map: map,
-      document: reference,
-      attackTargetBounds: svgAttackBoundary.outerGroup.bounds,
-      isDefense: true,
-    );
+    var edits = await compute(_decodeVisionGeometry, sources[4]);
+    if (editorDraft != null) {
+      edits = withVisionBoundaryDraft(
+        document: edits,
+        draft: editorDraft,
+      );
+    }
+    final maps = edits['maps'];
+    if (maps is! Map<String, dynamic>) {
+      throw const FormatException('Invalid collision edit manifest.');
+    }
+    if (maps.containsKey(map.name)) {
+      attackBoundary = AuthoredVisionBoundary.parse(
+        map: map,
+        document: edits,
+        attackTargetBounds: svgAttackBoundary.outerGroup.bounds,
+      );
+      defenseBoundary = AuthoredVisionBoundary.parse(
+        map: map,
+        document: edits,
+        attackTargetBounds: svgAttackBoundary.outerGroup.bounds,
+        isDefense: true,
+      );
+    }
   } on Object catch (error) {
     debugPrint(
-      'Unable to load authored collision reference; using SVG boundary: '
+      'Unable to load manual boundary edits; using exact SVG boundary: '
       '$error',
     );
   }
@@ -111,7 +135,7 @@ final viewConeGeometryProvider =
       defenseBoundary: defenseBoundary,
     );
   }
-});
+}
 
 Map<String, dynamic> _decodeVisionGeometry(String source) {
   final decoded = jsonDecode(source);

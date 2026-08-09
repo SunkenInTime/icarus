@@ -12,26 +12,165 @@ enum VisionCollisionConfidence {
 }
 
 class VisionSegment {
-  VisionSegment(this.start, this.end)
-      : minX = math.min(start.dx, end.dx),
+  factory VisionSegment(
+    Offset start,
+    Offset end, {
+    double collisionRadius = 0,
+    List<List<Offset>> additionalCollisionPolygons = const [],
+  }) {
+    final radius = _validatedRadius(collisionRadius);
+    final delta = end - start;
+    final lengthSquared = delta.distanceSquared;
+    final length = math.sqrt(lengthSquared);
+    final tangent = length <= 1e-9 ? Offset.zero : delta / length;
+    final normal = Offset(-tangent.dy, tangent.dx);
+    final collisionVertices = List<Offset>.unmodifiable(
+      radius <= 1e-9
+          ? [start, end]
+          : [
+              start + normal * radius,
+              end + normal * radius,
+              end - normal * radius,
+              start - normal * radius,
+            ],
+    );
+    final extraPolygons = List<List<Offset>>.unmodifiable([
+      for (final polygon in additionalCollisionPolygons)
+        if (polygon.length >= 3) List<Offset>.unmodifiable(polygon),
+    ]);
+    if (extraPolygons.length != additionalCollisionPolygons.length) {
+      throw ArgumentError.value(
+        additionalCollisionPolygons,
+        'additionalCollisionPolygons',
+      );
+    }
+    final collisionPolygons = List<List<Offset>>.unmodifiable([
+      if (radius > 1e-9) collisionVertices,
+      ...extraPolygons,
+    ]);
+    final extraPolygonBounds = List<Rect>.unmodifiable([
+      for (final polygon in extraPolygons)
+        Rect.fromLTRB(
+          polygon.map((point) => point.dx).reduce(math.min),
+          polygon.map((point) => point.dy).reduce(math.min),
+          polygon.map((point) => point.dx).reduce(math.max),
+          polygon.map((point) => point.dy).reduce(math.max),
+        ),
+    ]);
+    final collisionPoints = collisionPolygons.isEmpty
+        ? collisionVertices
+        : collisionPolygons.expand((polygon) => polygon).toList();
+    return VisionSegment._(
+      start,
+      end,
+      collisionRadius: radius,
+      delta: delta,
+      lengthSquared: lengthSquared,
+      length: length,
+      tangent: tangent,
+      normal: normal,
+      collisionVertices: collisionVertices,
+      additionalCollisionPolygons: extraPolygons,
+      additionalCollisionBounds: extraPolygonBounds,
+      collisionPolygons: collisionPolygons,
+      collisionMinX: collisionPoints.map((point) => point.dx).reduce(math.min),
+      collisionMaxX: collisionPoints.map((point) => point.dx).reduce(math.max),
+      collisionMinY: collisionPoints.map((point) => point.dy).reduce(math.min),
+      collisionMaxY: collisionPoints.map((point) => point.dy).reduce(math.max),
+    );
+  }
+
+  VisionSegment._(
+    this.start,
+    this.end, {
+    required this.collisionRadius,
+    required this.delta,
+    required this.lengthSquared,
+    required this.length,
+    required this.tangent,
+    required this.normal,
+    required this.collisionVertices,
+    required this.additionalCollisionPolygons,
+    required this.additionalCollisionBounds,
+    required this.collisionPolygons,
+    required this.collisionMinX,
+    required this.collisionMaxX,
+    required this.collisionMinY,
+    required this.collisionMaxY,
+  })  : minX = math.min(start.dx, end.dx),
         maxX = math.max(start.dx, end.dx),
         minY = math.min(start.dy, end.dy),
         maxY = math.max(start.dy, end.dy);
 
   final Offset start;
   final Offset end;
+  final double collisionRadius;
+  final Offset delta;
+  final double lengthSquared;
+  final double length;
+  final Offset tangent;
+  final Offset normal;
+  final List<Offset> collisionVertices;
+  final List<List<Offset>> additionalCollisionPolygons;
+  final List<Rect> additionalCollisionBounds;
+  final List<List<Offset>> collisionPolygons;
   final double minX;
   final double maxX;
   final double minY;
   final double maxY;
 
-  double get length => (end - start).distance;
+  final double collisionMinX;
+  final double collisionMaxX;
+  final double collisionMinY;
+  final double collisionMaxY;
+
+  VisionSegment withAdditionalCollisionPolygon(List<Offset> polygon) =>
+      VisionSegment(
+        start,
+        end,
+        collisionRadius: collisionRadius,
+        additionalCollisionPolygons: [
+          ...additionalCollisionPolygons,
+          polygon,
+        ],
+      );
+
+  double minimumCollisionDistance(Offset point) {
+    var distance = math
+        .max(
+          0.0,
+          math.sqrt(visionDistanceSquaredToSegment(point, this)) -
+              collisionRadius,
+        )
+        .toDouble();
+    for (final bounds in additionalCollisionBounds) {
+      final dx = point.dx < bounds.left
+          ? bounds.left - point.dx
+          : point.dx > bounds.right
+              ? point.dx - bounds.right
+              : 0.0;
+      final dy = point.dy < bounds.top
+          ? bounds.top - point.dy
+          : point.dy > bounds.bottom
+              ? point.dy - bounds.bottom
+              : 0.0;
+      distance = math.min(distance, math.sqrt(dx * dx + dy * dy));
+    }
+    return distance;
+  }
 
   bool intersectsRangeBounds(Offset origin, double range) {
-    return maxX >= origin.dx - range &&
-        minX <= origin.dx + range &&
-        maxY >= origin.dy - range &&
-        minY <= origin.dy + range;
+    return collisionMaxX >= origin.dx - range &&
+        collisionMinX <= origin.dx + range &&
+        collisionMaxY >= origin.dy - range &&
+        collisionMinY <= origin.dy + range;
+  }
+
+  static double _validatedRadius(double radius) {
+    if (!radius.isFinite || radius < 0) {
+      throw ArgumentError.value(radius, 'collisionRadius');
+    }
+    return radius;
   }
 }
 
@@ -41,13 +180,16 @@ class VisionCollisionGroup {
     required this.points,
     required this.paths,
     required this.segments,
+    required this.collisionSegments,
     required this.bounds,
     required this.kind,
     required this.isClosed,
     required this.isOuterBoundary,
     required this.nestingDepth,
     required this.requiresEvidence,
+    required this.isAuthoritative,
     required this.removesOwnEdgesWhenInside,
+    required this.inferObserverPassability,
     required this.layerMask,
     required this.evidenceLayerMask,
     required this.navigationLayerMask,
@@ -65,7 +207,10 @@ class VisionCollisionGroup {
     bool isOuterBoundary = false,
     int nestingDepth = 0,
     bool requiresEvidence = false,
+    bool isAuthoritative = false,
     bool removesOwnEdgesWhenInside = false,
+    bool inferObserverPassability = true,
+    double collisionRadius = 0,
   }) {
     final normalized = <Offset>[...points];
     if (isClosed &&
@@ -79,7 +224,11 @@ class VisionCollisionGroup {
         if ((normalizedPoints[index] - normalizedPoints[index - 1])
                 .distanceSquared >
             1e-9)
-          VisionSegment(normalizedPoints[index - 1], normalizedPoints[index]),
+          VisionSegment(
+            normalizedPoints[index - 1],
+            normalizedPoints[index],
+            collisionRadius: collisionRadius,
+          ),
     ]);
     if (segments.isEmpty) {
       throw const FormatException('Collision group has no usable segments.');
@@ -94,13 +243,19 @@ class VisionCollisionGroup {
       points: normalizedPoints,
       paths: List<List<Offset>>.unmodifiable([normalizedPoints]),
       segments: segments,
+      collisionSegments: _collisionSegmentsForPath(
+        segments,
+        isClosed: isClosed,
+      ),
       bounds: bounds,
       kind: kind,
       isClosed: isClosed,
       isOuterBoundary: isOuterBoundary,
       nestingDepth: nestingDepth,
       requiresEvidence: requiresEvidence,
+      isAuthoritative: isAuthoritative,
       removesOwnEdgesWhenInside: removesOwnEdgesWhenInside,
+      inferObserverPassability: inferObserverPassability,
       layerMask: 0,
       evidenceLayerMask: 0,
       navigationLayerMask: 0,
@@ -122,20 +277,34 @@ class VisionCollisionGroup {
     required List<List<Offset>> paths,
     required VisionCollisionKind kind,
     bool requiresEvidence = false,
+    bool isAuthoritative = false,
+    double collisionRadius = 0,
   }) {
     final normalizedPaths = <List<Offset>>[];
     final segments = <VisionSegment>[];
+    final collisionSegments = <VisionSegment>[];
     for (final path in paths) {
       final normalized = List<Offset>.unmodifiable(path);
       final pathSegments = <VisionSegment>[
         for (var index = 1; index < normalized.length; index += 1)
           if ((normalized[index] - normalized[index - 1]).distanceSquared >
               1e-9)
-            VisionSegment(normalized[index - 1], normalized[index]),
+            VisionSegment(
+              normalized[index - 1],
+              normalized[index],
+              collisionRadius: collisionRadius,
+            ),
       ];
       if (pathSegments.isEmpty) continue;
       normalizedPaths.add(normalized);
       segments.addAll(pathSegments);
+      collisionSegments.addAll(
+        _collisionSegmentsForPath(
+          pathSegments,
+          isClosed: normalized.length > 2 &&
+              (normalized.first - normalized.last).distanceSquared <= 1e-9,
+        ),
+      );
     }
     if (segments.isEmpty) {
       throw const FormatException('Collision group has no usable segments.');
@@ -156,13 +325,16 @@ class VisionCollisionGroup {
       points: List<Offset>.unmodifiable(immutablePaths.expand((path) => path)),
       paths: immutablePaths,
       segments: immutableSegments,
+      collisionSegments: List<VisionSegment>.unmodifiable(collisionSegments),
       bounds: bounds,
       kind: kind,
       isClosed: false,
       isOuterBoundary: false,
       nestingDepth: 0,
       requiresEvidence: requiresEvidence,
+      isAuthoritative: isAuthoritative,
       removesOwnEdgesWhenInside: false,
+      inferObserverPassability: false,
       layerMask: 0,
       evidenceLayerMask: 0,
       navigationLayerMask: 0,
@@ -179,14 +351,21 @@ class VisionCollisionGroup {
   /// subpath boundaries and is the authoritative source for compounds.
   final List<Offset> points;
   final List<List<Offset>> paths;
+
+  /// Authored centerlines retained for matching, editing, and serialization.
   final List<VisionSegment> segments;
+
+  /// Runtime blockers, including the exact miter/bevel surface at thick joins.
+  final List<VisionSegment> collisionSegments;
   final Rect bounds;
   final VisionCollisionKind kind;
   final bool isClosed;
   final bool isOuterBoundary;
   final int nestingDepth;
   final bool requiresEvidence;
+  final bool isAuthoritative;
   final bool removesOwnEdgesWhenInside;
+  final bool inferObserverPassability;
   final int layerMask;
   final int evidenceLayerMask;
   final int navigationLayerMask;
@@ -245,13 +424,16 @@ class VisionCollisionGroup {
       points: points,
       paths: paths,
       segments: segments,
+      collisionSegments: collisionSegments,
       bounds: bounds,
       kind: kind,
       isClosed: isClosed,
       isOuterBoundary: isOuterBoundary,
       nestingDepth: nestingDepth,
       requiresEvidence: requiresEvidence,
+      isAuthoritative: isAuthoritative,
       removesOwnEdgesWhenInside: removesOwnEdgesWhenInside,
+      inferObserverPassability: inferObserverPassability,
       layerMask: layerMask,
       evidenceLayerMask: evidenceLayerMask,
       navigationLayerMask: navigationLayerMask,
@@ -338,16 +520,73 @@ class VisionCollisionGroup {
     }
     return left.length.compareTo(right.length);
   }
+
+  static List<VisionSegment> _collisionSegmentsForPath(
+    List<VisionSegment> segments, {
+    required bool isClosed,
+  }) {
+    if (segments.length < 2 ||
+        segments.every((segment) => segment.collisionRadius <= 1e-9)) {
+      return List<VisionSegment>.unmodifiable(segments);
+    }
+
+    final result = <VisionSegment>[...segments];
+    final joinCount = isClosed ? segments.length : segments.length - 1;
+    for (var index = 0; index < joinCount; index += 1) {
+      result[index] = _withStrokeJoin(
+        result[index],
+        segments[(index + 1) % segments.length],
+      );
+    }
+    return List<VisionSegment>.unmodifiable(result);
+  }
+
+  static VisionSegment _withStrokeJoin(
+    VisionSegment incoming,
+    VisionSegment outgoing,
+  ) {
+    const endpointToleranceSquared = 0.001 * 0.001;
+    const miterLimit = 4.0;
+    final radius = math.min(
+      incoming.collisionRadius,
+      outgoing.collisionRadius,
+    );
+    if (radius <= 1e-9 ||
+        (incoming.end - outgoing.start).distanceSquared >
+            endpointToleranceSquared) {
+      return incoming;
+    }
+
+    final turn = visionCross(incoming.tangent, outgoing.tangent);
+    if (turn.abs() <= 1e-9) return incoming;
+
+    // A turn's outside is the side opposite its signed normal. SVG's default
+    // miter join is the intersection of the two outside offset lines.
+    final outside = turn > 0 ? -1.0 : 1.0;
+    final join = incoming.end;
+    final incomingOuter = join + incoming.normal * (outside * radius);
+    final outgoingOuter = join + outgoing.normal * (outside * radius);
+    final offsetDelta = outgoingOuter - incomingOuter;
+    final distanceAlongIncoming =
+        visionCross(offsetDelta, outgoing.tangent) / turn;
+    final miter = incomingOuter + incoming.tangent * distanceAlongIncoming;
+    final miterRatio = (miter - join).distance / radius;
+
+    final polygon = !miterRatio.isFinite || miterRatio > miterLimit
+        ? [incomingOuter, outgoingOuter, join]
+        : [incomingOuter, miter, outgoingOuter, join];
+    return incoming.withAdditionalCollisionPolygon(polygon);
+  }
 }
 
 class VisionSegmentIndex {
   VisionSegmentIndex(this.segments, {this.cellSize = 64}) {
     for (var index = 0; index < segments.length; index += 1) {
       final segment = segments[index];
-      final minX = (segment.minX / cellSize).floor();
-      final maxX = (segment.maxX / cellSize).floor();
-      final minY = (segment.minY / cellSize).floor();
-      final maxY = (segment.maxY / cellSize).floor();
+      final minX = (segment.collisionMinX / cellSize).floor();
+      final maxX = (segment.collisionMaxX / cellSize).floor();
+      final minY = (segment.collisionMinY / cellSize).floor();
+      final maxY = (segment.collisionMaxY / cellSize).floor();
       for (var x = minX; x <= maxX; x += 1) {
         for (var y = minY; y <= maxY; y += 1) {
           (_cells[(x, y)] ??= <int>[]).add(index);
@@ -373,10 +612,10 @@ class VisionSegmentIndex {
     }
     final sorted = result.where((index) {
       final segment = segments[index];
-      return segment.maxX >= bounds.left &&
-          segment.minX <= bounds.right &&
-          segment.maxY >= bounds.top &&
-          segment.minY <= bounds.bottom;
+      return segment.collisionMaxX >= bounds.left &&
+          segment.collisionMinX <= bounds.right &&
+          segment.collisionMaxY >= bounds.top &&
+          segment.collisionMinY <= bounds.bottom;
     }).toList()
       ..sort();
     return sorted;
@@ -390,13 +629,15 @@ double visionCross(Offset left, Offset right) =>
     left.dx * right.dy - left.dy * right.dx;
 
 double visionDistanceSquaredToSegment(Offset point, VisionSegment segment) {
-  final delta = segment.end - segment.start;
-  final lengthSquared = delta.distanceSquared;
-  if (lengthSquared <= 1e-9) return (point - segment.start).distanceSquared;
+  if (segment.lengthSquared <= 1e-9) {
+    return (point - segment.start).distanceSquared;
+  }
   final relative = point - segment.start;
   final projection =
-      (relative.dx * delta.dx + relative.dy * delta.dy) / lengthSquared;
-  final nearest = segment.start + delta * projection.clamp(0.0, 1.0).toDouble();
+      (relative.dx * segment.delta.dx + relative.dy * segment.delta.dy) /
+          segment.lengthSquared;
+  final nearest =
+      segment.start + segment.delta * projection.clamp(0.0, 1.0).toDouble();
   return (point - nearest).distanceSquared;
 }
 
@@ -412,7 +653,7 @@ bool visionPointIsOnSegment(
     return false;
   }
   return visionCross(
-        segment.end - segment.start,
+        segment.delta,
         point - segment.start,
       ).abs() <=
       tolerance * math.max(1, segment.length);

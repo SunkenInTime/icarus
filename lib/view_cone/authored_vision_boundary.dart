@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:icarus/const/maps.dart';
@@ -28,6 +29,9 @@ class AuthoredVisionBoundary {
     if (sourceBounds.width <= 0 || sourceBounds.height <= 0) {
       throw FormatException('Invalid source bounds for ${map.name}.');
     }
+    final scaleX = attackTargetBounds.width / sourceBounds.width;
+    final scaleY = attackTargetBounds.height / sourceBounds.height;
+    final radiusScale = math.min(scaleX.abs(), scaleY.abs());
 
     Offset project(Offset point) {
       final attackPoint = Offset(
@@ -68,9 +72,77 @@ class AuthoredVisionBoundary {
       ]);
     }
 
+    List<Offset> polyline(Object? encoded, String label) {
+      if (encoded is! List || encoded.length < 2) {
+        throw FormatException('Invalid $label polyline for ${map.name}.');
+      }
+      return List<Offset>.unmodifiable([
+        for (final point in encoded) project(_point(point, label)),
+      ]);
+    }
+
+    List<List<Offset>> polylines(Object? encoded, String label) {
+      if (encoded is! List) {
+        throw FormatException('Invalid $label list for ${map.name}.');
+      }
+      return List<List<Offset>>.unmodifiable([
+        for (var index = 0; index < encoded.length; index += 1)
+          polyline(encoded[index], '$label[$index]'),
+      ]);
+    }
+
+    final encodedRadii = value['collisionRadii'];
+    if (encodedRadii != null && encodedRadii is! Map<String, dynamic>) {
+      throw FormatException('Invalid collision radii for ${map.name}.');
+    }
+
+    double radius(Object? encoded, String label) {
+      if (encoded == null) return 0;
+      final value = _number(encoded);
+      if (value < 0) {
+        throw FormatException('Invalid $label radius for ${map.name}.');
+      }
+      return value * radiusScale;
+    }
+
+    List<double> radii(Object? encoded, int count, String label) {
+      if (encoded == null) return List<double>.filled(count, 0);
+      if (encoded is! List || encoded.length != count) {
+        throw FormatException('Invalid $label radii for ${map.name}.');
+      }
+      return List<double>.unmodifiable([
+        for (var index = 0; index < encoded.length; index += 1)
+          radius(encoded[index], '$label[$index]'),
+      ]);
+    }
+
     final outer = polygon(value['outer'], 'outer');
     final interiors = polygons(value['interiors'], 'interiors');
     final heightBoxes = polygons(value['heightBoxes'], 'heightBoxes');
+    final structuralChains = polylines(
+      value['structuralChains'] ?? const <dynamic>[],
+      'structuralChains',
+    );
+    final collisionRadii = encodedRadii as Map<String, dynamic>?;
+    final outerCollisionRadius = radius(
+      collisionRadii?['outer'],
+      'collisionRadii.outer',
+    );
+    final interiorCollisionRadii = radii(
+      collisionRadii?['interiors'],
+      interiors.length,
+      'collisionRadii.interiors',
+    );
+    final heightBoxCollisionRadii = radii(
+      collisionRadii?['heightBoxes'],
+      heightBoxes.length,
+      'collisionRadii.heightBoxes',
+    );
+    final structuralChainCollisionRadii = radii(
+      collisionRadii?['structuralChains'],
+      structuralChains.length,
+      'collisionRadii.structuralChains',
+    );
     final maskContours = List<List<Offset>>.unmodifiable([
       outer,
       ...interiors,
@@ -81,27 +153,48 @@ class AuthoredVisionBoundary {
       kind: VisionCollisionKind.maskBoundary,
       isClosed: true,
       isOuterBoundary: true,
+      inferObserverPassability: false,
+      collisionRadius: outerCollisionRadius,
     );
     final groups = <VisionCollisionGroup>[
       outerGroup,
-      for (final interior in interiors)
+      for (var index = 0; index < interiors.length; index += 1)
         VisionCollisionGroup.geometry(
-          points: interior,
+          points: interiors[index],
           kind: VisionCollisionKind.maskBoundary,
           isClosed: true,
           nestingDepth: 1,
+          inferObserverPassability: false,
+          collisionRadius: interiorCollisionRadii[index],
         ),
-      for (final box in heightBoxes)
+      for (var index = 0; index < heightBoxes.length; index += 1)
         VisionCollisionGroup.geometry(
-          points: box,
+          points: heightBoxes[index],
           kind: VisionCollisionKind.structuralObstacle,
           isClosed: true,
           removesOwnEdgesWhenInside: true,
+          inferObserverPassability: false,
+          collisionRadius: heightBoxCollisionRadii[index],
+        ),
+      for (var index = 0; index < structuralChains.length; index += 1)
+        VisionCollisionGroup.geometry(
+          points: structuralChains[index],
+          kind: VisionCollisionKind.structuralChain,
+          isClosed: false,
+          requiresEvidence: false,
+          isAuthoritative: true,
+          inferObserverPassability: false,
+          collisionRadius: structuralChainCollisionRadii[index],
         ),
     ];
 
     final maskSegments = List<VisionSegment>.unmodifiable([
-      for (final contour in maskContours) ..._segments(contour),
+      ..._segments(outer, collisionRadius: outerCollisionRadius),
+      for (var index = 0; index < interiors.length; index += 1)
+        ..._segments(
+          interiors[index],
+          collisionRadius: interiorCollisionRadii[index],
+        ),
     ]);
     final collisionSegments = <VisionSegment>[];
     final collisionKeys = <String>{};
@@ -146,9 +239,17 @@ class AuthoredVisionBoundary {
     return value.toDouble();
   }
 
-  static List<VisionSegment> _segments(List<Offset> points) => [
+  static List<VisionSegment> _segments(
+    List<Offset> points, {
+    required double collisionRadius,
+  }) =>
+      [
         for (var index = 1; index < points.length; index += 1)
           if ((points[index] - points[index - 1]).distanceSquared > 1e-9)
-            VisionSegment(points[index - 1], points[index]),
+            VisionSegment(
+              points[index - 1],
+              points[index],
+              collisionRadius: collisionRadius,
+            ),
       ];
 }
