@@ -10,11 +10,20 @@ import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 bool supportsAbilityVisibilityMenu(Ability? ability) {
-  return ability is SquareAbility ||
+  return supportsAbilityInactiveState(ability) ||
+      ability is SquareAbility ||
       ability is CenterSquareAbility ||
       ability is CircleAbility ||
       ability is SectorCircleAbility ||
       ability is DeadlockBarrierMeshAbility;
+}
+
+bool supportsAbilityInactiveState(Ability? ability) {
+  return switch (ability) {
+    ImageAbility() => ability.supportsInactiveState,
+    SquareAbility() => ability.supportsInactiveState,
+    _ => false,
+  };
 }
 
 List<ShadContextMenuItem>? buildAbilityContextMenuItems(
@@ -77,6 +86,18 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
   Ability? abilityData,
   AbilityVisualState visualState,
 ) {
+  if (supportsAbilityInactiveState(abilityData)) {
+    return [
+      _AbilityVisibilityControl(
+        label: 'Active',
+        isEnabled: visualState.showRangeFill,
+        toggle: (state) => state.copyWith(
+          showRangeFill: !state.showRangeFill,
+        ),
+      ),
+    ];
+  }
+
   if (abilityData is CircleAbility || abilityData is SectorCircleAbility) {
     if (_hasInnerRange(abilityData)) {
       return [

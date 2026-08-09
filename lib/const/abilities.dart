@@ -118,8 +118,15 @@ class BaseAbility extends Ability {
 class ImageAbility extends Ability {
   final String imagePath;
   final double size;
+  final Color? inactiveTraceColor;
 
-  ImageAbility({required this.imagePath, required this.size});
+  ImageAbility({
+    required this.imagePath,
+    required this.size,
+    this.inactiveTraceColor,
+  });
+
+  bool get supportsInactiveState => inactiveTraceColor != null;
 
   @override
   Widget createWidget({
@@ -141,6 +148,10 @@ class ImageAbility extends Ability {
       imagePath: imagePath,
       size: size * mapScale,
       id: id,
+      visualState: visualState,
+      inactiveTraceColor: inactiveTraceColor,
+      watchMouse: watchMouse,
+      contextMenuItems: contextMenuItems,
     );
   }
 
@@ -343,6 +354,7 @@ class SquareAbility extends Ability {
   final bool hasTopborder;
   final bool hasSideBorders;
   final bool isTransparent;
+  final bool supportsInactiveState;
 
   SquareAbility({
     required this.width,
@@ -354,8 +366,12 @@ class SquareAbility extends Ability {
     this.hasTopborder = false,
     this.hasSideBorders = false,
     this.isTransparent = false,
+    this.supportsInactiveState = false,
     double? minHeight,
-  });
+  }) : assert(
+          !supportsInactiveState || isWall,
+          'Inactive square traces are only supported for walls',
+        );
 
   @override
   Offset getAnchorPoint({
@@ -430,6 +446,7 @@ class SquareAbility extends Ability {
       hasSideBorders: hasSideBorders,
       isWall: isWall,
       isTransparent: isTransparent,
+      supportsInactiveState: supportsInactiveState,
       visualState: visualState,
       watchMouse: watchMouse,
       contextMenuItems: contextMenuItems,
