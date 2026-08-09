@@ -86,25 +86,20 @@ class InactiveWallAbilityTracePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const endpointRadius = 3.0;
-    final start = Offset(size.width / 2, endpointRadius);
-    final end = Offset(size.width / 2, size.height - endpointRadius);
+    const strokeWidth = 2.0;
+    const inset = strokeWidth / 2;
+    final start = Offset(size.width / 2, inset);
+    final end = Offset(size.width / 2, size.height - inset);
     final path = Path()
       ..moveTo(start.dx, start.dy)
       ..lineTo(end.dx, end.dy);
     final tracePaint = Paint()
       ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
+      ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
 
     _drawDashedPath(canvas, path, tracePaint);
-
-    final endpointPaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(start, endpointRadius, endpointPaint);
-    canvas.drawCircle(end, endpointRadius, endpointPaint);
   }
 
   @override
