@@ -1165,6 +1165,12 @@ class CustomShapeGeometryAction extends WidgetAction {
   }
 }
 
+class CustomShapeColorAction extends WidgetAction {
+  final int? customColorValue;
+
+  CustomShapeColorAction({required this.customColorValue});
+}
+
 class TextContentAction extends WidgetAction {
   final String text;
 
@@ -1396,6 +1402,33 @@ class PlacedUtility extends PlacedWidget {
     _poppedAction.removeLast();
   }
 
+  void updateCustomShapeColor(int newColorValue) {
+    _actionHistory.add(
+      CustomShapeColorAction(customColorValue: customColorValue),
+    );
+    customColorValue = newColorValue;
+  }
+
+  void _undoCustomShapeColor() {
+    _poppedAction.add(
+      CustomShapeColorAction(customColorValue: customColorValue),
+    );
+    customColorValue =
+        (_actionHistory.last as CustomShapeColorAction).customColorValue;
+    _actionHistory.removeLast();
+  }
+
+  void _redoCustomShapeColor() {
+    if (_poppedAction.isEmpty) return;
+
+    _actionHistory.add(
+      CustomShapeColorAction(customColorValue: customColorValue),
+    );
+    customColorValue =
+        (_poppedAction.last as CustomShapeColorAction).customColorValue;
+    _poppedAction.removeLast();
+  }
+
   @override
   void undoAction() {
     if (_actionHistory.isEmpty) return;
@@ -1406,6 +1439,8 @@ class PlacedUtility extends PlacedWidget {
       _undoRotation();
     } else if (_actionHistory.last is CustomShapeGeometryAction) {
       _undoCustomShapeGeometry();
+    } else if (_actionHistory.last is CustomShapeColorAction) {
+      _undoCustomShapeColor();
     }
   }
 
@@ -1419,6 +1454,8 @@ class PlacedUtility extends PlacedWidget {
       _redoRotation();
     } else if (_poppedAction.last is CustomShapeGeometryAction) {
       _redoCustomShapeGeometry();
+    } else if (_poppedAction.last is CustomShapeColorAction) {
+      _redoCustomShapeColor();
     }
   }
 
@@ -1598,6 +1635,8 @@ extension PlacedWidgetCopy on PlacedWidget {
         customWidth: action.customWidth,
         customLength: action.customLength,
       );
+    } else if (action is CustomShapeColorAction) {
+      return CustomShapeColorAction(customColorValue: action.customColorValue);
     }
 
     throw UnsupportedError(

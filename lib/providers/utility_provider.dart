@@ -153,6 +153,26 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     state = newState;
   }
 
+  void updateCustomShapeColor({required String id, required int colorValue}) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+
+    final utility = newState[index];
+    if (!UtilityData.isCustomShape(utility.type) ||
+        utility.customColorValue == colorValue) {
+      return;
+    }
+
+    utility.updateCustomShapeColor(colorValue);
+    ref
+        .read(actionProvider.notifier)
+        .addAction(
+          UserAction(type: ActionType.edit, id: id, group: ActionGroup.utility),
+        );
+    state = newState;
+  }
+
   void updateRotationHistory(int index) {
     final newState = [...state];
 
