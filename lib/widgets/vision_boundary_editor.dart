@@ -116,13 +116,14 @@ class _VisionBoundaryEditorOverlayState
               .select(hitTest(details.localPosition));
         },
         onPanStart: (details) {
-          final selection = hitTest(details.localPosition);
-          if (selection == null &&
-              editor.scope != VisionBoundaryEditScope.all) {
-            return;
-          }
           final notifier = ref.read(visionBoundaryEditorProvider.notifier);
-          notifier.select(selection);
+          if (editor.scope == VisionBoundaryEditScope.all) {
+            notifier.select(null);
+          } else {
+            final selection = hitTest(details.localPosition);
+            if (selection == null) return;
+            notifier.select(selection);
+          }
           notifier.beginEdit();
           _lastSourcePosition = toSource(details.localPosition);
           _isDragging = true;
