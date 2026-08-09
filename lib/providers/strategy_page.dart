@@ -18,6 +18,9 @@ class StrategyPage extends HiveObject {
   final String id;
   final int sortIndex;
   final String name;
+  // Null means this page predates persisted name provenance. Treat it as
+  // custom so structural changes never overwrite a name we cannot classify.
+  final bool? isAutoNamed;
   final List<DrawingElement> drawingData;
   final List<PlacedAgentNode> agentData;
   final List<PlacedAbility> abilityData;
@@ -53,6 +56,7 @@ class StrategyPage extends HiveObject {
   StrategyPage({
     required this.id,
     required this.name,
+    this.isAutoNamed,
     required this.drawingData,
     required this.agentData,
     required this.abilityData,
@@ -79,6 +83,7 @@ class StrategyPage extends HiveObject {
     String? id,
     int? sortIndex,
     String? name,
+    bool? isAutoNamed,
     List<DrawingElement>? drawingData,
     List<PlacedAgentNode>? agentData,
     List<PlacedAbility>? abilityData,
@@ -99,6 +104,7 @@ class StrategyPage extends HiveObject {
       id: id ?? this.id,
       sortIndex: sortIndex ?? this.sortIndex,
       name: name ?? this.name,
+      isAutoNamed: isAutoNamed ?? this.isAutoNamed,
       drawingData: DrawingProvider.fromJson(
           DrawingProvider.objectToJson(drawingData ?? this.drawingData)),
       agentData: AgentProvider.fromJson(AgentProvider.objectToJson(
@@ -128,6 +134,7 @@ class StrategyPage extends HiveObject {
                "id": "$id",
                "sortIndex": "$sortIndex",
                "name": "$name",
+               "isAutoNamed": $isAutoNamed,
                "drawingData": ${DrawingProvider.objectToJson(drawingData)},
                "agentData": ${AgentProvider.objectToJson(agentData)},
                "abilityData": ${AbilityProvider.objectToJson(abilityData)},
@@ -140,7 +147,11 @@ class StrategyPage extends HiveObject {
                }
              ''';
 
-    return jsonDecode(data);
+    final result = jsonDecode(data) as Map<String, dynamic>;
+    if (isAutoNamed == null) {
+      result.remove('isAutoNamed');
+    }
+    return result;
   }
 
   static Future<List<StrategyPage>> listFromJson(
@@ -167,6 +178,17 @@ class StrategyPage extends HiveObject {
       {required Map<String, dynamic> json,
       required String strategyID,
       required bool isZip}) async {
+    final bool? isAutoNamed;
+    if (!json.containsKey('isAutoNamed')) {
+      isAutoNamed = null;
+    } else if (json['isAutoNamed'] is bool) {
+      isAutoNamed = json['isAutoNamed'] as bool;
+    } else {
+      throw const FormatException(
+        'Strategy page isAutoNamed must be a boolean',
+      );
+    }
+
     List<PlacedImage> imageData = [];
 
     if (!kIsWeb) {
@@ -186,10 +208,12 @@ class StrategyPage extends HiveObject {
     } else {
       isAttack = false;
     }
+
     return StrategyPage(
       id: json['id'],
       sortIndex: int.parse(json['sortIndex']),
       name: json['name'],
+      isAutoNamed: isAutoNamed,
       drawingData: DrawingProvider.fromJson(jsonEncode(json['drawingData'])),
       agentData: AgentProvider.fromJson(jsonEncode(json['agentData'])),
       abilityData: AbilityProvider.fromJson(jsonEncode(json['abilityData'])),

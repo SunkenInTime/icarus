@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
 class ImageUtilityWidget extends ConsumerWidget {
@@ -23,6 +24,9 @@ class ImageUtilityWidget extends ConsumerWidget {
       cursor: SystemMouseCursors.click,
       deleteTarget: (id?.isNotEmpty ?? false)
           ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
+          : null,
+      contextMenuItems: (id?.isNotEmpty ?? false)
+          ? buildAdjacentPageCopyMenuItems(ref, id!)
           : null,
       child: SvgPicture.asset(
         imagePath,

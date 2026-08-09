@@ -345,7 +345,7 @@ types:
         index: 6
   StrategyPage:
     typeId: 20
-    nextIndex: 14
+    nextIndex: 15
     fields:
       id:
         index: 0
@@ -373,6 +373,8 @@ types:
         index: 11
       lineUpGroups:
         index: 12
+      isAutoNamed:
+        index: 14
   LineUp:
     typeId: 21
     nextIndex: 6

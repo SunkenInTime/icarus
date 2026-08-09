@@ -16,6 +16,7 @@ import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/custom_square_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/inactive_ability_trace.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
@@ -105,6 +106,144 @@ void main() {
       expect(rangeBody.opacity, 0);
       expect(rotatable.showHandle, isFalse);
       expect(find.byType(AbilityWidget), findsOneWidget);
+    });
+
+    testWidgets('inactive Viper cloud keeps its footprint as a dashed trace',
+        (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_TestActionProvider.new),
+          mapProvider.overrideWith(_FixedMapProvider.new),
+        ],
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+
+      final ability = PlacedAbility(
+        id: 'viper-cloud-inactive',
+        data: AgentData.agents[AgentType.viper]!.abilities[1],
+        position: const Offset(100, 120),
+        visualState: const AbilityVisualState(showRangeFill: false),
+      );
+      container.read(abilityProvider.notifier).fromHive([ability]);
+
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Stack(
+            children: [
+              PlacedAbilityWidget(
+                ability: ability,
+                onDragEnd: (_, __) {},
+                id: ability.id,
+                data: ability,
+                rotation: ability.rotation,
+                length: ability.length,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('image-ability-active-layer')),
+            )
+            .opacity,
+        0,
+      );
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('image-ability-inactive-layer')),
+            )
+            .opacity,
+        1,
+      );
+      expect(find.byType(InactiveCircleAbilityTrace), findsOneWidget);
+      expect(find.byKey(const ValueKey('inactive-circle-trace')), findsOneWidget);
+      final trace = tester.widget<CustomPaint>(
+        find.byKey(const ValueKey('inactive-circle-trace')),
+      );
+      expect(
+        (trace.painter! as InactiveCircleAbilityTracePainter).color,
+        Colors.greenAccent.withAlpha(100),
+      );
+    });
+
+    testWidgets('inactive Viper wall keeps its path and hides its handle',
+        (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_TestActionProvider.new),
+          mapProvider.overrideWith(_FixedMapProvider.new),
+        ],
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+
+      final ability = PlacedAbility(
+        id: 'viper-wall-inactive',
+        data: AgentData.agents[AgentType.viper]!.abilities[2],
+        position: const Offset(100, 120),
+        visualState: const AbilityVisualState(showRangeFill: false),
+      );
+      container.read(abilityProvider.notifier).fromHive([ability]);
+
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Stack(
+            children: [
+              PlacedAbilityWidget(
+                ability: ability,
+                onDragEnd: (_, __) {},
+                id: ability.id,
+                data: ability,
+                rotation: ability.rotation,
+                length: ability.length,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('square-range-body-transition')),
+            )
+            .opacity,
+        0,
+      );
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('inactive-wall-trace-transition')),
+            )
+            .opacity,
+        1,
+      );
+      expect(find.byType(InactiveWallAbilityTrace), findsOneWidget);
+      expect(find.byKey(const ValueKey('inactive-wall-trace')), findsOneWidget);
+      final trace = tester.widget<CustomPaint>(
+        find.byKey(const ValueKey('inactive-wall-trace')),
+      );
+      expect(
+        (trace.painter! as InactiveWallAbilityTracePainter).color,
+        Colors.greenAccent.withAlpha(100),
+      );
+      expect(
+        tester.widget<RotatableWidget>(find.byType(RotatableWidget)).showHandle,
+        isFalse,
+      );
     });
 
     testWidgets('circle visibility toggles preserve icon and target layers',
@@ -400,6 +539,76 @@ void main() {
       expect(find.text('Range'), findsOneWidget);
       expect(find.text('Range Outline'), findsNothing);
       expect(find.text('Mesh'), findsNothing);
+    });
+
+    testWidgets('Viper cloud exposes an Active toggle and applies it',
+        (tester) async {
+      final ability = PlacedAbility(
+        id: 'viper-cloud-menu',
+        data: AgentData.agents[AgentType.viper]!.abilities[1],
+        position: Offset.zero,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_TestActionProvider.new),
+          mapProvider.overrideWith(_FixedMapProvider.new),
+        ],
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+      container.read(abilityProvider.notifier).fromHive([ability]);
+
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Stack(
+            children: [
+              PlacedAbilityWidget(
+                ability: ability,
+                onDragEnd: (_, __) {},
+                id: ability.id,
+                data: ability,
+                rotation: ability.rotation,
+                length: ability.length,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await _openContextMenu(
+        tester,
+        find.byKey(const ValueKey('image-ability-active-layer')),
+      );
+
+      expect(find.text('Active'), findsOneWidget);
+      expect(find.text('Range'), findsNothing);
+
+      await tester.tap(find.text('Active'));
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(abilityProvider).single.visualState.showRangeFill,
+        isFalse,
+      );
+    });
+
+    testWidgets('Viper wall uses Active instead of a generic Range toggle',
+        (tester) async {
+      final ability = PlacedAbility(
+        id: 'viper-wall-menu',
+        data: AgentData.agents[AgentType.viper]!.abilities[2],
+        position: Offset.zero,
+      );
+
+      await _pumpPlacedAbility(tester, ability: ability);
+      await _openContextMenu(tester, find.byType(AbilityWidget));
+
+      expect(find.text('Active'), findsOneWidget);
+      expect(find.text('Range'), findsNothing);
     });
 
     testWidgets('placed circle ability shows range and inner layer toggles',

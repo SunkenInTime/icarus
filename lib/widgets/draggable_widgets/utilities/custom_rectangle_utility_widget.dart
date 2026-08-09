@@ -6,6 +6,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/custom_shape_context_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 
 class CustomRectangleUtilityWidget extends ConsumerWidget {
@@ -90,6 +91,9 @@ class CustomRectangleUtilityWidget extends ConsumerWidget {
                 cursor: SystemMouseCursors.click,
                 deleteTarget: (id?.isNotEmpty ?? false)
                     ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
+                    : null,
+                contextMenuItems: (id?.isNotEmpty ?? false) && utility != null
+                    ? buildCustomShapeContextMenuItems(ref, utility)
                     : null,
                 child: AnimatedOpacity(
                   opacity: centerMarkerVisible ? 1.0 : 0.0,

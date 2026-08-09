@@ -33,6 +33,7 @@ import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
+import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -351,6 +352,7 @@ class _MyAppState extends ConsumerState<MyApp> {
       ),
       child: ShadApp(
         navigatorKey: appNavigatorKey,
+        navigatorObservers: [mouseNavigationRouteObserver],
         themeMode: ThemeMode.dark,
         darkTheme: ShadThemeData(
           brightness: Brightness.dark,
@@ -364,7 +366,9 @@ class _MyAppState extends ConsumerState<MyApp> {
           Routes.settings: (context) => const SettingsTab(),
         },
         builder: (context, child) {
-          return GlobalShortcuts(child: child ?? const SizedBox.shrink());
+          return GlobalShortcuts(
+            child: MouseNavigation(child: child ?? const SizedBox.shrink()),
+          );
         },
       ),
     );

@@ -23,6 +23,8 @@ class SvgVisionBoundary {
     final document = XmlDocument.parse(source);
     final root = document.rootElement;
     final viewBox = _parseViewBox(root.getAttribute('viewBox'), map);
+    final projectionScale = _projectionScale(viewBox);
+    final baseWallRadius = projectionScale / 2;
     final candidates = root.descendants
         .whereType<XmlElement>()
         .where((element) => element.name.local == 'path')
@@ -62,7 +64,11 @@ class SvgVisionBoundary {
       for (final contour in worldMaskContours)
         for (var index = 1; index < contour.length; index += 1)
           if ((contour[index] - contour[index - 1]).distanceSquared > 1e-9)
-            VisionSegment(contour[index - 1], contour[index]),
+            VisionSegment(
+              contour[index - 1],
+              contour[index],
+              collisionRadius: baseWallRadius,
+            ),
     ]);
     if (maskSegments.isEmpty) {
       throw FormatException('No base map edges for ${map.name}.');
@@ -84,6 +90,11 @@ class SvgVisionBoundary {
           isClosed: true,
           isOuterBoundary: index == primaryIndex,
           nestingDepth: _nestingDepth(index, primaryIndex, worldMaskContours),
+          collisionRadius: baseWallRadius,
+          // Base-fill contours are the exact visible map walls. Navigation
+          // samples may select an elevation, but may never erase one of these
+          // rendered boundaries around the observer.
+          inferObserverPassability: false,
         ),
       );
     }
@@ -116,6 +127,7 @@ class SvgVisionBoundary {
       required bool isClosed,
       required bool isStructuralObstacle,
       required bool requiresEvidence,
+      required double strokeWidth,
     }) {
       final worldPoints = List<Offset>.unmodifiable([
         for (final point in svgPoints) _project(point, viewBox),
@@ -131,6 +143,7 @@ class SvgVisionBoundary {
                 : VisionCollisionKind.structuralChain,
             isClosed: isClosed,
             requiresEvidence: requiresEvidence,
+            collisionRadius: strokeWidth * projectionScale / 2,
           ),
         );
       } on FormatException {
@@ -141,6 +154,7 @@ class SvgVisionBoundary {
     void addCompoundGroup(
       Iterable<List<Offset>> svgPaths, {
       required bool requiresEvidence,
+      required double strokeWidth,
     }) {
       final worldPaths = <List<Offset>>[
         for (final path in svgPaths)
@@ -154,6 +168,7 @@ class SvgVisionBoundary {
             paths: worldPaths,
             kind: VisionCollisionKind.structuralObstacle,
             requiresEvidence: requiresEvidence,
+            collisionRadius: strokeWidth * projectionScale / 2,
           ),
         );
       } on FormatException {
@@ -177,6 +192,7 @@ class SvgVisionBoundary {
             addCompoundGroup(
               part.paths,
               requiresEvidence: _strokeRequiresEvidence(element),
+              strokeWidth: _strokeWidth(element),
             );
             continue;
           }
@@ -185,6 +201,7 @@ class SvgVisionBoundary {
             isClosed: part.isClosed,
             isStructuralObstacle: part.isClosed,
             requiresEvidence: _strokeRequiresEvidence(element),
+            strokeWidth: _strokeWidth(element),
           );
         }
         continue;
@@ -195,6 +212,7 @@ class SvgVisionBoundary {
           isClosed: true,
           isStructuralObstacle: true,
           requiresEvidence: false,
+          strokeWidth: 1,
         );
       }
     }
@@ -208,6 +226,7 @@ class SvgVisionBoundary {
           isClosed: contour.isClosed,
           isStructuralObstacle: contour.isClosed,
           requiresEvidence: _strokeRequiresEvidence(element),
+          strokeWidth: _strokeWidth(element),
         );
       }
     }
@@ -224,6 +243,7 @@ class SvgVisionBoundary {
         isClosed: entry.isClosed,
         isStructuralObstacle: entry.isClosed,
         requiresEvidence: false,
+        strokeWidth: 1,
       );
     }
 
@@ -268,12 +288,19 @@ class SvgVisionBoundary {
   static bool _strokeRequiresEvidence(XmlElement element) {
     final opacity =
         double.tryParse(element.getAttribute('stroke-opacity') ?? '1') ?? 1;
-    final width =
-        double.tryParse(element.getAttribute('stroke-width') ?? '1') ?? 1;
+    final width = _strokeWidth(element);
     final dashArray = element.getAttribute('stroke-dasharray');
     return opacity < 0.5 ||
         width < 0.75 ||
         (dashArray != null && dashArray.toLowerCase() != 'none');
+  }
+
+  static double _strokeWidth(XmlElement element) {
+    final width = double.tryParse(element.getAttribute('stroke-width') ?? '1');
+    if (width == null || !width.isFinite || width <= 0) {
+      throw const FormatException('Invalid SVG wall stroke width.');
+    }
+    return width;
   }
 
   /// Partitions one structural SVG element into atomic cycle compounds and
@@ -723,10 +750,7 @@ class SvgVisionBoundary {
     const mapWidth = normalizedHeight * CoordinateSystem.defaultMapAspectRatio;
     const worldWidth = normalizedHeight * (16 / 9);
     const mapLeft = (worldWidth - mapWidth) / 2;
-    final scale = math.min(
-      mapWidth / viewBox.width,
-      normalizedHeight / viewBox.height,
-    );
+    final scale = _projectionScale(viewBox);
     final renderedWidth = viewBox.width * scale;
     final renderedHeight = viewBox.height * scale;
     final offset = Offset(
@@ -735,6 +759,15 @@ class SvgVisionBoundary {
     );
     return offset +
         Offset(point.dx - viewBox.left, point.dy - viewBox.top) * scale;
+  }
+
+  static double _projectionScale(_SvgViewBox viewBox) {
+    const normalizedHeight = 1000.0;
+    const mapWidth = normalizedHeight * CoordinateSystem.defaultMapAspectRatio;
+    return math.min(
+      mapWidth / viewBox.width,
+      normalizedHeight / viewBox.height,
+    );
   }
 }
 

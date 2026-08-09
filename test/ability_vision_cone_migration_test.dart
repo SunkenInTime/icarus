@@ -39,6 +39,24 @@ void main() {
         isTrue,
       );
     });
+
+    test('runs through the current-version migration pipeline', () {
+      final strategy =
+          _strategy(version: AbilityVisionConeMigration.version - 1);
+
+      final migrated = StrategyProvider.migrateToCurrentVersion(strategy);
+
+      expect(migrated.versionNumber, Settings.versionNumber);
+      expect(
+        migrated.pages.single.abilityData.single.visualState.showVisionCone,
+        isTrue,
+      );
+      expect(
+        migrated.pages.single.lineUpGroups.single.items.single.ability
+            .visualState.showVisionCone,
+        isTrue,
+      );
+    });
   });
 }
 

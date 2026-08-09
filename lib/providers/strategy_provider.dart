@@ -23,6 +23,7 @@ import 'package:icarus/migrations/ability_vision_cone_migration.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/migrations/lineup_group_migration.dart';
+import 'package:icarus/migrations/page_name_provenance_migration.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
@@ -600,15 +601,21 @@ class StrategyProvider extends Notifier<StrategyState> {
       {bool forceAbilityScale = false}) {
     final needsAbilityVisionMigration =
         strat.versionNumber < AbilityVisionConeMigration.version;
+    final needsPageNameProvenanceMigration =
+        strat.versionNumber < PageNameProvenanceMigration.version;
     final worldMigrated = migrateToWorld16x9(strat);
     final abilityScaleMigrated =
         migrateAbilityScale(worldMigrated, force: forceAbilityScale);
     final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
     final customCircleMigrated = migrateCustomCircleWrapper(squareAoeMigrated);
     final lineUpGroupMigrated = migrateLineUpGroups(customCircleMigrated);
-    return migrateAbilityVisionCones(
+    final abilityVisionMigrated = migrateAbilityVisionCones(
       lineUpGroupMigrated,
       force: needsAbilityVisionMigration,
+    );
+    return migratePageNameProvenance(
+      abilityVisionMigrated,
+      force: needsPageNameProvenanceMigration,
     );
   }
 
@@ -621,6 +628,23 @@ class StrategyProvider extends Notifier<StrategyState> {
     final migratedPages = AbilityVisionConeMigration.migratePages(
       pages: strat.pages,
     );
+    return strat.copyWith(
+      pages: migratedPages,
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migratePageNameProvenance(StrategyData strat,
+      {bool force = false}) {
+    if (!force &&
+        strat.versionNumber >= PageNameProvenanceMigration.version) {
+      return strat;
+    }
+
+    final migratedPages =
+        PageNameProvenanceMigration.migratePages(pages: strat.pages);
+
     return strat.copyWith(
       pages: migratedPages,
       versionNumber: Settings.versionNumber,
@@ -674,6 +698,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final firstPage = StrategyPage(
       id: const Uuid().v4(),
       name: "Page 1",
+      isAutoNamed: true,
       // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       drawingData: [...strat.drawingData],
       // ignore: deprecated_member_use, deprecated_member_use_from_same_package
@@ -1008,6 +1033,20 @@ class StrategyProvider extends Notifier<StrategyState> {
     );
   }
 
+  static List<StrategyPage> reindexPagesAfterStructuralChange(
+    List<StrategyPage> orderedPages,
+  ) {
+    return [
+      for (var i = 0; i < orderedPages.length; i++)
+        orderedPages[i].copyWith(
+          sortIndex: i,
+          name: orderedPages[i].isAutoNamed == true
+              ? 'Page ${i + 1}'
+              : orderedPages[i].name,
+        ),
+    ];
+  }
+
   Future<void> reorderPage(int oldIndex, int newIndex) async {
     if (oldIndex == newIndex) return;
 
@@ -1031,10 +1070,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     final moved = ordered.removeAt(oldIndex);
     ordered.insert(newIndex, moved);
 
-    final reindexed = [
-      for (var i = 0; i < ordered.length; i++)
-        ordered[i].copyWith(sortIndex: i),
-    ];
+    final reindexed = reindexPagesAfterStructuralChange(ordered);
 
     final updated =
         strat.copyWith(pages: reindexed, lastEdited: DateTime.now());
@@ -1195,6 +1231,151 @@ class StrategyProvider extends Notifier<StrategyState> {
   ) =>
       TransitionPlanner.diff(prev, next);
 
+  List<PageTransitionDirection> copyDirectionsForPlacedWidget(
+    String widgetId,
+  ) {
+    if (widgetId.isEmpty ||
+        !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) return const [];
+
+    final strat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(
+      state.id,
+    );
+    if (strat == null || strat.pages.length < 2) return const [];
+
+    final orderedPages = [...strat.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    final currentPageId = activePageID ?? state.activePageId;
+    final currentIndex = orderedPages.indexWhere(
+      (page) => page.id == currentPageId,
+    );
+    if (currentIndex < 0) return const [];
+
+    final directions = <PageTransitionDirection>[];
+    if (currentIndex > 0 &&
+        !_pageContainsPlacedWidget(orderedPages[currentIndex - 1], widgetId)) {
+      directions.add(PageTransitionDirection.backward);
+    }
+    if (currentIndex < orderedPages.length - 1 &&
+        !_pageContainsPlacedWidget(orderedPages[currentIndex + 1], widgetId)) {
+      directions.add(PageTransitionDirection.forward);
+    }
+    return directions;
+  }
+
+  Future<bool> copyPlacedWidgetToAdjacentPage({
+    required String widgetId,
+    required PageTransitionDirection direction,
+  }) async {
+    if (widgetId.isEmpty ||
+        !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) return false;
+
+    await _syncCurrentPageToHive();
+
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(state.id);
+    if (strat == null || strat.pages.length < 2) return false;
+
+    final orderedPages = [...strat.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    final currentPageId = activePageID ?? state.activePageId;
+    final currentIndex = orderedPages.indexWhere(
+      (page) => page.id == currentPageId,
+    );
+    if (currentIndex < 0) return false;
+
+    final targetIndex = switch (direction) {
+      PageTransitionDirection.backward => currentIndex - 1,
+      PageTransitionDirection.forward => currentIndex + 1,
+    };
+    if (targetIndex < 0 || targetIndex >= orderedPages.length) return false;
+
+    final sourcePage = orderedPages[currentIndex];
+    final targetPage = orderedPages[targetIndex];
+    if (_pageContainsPlacedWidget(targetPage, widgetId)) return false;
+
+    final updatedTarget = _copyPlacedWidgetBetweenPages(
+      widgetId: widgetId,
+      source: sourcePage,
+      target: targetPage,
+    );
+    if (updatedTarget == null) return false;
+
+    final updatedPages = [
+      for (final page in strat.pages)
+        if (page.id == targetPage.id) updatedTarget else page,
+    ];
+    final updated = strat.copyWith(
+      pages: updatedPages,
+      lastEdited: DateTime.now(),
+    );
+    await box.put(updated.id, updated);
+    return true;
+  }
+
+  static bool _pageContainsPlacedWidget(
+    StrategyPage page,
+    String widgetId,
+  ) {
+    return page.agentData.any((widget) => widget.id == widgetId) ||
+        page.abilityData.any((widget) => widget.id == widgetId) ||
+        page.textData.any((widget) => widget.id == widgetId) ||
+        page.imageData.any((widget) => widget.id == widgetId) ||
+        page.utilityData.any((widget) => widget.id == widgetId);
+  }
+
+  static StrategyPage? _copyPlacedWidgetBetweenPages({
+    required String widgetId,
+    required StrategyPage source,
+    required StrategyPage target,
+  }) {
+    final agentIndex = source.agentData.indexWhere(
+      (widget) => widget.id == widgetId,
+    );
+    if (agentIndex >= 0) {
+      return target.copyWith(
+        agentData: [...target.agentData, source.agentData[agentIndex]],
+      );
+    }
+
+    final abilityIndex = source.abilityData.indexWhere(
+      (widget) => widget.id == widgetId,
+    );
+    if (abilityIndex >= 0) {
+      return target.copyWith(
+        abilityData: [...target.abilityData, source.abilityData[abilityIndex]],
+      );
+    }
+
+    final textIndex = source.textData.indexWhere(
+      (widget) => widget.id == widgetId,
+    );
+    if (textIndex >= 0) {
+      return target.copyWith(
+        textData: [...target.textData, source.textData[textIndex]],
+      );
+    }
+
+    final imageIndex = source.imageData.indexWhere(
+      (widget) => widget.id == widgetId,
+    );
+    if (imageIndex >= 0) {
+      return target.copyWith(
+        imageData: [...target.imageData, source.imageData[imageIndex]],
+      );
+    }
+
+    final utilityIndex = source.utilityData.indexWhere(
+      (widget) => widget.id == widgetId,
+    );
+    if (utilityIndex >= 0) {
+      return target.copyWith(
+        utilityData: [...target.utilityData, source.utilityData[utilityIndex]],
+      );
+    }
+
+    return null;
+  }
+
   Future<void> addPage([String? name]) async {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
 
@@ -1202,30 +1383,31 @@ class StrategyProvider extends Notifier<StrategyState> {
     await _syncCurrentPageToHive();
 
     final strat = box.get(state.id);
-    if (strat == null) return;
+    if (strat == null || strat.pages.isEmpty) return;
 
-    name ??= "Page ${strat.pages.length + 1}";
-    //TODO Make this function of the index
-    final newPage = strat.pages.last.copyWith(
+    final orderedPages = [...strat.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    final currentPageId = activePageID ?? state.activePageId;
+    final currentIndex = orderedPages.indexWhere(
+      (page) => page.id == currentPageId,
+    );
+    final sourceIndex =
+        currentIndex >= 0 ? currentIndex : orderedPages.length - 1;
+    final insertionIndex = sourceIndex + 1;
+    final isAutoNamed = name == null;
+    name ??= "Page ${insertionIndex + 1}";
+    final newPage = orderedPages[sourceIndex].copyWith(
       id: const Uuid().v4(),
       name: name,
-      sortIndex: strat.pages.length,
+      isAutoNamed: isAutoNamed,
+      sortIndex: insertionIndex,
     );
 
-    // final newPage = StrategyPage(
-    //   id: const Uuid().v4(),
-    //   name: name,
-    //   drawingData: ,
-    //   agentData: const [],
-    //   abilityData: const [],
-    //   textData: const [],
-    //   imageData: const [],
-    //   utilityData: const [],
-    //   sortIndex: strat.pages.length, // corrected
-    // );
+    orderedPages.insert(insertionIndex, newPage);
+    final reindexed = reindexPagesAfterStructuralChange(orderedPages);
 
     final updated = strat.copyWith(
-      pages: [...strat.pages, newPage],
+      pages: reindexed,
       lastEdited: DateTime.now(),
     );
     await box.put(updated.id, updated);
@@ -3104,6 +3286,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         StrategyPage(
           id: pageID,
           name: "Page 1",
+          isAutoNamed: true,
           drawingData: [],
           agentData: [],
           abilityData: [],

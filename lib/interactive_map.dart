@@ -382,11 +382,11 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                       final transitionOpacity = ref.watch(
                                         drawingsTransitionOpacityProvider,
                                       );
-                                      final lineUpOpacity = ref.watch(
-                                                  interactionStateProvider) ==
-                                              InteractionState.lineUpPlacing
-                                          ? 0.2
-                                          : 1.0;
+                                      final lineUpOpacity =
+                                          ref.watch(interactionStateProvider) ==
+                                                  InteractionState.lineUpPlacing
+                                              ? 0.2
+                                              : 1.0;
                                       return Opacity(
                                         opacity:
                                             transitionOpacity * lineUpOpacity,
