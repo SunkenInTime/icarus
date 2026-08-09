@@ -583,6 +583,25 @@ void main() {
       expect(find.text('Range'), findsNothing);
     });
 
+    testWidgets('transparent circle ability omits the no-op Range Fill toggle',
+        (tester) async {
+      final turret = PlacedAbility(
+        id: 'transparent-circle-menu',
+        data: AgentData.agents[AgentType.killjoy]!.abilities[2],
+        position: Offset.zero,
+      );
+
+      await _pumpPlacedAbility(
+        tester,
+        ability: turret,
+      );
+
+      await _openContextMenu(tester, find.byType(AbilityWidget));
+
+      expect(find.text('Range Outline'), findsOneWidget);
+      expect(find.text('Range Fill'), findsNothing);
+    });
+
     testWidgets('placed deadlock ability shows Mesh', (tester) async {
       final deadlockAbility = PlacedAbility(
         id: 'deadlock-menu',
