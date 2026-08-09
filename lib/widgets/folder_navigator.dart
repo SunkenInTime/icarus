@@ -4,7 +4,9 @@ import 'package:desktop_updater/desktop_updater.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
@@ -25,6 +27,7 @@ import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:url_launcher/url_launcher.dart' show launchUrl;
 
 class FolderNavigator extends ConsumerStatefulWidget {
   const FolderNavigator({super.key});
@@ -85,8 +88,41 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
         _warnWebView();
 
         _warnDemo();
+
+        _maybeShowSupportPrompt();
       }
     });
+  }
+
+  Future<void> _maybeShowSupportPrompt() async {
+    if (kIsWeb) return;
+    if (!Hive.isBoxOpen(HiveBoxNames.appFlagsBox)) return;
+
+    final flags = Hive.box<int>(HiveBoxNames.appFlagsBox);
+    final launchCount =
+        flags.get(HiveBoxNames.appLaunchCountKey, defaultValue: 0) ?? 0;
+    final hasShownPrompt =
+        flags.get(HiveBoxNames.supportPromptShownKey, defaultValue: 0) == 1;
+    if (launchCount < 3 || hasShownPrompt) return;
+
+    // Claim the prompt before the delay so a route change or quick exit never
+    // turns a one-time invitation into a recurring interruption.
+    await flags.put(HiveBoxNames.supportPromptShownKey, 1);
+    if (Platform.isWindows && !isWebViewInitialized) return;
+
+    await Future<void>.delayed(const Duration(seconds: 6));
+    if (!mounted) return;
+
+    Settings.showToast(
+      message:
+          'Icarus is free and open source. If it helps your team, you can help keep it going.',
+      backgroundColor: Settings.tacticalVioletTheme.card,
+      actionLabel: 'Buy me a coffee',
+      onActionPressed: () {
+        launchUrl(Settings.buyMeACoffeeLink);
+      },
+      autoCloseDuration: const Duration(seconds: 8),
+    );
   }
 
   void _warnWebView() async {

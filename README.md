@@ -76,4 +76,14 @@ If you would like to contribute, please fork the repository and submit a pull re
 
 ## Support
 
-This project is completely free and open source. Your support helps maintain it.
+Icarus is completely free and open source. If it helps your team, you can [buy Dara a coffee](https://www.buymeacoffee.com/daradoescode) to support its continued development.
+
+## Sponsors
+
+<a href="https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source">
+  <img src="https://www.greptile.com/badge.svg" alt="Greptile: The War on Bugs" width="600">
+</a>
+
+[Greptile's Open Source Program](https://www.greptile.com/open-source) provides AI code review for the project.
+
+**[OpenAI — Codex for Open Source](https://openai.com/form/codex-for-oss/)** provides tooling and credits for open-source maintenance.

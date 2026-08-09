@@ -5,4 +5,8 @@ class HiveBoxNames {
   static const appPreferencesBox = "app_preferences_box";
   static const favoriteAgentsBox = "favorite_agents_box";
   static const pinnedItemsBox = "pinned_items_box";
+  static const appFlagsBox = "app_flags_box";
+
+  static const appLaunchCountKey = "app_launch_count";
+  static const supportPromptShownKey = "support_prompt_shown";
 }

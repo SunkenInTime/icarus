@@ -98,6 +98,12 @@ class Settings {
   }
 
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
+  static final Uri buyMeACoffeeLink =
+      Uri.parse("https://www.buymeacoffee.com/daradoescode");
+  static final Uri greptileOpenSourceLink =
+      Uri.parse("https://www.greptile.com/open-source");
+  static final Uri openAICodexForOssLink =
+      Uri.parse("https://openai.com/form/codex-for-oss/");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
   static const int versionNumber = 95;
@@ -227,9 +233,10 @@ class Settings {
     required Color backgroundColor,
     String? actionLabel,
     VoidCallback? onActionPressed,
+    Duration autoCloseDuration = const Duration(seconds: 3),
   }) {
     toastification.showCustom(
-      autoCloseDuration: const Duration(seconds: 3),
+      autoCloseDuration: autoCloseDuration,
       alignment: Alignment.bottomCenter,
       builder: (context, holder) {
         final actionIsVisible = actionLabel != null &&
