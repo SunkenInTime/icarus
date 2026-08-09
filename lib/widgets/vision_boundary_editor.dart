@@ -121,7 +121,6 @@ class _VisionBoundaryEditorOverlayState
               editor.scope != VisionBoundaryEditScope.all) {
             return;
           }
-          if (selection == null) return;
           final notifier = ref.read(visionBoundaryEditorProvider.notifier);
           notifier.select(selection);
           notifier.beginEdit();
