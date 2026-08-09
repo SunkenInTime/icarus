@@ -96,7 +96,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
   Future<void> _maybeShowSupportPrompt() async {
     if (kIsWeb) return;
-    if (Platform.isWindows && !isWebViewInitialized) return;
     if (!Hive.isBoxOpen(HiveBoxNames.appFlagsBox)) return;
 
     final flags = Hive.box<int>(HiveBoxNames.appFlagsBox);
@@ -109,6 +108,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     // Claim the prompt before the delay so a route change or quick exit never
     // turns a one-time invitation into a recurring interruption.
     await flags.put(HiveBoxNames.supportPromptShownKey, 1);
+    if (Platform.isWindows && !isWebViewInitialized) return;
+
     await Future<void>.delayed(const Duration(seconds: 6));
     if (!mounted) return;
 

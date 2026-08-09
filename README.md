@@ -80,9 +80,7 @@ Icarus is completely free and open source. If it helps your team, you can [buy D
 
 ## Sponsors
 
-<a href="https://www.greptile.com/open-source">
-  <img src="https://www.greptile.com/wordmark-logo-green.svg" alt="Greptile" height="32">
-</a>
+[![Greptile: The War on Bugs](https://www.greptile.com/badge.svg)](https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source)
 
 [Greptile's Open Source Program](https://www.greptile.com/open-source) provides AI code review for the project.
 
