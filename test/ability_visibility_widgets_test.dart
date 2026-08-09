@@ -21,6 +21,7 @@ import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.d
 import 'package:icarus/widgets/draggable_widgets/ability/resizable_square_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/sector_circle_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:icarus/widgets/line_up_media_carousel.dart';
 import 'package:icarus/widgets/line_up_widget.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -460,6 +461,67 @@ void main() {
   });
 
   group('Ability visibility context menus', () {
+    testWidgets('placed directional ability toggles its vision cone',
+        (tester) async {
+      final turret = PlacedAbility(
+        id: 'turret-vision-menu',
+        data: AgentData.agents[AgentType.killjoy]!.abilities[2],
+        position: const Offset(100, 120),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          actionProvider.overrideWith(_TestActionProvider.new),
+          mapProvider.overrideWith(_FixedMapProvider.new),
+        ],
+      );
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        container.dispose();
+      });
+      container.read(abilityProvider.notifier).fromHive([turret]);
+
+      await tester.pumpWidget(
+        _buildHarness(
+          container: container,
+          child: Stack(
+            children: [
+              PlacedAbilityWidget(
+                ability: turret,
+                onDragEnd: (_, __) {},
+                id: turret.id,
+                data: turret,
+                rotation: turret.rotation,
+                length: turret.length,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('ability-vision-cone')),
+        findsOneWidget,
+      );
+      expect(find.byType(ViewConeWidget), findsOneWidget);
+
+      await _openContextMenu(tester, find.byType(AbilityWidget));
+      expect(find.text('Vision Cone'), findsOneWidget);
+
+      await tester.tap(find.text('Vision Cone'));
+      await tester.pumpAndSettle();
+
+      expect(
+        container.read(abilityProvider).single.visualState.showVisionCone,
+        isFalse,
+      );
+      expect(
+        find.byKey(const ValueKey('ability-vision-cone')),
+        findsNothing,
+      );
+      expect(find.byType(AbilityWidget), findsOneWidget);
+    });
+
     testWidgets('placed square ability shows Range', (tester) async {
       final squareAbility = PlacedAbility(
         id: 'square-menu',
