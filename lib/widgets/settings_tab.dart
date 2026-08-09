@@ -16,6 +16,7 @@ import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:url_launcher/url_launcher.dart' show launchUrl;
 
 enum _SettingsMode {
   strategy,
@@ -31,6 +32,7 @@ enum _SettingsSection {
   globalMapVisibility,
   globalMapProfiles,
   globalPrivacy,
+  globalSupport,
   shortcuts,
 }
 
@@ -72,7 +74,10 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     };
     final scopeValue = switch (_mode) {
       _SettingsMode.strategy => activeStrategyName,
-      _SettingsMode.global => 'Defaults',
+      _SettingsMode.global =>
+        _selectedSection == _SettingsSection.globalSupport
+            ? 'About & sponsors'
+            : 'Defaults',
       _SettingsMode.shortcuts => 'Keybinds',
     };
 
@@ -193,6 +198,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       case _SettingsSection.globalMapVisibility:
       case _SettingsSection.globalMapProfiles:
       case _SettingsSection.globalPrivacy:
+      case _SettingsSection.globalSupport:
         return _SettingsMode.global;
       case _SettingsSection.shortcuts:
         return _SettingsMode.shortcuts;
@@ -560,6 +566,51 @@ class _GlobalSettingsSections extends ConsumerWidget {
           key: sectionKeys[_SettingsSection.globalMapProfiles],
           child: const MapThemeSettingsSection(
             scope: MapThemeSettingsScope.global,
+          ),
+        ),
+        const SizedBox(height: 20),
+        const _SectionDivider(),
+        const SizedBox(height: 20),
+        SettingsScopeCard(
+          key: sectionKeys[_SettingsSection.globalSupport],
+          title: "Sponsors & support",
+          description:
+              "Icarus stays free through open-source programs and support from its users.",
+          child: Column(
+            children: [
+              _SupportLinkTile(
+                icon: Icons.bug_report_outlined,
+                title: "Greptile",
+                description:
+                    "AI code review through Greptile's Open Source Program.",
+                actionLabel: "View program",
+                onPressed: () {
+                  launchUrl(Settings.greptileOpenSourceLink);
+                },
+              ),
+              const _SettingsItemDivider(),
+              _SupportLinkTile(
+                icon: Icons.code_outlined,
+                title: "OpenAI",
+                description:
+                    "Tooling and credits through Codex for Open Source.",
+                actionLabel: "View program",
+                onPressed: () {
+                  launchUrl(Settings.openAICodexForOssLink);
+                },
+              ),
+              const _SettingsItemDivider(),
+              _SupportLinkTile(
+                icon: Icons.local_cafe_outlined,
+                title: "Support Icarus",
+                description:
+                    "If Icarus helps your team, you can help keep development going.",
+                actionLabel: "Buy me a coffee",
+                onPressed: () {
+                  launchUrl(Settings.buyMeACoffeeLink);
+                },
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 24),
@@ -1218,6 +1269,12 @@ class _SettingsNavigationRail extends StatelessWidget {
             isSelected: selectedSection == _SettingsSection.shortcuts,
             onTap: () => onSectionSelected(_SettingsSection.shortcuts),
           ),
+          _SettingsNavItem(
+            icon: Icons.favorite_border_outlined,
+            label: "Sponsors",
+            isSelected: selectedSection == _SettingsSection.globalSupport,
+            onTap: () => onSectionSelected(_SettingsSection.globalSupport),
+          ),
         ],
       ),
     );
@@ -1501,6 +1558,64 @@ class _SettingsToggleTile extends StatelessWidget {
               value: value,
               onChanged: onChanged,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SupportLinkTile extends StatelessWidget {
+  const _SupportLinkTile({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.actionLabel,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final String actionLabel;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _SettingLeadingIcon(
+            icon: icon,
+            accentColor: Settings.tacticalVioletTheme.mutedForeground,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  description,
+                  style: ShadTheme.of(context).textTheme.small.copyWith(
+                        color: Settings.tacticalVioletTheme.mutedForeground,
+                        height: 1.3,
+                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          ShadButton.secondary(
+            size: ShadButtonSize.sm,
+            onPressed: onPressed,
+            child: Text(actionLabel),
           ),
         ],
       ),

@@ -89,6 +89,10 @@ Future<void> main(List<String> args) async {
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
       await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
       await Hive.openBox<int>(HiveBoxNames.pinnedItemsBox);
+      final appFlagsBox = await Hive.openBox<int>(HiveBoxNames.appFlagsBox);
+      final launchCount =
+          appFlagsBox.get(HiveBoxNames.appLaunchCountKey, defaultValue: 0) ?? 0;
+      await appFlagsBox.put(HiveBoxNames.appLaunchCountKey, launchCount + 1);
       await Hive.openBox<dynamic>(AnalyticsService.storageBoxName);
 
       await MapThemeProfilesProvider.bootstrap();
