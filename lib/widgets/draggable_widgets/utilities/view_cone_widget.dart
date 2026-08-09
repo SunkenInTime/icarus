@@ -9,10 +9,12 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/providers/view_cone_debug_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
+import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
 
@@ -112,6 +114,7 @@ class ViewConeWidget extends ConsumerWidget {
         // while this provider fallback keeps clipping correct for any caller
         // that only supplies the persisted utility id.
         final effectiveRotation = rotation ?? placedUtility?.rotation ?? 0;
+        final screenZoom = ref.watch(screenZoomProvider).clamp(1.0, 8.0);
         // MapProvider.switchSide mirrors every placed item before toggling the
         // side. The resolved origin is therefore already in the current map's
         // display frame and pairs with the correspondingly mirrored layer.
@@ -121,6 +124,10 @@ class ViewConeWidget extends ConsumerWidget {
           facingAngle: effectiveRotation - pi / 2,
           coneAngle: angle * pi / 180,
           range: coord.virtualLengthToWorld(currentLength),
+          // Leave half a physical pixel between the antialiased cone clip and
+          // the authored wall surface. This prevents their coverage fringes
+          // from blending without creating a zoom-dependent visible gap.
+          surfaceClearance: coord.screenHeightToWorld(0.5 / screenZoom),
         );
         final inverseRotation = -effectiveRotation;
         final cosine = cos(inverseRotation);
@@ -207,30 +214,33 @@ class ViewConeWidget extends ConsumerWidget {
       }
     }
 
-    final elevationMenuItems = placedUtility != null && geometry != null
-        ? [
-            buildViewConeElevationMenuItem(
-              geometry: geometry,
-              selectedElevation: placedUtility.visionElevation,
-              automaticElevation: geometry
-                  .layerForPosition(
-                    isAttack: ref.read(mapProvider).isAttack,
-                    position: resolvedWorldOrigin!,
-                  )
-                  .elevation,
-              onChanged: (elevation) {
-                ref
-                    .read(utilityProvider.notifier)
-                    .updateViewConeElevation(placedUtility!.id, elevation);
-              },
-            ),
-            buildViewConeDebugMenuItem(
-              enabled: debugEnabled,
-              onChanged: (enabled) =>
-                  ref.read(viewConeDebugProvider.notifier).state = enabled,
-            ),
-          ]
-        : null;
+    final elevationMenuItems = placedUtility == null
+        ? null
+        : [
+            if (geometry != null)
+              buildViewConeElevationMenuItem(
+                geometry: geometry,
+                selectedElevation: placedUtility.visionElevation,
+                automaticElevation: geometry
+                    .layerForPosition(
+                      isAttack: ref.read(mapProvider).isAttack,
+                      position: resolvedWorldOrigin!,
+                    )
+                    .elevation,
+                onChanged: (elevation) {
+                  ref
+                      .read(utilityProvider.notifier)
+                      .updateViewConeElevation(placedUtility!.id, elevation);
+                },
+              ),
+            if (geometry != null)
+              buildViewConeDebugMenuItem(
+                enabled: debugEnabled,
+                onChanged: (enabled) =>
+                    ref.read(viewConeDebugProvider.notifier).state = enabled,
+              ),
+            ...buildAdjacentPageCopyMenuItems(ref, placedUtility.id),
+          ];
 
     return SizedBox(
       width: totalWidth,

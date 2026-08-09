@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
@@ -49,6 +50,7 @@ class StrategyView extends ConsumerStatefulWidget {
     bool initialIsAttack = true,
   }) {
     return PageRouteBuilder<void>(
+      settings: const RouteSettings(name: Routes.strategyView),
       transitionDuration: const Duration(milliseconds: 200),
       reverseTransitionDuration: const Duration(milliseconds: 200),
       pageBuilder: (context, animation, _) => StrategyView(
