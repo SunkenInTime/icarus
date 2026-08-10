@@ -216,6 +216,16 @@ class Settings {
     destructiveForeground: Color(0xfffafafa),
   );
 
+  // Semantic accents for settings tile icons. Each hue follows the meaning of
+  // its setting (never the violet action hue, which is reserved for
+  // commands/selection).
+  static const Color settingsAgentAccent = Color(0xff5da37e); // team markers
+  static const Color settingsAbilityAccent = Color(0xff6aa1d8); // utility
+  static const Color settingsNeutralAccent = Color(0xffa1a1aa); // greys toggle
+  static const Color settingsPersistenceAccent = Color(0xff4b8f86); // saving
+  static const Color settingsDiscordAccent = Color(0xff5865f2); // brand blurple
+  static const Color settingsMapAccent = Color(0xffb27c40); // map layers
+
   static const cardForegroundBackdrop = BoxShadow(
     color: Colors.black54, // High opacity because the background is dark
     blurRadius: 12,

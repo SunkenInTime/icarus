@@ -23,30 +23,8 @@ import 'package:icarus/widgets/lineup_control_buttons.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
+import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-
-class _MapSvgColorMapper extends ColorMapper {
-  const _MapSvgColorMapper(this.replacements);
-
-  final Map<int, Color> replacements;
-
-  @override
-  Color substitute(
-    String? id,
-    String elementName,
-    String attributeName,
-    Color color,
-  ) {
-    final opaqueColorValue = (color.toARGB32() & 0x00FFFFFF) | 0xFF000000;
-    final replacement = replacements[opaqueColorValue];
-    if (replacement == null) {
-      return color;
-    }
-    // Keep per-element opacity from the original SVG.
-    final alpha = (color.a * 255.0).round().clamp(0, 255);
-    return replacement.withAlpha(alpha);
-  }
-}
 
 class InteractiveMap extends ConsumerStatefulWidget {
   const InteractiveMap({
@@ -58,10 +36,6 @@ class InteractiveMap extends ConsumerStatefulWidget {
 }
 
 class _InteractiveMapState extends ConsumerState<InteractiveMap> {
-  static const Color _mapBaseSourceColor = Color(0xFF271406);
-  static const Color _mapDetailSourceColor = Color(0xFFB27C40);
-  static const Color _mapHighlightSourceColor = Color(0xFFF08234);
-
   final controller = TransformationController();
   Size? _lastViewportSize;
   Size? _lastPlayAreaSize;
@@ -153,11 +127,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
       ),
     );
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
-    final mapColorMapper = _MapSvgColorMapper({
-      _mapBaseSourceColor.toARGB32(): effectivePalette.baseColor,
-      _mapDetailSourceColor.toARGB32(): effectivePalette.detailColor,
-      _mapHighlightSourceColor.toARGB32(): effectivePalette.highlightColor,
-    });
+    final mapColorMapper = MapSvgColorMapper.forPalette(effectivePalette);
 
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
