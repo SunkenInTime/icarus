@@ -81,20 +81,35 @@ Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("dart
 if (-not (Test-Path -LiteralPath $distArchivePath)) {
     throw "Desktop Updater archive folder not found at $distArchivePath"
 }
-$archivedFfmpegPath = Join-Path $distArchivePath "ffmpeg\ffmpeg.exe"
+$archivedFfmpegDirectory = Join-Path $distArchivePath "ffmpeg"
+$archivedFfmpegPath = Join-Path $archivedFfmpegDirectory "ffmpeg.exe"
 $archiveHashesPath = Join-Path $distArchivePath "hashes.json"
 if (-not (Test-Path -LiteralPath $archivedFfmpegPath)) {
     throw "FFmpeg was not included in the Desktop Updater archive at $archivedFfmpegPath"
+}
+if (-not (Get-ChildItem -LiteralPath $archivedFfmpegDirectory -File -Filter "*.dll")) {
+    throw "FFmpeg shared runtime DLLs were not included in the Desktop Updater archive at $archivedFfmpegDirectory"
 }
 if (-not (Test-Path -LiteralPath $archiveHashesPath)) {
     throw "Desktop Updater hashes file not found at $archiveHashesPath"
 }
 $archiveHashes = Get-Content -LiteralPath $archiveHashesPath -Raw | ConvertFrom-Json
-$ffmpegHash = $archiveHashes | Where-Object {
-    [string]$_.path -ieq "ffmpeg\ffmpeg.exe"
-} | Select-Object -First 1
-if ($null -eq $ffmpegHash) {
-    throw "FFmpeg was not included in the Desktop Updater hashes at $archiveHashesPath"
+$archiveHashPaths = @($archiveHashes | ForEach-Object { [string]$_.path })
+foreach ($ffmpegRuntimeFile in Get-ChildItem -LiteralPath $archivedFfmpegDirectory -File) {
+    $runtimeRelativePath = "ffmpeg\$($ffmpegRuntimeFile.Name)"
+    if ($archiveHashPaths -notcontains $runtimeRelativePath) {
+        throw "FFmpeg runtime file '$runtimeRelativePath' was not included in the Desktop Updater hashes at $archiveHashesPath"
+    }
+}
+
+$oversizedPagesFiles = @(Get-ChildItem -LiteralPath $distArchivePath -Recurse -File | Where-Object {
+    $_.Length -gt 100MB
+})
+if ($oversizedPagesFiles.Count -gt 0) {
+    $oversizedFileList = $oversizedPagesFiles | ForEach-Object {
+        "$($_.FullName) ($($_.Length) bytes)"
+    }
+    throw "Desktop Updater files exceed GitHub Pages' 100 MiB blob limit:`n$($oversizedFileList -join "`n")"
 }
 
 Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @("-ExecutionPolicy", "Bypass", "-File", "installer/build_installer.ps1", "-Configuration", "Release")
