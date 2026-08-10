@@ -54,14 +54,50 @@ finally {
 Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(
     "-ExecutionPolicy", "Bypass", "-File", "scripts/fetch_ffmpeg.ps1"
 )
-Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("dart", "run", "desktop_updater:archive", "windows")
-Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @("-ExecutionPolicy", "Bypass", "-File", "installer/build_installer.ps1", "-Configuration", "Release")
 
+# desktop_updater:release snapshots the Windows build into its app-prefixed
+# dist folder before returning. Refresh that snapshot after staging FFmpeg;
+# desktop_updater:archive hashes the snapshot, not the live build output.
 $versionInfo = Get-VersionInfo -RepoRoot $repoRoot
-$distArchivePath = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath ("dist\{0}\{1}" -f $versionInfo.BuildNumber, $versionInfo.WindowsArchiveFolderName)
-if (-not (Test-Path $distArchivePath)) {
+$releaseOutputPath = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath "build\windows\x64\runner\Release"
+$desktopUpdaterSourcePath = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath (
+    "dist\{0}\icarus-{1}-windows" -f $versionInfo.BuildNumber, $versionInfo.FullVersion
+)
+$distArchivePath = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath (
+    "dist\{0}\{1}" -f $versionInfo.BuildNumber, $versionInfo.WindowsArchiveFolderName
+)
+if (-not (Test-Path -LiteralPath $releaseOutputPath)) {
+    throw "Windows release output not found at $releaseOutputPath"
+}
+if (Test-Path -LiteralPath $desktopUpdaterSourcePath) {
+    Remove-Item -LiteralPath $desktopUpdaterSourcePath -Recurse -Force
+}
+Copy-Item -LiteralPath $releaseOutputPath -Destination $desktopUpdaterSourcePath -Recurse -Force
+if (Test-Path -LiteralPath $distArchivePath) {
+    Remove-Item -LiteralPath $distArchivePath -Recurse -Force
+}
+
+Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments @("dart", "run", "desktop_updater:archive", "windows")
+if (-not (Test-Path -LiteralPath $distArchivePath)) {
     throw "Desktop Updater archive folder not found at $distArchivePath"
 }
+$archivedFfmpegPath = Join-Path $distArchivePath "ffmpeg\ffmpeg.exe"
+$archiveHashesPath = Join-Path $distArchivePath "hashes.json"
+if (-not (Test-Path -LiteralPath $archivedFfmpegPath)) {
+    throw "FFmpeg was not included in the Desktop Updater archive at $archivedFfmpegPath"
+}
+if (-not (Test-Path -LiteralPath $archiveHashesPath)) {
+    throw "Desktop Updater hashes file not found at $archiveHashesPath"
+}
+$archiveHashes = Get-Content -LiteralPath $archiveHashesPath -Raw | ConvertFrom-Json
+$ffmpegHash = $archiveHashes | Where-Object {
+    [string]$_.path -ieq "ffmpeg\ffmpeg.exe"
+} | Select-Object -First 1
+if ($null -eq $ffmpegHash) {
+    throw "FFmpeg was not included in the Desktop Updater hashes at $archiveHashesPath"
+}
+
+Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @("-ExecutionPolicy", "Bypass", "-File", "installer/build_installer.ps1", "-Configuration", "Release")
 
 $metadataRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath $MetadataDir
 New-Item -ItemType Directory -Force -Path $metadataRoot | Out-Null
