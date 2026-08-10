@@ -199,8 +199,8 @@ class AppPreferences extends HiveObject {
       drawingThickness: drawingThickness ?? this.drawingThickness,
       discordPresenceEnabled:
           discordPresenceEnabled ?? this.discordPresenceEnabled,
-      videoExportStepDurationSeconds: videoExportStepDurationSeconds ??
-          this.videoExportStepDurationSeconds,
+      videoExportStepDurationSeconds:
+          videoExportStepDurationSeconds ?? this.videoExportStepDurationSeconds,
     );
   }
 }
@@ -390,36 +390,41 @@ class MapThemeProfilesProvider extends Notifier<MapThemeProfilesState> {
     return profile;
   }
 
-  Future<void> renameProfile({
+  /// Returns false when nothing was written (unknown or built-in profile,
+  /// or an empty name) so callers never report a success that didn't happen.
+  Future<bool> renameProfile({
     required String profileId,
     required String newName,
   }) async {
     final profile = _findProfile(profileId);
     if (profile == null || profile.isBuiltIn) {
-      return;
+      return false;
     }
     final trimmed = newName.trim();
     if (trimmed.isEmpty) {
-      return;
+      return false;
     }
     final updated = profile.copyWith(name: trimmed);
     await Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
         .put(updated.id, updated);
     await refreshFromHive();
+    return true;
   }
 
-  Future<void> updateProfilePalette({
+  /// Returns false when nothing was written (unknown or built-in profile).
+  Future<bool> updateProfilePalette({
     required String profileId,
     required MapThemePalette palette,
   }) async {
     final profile = _findProfile(profileId);
     if (profile == null || profile.isBuiltIn) {
-      return;
+      return false;
     }
     final updated = profile.copyWith(palette: palette);
     await Hive.box<MapThemeProfile>(HiveBoxNames.mapThemeProfilesBox)
         .put(updated.id, updated);
     await refreshFromHive();
+    return true;
   }
 
   Future<void> deleteProfile(String profileId) async {

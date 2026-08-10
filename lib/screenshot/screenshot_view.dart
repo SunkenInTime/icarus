@@ -19,30 +19,9 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/drawing_painter.dart';
-
-class _MapSvgColorMapper extends ColorMapper {
-  const _MapSvgColorMapper(this.replacements);
-
-  final Map<int, Color> replacements;
-
-  @override
-  Color substitute(
-    String? id,
-    String elementName,
-    String attributeName,
-    Color color,
-  ) {
-    final opaqueColorValue = (color.toARGB32() & 0x00FFFFFF) | 0xFF000000;
-    final replacement = replacements[opaqueColorValue];
-    if (replacement == null) {
-      return color;
-    }
-    final alpha = (color.a * 255.0).round().clamp(0, 255);
-    return replacement.withAlpha(alpha);
-  }
-}
 
 class ScreenshotView extends ConsumerWidget {
   ScreenshotView({
@@ -129,11 +108,7 @@ class ScreenshotView extends ConsumerWidget {
     String ultOrbsAssetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_ult_orbs.svg';
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
-    final mapColorMapper = _MapSvgColorMapper({
-      0xFF271406: effectivePalette.baseColor,
-      0xFFB27C40: effectivePalette.detailColor,
-      0xFFF08234: effectivePalette.highlightColor,
-    });
+    final mapColorMapper = MapSvgColorMapper.forPalette(effectivePalette);
     final mapWidth = CoordinateSystem.screenShotSize.height *
         CoordinateSystem.instance.mapAspectRatio;
     final mapLeft = (CoordinateSystem.screenShotSize.width - mapWidth) / 2;
