@@ -403,12 +403,20 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
       return;
     }
     final notifier = ref.read(mapThemeProfilesProvider.notifier);
-    await notifier.updateProfilePalette(
+    final paletteSaved = await notifier.updateProfilePalette(
       profileId: profile.id,
       palette: _palette,
     );
+    if (!paletteSaved) {
+      Settings.showToast(
+        message: "Couldn't update this profile.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
+    var renamed = true;
     if (trimmedName != profile.name) {
-      await notifier.renameProfile(
+      renamed = await notifier.renameProfile(
         profileId: profile.id,
         newName: trimmedName,
       );
@@ -416,8 +424,12 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
     if (!mounted) return;
     Navigator.of(context).pop();
     Settings.showToast(
-      message: "Profile updated.",
-      backgroundColor: Settings.tacticalVioletTheme.primary,
+      message: renamed
+          ? "Profile updated."
+          : "Colors saved, but the name couldn't be changed.",
+      backgroundColor: renamed
+          ? Settings.tacticalVioletTheme.primary
+          : Settings.tacticalVioletTheme.destructive,
     );
   }
 

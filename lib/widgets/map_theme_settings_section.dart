@@ -329,9 +329,15 @@ class _ProfileContextMenuButtonState
     );
     if (newName == null || newName.isEmpty) return;
 
-    await ref
+    final renamed = await ref
         .read(mapThemeProfilesProvider.notifier)
         .renameProfile(profileId: widget.profile.id, newName: newName);
+    if (!renamed) {
+      Settings.showToast(
+        message: "Couldn't rename this profile.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+    }
   }
 
   Future<void> _editProfilePalette() async {
