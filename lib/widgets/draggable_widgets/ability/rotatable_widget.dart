@@ -107,17 +107,19 @@ class _RotatableWidgetState extends ConsumerState<RotatableWidget>
         _isHandleHovered ||
         _isHandleDragging;
 
-    return MouseRegion(
-      opaque: false,
-      // Keep spatially separated handles reachable across transparent parts
-      // of a view cone without blocking pointer targets underneath.
-      hitTestBehavior: HitTestBehavior.translucent,
-      onEnter: (_) => _showTargetHandle(),
-      onExit: (_) => _scheduleTargetHandleHide(),
-      child: Transform.rotate(
-        angle: widget.rotation,
-        alignment: Alignment.topLeft,
-        origin: rotationOrigin,
+    // The hover region lives inside the rotation so it tracks the visual;
+    // outside the Transform it would stay pinned to the unrotated footprint.
+    return Transform.rotate(
+      angle: widget.rotation,
+      alignment: Alignment.topLeft,
+      origin: rotationOrigin,
+      child: MouseRegion(
+        opaque: false,
+        // Keep spatially separated handles reachable across transparent parts
+        // of a view cone without blocking pointer targets underneath.
+        hitTestBehavior: HitTestBehavior.translucent,
+        onEnter: (_) => _showTargetHandle(),
+        onExit: (_) => _scheduleTargetHandleHide(),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
