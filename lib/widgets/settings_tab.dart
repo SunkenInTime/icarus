@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -68,9 +66,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
 
     final screenSize = MediaQuery.sizeOf(context);
     final dialogWidth =
-        math.min(screenSize.width - 96, SettingsTab._maxDialogWidth);
+        (screenSize.width - 96).clamp(560.0, SettingsTab._maxDialogWidth);
     final dialogHeight =
-        math.min(screenSize.height - 80, SettingsTab._maxDialogHeight);
+        (screenSize.height - 80).clamp(420.0, SettingsTab._maxDialogHeight);
 
     return ShadDialog(
       constraints: BoxConstraints(

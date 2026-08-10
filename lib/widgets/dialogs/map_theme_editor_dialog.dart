@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
@@ -94,8 +92,8 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.sizeOf(context);
-    final dialogWidth = math.min(screenSize.width - 96, 1120.0);
-    final dialogHeight = math.min(screenSize.height - 80, 780.0);
+    final dialogWidth = (screenSize.width - 96).clamp(560.0, 1120.0);
+    final dialogHeight = (screenSize.height - 80).clamp(420.0, 780.0);
 
     final mapState = ref.watch(mapProvider);
     final mapAsset =
@@ -396,13 +394,20 @@ class _MapThemeEditorDialogState extends ConsumerState<MapThemeEditorDialog> {
 
   Future<void> _saveProfileEdits() async {
     final profile = widget.profile!;
+    final trimmedName = _nameController.text.trim();
+    if (trimmedName.isEmpty) {
+      Settings.showToast(
+        message: "Enter a profile name.",
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
+      );
+      return;
+    }
     final notifier = ref.read(mapThemeProfilesProvider.notifier);
     await notifier.updateProfilePalette(
       profileId: profile.id,
       palette: _palette,
     );
-    final trimmedName = _nameController.text.trim();
-    if (trimmedName.isNotEmpty && trimmedName != profile.name) {
+    if (trimmedName != profile.name) {
       await notifier.renameProfile(
         profileId: profile.id,
         newName: trimmedName,

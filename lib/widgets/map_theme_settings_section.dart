@@ -66,7 +66,7 @@ class _ThemeProfilesList extends ConsumerWidget {
             tags: const ["This strategy only"],
             palette: overridePalette,
             isSelected: true,
-            onTap: () {},
+            onTap: null,
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -412,7 +412,7 @@ class _ProfileListRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             child: Row(
               children: [
-                if (onTap != null)
+                if (onTap != null || isSelected)
                   SizedBox(
                     width: 22,
                     child: isSelected
