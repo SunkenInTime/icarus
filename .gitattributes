@@ -1,0 +1,3 @@
+﻿# Keep updater payload bytes identical to the generated hashes.
+updates/** -text
+downloads/** -text
