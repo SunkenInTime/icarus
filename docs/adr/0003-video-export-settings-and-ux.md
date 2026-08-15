@@ -1,6 +1,6 @@
 # ADR 0003: Video export settings — global step duration, page checkboxes, fixed 1080p
 
-**Status:** Accepted (2026-07-31)
+**Status:** Amended by ADR 0005 (2026-08-15)
 **Feature:** Video sequencing export (pages → .mp4)
 
 ## Context

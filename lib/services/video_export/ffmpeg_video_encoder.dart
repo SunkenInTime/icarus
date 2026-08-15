@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:path/path.dart' as p;
 
 class VideoExportCancelled implements Exception {}
@@ -69,38 +70,47 @@ class FfmpegVideoEncoder {
   /// per-frame durations, relative to [workingDirectory]) into [outputPath].
   ///
   /// H.264 comes from the OS encoder (`h264_mf` via Media Foundation on
-  /// Windows, `libx264` from a user-installed ffmpeg elsewhere); `mpeg4` is
-  /// the fallback when the preferred encoder is unavailable on this machine.
+  /// Windows, `libx264` from a user-installed ffmpeg elsewhere). Max quality
+  /// retains the `mpeg4` fallback; Social must fail instead because that
+  /// quality-targeted fallback cannot uphold a file-size promise.
   Future<void> encode({
     required String binary,
     required String workingDirectory,
     required String concatListFileName,
     required String outputPath,
     required double totalSeconds,
+    required VideoExportQuality quality,
     void Function(double fraction)? onProgress,
   }) async {
+    var socialBitrate = quality == VideoExportQuality.social
+        ? SocialVideoExportPolicy.initialVideoBitrate(totalSeconds)
+        : null;
+    if (quality == VideoExportQuality.social && socialBitrate == null) {
+      throw VideoExportException(
+        'This video is too long to keep readable under 10 MB. '
+        'Reduce the pages or step duration.',
+      );
+    }
+
     final baseArgs = [
       '-y',
-      '-f', 'concat',
-      '-safe', '0',
-      '-i', concatListFileName,
-      '-vf', 'fps=60,format=yuv420p',
+      '-f',
+      'concat',
+      '-safe',
+      '0',
+      '-i',
+      concatListFileName,
+      '-vf',
+      'fps=${quality.fps},format=yuv420p',
       // The concat playlist repeats its final still so FFmpeg honors that
       // entry's duration. Some FFmpeg builds inherit the duration on the
       // repeated file and hold the final page twice, so cap the output to the
       // duration planned by VideoExporter.
-      '-t', totalSeconds.toStringAsFixed(6),
-      '-movflags', '+faststart',
+      '-t',
+      totalSeconds.toStringAsFixed(6),
+      '-movflags',
+      '+faststart',
     ];
-    final codecAttempts = Platform.isWindows
-        ? [
-            ['-c:v', 'h264_mf', '-b:v', '8M'],
-            ['-c:v', 'mpeg4', '-q:v', '3'],
-          ]
-        : [
-            ['-c:v', 'libx264', '-crf', '20', '-preset', 'medium'],
-            ['-c:v', 'mpeg4', '-q:v', '3'],
-          ];
 
     // `-y` truncates its target immediately, so ffmpeg never writes to the
     // user-chosen path directly: a failed or cancelled encode must not
@@ -118,61 +128,92 @@ class FfmpegVideoEncoder {
 
     var lastLog = '';
     var lastExitCode = 0;
-    for (final codec in codecAttempts) {
-      if (_cancelled) {
-        await removePartialOutput();
-        throw VideoExportCancelled();
-      }
-      // This encoder always produces MP4. Declaring the muxer explicitly
-      // avoids relying on FFmpeg to infer it from the user-selected path.
-      final args = [...baseArgs, ...codec, '-f', 'mp4', partialPath];
-      final stderrBuffer = StringBuffer();
-      final process = await Process.start(
-        binary,
-        args,
-        workingDirectory: workingDirectory,
+    var sizeRetries = 0;
+    while (true) {
+      var retryForSize = false;
+      final codecAttempts = _codecAttempts(
+        quality: quality,
+        socialBitrate: socialBitrate,
       );
-      _process = process;
-      unawaited(process.stdout.drain<void>());
-      final stderrDone = process.stderr
-          .transform(utf8.decoder)
-          .transform(const LineSplitter())
-          .forEach((line) {
-        stderrBuffer.writeln(line);
-        final match = _timePattern.firstMatch(line);
-        if (match != null && totalSeconds > 0) {
-          final seconds = int.parse(match.group(1)!) * 3600 +
-              int.parse(match.group(2)!) * 60 +
-              int.parse(match.group(3)!) +
-              double.parse('0.${match.group(4)!}');
-          onProgress?.call((seconds / totalSeconds).clamp(0.0, 1.0));
-        }
-      });
-      final exitCode = await process.exitCode;
-      await stderrDone;
-      _process = null;
-      if (_cancelled) {
-        await removePartialOutput();
-        throw VideoExportCancelled();
-      }
-      if (exitCode == 0) {
-        try {
-          await _replaceDestination(partialPath, outputPath);
-        } on Object catch (error) {
+      for (final codec in codecAttempts) {
+        if (_cancelled) {
           await removePartialOutput();
-          throw VideoExportException(
-            'Could not write the video to the selected location: $error',
-          );
+          throw VideoExportCancelled();
         }
-        onProgress?.call(1.0);
-        return;
+        // This encoder always produces MP4. Declaring the muxer explicitly
+        // avoids relying on FFmpeg to infer it from the selected path.
+        final args = [...baseArgs, ...codec, '-f', 'mp4', partialPath];
+        final stderrBuffer = StringBuffer();
+        final process = await Process.start(
+          binary,
+          args,
+          workingDirectory: workingDirectory,
+        );
+        _process = process;
+        unawaited(process.stdout.drain<void>());
+        final stderrDone = process.stderr
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .forEach((line) {
+          stderrBuffer.writeln(line);
+          final match = _timePattern.firstMatch(line);
+          if (match != null && totalSeconds > 0) {
+            final seconds = int.parse(match.group(1)!) * 3600 +
+                int.parse(match.group(2)!) * 60 +
+                int.parse(match.group(3)!) +
+                double.parse('0.${match.group(4)!}');
+            onProgress?.call((seconds / totalSeconds).clamp(0.0, 1.0));
+          }
+        });
+        final exitCode = await process.exitCode;
+        await stderrDone;
+        _process = null;
+        if (_cancelled) {
+          await removePartialOutput();
+          throw VideoExportCancelled();
+        }
+        if (exitCode == 0) {
+          if (quality == VideoExportQuality.social) {
+            final actualBytes = await File(partialPath).length();
+            if (actualBytes > SocialVideoExportPolicy.maxFileSizeBytes) {
+              final retryBitrate = SocialVideoExportPolicy.retryVideoBitrate(
+                previousBitrate: socialBitrate!,
+                actualBytes: actualBytes,
+              );
+              if (sizeRetries >= 1 || retryBitrate == null) {
+                await removePartialOutput();
+                throw VideoExportException(
+                  'Could not keep this video readable under 10 MB. '
+                  'Reduce the pages or step duration.',
+                );
+              }
+              socialBitrate = retryBitrate;
+              sizeRetries++;
+              retryForSize = true;
+              break;
+            }
+          }
+
+          try {
+            await _replaceDestination(partialPath, outputPath);
+          } on Object catch (error) {
+            await removePartialOutput();
+            throw VideoExportException(
+              'Could not write the video to the selected location: $error',
+            );
+          }
+          onProgress?.call(1.0);
+          return;
+        }
+        lastLog = stderrBuffer.toString();
+        lastExitCode = exitCode;
+        log(
+          'ffmpeg (${codec.join(' ')}) exited with $exitCode',
+          error: lastLog,
+        );
       }
-      lastLog = stderrBuffer.toString();
-      lastExitCode = exitCode;
-      log(
-        'ffmpeg (${codec.join(' ')}) exited with $exitCode',
-        error: lastLog,
-      );
+      if (retryForSize) continue;
+      break;
     }
     await removePartialOutput();
     final tail = lastLog.split('\n').where((l) => l.trim().isNotEmpty).toList();
@@ -188,6 +229,55 @@ class FfmpegVideoEncoder {
     throw VideoExportException(
       'ffmpeg failed (exit $lastExitCode): ${detail.trim()}',
     );
+  }
+
+  static List<List<String>> _codecAttempts({
+    required VideoExportQuality quality,
+    required int? socialBitrate,
+  }) {
+    if (quality == VideoExportQuality.social) {
+      final bitrate = socialBitrate!;
+      if (Platform.isWindows) {
+        return [
+          [
+            '-c:v',
+            'h264_mf',
+            '-rate_control',
+            'cbr',
+            '-scenario',
+            'archive',
+            '-quality',
+            '80',
+            '-b:v',
+            '$bitrate',
+          ],
+        ];
+      }
+      return [
+        [
+          '-c:v',
+          'libx264',
+          '-b:v',
+          '$bitrate',
+          '-maxrate',
+          '$bitrate',
+          '-bufsize',
+          '${bitrate * 2}',
+          '-preset',
+          'medium',
+        ],
+      ];
+    }
+
+    return Platform.isWindows
+        ? [
+            ['-c:v', 'h264_mf', '-b:v', '8M'],
+            ['-c:v', 'mpeg4', '-q:v', '3'],
+          ]
+        : [
+            ['-c:v', 'libx264', '-crf', '20', '-preset', 'medium'],
+            ['-c:v', 'mpeg4', '-q:v', '3'],
+          ];
   }
 
   /// Moves the finished encode over the destination. The partial file lives

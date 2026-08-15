@@ -16,8 +16,10 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
+import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:icarus/services/video_export/video_exporter.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
+import 'package:icarus/widgets/custom_segmented_tabs.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Settings + progress dialog for exporting the strategy's pages as an .mp4
@@ -33,6 +35,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   List<StrategyPage> _pages = const [];
   final Set<String> _selectedPageIds = {};
   double _stepDurationSeconds = 3.0;
+  VideoExportQuality _quality = VideoExportQuality.social;
 
   VideoExporter? _exporter;
   double _progress = 0;
@@ -55,8 +58,9 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         .read(appPreferencesProvider)
         .videoExportStepDurationSeconds
         .clamp(1.0, 30.0);
-    final doc = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
-        .get(ref.read(strategyProvider).id);
+    final doc = Hive.box<StrategyData>(
+      HiveBoxNames.strategiesBox,
+    ).get(ref.read(strategyProvider).id);
     _pages = [...?doc?.pages]
       ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
     _selectedPageIds.addAll(_pages.map((p) => p.id));
@@ -65,7 +69,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
   Future<void> _export() async {
     // The Export button stays enabled while the file picker is open; a
     // second tap must not start a second export.
-    if (_exportRunning || _selectedPageIds.isEmpty) return;
+    if (_exportRunning || !_canExport) return;
     _exportRunning = true;
     try {
       await _runExport();
@@ -79,8 +83,9 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     // mid-export dismissal can still reach the live providers.
     final container = ProviderScope.containerOf(context, listen: false);
 
-    final stepDuration =
-        Duration(milliseconds: (_stepDurationSeconds * 1000).round());
+    final stepDuration = Duration(
+      milliseconds: (_stepDurationSeconds * 1000).round(),
+    );
     unawaited(
       ref
           .read(appPreferencesProvider.notifier)
@@ -109,8 +114,9 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
 
     final strategyId = ref.read(strategyProvider).id;
     await ref.read(strategyProvider.notifier).forceSaveNow(strategyId);
-    final doc =
-        Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategyId);
+    final doc = Hive.box<StrategyData>(
+      HiveBoxNames.strategiesBox,
+    ).get(strategyId);
     if (doc == null || !mounted) return;
 
     // Resolve pages from the freshly saved document — the dialog's initial
@@ -151,6 +157,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
         stepDuration: stepDuration,
         ffmpegBinary: ffmpegBinary,
         outputPath: outputPath,
+        quality: _quality,
         onProgress: (fraction, label) {
           if (!mounted) return;
           setState(() {
@@ -166,6 +173,8 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
             'content_type': 'video',
             'page_count': selectedPages.length,
             'step_duration_seconds': _stepDurationSeconds,
+            'quality': _quality.name,
+            'fps': _quality.fps,
           },
         ),
       );
@@ -206,8 +215,21 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     return VideoExporter.plannedDurationSeconds(
       pageCount: _selectedPageIds.length,
       stepSeconds: _stepDurationSeconds,
+      fps: _quality.fps,
     );
   }
+
+  bool get _socialSelectionFits {
+    if (_quality != VideoExportQuality.social || _selectedPageIds.isEmpty) {
+      return true;
+    }
+    return SocialVideoExportPolicy.initialVideoBitrate(
+          _estimatedVideoSeconds,
+        ) !=
+        null;
+  }
+
+  bool get _canExport => _selectedPageIds.isNotEmpty && _socialSelectionFits;
 
   static String _formatSeconds(double seconds) {
     final total = seconds.round();
@@ -257,7 +279,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
           child: const Text('Cancel'),
         ),
         ShadButton(
-          onPressed: selectedCount == 0 ? null : _export,
+          onPressed: _canExport ? _export : null,
           child: const Text('Export'),
         ),
       ],
@@ -297,6 +319,44 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                     : 'Video length: ~${_formatSeconds(_estimatedVideoSeconds)} '
                         '($selectedCount ${selectedCount == 1 ? "page" : "pages"})',
                 style: ShadTheme.of(context).textTheme.muted,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Text('Quality'),
+                  const Spacer(),
+                  CustomSegmentedTabs<VideoExportQuality>(
+                    compactness: 0.7,
+                    value: _quality,
+                    items: const [
+                      SegmentedTabItem<VideoExportQuality>(
+                        value: VideoExportQuality.social,
+                        child: Text('Social'),
+                      ),
+                      SegmentedTabItem<VideoExportQuality>(
+                        value: VideoExportQuality.max,
+                        child: Text('Max'),
+                      ),
+                    ],
+                    onChanged: (quality) {
+                      setState(() => _quality = quality);
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _quality == VideoExportQuality.social
+                    ? _socialSelectionFits
+                        ? '1080p · 30 fps · Under 10 MB, optimized for sharing.'
+                        : 'This video is too long to keep readable under 10 MB. '
+                            'Reduce the pages or step duration.'
+                    : '1080p · 60 fps · Highest quality, larger file.',
+                style: _socialSelectionFits
+                    ? ShadTheme.of(context).textTheme.muted
+                    : ShadTheme.of(context).textTheme.muted.copyWith(
+                          color: ShadTheme.of(context).colorScheme.destructive,
+                        ),
               ),
               const SizedBox(height: 12),
               Text('Pages ($selectedCount/${_pages.length})'),
