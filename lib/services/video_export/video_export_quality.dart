@@ -9,20 +9,19 @@ extension VideoExportQualitySettings on VideoExportQuality {
 
 /// File-size policy for the Social video-export preset.
 ///
-/// Discord documents a 10 MiB default attachment limit. The first encode
-/// targets 9.25 MiB, leaving room for MP4 muxing and encoder overhead; the
-/// finished file is still measured before it replaces the destination.
+/// Attachment limits vary by Discord account and server and are changing over
+/// time. Social aims for 20 MiB without turning that external limit into an
+/// export failure: long or unusually complex videos still save successfully.
 abstract final class SocialVideoExportPolicy {
-  static const int maxFileSizeBytes = 10 * 1024 * 1024;
-  static const int workingTargetBytes = 9699328; // 9.25 MiB.
-  static const int retryTargetBytes = 9961472; // 9.50 MiB.
+  static const int targetFileSizeBytes = 20 * 1024 * 1024;
+  static const int workingTargetBytes = 19398656; // 18.5 MiB.
+  static const int retryTargetBytes = 19922944; // 19 MiB.
   static const int muxOverheadBitsPerSecond = 64000;
   static const int minVideoBitrate = 250000;
   static const int maxVideoBitrate = 8000000;
 
-  /// Returns null when fitting the duration would require a bitrate below the
-  /// readable floor. The caller should ask the user to shorten the export.
-  static int? initialVideoBitrate(double durationSeconds) {
+  /// Keeps very long exports at the readable floor rather than rejecting them.
+  static int initialVideoBitrate(double durationSeconds) {
     if (!durationSeconds.isFinite || durationSeconds <= 0) {
       throw ArgumentError.value(
         durationSeconds,
@@ -33,12 +32,11 @@ abstract final class SocialVideoExportPolicy {
 
     final available = (workingTargetBytes * 8 / durationSeconds).floor() -
         muxOverheadBitsPerSecond;
-    if (available < minVideoBitrate) return null;
     return available.clamp(minVideoBitrate, maxVideoBitrate);
   }
 
-  /// Scales a bitrate after an oversized encode. Returns null rather than
-  /// crossing the readable floor.
+  /// Scales a bitrate after an oversized encode. Returns null when the current
+  /// bitrate is already the lowest useful attempt.
   static int? retryVideoBitrate({
     required int previousBitrate,
     required int actualBytes,
@@ -60,7 +58,7 @@ abstract final class SocialVideoExportPolicy {
 
     final scaled =
         (previousBitrate * (retryTargetBytes / actualBytes) * 0.96).floor();
-    if (scaled < minVideoBitrate) return null;
-    return scaled.clamp(minVideoBitrate, maxVideoBitrate);
+    final candidate = scaled.clamp(minVideoBitrate, maxVideoBitrate);
+    return candidate < previousBitrate ? candidate : null;
   }
 }

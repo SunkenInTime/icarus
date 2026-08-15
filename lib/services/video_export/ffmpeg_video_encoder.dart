@@ -71,8 +71,8 @@ class FfmpegVideoEncoder {
   ///
   /// H.264 comes from the OS encoder (`h264_mf` via Media Foundation on
   /// Windows, `libx264` from a user-installed ffmpeg elsewhere). Max quality
-  /// retains the `mpeg4` fallback; Social must fail instead because that
-  /// quality-targeted fallback cannot uphold a file-size promise.
+  /// retains the `mpeg4` fallback; Social stays on H.264 so its bitrate-guided
+  /// sharing target remains meaningful.
   Future<void> encode({
     required String binary,
     required String workingDirectory,
@@ -85,12 +85,6 @@ class FfmpegVideoEncoder {
     var socialBitrate = quality == VideoExportQuality.social
         ? SocialVideoExportPolicy.initialVideoBitrate(totalSeconds)
         : null;
-    if (quality == VideoExportQuality.social && socialBitrate == null) {
-      throw VideoExportException(
-        'This video is too long to keep readable under 10 MB. '
-        'Reduce the pages or step duration.',
-      );
-    }
 
     final baseArgs = [
       '-y',
@@ -194,22 +188,18 @@ class FfmpegVideoEncoder {
         if (exitCode == 0) {
           if (quality == VideoExportQuality.social) {
             final actualBytes = await File(partialPath).length();
-            if (actualBytes > SocialVideoExportPolicy.maxFileSizeBytes) {
+            if (actualBytes > SocialVideoExportPolicy.targetFileSizeBytes &&
+                sizeRetries < 1) {
               final retryBitrate = SocialVideoExportPolicy.retryVideoBitrate(
                 previousBitrate: socialBitrate!,
                 actualBytes: actualBytes,
               );
-              if (sizeRetries >= 1 || retryBitrate == null) {
-                await removePartialOutput();
-                throw VideoExportException(
-                  'Could not keep this video readable under 10 MB. '
-                  'Reduce the pages or step duration.',
-                );
+              if (retryBitrate != null) {
+                socialBitrate = retryBitrate;
+                sizeRetries++;
+                retryForSize = true;
+                break;
               }
-              socialBitrate = retryBitrate;
-              sizeRetries++;
-              retryForSize = true;
-              break;
             }
           }
 

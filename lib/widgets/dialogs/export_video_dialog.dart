@@ -219,17 +219,7 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
     );
   }
 
-  bool get _socialSelectionFits {
-    if (_quality != VideoExportQuality.social || _selectedPageIds.isEmpty) {
-      return true;
-    }
-    return SocialVideoExportPolicy.initialVideoBitrate(
-          _estimatedVideoSeconds,
-        ) !=
-        null;
-  }
-
-  bool get _canExport => _selectedPageIds.isNotEmpty && _socialSelectionFits;
+  bool get _canExport => _selectedPageIds.isNotEmpty;
 
   static String _formatSeconds(double seconds) {
     final total = seconds.round();
@@ -347,16 +337,9 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
               const SizedBox(height: 4),
               Text(
                 _quality == VideoExportQuality.social
-                    ? _socialSelectionFits
-                        ? '1080p · 30 fps · Under 10 MB, optimized for sharing.'
-                        : 'This video is too long to keep readable under 10 MB. '
-                            'Reduce the pages or step duration.'
+                    ? '1080p · 30 fps · Aims for 20 MB, optimized for sharing.'
                     : '1080p · 60 fps · Highest quality, larger file.',
-                style: _socialSelectionFits
-                    ? ShadTheme.of(context).textTheme.muted
-                    : ShadTheme.of(context).textTheme.muted.copyWith(
-                          color: ShadTheme.of(context).colorScheme.destructive,
-                        ),
+                style: ShadTheme.of(context).textTheme.muted,
               ),
               const SizedBox(height: 12),
               Text('Pages ($selectedCount/${_pages.length})'),

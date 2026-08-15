@@ -13,7 +13,7 @@ void main() {
     test('derives the 22-second bitrate from the working file-size target', () {
       expect(
         SocialVideoExportPolicy.initialVideoBitrate(22),
-        3463028,
+        6990056,
       );
     });
 
@@ -24,23 +24,35 @@ void main() {
       );
     });
 
-    test('rejects durations that fall below the readable bitrate floor', () {
-      expect(SocialVideoExportPolicy.initialVideoBitrate(1000), isNull);
+    test('keeps long exports at the readable bitrate floor', () {
+      expect(
+        SocialVideoExportPolicy.initialVideoBitrate(1000),
+        SocialVideoExportPolicy.minVideoBitrate,
+      );
     });
 
     test('scales an oversized encode below the retry target', () {
       final retry = SocialVideoExportPolicy.retryVideoBitrate(
-        previousBitrate: 750000,
-        actualBytes: 11 * 1024 * 1024,
+        previousBitrate: 1500000,
+        actualBytes: 22 * 1024 * 1024,
       );
 
-      expect(retry, 621818);
+      expect(retry, 1243636);
     });
 
-    test('refuses a retry below the readable bitrate floor', () {
+    test('clamps a useful retry at the readable bitrate floor', () {
       final retry = SocialVideoExportPolicy.retryVideoBitrate(
-        previousBitrate: 250000,
-        actualBytes: 20 * 1024 * 1024,
+        previousBitrate: 500000,
+        actualBytes: 40 * 1024 * 1024,
+      );
+
+      expect(retry, SocialVideoExportPolicy.minVideoBitrate);
+    });
+
+    test('skips a retry when already at the readable bitrate floor', () {
+      final retry = SocialVideoExportPolicy.retryVideoBitrate(
+        previousBitrate: SocialVideoExportPolicy.minVideoBitrate,
+        actualBytes: 40 * 1024 * 1024,
       );
 
       expect(retry, isNull);
