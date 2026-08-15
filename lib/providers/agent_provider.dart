@@ -232,6 +232,28 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     return true;
   }
 
+  bool convertViewConeAgentToPlain({required String id}) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return false;
+    final node = newState[index];
+    if (node is! PlacedViewConeAgent) return false;
+
+    newState[index] = PlacedAgent(
+      id: node.id,
+      position: node.position,
+      type: node.type,
+      isAlly: node.isAlly,
+      state: node.state,
+    )..isDeleted = node.isDeleted;
+
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(type: ActionType.edit, id: id, group: ActionGroup.agent),
+        );
+    state = newState;
+    return true;
+  }
+
   bool convertPlainAgentToCircle({
     required String id,
     required double diameterMeters,
