@@ -214,31 +214,9 @@ class ViewConeWidget extends ConsumerWidget {
       }
     }
 
-    final elevationMenuItems = placedUtility == null
+    final contextMenuItems = placedUtility == null
         ? null
         : [
-            if (geometry != null)
-              buildViewConeElevationMenuItem(
-                geometry: geometry,
-                selectedElevation: placedUtility.visionElevation,
-                automaticElevation: geometry
-                    .layerForPosition(
-                      isAttack: ref.read(mapProvider).isAttack,
-                      position: resolvedWorldOrigin!,
-                    )
-                    .elevation,
-                onChanged: (elevation) {
-                  ref
-                      .read(utilityProvider.notifier)
-                      .updateViewConeElevation(placedUtility!.id, elevation);
-                },
-              ),
-            if (geometry != null)
-              buildViewConeDebugMenuItem(
-                enabled: debugEnabled,
-                onChanged: (enabled) =>
-                    ref.read(viewConeDebugProvider.notifier).state = enabled,
-              ),
             ...buildAdjacentPageCopyMenuItems(ref, placedUtility.id),
           ];
 
@@ -279,7 +257,7 @@ class ViewConeWidget extends ConsumerWidget {
                 deleteTarget: (id?.isNotEmpty ?? false)
                     ? HoveredDeleteTarget.utility(id: id!, ownerToken: Object())
                     : null,
-                contextMenuItems: elevationMenuItems,
+                contextMenuItems: contextMenuItems,
                 cursor: SystemMouseCursors.click,
                 child: Container(
                   decoration: BoxDecoration(
