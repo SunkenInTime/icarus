@@ -135,7 +135,20 @@ class FfmpegVideoEncoder {
         quality: quality,
         socialBitrate: socialBitrate,
       );
-      for (final codec in codecAttempts) {
+      for (var codecIndex = 0;
+          codecIndex < codecAttempts.length;
+          codecIndex++) {
+        final codec = codecAttempts[codecIndex];
+        // Reserve one progress slot for every possible invocation. A Social
+        // size correction therefore continues from halfway instead of
+        // making the dialog jump backward to the start of encoding. Max's
+        // codec fallback gets the same monotonic behavior.
+        final attemptCount =
+            quality == VideoExportQuality.social ? 2 : codecAttempts.length;
+        final attemptIndex =
+            quality == VideoExportQuality.social ? sizeRetries : codecIndex;
+        final attemptStart = attemptIndex / attemptCount;
+        final attemptWeight = 1 / attemptCount;
         if (_cancelled) {
           await removePartialOutput();
           throw VideoExportCancelled();
@@ -162,7 +175,13 @@ class FfmpegVideoEncoder {
                 int.parse(match.group(2)!) * 60 +
                 int.parse(match.group(3)!) +
                 double.parse('0.${match.group(4)!}');
-            onProgress?.call((seconds / totalSeconds).clamp(0.0, 1.0));
+            final attemptFraction = (seconds / totalSeconds).clamp(0.0, 1.0);
+            onProgress?.call(
+              (attemptStart + attemptFraction * attemptWeight).clamp(
+                0.0,
+                1.0,
+              ),
+            );
           }
         });
         final exitCode = await process.exitCode;
