@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
+import 'package:icarus/services/video_export/video_export_quality.dart';
 
 void main() {
   group('ensureMp4Extension', () {
@@ -15,7 +16,7 @@ void main() {
   });
 
   group('videoEncodeAttemptProgress', () {
-    test('keeps a Social size retry monotonic', () {
+    test('keeps a size-targeted retry monotonic', () {
       final callbacks = <double>[
         videoEncodeAttemptProgress(
           attemptIndex: 0,
@@ -61,6 +62,45 @@ void main() {
           attemptFraction: 1.5,
         ),
         1,
+      );
+    });
+  });
+
+  group('videoExportFilter', () {
+    test('keeps ordinary Potato exports at 1080p', () {
+      expect(
+        videoExportFilter(
+          quality: VideoExportQuality.potato,
+          totalSeconds: 22,
+        ),
+        'fps=30,format=yuv420p',
+      );
+    });
+
+    test('downscales floor-bitrate Potato exports to 720p once', () {
+      expect(
+        videoExportFilter(
+          quality: VideoExportQuality.potato,
+          totalSeconds: 248,
+        ),
+        'fps=30,scale=1280:720:flags=lanczos,format=yuv420p',
+      );
+    });
+
+    test('never downscales Social or Max', () {
+      expect(
+        videoExportFilter(
+          quality: VideoExportQuality.social,
+          totalSeconds: 1000,
+        ),
+        'fps=30,format=yuv420p',
+      );
+      expect(
+        videoExportFilter(
+          quality: VideoExportQuality.max,
+          totalSeconds: 1000,
+        ),
+        'fps=60,format=yuv420p',
       );
     });
   });

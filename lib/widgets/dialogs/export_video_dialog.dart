@@ -320,6 +320,10 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
                     value: _quality,
                     items: const [
                       SegmentedTabItem<VideoExportQuality>(
+                        value: VideoExportQuality.potato,
+                        child: Text('Potato'),
+                      ),
+                      SegmentedTabItem<VideoExportQuality>(
                         value: VideoExportQuality.social,
                         child: Text('Social'),
                       ),
@@ -336,9 +340,11 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
               ),
               const SizedBox(height: 4),
               Text(
-                _quality == VideoExportQuality.social
-                    ? '1080p · 30 fps · Aims for 20 MB, optimized for sharing.'
-                    : '1080p · 60 fps · Highest quality, larger file.',
+                videoExportQualityDescription(
+                  _quality,
+                  durationSeconds:
+                      selectedCount == 0 ? null : _estimatedVideoSeconds,
+                ),
                 style: ShadTheme.of(context).textTheme.muted,
               ),
               const SizedBox(height: 12),
@@ -387,4 +393,18 @@ class _ExportVideoDialogState extends ConsumerState<ExportVideoDialog> {
       ),
     );
   }
+}
+
+String videoExportQualityDescription(
+  VideoExportQuality quality, {
+  required double? durationSeconds,
+}) {
+  return switch (quality) {
+    VideoExportQuality.potato =>
+      '${durationSeconds == null ? 1080 : quality.outputHeightForDuration(durationSeconds)}p · '
+          '30 fps · Aims for 10 MB. Tiny file, full strat.',
+    VideoExportQuality.social =>
+      '1080p · 30 fps · Aims for 20 MB, optimized for sharing.',
+    VideoExportQuality.max => '1080p · 60 fps · Highest quality, larger file.',
+  };
 }

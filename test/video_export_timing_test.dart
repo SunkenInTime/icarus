@@ -20,6 +20,16 @@ void main() {
       );
     });
 
+    test('derives Potato transition timing from 30 fps', () {
+      expect(VideoExporter.transitionFrameCountFor(30), 13);
+      expect(
+        VideoExporter.encodedTransitionSecondsFor(
+          VideoExportQuality.potato.fps,
+        ),
+        closeTo(13 / 30, 1e-12),
+      );
+    });
+
     test('plans two-page Max duration from scheduled transition frames', () {
       expect(
         VideoExporter.plannedDurationSeconds(
@@ -37,6 +47,17 @@ void main() {
           pageCount: 2,
           stepSeconds: 3,
           fps: VideoExportQuality.social.fps,
+        ),
+        closeTo(6 + 13 / 30, 1e-12),
+      );
+    });
+
+    test('plans two-page Potato duration from scheduled transition frames', () {
+      expect(
+        VideoExporter.plannedDurationSeconds(
+          pageCount: 2,
+          stepSeconds: 3,
+          fps: VideoExportQuality.potato.fps,
         ),
         closeTo(6 + 13 / 30, 1e-12),
       );

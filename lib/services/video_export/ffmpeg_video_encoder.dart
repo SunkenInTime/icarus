@@ -39,6 +39,19 @@ double videoEncodeAttemptProgress({
       .clamp(0.0, 1.0);
 }
 
+/// Builds the output filter for the selected preset and planned duration.
+String videoExportFilter({
+  required VideoExportQuality quality,
+  required double totalSeconds,
+}) {
+  final outputHeight = quality.outputHeightForDuration(totalSeconds);
+  return [
+    'fps=${quality.fps}',
+    if (outputHeight == 720) 'scale=1280:720:flags=lanczos',
+    'format=yuv420p',
+  ].join(',');
+}
+
 /// Encodes a rendered frame sequence into an .mp4 by invoking a bundled (or
 /// PATH-installed) ffmpeg binary as a child process (ADR 0001).
 class FfmpegVideoEncoder {
@@ -89,8 +102,8 @@ class FfmpegVideoEncoder {
   ///
   /// H.264 comes from the OS encoder (`h264_mf` via Media Foundation on
   /// Windows, `libx264` from a user-installed ffmpeg elsewhere). Max quality
-  /// retains the `mpeg4` fallback; Social stays on H.264 so its bitrate-guided
-  /// sharing target remains meaningful.
+  /// retains the `mpeg4` fallback; size-targeted presets stay on H.264 so their
+  /// bitrate-guided sharing targets remain meaningful.
   Future<void> encode({
     required String binary,
     required String workingDirectory,
@@ -100,9 +113,12 @@ class FfmpegVideoEncoder {
     required VideoExportQuality quality,
     void Function(double fraction)? onProgress,
   }) async {
-    var socialBitrate = quality == VideoExportQuality.social
-        ? SocialVideoExportPolicy.initialVideoBitrate(totalSeconds)
-        : null;
+    final sizePolicy = quality.sizePolicy;
+    var targetBitrate = sizePolicy?.initialVideoBitrate(totalSeconds);
+    final videoFilter = videoExportFilter(
+      quality: quality,
+      totalSeconds: totalSeconds,
+    );
 
     final baseArgs = [
       '-y',
@@ -113,7 +129,7 @@ class FfmpegVideoEncoder {
       '-i',
       concatListFileName,
       '-vf',
-      'fps=${quality.fps},format=yuv420p',
+      videoFilter,
       // The concat playlist repeats its final still so FFmpeg honors that
       // entry's duration. Some FFmpeg builds inherit the duration on the
       // repeated file and hold the final page twice, so cap the output to the
@@ -145,20 +161,17 @@ class FfmpegVideoEncoder {
       var retryForSize = false;
       final codecAttempts = _codecAttempts(
         quality: quality,
-        socialBitrate: socialBitrate,
+        targetBitrate: targetBitrate,
       );
       for (var codecIndex = 0;
           codecIndex < codecAttempts.length;
           codecIndex++) {
         final codec = codecAttempts[codecIndex];
-        // Reserve one progress slot for every possible invocation. A Social
-        // size correction therefore continues from halfway instead of
-        // making the dialog jump backward to the start of encoding. Max's
-        // codec fallback gets the same monotonic behavior.
-        final attemptCount =
-            quality == VideoExportQuality.social ? 2 : codecAttempts.length;
-        final attemptIndex =
-            quality == VideoExportQuality.social ? sizeRetries : codecIndex;
+        // Reserve one progress slot for every possible invocation. A size
+        // correction therefore continues from halfway instead of making the
+        // dialog jump backward. Max's codec fallback behaves the same way.
+        final attemptCount = sizePolicy != null ? 2 : codecAttempts.length;
+        final attemptIndex = sizePolicy != null ? sizeRetries : codecIndex;
         if (_cancelled) {
           await removePartialOutput();
           throw VideoExportCancelled();
@@ -203,16 +216,16 @@ class FfmpegVideoEncoder {
           throw VideoExportCancelled();
         }
         if (exitCode == 0) {
-          if (quality == VideoExportQuality.social) {
+          if (sizePolicy != null) {
             final actualBytes = await File(partialPath).length();
-            if (actualBytes > SocialVideoExportPolicy.targetFileSizeBytes &&
+            if (actualBytes > sizePolicy.targetFileSizeBytes &&
                 sizeRetries < 1) {
-              final retryBitrate = SocialVideoExportPolicy.retryVideoBitrate(
-                previousBitrate: socialBitrate!,
+              final retryBitrate = sizePolicy.retryVideoBitrate(
+                previousBitrate: targetBitrate!,
                 actualBytes: actualBytes,
               );
               if (retryBitrate != null) {
-                socialBitrate = retryBitrate;
+                targetBitrate = retryBitrate;
                 sizeRetries++;
                 retryForSize = true;
                 break;
@@ -259,10 +272,10 @@ class FfmpegVideoEncoder {
 
   static List<List<String>> _codecAttempts({
     required VideoExportQuality quality,
-    required int? socialBitrate,
+    required int? targetBitrate,
   }) {
-    if (quality == VideoExportQuality.social) {
-      final bitrate = socialBitrate!;
+    if (quality.sizePolicy != null) {
+      final bitrate = targetBitrate!;
       if (Platform.isWindows) {
         return [
           [
