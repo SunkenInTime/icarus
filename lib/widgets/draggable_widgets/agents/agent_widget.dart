@@ -14,11 +14,8 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
-import 'package:icarus/providers/view_cone_debug_provider.dart';
-import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
-import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_elevation_menu.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -76,6 +73,8 @@ const Color _mutedEnemyBGColor = Color.fromARGB(255, 70, 50, 50);
 /// Muted outline colors for dead agents
 const Color _mutedAllyOutlineColor = Color.fromARGB(100, 100, 100, 100);
 const Color _mutedEnemyOutlineColor = Color.fromARGB(100, 120, 80, 80);
+const double _agentQuickActionSize = 36;
+const double _agentQuickActionGap = 4;
 
 class AgentWidget extends ConsumerWidget {
   const AgentWidget({
@@ -210,25 +209,24 @@ class AgentWidget extends ConsumerWidget {
               )
             : null;
     final plainAgent = placedAgentNode is PlacedAgent ? placedAgentNode : null;
-    final viewConeAgent =
-        placedAgentNode is PlacedViewConeAgent ? placedAgentNode : null;
-    final visionGeometry = viewConeAgent == null || mapState == null
-        ? null
-        : ref
-            .watch(viewConeGeometryProvider(mapState.currentMap))
-            .asData
-            ?.value;
-    final viewConeDebugEnabled =
-        viewConeAgent == null ? false : ref.watch(viewConeDebugProvider);
-
+    final adjacentPageCopyItems =
+        canInteract && lineUpId == null && placedAgentNode != null
+            ? buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id)
+            : const <ShadContextMenuItem>[];
+    final hasContextMenuItemsBelow = canInteract &&
+        (lineUpId != null ||
+            (plainAgent != null && plainAgent.id.isNotEmpty) ||
+            adjacentPageCopyItems.isNotEmpty);
     final contextMenuItems = <ShadContextMenuItem>[
       if (canInteract)
         ShadContextMenuItem.raw(
           variant: ShadContextMenuItemVariant.primary,
-          height: 36,
+          height: _agentQuickActionSize,
           closeOnTap: false,
-          padding: const EdgeInsets.only(bottom: 4),
-          insetPadding: const EdgeInsets.only(left: 4, right: 4),
+          padding: hasContextMenuItemsBelow
+              ? const EdgeInsets.only(bottom: _agentQuickActionGap)
+              : EdgeInsets.zero,
+          insetPadding: EdgeInsets.zero,
           backgroundColor: Colors.transparent,
           selectedBackgroundColor: Colors.transparent,
           child: _AgentAbilityContextMenuRow(
@@ -236,32 +234,6 @@ class AgentWidget extends ConsumerWidget {
             isAlly: isAlly,
             mapScale: mapScale,
           ),
-        ),
-      if (canInteract && viewConeAgent != null && visionGeometry != null)
-        buildViewConeElevationMenuItem(
-          geometry: visionGeometry,
-          selectedElevation: viewConeAgent.visionElevation,
-          automaticElevation: visionGeometry
-              .layerForPosition(
-                isAttack: mapState!.isAttack,
-                position: viewConeAgent.position +
-                    coordinateSystem.virtualOffsetToWorld(
-                      Offset(agentSize / 2, agentSize / 2),
-                    ),
-              )
-              .elevation,
-          onChanged: (elevation) {
-            ref.read(agentProvider.notifier).updateViewConeElevation(
-                  id: viewConeAgent.id,
-                  elevation: elevation,
-                );
-          },
-        ),
-      if (canInteract && viewConeAgent != null && visionGeometry != null)
-        buildViewConeDebugMenuItem(
-          enabled: viewConeDebugEnabled,
-          onChanged: (enabled) =>
-              ref.read(viewConeDebugProvider.notifier).state = enabled,
         ),
       if (canInteract && lineUpId != null)
         ShadContextMenuItem(
@@ -305,8 +277,7 @@ class AgentWidget extends ConsumerWidget {
             ref.read(lineUpProvider.notifier).startNewGroup(plainAgent);
           },
         ),
-      if (canInteract && lineUpId == null && placedAgentNode != null)
-        ...buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id),
+      ...adjacentPageCopyItems,
     ];
 
     Widget agentCard;
@@ -368,20 +339,24 @@ class _AgentAbilityContextMenuRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Row(
-      spacing: 4,
-      // crossAxisAlignment: CrossAxisAlignment.start,
-      //
-      mainAxisSize: MainAxisSize.max,
-      // mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        for (final ability in agent.abilities)
-          _AgentAbilityContextMenuButton(
-            ability: ability,
-            isAlly: isAlly,
-            mapScale: mapScale,
-          ),
-      ],
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        minWidth: (agent.abilities.length * _agentQuickActionSize) +
+            ((agent.abilities.length + 1) * _agentQuickActionGap),
+      ),
+      child: Row(
+        spacing: _agentQuickActionGap,
+        mainAxisSize: MainAxisSize.max,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (final ability in agent.abilities)
+            _AgentAbilityContextMenuButton(
+              ability: ability,
+              isAlly: isAlly,
+              mapScale: mapScale,
+            ),
+        ],
+      ),
     );
   }
 }
@@ -471,8 +446,8 @@ class _AgentAbilityContextMenuButtonState
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
             curve: Curves.easeOutCubic,
-            width: 36,
-            height: 36,
+            width: _agentQuickActionSize,
+            height: _agentQuickActionSize,
             padding: const EdgeInsets.all(5),
             decoration: BoxDecoration(
               color: background,

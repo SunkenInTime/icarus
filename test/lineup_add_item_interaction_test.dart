@@ -200,6 +200,62 @@ void main() {
     );
   });
 
+  testWidgets('agent quick actions span the width of longer menu rows',
+      (tester) async {
+    final container = _createContainer();
+    final group = _breachGroup();
+    container.read(lineUpProvider.notifier).addGroup(group);
+
+    await _pumpHarness(
+      tester,
+      container: container,
+      child: Center(
+        child: AgentWidget(
+          lineUpId: group.id,
+          id: group.agent.id,
+          isAlly: group.agent.isAlly,
+          agent: AgentData.agents[group.agent.type]!,
+        ),
+      ),
+    );
+
+    await tester.tapAt(
+      tester.getCenter(find.byType(AgentWidget)),
+      buttons: kSecondaryButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+
+    final menuItemRect = tester.getRect(
+      find.byType(ShadContextMenuItem).first,
+    );
+    final abilityButtons = find.byWidgetPredicate(
+      (widget) => widget is Draggable<DraggedAbilityData>,
+    );
+    expect(
+      abilityButtons,
+      findsNWidgets(AgentData.agents[group.agent.type]!.abilities.length),
+    );
+
+    final buttonRects = [
+      for (final element in abilityButtons.evaluate())
+        tester.getRect(
+          find.byElementPredicate((candidate) => candidate == element),
+        ),
+    ];
+    final leadingSpace = buttonRects.first.left - menuItemRect.left;
+    final trailingSpace = menuItemRect.right - buttonRects.last.right;
+    for (var index = 1; index < buttonRects.length; index++) {
+      final gap = buttonRects[index].left - buttonRects[index - 1].right;
+      expect(gap, closeTo(4, 0.1));
+    }
+    expect(trailingSpace, closeTo(leadingSpace, 0.1));
+    for (final buttonRect in buttonRects) {
+      expect(buttonRect.width, 36);
+      expect(buttonRect.height, 36);
+    }
+  });
+
   testWidgets('locked add-item mode renders a non-draggable preview agent',
       (tester) async {
     final container = _createContainer();
