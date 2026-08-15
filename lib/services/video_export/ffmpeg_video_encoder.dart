@@ -21,6 +21,24 @@ class VideoExportException implements Exception {
 String ensureMp4Extension(String path) =>
     path.toLowerCase().endsWith('.mp4') ? path : '$path.mp4';
 
+/// Maps one FFmpeg invocation's progress into its share of the full encode.
+///
+/// A Social size retry is invocation 1 of 2, so its raw 0...1 progress becomes
+/// 0.5...1 instead of resetting the dialog to zero.
+double videoEncodeAttemptProgress({
+  required int attemptIndex,
+  required int attemptCount,
+  required double attemptFraction,
+}) {
+  if (attemptCount <= 0 || attemptIndex < 0 || attemptIndex >= attemptCount) {
+    throw ArgumentError('Attempt must be within the attempt count.');
+  }
+  final attemptStart = attemptIndex / attemptCount;
+  final attemptWeight = 1 / attemptCount;
+  return (attemptStart + attemptFraction.clamp(0.0, 1.0) * attemptWeight)
+      .clamp(0.0, 1.0);
+}
+
 /// Encodes a rendered frame sequence into an .mp4 by invoking a bundled (or
 /// PATH-installed) ffmpeg binary as a child process (ADR 0001).
 class FfmpegVideoEncoder {
@@ -141,8 +159,6 @@ class FfmpegVideoEncoder {
             quality == VideoExportQuality.social ? 2 : codecAttempts.length;
         final attemptIndex =
             quality == VideoExportQuality.social ? sizeRetries : codecIndex;
-        final attemptStart = attemptIndex / attemptCount;
-        final attemptWeight = 1 / attemptCount;
         if (_cancelled) {
           await removePartialOutput();
           throw VideoExportCancelled();
@@ -171,9 +187,10 @@ class FfmpegVideoEncoder {
                 double.parse('0.${match.group(4)!}');
             final attemptFraction = (seconds / totalSeconds).clamp(0.0, 1.0);
             onProgress?.call(
-              (attemptStart + attemptFraction * attemptWeight).clamp(
-                0.0,
-                1.0,
+              videoEncodeAttemptProgress(
+                attemptIndex: attemptIndex,
+                attemptCount: attemptCount,
+                attemptFraction: attemptFraction,
               ),
             );
           }
