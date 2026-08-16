@@ -136,30 +136,34 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                   (p) => p.id == currentPageID,
                   orElse: () => newStrat.pages.first,
                 );
+                final screenshotContainer = ProviderContainer();
 
                 try {
+                  final screenshotView = ScreenshotView(
+                    isAttack: activePage.isAttack,
+                    mapValue: newStrat.mapData,
+                    showSpawnBarrier: mapState.showSpawnBarrier,
+                    showRegionNames: mapState.showRegionNames,
+                    showUltOrbs: mapState.showUltOrbs,
+                    agents: activePage.agentData,
+                    abilities: activePage.abilityData,
+                    text: activePage.textData,
+                    images: activePage.imageData,
+                    drawings: activePage.drawingData,
+                    utilities: activePage.utilityData,
+                    strategySettings: activePage.settings,
+                    strategyState: ref.read(strategyProvider),
+                    pageName: activePage.name,
+                    lineUpGroups: activePage.lineUpGroups,
+                    themeProfileId: newStrat.themeProfileId,
+                    themeOverridePalette: newStrat.themeOverridePalette,
+                  );
+                  screenshotView.hydrateProviders(screenshotContainer);
                   final image = await newController.captureFromWidget(
                     targetSize: CoordinateSystem.screenShotSize,
                     wrapForOffscreenCapture(
-                      ScreenshotView(
-                        isAttack: activePage.isAttack,
-                        mapValue: newStrat.mapData,
-                        showSpawnBarrier: mapState.showSpawnBarrier,
-                        showRegionNames: mapState.showRegionNames,
-                        showUltOrbs: mapState.showUltOrbs,
-                        agents: activePage.agentData,
-                        abilities: activePage.abilityData,
-                        text: activePage.textData,
-                        images: activePage.imageData,
-                        drawings: activePage.drawingData,
-                        utilities: activePage.utilityData,
-                        strategySettings: activePage.settings,
-                        strategyState: ref.read(strategyProvider),
-                        pageName: activePage.name,
-                        lineUpGroups: activePage.lineUpGroups,
-                        themeProfileId: newStrat.themeProfileId,
-                        themeOverridePalette: newStrat.themeOverridePalette,
-                      ),
+                      screenshotView,
+                      container: screenshotContainer,
                     ),
                   );
                   setState(() {
@@ -178,6 +182,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                   }
                 } catch (_) {
                 } finally {
+                  screenshotContainer.dispose();
                   ref.read(screenshotProvider.notifier).setIsScreenShot(false);
                   CoordinateSystem.instance.setIsScreenshot(false);
                   ref

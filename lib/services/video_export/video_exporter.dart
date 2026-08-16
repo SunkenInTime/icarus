@@ -123,8 +123,12 @@ class VideoExporter {
       var renderedFrames = 0;
       String? lastFrameFile;
 
-      Future<void> renderFrame(Widget view, double durationSeconds) async {
+      Future<void> renderFrame(
+        ScreenshotView view,
+        double durationSeconds,
+      ) async {
         if (_cancelled) throw VideoExportCancelled();
+        view.hydrateProviders(offscreenContainer);
         final bytes = await renderer!.captureRawRgba(view);
         final fileName = 'frame_${frameIndex.toString().padLeft(5, '0')}.png';
         await frameWriter!.writeFrame(bytes);
@@ -143,8 +147,10 @@ class VideoExporter {
       // Warm the first page's SVGs and image streams once. Later pages get a
       // shorter warm-up immediately before their transition begins; the
       // transition frames themselves never pay a fixed settling delay.
+      final firstView = _stillView(pages.first);
+      firstView.hydrateProviders(offscreenContainer);
       await renderer.prepare(
-        _stillView(pages.first),
+        firstView,
         settleDuration: const Duration(milliseconds: 800),
       );
 
@@ -170,8 +176,10 @@ class VideoExporter {
           endAgentSize: nextPage.settings.agentSize,
           coordinateSystem: CoordinateSystem.instance,
         );
+        final nextView = _stillView(nextPage);
+        nextView.hydrateProviders(offscreenContainer);
         await renderer.prepare(
-          _stillView(nextPage),
+          nextView,
           settleDuration: const Duration(milliseconds: 120),
         );
         for (var f = 1; f <= transitionFrames; f++) {
@@ -234,9 +242,9 @@ class VideoExporter {
     }
   }
 
-  Widget _stillView(StrategyPage page) => _pageView(page);
+  ScreenshotView _stillView(StrategyPage page) => _pageView(page);
 
-  Widget _transitionView({
+  ScreenshotView _transitionView({
     required StrategyPage from,
     required StrategyPage to,
     required List<PageTransitionEntry> entries,
@@ -259,7 +267,7 @@ class VideoExporter {
     );
   }
 
-  Widget _pageView(
+  ScreenshotView _pageView(
     StrategyPage page, {
     Widget? placedWidgetsOverride,
     double drawingsOpacity = 1.0,

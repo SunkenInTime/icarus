@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
@@ -25,8 +26,9 @@ class TextWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (isFeedback) {
+    if (isFeedback || ref.watch(screenshotProvider)) {
       return _FeedbackTextWidget(
+        key: ValueKey(text),
         text: text,
         size: size,
         fontSize: fontSize,
@@ -189,6 +191,7 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
 
 class _FeedbackTextWidget extends StatefulWidget {
   const _FeedbackTextWidget({
+    super.key,
     required this.text,
     required this.size,
     required this.fontSize,

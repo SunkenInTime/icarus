@@ -74,31 +74,37 @@ class ScreenshotView extends ConsumerWidget {
   /// Video export fades the drawing layer in early during transitions.
   final double drawingsOpacity;
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  /// Loads this frame into the isolated providers used for offscreen capture.
+  ///
+  /// Call this before mounting or updating the view. Riverpod intentionally
+  /// rejects provider writes from [build], even though release builds do not
+  /// surface that assertion.
+  void hydrateProviders(ProviderContainer container) {
     CoordinateSystem.instance.setIsScreenshot(true);
-    ref.read(strategyProvider.notifier).setFromState(strategyState);
-    ref.read(agentProvider.notifier).fromHive(agents);
-    ref.read(screenshotProvider.notifier).setIsScreenShot(true);
-
-    ref.read(abilityProvider.notifier).fromHive(abilities);
-    ref.read(drawingProvider.notifier).fromHive(drawings);
-    ref.read(mapProvider.notifier).fromHive(mapValue, isAttack);
-    ref.read(textProvider.notifier).fromHive(text);
-    ref.read(placedImageProvider.notifier).fromHive(images);
-
-    ref.read(strategySettingsProvider.notifier).fromHive(strategySettings);
-    ref.read(strategyThemeProvider.notifier).fromStrategy(
+    container.read(strategyProvider.notifier).setFromState(strategyState);
+    container.read(agentProvider.notifier).fromHive(agents);
+    container.read(screenshotProvider.notifier).setIsScreenShot(true);
+    container.read(abilityProvider.notifier).fromHive(abilities);
+    container.read(drawingProvider.notifier).fromHive(drawings);
+    container.read(mapProvider.notifier).fromHive(mapValue, isAttack);
+    container.read(textProvider.notifier).fromHive(text);
+    container.read(placedImageProvider.notifier).fromHive(images);
+    container
+        .read(strategySettingsProvider.notifier)
+        .fromHive(strategySettings);
+    container.read(strategyThemeProvider.notifier).fromStrategy(
           profileId: themeProfileId,
           overridePalette: themeOverridePalette,
         );
-    ref.read(utilityProvider.notifier).fromHive(utilities);
-
-    ref.read(lineUpProvider.notifier).fromHive(lineUpGroups);
-
-    ref
+    container.read(utilityProvider.notifier).fromHive(utilities);
+    container.read(lineUpProvider.notifier).fromHive(lineUpGroups);
+    container
         .read(drawingProvider.notifier)
         .rebuildAllPaths(CoordinateSystem.instance);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
     String barrierAssetName =
