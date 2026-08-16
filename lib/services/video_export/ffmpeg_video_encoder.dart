@@ -43,8 +43,12 @@ double videoEncodeAttemptProgress({
 String videoExportFilter({
   required VideoExportQuality quality,
   required double totalSeconds,
+  int? videoBitrate,
 }) {
-  final outputHeight = quality.outputHeightForDuration(totalSeconds);
+  final sizePolicy = quality.sizePolicy;
+  final outputHeight = sizePolicy != null && videoBitrate != null
+      ? sizePolicy.outputHeightForBitrate(videoBitrate)
+      : quality.outputHeightForDuration(totalSeconds);
   return [
     'fps=${quality.fps}',
     if (outputHeight == 720) 'scale=1280:720:flags=lanczos',
@@ -52,9 +56,30 @@ String videoExportFilter({
   ].join(',');
 }
 
+typedef FfmpegProcessStarter = Future<Process> Function(
+  String executable,
+  List<String> arguments, {
+  String? workingDirectory,
+});
+
+Future<Process> _startFfmpegProcess(
+  String executable,
+  List<String> arguments, {
+  String? workingDirectory,
+}) =>
+    Process.start(
+      executable,
+      arguments,
+      workingDirectory: workingDirectory,
+    );
+
 /// Encodes a rendered frame sequence into an .mp4 by invoking a bundled (or
 /// PATH-installed) ffmpeg binary as a child process (ADR 0001).
 class FfmpegVideoEncoder {
+  FfmpegVideoEncoder({FfmpegProcessStarter? processStarter})
+      : _processStarter = processStarter ?? _startFfmpegProcess;
+
+  final FfmpegProcessStarter _processStarter;
   Process? _process;
   bool _cancelled = false;
 
@@ -115,10 +140,6 @@ class FfmpegVideoEncoder {
   }) async {
     final sizePolicy = quality.sizePolicy;
     var targetBitrate = sizePolicy?.initialVideoBitrate(totalSeconds);
-    final videoFilter = videoExportFilter(
-      quality: quality,
-      totalSeconds: totalSeconds,
-    );
 
     final baseArgs = [
       '-y',
@@ -128,8 +149,6 @@ class FfmpegVideoEncoder {
       '0',
       '-i',
       concatListFileName,
-      '-vf',
-      videoFilter,
       // The concat playlist repeats its final still so FFmpeg honors that
       // entry's duration. Some FFmpeg builds inherit the duration on the
       // repeated file and hold the final page twice, so cap the output to the
@@ -178,9 +197,21 @@ class FfmpegVideoEncoder {
         }
         // This encoder always produces MP4. Declaring the muxer explicitly
         // avoids relying on FFmpeg to infer it from the selected path.
-        final args = [...baseArgs, ...codec, '-f', 'mp4', partialPath];
+        final args = [
+          ...baseArgs,
+          '-vf',
+          videoExportFilter(
+            quality: quality,
+            totalSeconds: totalSeconds,
+            videoBitrate: targetBitrate,
+          ),
+          ...codec,
+          '-f',
+          'mp4',
+          partialPath,
+        ];
         final stderrBuffer = StringBuffer();
-        final process = await Process.start(
+        final process = await _processStarter(
           binary,
           args,
           workingDirectory: workingDirectory,
