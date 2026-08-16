@@ -6,8 +6,9 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
+import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -209,6 +210,8 @@ class AgentWidget extends ConsumerWidget {
               )
             : null;
     final plainAgent = placedAgentNode is PlacedAgent ? placedAgentNode : null;
+    final viewConeAgent =
+        placedAgentNode is PlacedViewConeAgent ? placedAgentNode : null;
     final adjacentPageCopyItems =
         canInteract && lineUpId == null && placedAgentNode != null
             ? buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id)
@@ -216,6 +219,7 @@ class AgentWidget extends ConsumerWidget {
     final hasContextMenuItemsBelow = canInteract &&
         (lineUpId != null ||
             (plainAgent != null && plainAgent.id.isNotEmpty) ||
+            viewConeAgent != null ||
             adjacentPageCopyItems.isNotEmpty);
     final contextMenuItems = <ShadContextMenuItem>[
       if (canInteract)
@@ -261,6 +265,21 @@ class AgentWidget extends ConsumerWidget {
           child: const Text('Delete Lineup Group'),
           onPressed: () {
             ref.read(lineUpProvider.notifier).deleteGroupById(lineUpId!);
+          },
+        ),
+      if (canInteract && viewConeAgent != null)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.eyeOff),
+          child: const Text('Remove View Cone'),
+          onPressed: () {
+            ref.read(actionProvider.notifier).performTransaction(
+              groups: const [ActionGroup.agent],
+              mutation: () {
+                ref
+                    .read(agentProvider.notifier)
+                    .convertViewConeAgentToPlain(id: viewConeAgent.id);
+              },
+            );
           },
         ),
       if (canInteract &&
