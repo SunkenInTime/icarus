@@ -96,165 +96,183 @@ class VideoExporter {
       throw VideoExportException('No pages selected.');
     }
 
-    await runPreservingScreenshotMode(() async {
-      final fps = quality.fps;
-      final transitionFrames = transitionFrameCountFor(fps);
-      final frameInterval = 1.0 / fps;
-      final stepSeconds = stepDuration.inMilliseconds / 1000.0;
-      final totalFrames = pages.length + (pages.length - 1) * transitionFrames;
-      final totalSeconds = plannedDurationSeconds(
-        pageCount: pages.length,
-        stepSeconds: stepSeconds,
+    await runPreservingScreenshotMode(
+      () => _export(
+        pages: pages,
+        stepDuration: stepDuration,
+        ffmpegBinary: ffmpegBinary,
+        outputPath: outputPath,
+        quality: quality,
+        onProgress: onProgress,
+      ),
+    );
+  }
+
+  Future<void> _export({
+    required List<StrategyPage> pages,
+    required Duration stepDuration,
+    required String ffmpegBinary,
+    required String outputPath,
+    required VideoExportQuality quality,
+    void Function(double fraction, String label)? onProgress,
+  }) async {
+    final fps = quality.fps;
+    final transitionFrames = transitionFrameCountFor(fps);
+    final frameInterval = 1.0 / fps;
+    final stepSeconds = stepDuration.inMilliseconds / 1000.0;
+    final totalFrames = pages.length + (pages.length - 1) * transitionFrames;
+    final totalSeconds = plannedDurationSeconds(
+      pageCount: pages.length,
+      stepSeconds: stepSeconds,
+      fps: fps,
+    );
+
+    final tempDir = await Directory.systemTemp.createTemp(
+      'icarus_video_export_',
+    );
+    ProviderContainer? captureContainer;
+    PersistentOffscreenRenderer? renderer;
+    FfmpegPngSequenceWriter? frameWriter;
+    try {
+      final offscreenContainer = ProviderContainer();
+      captureContainer = offscreenContainer;
+      renderer = PersistentOffscreenRenderer(
+        targetSize: CoordinateSystem.screenShotSize,
+        wrapWidget: (child) =>
+            wrapForOffscreenCapture(child, container: offscreenContainer),
+      );
+      frameWriter = FfmpegPngSequenceWriter();
+      _frameWriter = frameWriter;
+      await frameWriter.start(
+        binary: ffmpegBinary,
+        workingDirectory: tempDir.path,
+        width: CoordinateSystem.screenShotSize.width.round(),
+        height: CoordinateSystem.screenShotSize.height.round(),
         fps: fps,
+        totalFrames: totalFrames,
       );
+      final concatLines = <String>['ffconcat version 1.0'];
+      var frameIndex = 0;
+      var renderedFrames = 0;
+      String? lastFrameFile;
 
-      final tempDir = await Directory.systemTemp.createTemp(
-        'icarus_video_export_',
-      );
-      ProviderContainer? captureContainer;
-      PersistentOffscreenRenderer? renderer;
-      FfmpegPngSequenceWriter? frameWriter;
-      try {
-        final offscreenContainer = ProviderContainer();
-        captureContainer = offscreenContainer;
-        renderer = PersistentOffscreenRenderer(
-          targetSize: CoordinateSystem.screenShotSize,
-          wrapWidget: (child) =>
-              wrapForOffscreenCapture(child, container: offscreenContainer),
-        );
-        frameWriter = FfmpegPngSequenceWriter();
-        _frameWriter = frameWriter;
-        await frameWriter.start(
-          binary: ffmpegBinary,
-          workingDirectory: tempDir.path,
-          width: CoordinateSystem.screenShotSize.width.round(),
-          height: CoordinateSystem.screenShotSize.height.round(),
-          fps: fps,
-          totalFrames: totalFrames,
-        );
-        final concatLines = <String>['ffconcat version 1.0'];
-        var frameIndex = 0;
-        var renderedFrames = 0;
-        String? lastFrameFile;
-
-        Future<void> renderFrame(
-          ScreenshotView view,
-          double durationSeconds,
-        ) async {
-          if (_cancelled) throw VideoExportCancelled();
-          view.hydrateProviders(offscreenContainer);
-          final bytes = await renderer!.captureRawRgba(view);
-          final fileName = 'frame_${frameIndex.toString().padLeft(5, '0')}.png';
-          await frameWriter!.writeFrame(bytes);
-          frameIndex++;
-          concatLines
-            ..add("file '$fileName'")
-            ..add('duration ${durationSeconds.toStringAsFixed(6)}');
-          lastFrameFile = fileName;
-          renderedFrames++;
-          onProgress?.call(
-            renderedFrames / totalFrames * _renderWeight,
-            'Rendering frames ($renderedFrames/$totalFrames)',
-          );
-        }
-
-        // Warm the first page's SVGs and image streams once. Later pages get a
-        // shorter warm-up immediately before their transition begins; the
-        // transition frames themselves never pay a fixed settling delay.
-        final firstView = _stillView(pages.first);
-        firstView.hydrateProviders(offscreenContainer);
-        await renderer.prepare(
-          firstView,
-          settleDuration: const Duration(milliseconds: 800),
-        );
-
-        for (var i = 0; i < pages.length; i++) {
-          final page = pages[i];
-          await renderFrame(_stillView(page), stepSeconds);
-
-          if (i + 1 >= pages.length) continue;
-          final nextPage = pages[i + 1];
-          final entries = TransitionPlanner.diff(
-            TransitionPlanner.placedWidgetMapForPage(page),
-            TransitionPlanner.placedWidgetMapForPage(nextPage),
-          );
-          final fadeDrawings = TransitionPlanner.drawingsChanged(
-            page.drawingData,
-            nextPage.drawingData,
-          );
-          final agentPaths = AgentTransitionPathPlanner.plan(
-            entries: entries,
-            geometry: geometry,
-            isAttack: nextPage.isAttack,
-            startAgentSize: page.settings.agentSize,
-            endAgentSize: nextPage.settings.agentSize,
-            coordinateSystem: CoordinateSystem.instance,
-          );
-          final nextView = _stillView(nextPage);
-          nextView.hydrateProviders(offscreenContainer);
-          await renderer.prepare(
-            nextView,
-            settleDuration: const Duration(milliseconds: 120),
-          );
-          for (var f = 1; f <= transitionFrames; f++) {
-            final t = kPageTransitionCurve.transform(f / transitionFrames);
-            await renderFrame(
-              _transitionView(
-                from: page,
-                to: nextPage,
-                entries: entries,
-                agentPaths: agentPaths,
-                t: t,
-                fadeDrawings: fadeDrawings,
-              ),
-              frameInterval,
-            );
-          }
-        }
-
-        await frameWriter.finish();
-        _frameWriter = null;
-
-        // The concat demuxer ignores the duration of the final entry unless the
-        // last file is repeated.
-        if (lastFrameFile != null) {
-          concatLines.add("file '$lastFrameFile'");
-        }
-        final concatFile = File(p.join(tempDir.path, 'frames.ffconcat'));
-        await concatFile.writeAsString(concatLines.join('\n'));
-
+      Future<void> renderFrame(
+        ScreenshotView view,
+        double durationSeconds,
+      ) async {
         if (_cancelled) throw VideoExportCancelled();
-        onProgress?.call(_renderWeight, 'Encoding video');
-        await _encoder.encode(
-          binary: ffmpegBinary,
-          workingDirectory: tempDir.path,
-          concatListFileName: 'frames.ffconcat',
-          outputPath: outputPath,
-          totalSeconds: totalSeconds,
-          quality: quality,
-          onProgress: (fraction) => onProgress?.call(
-            _renderWeight + fraction * (1 - _renderWeight),
-            'Encoding video',
-          ),
+        view.hydrateProviders(offscreenContainer);
+        final bytes = await renderer!.captureRawRgba(view);
+        final fileName = 'frame_${frameIndex.toString().padLeft(5, '0')}.png';
+        await frameWriter!.writeFrame(bytes);
+        frameIndex++;
+        concatLines
+          ..add("file '$fileName'")
+          ..add('duration ${durationSeconds.toStringAsFixed(6)}');
+        lastFrameFile = fileName;
+        renderedFrames++;
+        onProgress?.call(
+          renderedFrames / totalFrames * _renderWeight,
+          'Rendering frames ($renderedFrames/$totalFrames)',
         );
-      } finally {
-        // Wait for ffmpeg to exit before deleting the directory it writes into;
-        // on Windows the delete races a still-exiting process otherwise.
-        await frameWriter?.cancel();
-        _frameWriter = null;
-        try {
-          await renderer?.dispose();
-        } finally {
-          captureContainer?.dispose();
-          try {
-            await tempDir.delete(recursive: true);
-          } on Object {
-            // Leaving orphaned temp frames behind is preferable to masking the
-            // original export result.
-          }
+      }
+
+      // Warm the first page's SVGs and image streams once. Later pages get a
+      // shorter warm-up immediately before their transition begins; the
+      // transition frames themselves never pay a fixed settling delay.
+      final firstView = _stillView(pages.first);
+      firstView.hydrateProviders(offscreenContainer);
+      await renderer.prepare(
+        firstView,
+        settleDuration: const Duration(milliseconds: 800),
+      );
+
+      for (var i = 0; i < pages.length; i++) {
+        final page = pages[i];
+        await renderFrame(_stillView(page), stepSeconds);
+
+        if (i + 1 >= pages.length) continue;
+        final nextPage = pages[i + 1];
+        final entries = TransitionPlanner.diff(
+          TransitionPlanner.placedWidgetMapForPage(page),
+          TransitionPlanner.placedWidgetMapForPage(nextPage),
+        );
+        final fadeDrawings = TransitionPlanner.drawingsChanged(
+          page.drawingData,
+          nextPage.drawingData,
+        );
+        final agentPaths = AgentTransitionPathPlanner.plan(
+          entries: entries,
+          geometry: geometry,
+          isAttack: nextPage.isAttack,
+          startAgentSize: page.settings.agentSize,
+          endAgentSize: nextPage.settings.agentSize,
+          coordinateSystem: CoordinateSystem.instance,
+        );
+        final nextView = _stillView(nextPage);
+        nextView.hydrateProviders(offscreenContainer);
+        await renderer.prepare(
+          nextView,
+          settleDuration: const Duration(milliseconds: 120),
+        );
+        for (var f = 1; f <= transitionFrames; f++) {
+          final t = kPageTransitionCurve.transform(f / transitionFrames);
+          await renderFrame(
+            _transitionView(
+              from: page,
+              to: nextPage,
+              entries: entries,
+              agentPaths: agentPaths,
+              t: t,
+              fadeDrawings: fadeDrawings,
+            ),
+            frameInterval,
+          );
         }
       }
-    });
+
+      await frameWriter.finish();
+      _frameWriter = null;
+
+      // The concat demuxer ignores the duration of the final entry unless the
+      // last file is repeated.
+      if (lastFrameFile != null) {
+        concatLines.add("file '$lastFrameFile'");
+      }
+      final concatFile = File(p.join(tempDir.path, 'frames.ffconcat'));
+      await concatFile.writeAsString(concatLines.join('\n'));
+
+      if (_cancelled) throw VideoExportCancelled();
+      onProgress?.call(_renderWeight, 'Encoding video');
+      await _encoder.encode(
+        binary: ffmpegBinary,
+        workingDirectory: tempDir.path,
+        concatListFileName: 'frames.ffconcat',
+        outputPath: outputPath,
+        totalSeconds: totalSeconds,
+        quality: quality,
+        onProgress: (fraction) => onProgress?.call(
+          _renderWeight + fraction * (1 - _renderWeight),
+          'Encoding video',
+        ),
+      );
+    } finally {
+      // Wait for ffmpeg to exit before deleting the directory it writes into;
+      // on Windows the delete races a still-exiting process otherwise.
+      await frameWriter?.cancel();
+      _frameWriter = null;
+      try {
+        await renderer?.dispose();
+      } finally {
+        captureContainer?.dispose();
+        try {
+          await tempDir.delete(recursive: true);
+        } on Object {
+          // Leaving orphaned temp frames behind is preferable to masking the
+          // original export result.
+        }
+      }
+    }
   }
 
   ScreenshotView _stillView(StrategyPage page) => _pageView(page);
