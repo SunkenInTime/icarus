@@ -58,3 +58,6 @@ app.*.map.json
 
 # Cached ffmpeg download for video export packaging (scripts/fetch_ffmpeg.ps1)
 windows/.ffmpeg-cache/
+
+# Local investigation/benchmark evidence (may contain user strategy renders)
+/artifacts/

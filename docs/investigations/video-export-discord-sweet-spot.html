@@ -1,0 +1,971 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Icarus video export · Discord-size investigation</title>
+  <script>
+    /* Runs before first paint so the theme never flashes. Keep it in <head>. */
+    (() => {
+      /* ?theme=light|dark forces a theme — used for automated verification. */
+      const forced = new URLSearchParams(location.search).get("theme");
+      let stored = null;
+      try { stored = localStorage.getItem("blueprint-theme"); } catch {}
+      const system = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      document.documentElement.dataset.theme = forced || stored || system;
+    })();
+  </script>
+  <style>
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+/* ---- palette ----------------------------------------------------------
+   Dark is the default. The inline <head> script sets data-theme from
+   localStorage or the system preference before first paint; the light
+   block below is the only override. Never hardcode a hex outside here —
+   inline SVG included. ------------------------------------------------ */
+:root {
+  color-scheme: dark;
+
+  /* background ramp, darkest to lightest: sunken · bg · tint · inset · hover · raised */
+  --bg-sunken: #000;
+  --bg: #050505;
+  --bg-tint: #0a0a09;
+  --bg-inset: #0d0d0d;
+  --bg-hover: #141414;
+  --bg-raised: #1b1b19;
+  --bg-translucent: rgba(5, 5, 5, .96);
+  --track: #111;
+
+  --fg: #d6d3cc;
+  --fg-strong: #f1efe8;
+  --fg-muted: #8b8983;
+  --fg-faint: #7a7872;
+
+  --line: #222;
+  --line-strong: #3d3d3d;
+
+  --accent: #7b96ff;
+  --ok: #6fcf8f;
+  --warn: #e8b866;
+  --danger: #ff7b72;
+
+  /* diagram series, ramping toward the accent */
+  --series-1: #44527f;
+  --series-2: #566ba9;
+  --series-3: #7b96ff;
+  --series-4: #817b9f;
+  --on-fill: #f1efe8;    /* label sitting on a series bar */
+  --on-accent: #050505;  /* label sitting on the accent bar */
+
+  /* theme-independent */
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --hatch: repeating-linear-gradient(-45deg, transparent, transparent 8px, var(--line) 8px, var(--line) 9px);
+  --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* background ramp, lightest page to deepest surface — warm off-white, not white */
+  --bg-sunken: #eae5d8;
+  --bg: #f4f1e9;
+  --bg-tint: #efebe0;
+  --bg-inset: #ebe6d9;
+  --bg-hover: #e2dccc;
+  --bg-raised: #dbd4c2;
+  --bg-translucent: rgba(244, 241, 233, .96);
+  --track: #e6e1d2;
+
+  --fg: #3d3b35;
+  --fg-strong: #14130f;
+  --fg-muted: #6a675f;
+  --fg-faint: #767268;
+
+  --line: #dedad0;
+  --line-strong: #b0aca1;
+
+  --accent: #3f52c9;
+  --ok: #2c7a4b;
+  --warn: #8a5d0f;
+  --danger: #b3352c;
+
+  --series-1: #6a739b;
+  --series-2: #4f5d9e;
+  --series-3: #3f52c9;
+  --series-4: #6f6890;
+  --on-fill: #fff;
+  --on-accent: #fff;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
+body { margin: 0; min-height: 100vh; overflow-x: clip; background: var(--bg); color: var(--fg); font: 400 1rem/1.75 var(--sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+a { color: inherit; }
+button { color: inherit; font: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
+
+/* ---- ruled page grid: rail | content, hairlines run the full height ---- */
+.page-grid { display: grid; grid-template-columns: minmax(1rem, 1fr) 13rem minmax(0, 56rem) minmax(1rem, 1fr); }
+.topbar { position: relative; z-index: 20; border-bottom: 1px solid var(--line); background: var(--bg-translucent); }
+.topbar-grid::before, .hatch-grid::before { content: ""; grid-area: 1 / 2; border-left: 1px solid var(--line); pointer-events: none; }
+.topbar-row { grid-column: 3; min-height: 3rem; display: flex; align-items: stretch; justify-content: space-between; border-inline: 1px solid var(--line); }
+.wordmark { display: inline-flex; align-items: center; gap: .55rem; padding: 0 1.75rem; color: var(--fg-strong); font: 600 .7rem/1 var(--mono); letter-spacing: .18em; text-decoration: none; }
+.wordmark-mark { color: var(--accent); font-size: .8rem; }
+.top-actions { display: flex; align-items: stretch; }
+.top-action { display: inline-flex; align-items: center; padding: 0 1rem; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--fg-muted); cursor: pointer; font: 400 .62rem/1 var(--mono); letter-spacing: .16em; text-decoration: none; }
+.top-action:hover, .top-action:focus-visible { color: var(--fg-strong); background: var(--bg-hover); outline-offset: -1px; }
+.hatch { height: 1.4rem; border-bottom: 1px solid var(--line); background: var(--hatch); }
+.hatch-grid { height: 100%; }
+.hatch-cell { grid-column: 3; height: 100%; border-inline: 1px solid var(--line); }
+.body-grid { align-items: stretch; min-height: calc(100vh - 4.4rem); }
+
+/* ---- sticky rail ---- */
+.rail { grid-column: 2; min-width: 0; border-left: 1px solid var(--line); }
+.rail-sticky { position: sticky; top: 0; max-height: 100vh; overflow-y: auto; scrollbar-width: none; }
+.rail-sticky::-webkit-scrollbar { display: none; }
+.rail-block { padding: 1.1rem; border-bottom: 1px solid var(--line); }
+.rail-label, .kicker { margin: 0 0 .75rem; color: var(--fg-faint); font: 400 .68rem/1.4 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+.outline-list { display: flex; flex-direction: column; border-left: 1px solid var(--line); }
+.outline-link { margin-left: -1px; padding: .25rem 0 .25rem .75rem; border-left: 1px solid transparent; color: var(--fg-muted); font: 400 .75rem/1.45 var(--mono); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.outline-link[data-level="3"] { padding-left: 1.45rem; color: var(--fg-faint); }
+.outline-link:hover, .outline-link.active { color: var(--fg-strong); border-left-color: var(--accent); }
+.rail-text { margin: 0; color: var(--fg-muted); font-size: .8rem; line-height: 1.55; overflow-wrap: anywhere; }
+.rail-text + .rail-text { margin-top: .45rem; }
+.rail-metric { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; margin: 0; padding: .22rem 0; color: var(--fg-muted); font: 400 .66rem/1.5 var(--mono); }
+.rail-metric span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rail-metric + .rail-metric { border-top: 1px solid var(--line); }
+.rail-metric b { color: var(--fg-strong); font-weight: 600; white-space: nowrap; }
+.rail-metric b.good { color: var(--ok); }
+.rail-metric b.bad { color: var(--danger); }
+.rail-metric b.warn { color: var(--warn); }
+.rail-artifact { display: flex; align-items: baseline; gap: .45rem; padding: .3rem 0; color: var(--fg-muted); font: 400 .68rem/1.5 var(--mono); text-decoration: none; }
+.rail-artifact + .rail-artifact { border-top: 1px solid var(--line); }
+.rail-artifact .ext { flex: none; padding: 0 .3rem; border: 1px solid var(--line-strong); color: var(--fg-faint); font-size: .56rem; letter-spacing: .1em; }
+.rail-artifact .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rail-artifact::after { content: "↓"; flex: none; color: var(--fg-faint); }
+.rail-artifact:hover { color: var(--fg-strong); }
+.rail-artifact:hover::after, .rail-artifact:hover .ext { color: var(--accent); border-color: var(--accent); }
+
+/* ---- document flow: prose inside --pad, blocks bleed past it ---- */
+.content { --pad: min(1.4rem, 5vw); grid-column: 3; min-width: 0; padding: 1.4rem var(--pad) 3rem; border-inline: 1px solid var(--line); }
+.document-flow { min-width: 0; }
+h1, h2, h3 { color: var(--fg-strong); font-family: var(--mono); text-wrap: pretty; scroll-margin-top: 5rem; }
+h1 { margin: 0 calc(-1 * var(--pad)) 1.4rem; padding: 0 var(--pad) 1.4rem; border-bottom: 1px solid var(--line); font-size: clamp(1.35rem, 3vw, 1.5rem); font-weight: 600; line-height: 1.35; letter-spacing: -.02em; }
+h2 { margin: 1.4rem calc(-1 * var(--pad)); padding: 0 var(--pad); font-size: 1.15rem; font-weight: 600; line-height: 1.4; letter-spacing: -.01em; }
+h2::before { content: ""; display: block; height: 1.1rem; margin: 0 calc(-1 * var(--pad)) 1.4rem; border-block: 1px solid var(--line); background: var(--hatch); }
+.document-flow > section:first-of-type h2::before { display: none; }
+h3 { margin: 1.8rem 0 .7rem; font-size: 1rem; font-weight: 600; line-height: 1.45; }
+/* Prose measure stays readable: paragraphs cap at ~72ch while tables,
+   charts, diffs, and pre keep the full column. Structural p's (titles,
+   colophon) span fully so their border rules reach the column lines. */
+p, ul, ol, blockquote { max-width: 72ch; }
+.diff-title, .diagram-title, .colophon, .source { max-width: none; }
+p { margin: 1rem 0; text-wrap: pretty; }
+.lede { color: var(--fg); font-size: 1.02rem; }
+strong { color: var(--fg-strong); font-weight: 600; }
+ul, ol { margin: .9rem 0; padding-left: 1.4rem; }
+li { margin: .3rem 0; }
+li::marker { color: var(--fg-faint); }
+code, pre { font-family: var(--mono); }
+code { padding: .1em .35em; border-radius: 2px; background: var(--bg-hover); color: var(--fg-strong); font-size: .85em; }
+pre { margin: 1.4rem calc(-1 * var(--pad)); padding: 1rem var(--pad); overflow-x: auto; border-block: 1px solid var(--line); background: var(--bg-inset); color: var(--fg); font-size: .82rem; line-height: 1.7; }
+pre code { padding: 0; background: transparent; color: inherit; font-size: 1em; }
+blockquote, .callout { margin: 1.2rem 0; padding: .1rem 0 .1rem 1rem; border-left: 2px solid var(--line-strong); color: var(--fg-muted); }
+.callout { border-left-color: var(--accent); color: var(--fg); }
+
+/* ---- tables ---- */
+.table-wrap { margin: 1.4rem calc(-1 * var(--pad)); overflow-x: auto; border-block: 1px solid var(--line); }
+table { width: 100%; border-collapse: collapse; background: var(--bg-tint); font-size: .85rem; }
+tbody tr:hover { background: var(--bg-hover); }
+th, td { padding: .55rem .7rem; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+th:first-child, td:first-child { border-left: 0; padding-left: var(--pad); }
+th:last-child, td:last-child { border-right: 0; padding-right: var(--pad); }
+th { background: var(--bg-raised); color: var(--fg-strong); font: 500 .72rem/1.45 var(--mono); white-space: nowrap; }
+
+/* ---- diagrams ---- */
+.diagram { margin: 1.4rem calc(-1 * var(--pad)); padding: 1.2rem var(--pad); overflow-x: auto; border-block: 1px solid var(--line); background: var(--bg-inset); }
+.diagram svg { display: block; width: 100%; min-width: 43rem; height: auto; font-family: var(--mono); }
+.diagram-title { margin: 0 0 .35rem; color: var(--fg-strong); font: 500 .78rem/1.45 var(--mono); }
+.diagram-note, .caption { margin: .35rem 0 0; color: var(--fg-muted); font-size: .78rem; line-height: 1.55; }
+.source { margin: .35rem 0 0; color: var(--fg-faint); font: 400 .68rem/1.6 var(--mono); }
+.table-wrap + .source, .diagram + .source, pre + .source { margin-top: -.9rem; margin-bottom: 1.4rem; }
+.legend { display: flex; flex-wrap: wrap; gap: .45rem 1rem; margin: .8rem 0 0; color: var(--fg-muted); font: 400 .7rem/1.4 var(--mono); }
+.legend span { display: inline-flex; align-items: center; gap: .38rem; }
+.legend i { width: .65rem; height: .65rem; border-radius: 1px; background: var(--legend, var(--accent)); }
+
+/* ---- chart hover ----
+   Any element inside .diagram carrying data-tip gets a hover highlight and
+   a fixed-position tooltip (the skeleton script positions #chart-tip). */
+.diagram [data-tip] { cursor: help; }
+.diagram [data-tip]:hover { filter: brightness(1.22); }
+.diagram rect[data-guide]:hover { fill: var(--accent-soft); filter: none; }
+.hover-guide line { stroke: var(--line-strong); stroke-dasharray: 3 3; }
+.hover-guide circle { fill: var(--accent); stroke: var(--bg-inset); stroke-width: 1.5; }
+.chart-tip { position: fixed; z-index: 60; max-width: 22rem; padding: .45rem .65rem; border: 1px solid var(--line-strong); background: var(--bg-raised); color: var(--fg-strong); font: 400 .68rem/1.55 var(--mono); white-space: pre-line; pointer-events: none; visibility: hidden; }
+
+/* ---- headline metrics ---- */
+.metric-line { display: flex; flex-wrap: wrap; gap: 0; margin: 1.35rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); }
+
+/* ---- code diffs ----
+   Preferred: @pierre/diffs rendered into .diff-block (see SKILL.md).
+   Fallback when the doc must stay fully offline: pre.diff with one span
+   per line, classed add / del / hunk. */
+.diff-block { margin: 1.4rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); background: var(--bg-inset); font-size: .8rem; }
+.diff-block .diff-title { margin: 0; padding: .55rem var(--pad); border-bottom: 1px solid var(--line); color: var(--fg-strong); font: 500 .72rem/1.45 var(--mono); }
+.diff-block pre { margin: 0; border-block: 0; background: transparent; }
+pre.diff span { display: block; margin: 0 calc(-1 * var(--pad)); padding: 0 var(--pad); }
+pre.diff .add { background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--fg-strong); }
+pre.diff .del { background: color-mix(in srgb, var(--danger) 11%, transparent); color: var(--fg-muted); }
+pre.diff .hunk { color: var(--accent); }
+.metric { flex: 1 1 11rem; min-width: 0; padding: .8rem var(--pad); border-right: 1px solid var(--line); background: var(--bg-tint); }
+.metric:hover { background: var(--bg-hover); }
+.metric:last-child { border-right: 0; }
+.metric-value { display: block; color: var(--fg-strong); font: 600 1.15rem/1.25 var(--mono); }
+.metric-label { display: block; margin-top: .25rem; color: var(--fg-muted); font: 400 .68rem/1.45 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+
+/* ---- verdict colors ---- */
+.good { color: var(--ok); }
+.warn { color: var(--warn); }
+.bad { color: var(--danger); }
+.nowrap { white-space: nowrap; }
+
+/* ---- numbers: digits align in columns and metrics ---- */
+.metric-value, .rail-metric b, th, td { font-variant-numeric: tabular-nums; }
+
+/* ---- status chips: uppercase mono state markers ---- */
+.chip { display: inline-block; vertical-align: baseline; padding: .05rem .45rem; border: 1px solid var(--line-strong); color: var(--fg-muted); font: 500 .6rem/1.6 var(--mono); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+.chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.chip.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.chip.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* ---- appendix: collapsed raw evidence ---- */
+details.appendix { margin: 1.4rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); background: var(--bg-tint); }
+details.appendix > summary { padding: .6rem var(--pad); cursor: pointer; color: var(--fg-muted); font: 500 .68rem/1.5 var(--mono); letter-spacing: .14em; text-transform: uppercase; list-style: none; }
+details.appendix > summary::-webkit-details-marker { display: none; }
+details.appendix > summary::before { content: "+ "; color: var(--accent); }
+details.appendix[open] > summary::before { content: "− "; }
+details.appendix > summary:hover { background: var(--bg-hover); color: var(--fg-strong); }
+details.appendix pre, details.appendix .table-wrap { margin: 0; border-block-end: 0; border-top: 1px solid var(--line); }
+details.appendix p, details.appendix .source { margin: .6rem var(--pad) .9rem; }
+
+/* ---- colophon: document provenance footer ---- */
+.colophon { margin: 2.5rem calc(-1 * var(--pad)) 0; padding: .8rem var(--pad) 0; border-top: 1px solid var(--line); color: var(--fg-faint); font: 400 .68rem/1.7 var(--mono); }
+.colophon a { color: var(--fg-muted); }
+
+/* ---- heading anchors: hover a heading to grab its link ---- */
+.anchor-link { margin-left: .55rem; color: var(--fg-faint); font-size: .8em; font-weight: 400; text-decoration: none; opacity: 0; }
+h2:hover .anchor-link, h3:hover .anchor-link, .anchor-link:focus-visible { opacity: 1; }
+.anchor-link:hover { color: var(--accent); }
+
+.reading-progress { position: fixed; z-index: 50; inset: 0 0 0 auto; width: 4px; background: var(--track); pointer-events: none; }
+.reading-progress-fill { width: 100%; height: 100%; transform: scaleY(0); transform-origin: top; background: var(--line-strong); }
+
+@media (max-width: 1159px) {
+  .page-grid { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
+  .rail { display: none; }
+  .topbar-row, .hatch-cell, .content { border-inline: 0; }
+}
+@media (max-width: 699px) {
+  .top-action[data-optional] { display: none; }
+  .wordmark { padding-inline: 1.25rem; }
+  .content { padding-top: 1.5rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+@media print {
+  .topbar, .hatch, .rail, .reading-progress { display: none; }
+  .content { border-inline: 0; }
+}
+
+  </style>
+</head>
+<body>
+  <div class="reading-progress" aria-hidden="true"><div class="reading-progress-fill"></div></div>
+  <div class="chart-tip" id="chart-tip" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="page-grid topbar-grid">
+      <div class="topbar-row">
+        <!-- Wordmark: one glyph + one uppercase word naming the document class (PLAN, REPORT, SPEC, RFC). -->
+        <a class="wordmark" href="#top"><span class="wordmark-mark">◆</span> REPORT</a>
+        <nav class="top-actions" aria-label="Document actions">
+          <button class="top-action" type="button" id="toggle-theme" aria-live="polite">LIGHT</button>
+          <button class="top-action" type="button" id="copy-link">COPY LINK</button>
+          <a class="top-action" data-optional href="#top">TOP</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hatch" aria-hidden="true">
+    <div class="page-grid hatch-grid"><div class="hatch-cell"></div></div>
+  </div>
+
+  <div class="page-grid body-grid">
+    <aside class="rail" aria-label="Document rail">
+      <div class="rail-sticky">
+        <div class="rail-block" id="outline-block">
+          <p class="rail-label">Outline</p>
+          <nav class="outline-list" id="outline-list" aria-label="Document outline"></nav>
+        </div>
+        <div class="rail-block" id="rail-metrics-block" hidden>
+          <p class="rail-label">Key figures</p>
+          <div id="rail-metrics"></div>
+        </div>
+        <div class="rail-block" id="rail-artifacts-block" hidden>
+          <p class="rail-label">Artifacts</p>
+          <nav id="rail-artifacts" aria-label="Referenced artifacts"></nav>
+        </div>
+        <div class="rail-block">
+          <p class="rail-label">Document</p>
+          <p class="rail-text" id="rail-title"></p>
+          <p class="rail-text" id="rail-status"></p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content" id="document">
+      <article class="document-flow">
+        <p class="kicker">Investigation · Measured · Decision ready</p>
+        <h1 id="top">Potato, Social, and Max cover the useful export range without exposing encoder math</h1>
+        <p class="lede"><strong>9.650 MiB</strong> is the Potato result from the exact 16-page Pearl strategy that prompted this work: 54.500 seconds at 1920×1080 / 30 fps. The same field sample produced <strong>15.907 MiB in Social</strong> and <strong>17.517 MiB in Max</strong>, validating 10 MiB, 20 MiB, and maximum quality as recognizable outcomes without making either size target a rejection rule. Potato stays at 1080p while detail still wins and drops to 720p only when duration forces the request to the 250 kbps floor. Social remains the default; any successful Potato or Social encode is saved even when unusual content lands above its target.</p>
+
+        <section>
+          <h2 id="decision">Decision in one screen</h2>
+
+          <div class="metric-line" aria-label="Key measurements">
+            <div class="metric"><span class="metric-value good">9.650 MiB</span><span class="metric-label">Potato · exact field sample</span></div>
+            <div class="metric"><span class="metric-value good">15.907 MiB</span><span class="metric-label">Social · exact field sample</span></div>
+            <div class="metric"><span class="metric-value">17.517 MiB</span><span class="metric-label">Max · exact field sample</span></div>
+            <div class="metric"><span class="metric-value">54.500 s</span><span class="metric-label">16 pages · 3 s steps</span></div>
+          </div>
+
+          <blockquote class="callout"><p><strong>Recommended decision:</strong> ship <strong>Potato</strong>, <strong>Social</strong>, and <strong>Max</strong>, with Social selected by default. Potato gets character in its name and copy; codec, bitrate, retry mechanics, and the adaptive resolution threshold stay out of the user’s way.</p></blockquote>
+
+          <div class="diagram" role="img" aria-label="Wireframe of the Export Video dialog with Potato, Social, and Max quality choices">
+            <p class="diagram-title">Implemented export dialog · three recognizable outcomes</p>
+            <svg viewBox="0 0 760 326" aria-hidden="true">
+              <rect x="118" y="14" width="524" height="298" fill="var(--bg-tint)" stroke="var(--line-strong)"/>
+              <text x="142" y="43" fill="var(--fg-strong)" font-size="15" font-weight="600">Export Video</text>
+              <text x="142" y="67" fill="var(--fg-muted)" font-size="10">Each included page is shown for the step duration.</text>
+
+              <text x="142" y="101" fill="var(--fg)" font-size="11">STEP DURATION</text>
+              <text x="618" y="101" fill="var(--fg-strong)" font-size="11" text-anchor="end">3 s</text>
+              <line x1="142" y1="119" x2="618" y2="119" stroke="var(--line-strong)"/>
+              <rect x="233" y="114" width="10" height="10" fill="var(--accent)" data-tip="Step duration stays exactly where users expect it."/>
+              <text x="142" y="140" fill="var(--fg-muted)" font-size="10">Video length · ~1m 42s · 30 pages</text>
+
+              <text x="142" y="174" fill="var(--fg)" font-size="11">QUALITY</text>
+              <rect x="328" y="152" width="290" height="36" fill="var(--bg-raised)" stroke="var(--line-strong)"/>
+              <rect x="328" y="152" width="97" height="36" fill="var(--accent)" data-tip="Potato&#10;H.264 · 30 fps&#10;aims for 10 MiB; adaptive 1080p or 720p"/>
+              <text x="376" y="174" fill="var(--on-accent)" font-size="10" font-weight="600" text-anchor="middle">POTATO</text>
+              <text x="473" y="174" fill="var(--fg)" font-size="10" text-anchor="middle">SOCIAL</text>
+              <text x="570" y="174" fill="var(--fg)" font-size="10" text-anchor="middle">MAX</text>
+              <text x="142" y="209" fill="var(--ok)" font-size="10">1080p · 30 fps · aims for 10 MB · tiny file, full strat</text>
+
+              <line x1="118" y1="229" x2="642" y2="229" stroke="var(--line)"/>
+              <text x="142" y="254" fill="var(--fg)" font-size="11">PAGES</text>
+              <text x="618" y="254" fill="var(--fg-muted)" font-size="10" text-anchor="end">30 / 30 INCLUDED</text>
+              <rect x="142" y="273" width="86" height="25" fill="var(--bg-raised)" stroke="var(--line-strong)"/>
+              <text x="185" y="289" fill="var(--fg)" font-size="10" text-anchor="middle">CANCEL</text>
+              <rect x="522" y="273" width="96" height="25" fill="var(--accent)" data-tip="Export performs a byte-size check before replacing the destination."/>
+              <text x="570" y="289" fill="var(--on-accent)" font-size="10" font-weight="600" text-anchor="middle">EXPORT</text>
+            </svg>
+            <p class="diagram-note">The advanced encoder vocabulary stays in the implementation. The person exporting a strategy only chooses the outcome they need.</p>
+          </div>
+          <p class="source">Source: implemented in PR 126 against <code>lib/widgets/dialogs/export_video_dialog.dart</code> and Icarus <code>DESIGN.md</code>.</p>
+        </section>
+
+        <section>
+          <h2 id="constraint">The constraint is duration, not a magic codec setting</h2>
+
+          <p>Discord’s official FAQ still documents a <strong>10 MB base maximum</strong> while saying it is experimenting with other upload limits and that selected users may see larger limits. Icarus’s product direction is to anticipate the move toward <strong>20 MB</strong>, but treat that number as a best-effort optimization rather than a promise. A user with a smaller limit may need another sharing path; an unusually complex or long strategy must still export successfully. See <a href="https://docs.discord.com/developers/reference#uploading-files">Discord’s upload reference</a> and <a href="https://support.discord.com/hc/en-us/articles/25444343291031-File-Attachments-FAQ">File Attachments FAQ</a>.</p>
+
+          <pre><code># File-size arithmetic · no audio track
+payload bytes ≈ bitrate bits/s × duration s ÷ 8
+
+7,000 kbps × 22 s ÷ 8 = 19,250,000 bytes = 18.36 MiB
+18.5 MiB × 8 ÷ 22 s    = 7,054 kbps total budget
+7,054 kbps − 64 kbps   = 6,990 kbps first video request</code></pre>
+          <p class="caption">The 18.5 MiB working budget leaves headroom under the 20 MiB target. The 64 kbps reserve covers MP4 muxing and fixed encoder/header behavior; the finished-byte check decides whether one lower-bitrate retry is useful.</p>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Included pages</th><th>Planned duration</th><th>18.5 MiB total budget</th><th>First video request</th><th>Reading</th></tr></thead>
+              <tbody>
+                <tr><td>10</td><td>33.900 s</td><td>4,578 kbps</td><td>4,514 kbps</td><td>Comfortable 1080p / 30 fps</td></tr>
+                <tr><td>20</td><td>68.233 s</td><td>2,274 kbps</td><td>2,210 kbps</td><td>Comfortable 1080p / 30 fps</td></tr>
+                <tr><td>30</td><td>102.567 s</td><td>1,513 kbps</td><td class="good">1,449 kbps</td><td>Sweet spot for the reported use case</td></tr>
+                <tr><td>40</td><td>136.900 s</td><td>1,134 kbps</td><td class="good">1,070 kbps</td><td>Still comfortable for strategy content</td></tr>
+                <tr><td>60</td><td>205.567 s</td><td>755 kbps</td><td class="warn">691 kbps</td><td>Near the measured visual candidate</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: 30 fps schedule derived from <code>VideoExporter.plannedDurationSeconds</code> · 3.000 s step duration · 13/30 s between included pages · 18.5 MiB working target.</p>
+        </section>
+
+        <section>
+          <h2 id="current-path">The previous exporter asked for quality and hoped the bytes followed</h2>
+
+          <p>The path before PR 126 was fixed at <strong>1920×1080, 60 fps</strong>. On Windows it asked Media Foundation H.264 for <code>-b:v 8M</code>, but never calculated a budget from duration or checked the final size. If H.264 failed, it fell through to MPEG-4 Part 2 with <code>-q:v 3</code>, which is quality-targeted and even less predictable in bytes. The implemented path keeps that behavior only for Max; Potato and Social now derive a bitrate from duration and inspect the finished bytes.</p>
+
+          <div class="diagram" role="img" aria-label="Current and proposed video export encoding paths">
+            <p class="diagram-title">Encoding control · current path versus Discord-size path</p>
+            <svg viewBox="0 0 760 246" aria-hidden="true">
+              <text x="16" y="30" fill="var(--fg-muted)" font-size="10">PREVIOUS</text>
+              <rect x="110" y="10" width="142" height="42" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Current input&#10;planned duration exists, but does not drive encoding"/>
+              <text x="181" y="36" fill="var(--fg)" font-size="10" text-anchor="middle">60 fps frames</text>
+              <line x1="252" y1="31" x2="296" y2="31" stroke="var(--line-strong)"/>
+              <path d="M296 31 L288 27 L288 35 Z" fill="var(--line-strong)"/>
+              <rect x="296" y="10" width="178" height="42" fill="var(--bg-raised)" stroke="var(--danger)" data-tip="Current encoder request&#10;h264_mf · 8 Mbps regardless of duration"/>
+              <text x="385" y="36" fill="var(--danger)" font-size="10" text-anchor="middle">fixed 8 Mbps</text>
+              <line x1="474" y1="31" x2="518" y2="31" stroke="var(--line-strong)"/>
+              <path d="M518 31 L510 27 L510 35 Z" fill="var(--line-strong)"/>
+              <rect x="518" y="10" width="182" height="42" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Current result&#10;file size varies with duration and encoder behavior"/>
+              <text x="609" y="36" fill="var(--fg)" font-size="10" text-anchor="middle">unknown bytes</text>
+
+              <line x1="16" y1="86" x2="718" y2="86" stroke="var(--line)"/>
+              <text x="16" y="120" fill="var(--accent)" font-size="10">PR 126</text>
+              <rect x="110" y="99" width="142" height="42" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="Discord preset&#10;30 fps reduces rendered transition frames by 46.1% for 30 pages"/>
+              <text x="181" y="125" fill="var(--fg)" font-size="10" text-anchor="middle">30 fps frames</text>
+              <line x1="252" y1="120" x2="296" y2="120" stroke="var(--accent)"/>
+              <path d="M296 120 L288 116 L288 124 Z" fill="var(--accent)"/>
+              <rect x="296" y="99" width="178" height="42" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="Budget calculator&#10;(18.5 MiB × 8 ÷ duration) − 64 kbps"/>
+              <text x="385" y="118" fill="var(--fg)" font-size="10" text-anchor="middle">duration → bitrate</text>
+              <text x="385" y="132" fill="var(--fg-muted)" font-size="9" text-anchor="middle">H.264 CBR</text>
+              <line x1="474" y1="120" x2="518" y2="120" stroke="var(--accent)"/>
+              <path d="M518 120 L510 116 L510 124 Z" fill="var(--accent)"/>
+              <rect x="518" y="99" width="182" height="42" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="Best-effort correction&#10;retry once above 20 MiB, then save any successful result"/>
+              <text x="609" y="118" fill="var(--fg)" font-size="10" text-anchor="middle">verify bytes</text>
+              <text x="609" y="132" fill="var(--ok)" font-size="9" text-anchor="middle">retry if oversized</text>
+
+              <rect x="296" y="181" width="178" height="42" fill="var(--bg-raised)" stroke="var(--danger)" data-tip="Guarantee boundary&#10;the current MPEG-4 quality fallback cannot silently claim Discord fit"/>
+              <text x="385" y="199" fill="var(--danger)" font-size="10" text-anchor="middle">H.264 unavailable</text>
+              <text x="385" y="214" fill="var(--fg-muted)" font-size="9" text-anchor="middle">fail the preset loudly</text>
+              <line x1="385" y1="141" x2="385" y2="181" stroke="var(--danger)" stroke-dasharray="4 4"/>
+            </svg>
+          </div>
+          <p class="source">Source: previous behavior at <code>4cdcbcf</code>; implemented path in <code>lib/services/video_export/ffmpeg_video_encoder.dart</code> and <code>lib/services/video_export/video_exporter.dart</code> on PR 126.</p>
+        </section>
+
+        <section>
+          <h2 id="field-benchmark">The exact field strategy lands Potato below 10 MiB</h2>
+
+          <p><strong>10,118,396 bytes</strong> is the finished Potato file for <code>size-strat.ica</code>. The source is a valid current-format archive with 16 attack-side Pearl pages, agents on every page, and a mix of abilities, text, and utility. At Icarus’s normal 3-second step duration, the 30 fps presets schedule 54.500 seconds; Max schedules 54.250 seconds because its 60 fps transition rounding is slightly different.</p>
+
+          <div class="diagram" role="img" aria-label="Measured file sizes for Potato, Social, and Max exports of the exact 16-page strategy">
+            <p class="diagram-title">Exact field sample · finished MP4 size · 16 pages</p>
+            <svg viewBox="0 0 760 196" aria-hidden="true">
+              <line x1="190" y1="16" x2="190" y2="154" stroke="var(--line-strong)"/>
+              <line x1="454" y1="16" x2="454" y2="154" stroke="var(--accent)" stroke-dasharray="4 4"/>
+              <text x="460" y="13" fill="var(--accent)" font-size="10">10 MiB Potato target</text>
+              <line x1="718" y1="16" x2="718" y2="154" stroke="var(--line-strong)" stroke-dasharray="4 4"/>
+              <text x="712" y="13" fill="var(--fg-muted)" font-size="10" text-anchor="end">20 MiB Social target</text>
+
+              <text x="16" y="50" fill="var(--fg-strong)" font-size="10">Potato · 1080p/30</text>
+              <rect x="190" y="34" width="255" height="22" fill="var(--accent)" data-tip="Potato&#10;10,118,396 bytes · 9.649654 MiB&#10;96.497% of the 10 MiB best-effort target&#10;1920×1080 · 30 fps · H.264"/>
+              <text x="437" y="50" fill="var(--on-accent)" font-size="10" text-anchor="end">9.650 MiB</text>
+
+              <text x="16" y="91" fill="var(--fg-muted)" font-size="10">Social · 1080p/30</text>
+              <rect x="190" y="75" width="420" height="22" fill="var(--series-2)" data-tip="Social&#10;16,680,180 bytes · 15.907459 MiB&#10;79.537% of the 20 MiB best-effort target&#10;1920×1080 · 30 fps · H.264"/>
+              <text x="602" y="91" fill="var(--on-fill)" font-size="10" text-anchor="end">15.907 MiB</text>
+
+              <text x="16" y="132" fill="var(--fg-muted)" font-size="10">Max · 1080p/60</text>
+              <rect x="190" y="116" width="462" height="22" fill="var(--series-1)" data-tip="Max&#10;18,367,663 bytes · 17.516768 MiB&#10;No file-size target&#10;1920×1080 · 60 fps · H.264"/>
+              <text x="644" y="132" fill="var(--on-fill)" font-size="10" text-anchor="end">17.517 MiB</text>
+
+              <line x1="190" y1="154" x2="718" y2="154" stroke="var(--line-strong)"/>
+              <text x="190" y="176" fill="var(--fg-muted)" font-size="10">0 MiB</text>
+              <text x="454" y="176" fill="var(--fg-muted)" font-size="10" text-anchor="middle">10 MiB</text>
+              <text x="718" y="176" fill="var(--fg-muted)" font-size="10" text-anchor="end">20 MiB</text>
+            </svg>
+          </div>
+          <p class="source">Source: release-mode Icarus desktop export of <code>size-strat.ica</code> · SHA-256 <code>908c2dd64e9cacaba50a3fcc15cbd32ee2dc4e734d3bae41e5de267027e91e90</code> · FFmpeg / ffprobe 8.1.2 · 3.000 s step duration.</p>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Preset</th><th>Video</th><th>Duration</th><th>Finished bytes</th><th>Outcome</th></tr></thead>
+              <tbody>
+                <tr><td>Potato</td><td>H.264 · 1920×1080 · 30 fps</td><td>54.500 s</td><td class="good">10,118,396 B · 9.650 MiB</td><td>0.350 MiB below its best-effort target</td></tr>
+                <tr><td>Social</td><td>H.264 · 1920×1080 · 30 fps</td><td>54.500 s</td><td class="good">16,680,180 B · 15.907 MiB</td><td>4.093 MiB below its best-effort target</td></tr>
+                <tr><td>Max</td><td>H.264 · 1920×1080 · 60 fps</td><td>54.250 s</td><td>18,367,663 B · 17.517 MiB</td><td>No size target; highest motion fidelity</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: <code>ffprobe -show_entries stream=codec_name,width,height,r_frame_rate,nb_frames -show_entries format=duration,size</code>. Representative page 9 frames were inspected for all presets; the strategy source and MP4s remain local and are not PR artifacts.</p>
+
+          <blockquote><p><strong>Reading:</strong> Potato is worth shipping as a real mode, not a novelty label. On the motivating strategy it preserves 1080p detail and uses 96.497% of its byte envelope. Social buys 6.258 MiB over Potato for more encoding headroom, while Max adds 1.609 MiB over Social for 60 fps.</p></blockquote>
+        </section>
+
+        <section>
+          <h2 id="experiment">The controlled experiment favors 1080p / 30 fps over 720p or H.265-first</h2>
+
+          <p>I built a 22.000-second reference from Icarus’s <code>best-test-preview.png</code>: 1920×1080, 60 fps, a static tactical map plus intermittent moving widgets and drawing growth during 420 ms transition windows. Media Foundation H.264 was tested through the same encoder family Icarus ships. VMAF is directional here—its model was built for natural video, not tactical diagrams—so exact scores are less important than the controlled comparison.</p>
+
+          <div class="diagram" role="img" aria-label="Output file sizes for tested 22-second video encodes with a 10 MiB reference line">
+            <p class="diagram-title">Output size · 22.000 s strategy-motion sample</p>
+            <svg viewBox="0 0 760 304" aria-hidden="true">
+              <line x1="190" y1="20" x2="190" y2="266" stroke="var(--line-strong)"/>
+              <line x1="454" y1="20" x2="454" y2="266" stroke="var(--accent)" stroke-dasharray="4 4"/>
+              <text x="460" y="16" fill="var(--accent)" font-size="10">10 MiB floor</text>
+
+              <text x="16" y="50" fill="var(--fg-muted)" font-size="10">current H.264 · 8M</text>
+              <rect x="190" y="34" width="104" height="22" fill="var(--series-2)" data-tip="Current H.264 Media Foundation&#10;8 Mbps request · 1080p / 60 fps&#10;3.943 MiB actual · 1,503.521 kbps actual"/>
+              <text x="302" y="50" fill="var(--fg)" font-size="10">3.94 MiB</text>
+
+              <text x="16" y="85" fill="var(--fg-muted)" font-size="10">H.264 · 750k · 1080/30</text>
+              <rect x="190" y="69" width="56" height="22" fill="var(--series-3)" data-tip="Discord candidate&#10;750 kbps request · 1080p / 30 fps&#10;2.139 MiB actual · VMAF 96.296"/>
+              <text x="254" y="85" fill="var(--fg)" font-size="10">2.14 MiB</text>
+
+              <text x="16" y="120" fill="var(--fg-muted)" font-size="10">H.264 · 750k · 720/30</text>
+              <rect x="190" y="104" width="45" height="22" fill="var(--series-1)" data-tip="Resolution alternative&#10;750 kbps request · 720p / 30 fps&#10;1.719 MiB actual · VMAF 91.104"/>
+              <text x="243" y="120" fill="var(--fg)" font-size="10">1.72 MiB</text>
+
+              <text x="16" y="155" fill="var(--fg-muted)" font-size="10">MPEG-4 fallback · q3</text>
+              <rect x="190" y="139" width="483" height="22" fill="var(--danger)" data-tip="Current fallback&#10;MPEG-4 Part 2 · q:v 3 · 1080p / 60 fps&#10;18.278 MiB actual · exceeds 10 MiB"/>
+              <text x="665" y="155" fill="var(--on-fill)" font-size="10" text-anchor="end">18.28 MiB</text>
+
+              <text x="16" y="190" fill="var(--fg-muted)" font-size="10">HEVC theory · 750k · 720/30</text>
+              <rect x="190" y="174" width="21" height="22" fill="var(--series-4)" data-tip="Theoretical HEVC comparison&#10;libx265 · not the shippable Media Foundation path&#10;0.795 MiB actual · VMAF 91.145"/>
+              <text x="219" y="190" fill="var(--fg)" font-size="10">0.80 MiB</text>
+
+              <text x="16" y="225" fill="var(--fg-strong)" font-size="10">exact field · Potato</text>
+              <rect x="190" y="209" width="255" height="22" fill="var(--accent)" data-tip="Exact motivating strategy&#10;16 pages · 54.500 s · 1080p / 30 fps&#10;9.649654 MiB actual · release-mode Icarus export"/>
+              <text x="437" y="225" fill="var(--on-accent)" font-size="10" text-anchor="end">9.650 MiB</text>
+
+              <line x1="190" y1="266" x2="718" y2="266" stroke="var(--line-strong)"/>
+              <text x="190" y="288" fill="var(--fg-muted)" font-size="10">0 MiB</text>
+              <text x="454" y="288" fill="var(--fg-muted)" font-size="10" text-anchor="middle">10 MiB</text>
+              <text x="718" y="288" fill="var(--fg-muted)" font-size="10" text-anchor="end">20 MiB</text>
+            </svg>
+          </div>
+          <p class="source">Source: FFmpeg 8.1.2 on Windows · Media Foundation H.264, MPEG-4 Part 2, and local libx265 comparison · full command matrix in Appendix. Field row: exact 16-page strategy exported through Icarus in release mode.</p>
+
+          <div class="diagram" role="img" aria-label="VMAF quality comparison at a 750 kbps request showing 1080p 30 fps highest">
+            <p class="diagram-title">Detail retention at a 750 kbps request · VMAF mean · axis truncated to 85–100</p>
+            <svg viewBox="0 0 760 195" aria-hidden="true">
+              <line x1="230" y1="22" x2="718" y2="22" stroke="var(--line-strong)"/>
+              <line x1="230" y1="22" x2="230" y2="158" stroke="var(--line)"/>
+              <line x1="393" y1="22" x2="393" y2="158" stroke="var(--line)"/>
+              <line x1="555" y1="22" x2="555" y2="158" stroke="var(--line)"/>
+              <line x1="718" y1="22" x2="718" y2="158" stroke="var(--line)"/>
+              <text x="230" y="16" fill="var(--fg-muted)" font-size="10">85</text>
+              <text x="393" y="16" fill="var(--fg-muted)" font-size="10" text-anchor="middle">90</text>
+              <text x="555" y="16" fill="var(--fg-muted)" font-size="10" text-anchor="middle">95</text>
+              <text x="718" y="16" fill="var(--fg-muted)" font-size="10" text-anchor="end">100</text>
+
+              <text x="16" y="59" fill="var(--fg-muted)" font-size="10">1080p · 60 fps</text>
+              <line x1="230" y1="54" x2="718" y2="54" stroke="var(--line)"/>
+              <circle cx="486" cy="54" r="6" fill="var(--series-2)" data-tip="1080p / 60 fps&#10;750 kbps request&#10;VMAF mean 92.875 · minimum 61.713"/>
+              <text x="498" y="58" fill="var(--fg)" font-size="10">92.875</text>
+
+              <text x="16" y="104" fill="var(--fg-strong)" font-size="10">1080p · 30 fps</text>
+              <line x1="230" y1="99" x2="718" y2="99" stroke="var(--line)"/>
+              <circle cx="598" cy="99" r="7" fill="var(--accent)" data-tip="Recommended Discord candidate&#10;1080p / 30 fps · 750 kbps request&#10;VMAF mean 96.296 · minimum 90.214"/>
+              <text x="611" y="103" fill="var(--ok)" font-size="10" font-weight="600">96.296</text>
+
+              <text x="16" y="149" fill="var(--fg-muted)" font-size="10">720p · 30 fps</text>
+              <line x1="230" y1="144" x2="718" y2="144" stroke="var(--line)"/>
+              <circle cx="429" cy="144" r="6" fill="var(--series-1)" data-tip="720p / 30 fps&#10;750 kbps request&#10;VMAF mean 91.104 · minimum 88.943"/>
+              <text x="441" y="148" fill="var(--fg)" font-size="10">91.104</text>
+              <text x="718" y="180" fill="var(--fg-faint)" font-size="9" text-anchor="end">higher is better</text>
+            </svg>
+          </div>
+          <p class="source">Source: libvmaf over the same 22.000 s reference · 30 fps variants compared against a 30 fps reference · 720p upscaled with Lanczos before scoring.</p>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Variant</th><th>Output</th><th>Actual average</th><th>VMAF mean</th><th>Verdict</th></tr></thead>
+              <tbody>
+                <tr><td>H.264 MF · 8M · 1080p/60</td><td>3.943 MiB</td><td>1,503.521 kbps</td><td>96.646</td><td>Current path; spends frames unnecessarily</td></tr>
+                <tr><td>H.264 MF · 750k · 1080p/60</td><td>2.213 MiB</td><td>843.884 kbps</td><td>92.875</td><td>Transition motion consumes the budget</td></tr>
+                <tr><td>H.264 MF · 750k · 1080p/30</td><td>2.139 MiB</td><td>815.487 kbps</td><td class="good">96.296</td><td>Best tested low-bitrate balance <span class="chip ok">recommended</span></td></tr>
+                <tr><td>H.264 MF · 750k · 720p/30</td><td>1.719 MiB</td><td>655.537 kbps</td><td>91.104</td><td>Small labels pay for the downscale</td></tr>
+                <tr><td>H.264 MF · 450k · 1080p/30</td><td>1.334 MiB</td><td>508.730 kbps</td><td class="warn">93.524</td><td>Measured floor remains usable</td></tr>
+                <tr><td>MPEG-4 · q3 · 1080p/60</td><td class="bad">18.278 MiB</td><td>6,969.429 kbps</td><td>96.769</td><td>Too unpredictable for the Social target</td></tr>
+                <tr><td>libx265 · 3,400k · 1080p/60</td><td>2.415 MiB</td><td>920.784 kbps</td><td>97.090</td><td>Theoretical only; not the shippable encoder</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Requested bitrate</th><th>1080p / 30</th><th>720p / 30</th><th>Decision</th></tr></thead>
+              <tbody>
+                <tr><td>450 kbps</td><td class="good">1.340 MiB · 92.025</td><td>1.276 MiB · 90.030</td><td>Keep 1080p</td></tr>
+                <tr><td>300 kbps</td><td class="good">0.829 MiB · 90.548</td><td>0.867 MiB · 86.445</td><td>Keep 1080p</td></tr>
+                <tr><td>250 kbps</td><td>0.690 MiB · 80.169</td><td class="good">0.692 MiB · 84.163</td><td>Drop to 720p</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: controlled 22.000 s tactical-motion benchmark · each cell is encoded size then VMAF · 720p candidates upscaled with Lanczos for scoring.</p>
+          <blockquote><p><strong>Potato earns the name without becoming a blunt 720p switch:</strong> it aims for 10 MiB, keeps the 1080p detail that wins at 300 kbps and above, and changes the encoded output to 720p only at the 250 kbps floor. With the 9.25 MiB working budget and 64 kbps overhead reserve, that threshold begins around <strong>247 seconds</strong>.</p></blockquote>
+        </section>
+
+        <section>
+          <h2 id="codec">H.265 saves bytes but loses the reliability contest</h2>
+
+          <p>Discord accepts HEVC/H.265 MP4 uploads, but that does not make HEVC the safest file to hand teammates. MDN calls H.264 the pragmatic maximum-compatibility choice and says HEVC has significant support gaps outside Apple platforms. Microsoft documents HEVC playback in Edge as conditional on a valid HEVC Video Extension. Sources: <a href="https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API/Codec_selection">MDN codec selection</a> and <a href="https://learn.microsoft.com/en-us/troubleshoot/microsoft-edge/development/video-playback-issues">Microsoft’s Edge playback guide</a>.</p>
+
+          <p>The local result was sharper: FFmpeg advertised <code>hevc_mf</code>, but the first submitted frame failed with <code>0x80004005</code> and produced an empty MP4. Microsoft documents the Media Foundation HEVC encoder from Windows 10 onward, but availability on paper is not proof that the transform works on the user’s machine. The software <code>libx265</code> experiment shows compression potential, but that encoder is not part of Icarus’s pinned LGPL runtime and cannot justify a default path. See <a href="https://learn.microsoft.com/en-us/windows/win32/medfound/h-265---hevc-video-encoder">Microsoft’s Media Foundation HEVC encoder reference</a>.</p>
+
+          <blockquote><p><strong>Conclusion:</strong> H.265 can return later as an explicitly compatibility-limited option after device probing, license review, and a real playback matrix. It should not sit between a user and the teammate who needs to watch the strategy now.</p></blockquote>
+        </section>
+
+        <section>
+          <h2 id="implementation">The implementation is a small policy layer over the existing safe write path</h2>
+
+          <ol>
+            <li>Add the serialization-free export policy values <code>potato</code>, <code>social</code>, and <code>max</code>. This is not library data and requires no Hive model migration.</li>
+            <li>For Potato and Social, render transitions at 30 fps. A 30-page export falls from 755 rendered images to 407, a <strong>46.1% reduction</strong>; the 420 ms transition is represented by 13 images.</li>
+            <li>Calculate the first H.264 request from the preset’s working budget: 9.25 MiB for Potato or 18.5 MiB for Social, minus 64 kbps reserved overhead, clamped from 250 kbps to 8 Mbps.</li>
+            <li>Keep Potato at 1080p unless its initial request reaches 250 kbps; at that floor, add one Lanczos downscale to 1280×720 in the FFmpeg filter.</li>
+            <li>Invoke <code>h264_mf</code> with explicit CBR and archive intent. Keep <code>yuv420p</code> and <code>+faststart</code> for compatibility.</li>
+            <li>Encode to <code>.icarus-partial.mp4</code>. Above 10 MiB or 20 MiB, scale bitrate toward the preset’s retry budget and retry once when a lower bitrate is possible. After that correction, replace the destination with any successful result even if it remains oversized.</li>
+            <li>Hydrate the isolated screenshot providers before mounting each offscreen frame. Screenshot text uses the existing read-only presentation so debug and release builds render the same strategy without provider writes during <code>build()</code>.</li>
+            <li>If H.264 is unavailable in a size-targeted preset, fail clearly without saving. The existing <code>mpeg4 -q:v 3</code> fallback remains acceptable for Max, but cannot follow a file-size target predictably.</li>
+          </ol>
+
+          <pre><code># Shared size-target policy · Potato shown
+workingTargetBytes = 9.25 × 1024 × 1024
+targetBytes = 10 × 1024 × 1024
+totalBudget = floor(workingTargetBytes × 8 ÷ plannedSeconds)
+videoBitrate = totalBudget − 64,000
+
+scale = videoBitrate == 250,000 ? "scale=1280:720:flags=lanczos," : ""
+ffmpeg ... -vf ${scale}fps=30,format=yuv420p \
+  -c:v h264_mf -rate_control cbr -scenario archive \
+  -quality 80 -b:v ${videoBitrate} -movflags +faststart partial.mp4
+
+if partialBytes &gt; targetBytes and a lower bitrate is possible:
+  retryBitrate = videoBitrate × (9.5 MiB ÷ partialBytes)
+  encode once more
+replace destination with the successful partial, regardless of final size</code></pre>
+          <p class="caption">The destination-safety property remains: Icarus writes beside the destination and renames only after success. File size can trigger one corrective retry, but never turns a successful Potato or Social encode into a rejection.</p>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>File</th><th>Change</th><th>Verification</th></tr></thead>
+              <tbody>
+                <tr><td><code>export_video_dialog.dart</code></td><td>Add the three-choice quality control and duration-aware summary</td><td>Copy tests plus real Windows dialog inspection</td></tr>
+                <tr><td><code>video_exporter.dart</code></td><td>Accept output fps; derive transition frames and duration from it</td><td>30/60 fps timing tests; 30-page frame-count test</td></tr>
+                <tr><td><code>ffmpeg_video_encoder.dart</code></td><td>Share size policy; CBR args; adaptive scale; verify and retry partial</td><td>Filter and policy tests; two encoder smokes; one complete UI export</td></tr>
+                <tr><td><code>screenshot_view.dart</code></td><td>Hydrate isolated capture providers before mounting instead of writing during build</td><td>Regression widget test plus clean debug field export</td></tr>
+                <tr><td><code>text_widget.dart</code></td><td>Use the read-only text presentation while capturing screenshots</td><td>Page-update resilience test; exact field frame inspection</td></tr>
+                <tr><td><code>video_export_timing_test.dart</code></td><td>Cover profile-dependent schedules</td><td>420 ms rounding is explicit at both frame rates</td></tr>
+                <tr><td><code>docs/adr/0005-…</code></td><td>Supersede ADR 0003’s fixed-quality decision</td><td>Record all three outcomes, adaptive threshold, best-effort semantics</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: repository inspection plus implementation and review on PR 126.</p>
+        </section>
+
+        <section>
+          <h2 id="acceptance">Acceptance should be stated in user outcomes</h2>
+
+          <ul>
+            <li>A <strong>Potato</strong> export aims for 10 MiB and a <strong>Social</strong> export aims for 20 MiB; neither rejects a successful encode solely because the result is larger.</li>
+            <li>A 30-page strategy at 3-second step duration exports at 1080p / 30 fps with bitrate derived from its planned duration.</li>
+            <li>The dialog calls the smallest preset <strong>Potato</strong> and says <strong>Aims for 10 MB. Tiny file, full strat.</strong>; it does not ask the user to understand codecs or kbps.</li>
+            <li>Potato reports and outputs 720p only when the duration-derived initial bitrate reaches the 250 kbps floor; otherwise it remains 1080p.</li>
+            <li>At 30 fps, page transitions end on the destination page and stay within one output-frame interval of 420 ms.</li>
+            <li>Cancellation or any failed/retried encode leaves an existing destination untouched and removes the partial file best-effort.</li>
+            <li>If H.264 encoding is unavailable, Potato and Social report that they could not create the optimized video; they do not silently emit MPEG-4 quality mode.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 id="limits">Confidence, limits, and the next evidence to collect</h2>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Finding</th><th>Confidence</th><th>Reason</th></tr></thead>
+              <tbody>
+                <tr><td>7,000 kbps places 22 seconds near the 20 MiB target</td><td class="good">High</td><td>Deterministic arithmetic plus 18.65 MiB Windows smoke result</td></tr>
+                <tr><td>H.264 is the default compatibility choice</td><td class="good">High</td><td>Current Icarus runtime plus browser/Windows documentation</td></tr>
+                <tr><td>1080p / 30 fps is the tactical-content sweet spot</td><td class="good">High for tested sample</td><td>Controlled 750 and 450 kbps comparisons agree</td></tr>
+                <tr><td>720p becomes preferable at the 250 kbps floor</td><td class="good">High for tested sample</td><td>Three paired 1080p / 720p runs place the crossover below 300 kbps</td></tr>
+                <tr><td>≈1,449 kbps is a comfortable first request for 30 pages</td><td class="good">High</td><td>It sits well above the tested 750 kbps candidate</td></tr>
+                <tr><td>Potato works on the motivating 16-page strategy</td><td class="good">High</td><td>54.500 s field export: H.264, 1920×1080, 30 fps, 9.650 MiB; release and clean debug replay</td></tr>
+                <tr><td>H.265 can be universal on Icarus Windows machines</td><td class="bad">Low / contradicted</td><td><code>hevc_mf</code> failed locally; playback is conditional</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: arithmetic, repository code, local FFmpeg/ffprobe/libvmaf experiment, and cited platform documentation.</p>
+
+          <p>The motivating strategy is now measured rather than reported-only, but one field sample is not a corpus. The next useful evidence is 5–10 additional real strategies: sparse, drawing-heavy, image-heavy, 10 pages, 30 pages, and one export long enough to activate Potato’s 720p floor. Run the same presets, inspect the smallest labels at transition boundaries, and tune only the warning floor—not the product shape—unless those results contradict this matrix.</p>
+        </section>
+
+        <section>
+          <h2 id="appendix">Appendix</h2>
+
+          <details class="appendix">
+            <summary>Raw evidence · benchmark commands and observed rows</summary>
+            <pre><code># Exact field sample · source retained locally, not committed or uploaded
+size-strat.ica
+SHA256 908c2dd64e9cacaba50a3fcc15cbd32ee2dc4e734d3bae41e5de267027e91e90
+archive 4,824 B · JSON 56,084 B · format version 95
+Pearl · 16 pages · 3.000 s steps
+
+potato,H.264,1920x1080,30/1,54.500000 s,1,635 frames,10,118,396 B,9.649654 MiB
+social,H.264,1920x1080,30/1,54.500000 s,1,635 frames,16,680,180 B,15.907459 MiB
+max,H.264,1920x1080,60/1,54.250000 s,3,255 frames,18,367,663 B,17.516768 MiB
+
+# Debug replay after capture-provider fix
+potato,16 pages,54.500000 s,10,118,396 B,25,370 ms wall
+result: no Flutter exception · representative page 9 frame inspected
+
+# Synthetic reference: 22.000 s · 1920×1080 · 60 fps · lossless H.264
+ffmpeg -loop 1 -framerate 60 -i best-test-preview.png -t 22 \
+  -vf "scale=1920:1080:force_original_aspect_ratio=decrease,
+       pad=1920:1080:(ow-iw)/2:(oh-ih)/2,
+       [intermittent moving widget filters],format=yuv420p" \
+  -c:v libx264 -crf 0 -preset ultrafast reference.mkv
+
+# Representative H.264 candidate
+ffmpeg -i reference.mkv -vf "fps=30,format=yuv420p" \
+  -c:v h264_mf -rate_control cbr -scenario archive \
+  -quality 80 -b:v 750k -movflags +faststart candidate.mp4
+
+# Objective comparison
+ffmpeg -i candidate.mp4 -i reference.mkv \
+  -lavfi "[distorted][reference]libvmaf" -f null NUL
+
+current-h264-mf-8m-1080p60,22.000000,4,134,685 B,1,503,521 bps,VMAF 96.646
+fit110-h264-mf-750k-1080p60,22.000000,2,320,682 B,843,884 bps,VMAF 92.875
+fit110-h264-mf-750k-1080p30,22.000000,2,242,590 B,815,487 bps,VMAF 96.296
+fit110-h264-mf-750k-720p30,22.000000,1,802,728 B,655,537 bps,VMAF 91.104
+fit180-h264-mf-450k-1080p30,22.000000,1,399,009 B,508,730 bps,VMAF 93.524
+fit180-h264-mf-450k-720p30,22.000000,1,307,683 B,475,521 bps,VMAF 90.063
+potato-450k-1080p30,22.000000,1,405,421 B,VMAF 92.025
+potato-450k-720p30,22.000000,1,337,931 B,VMAF 90.030
+potato-300k-1080p30,22.000000,869,413 B,VMAF 90.548
+potato-300k-720p30,22.000000,908,778 B,VMAF 86.445
+potato-250k-1080p30,22.000000,723,711 B,VMAF 80.169
+potato-250k-720p30,22.000000,725,550 B,VMAF 84.163
+fallback-mpeg4-q3-1080p60,22.000000,19,165,931 B,6,969,429 bps,VMAF 96.769
+h265-theory-3400k-1080p60,22.000000,2,532,156 B,920,784 bps,VMAF 97.090
+
+# Media Foundation HEVC probe
+hevc_mf: failed processing input 0x80004005
+output: 258-byte empty MP4 · no video stream</code></pre>
+            <p class="source">Captured 2026-08-15 · Windows · exact field run through Icarus release and debug desktop harnesses · FFmpeg 8.1.2 full local build · VMAF comparisons normalized to the matching frame rate and 1920×1080.</p>
+          </details>
+
+          <details class="appendix">
+            <summary>Non-goals · deliberately not decided here</summary>
+            <ul>
+              <li>No per-page step duration.</li>
+              <li>No exposed codec picker or raw bitrate slider.</li>
+              <li>No AV1/WebM packaging change.</li>
+              <li>No promise that every export will fit a particular Discord account’s current limit.</li>
+              <li>No hard rejection when a successful Potato or Social export remains above its target.</li>
+            </ul>
+          </details>
+        </section>
+
+        <p class="colophon">Generated 2026-08-15 · Codex for Dara / Icarus · inputs: attached Discord report, local <code>size-strat.ica</code> (SHA-256 <code>908c…e90</code>), <code>best-test-preview.png</code>, PR 126 after <code>adb8150</code>, FFmpeg 8.1.2, official Discord / MDN / Microsoft documentation · revision v4</p>
+      </article>
+    </main>
+  </div>
+
+  <script>
+    const title = document.querySelector("h1");
+    const status = document.querySelector(".kicker");
+    document.title = title?.textContent || "Document";
+    document.getElementById("rail-title").textContent = title?.textContent || "Document";
+    document.getElementById("rail-status").textContent = status?.textContent || "";
+
+    const themeButton = document.getElementById("toggle-theme");
+    const paintTheme = () => {
+      const light = document.documentElement.dataset.theme === "light";
+      themeButton.textContent = light ? "DARK" : "LIGHT";
+      themeButton.setAttribute("aria-label", `Switch to ${light ? "dark" : "light"} theme`);
+    };
+    paintTheme();
+    themeButton.addEventListener("click", () => {
+      const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("blueprint-theme", next); } catch {}
+      paintTheme();
+    });
+
+    /* The rail earns its width: mirror the headline metrics so key figures
+       stay visible while scrolling, and drop the outline when the document
+       is too short for it to help. */
+    const railMetrics = document.getElementById("rail-metrics");
+    const firstMetrics = [...document.querySelectorAll("#document .metric-line .metric")].slice(0, 4);
+    firstMetrics.forEach((metric) => {
+      const value = metric.querySelector(".metric-value");
+      const label = metric.querySelector(".metric-label");
+      if (!value || !label) return;
+      const row = document.createElement("p");
+      row.className = "rail-metric";
+      const name = document.createElement("span");
+      name.textContent = label.textContent;
+      const figure = document.createElement("b");
+      figure.textContent = value.textContent;
+      for (const verdict of ["good", "warn", "bad"]) {
+        if (value.classList.contains(verdict)) figure.classList.add(verdict);
+      }
+      row.append(name, figure);
+      railMetrics.appendChild(row);
+    });
+    document.getElementById("rail-metrics-block").hidden = !railMetrics.childElementCount;
+
+    /* Artifacts: every file the document references, collected into rail
+       download links. Links and images are picked up automatically by
+       extension; force-include anything else with data-artifact (empty on
+       an <a> to use its href, or data-artifact="url" on any element).
+       Override the display name with data-artifact-name. */
+    const railArtifacts = document.getElementById("rail-artifacts");
+    const ARTIFACT_EXT = /\.(zip|tar|tar\.gz|tgz|gz|7z|csv|tsv|json|jsonl|ndjson|parquet|xlsx|pdf|png|jpe?g|gif|svg|webp|mp4|txt|log|sql|patch|diff|ipynb|js|ts|sh|py|ya?ml|toml|md)(?=$|[?#])/i;
+    const seenArtifacts = new Set();
+    document.querySelectorAll("#document a[href], #document img[src], #document [data-artifact]").forEach((el) => {
+      const url = el.dataset?.artifact || el.getAttribute("href") || el.getAttribute("src") || "";
+      if (!url || url.startsWith("#") || url.startsWith("data:") || url.startsWith("javascript:")) return;
+      if (!el.hasAttribute("data-artifact") && !ARTIFACT_EXT.test(url)) return;
+      if (seenArtifacts.has(url)) return;
+      seenArtifacts.add(url);
+      const name = el.dataset.artifactName
+        || decodeURIComponent(url.split(/[?#]/)[0].split("/").pop() || url);
+      const ext = (name.match(/\.([a-z0-9]+)$/i)?.[1] || "file").toUpperCase();
+      const row = document.createElement("a");
+      row.className = "rail-artifact";
+      row.href = url;
+      row.setAttribute("download", "");
+      const tag = document.createElement("span");
+      tag.className = "ext";
+      tag.textContent = ext;
+      const label = document.createElement("span");
+      label.className = "name";
+      label.textContent = name;
+      row.append(tag, label);
+      railArtifacts.appendChild(row);
+    });
+    document.getElementById("rail-artifacts-block").hidden = !railArtifacts.childElementCount;
+
+    const outline = document.getElementById("outline-list");
+    const headings = [...document.querySelectorAll("#document h2[id], #document h3[id]")];
+    if (headings.length < 3) document.getElementById("outline-block").hidden = true;
+    const links = headings.map((heading) => {
+      const link = document.createElement("a");
+      link.className = "outline-link";
+      link.href = `#${heading.id}`;
+      link.textContent = heading.textContent;
+      link.dataset.level = heading.tagName.slice(1);
+      outline.appendChild(link);
+
+      /* hover anchor: click navigates and copies the absolute link */
+      const anchor = document.createElement("a");
+      anchor.className = "anchor-link";
+      anchor.href = `#${heading.id}`;
+      anchor.textContent = "§";
+      anchor.setAttribute("aria-label", `Copy link to ${heading.textContent}`);
+      anchor.addEventListener("click", () => {
+        const url = `${location.origin}${location.pathname}#${heading.id}`;
+        try { navigator.clipboard.writeText(url); } catch {}
+      });
+      heading.appendChild(anchor);
+      return link;
+    });
+
+    /* Chart tooltips: any [data-tip] inside a .diagram shows its text in a
+       fixed tooltip that follows the pointer. Newlines in data-tip render
+       as line breaks (white-space: pre-line). */
+    const chartTip = document.getElementById("chart-tip");
+    /* Line indicator: a hit rect carrying data-guide (the series' y at that
+       interval, in viewBox units; space-separate several ys for several
+       series) gets a dashed vertical guide plus a dot per y on hover.
+       data-guide-fill="var(--danger)" colors the dots; default accent. */
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const hideGuides = () => document.querySelectorAll(".hover-guide").forEach((g) => g.setAttribute("visibility", "hidden"));
+    const showGuide = (mark) => {
+      const svg = mark.ownerSVGElement;
+      if (!svg || mark.dataset.guide === undefined || mark.tagName !== "rect") return;
+      let guide = svg.querySelector(".hover-guide");
+      if (!guide) {
+        guide = document.createElementNS(SVG_NS, "g");
+        guide.setAttribute("class", "hover-guide");
+        guide.setAttribute("pointer-events", "none");
+        guide.appendChild(document.createElementNS(SVG_NS, "line"));
+        svg.appendChild(guide);
+      }
+      const x = mark.dataset.guideX !== undefined
+        ? +mark.dataset.guideX
+        : +mark.getAttribute("x") + +mark.getAttribute("width") / 2;
+      const line = guide.querySelector("line");
+      line.setAttribute("x1", x);
+      line.setAttribute("x2", x);
+      line.setAttribute("y1", mark.getAttribute("y"));
+      line.setAttribute("y2", +mark.getAttribute("y") + +mark.getAttribute("height"));
+      guide.querySelectorAll("circle").forEach((dot) => dot.remove());
+      mark.dataset.guide.trim().split(/\s+/).filter(Boolean).forEach((cy) => {
+        const dot = document.createElementNS(SVG_NS, "circle");
+        dot.setAttribute("cx", x);
+        dot.setAttribute("cy", cy);
+        dot.setAttribute("r", 3);
+        if (mark.dataset.guideFill) dot.style.fill = mark.dataset.guideFill;
+        guide.appendChild(dot);
+      });
+      guide.setAttribute("visibility", "visible");
+    };
+    const moveTip = (event) => {
+      const mark = event.target.closest("[data-tip]");
+      hideGuides();
+      if (!mark) { chartTip.style.visibility = "hidden"; return; }
+      chartTip.textContent = mark.dataset.tip;
+      chartTip.style.visibility = "visible";
+      const x = Math.min(event.clientX + 14, innerWidth - chartTip.offsetWidth - 8);
+      const y = Math.min(event.clientY + 14, innerHeight - chartTip.offsetHeight - 8);
+      chartTip.style.left = `${x}px`;
+      chartTip.style.top = `${y}px`;
+      showGuide(mark);
+    };
+    document.querySelectorAll(".diagram").forEach((diagram) => {
+      diagram.addEventListener("mousemove", moveTip);
+      diagram.addEventListener("mouseleave", () => { chartTip.style.visibility = "hidden"; hideGuides(); });
+    });
+
+    const progress = document.querySelector(".reading-progress-fill");
+    const updateProgress = () => {
+      const max = document.documentElement.scrollHeight - innerHeight;
+      const ratio = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+      progress.style.transform = `scaleY(${ratio})`;
+    };
+
+    const activateOutline = () => {
+      if (!headings.length) return;
+      const current = headings.reduce((active, heading) =>
+        heading.getBoundingClientRect().top <= 120 ? heading : active, headings[0]);
+      links.forEach((link) => link.classList.toggle("active", link.hash === `#${current.id}`));
+    };
+
+    const updateScrollState = () => {
+      updateProgress();
+      activateOutline();
+    };
+    addEventListener("scroll", updateScrollState, { passive: true });
+    addEventListener("resize", updateProgress, { passive: true });
+    updateScrollState();
+
+    document.getElementById("copy-link").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      try {
+        await navigator.clipboard.writeText(location.href);
+        button.textContent = "COPIED";
+      } catch {
+        button.textContent = "COPY FAILED";
+      }
+      setTimeout(() => { button.textContent = "COPY LINK"; }, 1400);
+    });
+  </script>
+</body>
+</html>
