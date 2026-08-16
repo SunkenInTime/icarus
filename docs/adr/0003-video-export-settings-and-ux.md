@@ -1,6 +1,6 @@
 # ADR 0003: Video export settings — global step duration, page checkboxes, fixed 1080p
 
-**Status:** Accepted (2026-07-31)
+**Status:** Amended by ADR 0005 (2026-08-15)
 **Feature:** Video sequencing export (pages → .mp4)
 
 ## Context
@@ -15,7 +15,7 @@ copy live in `lib/widgets/dialogs/` (shadcn `ShadDialog` style). "Steps" and
 ## Decision
 
 1. **Step duration is a single global setting per export**: how long each
-   included page is held on screen. **Default 3 s, clamped to 1–30 s.**
+   included page is held on screen. **Default 3 s, clamped to 1–15 s.**
    No per-page overrides in v1.
 2. **Page inclusion is an arbitrary subset** chosen via a checkbox list
    (page name + order) in the export dialog, **all checked by default**.

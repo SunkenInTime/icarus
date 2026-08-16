@@ -1,6 +1,6 @@
 # ADR 0002: Video transitions reuse the in-app page-transition system at full fidelity
 
-**Status:** Accepted (2026-07-31)
+**Status:** Amended by ADR 0005 (2026-08-15)
 **Feature:** Video sequencing export (pages → .mp4)
 
 ## Context

@@ -16,9 +16,23 @@ import 'package:icarus/screenshot/persistent_offscreen_renderer.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
 import 'package:icarus/services/video_export/ffmpeg_png_sequence_writer.dart';
 import 'package:icarus/services/video_export/ffmpeg_video_encoder.dart';
+import 'package:icarus/services/video_export/video_export_quality.dart';
 import 'package:icarus/view_cone/vision_geometry.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:path/path.dart' as p;
+
+@visibleForTesting
+Future<T> runPreservingScreenshotMode<T>(
+  Future<T> Function() operation,
+) async {
+  final coordinateSystem = CoordinateSystem.instance;
+  final previousMode = coordinateSystem.isScreenshot;
+  try {
+    return await operation();
+  } finally {
+    coordinateSystem.setIsScreenshot(previousMode);
+  }
+}
 
 /// Renders a strategy's selected pages into an .mp4 slideshow: each page is
 /// held for the step duration, with full-fidelity page transitions between
@@ -36,20 +50,23 @@ class VideoExporter {
   final MapState mapState;
   final VisionGeometryMap? geometry;
 
-  static const int fps = 60;
+  static int transitionFrameCountFor(int fps) {
+    if (fps <= 0) throw ArgumentError.value(fps, 'fps');
+    return (kPageTransitionDuration.inMilliseconds * fps / 1000).round();
+  }
 
-  static int get transitionFrameCount =>
-      (kPageTransitionDuration.inMilliseconds * fps / 1000).round();
-
-  /// Duration the 60 fps video can represent for one page transition.
-  static double get encodedTransitionSeconds => transitionFrameCount / fps;
+  /// Duration the selected frame rate can represent for one page transition.
+  static double encodedTransitionSecondsFor(int fps) =>
+      transitionFrameCountFor(fps) / fps;
 
   static double plannedDurationSeconds({
     required int pageCount,
     required double stepSeconds,
+    required int fps,
   }) {
     if (pageCount <= 0) return 0;
-    return pageCount * stepSeconds + (pageCount - 1) * encodedTransitionSeconds;
+    return pageCount * stepSeconds +
+        (pageCount - 1) * encodedTransitionSecondsFor(fps);
   }
 
   /// Frame-rendering dominates wall time; encoding is the short tail.
@@ -72,23 +89,47 @@ class VideoExporter {
     required Duration stepDuration,
     required String ffmpegBinary,
     required String outputPath,
+    required VideoExportQuality quality,
     void Function(double fraction, String label)? onProgress,
   }) async {
     if (pages.isEmpty) {
       throw VideoExportException('No pages selected.');
     }
 
-    final transitionFrames = transitionFrameCount;
-    const frameInterval = 1.0 / fps;
+    await runPreservingScreenshotMode(
+      () => _export(
+        pages: pages,
+        stepDuration: stepDuration,
+        ffmpegBinary: ffmpegBinary,
+        outputPath: outputPath,
+        quality: quality,
+        onProgress: onProgress,
+      ),
+    );
+  }
+
+  Future<void> _export({
+    required List<StrategyPage> pages,
+    required Duration stepDuration,
+    required String ffmpegBinary,
+    required String outputPath,
+    required VideoExportQuality quality,
+    void Function(double fraction, String label)? onProgress,
+  }) async {
+    final fps = quality.fps;
+    final transitionFrames = transitionFrameCountFor(fps);
+    final frameInterval = 1.0 / fps;
     final stepSeconds = stepDuration.inMilliseconds / 1000.0;
     final totalFrames = pages.length + (pages.length - 1) * transitionFrames;
     final totalSeconds = plannedDurationSeconds(
       pageCount: pages.length,
       stepSeconds: stepSeconds,
+      fps: fps,
     );
 
-    final tempDir =
-        await Directory.systemTemp.createTemp('icarus_video_export_');
+    final tempDir = await Directory.systemTemp.createTemp(
+      'icarus_video_export_',
+    );
     ProviderContainer? captureContainer;
     PersistentOffscreenRenderer? renderer;
     FfmpegPngSequenceWriter? frameWriter;
@@ -97,10 +138,8 @@ class VideoExporter {
       captureContainer = offscreenContainer;
       renderer = PersistentOffscreenRenderer(
         targetSize: CoordinateSystem.screenShotSize,
-        wrapWidget: (child) => wrapForOffscreenCapture(
-          child,
-          container: offscreenContainer,
-        ),
+        wrapWidget: (child) =>
+            wrapForOffscreenCapture(child, container: offscreenContainer),
       );
       frameWriter = FfmpegPngSequenceWriter();
       _frameWriter = frameWriter;
@@ -117,8 +156,12 @@ class VideoExporter {
       var renderedFrames = 0;
       String? lastFrameFile;
 
-      Future<void> renderFrame(Widget view, double durationSeconds) async {
+      Future<void> renderFrame(
+        ScreenshotView view,
+        double durationSeconds,
+      ) async {
         if (_cancelled) throw VideoExportCancelled();
+        view.hydrateProviders(offscreenContainer);
         final bytes = await renderer!.captureRawRgba(view);
         final fileName = 'frame_${frameIndex.toString().padLeft(5, '0')}.png';
         await frameWriter!.writeFrame(bytes);
@@ -135,10 +178,12 @@ class VideoExporter {
       }
 
       // Warm the first page's SVGs and image streams once. Later pages get a
-      // shorter warm-up immediately before their transition begins; the 60
-      // fps transition frames themselves never pay a fixed settling delay.
+      // shorter warm-up immediately before their transition begins; the
+      // transition frames themselves never pay a fixed settling delay.
+      final firstView = _stillView(pages.first);
+      firstView.hydrateProviders(offscreenContainer);
       await renderer.prepare(
-        _stillView(pages.first),
+        firstView,
         settleDuration: const Duration(milliseconds: 800),
       );
 
@@ -164,8 +209,10 @@ class VideoExporter {
           endAgentSize: nextPage.settings.agentSize,
           coordinateSystem: CoordinateSystem.instance,
         );
+        final nextView = _stillView(nextPage);
+        nextView.hydrateProviders(offscreenContainer);
         await renderer.prepare(
-          _stillView(nextPage),
+          nextView,
           settleDuration: const Duration(milliseconds: 120),
         );
         for (var f = 1; f <= transitionFrames; f++) {
@@ -203,6 +250,7 @@ class VideoExporter {
         concatListFileName: 'frames.ffconcat',
         outputPath: outputPath,
         totalSeconds: totalSeconds,
+        quality: quality,
         onProgress: (fraction) => onProgress?.call(
           _renderWeight + fraction * (1 - _renderWeight),
           'Encoding video',
@@ -227,9 +275,9 @@ class VideoExporter {
     }
   }
 
-  Widget _stillView(StrategyPage page) => _pageView(page);
+  ScreenshotView _stillView(StrategyPage page) => _pageView(page);
 
-  Widget _transitionView({
+  ScreenshotView _transitionView({
     required StrategyPage from,
     required StrategyPage to,
     required List<PageTransitionEntry> entries,
@@ -252,7 +300,7 @@ class VideoExporter {
     );
   }
 
-  Widget _pageView(
+  ScreenshotView _pageView(
     StrategyPage page, {
     Widget? placedWidgetsOverride,
     double drawingsOpacity = 1.0,
