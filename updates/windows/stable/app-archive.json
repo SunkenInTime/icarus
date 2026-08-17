@@ -1,7 +1,29 @@
 {
     "appName":  "Icarus",
-    "description":  "Turn strategies into videos, build cleaner multi-step plans, and customize maps your way.",
+    "description":  "Clearer video exports and simpler view-cone controls.",
     "items":  [
+                  {
+                      "version":  "4.6.1+96",
+                      "shortVersion":  96,
+                      "changes":  [
+                                      {
+                                          "message":  "Video export now has clearer Potato, Social, and Max quality options.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Exports are more reliable and automatically balance quality and file size.",
+                                          "type":  "improvement"
+                                      },
+                                      {
+                                          "message":  "Agent view cones have simpler controls and can be removed from the agent menu with Undo.",
+                                          "type":  "improvement"
+                                      }
+                                  ],
+                      "date":  "2026-08-16",
+                      "mandatory":  false,
+                      "url":  "https://sunkenintime.github.io/icarus/updates/windows/stable/4.6.1%2B96-windows",
+                      "platform":  "windows"
+                  },
                   {
                       "version":  "4.6.0+95",
                       "shortVersion":  95,
