@@ -288,6 +288,8 @@ RemoteEditorSnapshot _editorSnapshot({
   required List<RemotePage> pages,
   required RemotePageSnapshot activePage,
   int shellRevision = 1,
+  String? mapData,
+  String? themeProfileId,
 }) {
   final now = DateTime.utc(2026);
   return RemoteEditorSnapshot(
@@ -295,10 +297,11 @@ RemoteEditorSnapshot _editorSnapshot({
       header: RemoteStrategyHeader(
         publicId: 'cloud-strategy',
         name: 'Cloud Strategy',
-        mapData: Maps.mapNames[MapValue.ascent]!,
+        mapData: mapData ?? Maps.mapNames[MapValue.ascent]!,
         revision: shellRevision,
         createdAt: now,
         updatedAt: now,
+        themeProfileId: themeProfileId,
       ),
       pages: pages,
     ),
@@ -342,6 +345,36 @@ Future<Box<StrategyData>> _openStrategyBox() async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() => CoordinateSystem(playAreaSize: const Size(1920, 1080)));
+
+  test('cloud strategy metadata patch carries the remote shell revision',
+      () async {
+    final page = _page('page-1', 0);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page),
+      shellRevision: 17,
+      mapData: Maps.mapNames[MapValue.haven],
+      themeProfileId: 'remote-theme',
+    ));
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+
+    await container
+        .read(strategyProvider.notifier)
+        .notifyCloudStrategyMutation();
+
+    final op = container.read(strategyOpQueueProvider).pending.single.op;
+    expect(op.entityType, StrategyOpEntityType.strategy);
+    expect(op.expectedRevision, 17);
+    expect(op.toConvexJson()['expectedRevision'], 17);
+    expect(
+      op.payload,
+      containsPair('mapData', Maps.mapNames[MapValue.ascent]),
+    );
+    expect(op.payload, containsPair('clearThemeProfileId', true));
+  });
 
   test('active page update rehydrates without a strategy revision change',
       () async {

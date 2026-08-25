@@ -435,6 +435,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       kind: StrategyOpKind.patch,
       entityType: StrategyOpEntityType.strategy,
       entityPublicId: strategyId,
+      expectedRevision: snapshot.header.revision,
       payload: {
         'mapData': localMapData,
         if (localThemeProfileId != null) 'themeProfileId': localThemeProfileId,
