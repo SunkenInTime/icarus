@@ -7,6 +7,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/share_link_provider.dart';
+import 'package:icarus/share/share_link_copy.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -60,11 +61,10 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
   List<ShareLinkSummary> _links = const [];
   _LinksStatus _status = _LinksStatus.loading;
   bool _isCreating = false;
-  String? _revokingToken;
+  String? _disablingToken;
   String _selectedRole = 'viewer';
 
-  int get _activeLinkCount =>
-      _links.where((link) => !link.isRevoked).length;
+  int get _activeLinkCount => _links.where((link) => !link.isRevoked).length;
 
   Future<void> _loadLinks() async {
     setState(() => _status = _LinksStatus.loading);
@@ -119,19 +119,18 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
     }
   }
 
-  Future<void> _revokeLink(String token) async {
+  Future<void> _disableLink(String token) async {
     final confirmed = await ConfirmAlertDialog.show(
       context: context,
-      title: 'Revoke this link?',
-      content: 'Anyone who has the link or code loses the ability to join. '
-          'People who already joined keep their access.',
-      confirmText: 'Revoke',
+      title: ShareLinkCopy.disableTitle,
+      content: ShareLinkCopy.disableDescription,
+      confirmText: ShareLinkCopy.disableAction,
       isDestructive: true,
     );
     if (!confirmed || !mounted) {
       return;
     }
-    setState(() => _revokingToken = token);
+    setState(() => _disablingToken = token);
     try {
       await ref.read(convexStrategyRepositoryProvider).revokeShareLink(
             targetType: widget.targetType,
@@ -141,12 +140,12 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
       await _loadLinks();
     } catch (_) {
       Settings.showToast(
-        message: 'Failed to revoke share link.',
+        message: ShareLinkCopy.disableFailure,
         backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     } finally {
       if (mounted) {
-        setState(() => _revokingToken = null);
+        setState(() => _disablingToken = null);
       }
     }
   }
@@ -160,10 +159,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
         _shareDialogHeadline(widget.title),
         softWrap: true,
       ),
-      description: const Text(
-        'Links never expire. Anyone who opens one joins this item with the '
-        'access you choose.',
-      ),
+      description: const Text(ShareLinkCopy.dialogDescription),
       actions: [
         ShadButton.secondary(
           onPressed: () => Navigator.of(context).pop(),
@@ -183,6 +179,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
               children: [
                 Expanded(
                   child: ShadSelect<String>(
+                    key: const ValueKey('share-link-role-select'),
                     initialValue: _selectedRole,
                     selectedOptionBuilder: (context, value) => Text(
                       value == 'editor' ? 'Can edit' : 'View only',
@@ -212,6 +209,7 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
                 ),
                 const SizedBox(width: 8),
                 ShadButton(
+                  key: const ValueKey('share-link-create-and-copy'),
                   onPressed: _isCreating ? null : _createLink,
                   leading: _isCreating
                       ? SizedBox(
@@ -292,8 +290,8 @@ class _ShareLinksDialogState extends ConsumerState<ShareLinksDialog> {
               final link = _links[index];
               return _ShareLinkTile(
                 link: link,
-                isRevoking: _revokingToken == link.token,
-                onRevoke: () => _revokeLink(link.token),
+                isDisabling: _disablingToken == link.token,
+                onDisable: () => _disableLink(link.token),
               );
             },
           ),
@@ -367,7 +365,7 @@ class _RoleBadge extends StatelessWidget {
     if (isRevoked) {
       background = theme.colorScheme.destructive.withValues(alpha: 0.14);
       foreground = theme.colorScheme.destructive;
-      label = 'REVOKED';
+      label = ShareLinkCopy.disabledStatus;
     } else if (role == 'editor') {
       background = theme.colorScheme.primary.withValues(alpha: 0.16);
       foreground = theme.colorScheme.primary;
@@ -399,13 +397,13 @@ class _RoleBadge extends StatelessWidget {
 class _ShareLinkTile extends StatefulWidget {
   const _ShareLinkTile({
     required this.link,
-    required this.isRevoking,
-    required this.onRevoke,
+    required this.isDisabling,
+    required this.onDisable,
   });
 
   final ShareLinkSummary link;
-  final bool isRevoking;
-  final VoidCallback onRevoke;
+  final bool isDisabling;
+  final VoidCallback onDisable;
 
   @override
   State<_ShareLinkTile> createState() => _ShareLinkTileState();
@@ -478,6 +476,7 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
               ),
               const SizedBox(width: 8),
               _CopyIconButton(
+                buttonKey: ValueKey('share-link-copy-link-${link.token}'),
                 tooltip: 'Copy link',
                 icon: LucideIcons.link,
                 enabled: !link.isRevoked,
@@ -485,35 +484,50 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
                 toastMessage: 'Share link copied to clipboard.',
               ),
               _CopyIconButton(
+                buttonKey: ValueKey('share-link-copy-code-${link.token}'),
                 tooltip: 'Copy code',
                 icon: LucideIcons.hash,
                 enabled: !link.isRevoked,
                 textToCopy: link.token,
                 toastMessage: 'Share code copied to clipboard.',
               ),
-              Tooltip(
-                message: link.isRevoked ? 'Revoked' : 'Revoke link',
-                child: ShadButton.ghost(
-                  size: ShadButtonSize.sm,
-                  onPressed: link.isRevoked || widget.isRevoking
-                      ? null
-                      : widget.onRevoke,
-                  child: widget.isRevoking
-                      ? SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: theme.colorScheme.mutedForeground,
+              Semantics(
+                label: link.isRevoked
+                    ? ShareLinkCopy.disabledTooltip
+                    : ShareLinkCopy.disableTooltip,
+                button: true,
+                enabled: !link.isRevoked && !widget.isDisabling,
+                onTap: link.isRevoked || widget.isDisabling
+                    ? null
+                    : widget.onDisable,
+                excludeSemantics: true,
+                child: Tooltip(
+                  message: link.isRevoked
+                      ? ShareLinkCopy.disabledTooltip
+                      : ShareLinkCopy.disableTooltip,
+                  child: ShadButton.ghost(
+                    key: ValueKey('share-link-disable-${link.token}'),
+                    size: ShadButtonSize.sm,
+                    onPressed: link.isRevoked || widget.isDisabling
+                        ? null
+                        : widget.onDisable,
+                    child: widget.isDisabling
+                        ? SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: theme.colorScheme.mutedForeground,
+                            ),
+                          )
+                        : Icon(
+                            LucideIcons.link2Off,
+                            size: 16,
+                            color: link.isRevoked
+                                ? theme.colorScheme.mutedForeground
+                                : theme.colorScheme.destructive,
                           ),
-                        )
-                      : Icon(
-                          LucideIcons.trash2,
-                          size: 16,
-                          color: link.isRevoked
-                              ? theme.colorScheme.mutedForeground
-                              : theme.colorScheme.destructive,
-                        ),
+                  ),
                 ),
               ),
             ],
@@ -526,6 +540,7 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
 
 class _CopyIconButton extends StatefulWidget {
   const _CopyIconButton({
+    required this.buttonKey,
     required this.tooltip,
     required this.icon,
     required this.enabled,
@@ -533,6 +548,7 @@ class _CopyIconButton extends StatefulWidget {
     required this.toastMessage,
   });
 
+  final Key buttonKey;
   final String tooltip;
   final IconData icon;
   final bool enabled;
@@ -572,34 +588,42 @@ class _CopyIconButtonState extends State<_CopyIconButton> {
   @override
   Widget build(BuildContext context) {
     final theme = ShadTheme.of(context);
-    return Tooltip(
-      message: widget.tooltip,
-      child: ShadButton.ghost(
-        size: ShadButtonSize.sm,
-        onPressed: widget.enabled ? _copy : null,
-        child: AnimatedSwitcher(
-          duration: _hoverDuration,
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeOutCubic,
-          transitionBuilder: (child, animation) => ScaleTransition(
-            scale: animation,
-            child: FadeTransition(opacity: animation, child: child),
+    return Semantics(
+      label: widget.tooltip,
+      button: true,
+      enabled: widget.enabled,
+      onTap: widget.enabled ? _copy : null,
+      excludeSemantics: true,
+      child: Tooltip(
+        message: widget.tooltip,
+        child: ShadButton.ghost(
+          key: widget.buttonKey,
+          size: ShadButtonSize.sm,
+          onPressed: widget.enabled ? _copy : null,
+          child: AnimatedSwitcher(
+            duration: _hoverDuration,
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeOutCubic,
+            transitionBuilder: (child, animation) => ScaleTransition(
+              scale: animation,
+              child: FadeTransition(opacity: animation, child: child),
+            ),
+            child: _copied
+                ? Icon(
+                    LucideIcons.check,
+                    key: const ValueKey('check'),
+                    size: 16,
+                    color: theme.colorScheme.primary,
+                  )
+                : Icon(
+                    widget.icon,
+                    key: const ValueKey('idle'),
+                    size: 16,
+                    color: widget.enabled
+                        ? theme.colorScheme.foreground
+                        : theme.colorScheme.mutedForeground,
+                  ),
           ),
-          child: _copied
-              ? Icon(
-                  LucideIcons.check,
-                  key: const ValueKey('check'),
-                  size: 16,
-                  color: theme.colorScheme.primary,
-                )
-              : Icon(
-                  widget.icon,
-                  key: const ValueKey('idle'),
-                  size: 16,
-                  color: widget.enabled
-                      ? theme.colorScheme.foreground
-                      : theme.colorScheme.mutedForeground,
-                ),
         ),
       ),
     );
