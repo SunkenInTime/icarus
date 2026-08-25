@@ -813,6 +813,7 @@ class _LibraryRailItem extends StatelessWidget {
       button: true,
       enabled: data.onTap != null,
       selected: data.selected,
+      onTap: data.onTap,
       excludeSemantics: true,
       child: Tooltip(
         message: data.description,
@@ -925,6 +926,7 @@ class _AccountRailItem extends StatelessWidget {
       label: semanticsLabel,
       button: true,
       enabled: onAuthAction != null,
+      onTap: onAuthAction,
       excludeSemantics: true,
       child: Material(
         color: Colors.transparent,

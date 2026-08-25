@@ -59,7 +59,14 @@ void main() {
     expect(_semanticsLabel('Shared library'), findsOneWidget);
     expect(_semanticsLabel('Community library'), findsOneWidget);
     expect(_semanticsLabel('Log in to Icarus'), findsOneWidget);
+    expect(_semantics('This Computer library').properties.onTap, isNotNull);
+    expect(_semantics('Community library').properties.onTap, isNotNull);
+    expect(_semantics('Log in to Icarus').properties.onTap, isNotNull);
   });
+}
+
+Semantics _semantics(String label) {
+  return _semanticsLabel(label).evaluate().single.widget as Semantics;
 }
 
 Finder _semanticsLabel(String label) {
