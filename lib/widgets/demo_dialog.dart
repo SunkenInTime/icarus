@@ -10,12 +10,12 @@ class DemoDialog extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ShadDialog.alert(
-      title: const Text('Demo Version'),
+      title: const Text('Browser beta'),
       description: const SizedBox(
         width: 400,
         child: Text(
-          'You are running the web version of this application, which has limited functionality. '
-          'For the best experience, please install the Windows version from the Microsoft Store — it is free.',
+          'The browser client supports the cloud library and shared strategies. '
+          'Some editing and file tools still require the Windows app.',
         ),
       ),
       actions: [
@@ -31,9 +31,9 @@ class DemoDialog extends ConsumerWidget {
         ShadButton(
           leading: const Icon(Icons.download),
           onPressed: () async {
-            await launchUrl(Settings.windowsStoreLink);
+            await launchUrl(Settings.stableWindowsInstallerLink);
           },
-          child: const Text('Download'),
+          child: const Text('Download app'),
         )
       ],
     );

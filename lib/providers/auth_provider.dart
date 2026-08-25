@@ -707,10 +707,6 @@ class AuthProvider extends Notifier<AppAuthState> {
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.signedOut,
       );
-      Settings.showToast(
-        message: 'Signed out. Your local strategies stay on this device.',
-        backgroundColor: Settings.tacticalVioletTheme.primary,
-      );
     } catch (error, stackTrace) {
       log(
         'Sign out failed: $error',
@@ -723,6 +719,21 @@ class AuthProvider extends Notifier<AppAuthState> {
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.incident,
         errorMessage: 'Sign out failed. Please try again.',
+      );
+      return;
+    }
+
+    try {
+      Settings.showToast(
+        message: 'Signed out. Your local strategies stay on this device.',
+        backgroundColor: Settings.tacticalVioletTheme.primary,
+      );
+    } catch (error, stackTrace) {
+      log(
+        'Signed out, but the confirmation toast could not be shown: $error',
+        name: 'auth',
+        error: error,
+        stackTrace: stackTrace,
       );
     }
   }

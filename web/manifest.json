@@ -1,12 +1,11 @@
 {
-    "name": "icarus",
-    "short_name": "icarus",
+    "name": "Icarus",
+    "short_name": "Icarus",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#09090b",
+    "theme_color": "#09090b",
+    "description": "Create, sync, and share Valorant strategies.",
     "prefer_related_applications": false,
     "icons": [
         {

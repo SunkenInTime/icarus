@@ -109,6 +109,8 @@ class Settings {
 
   static final Uri windowsStoreLink = Uri.parse(
       "https://apps.microsoft.com/detail/9PBWHHZRQFW6?hl=en-us&gl=US&ocid=pdpshare");
+  static final Uri stableWindowsInstallerLink = Uri.parse(
+      "https://sunkenintime.github.io/icarus/downloads/windows/stable/icarus-setup-latest.exe");
   static ThemeData appTheme = ThemeData(
       colorScheme: const ColorScheme.dark(
         // primary: Color.fromARGB(255, 129, 75, 223),
