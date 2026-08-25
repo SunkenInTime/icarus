@@ -34,6 +34,12 @@
   <link rel="manifest" href="manifest.json">
 </head>
 <body>
+  <!--
+    Official Convex browser transport. Flutter's published Convex package still
+    uses an obsolete web authentication wire shape; native builds continue to
+    use that package's Rust transport.
+  -->
+  <script src="convex.browser.bundle.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

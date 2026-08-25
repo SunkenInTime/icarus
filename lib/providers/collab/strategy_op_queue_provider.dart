@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:math' as math;
 
-import 'package:convex_flutter/convex_flutter.dart';
+import 'package:icarus/collab/convex_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/collab_models.dart';

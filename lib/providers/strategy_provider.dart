@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
-import 'package:convex_flutter/convex_flutter.dart';
+import 'package:icarus/collab/convex_client.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';

@@ -11,17 +11,17 @@ being released.
 Do not invite outside testers yet.
 
 The local automated baseline is healthy: the Flutter suite passes, Convex
-TypeScript passes, and the web release build completes. The leading blocker is
-the actual online loop. During a browser smoke test, an existing signed-in
-session connected to Convex, then the server rejected a client message with:
+TypeScript passes, and the web release build completes. The web client's
+authentication protocol mismatch is fixed: a production web build completed a
+real email/password sign-in, authenticated Convex read and write, a second-page
+edit that reached **Synced**, and a reload/readback cycle without a fatal
+protocol error or reconnect loop. The temporary strategy was deleted after the
+proof.
 
-```text
-Received Invalid JSON on websocket: missing field `baseVersion`
-```
-
-The client then reconnected and hit the same fatal error again. Until that is
-fixed and the two-client path below passes, the product can render online UI
-without proving that it can safely keep a library online.
+The remaining blocker is the complete two-client and failure-recovery path
+below. One healthy authenticated client proves the transport boundary, but it
+does not yet prove sharing, access control, conflicts, offline recovery, media,
+or round-trip fidelity.
 
 ## Release Rule
 
@@ -34,9 +34,12 @@ support channel. P2 items can follow the invite-only beta.
 
 ## P0: Protect the Library
 
-- [ ] The Convex client and deployed server complete authentication without a
+- [x] The Convex client and deployed server complete authentication without a
       fatal protocol error or reconnect loop.
-  - Evidence: pending; `baseVersion` mismatch reproduced on 2026-08-25.
+  - Evidence: production web build verified on 2026-08-25 with real sign-in,
+    authenticated strategy create, second-page edit to **Synced**, reload,
+    fresh sign-in, server readback of both pages, and test-data cleanup. No new
+    protocol error or reconnect loop appeared in the post-fix console.
 - [ ] A local-mode library created on the current public build opens unchanged
       after installing the beta.
   - Evidence: pending; record the public version, beta commit, and fixture.

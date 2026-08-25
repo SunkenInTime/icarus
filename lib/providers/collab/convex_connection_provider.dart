@@ -1,4 +1,4 @@
-import 'package:convex_flutter/convex_flutter.dart';
+import 'package:icarus/collab/convex_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Reactive view of the Convex WebSocket connection, seeded with the current
