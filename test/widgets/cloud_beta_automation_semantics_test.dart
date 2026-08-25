@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -8,6 +9,7 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
   testWidgets('auth dialog exposes stable fields and actions', (tester) async {
+    final semanticsHandle = tester.ensureSemantics();
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -22,6 +24,11 @@ void main() {
     expect(find.byKey(const ValueKey('auth-mode-switch')), findsOneWidget);
     expect(find.byKey(const ValueKey('auth-discord-button')), findsOneWidget);
     expect(find.byKey(const ValueKey('auth-submit-button')), findsOneWidget);
+    expect(_textFieldNodes(tester), hasLength(2));
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('auth-email-field'))).label,
+      'Email',
+    );
 
     await tester.tap(find.byKey(const ValueKey('auth-mode-switch')));
     await tester.pumpAndSettle();
@@ -32,6 +39,8 @@ void main() {
     );
     expect(_semanticsLabel('Confirm password'), findsOneWidget);
     expect(find.text('Create account'), findsAtLeastNWidgets(1));
+    expect(_textFieldNodes(tester), hasLength(3));
+    semanticsHandle.dispose();
   });
 
   testWidgets('library rail exposes stable destinations while signed out',
@@ -67,6 +76,27 @@ void main() {
 
 Semantics _semantics(String label) {
   return _semanticsLabel(label).evaluate().single.widget as Semantics;
+}
+
+List<SemanticsNode> _textFieldNodes(WidgetTester tester) {
+  final nodes = <SemanticsNode>[];
+
+  void visit(SemanticsNode node) {
+    if (node.flagsCollection.isTextField) {
+      nodes.add(node);
+    }
+    node.visitChildren((child) {
+      visit(child);
+      return true;
+    });
+  }
+
+  final root = tester
+      .binding.renderViews.single.owner!.semanticsOwner!.rootSemanticsNode;
+  if (root != null) {
+    visit(root);
+  }
+  return nodes;
 }
 
 Finder _semanticsLabel(String label) {

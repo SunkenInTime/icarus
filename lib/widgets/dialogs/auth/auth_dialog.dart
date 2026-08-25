@@ -158,49 +158,52 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Semantics(
-              key: const ValueKey('auth-email-field'),
-              label: 'Email',
-              textField: true,
-              child: CustomTextField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                autofillHints: const [AutofillHints.email],
-                hintText: 'Email',
-                textInputAction: TextInputAction.next,
-                hasError: _errorField == _AuthField.email,
+            MergeSemantics(
+              child: Semantics(
+                key: const ValueKey('auth-email-field'),
+                label: 'Email',
+                child: CustomTextField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  autofillHints: const [AutofillHints.email],
+                  hintText: 'Email',
+                  textInputAction: TextInputAction.next,
+                  hasError: _errorField == _AuthField.email,
+                ),
               ),
             ),
             const SizedBox(height: 10),
-            Semantics(
-              key: const ValueKey('auth-password-field'),
-              label: 'Password',
-              textField: true,
-              child: CustomTextField(
-                controller: _passwordController,
-                obscureText: true,
-                autofillHints: const [AutofillHints.password],
-                hintText: 'Password',
-                textInputAction:
-                    _isSignUp ? TextInputAction.next : TextInputAction.done,
-                onSubmitted: _isSignUp ? null : (_) => _submit(),
-                hasError: _errorField == _AuthField.password,
+            MergeSemantics(
+              child: Semantics(
+                key: const ValueKey('auth-password-field'),
+                label: 'Password',
+                child: CustomTextField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  autofillHints: const [AutofillHints.password],
+                  hintText: 'Password',
+                  textInputAction:
+                      _isSignUp ? TextInputAction.next : TextInputAction.done,
+                  onSubmitted: _isSignUp ? null : (_) => _submit(),
+                  hasError: _errorField == _AuthField.password,
+                ),
               ),
             ),
             if (_isSignUp) ...[
               const SizedBox(height: 10),
-              Semantics(
-                key: const ValueKey('auth-confirm-password-field'),
-                label: 'Confirm password',
-                textField: true,
-                child: CustomTextField(
-                  controller: _confirmController,
-                  obscureText: true,
-                  autofillHints: const [AutofillHints.password],
-                  hintText: 'Confirm password',
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => _submit(),
-                  hasError: _errorField == _AuthField.confirm,
+              MergeSemantics(
+                child: Semantics(
+                  key: const ValueKey('auth-confirm-password-field'),
+                  label: 'Confirm password',
+                  child: CustomTextField(
+                    controller: _confirmController,
+                    obscureText: true,
+                    autofillHints: const [AutofillHints.password],
+                    hintText: 'Confirm password',
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _submit(),
+                    hasError: _errorField == _AuthField.confirm,
+                  ),
                 ),
               ),
             ],
