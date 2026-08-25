@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { assertStrategyRole } from "./lib/auth";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
 import {
+  clampPageIndex,
   getPageByPublicId,
   getStrategyByPublicId,
   sortByNumberField,
@@ -50,6 +51,10 @@ export const add = mutation({
       .query("pages")
       .withIndex("by_publicId", (q) => q.eq("publicId", args.pagePublicId))
       .first();
+    const pages = await ctx.db
+      .query("pages")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+      .collect();
 
     if (existingPage !== null) {
       if (existingPage.strategyId !== strategy._id) {
@@ -66,9 +71,13 @@ export const add = mutation({
           "Each page must have exactly one page content row.",
         );
       }
+      const desiredSortIndex = clampPageIndex(
+        args.sortIndex,
+        Math.max(0, pages.length - 1),
+      );
       const identical =
         existingPage.name === args.name &&
-        existingPage.sortIndex === args.sortIndex &&
+        existingPage.sortIndex === desiredSortIndex &&
         existingPage.isAttack === args.isAttack &&
         valuesEqual(pageContents[0]!.settings, args.settings);
       if (identical) {
@@ -81,11 +90,24 @@ export const add = mutation({
     }
 
     const now = Date.now();
+    const orderedPages = sortByNumberField(pages, "sortIndex");
+    const desiredSortIndex = clampPageIndex(args.sortIndex, orderedPages.length);
+    for (let index = 0; index < orderedPages.length; index += 1) {
+      const page = orderedPages[index]!;
+      const normalizedIndex = index >= desiredSortIndex ? index + 1 : index;
+      if (page.sortIndex !== normalizedIndex) {
+        await ctx.db.patch(page._id, {
+          sortIndex: normalizedIndex,
+          revision: page.revision + 1,
+          updatedAt: now,
+        });
+      }
+    }
     const pageId = await ctx.db.insert("pages", {
       publicId: args.pagePublicId,
       strategyId: strategy._id,
       name: args.name,
-      sortIndex: args.sortIndex,
+      sortIndex: desiredSortIndex,
       isAttack: args.isAttack,
       revision: 1,
       createdAt: now,

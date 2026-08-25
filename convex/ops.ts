@@ -2,7 +2,11 @@ import { mutation, type MutationCtx } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
-import { getStrategyByPublicId, sortByNumberField } from "./lib/entities";
+import {
+  clampPageIndex,
+  getStrategyByPublicId,
+  sortByNumberField,
+} from "./lib/entities";
 import { strategyOpValidator } from "./lib/opTypes";
 import { assertSupportedCloudProtocol } from "./lib/cloudProtocol";
 import { valuesEqual } from "./lib/canonicalValues";
@@ -46,10 +50,6 @@ type OperationResult = {
   latestPayload?: unknown;
   eventPageId?: Id<"pages">;
 };
-
-function clampPageIndex(index: number, maximum: number): number {
-  return Math.max(0, Math.min(Math.trunc(index), maximum));
-}
 
 function isRecord(payload: unknown): payload is Record<string, unknown> {
   return (

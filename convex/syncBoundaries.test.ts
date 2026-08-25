@@ -791,6 +791,50 @@ describe("record-scoped write contract", () => {
     })) as { revision: number; reused?: boolean };
     expect(replayed).toMatchObject({ revision: 1, reused: true });
   });
+
+  test("direct page add normalizes occupied and out-of-range positions", async () => {
+    const { owner } = await createHarness();
+    await createBaseStrategy(owner);
+
+    await owner.mutation(addPage, {
+      strategyPublicId,
+      expectedRevision: 0,
+      pagePublicId: pageB,
+      name: "B inactive",
+      sortIndex: 0,
+      isAttack: false,
+      settings: settingsB,
+    });
+    await owner.mutation(addPage, {
+      strategyPublicId,
+      expectedRevision: 1,
+      pagePublicId: "page-c",
+      name: "C",
+      sortIndex: 99,
+      isAttack: true,
+    });
+
+    const shell = (await owner.query(getShell, {
+      strategyPublicId,
+    })) as {
+      pages: Array<{ publicId: string; sortIndex: number; revision: number }>;
+    };
+    expect(shell.pages).toMatchObject([
+      { publicId: pageB, sortIndex: 0, revision: 1 },
+      { publicId: pageA, sortIndex: 1, revision: 2 },
+      { publicId: "page-c", sortIndex: 2, revision: 1 },
+    ]);
+
+    const replayed = (await owner.mutation(addPage, {
+      strategyPublicId,
+      expectedRevision: 1,
+      pagePublicId: "page-c",
+      name: "C",
+      sortIndex: 99,
+      isAttack: true,
+    })) as { revision: number; reused?: boolean };
+    expect(replayed).toMatchObject({ revision: 2, reused: true });
+  });
 });
 
 describe("replay safety after operation event expiry", () => {

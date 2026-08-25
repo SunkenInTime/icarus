@@ -97,3 +97,7 @@ export function sortByNumberField<T extends Record<string, unknown>>(
     return leftPublicId.localeCompare(rightPublicId);
   });
 }
+
+export function clampPageIndex(index: number, maximum: number): number {
+  return Math.max(0, Math.min(Math.trunc(index), maximum));
+}
