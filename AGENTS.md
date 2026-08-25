@@ -20,6 +20,8 @@ op - one queued change to cloud data. an op lands when the server accepts it.
 
 The domain vocabulary (strategy, page, lineup, .ica file, and friends) lives in CONTEXT.md, use those words exactly. DESIGN.md defines how the app must look and how we build UI, read it before touching UI. PRODUCT.md holds who this is for and how it must feel.
 
+Server sync boundary work: before changing the Convex schema, snapshot queries, page subscriptions, op revisions, or durable outbox, read `docs/cloud_sync_refactor/server_side_sync_boundaries_handoff.md` and follow its proof and PR gates.
+
 Here's the philosophy we work by:
 
 ## The library is sacred
@@ -47,12 +49,3 @@ Measure twice, cut once: understand the problem fully before building, because c
 These steer us in the right direction. They are not hard-set, but default to following them; if you think one should be ignored, be very loud about it and get approval from us first.
 
 - Never edit generated files (`*.g.dart`, `convex/_generated/`). Edit the source models or schema, then regenerate (`dart run build_runner build --delete-conflicting-outputs`; Convex regenerates via `npx convex dev`).
-- Before touching `convex/`, read `convex/_generated/ai/guidelines.md` first, it overrides anything you learned about Convex in training.
-
-<!-- convex-ai-start -->
-This project uses [Convex](https://convex.dev) as its backend.
-
-When working on Convex code, **always read `convex/_generated/ai/guidelines.md` first** for important guidelines on how to correctly use Convex APIs and patterns. The file contains rules that override what you may have learned about Convex from training data.
-
-Convex agent skills for common tasks can be installed by running `npx convex ai-files install`.
-<!-- convex-ai-end -->
