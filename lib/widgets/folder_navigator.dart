@@ -432,7 +432,10 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
               switchOutCurve: Curves.easeOutCubic,
               child: KeyedSubtree(
                 key: ValueKey('$workspace/$cloudSection'),
-                child: FolderContent(folder: currentFolder),
+                child: FolderContent(
+                  folder: currentFolder,
+                  onCreateStrategy: showCreateDialog,
+                ),
               ),
             ),
           ),
@@ -521,7 +524,7 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
             : 'Log in to sync strategies',
         selected: workspace == LibraryWorkspace.cloud &&
             cloudSection == CloudLibrarySection.home,
-        onTap: cloudAvailable ? () => _selectCloudHome() : null,
+        onTap: cloudAvailable ? () => _selectCloudHome() : _showAuthDialog,
       ),
       _LibraryRailItemData(
         key: const ValueKey('library-shared'),
@@ -530,10 +533,10 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
         semanticsLabel: 'Shared library',
         description: cloudAvailable
             ? 'Strategies shared with you'
-            : 'Log in to view shared strats',
+            : 'Log in to view shared strategies',
         selected: workspace == LibraryWorkspace.cloud &&
             cloudSection == CloudLibrarySection.sharedWithMe,
-        onTap: cloudAvailable ? () => _selectShared() : null,
+        onTap: cloudAvailable ? () => _selectShared() : _showAuthDialog,
       ),
       _LibraryRailItemData(
         key: const ValueKey('library-community'),
@@ -685,6 +688,13 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
   void _selectLocal() {
     ref.read(libraryWorkspaceProvider.notifier).select(LibraryWorkspace.local);
     ref.read(folderProvider.notifier).updateID(null);
+  }
+
+  void _showAuthDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (_) => const AuthDialog(),
+    );
   }
 
   void _selectCloudHome() {
