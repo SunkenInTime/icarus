@@ -185,10 +185,11 @@ void main() {
     await pumpMicrotasks();
     expect(convexApi.setAuthCalls, 1);
 
-    final error = await container.read(authProvider.notifier).signInWithEmailPassword(
-          email: 'test@example.com',
-          password: 'password',
-        );
+    final error =
+        await container.read(authProvider.notifier).signInWithEmailPassword(
+              email: 'test@example.com',
+              password: 'password',
+            );
     await pumpMicrotasks();
 
     expect(error, isNull);
@@ -220,7 +221,8 @@ void main() {
     expect(convexApi.clearAuthCalls, 0);
 
     await container.read(authProvider.notifier).signOut();
-    expect(container.read(authProvider).convexAuthStatus, ConvexAuthStatus.signedOut);
+    expect(container.read(authProvider).convexAuthStatus,
+        ConvexAuthStatus.signedOut);
     expect(convexApi.clearAuthCalls, 1);
 
     convexApi.setAuthCompleter!.complete(FakeAuthHandle());
@@ -265,7 +267,7 @@ void main() {
     expect(state.activeAuthIncidentId, isNotNull);
     expect(
       state.errorMessage,
-      'Cloud authentication expired. Retry Convex auth or sign out.',
+      'Your cloud session expired. Reconnect to resume syncing, or sign out.',
     );
   });
 
@@ -285,7 +287,7 @@ void main() {
     expect(state.activeAuthIncidentId, isNull);
     expect(
       state.errorMessage,
-      contains('Convex auth did not become ready within'),
+      "Couldn't connect to cloud sync. Please retry.",
     );
     expect(convexApi.mutationCalls, 0);
   });
@@ -304,7 +306,7 @@ void main() {
     final state = container.read(authProvider);
     expect(state.convexAuthStatus, ConvexAuthStatus.incident);
     expect(state.activeAuthIncidentId, isNull);
-    expect(state.errorMessage, contains('Failed to configure Convex auth'));
+    expect(state.errorMessage, "Couldn't connect to cloud sync. Please retry.");
   });
 
   test(
@@ -326,9 +328,8 @@ void main() {
     expect(state.activeAuthIncidentId, isNull);
     expect(
       state.errorMessage,
-      contains('Convex auth did not become ready within'),
+      "Couldn't connect to cloud sync. Please retry.",
     );
-    expect(state.errorMessage, contains('reconnectResult: unknown'));
   });
 }
 

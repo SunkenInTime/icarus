@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:developer' as developer;
-import 'dart:io';
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:app_links/app_links.dart';
@@ -12,9 +11,9 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/services/deep_link_registrar.dart';
+import 'package:icarus/services/desktop_runtime.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:windows_single_instance/windows_single_instance.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/app_navigator.dart';
@@ -42,7 +41,6 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
-import 'package:window_manager/window_manager.dart';
 
 late CustomMouseCursor staticDrawingCursor;
 WebViewEnvironment? webViewEnvironment;
@@ -114,15 +112,7 @@ Future<void> main(List<String> args) async {
         _publishDeepLink(Uri.base, source: 'web_location');
       }
 
-      if (!kIsWeb && Platform.isWindows) {
-        await WindowsSingleInstance.ensureSingleInstance(
-          args,
-          'icarus_single_instance',
-          onSecondWindow: (args) {
-            publishSecondInstanceArgs(args);
-          },
-        );
-      }
+      await ensureIcarusSingleInstance(args);
 
       if (kIsWeb) {
         // On web, Hive uses IndexedDB; no path needed.
@@ -172,15 +162,9 @@ Future<void> main(List<String> args) async {
       // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
 
       if (!kIsWeb) {
-        await windowManager.ensureInitialized();
-        WindowOptions windowOptions = const WindowOptions(
-          title:
-              "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
+        await initializeIcarusDesktopWindow(
+          "Icarus: Valorant Strategies & Line ups ${Settings.versionName}",
         );
-        windowManager.waitUntilReadyToShow(windowOptions, () async {
-          await windowManager.show();
-          await windowManager.focus();
-        });
       }
       runApp(
         UncontrolledProviderScope(
@@ -201,7 +185,7 @@ Future<void> main(List<String> args) async {
 }
 
 Future<void> warmUpWebViewEnvironment() {
-  if (kIsWeb || !Platform.isWindows) {
+  if (!isWindowsRuntime) {
     isWebViewWarmupComplete = true;
     return Future.value();
   }
@@ -281,8 +265,7 @@ Future<void> _initializePersistedDebugLog() async {
 }
 
 Future<void> _initWebViewEnvironment() async {
-  if (kIsWeb) return;
-  if (Platform.isWindows) {
+  if (isWindowsRuntime) {
     if (isWebViewInitialized && webViewEnvironment != null) {
       return;
     }

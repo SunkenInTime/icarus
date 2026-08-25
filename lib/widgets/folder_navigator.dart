@@ -24,7 +24,6 @@ import 'package:icarus/services/windows_desktop_update_controller.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/current_path_bar.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
-import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
@@ -66,14 +65,11 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   void initState() {
     super.initState();
 
-    // Show the demo warning only once after the first frame on web.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_warnedOnce) {
         _warnedOnce = true;
 
         _warnWebView();
-
-        _warnDemo();
       }
     });
   }
@@ -88,16 +84,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       context: context,
       builder: (context) {
         return const WebViewDialog();
-      },
-    );
-  }
-
-  void _warnDemo() async {
-    if (!kIsWeb) return;
-    await showShadDialog<void>(
-      context: context,
-      builder: (context) {
-        return const DemoDialog();
       },
     );
   }

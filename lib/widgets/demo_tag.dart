@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:icarus/const/settings.dart';
 import 'package:icarus/widgets/demo_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -11,7 +12,7 @@ class DemoTag extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    const accent = Colors.red;
+    final accent = Settings.tacticalVioletTheme.primary;
 
     return InkWell(
       mouseCursor: SystemMouseCursors.click,
@@ -48,7 +49,7 @@ class DemoTag extends ConsumerWidget {
             ),
             const SizedBox(width: 6),
             Text(
-              'DEMO',
+              'WEB BETA',
               style: theme.textTheme.labelMedium?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,

@@ -54,6 +54,9 @@ jobs:
       - name: Analyze
         shell: pwsh
         run: fvm flutter analyze --no-fatal-infos
+      - name: Build Web Client
+        shell: pwsh
+        run: fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons
       - name: Run Tests
         shell: pwsh
         run: fvm flutter test
