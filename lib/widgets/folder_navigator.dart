@@ -308,6 +308,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 children: [
                   if (isSharedWithMe)
                     ShadButton(
+                      key: const ValueKey('cloud-add-shared-item'),
                       onPressed: () => showAddSharedItemDialog(context),
                       leading: const Icon(LucideIcons.link),
                       child: const Text('Add by Link or Code'),
@@ -385,6 +386,11 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                       ),
                     ),
                     ShadButton.secondary(
+                      key: ValueKey(
+                        isCloudWorkspace
+                            ? 'cloud-add-folder'
+                            : 'local-add-folder',
+                      ),
                       leading: const Icon(LucideIcons.folderPlus),
                       onPressed: isCommunityWorkspace
                           ? null
@@ -399,6 +405,11 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                       child: const Text('Add Folder'),
                     ),
                     ShadButton(
+                      key: ValueKey(
+                        isCloudWorkspace
+                            ? 'cloud-create-strategy'
+                            : 'local-create-strategy',
+                      ),
                       onPressed: isCommunityWorkspace ? null : showCreateDialog,
                       leading: const Icon(Icons.add),
                       child: Text(
@@ -492,15 +503,19 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
 
     final items = [
       _LibraryRailItemData(
+        key: const ValueKey('library-local'),
         icon: LucideIcons.monitor,
         label: 'This Computer',
+        semanticsLabel: 'This Computer library',
         description: 'Local strategies and imports',
         selected: workspace == LibraryWorkspace.local,
         onTap: () => _selectLocal(),
       ),
       _LibraryRailItemData(
+        key: const ValueKey('library-cloud'),
         icon: LucideIcons.cloud,
         label: 'Cloud',
+        semanticsLabel: 'Cloud library',
         description: cloudAvailable
             ? 'Your online strategies'
             : 'Log in to sync strategies',
@@ -509,8 +524,10 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
         onTap: cloudAvailable ? () => _selectCloudHome() : null,
       ),
       _LibraryRailItemData(
+        key: const ValueKey('library-shared'),
         icon: LucideIcons.users,
         label: 'Shared',
+        semanticsLabel: 'Shared library',
         description: cloudAvailable
             ? 'Strategies shared with you'
             : 'Log in to view shared strats',
@@ -519,8 +536,10 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
         onTap: cloudAvailable ? () => _selectShared() : null,
       ),
       _LibraryRailItemData(
+        key: const ValueKey('library-community'),
         icon: Icons.public,
         label: 'Community',
+        semanticsLabel: 'Community library',
         description: 'Public strategy library',
         selected: workspace == LibraryWorkspace.community,
         onTap: () => _selectCommunity(),
@@ -601,6 +620,7 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
                     children: [
                       for (final item in items) ...[
                         _LibraryRailItem(
+                          key: item.key,
                           data: item,
                           expanded: _expanded,
                           showDetails: _showExpandedContent,
@@ -609,6 +629,7 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
                       ],
                       const Spacer(),
                       _AccountRailItem(
+                        key: const ValueKey('library-account-action'),
                         expanded: _expanded,
                         showDetails: _showExpandedContent,
                         isLoading: authState.isLoading,
@@ -617,6 +638,9 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
                         label: authState.isAuthenticated
                             ? authState.displayName
                             : 'Log In',
+                        semanticsLabel: authState.isAuthenticated
+                            ? 'Account for ${authState.displayName}'
+                            : 'Log in to Icarus',
                         onAuthAction: authState.isLoading
                             ? null
                             : () async {
@@ -750,15 +774,19 @@ class _RailHeader extends StatelessWidget {
 
 class _LibraryRailItemData {
   const _LibraryRailItemData({
+    required this.key,
     required this.icon,
     required this.label,
+    required this.semanticsLabel,
     required this.description,
     required this.selected,
     required this.onTap,
   });
 
+  final Key key;
   final IconData icon;
   final String label;
+  final String semanticsLabel;
   final String description;
   final bool selected;
   final VoidCallback? onTap;
@@ -766,6 +794,7 @@ class _LibraryRailItemData {
 
 class _LibraryRailItem extends StatelessWidget {
   const _LibraryRailItem({
+    super.key,
     required this.data,
     required this.expanded,
     required this.showDetails,
@@ -779,79 +808,86 @@ class _LibraryRailItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final selectedColor =
         Settings.tacticalVioletTheme.primary.withValues(alpha: 0.18);
-    return Tooltip(
-      message: data.description,
-      waitDuration: const Duration(milliseconds: 500),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          mouseCursor: data.onTap == null
-              ? SystemMouseCursors.basic
-              : SystemMouseCursors.click,
-          onTap: data.onTap,
-          child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 140),
-            opacity: data.onTap == null ? 0.55 : 1,
-            child: AnimatedContainer(
+    return Semantics(
+      label: data.semanticsLabel,
+      button: true,
+      enabled: data.onTap != null,
+      selected: data.selected,
+      excludeSemantics: true,
+      child: Tooltip(
+        message: data.description,
+        waitDuration: const Duration(milliseconds: 500),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            mouseCursor: data.onTap == null
+                ? SystemMouseCursors.basic
+                : SystemMouseCursors.click,
+            onTap: data.onTap,
+            child: AnimatedOpacity(
               duration: const Duration(milliseconds: 140),
-              height: 40,
-              padding: const EdgeInsets.symmetric(horizontal: 9),
-              decoration: BoxDecoration(
-                color: data.selected ? selectedColor : Colors.transparent,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: data.selected
-                      ? Settings.tacticalVioletTheme.primary
-                      : Colors.transparent,
+              opacity: data.onTap == null ? 0.55 : 1,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                height: 40,
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                decoration: BoxDecoration(
+                  color: data.selected ? selectedColor : Colors.transparent,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: data.selected
+                        ? Settings.tacticalVioletTheme.primary
+                        : Colors.transparent,
+                  ),
                 ),
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final showLabel = showDetails && constraints.maxWidth >= 96;
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned(
-                        left: 0,
-                        top: 0,
-                        bottom: 0,
-                        width: 26,
-                        child: Align(
-                          alignment: Alignment.center,
-                          child: Icon(
-                            data.icon,
-                            size: 18,
-                            color: data.onTap == null
-                                ? Settings.tacticalVioletTheme.mutedForeground
-                                : null,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final showLabel = showDetails && constraints.maxWidth >= 96;
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned(
+                          left: 0,
+                          top: 0,
+                          bottom: 0,
+                          width: 26,
+                          child: Align(
+                            alignment: Alignment.center,
+                            child: Icon(
+                              data.icon,
+                              size: 18,
+                              color: data.onTap == null
+                                  ? Settings.tacticalVioletTheme.mutedForeground
+                                  : null,
+                            ),
                           ),
                         ),
-                      ),
-                      Positioned.fill(
-                        left: 33,
-                        child: IgnorePointer(
-                          ignoring: !showLabel,
-                          child: AnimatedOpacity(
-                            duration: const Duration(milliseconds: 120),
-                            opacity: expanded && showLabel ? 1 : 0,
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                data.label,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
+                        Positioned.fill(
+                          left: 33,
+                          child: IgnorePointer(
+                            ignoring: !showLabel,
+                            child: AnimatedOpacity(
+                              duration: const Duration(milliseconds: 120),
+                              opacity: expanded && showLabel ? 1 : 0,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  data.label,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  );
-                },
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -863,12 +899,14 @@ class _LibraryRailItem extends StatelessWidget {
 
 class _AccountRailItem extends StatelessWidget {
   const _AccountRailItem({
+    super.key,
     required this.expanded,
     required this.showDetails,
     required this.isLoading,
     required this.isAuthenticated,
     required this.avatarUrl,
     required this.label,
+    required this.semanticsLabel,
     required this.onAuthAction,
   });
 
@@ -878,78 +916,85 @@ class _AccountRailItem extends StatelessWidget {
   final bool isAuthenticated;
   final String? avatarUrl;
   final String label;
+  final String semanticsLabel;
   final VoidCallback? onAuthAction;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        mouseCursor: onAuthAction == null
-            ? SystemMouseCursors.basic
-            : SystemMouseCursors.click,
-        onTap: onAuthAction,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOutCubic,
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          decoration: BoxDecoration(
-            color: Settings.tacticalVioletTheme.secondary.withValues(
-              alpha: 0.5,
+    return Semantics(
+      label: semanticsLabel,
+      button: true,
+      enabled: onAuthAction != null,
+      excludeSemantics: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          mouseCursor: onAuthAction == null
+              ? SystemMouseCursors.basic
+              : SystemMouseCursors.click,
+          onTap: onAuthAction,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            decoration: BoxDecoration(
+              color: Settings.tacticalVioletTheme.secondary.withValues(
+                alpha: 0.5,
+              ),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Settings.tacticalVioletTheme.border),
             ),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Settings.tacticalVioletTheme.border),
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final showLabel = showDetails && constraints.maxWidth >= 96;
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: 28,
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: _AccountAvatar(
-                        avatarUrl: avatarUrl,
-                        isAuthenticated: isAuthenticated,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final showLabel = showDetails && constraints.maxWidth >= 96;
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 28,
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: _AccountAvatar(
+                          avatarUrl: avatarUrl,
+                          isAuthenticated: isAuthenticated,
+                        ),
                       ),
                     ),
-                  ),
-                  Positioned.fill(
-                    left: 38,
-                    child: IgnorePointer(
-                      ignoring: !showLabel,
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 120),
-                        curve: Curves.easeOutCubic,
-                        opacity: expanded && showLabel ? 1 : 0,
-                        child: showLabel
-                            ? Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      isLoading ? 'Please wait...' : label,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
+                    Positioned.fill(
+                      left: 38,
+                      child: IgnorePointer(
+                        ignoring: !showLabel,
+                        child: AnimatedOpacity(
+                          duration: const Duration(milliseconds: 120),
+                          curve: Curves.easeOutCubic,
+                          opacity: expanded && showLabel ? 1 : 0,
+                          child: showLabel
+                              ? Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        isLoading ? 'Please wait...' : label,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
-                              )
-                            : const SizedBox.shrink(),
+                                  ],
+                                )
+                              : const SizedBox.shrink(),
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              );
-            },
+                  ],
+                );
+              },
+            ),
           ),
         ),
       ),

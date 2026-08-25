@@ -158,35 +158,50 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            CustomTextField(
-              controller: _emailController,
-              keyboardType: TextInputType.emailAddress,
-              autofillHints: const [AutofillHints.email],
-              hintText: 'Email',
-              textInputAction: TextInputAction.next,
-              hasError: _errorField == _AuthField.email,
+            Semantics(
+              key: const ValueKey('auth-email-field'),
+              label: 'Email',
+              textField: true,
+              child: CustomTextField(
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.email],
+                hintText: 'Email',
+                textInputAction: TextInputAction.next,
+                hasError: _errorField == _AuthField.email,
+              ),
             ),
             const SizedBox(height: 10),
-            CustomTextField(
-              controller: _passwordController,
-              obscureText: true,
-              autofillHints: const [AutofillHints.password],
-              hintText: 'Password',
-              textInputAction:
-                  _isSignUp ? TextInputAction.next : TextInputAction.done,
-              onSubmitted: _isSignUp ? null : (_) => _submit(),
-              hasError: _errorField == _AuthField.password,
+            Semantics(
+              key: const ValueKey('auth-password-field'),
+              label: 'Password',
+              textField: true,
+              child: CustomTextField(
+                controller: _passwordController,
+                obscureText: true,
+                autofillHints: const [AutofillHints.password],
+                hintText: 'Password',
+                textInputAction:
+                    _isSignUp ? TextInputAction.next : TextInputAction.done,
+                onSubmitted: _isSignUp ? null : (_) => _submit(),
+                hasError: _errorField == _AuthField.password,
+              ),
             ),
             if (_isSignUp) ...[
               const SizedBox(height: 10),
-              CustomTextField(
-                controller: _confirmController,
-                obscureText: true,
-                autofillHints: const [AutofillHints.password],
-                hintText: 'Confirm password',
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _submit(),
-                hasError: _errorField == _AuthField.confirm,
+              Semantics(
+                key: const ValueKey('auth-confirm-password-field'),
+                label: 'Confirm password',
+                textField: true,
+                child: CustomTextField(
+                  controller: _confirmController,
+                  obscureText: true,
+                  autofillHints: const [AutofillHints.password],
+                  hintText: 'Confirm password',
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _submit(),
+                  hasError: _errorField == _AuthField.confirm,
+                ),
               ),
             ],
             const SizedBox(height: 12),
@@ -223,6 +238,7 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
               children: [
                 Expanded(
                   child: ShadButton.secondary(
+                    key: const ValueKey('auth-mode-switch'),
                     onPressed: busy
                         ? null
                         : () {
@@ -234,43 +250,35 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
                             });
                           },
                     child: Text(
-                      _isSignUp
-                          ? 'Already have an account? Sign in'
-                          : 'Need an account? Sign up',
+                      _isSignUp ? 'Sign in instead' : 'Create an account',
                     ),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: ShadButton.secondary(
-                    onPressed:
-                        busy || _waitingForDiscord ? null : _startDiscordSignIn,
-                    child: const Text('Continue with Discord'),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ShadButton(
-                    onPressed: busy ? null : _submit,
-                    leading: busy
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : null,
-                    child: Text(
-                      busy
-                          ? (_isSignUp ? 'Creating…' : 'Signing in…')
-                          : (_isSignUp ? 'Create account' : 'Sign in'),
-                    ),
-                  ),
-                ),
-              ],
+            ShadButton.secondary(
+              key: const ValueKey('auth-discord-button'),
+              onPressed:
+                  busy || _waitingForDiscord ? null : _startDiscordSignIn,
+              child: const Text('Continue with Discord'),
+            ),
+            const SizedBox(height: 10),
+            ShadButton(
+              key: const ValueKey('auth-submit-button'),
+              onPressed: busy ? null : _submit,
+              leading: busy
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : null,
+              child: Text(
+                busy
+                    ? (_isSignUp ? 'Creating…' : 'Signing in…')
+                    : (_isSignUp ? 'Create account' : 'Sign in'),
+              ),
             ),
           ],
         ),
