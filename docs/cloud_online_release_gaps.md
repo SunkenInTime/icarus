@@ -1,138 +1,161 @@
-# Cloud Online Release Gaps
+# Icarus Online Beta Readiness
 
-This note captures the current backend/provider gaps found while auditing the online Icarus experience. The app has a real cloud foundation, but these items should be revisited before a broad public release.
+Last refreshed: 2026-08-25
 
-## Current Recommendation
+This is the release gate for the first invite-only Icarus Online beta. It is a
+checklist, not a backlog. A checked item needs current evidence from the build
+being released.
 
-Ship as a private beta only until the release blockers below are fixed. These issues affect shared library access, backend confidence, conflict behavior, permission clarity, and media cleanup.
+## Decision Today
 
-## Release Blockers
+Do not invite outside testers yet.
 
-### Missing Shared-With-Me Backend Function
+The local automated baseline is healthy: the Flutter suite passes, Convex
+TypeScript passes, and the web release build completes. The leading blocker is
+the actual online loop. During a browser smoke test, an existing signed-in
+session connected to Convex, then the server rejected a client message with:
 
-- Flutter calls `strategies:listSharedWithMe` from `lib/collab/convex_strategy_repository.dart`.
-- The Convex backend currently appears to export `strategies:listForFolder`, but no `listSharedWithMe` function exists in `convex/strategies.ts`.
-- Impact: the root "Shared with me" cloud library view may fail unless the deployed backend has an out-of-band function.
-
-Suggested fix: add `listSharedWithMe` or change the client to use `strategies:listForFolder` with `scope: "shared"` for the root shared view.
-
-### Convex TypeScript Check Fails
-
-- `npx tsc --noEmit` reports errors in `convex/pages.ts`.
-- Observed errors:
-  - `current` is possibly `undefined` around page reorder patching.
-  - `string | undefined` passed where `string` is required around ordered page ids.
-
-Suggested fix: tighten the reorder loop null checks and ensure undefined page IDs are guarded before use.
-
-### Targeted Sync Tests Are Not Green
-
-- Command run:
-
-```powershell
-fvm flutter test test\strategy_op_queue_provider_test.dart test\strategy_page_session_provider_test.dart test\collab_sync_models_test.dart
+```text
+Received Invalid JSON on websocket: missing field `baseVersion`
 ```
 
-- Failures included:
-  - cloud agent addition did not queue an add op as expected
-  - cloud map change did not queue a strategy patch op as expected
-  - Hive boxes missing in two session-provider tests
+The client then reconnected and hit the same fatal error again. Until that is
+fixed and the two-client path below passes, the product can render online UI
+without proving that it can safely keep a library online.
 
-Suggested fix: stabilize the test harness first, then verify the cloud queue behavior failures are either expected test drift or real regressions.
+## Release Rule
 
-## Conflict Handling Gaps
+The beta is ready when every P0 item is checked against one release candidate,
+there are no unresolved data-loss or access-control findings, and the tester
+can understand every non-synced state without opening logs.
 
-### Backend Rejects Stale Writes, But UX Is Thin
+P1 items should be complete before inviting people who will not have a direct
+support channel. P2 items can follow the invite-only beta.
 
-- Backend rejects stale writes with `sequence_mismatch` and `revision_mismatch` in `convex/ops.ts`.
-- Client receives rejected acks and pushes `ConflictResolution` objects through `strategyConflictProvider`.
-- I did not find a user-facing conflict resolver UI.
+## P0: Protect the Library
 
-Impact: users may not clearly understand when their edit was rebased, retried, dropped, or overwritten by remote state.
+- [ ] The Convex client and deployed server complete authentication without a
+      fatal protocol error or reconnect loop.
+  - Evidence: pending; `baseVersion` mismatch reproduced on 2026-08-25.
+- [ ] A local-mode library created on the current public build opens unchanged
+      after installing the beta.
+  - Evidence: pending; record the public version, beta commit, and fixture.
+- [ ] Signing in does not move, delete, or rewrite local strategies unless the
+      user explicitly starts a migration.
+  - Evidence: pending; compare library counts and exported fixtures before and
+    after sign-in.
+- [ ] A cloud strategy survives create, edit, app restart, sign-out, and sign-in
+      with pages, drawings, agents, abilities, lineups, media, and ordering
+      intact.
+  - Evidence: pending; attach the exported `.ica` before and after the cycle.
+- [ ] Exporting then importing both a local strategy and a cloud strategy loses
+      no supported data.
+  - Evidence: pending; compare canonical exports, allowing only documented
+    identity fields to differ.
+- [ ] An offline edit remains visibly pending, lands after reconnect, and still
+      lands after the app is restarted while offline.
+  - Evidence: pending; capture the status chip before restart, after restart,
+    and after the op lands.
+- [ ] A rejected or exhausted op never produces a **Synced** state. The user
+      sees an actionable error before leaving the strategy.
+  - Evidence: pending; force a rejection and an exhausted retry path.
 
-Suggested fix: add a small visible cloud sync/conflict surface that can show:
+## P0: Prove the Online Loop
 
-- edit kept and retried
-- remote edit won
-- local edit needs manual retry
-- sync failed and is paused
+- [ ] Account A can create a cloud strategy and Account B cannot see it before
+      it is shared.
+- [ ] Account A can create a view-only link. Account B can join and view every
+      page but cannot mutate the strategy.
+- [ ] Account A can create an editor link. An edit from Account B appears for
+      Account A without either client reloading or losing local input.
+- [ ] Simultaneous edits take the documented conflict path. No accepted edit is
+      silently overwritten, and uncertainty is visible.
+- [ ] Disabling a share link blocks a new Account C from joining while Account
+      B keeps the access already granted.
+- [ ] Removing or downgrading an existing collaborator, if exposed in this
+      beta, changes their effective access on the next protected operation.
+- [ ] Shared folders apply the correct effective role to their strategies,
+      including inherited editor access.
 
-### Conflict Provider Is Passive
+Evidence for this section: one screen recording with two clean browser profiles
+or two installed clients, plus the release commit and Convex deployment name.
 
-- `lib/providers/collab/strategy_conflict_provider.dart` stores conflicts.
-- The provider is not enough by itself; it needs a clear consumer in the UI or a documented automatic-resolution behavior.
+## P0: Platform and Failure Checks
 
-Suggested fix: either wire conflicts to UI or remove/replace the provider with explicit automatic conflict policy and telemetry.
+- [ ] macOS release build completes the full local and cloud smoke path.
+- [ ] Windows release build completes the full local and cloud smoke path.
+- [ ] Web release build completes the authenticated second-client smoke path.
+- [ ] Expired auth, revoked auth, unavailable Convex, and unavailable media
+      storage each produce an honest on-screen state and recover without an app
+      restart.
+- [ ] Cloud media upload, retry, restart recovery, download, export, and cleanup
+      are verified against the configured R2 bucket and public domain.
+- [ ] A rollback build can still open the untouched local library. If cloud data
+      cannot be read by the rollback build, the release notes say so plainly.
 
-## Permission And Sharing Gaps
+## P1: Make the Beta Legible
 
-### Effective Folder Role May Be Misreported
+- [ ] Signed-out Cloud and Shared destinations lead to one obvious login action.
+- [ ] Empty Cloud has a create-strategy action; empty Shared has an add-by-link
+      or code action.
+- [ ] Auth, library navigation, sharing, sync status, and recovery controls have
+      stable semantics and automation keys.
+- [ ] Share copy says **Disable link**, not delete or remove access, and explains
+      that existing collaborators keep access.
+- [ ] The web build identifies itself as beta and points desktop-primary users
+      to a stable installer.
+- [ ] Every beta tester has a visible way to report a problem with app version,
+      platform, and sync state attached.
 
-- Backend supports inherited folder roles via `getEffectiveStrategyRoleForUser`.
-- Strategy list role display in `convex/strategies.ts` appears to use direct strategy membership first and falls back to `viewer`.
+## P2: After the Invite-Only Beta Starts
 
-Impact: a user who has editor access via a shared folder may appear as a viewer in the strategy list, causing UI controls to be hidden or disabled incorrectly.
+- [ ] Decide whether share-link expiration belongs in the product.
+- [ ] Add collaborator management if testers need remove/downgrade controls.
+- [ ] Automate stale media cleanup and document its retention window.
+- [ ] Add operational alerts for repeated protocol failures, rejected ops, and
+      media jobs that exhaust retries.
+- [ ] Define free storage and usage limits from observed beta use instead of
+      guessing before there is real usage data.
 
-Suggested fix: return the effective role from `getEffectiveStrategyRoleForUser` in strategy summaries.
+## Automated Gate
 
-### Link Revocation Does Not Remove Existing Access
+Run from the repository root on the exact release commit:
 
-- `shares:revoke` marks a share link as revoked.
-- Existing `strategyCollaborators` / `folderCollaborators` rows created by that link remain.
+```sh
+fvm flutter analyze
+fvm flutter test
+npx tsc --noEmit
+fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons
+```
 
-Impact: this is okay if "revoke link" only means "stop future joins," but it is not enough for "remove access."
+Expected on 2026-08-25: no analyzer errors, six existing info notices, all
+Flutter tests green, TypeScript green, and the web release build green. These
+checks are necessary, but they do not replace the online-loop proof.
 
-Suggested fix: make UI copy explicit, or add separate collaborator management with remove/downgrade access.
+## Computer-Use Verification Path
 
-### Share Links Never Expire
+Use clean profiles so cached auth and local Hive data cannot make the test pass
+by accident.
 
-- The share dialog says links never expire.
-- `inviteTokens` support expiry/revocation, but the visible Flutter share flow uses `shareLinks`, not `invites`.
+1. Start Client A signed out. Confirm the local library and `.ica` import still
+   work before touching online mode.
+2. Sign in as Account A. Create a cloud strategy with at least two pages, one
+   drawing, one agent, one ability, one lineup, and one image.
+3. Open Client B in a separate clean profile and sign in as Account B. Confirm
+   the strategy is absent before sharing.
+4. Share view-only, join from B, and attempt each visible mutation. No mutation
+   may reach the server.
+5. Share editor, edit from B, and watch A. Repeat in the other direction while
+   both clients have unsaved local input.
+6. Take B offline, edit, restart B, reconnect, and wait for the pending op to
+   land. Verify both clients and the sync-status surface agree.
+7. Disable the link, then attempt a fresh join from clean Account C. Confirm B
+   retains existing access.
+8. Restart both clients, export the strategy, import it locally, and compare the
+   result with the cloud copy.
+9. Save the recording, release commit, deployment name, platform versions, and
+   any console/server errors next to the checked items above.
 
-Impact: public users may expect expiring links or member management for team content.
-
-Suggested fix: either add expiration options to share links or reserve public launch for a simpler "private beta link sharing" framing.
-
-### Invite Token Flow Appears Unused
-
-- Backend has `convex/invites.ts` with expiry and redemption.
-- I did not find a Flutter UX for creating/redeeming those invite tokens.
-
-Suggested fix: remove/defer this API if not needed, or wire it into the sharing UI.
-
-## Media Upload And Recovery Gaps
-
-### Upload Retry Exists
-
-- `cloud_media_upload_queue_provider.dart` persists jobs in Hive.
-- Failed uploads retry with backoff.
-- Save state tracks media sync errors.
-
-This part is a solid foundation.
-
-### Orphan Storage Risk
-
-- R2 migration note: new uploads now create a pending `imageAssets` row before the client PUTs to R2, then `images:completeUpload` verifies object metadata and marks the row active.
-- If the R2 upload succeeds but completion fails, the pending row keeps `objectKey` for retry and can later be swept by `images:sweepStaleUploadsForStrategy`.
-
-Remaining setup: configure the Cloudflare R2 bucket, custom public domain, and Convex env vars in `docs/cloudflare_r2_media_storage.md`.
-
-### Stale Asset Cleanup Wiring
-
-- R2 migration note: `images:listPotentiallyStale` now returns strategy-owned unreferenced assets plus pending/failed upload candidates.
-- `images:deleteAssetRef` now deletes strategy-owned R2 assets and legacy Convex-storage assets with editor permission checks.
-
-Residual risk: legacy rows without `strategyId` can only be cleaned when they are still provably referenced by the requesting strategy, because old dev rows did not record ownership.
-
-## Follow-Up Checklist
-
-- [ ] Add or replace `strategies:listSharedWithMe`.
-- [ ] Fix `convex/pages.ts` TypeScript errors.
-- [ ] Re-run targeted sync tests and fix real failures.
-- [ ] Return effective strategy role in cloud strategy summaries.
-- [ ] Add visible conflict/sync status UI.
-- [ ] Clarify "revoke link" versus "remove collaborator access."
-- [ ] Decide whether share links need expiry before public launch.
-- [ ] Decide whether stale/orphan media cleanup should run from UI, cron, or an admin maintenance action.
-- [ ] Add backend tests for share redemption, revocation, role inheritance, and stale op rejection.
-- [ ] Add client tests for conflict ack handling and media upload failure recovery.
+Stop immediately on silent data loss, a false **Synced** state, an access-control
+bypass, or a protocol reconnect loop. Preserve the clients and server state for
+diagnosis instead of continuing the script.
