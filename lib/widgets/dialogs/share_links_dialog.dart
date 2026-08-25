@@ -497,6 +497,9 @@ class _ShareLinkTileState extends State<_ShareLinkTile> {
                     : ShareLinkCopy.disableTooltip,
                 button: true,
                 enabled: !link.isRevoked && !widget.isDisabling,
+                onTap: link.isRevoked || widget.isDisabling
+                    ? null
+                    : widget.onDisable,
                 excludeSemantics: true,
                 child: Tooltip(
                   message: link.isRevoked
@@ -589,6 +592,7 @@ class _CopyIconButtonState extends State<_CopyIconButton> {
       label: widget.tooltip,
       button: true,
       enabled: widget.enabled,
+      onTap: widget.enabled ? _copy : null,
       excludeSemantics: true,
       child: Tooltip(
         message: widget.tooltip,
