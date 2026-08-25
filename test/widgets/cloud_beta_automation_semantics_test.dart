@@ -72,6 +72,32 @@ void main() {
     expect(_semantics('Community library').properties.onTap, isNotNull);
     expect(_semantics('Log in to Icarus').properties.onTap, isNotNull);
   });
+
+  testWidgets('signed-out cloud destinations open login', (tester) async {
+    await tester.pumpWidget(
+      _testApp(
+        const SizedBox(
+          width: 220,
+          height: 800,
+          child: LibraryNavigationRail(),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('library-cloud')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AuthDialog), findsOneWidget);
+    expect(find.text('Sign in'), findsAtLeastNWidgets(1));
+
+    Navigator.of(tester.element(find.byType(AuthDialog))).pop();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('library-shared')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AuthDialog), findsOneWidget);
+  });
 }
 
 Semantics _semantics(String label) {

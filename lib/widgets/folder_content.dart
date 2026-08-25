@@ -23,9 +23,14 @@ import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class FolderContent extends ConsumerWidget {
-  FolderContent({super.key, this.folder});
+  FolderContent({
+    super.key,
+    this.folder,
+    required this.onCreateStrategy,
+  });
 
   final Folder? folder;
+  final VoidCallback onCreateStrategy;
   final TextEditingController searchController = TextEditingController();
 
   static final strategiesListenable =
@@ -129,14 +134,31 @@ class FolderContent extends ConsumerWidget {
         localStrategies: const [],
         cloudStrategies: _filterCloudStrategies(ref, strategies),
         isCloud: true,
-        showAddSharedItemAction: isSharedWithMe,
+        emptyStateKey: ValueKey(
+          isSharedWithMe ? 'shared-empty-state' : 'cloud-empty-state',
+        ),
         emptyStateIcon:
             isSharedWithMe ? Icons.people_outline : Icons.cloud_outlined,
-        emptyStateTitle:
-            isSharedWithMe ? 'No shared items yet' : 'No cloud strategies yet',
+        emptyStateTitle: isSharedWithMe
+            ? 'Nothing shared with you yet'
+            : 'Your cloud library is empty',
         emptyStateSubtitle: isSharedWithMe
-            ? 'Shared folders and strategies will appear here'
-            : 'Create a cloud strategy to start your online workspace',
+            ? 'Add a share link or code from a teammate to keep it here.'
+            : 'Create your first cloud strategy to keep it available across '
+                'your Icarus clients.',
+        emptyStateAction: isSharedWithMe
+            ? ShadButton(
+                key: const ValueKey('shared-empty-add-item'),
+                onPressed: () => showAddSharedItemDialog(context),
+                leading: const Icon(LucideIcons.link),
+                child: const Text('Add by Link or Code'),
+              )
+            : ShadButton(
+                key: const ValueKey('cloud-empty-create-strategy'),
+                onPressed: onCreateStrategy,
+                leading: const Icon(Icons.add),
+                child: const Text('Create Cloud Strategy'),
+              ),
       ),
     );
   }
@@ -210,14 +232,16 @@ class FolderContent extends ConsumerWidget {
     required List<StrategyData> localStrategies,
     required List<CloudStrategySummary> cloudStrategies,
     required bool isCloud,
-    bool showAddSharedItemAction = false,
+    Key? emptyStateKey,
     IconData? emptyStateIcon,
     required String emptyStateTitle,
     required String emptyStateSubtitle,
+    Widget? emptyStateAction,
   }) {
     final hasStrategies =
         localStrategies.isNotEmpty || cloudStrategies.isNotEmpty;
     final Widget emptyState = Center(
+      key: emptyStateKey,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
         child: Column(
@@ -244,13 +268,9 @@ class FolderContent extends ConsumerWidget {
                 color: Settings.tacticalVioletTheme.mutedForeground,
               ),
             ),
-            if (showAddSharedItemAction) ...[
+            if (emptyStateAction != null) ...[
               const SizedBox(height: 18),
-              ShadButton(
-                onPressed: () => showAddSharedItemDialog(context),
-                leading: const Icon(LucideIcons.link),
-                child: const Text('Add by Link or Code'),
-              ),
+              emptyStateAction,
             ],
           ],
         ),
