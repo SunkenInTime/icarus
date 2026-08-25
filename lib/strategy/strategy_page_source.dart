@@ -150,8 +150,8 @@ class CloudStrategyPageSource implements StrategyPageSource {
   final String strategyId;
   final String? Function() activePageId;
 
-  RemoteStrategySnapshot get _snapshot {
-    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+  RemoteEditorSnapshot get _snapshot {
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
     if (snapshot == null) {
       throw StateError('Remote snapshot unavailable for $strategyId.');
     }
@@ -167,6 +167,17 @@ class CloudStrategyPageSource implements StrategyPageSource {
 
   @override
   Future<StrategyEditorPageData> loadPage(String pageId) async {
+    if (ref
+            .read(remoteEditorSnapshotProvider)
+            .valueOrNull
+            ?.activePage
+            ?.page
+            .publicId !=
+        pageId) {
+      await ref
+          .read(remoteEditorSnapshotProvider.notifier)
+          .setActivePage(pageId);
+    }
     final snapshot = _snapshot;
     final pages = [...snapshot.pages]
       ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
@@ -188,8 +199,13 @@ class CloudStrategyPageSource implements StrategyPageSource {
       return _hydrateProjectedPage(snapshot, page, projected);
     }
 
-    final elements = snapshot.elementsByPage[page.publicId] ?? const [];
-    final lineups = snapshot.lineupsByPage[page.publicId] ?? const [];
+    final pageSnapshot = snapshot.activePage;
+    if (pageSnapshot == null || pageSnapshot.page.publicId != page.publicId) {
+      throw StateError(
+          'Remote page snapshot unavailable for ${page.publicId}.');
+    }
+    final elements = pageSnapshot.elements;
+    final lineups = pageSnapshot.lineups;
 
     final agents = <PlacedAgentNode>[];
     final abilities = <PlacedAbility>[];
@@ -261,9 +277,10 @@ class CloudStrategyPageSource implements StrategyPageSource {
     );
 
     StrategySettings pageSettings = StrategySettings();
-    if (page.settings != null && page.settings!.isNotEmpty) {
+    final settingsPayload = pageSnapshot.content.settings;
+    if (settingsPayload != null && settingsPayload.isNotEmpty) {
       try {
-        pageSettings = StrategySettings.fromJson(page.settings!);
+        pageSettings = StrategySettings.fromJson(settingsPayload);
       } catch (_) {
         pageSettings = StrategySettings();
       }
@@ -292,22 +309,25 @@ class CloudStrategyPageSource implements StrategyPageSource {
       return;
     }
 
-    _syncStrategyMetadata();
+    await _syncStrategyMetadata();
 
     final desiredOpsByEntityKey =
         ref.read(activePageLiveSyncProvider.notifier).syncLocalPage(
               strategyPublicId: strategyId,
               pageId: pageId,
             );
-    ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
+    if (desiredOpsByEntityKey == null) {
+      return;
+    }
+    await ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
           pageId: pageId,
           desiredOpsByEntityKey: desiredOpsByEntityKey,
           flushImmediately: false,
         );
   }
 
-  void _syncStrategyMetadata() {
-    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+  Future<void> _syncStrategyMetadata() async {
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
     if (snapshot == null) {
       return;
     }
@@ -328,7 +348,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
         cloudJsonEquivalent(header.themeOverridePalette, desiredThemeOverride);
 
     if (mapMatches && themeProfileMatches && themeOverrideMatches) {
-      ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
+      await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
             entityKey: const EntitySyncKey.strategy(),
             desiredOp: null,
             flushImmediately: false,
@@ -348,21 +368,21 @@ class CloudStrategyPageSource implements StrategyPageSource {
         'clearThemeOverridePalette': true,
     };
 
-    ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
+    await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
           entityKey: const EntitySyncKey.strategy(),
           desiredOp: StrategyOp(
             opId: const Uuid().v4(),
             kind: StrategyOpKind.patch,
             entityType: StrategyOpEntityType.strategy,
             payload: payload,
-            expectedSequence: header.sequence,
+            expectedRevision: header.revision,
           ),
           flushImmediately: false,
         );
   }
 
   StrategyEditorPageData _hydrateProjectedPage(
-    RemoteStrategySnapshot snapshot,
+    RemoteEditorSnapshot snapshot,
     RemotePage page,
     ActivePageProjectedState projected,
   ) {

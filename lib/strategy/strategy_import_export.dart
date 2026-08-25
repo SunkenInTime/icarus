@@ -2376,11 +2376,12 @@ class StrategyImportExportService {
   }
 
   Future<void> _ensureRemoteAssetsCached(
-    RemoteStrategySnapshot snapshot,
+    RemoteFullStrategySnapshot snapshot,
   ) async {
     final strategyId = snapshot.header.publicId;
     final assetIds = <String>{};
-    for (final page in snapshot.pages) {
+    for (final fullPage in snapshot.pages) {
+      final page = fullPage.page;
       for (final element
           in snapshot.elementsByPage[page.publicId] ?? const []) {
         if (element.deleted || element.elementType != 'image') {
@@ -2423,7 +2424,7 @@ class StrategyImportExportService {
   Future<void> exportCloudStrategy(String strategyId) async {
     final snapshot = await ref
         .read(convexStrategyRepositoryProvider)
-        .fetchSnapshot(strategyId);
+        .fetchFullSnapshot(strategyId);
     await _ensureRemoteAssetsCached(snapshot);
     final strategy = _strategyDataFromRemoteSnapshot(snapshot);
     final outputFile = await FilePicker.platform.saveFile(
@@ -2452,15 +2453,17 @@ class StrategyImportExportService {
   }
 
   StrategyData _strategyDataFromRemoteSnapshot(
-      RemoteStrategySnapshot snapshot) {
+      RemoteFullStrategySnapshot snapshot) {
     final pages = <StrategyPage>[];
     final mapValue = Maps.mapNames.entries
         .where((entry) => entry.value == snapshot.header.mapData)
         .map((entry) => entry.key)
         .first;
 
-    for (final remotePage in snapshot.pages
-      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex))) {
+    final orderedPages = [...snapshot.pages]
+      ..sort((a, b) => a.page.sortIndex.compareTo(b.page.sortIndex));
+    for (final fullPage in orderedPages) {
+      final remotePage = fullPage.page;
       final elements = snapshot.elementsByPage[remotePage.publicId] ?? const [];
       final lineups = snapshot.lineupsByPage[remotePage.publicId] ?? const [];
       final drawingData = <DrawingElement>[];
@@ -2509,9 +2512,10 @@ class StrategyImportExportService {
       }
 
       StrategySettings settings = StrategySettings();
-      if (remotePage.settings != null && remotePage.settings!.isNotEmpty) {
+      final settingsPayload = fullPage.content.settings;
+      if (settingsPayload != null && settingsPayload.isNotEmpty) {
         try {
-          settings = StrategySettings.fromJson(remotePage.settings!);
+          settings = StrategySettings.fromJson(settingsPayload);
         } catch (_) {}
       }
 

@@ -115,7 +115,7 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                     imageFolderPath!.path, image.id + image.fileExtension);
                 final file = File(fullPath);
                 final snapshot =
-                    ref.watch(remoteStrategySnapshotProvider).valueOrNull;
+                    ref.watch(remoteEditorSnapshotProvider).valueOrNull;
                 final remoteUrl = snapshot?.assetsById[image.id]?.url;
 
                 if (!file.existsSync() &&
@@ -246,22 +246,22 @@ class _ImageCarouselState extends ConsumerState<LineUpMediaCarousel>
                       Navigator.of(context).pop();
 
                       ref.read(actionProvider.notifier).performTransaction(
-                            groups: const [ActionGroup.lineUp],
-                            mutation: () {
-                              ref.read(lineUpProvider.notifier).deleteItem(
-                                    groupId: widget.lineUpGroupId,
-                                    itemId: widget.lineUpItemId,
-                                  );
-                            },
-                          );
+                        groups: const [ActionGroup.lineUp],
+                        mutation: () {
+                          ref.read(lineUpProvider.notifier).deleteItem(
+                                groupId: widget.lineUpGroupId,
+                                itemId: widget.lineUpItemId,
+                              );
+                        },
+                      );
                     },
                   ),
                   ShadButton(
                     // height: 32,
                     leading: const Icon(LucideIcons.pencil),
                     // width: 80,
-                  child: const Text("Edit"),
-                  onPressed: () {
+                    child: const Text("Edit"),
+                    onPressed: () {
                       Navigator.of(context).pop();
                       showDialog(
                         context: context,

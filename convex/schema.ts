@@ -40,7 +40,7 @@ export default defineSchema({
     folderId: v.optional(v.id("folders")),
     name: v.string(),
     mapData: v.string(),
-    sequence: v.number(),
+    revision: v.number(),
     themeProfileId: v.optional(v.string()),
     themeOverridePalette: v.optional(mapThemePaletteValidator),
     createdAt: v.number(),
@@ -55,13 +55,19 @@ export default defineSchema({
     name: v.string(),
     sortIndex: v.number(),
     isAttack: v.boolean(),
-    settings: v.optional(strategySettingsValidator),
     revision: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index("by_publicId", ["publicId"])
     .index("by_strategyId", ["strategyId"]),
+  pageContents: defineTable({
+    pageId: v.id("pages"),
+    settings: v.optional(strategySettingsValidator),
+    revision: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_pageId", ["pageId"]),
   elements: defineTable({
     publicId: v.string(),
     strategyId: v.id("strategies"),
@@ -197,8 +203,6 @@ export default defineSchema({
     opType: v.string(),
     status: v.union(v.literal("ack"), v.literal("reject")),
     reason: v.optional(v.string()),
-    expectedSequence: v.optional(v.number()),
-    appliedSequence: v.optional(v.number()),
     expectedRevision: v.optional(v.number()),
     appliedRevision: v.optional(v.number()),
     createdAt: v.number(),

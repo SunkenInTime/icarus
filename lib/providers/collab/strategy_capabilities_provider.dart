@@ -83,14 +83,13 @@ final currentStrategyCapabilitiesProvider =
       !ref.watch(isCloudCollabEnabledProvider)) {
     return StrategyCapabilities.fullAccess();
   }
-  final role =
-      ref.watch(remoteStrategySnapshotProvider).valueOrNull?.header.role;
+  final role = ref.watch(remoteEditorSnapshotProvider).valueOrNull?.header.role;
   return StrategyCapabilities.fromCloudRole(role);
 });
 
 /// Last non-null cloud role reported for the currently open strategy.
 ///
-/// [remoteStrategySnapshotProvider] transiently loses its value during
+/// [remoteEditorSnapshotProvider] transiently loses its value during
 /// reloads, refresh errors, and auth incidents, so role-dependent UI (like
 /// the editor's "View only" chip) must not read `valueOrNull` directly or it
 /// flickers off mid-session. This provider remembers the last role seen for
@@ -108,13 +107,13 @@ class LastKnownCloudRoleNotifier extends Notifier<String?> {
     // strategy is opened.
     ref.watch(strategyProvider.select((value) => value.strategyId));
 
-    ref.listen(remoteStrategySnapshotProvider, (previous, next) {
+    ref.listen(remoteEditorSnapshotProvider, (previous, next) {
       final role = next.valueOrNull?.header.role;
       if (role != null) {
         state = role;
       }
     });
 
-    return ref.read(remoteStrategySnapshotProvider).valueOrNull?.header.role;
+    return ref.read(remoteEditorSnapshotProvider).valueOrNull?.header.role;
   }
 }

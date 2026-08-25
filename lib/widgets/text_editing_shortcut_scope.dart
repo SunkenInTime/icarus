@@ -22,14 +22,24 @@ class TextEditingShortcutScope extends ConsumerWidget {
             ? ref.watch(appPreferencesProvider).customShortcutBindings
             : const <String, String>{};
 
+    // Shortcut priority follows widget nesting from the focused field out:
+    // field-specific commands, native text editing, then app shortcut blockers.
+    final textField = DefaultTextEditingShortcuts(
+      child: extraShortcuts.isEmpty
+          ? child
+          : Shortcuts(
+              shortcuts: extraShortcuts,
+              child: child,
+            ),
+    );
+
     return Shortcuts(
       shortcuts: {
         ...ShortcutInfo.textEditingOverridesFor(
           customShortcutBindings,
         ),
-        ...extraShortcuts,
       },
-      child: child,
+      child: textField,
     );
   }
 }

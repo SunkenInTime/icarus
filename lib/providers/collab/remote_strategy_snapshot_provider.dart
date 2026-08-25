@@ -9,157 +9,257 @@ import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 
-final remoteStrategySnapshotProvider = AsyncNotifierProvider<
-    RemoteStrategySnapshotNotifier, RemoteStrategySnapshot?>(
-  RemoteStrategySnapshotNotifier.new,
+final remoteEditorSnapshotProvider =
+    AsyncNotifierProvider<RemoteEditorSnapshotNotifier, RemoteEditorSnapshot?>(
+  RemoteEditorSnapshotNotifier.new,
 );
 
-class RemoteStrategySnapshotNotifier
-    extends AsyncNotifier<RemoteStrategySnapshot?> {
+/// Owns the editor's bounded live read set: one shell and one active page.
+class RemoteEditorSnapshotNotifier
+    extends AsyncNotifier<RemoteEditorSnapshot?> {
   String? _activeStrategyPublicId;
-  StreamSubscription<RemoteStrategySnapshot>? _snapshotSubscription;
+  String? _activePagePublicId;
+  StreamSubscription<RemoteStrategyShell>? _shellSubscription;
+  StreamSubscription<RemotePageSnapshot>? _pageSubscription;
   Timer? _refreshDebounce;
+  int _pageEpoch = 0;
   Map<String, RemoteImageAsset>? _lastReconciledAssetsById;
 
   @override
-  Future<RemoteStrategySnapshot?> build() async {
+  Future<RemoteEditorSnapshot?> build() async {
     ref.onDispose(_disposeSubscriptions);
     return null;
   }
 
   String? get activeStrategyPublicId => _activeStrategyPublicId;
+  String? get activePagePublicId => _activePagePublicId;
 
-  Future<void> openStrategy(String strategyPublicId) async {
+  Future<void> openStrategy(
+    String strategyPublicId, {
+    String? activePagePublicId,
+  }) async {
+    _disposeSubscriptions();
     _activeStrategyPublicId = strategyPublicId;
+    _activePagePublicId = activePagePublicId;
     _lastReconciledAssetsById = null;
-    ref
-        .read(strategyOpQueueProvider.notifier)
-        .setActiveStrategy(strategyPublicId);
+    ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(
+          strategyPublicId,
+          accountId: ref.read(authProvider).user?.id,
+        );
     state = const AsyncLoading();
 
     await _refreshFromServer();
-    await _startSubscriptions(strategyPublicId);
+    await _startShellSubscription(strategyPublicId);
+    final pageId = _activePagePublicId;
+    if (pageId != null) {
+      await _startPageSubscription(strategyPublicId, pageId);
+    }
+  }
+
+  Future<RemotePageSnapshot?> setActivePage(String? pagePublicId) async {
+    final strategyPublicId = _activeStrategyPublicId;
+    if (strategyPublicId == null || pagePublicId == _activePagePublicId) {
+      return state.valueOrNull?.activePage;
+    }
+
+    _activePagePublicId = pagePublicId;
+    final epoch = ++_pageEpoch;
+    await _pageSubscription?.cancel();
+    _pageSubscription = null;
+
+    final current = state.valueOrNull;
+    if (current != null) {
+      state = AsyncData(current.copyWith(clearActivePage: true));
+    }
+    if (pagePublicId == null) return null;
+
+    try {
+      final page =
+          await ref.read(convexStrategyRepositoryProvider).fetchPageSnapshot(
+                strategyPublicId: strategyPublicId,
+                pagePublicId: pagePublicId,
+              );
+      if (epoch != _pageEpoch || pagePublicId != _activePagePublicId) {
+        return null;
+      }
+      _replacePage(page);
+      await _startPageSubscription(strategyPublicId, pagePublicId);
+      return page;
+    } catch (error, stackTrace) {
+      _handleReadError(
+        source: 'remote_editor:page_refresh',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
   }
 
   Future<void> refresh() async {
-    if (_activeStrategyPublicId == null) {
-      return;
-    }
-    await _refreshFromServer();
+    if (_activeStrategyPublicId != null) await _refreshFromServer();
   }
 
   void clear() {
     _activeStrategyPublicId = null;
+    _activePagePublicId = null;
     _lastReconciledAssetsById = null;
     _disposeSubscriptions();
-    ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(null);
+    ref.read(strategyOpQueueProvider.notifier).setActiveStrategy(
+          null,
+          accountId: ref.read(authProvider).user?.id,
+        );
     state = const AsyncData(null);
   }
 
   Future<void> _refreshFromServer() async {
     final strategyPublicId = _activeStrategyPublicId;
-    if (strategyPublicId == null) {
-      return;
-    }
-
-    final auth = ref.read(authProvider);
-    if (auth.hasActiveAuthIncident) {
+    if (strategyPublicId == null) return;
+    if (ref.read(authProvider).hasActiveAuthIncident) {
       state = const AsyncData(null);
       return;
     }
 
     try {
-      final snapshot = await ref
-          .read(convexStrategyRepositoryProvider)
-          .fetchSnapshot(strategyPublicId);
-      state = AsyncData(snapshot);
-    } catch (error, stackTrace) {
-      if (isConvexUnauthenticatedError(error)) {
-        unawaited(
-          ref.read(authProvider.notifier).reportConvexUnauthenticated(
-                source: 'remote_snapshot:refresh',
-                error: error,
-                stackTrace: stackTrace,
-              ),
-        );
-        state = const AsyncData(null);
-        return;
+      final repository = ref.read(convexStrategyRepositoryProvider);
+      final shell = await repository.fetchShell(strategyPublicId);
+      var pageId = _activePagePublicId;
+      if (pageId == null ||
+          !shell.pages.any((page) => page.publicId == pageId)) {
+        pageId = shell.pages.firstOrNull?.publicId;
+        _activePagePublicId = pageId;
       }
-
-      log('Failed to refresh remote snapshot: $error',
-          error: error, stackTrace: stackTrace);
-      state = AsyncError(error, stackTrace);
+      final page = pageId == null
+          ? null
+          : await repository.fetchPageSnapshot(
+              strategyPublicId: strategyPublicId,
+              pagePublicId: pageId,
+            );
+      state = AsyncData(RemoteEditorSnapshot(shell: shell, activePage: page));
+      if (page != null) _reconcilePageMedia(page);
+    } catch (error, stackTrace) {
+      _handleReadError(
+        source: 'remote_editor:refresh',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
-  Future<void> _startSubscriptions(String strategyPublicId) async {
-    _disposeSubscriptions();
-    final repository = ref.read(convexStrategyRepositoryProvider);
-
-    _snapshotSubscription = repository.watchSnapshot(strategyPublicId).listen(
-      (snapshot) {
-        _replaceSnapshot(snapshot);
-        if (_shouldReconcilePageMedia(snapshot.assetsById)) {
-          unawaited(
-            ref.read(cloudMediaUploadQueueProvider.notifier).reconcilePageMedia(
-                  strategyPublicId: strategyPublicId,
-                  placedImages: ref.read(placedImageProvider).images,
-                  assetsById: snapshot.assetsById,
-                ),
-          );
+  Future<void> _startShellSubscription(String strategyPublicId) async {
+    await _shellSubscription?.cancel();
+    _shellSubscription = ref
+        .read(convexStrategyRepositoryProvider)
+        .watchShell(strategyPublicId)
+        .listen(
+      (shell) {
+        if (_activeStrategyPublicId != strategyPublicId ||
+            ref.read(authProvider).hasActiveAuthIncident) return;
+        final current = state.valueOrNull;
+        state = AsyncData(RemoteEditorSnapshot(
+          shell: shell,
+          activePage: current?.activePage,
+        ));
+        final activePageId = _activePagePublicId;
+        if (activePageId != null &&
+            !shell.pages.any((page) => page.publicId == activePageId)) {
+          unawaited(setActivePage(shell.pages.firstOrNull?.publicId));
         }
       },
-      onError: (error, stackTrace) => _handleSubscriptionError(
-        source: 'remote_snapshot:snapshot_subscription',
+      onError: (Object error, StackTrace stackTrace) =>
+          _handleSubscriptionError(
+        source: 'remote_editor:shell_subscription',
         error: error,
         stackTrace: stackTrace,
       ),
     );
   }
 
-  void _replaceSnapshot(RemoteStrategySnapshot snapshot) {
-    if (_activeStrategyPublicId == null) {
-      return;
-    }
-    if (ref.read(authProvider).hasActiveAuthIncident) {
-      return;
-    }
-
-    state = AsyncData(snapshot);
+  Future<void> _startPageSubscription(
+    String strategyPublicId,
+    String pagePublicId,
+  ) async {
+    await _pageSubscription?.cancel();
+    final epoch = ++_pageEpoch;
+    _pageSubscription = ref
+        .read(convexStrategyRepositoryProvider)
+        .watchPageSnapshot(
+          strategyPublicId: strategyPublicId,
+          pagePublicId: pagePublicId,
+        )
+        .listen(
+      (page) {
+        if (epoch != _pageEpoch ||
+            _activeStrategyPublicId != strategyPublicId ||
+            _activePagePublicId != pagePublicId ||
+            ref.read(authProvider).hasActiveAuthIncident) return;
+        _replacePage(page);
+      },
+      onError: (Object error, StackTrace stackTrace) =>
+          _handleSubscriptionError(
+        source: 'remote_editor:page_subscription',
+        error: error,
+        stackTrace: stackTrace,
+      ),
+    );
   }
 
-  bool _shouldReconcilePageMedia(
-    Map<String, RemoteImageAsset> nextAssetsById,
-  ) {
+  void _replacePage(RemotePageSnapshot page) {
+    final current = state.valueOrNull;
+    if (current == null || page.page.publicId != _activePagePublicId) return;
+    state = AsyncData(current.copyWith(activePage: page));
+    _reconcilePageMedia(page);
+  }
+
+  void _reconcilePageMedia(RemotePageSnapshot page) {
+    if (!_shouldReconcilePageMedia(page.assetsById)) return;
+    final strategyPublicId = _activeStrategyPublicId;
+    if (strategyPublicId == null) return;
+    unawaited(
+      ref.read(cloudMediaUploadQueueProvider.notifier).reconcilePageMedia(
+            strategyPublicId: strategyPublicId,
+            placedImages: ref.read(placedImageProvider).images,
+            assetsById: page.assetsById,
+          ),
+    );
+  }
+
+  bool _shouldReconcilePageMedia(Map<String, RemoteImageAsset> next) {
     final previous = _lastReconciledAssetsById;
-    if (previous != null && _sameReconcileAssetSet(previous, nextAssetsById)) {
-      return false;
+    if (previous != null && previous.length == next.length) {
+      var same = true;
+      for (final entry in next.entries) {
+        final old = previous[entry.key];
+        if (old == null ||
+            old.publicId != entry.value.publicId ||
+            old.url != entry.value.url ||
+            old.uploadStatus != entry.value.uploadStatus) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return false;
     }
-
-    _lastReconciledAssetsById =
-        Map<String, RemoteImageAsset>.unmodifiable(nextAssetsById);
+    _lastReconciledAssetsById = Map.unmodifiable(next);
     return true;
   }
 
-  bool _sameReconcileAssetSet(
-    Map<String, RemoteImageAsset> previous,
-    Map<String, RemoteImageAsset> next,
-  ) {
-    if (previous.length != next.length) {
-      return false;
+  void _handleReadError({
+    required String source,
+    required Object error,
+    required StackTrace stackTrace,
+  }) {
+    if (isConvexUnauthenticatedError(error)) {
+      unawaited(ref.read(authProvider.notifier).reportConvexUnauthenticated(
+            source: source,
+            error: error,
+            stackTrace: stackTrace,
+          ));
+      state = const AsyncData(null);
+      return;
     }
-
-    for (final entry in next.entries) {
-      final previousAsset = previous[entry.key];
-      final nextAsset = entry.value;
-      if (previousAsset == null ||
-          previousAsset.publicId != nextAsset.publicId ||
-          previousAsset.url != nextAsset.url ||
-          previousAsset.uploadStatus != nextAsset.uploadStatus) {
-        return false;
-      }
-    }
-    return true;
+    log('Remote editor read failed: $error',
+        name: 'remote_editor', error: error, stackTrace: stackTrace);
+    state = AsyncError(error, stackTrace);
   }
 
   void _handleSubscriptionError({
@@ -167,47 +267,30 @@ class RemoteStrategySnapshotNotifier
     required Object error,
     StackTrace? stackTrace,
   }) {
-    final message = error.toString();
-    if (isConvexUnauthenticatedMessage(message)) {
-      unawaited(
-        ref.read(authProvider.notifier).reportConvexUnauthenticated(
-              source: source,
-              error: error,
-              stackTrace: stackTrace,
-            ),
-      );
+    if (isConvexUnauthenticatedMessage(error.toString())) {
+      unawaited(ref.read(authProvider.notifier).reportConvexUnauthenticated(
+            source: source,
+            error: error,
+            stackTrace: stackTrace,
+          ));
       return;
     }
-
-    log(
-      'Remote snapshot subscription failed: $message',
-      name: 'remote_snapshot',
-      error: error,
-      stackTrace: stackTrace,
-    );
-    _scheduleRefresh();
-  }
-
-  void _scheduleRefresh() {
-    if (_activeStrategyPublicId == null) {
-      return;
-    }
-
-    if (ref.read(authProvider).hasActiveAuthIncident) {
-      return;
-    }
-
+    log('Remote editor subscription failed: $error',
+        name: 'remote_editor', error: error, stackTrace: stackTrace);
     _refreshDebounce?.cancel();
-    _refreshDebounce = Timer(const Duration(milliseconds: 120), () async {
-      await _refreshFromServer();
-    });
+    _refreshDebounce = Timer(
+      const Duration(milliseconds: 120),
+      () => unawaited(_refreshFromServer()),
+    );
   }
 
   void _disposeSubscriptions() {
     _refreshDebounce?.cancel();
     _refreshDebounce = null;
-
-    unawaited(_snapshotSubscription?.cancel());
-    _snapshotSubscription = null;
+    _pageEpoch += 1;
+    unawaited(_shellSubscription?.cancel());
+    unawaited(_pageSubscription?.cancel());
+    _shellSubscription = null;
+    _pageSubscription = null;
   }
 }

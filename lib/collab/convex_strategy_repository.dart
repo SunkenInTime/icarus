@@ -191,28 +191,94 @@ class ConvexStrategyRepository {
     return controller.stream;
   }
 
-  Future<RemoteStrategySnapshot> fetchSnapshot(String strategyPublicId) async {
-    final response = await _client.query('snapshot:get', {
+  Future<RemoteStrategyShell> fetchShell(String strategyPublicId) async {
+    final response = await _client.query('strategy:getShell', {
       'strategyPublicId': strategyPublicId,
     });
-    return _decodeSnapshot(_decodeObject(response));
+    return _decodeShell(_decodeObject(response));
   }
 
-  Stream<RemoteStrategySnapshot> watchSnapshot(String strategyPublicId) {
+  Stream<RemoteStrategyShell> watchShell(String strategyPublicId) {
     return _watchObject(
-      name: 'snapshot:get',
+      name: 'strategy:getShell',
       args: {'strategyPublicId': strategyPublicId},
-      fromJson: _decodeSnapshot,
+      fromJson: _decodeShell,
     );
   }
 
-  RemoteStrategySnapshot _decodeSnapshot(Map<String, dynamic> value) {
-    final header =
-        RemoteStrategyHeader.fromJson(_decodeObject(value['header']));
-    // snapshot:get returns pages, elements, and lineups ordered by sortIndex.
-    final pages = _decodeObjectList(value['pages'])
-        .map(RemotePage.fromJson)
+  RemoteStrategyShell _decodeShell(Map<String, dynamic> value) {
+    return RemoteStrategyShell(
+      header: RemoteStrategyHeader.fromJson(_decodeObject(value['header'])),
+      pages: _decodeObjectList(value['pages'])
+          .map(RemotePage.fromJson)
+          .toList(growable: false),
+    );
+  }
+
+  Future<RemotePageSnapshot> fetchPageSnapshot({
+    required String strategyPublicId,
+    required String pagePublicId,
+  }) async {
+    final response = await _client.query('page:getSnapshot', {
+      'strategyPublicId': strategyPublicId,
+      'pagePublicId': pagePublicId,
+    });
+    return _decodePageSnapshot(_decodeObject(response));
+  }
+
+  Stream<RemotePageSnapshot> watchPageSnapshot({
+    required String strategyPublicId,
+    required String pagePublicId,
+  }) {
+    return _watchObject(
+      name: 'page:getSnapshot',
+      args: {
+        'strategyPublicId': strategyPublicId,
+        'pagePublicId': pagePublicId,
+      },
+      fromJson: _decodePageSnapshot,
+    );
+  }
+
+  RemotePageSnapshot _decodePageSnapshot(Map<String, dynamic> value) {
+    final assets = _decodeObjectList(value['assets'])
+        .map(RemoteImageAsset.fromJson)
         .toList(growable: false);
+    return RemotePageSnapshot(
+      page: RemotePage.fromJson(_decodeObject(value['page'])),
+      content: RemotePageContent.fromJson(_decodeObject(value['content'])),
+      elements: _decodeObjectList(value['elements'])
+          .map(RemoteElement.fromJson)
+          .toList(growable: false),
+      lineups: _decodeObjectList(value['lineups'])
+          .map(RemoteLineup.fromJson)
+          .toList(growable: false),
+      assetsById: {for (final asset in assets) asset.publicId: asset},
+    );
+  }
+
+  Future<RemoteFullStrategySnapshot> fetchFullSnapshot(
+    String strategyPublicId,
+  ) async {
+    final response = await _client.query('strategy:getFullSnapshot', {
+      'strategyPublicId': strategyPublicId,
+    });
+    return _decodeFullSnapshot(_decodeObject(response));
+  }
+
+  RemoteFullStrategySnapshot _decodeFullSnapshot(Map<String, dynamic> value) {
+    final pages = _decodeObjectList(value['pages']).map((json) {
+      final page = RemotePage.fromJson(json);
+      return RemoteFullPage(
+        page: page,
+        content: RemotePageContent.fromJson({
+          'settings': json['settings'],
+          'revision': json['contentRevision'],
+          'createdAt': json['contentCreatedAt'],
+          'updatedAt': json['contentUpdatedAt'],
+        }),
+      );
+    }).toList(growable: false);
     final elements = _decodeObjectList(value['elements'])
         .map(RemoteElement.fromJson)
         .toList(growable: false);
@@ -223,11 +289,11 @@ class ConvexStrategyRepository {
         .map(RemoteImageAsset.fromJson)
         .toList(growable: false);
 
-    return RemoteStrategySnapshot(
-      header: header,
+    return RemoteFullStrategySnapshot(
+      header: RemoteStrategyHeader.fromJson(_decodeObject(value['header'])),
       pages: pages,
-      elementsByPage: RemoteStrategySnapshot.groupElementsByPage(elements),
-      lineupsByPage: RemoteStrategySnapshot.groupLineupsByPage(lineups),
+      elementsByPage: RemoteFullStrategySnapshot.groupElementsByPage(elements),
+      lineupsByPage: RemoteFullStrategySnapshot.groupLineupsByPage(lineups),
       assetsById: {
         for (final asset in assets) asset.publicId: asset,
       },

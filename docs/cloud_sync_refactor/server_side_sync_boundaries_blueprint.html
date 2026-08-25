@@ -1,0 +1,929 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Icarus server-side sync boundaries</title>
+  <script>
+    /* Runs before first paint so the theme never flashes. Keep it in <head>. */
+    (() => {
+      /* ?theme=light|dark forces a theme — used for automated verification. */
+      const forced = new URLSearchParams(location.search).get("theme");
+      let stored = null;
+      try { stored = localStorage.getItem("blueprint-theme"); } catch {}
+      const system = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      document.documentElement.dataset.theme = forced || stored || system;
+    })();
+  </script>
+  <style>
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+/* ---- palette ----------------------------------------------------------
+   Dark is the default. The inline <head> script sets data-theme from
+   localStorage or the system preference before first paint; the light
+   block below is the only override. Never hardcode a hex outside here —
+   inline SVG included. ------------------------------------------------ */
+:root {
+  color-scheme: dark;
+
+  /* background ramp, darkest to lightest: sunken · bg · tint · inset · hover · raised */
+  --bg-sunken: #000;
+  --bg: #050505;
+  --bg-tint: #0a0a09;
+  --bg-inset: #0d0d0d;
+  --bg-hover: #141414;
+  --bg-raised: #1b1b19;
+  --bg-translucent: rgba(5, 5, 5, .96);
+  --track: #111;
+
+  --fg: #d6d3cc;
+  --fg-strong: #f1efe8;
+  --fg-muted: #8b8983;
+  --fg-faint: #7a7872;
+
+  --line: #222;
+  --line-strong: #3d3d3d;
+
+  --accent: #7b96ff;
+  --ok: #6fcf8f;
+  --warn: #e8b866;
+  --danger: #ff7b72;
+
+  /* diagram series, ramping toward the accent */
+  --series-1: #44527f;
+  --series-2: #566ba9;
+  --series-3: #7b96ff;
+  --series-4: #817b9f;
+  --on-fill: #f1efe8;    /* label sitting on a series bar */
+  --on-accent: #050505;  /* label sitting on the accent bar */
+
+  /* theme-independent */
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --hatch: repeating-linear-gradient(-45deg, transparent, transparent 8px, var(--line) 8px, var(--line) 9px);
+  --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* background ramp, lightest page to deepest surface — warm greige paper,
+     not white. Separation from #fff comes from lightness (~1.28:1), not
+     hue: subtle off-whites flatten to pure white on cool-white-point
+     external monitors, but a genuinely darker page survives any display.
+     Don't lighten it back toward #f4f1e9. */
+  --bg-sunken: #ddd6c8;
+  --bg: #e8e3d9;
+  --bg-tint: #e3ddd1;
+  --bg-inset: #dfd8ca;
+  --bg-hover: #d6cebc;
+  --bg-raised: #cdc4af;
+  --bg-translucent: rgba(232, 227, 217, .96);
+  --track: #dbd4c4;
+
+  --fg: #3d3b35;
+  --fg-strong: #14130f;
+  --fg-muted: #5c5a52;
+  --fg-faint: #67635a;
+
+  --line: #d0c9b8;
+  --line-strong: #a09a8a;
+
+  --accent: #3849b8;
+  --ok: #256a41;
+  --warn: #7d540d;
+  --danger: #a52f27;
+
+  --series-1: #6a739b;
+  --series-2: #4f5d9e;
+  --series-3: #3849b8;
+  --series-4: #6f6890;
+  --on-fill: #fff;
+  --on-accent: #fff;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
+body { margin: 0; min-height: 100vh; overflow-x: clip; background: var(--bg); color: var(--fg); font: 400 1rem/1.75 var(--sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+a { color: inherit; }
+button { color: inherit; font: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
+
+/* ---- ruled page grid: rail | content, hairlines run the full height ---- */
+.page-grid { display: grid; grid-template-columns: minmax(1rem, 1fr) 13rem minmax(0, 56rem) minmax(1rem, 1fr); }
+.topbar { position: relative; z-index: 20; border-bottom: 1px solid var(--line); background: var(--bg-translucent); }
+.topbar-grid::before, .hatch-grid::before { content: ""; grid-area: 1 / 2; border-left: 1px solid var(--line); pointer-events: none; }
+.topbar-row { grid-column: 3; min-height: 3rem; display: flex; align-items: stretch; justify-content: space-between; border-inline: 1px solid var(--line); }
+.wordmark { display: inline-flex; align-items: center; gap: .55rem; padding: 0 1.75rem; color: var(--fg-strong); font: 600 .7rem/1 var(--mono); letter-spacing: .18em; text-decoration: none; }
+.wordmark-mark { color: var(--accent); font-size: .8rem; }
+.top-actions { display: flex; align-items: stretch; }
+.top-action { display: inline-flex; align-items: center; padding: 0 1rem; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--fg-muted); cursor: pointer; font: 400 .62rem/1 var(--mono); letter-spacing: .16em; text-decoration: none; }
+.top-action:hover, .top-action:focus-visible { color: var(--fg-strong); background: var(--bg-hover); outline-offset: -1px; }
+.hatch { height: 1.4rem; border-bottom: 1px solid var(--line); background: var(--hatch); }
+.hatch-grid { height: 100%; }
+.hatch-cell { grid-column: 3; height: 100%; border-inline: 1px solid var(--line); }
+.body-grid { align-items: stretch; min-height: calc(100vh - 4.4rem); }
+
+/* ---- sticky rail ---- */
+.rail { grid-column: 2; min-width: 0; border-left: 1px solid var(--line); }
+.rail-sticky { position: sticky; top: 0; max-height: 100vh; overflow-y: auto; scrollbar-width: none; }
+.rail-sticky::-webkit-scrollbar { display: none; }
+.rail-block { padding: 1.1rem; border-bottom: 1px solid var(--line); }
+.rail-label, .kicker { margin: 0 0 .75rem; color: var(--fg-faint); font: 400 .68rem/1.4 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+.outline-list { display: flex; flex-direction: column; border-left: 1px solid var(--line); }
+.outline-link { margin-left: -1px; padding: .25rem 0 .25rem .75rem; border-left: 1px solid transparent; color: var(--fg-muted); font: 400 .75rem/1.45 var(--mono); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.outline-link[data-level="3"] { padding-left: 1.45rem; color: var(--fg-faint); }
+.outline-link:hover, .outline-link.active { color: var(--fg-strong); border-left-color: var(--accent); }
+.rail-text { margin: 0; color: var(--fg-muted); font-size: .8rem; line-height: 1.55; overflow-wrap: anywhere; }
+.rail-text + .rail-text { margin-top: .45rem; }
+.rail-metric { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; margin: 0; padding: .22rem 0; color: var(--fg-muted); font: 400 .66rem/1.5 var(--mono); }
+.rail-metric span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rail-metric + .rail-metric { border-top: 1px solid var(--line); }
+.rail-metric b { color: var(--fg-strong); font-weight: 600; white-space: nowrap; }
+.rail-metric b.good { color: var(--ok); }
+.rail-metric b.bad { color: var(--danger); }
+.rail-metric b.warn { color: var(--warn); }
+.rail-artifact { display: flex; align-items: baseline; gap: .45rem; padding: .3rem 0; color: var(--fg-muted); font: 400 .68rem/1.5 var(--mono); text-decoration: none; }
+.rail-artifact + .rail-artifact { border-top: 1px solid var(--line); }
+.rail-artifact .ext { flex: none; padding: 0 .3rem; border: 1px solid var(--line-strong); color: var(--fg-faint); font-size: .56rem; letter-spacing: .1em; }
+.rail-artifact .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rail-artifact::after { content: "↓"; flex: none; color: var(--fg-faint); }
+.rail-artifact:hover { color: var(--fg-strong); }
+.rail-artifact:hover::after, .rail-artifact:hover .ext { color: var(--accent); border-color: var(--accent); }
+
+/* ---- document flow: prose inside --pad, blocks bleed past it ---- */
+.content { --pad: min(1.4rem, 5vw); grid-column: 3; min-width: 0; padding: 1.4rem var(--pad) 3rem; border-inline: 1px solid var(--line); }
+.document-flow { min-width: 0; }
+h1, h2, h3 { color: var(--fg-strong); font-family: var(--mono); text-wrap: pretty; scroll-margin-top: 5rem; }
+h1 { margin: 0 calc(-1 * var(--pad)) 1.4rem; padding: 0 var(--pad) 1.4rem; border-bottom: 1px solid var(--line); font-size: clamp(1.35rem, 3vw, 1.5rem); font-weight: 600; line-height: 1.35; letter-spacing: -.02em; }
+h2 { margin: 1.4rem calc(-1 * var(--pad)); padding: 0 var(--pad); font-size: 1.15rem; font-weight: 600; line-height: 1.4; letter-spacing: -.01em; }
+h2::before { content: ""; display: block; height: 1.1rem; margin: 0 calc(-1 * var(--pad)) 1.4rem; border-block: 1px solid var(--line); background: var(--hatch); }
+.document-flow > section:first-of-type h2::before { display: none; }
+h3 { margin: 1.8rem 0 .7rem; font-size: 1rem; font-weight: 600; line-height: 1.45; }
+/* Prose measure stays readable: paragraphs cap at ~72ch while tables,
+   charts, diffs, and pre keep the full column. Structural p's (titles,
+   colophon) span fully so their border rules reach the column lines. */
+p, ul, ol, blockquote { max-width: 72ch; }
+.diff-title, .diagram-title, .colophon, .source { max-width: none; }
+p { margin: 1rem 0; text-wrap: pretty; }
+.lede { color: var(--fg); font-size: 1.02rem; }
+strong { color: var(--fg-strong); font-weight: 600; }
+ul, ol { margin: .9rem 0; padding-left: 1.4rem; }
+li { margin: .3rem 0; }
+li::marker { color: var(--fg-faint); }
+code, pre { font-family: var(--mono); }
+code { padding: .1em .35em; border-radius: 2px; background: var(--bg-hover); color: var(--fg-strong); font-size: .85em; }
+pre { margin: 1.4rem calc(-1 * var(--pad)); padding: 1rem var(--pad); overflow-x: auto; border-block: 1px solid var(--line); background: var(--bg-inset); color: var(--fg); font-size: .82rem; line-height: 1.7; }
+pre code { padding: 0; background: transparent; color: inherit; font-size: 1em; }
+blockquote, .callout { margin: 1.2rem 0; padding: .1rem 0 .1rem 1rem; border-left: 2px solid var(--line-strong); color: var(--fg-muted); }
+.callout { border-left-color: var(--accent); color: var(--fg); }
+
+/* ---- tables ---- */
+.table-wrap { margin: 1.4rem calc(-1 * var(--pad)); overflow-x: auto; border-block: 1px solid var(--line); }
+table { width: 100%; border-collapse: collapse; background: var(--bg-tint); font-size: .85rem; }
+tbody tr:hover { background: var(--bg-hover); }
+th, td { padding: .55rem .7rem; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+th:first-child, td:first-child { border-left: 0; padding-left: var(--pad); }
+th:last-child, td:last-child { border-right: 0; padding-right: var(--pad); }
+th { background: var(--bg-raised); color: var(--fg-strong); font: 500 .72rem/1.45 var(--mono); white-space: nowrap; }
+
+/* ---- diagrams ---- */
+.diagram { margin: 1.4rem calc(-1 * var(--pad)); padding: 1.2rem var(--pad); overflow-x: auto; border-block: 1px solid var(--line); background: var(--bg-inset); }
+.diagram svg { display: block; width: 100%; min-width: 43rem; height: auto; font-family: var(--mono); }
+.diagram-title { margin: 0 0 .35rem; color: var(--fg-strong); font: 500 .78rem/1.45 var(--mono); }
+.diagram-note, .caption { margin: .35rem 0 0; color: var(--fg-muted); font-size: .78rem; line-height: 1.55; }
+.source { margin: .35rem 0 0; color: var(--fg-faint); font: 400 .68rem/1.6 var(--mono); }
+.table-wrap + .source, .diagram + .source, pre + .source { margin-top: -.9rem; margin-bottom: 1.4rem; }
+.legend { display: flex; flex-wrap: wrap; gap: .45rem 1rem; margin: .8rem 0 0; color: var(--fg-muted); font: 400 .7rem/1.4 var(--mono); }
+.legend span { display: inline-flex; align-items: center; gap: .38rem; }
+.legend i { width: .65rem; height: .65rem; border-radius: 1px; background: var(--legend, var(--accent)); }
+
+/* ---- chart hover ----
+   Any element inside .diagram carrying data-tip gets a hover highlight and
+   a fixed-position tooltip (the skeleton script positions #chart-tip). */
+.diagram [data-tip] { cursor: help; }
+.diagram [data-tip]:hover { filter: brightness(1.22); }
+.diagram rect[data-guide]:hover { fill: var(--accent-soft); filter: none; }
+.hover-guide line { stroke: var(--line-strong); stroke-dasharray: 3 3; }
+.hover-guide circle { fill: var(--accent); stroke: var(--bg-inset); stroke-width: 1.5; }
+.chart-tip { position: fixed; z-index: 60; max-width: 22rem; padding: .45rem .65rem; border: 1px solid var(--line-strong); background: var(--bg-raised); color: var(--fg-strong); font: 400 .68rem/1.55 var(--mono); white-space: pre-line; pointer-events: none; visibility: hidden; }
+
+/* ---- headline metrics ---- */
+.metric-line { display: flex; flex-wrap: wrap; gap: 0; margin: 1.35rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); }
+
+/* ---- code diffs ----
+   Preferred: @pierre/diffs rendered into .diff-block (see SKILL.md).
+   Fallback when the doc must stay fully offline: pre.diff with one span
+   per line, classed add / del / hunk. */
+.diff-block { margin: 1.4rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); background: var(--bg-inset); font-size: .8rem; }
+.diff-block .diff-title { display: flex; align-items: center; gap: 1rem; margin: 0; padding: .55rem var(--pad); border-bottom: 1px solid var(--line); color: var(--fg-strong); font: 500 .72rem/1.45 var(--mono); }
+.diff-toggle { align-self: stretch; margin-left: auto; padding: 0 0 0 1rem; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--fg-muted); cursor: pointer; font: 400 .62rem/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+.diff-toggle:hover, .diff-toggle:focus-visible { color: var(--fg-strong); }
+.diff-note { margin: 0; padding: .45rem var(--pad); border-block: 1px solid var(--line); background: var(--bg-tint); color: var(--fg-muted); font: 400 .72rem/1.55 var(--mono); }
+.diff-note::before { content: "// "; color: var(--accent); }
+.diff-block pre { margin: 0; border-block: 0; background: transparent; }
+pre.diff span { display: block; margin: 0 calc(-1 * var(--pad)); padding: 0 var(--pad); }
+pre.diff .add { background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--fg-strong); }
+pre.diff .del { background: color-mix(in srgb, var(--danger) 11%, transparent); color: var(--fg-muted); }
+pre.diff .hunk { color: var(--accent); }
+.metric { flex: 1 1 11rem; min-width: 0; padding: .8rem var(--pad); border-right: 1px solid var(--line); background: var(--bg-tint); }
+.metric:hover { background: var(--bg-hover); }
+.metric:last-child { border-right: 0; }
+.metric-value { display: block; color: var(--fg-strong); font: 600 1.15rem/1.25 var(--mono); }
+.metric-label { display: block; margin-top: .25rem; color: var(--fg-muted); font: 400 .68rem/1.45 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+
+/* ---- verdict colors ---- */
+.good { color: var(--ok); }
+.warn { color: var(--warn); }
+.bad { color: var(--danger); }
+.nowrap { white-space: nowrap; }
+
+/* ---- numbers: digits align in columns and metrics ---- */
+.metric-value, .rail-metric b, th, td { font-variant-numeric: tabular-nums; }
+
+/* ---- status chips: uppercase mono state markers ---- */
+.chip { display: inline-block; vertical-align: baseline; padding: .05rem .45rem; border: 1px solid var(--line-strong); color: var(--fg-muted); font: 500 .6rem/1.6 var(--mono); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+.chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.chip.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.chip.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* ---- appendix: collapsed raw evidence ---- */
+details.appendix { margin: 1.4rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); background: var(--bg-tint); }
+details.appendix > summary { padding: .6rem var(--pad); cursor: pointer; color: var(--fg-muted); font: 500 .68rem/1.5 var(--mono); letter-spacing: .14em; text-transform: uppercase; list-style: none; }
+details.appendix > summary::-webkit-details-marker { display: none; }
+details.appendix > summary::before { content: "+ "; color: var(--accent); }
+details.appendix[open] > summary::before { content: "− "; }
+details.appendix > summary:hover { background: var(--bg-hover); color: var(--fg-strong); }
+details.appendix pre, details.appendix .table-wrap { margin: 0; border-block-end: 0; border-top: 1px solid var(--line); }
+details.appendix p, details.appendix .source { margin: .6rem var(--pad) .9rem; }
+
+/* ---- colophon: document provenance footer ---- */
+.colophon { margin: 2.5rem calc(-1 * var(--pad)) 0; padding: .8rem var(--pad) 0; border-top: 1px solid var(--line); color: var(--fg-faint); font: 400 .68rem/1.7 var(--mono); }
+.colophon a { color: var(--fg-muted); }
+
+/* ---- heading anchors: hover a heading to grab its link ---- */
+.anchor-link { margin-left: .55rem; color: var(--fg-faint); font-size: .8em; font-weight: 400; text-decoration: none; opacity: 0; }
+h2:hover .anchor-link, h3:hover .anchor-link, .anchor-link:focus-visible { opacity: 1; }
+.anchor-link:hover { color: var(--accent); }
+
+.reading-progress { position: fixed; z-index: 50; inset: 0 0 0 auto; width: 4px; background: var(--track); pointer-events: none; }
+.reading-progress-fill { width: 100%; height: 100%; transform: scaleY(0); transform-origin: top; background: var(--line-strong); }
+
+@media (max-width: 1159px) {
+  .page-grid { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
+  .rail { display: none; }
+  .topbar-row, .hatch-cell, .content { border-inline: 0; }
+}
+@media (max-width: 699px) {
+  .top-action[data-optional] { display: none; }
+  .wordmark { padding-inline: 1.25rem; }
+  .content { padding-top: 1.5rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+@media print {
+  .topbar, .hatch, .rail, .reading-progress { display: none; }
+  .content { border-inline: 0; }
+}
+  </style>
+</head>
+<body>
+  <div class="reading-progress" aria-hidden="true"><div class="reading-progress-fill"></div></div>
+  <div class="chart-tip" id="chart-tip" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="page-grid topbar-grid">
+      <div class="topbar-row">
+        <!-- Wordmark: one glyph + one uppercase word naming the document class (PLAN, REPORT, SPEC, RFC). -->
+        <a class="wordmark" href="#top"><span class="wordmark-mark">◆</span> RFC</a>
+        <nav class="top-actions" aria-label="Document actions">
+          <button class="top-action" type="button" id="toggle-theme" aria-live="polite">LIGHT</button>
+          <button class="top-action" type="button" id="copy-link">COPY LINK</button>
+          <a class="top-action" data-optional href="#top">TOP</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hatch" aria-hidden="true">
+    <div class="page-grid hatch-grid"><div class="hatch-cell"></div></div>
+  </div>
+
+  <div class="page-grid body-grid">
+    <aside class="rail" aria-label="Document rail">
+      <div class="rail-sticky">
+        <div class="rail-block" id="outline-block">
+          <p class="rail-label">Outline</p>
+          <nav class="outline-list" id="outline-list" aria-label="Document outline"></nav>
+        </div>
+        <div class="rail-block" id="rail-metrics-block" hidden>
+          <p class="rail-label">Key figures</p>
+          <div id="rail-metrics"></div>
+        </div>
+        <div class="rail-block" id="rail-artifacts-block" hidden>
+          <p class="rail-label">Artifacts</p>
+          <nav id="rail-artifacts" aria-label="Referenced artifacts"></nav>
+        </div>
+        <div class="rail-block">
+          <p class="rail-label">Document</p>
+          <p class="rail-text" id="rail-title"></p>
+          <p class="rail-text" id="rail-status"></p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content" id="document">
+      <article class="document-flow">
+        <p class="kicker">Reactive boundary · Proposed · High confidence</p>
+        <h1 id="top">The server should synchronize one active page, not rebuild the whole strategy</h1>
+        <p class="lede">Icarus currently has <strong>one live query that reads five logical record groups</strong>: the strategy, every page, every element, every lineup, and every referenced asset. Convex treats that query as one reactive dependency graph, so an edit on any page can rerun and resend the whole strategy snapshot. The proposed model uses <strong>two live queries</strong>, one stable strategy shell and one active-page snapshot. Entity revisions keep conflict checks precise, while full-strategy reads remain available for export and recovery without staying subscribed.</p>
+
+        <section>
+          <h2 id="decision">The decision</h2>
+
+          <div class="metric-line" aria-label="Architectural comparison">
+            <div class="metric"><span class="metric-value bad">5 groups</span><span class="metric-label">current live read set</span></div>
+            <div class="metric"><span class="metric-value">2 queries</span><span class="metric-label">proposed editor subscriptions</span></div>
+            <div class="metric"><span class="metric-value good">1 page</span><span class="metric-label">normal content invalidation</span></div>
+            <div class="metric"><span class="metric-value good">0 logs</span><span class="metric-label">new delta logs required</span></div>
+          </div>
+
+          <blockquote class="callout"><p><strong>Recommended decision:</strong> keep Convex and the existing active-page client overlay. Split the server read model into a strategy shell and an active-page snapshot, then stop advancing the strategy row for ordinary page content edits.</p></blockquote>
+
+          <p>This is not a database rewrite. Most current tables, payloads, indexes, operation IDs, and entity revisions remain useful. The main change is deciding which records each subscribed query may read and which parent records each mutation may write.</p>
+
+          <p><span class="chip accent">Confidence high</span> The repository proves the current dependency graph. Convex documents that subscribed queries rerun when data they depend on changes. <span class="chip warn">Not measured</span> This document does not claim a byte, latency, or billing reduction because no production workload exists yet.</p>
+        </section>
+
+        <section>
+          <h2 id="why-boundaries-matter">Why a server boundary matters in Convex</h2>
+
+          <p>In a conventional request API, an endpoint usually runs once and returns. A Convex query can stay subscribed. Convex records what the query read, then reruns it when relevant database data changes. That makes the query's read set the real synchronization boundary.</p>
+
+          <p>Splitting Flutter providers does not narrow server work if they still subscribe to one broad query. Normalizing data into separate tables also does not help if one query reads every table. The boundary becomes narrow only when the query arguments and indexes let it read a narrow set of records.</p>
+
+          <div class="diagram" role="img" aria-label="The current snapshot query reads the strategy and all child records, so one page edit reruns the whole snapshot">
+            <p class="diagram-title">Current path · one content edit intersects the whole live read set</p>
+            <svg viewBox="0 0 760 350" aria-hidden="true">
+              <rect x="18" y="34" width="136" height="54" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Flutter client&#10;Subscribes to snapshot:get for one strategy"/>
+              <text x="86" y="57" fill="var(--fg)" font-size="11" text-anchor="middle">FLUTTER</text>
+              <text x="86" y="73" fill="var(--fg-muted)" font-size="9" text-anchor="middle">watchSnapshot()</text>
+
+              <line x1="154" y1="61" x2="226" y2="61" stroke="var(--danger)"/>
+              <path d="M226 61 L218 57 L218 65 Z" fill="var(--danger)"/>
+
+              <rect x="226" y="26" width="164" height="70" fill="var(--bg-raised)" stroke="var(--danger)" data-tip="snapshot:get&#10;One subscribed query reads every strategy child row"/>
+              <text x="308" y="54" fill="var(--fg-strong)" font-size="11" text-anchor="middle">snapshot:get</text>
+              <text x="308" y="72" fill="var(--danger)" font-size="9" text-anchor="middle">ONE LIVE READ SET</text>
+
+              <line x1="390" y1="61" x2="454" y2="61" stroke="var(--line-strong)"/>
+              <path d="M454 61 L446 57 L446 65 Z" fill="var(--line-strong)"/>
+
+              <rect x="454" y="18" width="288" height="256" fill="var(--bg-tint)" stroke="var(--danger)" data-tip="Reactive dependency set&#10;Any relevant write can rerun the query"/>
+              <text x="598" y="43" fill="var(--danger)" font-size="10" text-anchor="middle">REACTIVE DEPENDENCIES</text>
+
+              <rect x="478" y="58" width="116" height="38" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="strategies row&#10;Header, sequence, updatedAt, theme, ownership"/>
+              <text x="536" y="81" fill="var(--fg)" font-size="10" text-anchor="middle">strategy</text>
+              <rect x="602" y="58" width="116" height="38" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="pages index range&#10;Every page in the strategy"/>
+              <text x="660" y="81" fill="var(--fg)" font-size="10" text-anchor="middle">all pages</text>
+
+              <rect x="478" y="108" width="116" height="38" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="elements index range&#10;Every element across every page"/>
+              <text x="536" y="131" fill="var(--fg)" font-size="10" text-anchor="middle">all elements</text>
+              <rect x="602" y="108" width="116" height="38" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="lineups index range&#10;Every lineup across every page"/>
+              <text x="660" y="131" fill="var(--fg)" font-size="10" text-anchor="middle">all lineups</text>
+
+              <rect x="540" y="158" width="116" height="38" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="imageAssets rows&#10;Every asset referenced anywhere in the strategy"/>
+              <text x="598" y="181" fill="var(--fg)" font-size="10" text-anchor="middle">all assets</text>
+
+              <rect x="18" y="224" width="164" height="66" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="Example mutation&#10;Move one agent on Page B"/>
+              <text x="100" y="249" fill="var(--fg-strong)" font-size="10" text-anchor="middle">element.patch</text>
+              <text x="100" y="267" fill="var(--fg-muted)" font-size="9" text-anchor="middle">one agent · page B</text>
+
+              <line x1="182" y1="245" x2="282" y2="245" stroke="var(--accent)"/>
+              <path d="M282 245 L274 241 L274 249 Z" fill="var(--accent)"/>
+              <rect x="282" y="210" width="158" height="80" fill="var(--bg-raised)" stroke="var(--danger)" data-tip="Current mutation writes two records&#10;The element and the parent strategy sequence"/>
+              <text x="361" y="237" fill="var(--fg)" font-size="10" text-anchor="middle">PATCH element</text>
+              <text x="361" y="256" fill="var(--danger)" font-size="10" text-anchor="middle">PATCH strategy.sequence</text>
+              <text x="361" y="274" fill="var(--fg-muted)" font-size="9" text-anchor="middle">two dependency hits</text>
+
+              <line x1="440" y1="250" x2="454" y2="250" stroke="var(--danger)"/>
+              <path d="M454 250 L446 246 L446 254 Z" fill="var(--danger)"/>
+
+              <line x1="598" y1="274" x2="598" y2="322" stroke="var(--danger)"/>
+              <path d="M598 322 L594 314 L602 314 Z" fill="var(--danger)"/>
+              <text x="598" y="340" fill="var(--danger)" font-size="10" text-anchor="middle">RERUN + RESEND FULL SNAPSHOT</text>
+            </svg>
+            <p class="diagram-note">The broad result is correct and consistent. The problem is that the unit of consistency is larger than the user's edit.</p>
+          </div>
+          <p class="source">Sources: <a href="../../convex/snapshot.ts">convex/snapshot.ts</a>, <a href="../../convex/ops.ts">convex/ops.ts</a>, and <a href="https://docs.convex.dev/understanding/overview">Convex reactive query overview</a>. Diagram shows code paths, not measured traffic.</p>
+
+          <h3 id="one-agent-trace">What happens when one agent moves</h3>
+          <ol>
+            <li>The active-page overlay creates an <code>element.patch</code> with that element's expected revision.</li>
+            <li><code>ops:applyBatch</code> patches the element and then increments <code>strategies.sequence</code> and <code>strategies.updatedAt</code>.</li>
+            <li><code>snapshot:get</code> already depends on that element. It also depends on the parent strategy row and every other page child it collected.</li>
+            <li>Convex reruns <code>snapshot:get</code>. The function reads and serializes every page, element, lineup, and referenced asset again.</li>
+            <li>Flutter receives a new <code>RemoteStrategySnapshot</code>. The active-page overlay protects pending local intent while the snapshot replaces the remote base.</li>
+          </ol>
+
+          <p>The overlay solves correctness on the client. It cannot shrink the server query that produced the remote base. That is why the existing active-page work and the missing server boundary are separate problems.</p>
+        </section>
+
+        <section>
+          <h2 id="proposed-boundaries">The proposed server boundaries</h2>
+
+          <p>An open editor needs two changing views. The first is the strategy shell: metadata, access role, and the ordered page list. The second is the active page: settings, elements, lineups, and only the assets those records reference.</p>
+
+          <div class="diagram" role="img" aria-label="The proposed model has a stable strategy shell subscription and one active page snapshot subscription">
+            <p class="diagram-title">Proposed path · two live read sets with different reasons to change</p>
+            <svg viewBox="0 0 760 430" aria-hidden="true">
+              <rect x="18" y="174" width="126" height="62" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="Flutter editor&#10;Maintains one shell subscription and one active-page subscription"/>
+              <text x="81" y="201" fill="var(--fg-strong)" font-size="11" text-anchor="middle">EDITOR</text>
+              <text x="81" y="219" fill="var(--fg-muted)" font-size="9" text-anchor="middle">2 subscriptions</text>
+
+              <line x1="144" y1="194" x2="218" y2="112" stroke="var(--line-strong)"/>
+              <path d="M218 112 L209 115 L215 121 Z" fill="var(--line-strong)"/>
+              <line x1="144" y1="216" x2="218" y2="302" stroke="var(--accent)"/>
+              <path d="M218 302 L215 293 L209 299 Z" fill="var(--accent)"/>
+
+              <rect x="218" y="64" width="178" height="82" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="strategy:getShell&#10;Reads stable strategy metadata, role, and page descriptors"/>
+              <text x="307" y="93" fill="var(--fg-strong)" font-size="11" text-anchor="middle">strategy:getShell</text>
+              <text x="307" y="113" fill="var(--fg-muted)" font-size="9" text-anchor="middle">metadata + page list</text>
+              <text x="307" y="129" fill="var(--ok)" font-size="9" text-anchor="middle">stable during canvas edits</text>
+
+              <rect x="218" y="264" width="178" height="82" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="page:getSnapshot&#10;Arguments include the active page public ID"/>
+              <text x="307" y="293" fill="var(--fg-strong)" font-size="11" text-anchor="middle">page:getSnapshot</text>
+              <text x="307" y="313" fill="var(--fg-muted)" font-size="9" text-anchor="middle">activePagePublicId</text>
+              <text x="307" y="329" fill="var(--accent)" font-size="9" text-anchor="middle">changes with active content</text>
+
+              <line x1="396" y1="105" x2="454" y2="105" stroke="var(--line-strong)"/>
+              <path d="M454 105 L446 101 L446 109 Z" fill="var(--line-strong)"/>
+              <line x1="396" y1="305" x2="454" y2="305" stroke="var(--accent)"/>
+              <path d="M454 305 L446 301 L446 309 Z" fill="var(--accent)"/>
+
+              <rect x="454" y="34" width="288" height="142" fill="var(--bg-tint)" stroke="var(--line-strong)" data-tip="Shell read set&#10;Content mutations never write these rows"/>
+              <text x="598" y="57" fill="var(--fg-muted)" font-size="10" text-anchor="middle">SHELL READ SET</text>
+              <rect x="478" y="72" width="116" height="42" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Strategy metadata&#10;Name, map, theme, owner, folder, structure revision"/>
+              <text x="536" y="97" fill="var(--fg)" font-size="10" text-anchor="middle">strategy</text>
+              <rect x="602" y="72" width="116" height="42" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Page descriptors&#10;ID, name, sort order, attack or defend"/>
+              <text x="660" y="97" fill="var(--fg)" font-size="10" text-anchor="middle">page descriptors</text>
+              <rect x="540" y="126" width="116" height="30" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Authorization dependencies&#10;Owner and collaborator records"/>
+              <text x="598" y="145" fill="var(--fg)" font-size="9" text-anchor="middle">access role</text>
+
+              <rect x="454" y="224" width="288" height="182" fill="var(--bg-tint)" stroke="var(--accent)" data-tip="Active page read set&#10;Only records for the selected page plus referenced assets"/>
+              <text x="598" y="247" fill="var(--accent)" font-size="10" text-anchor="middle">ACTIVE PAGE READ SET</text>
+              <rect x="478" y="262" width="116" height="42" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="pageContents row&#10;Canvas settings and its own revision"/>
+              <text x="536" y="287" fill="var(--fg)" font-size="10" text-anchor="middle">pageContents</text>
+              <rect x="602" y="262" width="116" height="42" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Elements selected by pageId&#10;Agents, abilities, drawings, text, images, utilities"/>
+              <text x="660" y="287" fill="var(--fg)" font-size="10" text-anchor="middle">page elements</text>
+              <rect x="478" y="316" width="116" height="42" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Lineups selected by pageId&#10;Only the active page"/>
+              <text x="536" y="341" fill="var(--fg)" font-size="10" text-anchor="middle">page lineups</text>
+              <rect x="602" y="316" width="116" height="42" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Referenced assets&#10;Only IDs found in the active page payloads"/>
+              <text x="660" y="341" fill="var(--fg)" font-size="10" text-anchor="middle">page assets</text>
+              <text x="598" y="385" fill="var(--ok)" font-size="9" text-anchor="middle">PAGE B EDIT DOES NOT INTERSECT PAGE A</text>
+            </svg>
+            <div class="legend">
+              <span><i style="--legend:var(--line-strong)"></i>stable or structural path</span>
+              <span><i style="--legend:var(--accent)"></i>active content path</span>
+            </div>
+          </div>
+          <p class="source">Proposed design derived from existing <code>by_pageId</code> indexes in <a href="../../convex/schema.ts">convex/schema.ts</a>. No schema or query in this diagram has been implemented yet.</p>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Server read</th><th>Lifetime</th><th>May read</th><th>Must not read</th><th>Why it changes</th></tr></thead>
+              <tbody>
+                <tr><td><code>strategy:getShell</code></td><td>Subscribed while editor is open</td><td>Strategy metadata, role, page descriptors</td><td>Elements, lineups, page content settings, assets</td><td>Rename, theme, page add/delete/reorder, role change</td></tr>
+                <tr><td><code>page:getSnapshot</code></td><td>Subscribed for active page only</td><td>One page's content, entities, referenced assets</td><td>Other pages' entities or assets</td><td>Edit on active page, asset status change, page deletion</td></tr>
+                <tr><td><code>strategy:getFullSnapshot</code></td><td>One-shot</td><td>Everything required for round-trip</td><td>Nothing required for export may be omitted</td><td>Explicit export, import verification, recovery</td></tr>
+                <tr><td><code>strategies:listForFolder</code></td><td>Subscribed while library is visible</td><td>Small summaries and access data</td><td>Canvas entities and media payloads</td><td>Library metadata or membership change</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: proposed query contract. The full snapshot remains deliberately broad, but no editor keeps it subscribed.</p>
+        </section>
+
+        <section>
+          <h2 id="data-model">The data model that makes the boundary real</h2>
+
+          <p>The key split is inside today's <code>pages</code> document. A shell query needs page descriptors, but it does not need mutable canvas settings. Convex tracks documents read by a query. Mapping only a few fields in TypeScript does not turn a page document into two dependencies. Moving page settings into a one-row <code>pageContents</code> table gives the shell and page snapshot separate records to depend on.</p>
+
+          <div class="diagram" role="img" aria-label="Proposed data model with stable strategy and page descriptor rows separated from active page content and entities">
+            <p class="diagram-title">Proposed records · stable descriptors above, active content below</p>
+            <svg viewBox="0 0 760 500" aria-hidden="true">
+              <rect x="274" y="24" width="212" height="76" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="strategies&#10;Stable metadata and structure revision&#10;No content sequence writes"/>
+              <text x="380" y="48" fill="var(--fg-strong)" font-size="11" text-anchor="middle">strategies</text>
+              <text x="380" y="67" fill="var(--fg-muted)" font-size="9" text-anchor="middle">metadataRevision</text>
+              <text x="380" y="84" fill="var(--ok)" font-size="9" text-anchor="middle">not touched by canvas edits</text>
+
+              <line x1="380" y1="100" x2="380" y2="140" stroke="var(--line-strong)"/>
+              <path d="M380 140 L376 132 L384 132 Z" fill="var(--line-strong)"/>
+
+              <rect x="250" y="140" width="260" height="88" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="pages&#10;One descriptor per page&#10;Navigation fields and revision"/>
+              <text x="380" y="166" fill="var(--fg-strong)" font-size="11" text-anchor="middle">pages</text>
+              <text x="380" y="185" fill="var(--fg-muted)" font-size="9" text-anchor="middle">name · sortIndex · isAttack</text>
+              <text x="380" y="202" fill="var(--fg-muted)" font-size="9" text-anchor="middle">revision · by_strategyId</text>
+
+              <line x1="380" y1="228" x2="380" y2="274" stroke="var(--accent)"/>
+              <path d="M380 274 L376 266 L384 266 Z" fill="var(--accent)"/>
+
+              <rect x="24" y="274" width="158" height="86" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="pageContents&#10;One row per page&#10;Settings and settings revision"/>
+              <text x="103" y="300" fill="var(--fg-strong)" font-size="11" text-anchor="middle">pageContents</text>
+              <text x="103" y="320" fill="var(--fg-muted)" font-size="9" text-anchor="middle">settings · revision</text>
+              <text x="103" y="338" fill="var(--fg-muted)" font-size="9" text-anchor="middle">by_pageId</text>
+
+              <rect x="208" y="274" width="158" height="86" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="elements&#10;Existing rows and by_pageId index remain&#10;Revision is per entity"/>
+              <text x="287" y="300" fill="var(--fg-strong)" font-size="11" text-anchor="middle">elements</text>
+              <text x="287" y="320" fill="var(--fg-muted)" font-size="9" text-anchor="middle">payload · revision</text>
+              <text x="287" y="338" fill="var(--fg-muted)" font-size="9" text-anchor="middle">by_pageId</text>
+
+              <rect x="392" y="274" width="158" height="86" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="lineups&#10;Existing rows and by_pageId index remain&#10;Revision is per lineup group"/>
+              <text x="471" y="300" fill="var(--fg-strong)" font-size="11" text-anchor="middle">lineups</text>
+              <text x="471" y="320" fill="var(--fg-muted)" font-size="9" text-anchor="middle">payload · revision</text>
+              <text x="471" y="338" fill="var(--fg-muted)" font-size="9" text-anchor="middle">by_pageId</text>
+
+              <rect x="576" y="274" width="158" height="86" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="imageAssets&#10;Existing strategy-owned assets remain&#10;Page query fetches only referenced IDs"/>
+              <text x="655" y="300" fill="var(--fg-strong)" font-size="11" text-anchor="middle">imageAssets</text>
+              <text x="655" y="320" fill="var(--fg-muted)" font-size="9" text-anchor="middle">status · URL data</text>
+              <text x="655" y="338" fill="var(--fg-muted)" font-size="9" text-anchor="middle">referenced IDs only</text>
+
+              <line x1="332" y1="228" x2="103" y2="274" stroke="var(--accent)"/>
+              <line x1="364" y1="228" x2="287" y2="274" stroke="var(--accent)"/>
+              <line x1="396" y1="228" x2="471" y2="274" stroke="var(--accent)"/>
+              <line x1="428" y1="228" x2="655" y2="274" stroke="var(--accent)"/>
+
+              <rect x="100" y="410" width="224" height="62" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="operationEvents&#10;Keeps op idempotency and ack or reject evidence"/>
+              <text x="212" y="436" fill="var(--fg-strong)" font-size="10" text-anchor="middle">operationEvents</text>
+              <text x="212" y="454" fill="var(--fg-muted)" font-size="9" text-anchor="middle">opId · clientId · appliedRevision</text>
+
+              <rect x="436" y="410" width="224" height="62" fill="var(--bg-raised)" stroke="var(--warn)" data-tip="strategyActivity&#10;Optional later table for library recency&#10;Never read by editor queries"/>
+              <text x="548" y="436" fill="var(--fg-strong)" font-size="10" text-anchor="middle">strategyActivity · optional</text>
+              <text x="548" y="454" fill="var(--warn)" font-size="9" text-anchor="middle">library only · measure first</text>
+            </svg>
+          </div>
+          <p class="source">Source: proposed model over the current schema in <a href="../../convex/schema.ts">convex/schema.ts</a>. Existing entity, asset, and event rows stay recognizable.</p>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Table</th><th>Keep</th><th>Change</th><th>Revision meaning</th></tr></thead>
+              <tbody>
+                <tr><td><code>strategies</code></td><td>Identity, ownership, folder, name, map, theme</td><td>Replace global content <code>sequence</code> with metadata or structure revision</td><td>Only strategy metadata and page structure changed</td></tr>
+                <tr><td><code>pages</code></td><td>ID, strategy ID, name, order, side</td><td>Move canvas <code>settings</code> out</td><td>This page descriptor changed</td></tr>
+                <tr><td><code>pageContents</code></td><td>New one-to-one row</td><td>Own page settings independently</td><td>Settings changed</td></tr>
+                <tr><td><code>elements</code></td><td>Current payload, tombstone, revision, <code>by_pageId</code></td><td>No structural change required</td><td>This element changed</td></tr>
+                <tr><td><code>lineups</code></td><td>Current payload, tombstone, revision, <code>by_pageId</code></td><td>No structural change required</td><td>This lineup changed</td></tr>
+                <tr><td><code>imageAssets</code></td><td>Current ownership and upload fields</td><td>Fetch by referenced ID for the active page</td><td>Asset status remains its own state</td></tr>
+                <tr><td><code>operationEvents</code></td><td>Idempotency and audit fields</td><td>Global expected sequence becomes entity or metadata revision</td><td>The acknowledged entity version</td></tr>
+                <tr><td><code>strategyActivity</code></td><td>Nothing yet</td><td>Optional small library-only row</td><td>Last content activity, if product needs it</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: proposed schema responsibilities. The server is still pre-release clay, so this can replace the deployed shape without migrating public cloud data.</p>
+
+          <h3 id="why-no-page-sequence">Why the first version should not add a page sequence</h3>
+          <p>A page-level sequence looks like the natural replacement for the strategy sequence, but the reactive query already watches the active page's rows. Element and lineup revisions already detect conflicting edits to the same entity. Writing one page sequence after every drag would create a new hot row for everyone editing that page.</p>
+
+          <p>The first version should use per-entity revisions and Convex query reactivity. Add a page sequence later only if a concrete recovery case cannot be expressed with query updates, operation acknowledgements, and entity revisions.</p>
+        </section>
+
+        <section>
+          <h2 id="write-contract">The mutation contract controls invalidation</h2>
+
+          <p>The query split works only if mutations respect it. A normal content edit must stop patching the strategy row. Otherwise every active-page mutation still wakes the shell and any library query that reads the strategy.</p>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Operation</th><th>Rows written</th><th>Conflict check</th><th>Shell</th><th>Page A</th><th>Page B</th></tr></thead>
+              <tbody>
+                <tr><td>Move element on A</td><td>Element A, event</td><td>Element revision</td><td class="good">Stable</td><td class="warn">Reruns</td><td class="good">Stable</td></tr>
+                <tr><td>Edit lineup on B</td><td>Lineup B, event</td><td>Lineup revision</td><td class="good">Stable</td><td class="good">Stable</td><td class="warn">Reruns</td></tr>
+                <tr><td>Change settings on A</td><td>PageContents A, event</td><td>Settings revision</td><td class="good">Stable</td><td class="warn">Reruns</td><td class="good">Stable</td></tr>
+                <tr><td>Move element A to B</td><td>Element changes <code>pageId</code>, event</td><td>Element revision</td><td class="good">Stable</td><td class="warn">Reruns</td><td class="warn">Reruns</td></tr>
+                <tr><td>Rename page A</td><td>Page descriptor A, event</td><td>Page revision</td><td class="warn">Reruns</td><td class="warn">Reruns</td><td class="good">Stable</td></tr>
+                <tr><td>Reorder pages</td><td>Page descriptors, strategy metadata revision</td><td>Structure revision</td><td class="warn">Reruns</td><td class="good">Content stable</td><td class="good">Content stable</td></tr>
+                <tr><td>Rename strategy</td><td>Strategy, event</td><td>Metadata revision</td><td class="warn">Reruns</td><td class="warn">Auth row read may rerun</td><td class="warn">Auth row read may rerun</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: proposed write matrix. "Stable" means the write does not intersect that query's intended database read set.</p>
+
+          <h3 id="conflict-rules">Conflict rules become easier to explain</h3>
+          <ul>
+            <li>Two users edit different elements. Both operations land because neither depends on a global content sequence.</li>
+            <li>Two users edit the same element revision. One lands and the other receives a revision mismatch with the current payload.</li>
+            <li>Two users edit different pages. Each active-page subscription receives only its page's result.</li>
+            <li>A page moves or disappears while someone edits it. The shell update changes page membership, and the client flushes or surfaces the pending operation before leaving that page.</li>
+          </ul>
+
+          <p>Convex still provides atomic mutations and retries internal optimistic concurrency conflicts. Icarus entity revisions solve a different problem: they detect user-level edits based on stale content and let the app explain the conflict instead of silently choosing a winner.</p>
+          <p class="source">Source: <a href="https://docs.convex.dev/database/advanced/occ">Convex OCC and atomicity</a> and current expected revision handling in <a href="../../convex/ops.ts">convex/ops.ts</a>.</p>
+        </section>
+
+        <section>
+          <h2 id="client-contract">The client can reuse the work that already exists</h2>
+
+          <p>The active-page projection is not throwaway code. It already groups intent by page and entity, overlays queued and in-flight changes over the remote base, and compares entity revisions. The server split should feed that controller a smaller remote base.</p>
+
+          <div class="diagram" role="img" aria-label="Page switching cancels one page subscription, starts another, and preserves queued local intent">
+            <p class="diagram-title">Page switch · one live page subscription at a time</p>
+            <svg viewBox="0 0 760 250" aria-hidden="true">
+              <line x1="42" y1="76" x2="718" y2="76" stroke="var(--line-strong)"/>
+              <rect x="42" y="54" width="124" height="44" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="Page A is active&#10;Local edits render immediately and queue behind them"/>
+              <text x="104" y="80" fill="var(--fg-strong)" font-size="10" text-anchor="middle">EDIT PAGE A</text>
+              <rect x="200" y="54" width="124" height="44" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Flush boundary&#10;Attempt to send Page A intent before changing context"/>
+              <text x="262" y="80" fill="var(--fg)" font-size="10" text-anchor="middle">FLUSH A OPS</text>
+              <rect x="358" y="54" width="124" height="44" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Subscription boundary&#10;Cancel Page A and subscribe to Page B"/>
+              <text x="420" y="73" fill="var(--fg)" font-size="10" text-anchor="middle">A → B</text>
+              <text x="420" y="88" fill="var(--fg-muted)" font-size="8" text-anchor="middle">swap subscription</text>
+              <rect x="516" y="54" width="202" height="44" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="Page B snapshot&#10;Hydrate the remote base, then layer any durable local intent"/>
+              <text x="617" y="73" fill="var(--fg-strong)" font-size="10" text-anchor="middle">HYDRATE PAGE B</text>
+              <text x="617" y="88" fill="var(--fg-muted)" font-size="8" text-anchor="middle">remote base + local overlay</text>
+
+              <line x1="104" y1="116" x2="104" y2="185" stroke="var(--accent)"/>
+              <line x1="617" y1="116" x2="617" y2="185" stroke="var(--accent)"/>
+              <rect x="72" y="150" width="578" height="70" fill="var(--bg-tint)" stroke="var(--line-strong)" data-tip="Durable outbox&#10;Pending intent survives page switches, restarts, and loss of connectivity"/>
+              <text x="361" y="177" fill="var(--fg-strong)" font-size="10" text-anchor="middle">DURABLE OUTBOX PERSISTS ACROSS THE SWITCH</text>
+              <text x="361" y="197" fill="var(--fg-muted)" font-size="9" text-anchor="middle">queuedByEntityKey · clientId · attempts · last error</text>
+            </svg>
+          </div>
+          <p class="source">Source: existing page-scoped entity keys and overlay logic in <a href="../../lib/providers/collab/active_page_live_sync_provider.dart" data-artifact>active_page_live_sync_provider.dart</a> and <a href="../../lib/providers/collab/strategy_op_queue_provider.dart" data-artifact>strategy_op_queue_provider.dart</a>.</p>
+
+          <p>The durable outbox is a client boundary, but it completes the server design. A mutation acknowledgement proves the op landed. A query update supplies the new remote base. The outbox must preserve an unacknowledged op until one of those outcomes is visible to the user.</p>
+        </section>
+
+        <section>
+          <h2 id="implementation-cut">The smallest implementation cut</h2>
+
+          <ol>
+            <li>Add <code>pageContents</code> and reshape the empty Convex deployment. Keep current payload validators and generated client models aligned.</li>
+            <li>Add <code>strategy:getShell</code>, <code>page:getSnapshot</code>, and a one-shot <code>strategy:getFullSnapshot</code>. The page query must use <code>by_pageId</code> for elements and lineups.</li>
+            <li>Replace <code>watchSnapshot</code> with one shell subscription and one active-page subscription. Feed both into the existing projected-page logic.</li>
+            <li>Stop calling <code>incrementSequence</code> for element, lineup, and page-content operations. Keep metadata and structure revisions where stale writes need detection.</li>
+            <li>Persist the operation queue before calling the beta reliable. Remove the path that discards an op after eight failed attempts.</li>
+            <li>Measure query rows, bytes, reruns, and mutation conflicts. Add a library activity table only if users need content-based recency and the measurements support it.</li>
+          </ol>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Proof</th><th>Setup</th><th>Expected result</th></tr></thead>
+              <tbody>
+                <tr><td>Cross-page isolation</td><td>Subscribe device A to Page A, edit Page B from device B</td><td>Page A query does not update</td></tr>
+                <tr><td>Same-page realtime</td><td>Both devices open Page A, move different elements</td><td>Both operations land and both clients converge</td></tr>
+                <tr><td>Same-entity conflict</td><td>Both devices patch one element from the same revision</td><td>One reject is surfaced, no silent overwrite</td></tr>
+                <tr><td>Page switch</td><td>Edit offline on A, switch to B, restart app</td><td>A's pending op remains visible and retryable</td></tr>
+                <tr><td>Round-trip</td><td>Export full strategy, import into a clean local library</td><td>Pages, settings, entities, lineups, and media match</td></tr>
+                <tr><td>Query budget</td><td>Record Convex metrics for one element drag</td><td>Rows and bytes scale with active page, not strategy page count</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: proposed acceptance tests. Performance rows need live Convex metrics before a numeric target is set.</p>
+        </section>
+
+        <section>
+          <h2 id="non-goals">What this design refuses to add</h2>
+          <ul>
+            <li>No tunneled peer-to-peer transport. Convex remains the durable library and collaboration authority.</li>
+            <li>No custom delta log for normal synchronization. Convex reactive queries and entity revisions already provide the needed mechanism.</li>
+            <li>No subscription per inactive page. The editor keeps one page content subscription and changes its argument on page switch.</li>
+            <li>No global content sequence. Different entities and pages should not conflict merely because their edits happened near each other.</li>
+            <li>No claim that the refactor lowers cost by a specific amount until live query metrics exist.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 id="appendix">Evidence and assumptions</h2>
+          <details class="appendix">
+            <summary>Current dependency evidence · repository paths and commands</summary>
+            <pre><code># Current whole-snapshot reads
+nl -ba convex/snapshot.ts | sed -n '12,110p'
+
+# Current parent sequence write
+nl -ba convex/ops.ts | sed -n '17,29p'
+rg -n 'incrementSequence' convex/ops.ts
+
+# Current Flutter subscription
+nl -ba lib/collab/convex_strategy_repository.dart | sed -n '194,207p'
+nl -ba lib/providers/collab/remote_strategy_snapshot_provider.dart | sed -n '95,117p'
+
+# Existing page indexes and entity revisions
+nl -ba convex/schema.ts | sed -n '37,99p'</code></pre>
+            <p class="source">Verified against commit 277fc14 in worktree t3code-84485e64 on 2026-08-24.</p>
+          </details>
+
+          <details class="appendix">
+            <summary>Assumptions · decisions that need product confirmation</summary>
+            <ul>
+              <li>The active editor needs realtime content for one page at a time.</li>
+              <li>Page name, order, and side belong in the strategy shell because the page list displays them.</li>
+              <li>Canvas settings can move into <code>pageContents</code> without changing the exported <code>.ica</code> shape.</li>
+              <li>Library sorting does not need to change on every drag for the first beta. If it does, use a library-only activity record and keep it out of editor queries.</li>
+              <li>The current cloud deployment contains no public user data and can be wiped for the schema change.</li>
+            </ul>
+          </details>
+        </section>
+
+        <p class="colophon">Generated 2026-08-24 · Codex with Dara · inputs: commit 277fc14, current Convex schema, snapshot query, mutation path, Flutter sync providers, official Convex reactive query and OCC documentation · revision v1</p>
+      </article>
+    </main>
+  </div>
+
+  <script>
+    const title = document.querySelector("h1");
+    const status = document.querySelector(".kicker");
+    document.title = title?.textContent || "Document";
+    document.getElementById("rail-title").textContent = title?.textContent || "Document";
+    document.getElementById("rail-status").textContent = status?.textContent || "";
+
+    const themeButton = document.getElementById("toggle-theme");
+    const paintTheme = () => {
+      const light = document.documentElement.dataset.theme === "light";
+      themeButton.textContent = light ? "DARK" : "LIGHT";
+      themeButton.setAttribute("aria-label", `Switch to ${light ? "dark" : "light"} theme`);
+    };
+    paintTheme();
+    themeButton.addEventListener("click", () => {
+      const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("blueprint-theme", next); } catch {}
+      paintTheme();
+    });
+
+    /* The rail earns its width: mirror the headline metrics so key figures
+       stay visible while scrolling, and drop the outline when the document
+       is too short for it to help. */
+    const railMetrics = document.getElementById("rail-metrics");
+    const firstMetrics = [...document.querySelectorAll("#document .metric-line .metric")].slice(0, 4);
+    firstMetrics.forEach((metric) => {
+      const value = metric.querySelector(".metric-value");
+      const label = metric.querySelector(".metric-label");
+      if (!value || !label) return;
+      const row = document.createElement("p");
+      row.className = "rail-metric";
+      const name = document.createElement("span");
+      name.textContent = label.textContent;
+      const figure = document.createElement("b");
+      figure.textContent = value.textContent;
+      for (const verdict of ["good", "warn", "bad"]) {
+        if (value.classList.contains(verdict)) figure.classList.add(verdict);
+      }
+      row.append(name, figure);
+      railMetrics.appendChild(row);
+    });
+    document.getElementById("rail-metrics-block").hidden = !railMetrics.childElementCount;
+
+    /* Artifacts: every file the document references, collected into rail
+       download links. Links and images are picked up automatically by
+       extension; force-include anything else with data-artifact (empty on
+       an <a> to use its href, or data-artifact="url" on any element).
+       Override the display name with data-artifact-name. */
+    const railArtifacts = document.getElementById("rail-artifacts");
+    const ARTIFACT_EXT = /\.(zip|tar|tar\.gz|tgz|gz|7z|csv|tsv|json|jsonl|ndjson|parquet|xlsx|pdf|png|jpe?g|gif|svg|webp|mp4|txt|log|sql|patch|diff|ipynb|js|ts|sh|py|ya?ml|toml|md)(?=$|[?#])/i;
+    const seenArtifacts = new Set();
+    document.querySelectorAll("#document a[href], #document img[src], #document [data-artifact]").forEach((el) => {
+      const url = el.dataset?.artifact || el.getAttribute("href") || el.getAttribute("src") || "";
+      if (!url || url.startsWith("#") || url.startsWith("data:") || url.startsWith("javascript:")) return;
+      if (!el.hasAttribute("data-artifact") && !ARTIFACT_EXT.test(url)) return;
+      if (seenArtifacts.has(url)) return;
+      seenArtifacts.add(url);
+      const name = el.dataset.artifactName
+        || decodeURIComponent(url.split(/[?#]/)[0].split("/").pop() || url);
+      const ext = (name.match(/\.([a-z0-9]+)$/i)?.[1] || "file").toUpperCase();
+      const row = document.createElement("a");
+      row.className = "rail-artifact";
+      row.href = url;
+      row.setAttribute("download", "");
+      const tag = document.createElement("span");
+      tag.className = "ext";
+      tag.textContent = ext;
+      const label = document.createElement("span");
+      label.className = "name";
+      label.textContent = name;
+      row.append(tag, label);
+      railArtifacts.appendChild(row);
+    });
+    document.getElementById("rail-artifacts-block").hidden = !railArtifacts.childElementCount;
+
+    const outline = document.getElementById("outline-list");
+    const headings = [...document.querySelectorAll("#document h2[id], #document h3[id]")];
+    if (headings.length < 3) document.getElementById("outline-block").hidden = true;
+    const links = headings.map((heading) => {
+      const link = document.createElement("a");
+      link.className = "outline-link";
+      link.href = `#${heading.id}`;
+      link.textContent = heading.textContent;
+      link.dataset.level = heading.tagName.slice(1);
+      outline.appendChild(link);
+
+      /* hover anchor: click navigates and copies the absolute link */
+      const anchor = document.createElement("a");
+      anchor.className = "anchor-link";
+      anchor.href = `#${heading.id}`;
+      anchor.textContent = "§";
+      anchor.setAttribute("aria-label", `Copy link to ${heading.textContent}`);
+      anchor.addEventListener("click", () => {
+        const url = `${location.origin}${location.pathname}#${heading.id}`;
+        try { navigator.clipboard.writeText(url); } catch {}
+      });
+      heading.appendChild(anchor);
+      return link;
+    });
+
+    /* Chart tooltips: any [data-tip] inside a .diagram shows its text in a
+       fixed tooltip that follows the pointer. Newlines in data-tip render
+       as line breaks (white-space: pre-line). */
+    const chartTip = document.getElementById("chart-tip");
+    /* Line indicator: a hit rect carrying data-guide (the series' y at that
+       interval, in viewBox units; space-separate several ys for several
+       series) gets a dashed vertical guide plus a dot per y on hover.
+       data-guide-fill="var(--danger)" colors the dots; default accent. */
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const hideGuides = () => document.querySelectorAll(".hover-guide").forEach((g) => g.setAttribute("visibility", "hidden"));
+    const showGuide = (mark) => {
+      const svg = mark.ownerSVGElement;
+      if (!svg || mark.dataset.guide === undefined || mark.tagName !== "rect") return;
+      let guide = svg.querySelector(".hover-guide");
+      if (!guide) {
+        guide = document.createElementNS(SVG_NS, "g");
+        guide.setAttribute("class", "hover-guide");
+        guide.setAttribute("pointer-events", "none");
+        guide.appendChild(document.createElementNS(SVG_NS, "line"));
+        svg.appendChild(guide);
+      }
+      const x = mark.dataset.guideX !== undefined
+        ? +mark.dataset.guideX
+        : +mark.getAttribute("x") + +mark.getAttribute("width") / 2;
+      const line = guide.querySelector("line");
+      line.setAttribute("x1", x);
+      line.setAttribute("x2", x);
+      line.setAttribute("y1", mark.getAttribute("y"));
+      line.setAttribute("y2", +mark.getAttribute("y") + +mark.getAttribute("height"));
+      guide.querySelectorAll("circle").forEach((dot) => dot.remove());
+      mark.dataset.guide.trim().split(/\s+/).filter(Boolean).forEach((cy) => {
+        const dot = document.createElementNS(SVG_NS, "circle");
+        dot.setAttribute("cx", x);
+        dot.setAttribute("cy", cy);
+        dot.setAttribute("r", 3);
+        if (mark.dataset.guideFill) dot.style.fill = mark.dataset.guideFill;
+        guide.appendChild(dot);
+      });
+      guide.setAttribute("visibility", "visible");
+    };
+    const moveTip = (event) => {
+      const mark = event.target.closest("[data-tip]");
+      hideGuides();
+      if (!mark) { chartTip.style.visibility = "hidden"; return; }
+      chartTip.textContent = mark.dataset.tip;
+      chartTip.style.visibility = "visible";
+      const x = Math.min(event.clientX + 14, innerWidth - chartTip.offsetWidth - 8);
+      const y = Math.min(event.clientY + 14, innerHeight - chartTip.offsetHeight - 8);
+      chartTip.style.left = `${x}px`;
+      chartTip.style.top = `${y}px`;
+      showGuide(mark);
+    };
+    document.querySelectorAll(".diagram").forEach((diagram) => {
+      diagram.addEventListener("mousemove", moveTip);
+      diagram.addEventListener("mouseleave", () => { chartTip.style.visibility = "hidden"; hideGuides(); });
+    });
+
+    const progress = document.querySelector(".reading-progress-fill");
+    const updateProgress = () => {
+      const max = document.documentElement.scrollHeight - innerHeight;
+      const ratio = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+      progress.style.transform = `scaleY(${ratio})`;
+    };
+
+    const activateOutline = () => {
+      if (!headings.length) return;
+      const current = headings.reduce((active, heading) =>
+        heading.getBoundingClientRect().top <= 120 ? heading : active, headings[0]);
+      links.forEach((link) => link.classList.toggle("active", link.hash === `#${current.id}`));
+    };
+
+    const updateScrollState = () => {
+      updateProgress();
+      activateOutline();
+    };
+    addEventListener("scroll", updateScrollState, { passive: true });
+    addEventListener("resize", updateProgress, { passive: true });
+    updateScrollState();
+
+    document.getElementById("copy-link").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      try {
+        await navigator.clipboard.writeText(location.href);
+        button.textContent = "COPIED";
+      } catch {
+        button.textContent = "COPY FAILED";
+      }
+      setTimeout(() => { button.textContent = "COPY LINK"; }, 1400);
+    });
+  </script>
+</body>
+</html>

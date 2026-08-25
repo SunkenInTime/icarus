@@ -17,6 +17,7 @@ export const opKindValidator = v.union(
 export const entityTypeValidator = v.union(
   v.literal("strategy"),
   v.literal("page"),
+  v.literal("pageContent"),
   v.literal("element"),
   v.literal("lineup"),
 );
@@ -37,5 +38,4 @@ export const strategyOpValidator = v.object({
   ),
   sortIndex: v.optional(v.number()),
   expectedRevision: v.optional(v.number()),
-  expectedSequence: v.optional(v.number()),
 });

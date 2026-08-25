@@ -686,6 +686,10 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   Future<void> signOut() async {
+    // Invalidate any setup that is currently awaiting a Convex auth handle
+    // before the Supabase auth-state event has a chance to arrive. Otherwise a
+    // stale setup can resume during sign-out and surface a false auth incident.
+    _advanceAuthGeneration();
     state = state.copyWith(
       isLoading: true,
       isConvexUserReady: false,

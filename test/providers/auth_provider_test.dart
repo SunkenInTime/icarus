@@ -234,6 +234,7 @@ void main() {
     final state = container.read(authProvider);
     expect(state.isAuthenticated, isFalse);
     expect(state.isConvexUserReady, isFalse);
+    expect(state.errorMessage, isNull);
     expect(state.convexAuthStatus, ConvexAuthStatus.signedOut);
   });
 

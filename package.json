@@ -3,8 +3,14 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "test:convex": "vitest run --config vitest.config.ts"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@edge-runtime/vm": "^3.2.0",
+    "@types/bun": "latest",
+    "convex-test": "^0.0.41",
+    "vitest": "^1.6.1"
   },
   "peerDependencies": {
     "typescript": "^5"

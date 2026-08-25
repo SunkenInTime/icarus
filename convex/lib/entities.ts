@@ -88,5 +88,12 @@ export function sortByNumberField<T extends Record<string, unknown>>(
   input: T[],
   field: keyof T,
 ): T[] {
-  return [...input].sort((a, b) => Number(a[field] ?? 0) - Number(b[field] ?? 0));
+  return [...input].sort((a, b) => {
+    const fieldDifference = Number(a[field] ?? 0) - Number(b[field] ?? 0);
+    if (fieldDifference !== 0) return fieldDifference;
+
+    const leftPublicId = typeof a.publicId === "string" ? a.publicId : "";
+    const rightPublicId = typeof b.publicId === "string" ? b.publicId : "";
+    return leftPublicId.localeCompare(rightPublicId);
+  });
 }

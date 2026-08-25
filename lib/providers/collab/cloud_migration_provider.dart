@@ -99,6 +99,7 @@ class CloudMigrationNotifier extends Notifier<bool> {
             'sortIndex': page.sortIndex,
             'isAttack': page.isAttack,
             'settings': page.settings.toJson(),
+            'expectedRevision': i - 1,
           });
         } catch (error, stackTrace) {
           await _maybeReportCloudUnauthenticated(
