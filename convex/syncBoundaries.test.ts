@@ -23,6 +23,7 @@ const getFullSnapshot = makeFunctionReference<"query">(
 );
 const addPage = makeFunctionReference<"mutation">("pages:add");
 const deletePage = makeFunctionReference<"mutation">("pages:delete");
+const reorderPages = makeFunctionReference<"mutation">("pages:reorder");
 
 const identity = {
   issuer: "https://sync-boundaries.test",
@@ -834,6 +835,40 @@ describe("record-scoped write contract", () => {
       isAttack: true,
     })) as { revision: number; reused?: boolean };
     expect(replayed).toMatchObject({ revision: 2, reused: true });
+  });
+
+  test("direct page reorder rejects duplicate page ids", async () => {
+    const { owner } = await createHarness();
+    await createBaseStrategy(owner);
+    await owner.mutation(addPage, {
+      strategyPublicId,
+      expectedRevision: 0,
+      pagePublicId: pageB,
+      name: "B inactive",
+      sortIndex: 1,
+      isAttack: false,
+      settings: settingsB,
+    });
+
+    await expect(
+      owner.mutation(reorderPages, {
+        strategyPublicId,
+        orderedPagePublicIds: [pageA, pageA],
+        expectedRevision: 1,
+      }),
+    ).rejects.toThrow("Page order must include each page exactly once");
+
+    const shell = (await owner.query(getShell, {
+      strategyPublicId,
+    })) as {
+      header: { revision: number };
+      pages: Array<{ publicId: string; sortIndex: number; revision: number }>;
+    };
+    expect(shell.header.revision).toBe(1);
+    expect(shell.pages).toMatchObject([
+      { publicId: pageA, sortIndex: 0, revision: 1 },
+      { publicId: pageB, sortIndex: 1, revision: 1 },
+    ]);
   });
 });
 

@@ -233,6 +233,9 @@ export const reorder = mutation({
     if (pages.length !== args.orderedPagePublicIds.length) {
       throw invalidOpError("Page count mismatch");
     }
+    if (new Set(args.orderedPagePublicIds).size !== pages.length) {
+      throw invalidOpError("Page order must include each page exactly once");
+    }
     const pageByPublicId = new Map(pages.map((page) => [page.publicId, page]));
     const ordered = args.orderedPagePublicIds.map((publicId) => {
       const page = pageByPublicId.get(publicId);
