@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "evaluation": "convex_dart_client_contract_gate",
+  "baseCommit": "e59402eedee9035cf14693fbd26fe8b097d6abfa",
+  "adapterCandidate": "dartvex",
+  "sdkVersion": "0.2.0",
+  "codegenVersion": "0.2.0",
+  "platform": "macos-arm64",
+  "dartVersion": "3.11.0 (stable) (Mon Feb 9 00:38:07 2026 -0800) on \"macos_arm64\"",
+  "fixture": "folders:listForParent",
+  "baselineCompiles": true,
+  "checks": [
+    {
+      "id": "function_rename",
+      "required": "old_generated_method_fails_analysis",
+      "status": "pass",
+      "generationExitCode": 0,
+      "analysisExitCode": 3
+    },
+    {
+      "id": "argument_rename",
+      "required": "old_named_argument_fails_analysis",
+      "status": "pass",
+      "generationExitCode": 0,
+      "analysisExitCode": 3
+    },
+    {
+      "id": "result_field_rename",
+      "required": "old_result_field_fails_analysis",
+      "status": "fail",
+      "analysisExitCode": 0,
+      "generatedReturnType": "dynamic",
+      "detail": "The unvalidated Convex result is absent from function-spec and the old dynamic field access still analyzes."
+    },
+    {
+      "id": "unsupported_validator",
+      "required": "generation_stops_with_function_and_field_path",
+      "status": "fail",
+      "generationExitCode": 0,
+      "generatedFieldType": "dynamic",
+      "diagnostics": [
+        "Generated 4 files in <gauntlet-root>/lib/_probe_generated",
+        "Warning: folders.ts:listForParent → returns → field \"futureField\": Unknown Convex type \"future-validator\"; generated as dynamic."
+      ]
+    },
+    {
+      "id": "deterministic_regeneration",
+      "required": "second_generation_has_no_diff",
+      "status": "pass",
+      "changedFiles": []
+    }
+  ],
+  "gatePassed": false,
+  "decision": "keep_convex_flutter",
+  "runtimeGauntlet": {
+    "status": "skipped",
+    "reason": "compile_time_contract_gate_failed",
+    "correctnessSeedsRun": 0,
+    "operationsRun": 0,
+    "pairedProfileRuns": 0,
+    "p95RemoteConvergenceMs": null,
+    "peakMemoryBytes": null
+  }
+}

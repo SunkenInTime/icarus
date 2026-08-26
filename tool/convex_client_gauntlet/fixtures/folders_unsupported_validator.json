@@ -1,0 +1,20 @@
+{
+  "url": "https://your-deployment.convex.cloud",
+  "functions": [
+    {
+      "functionType": "Query",
+      "args": { "type": "object", "value": {} },
+      "returns": {
+        "type": "object",
+        "value": {
+          "futureField": {
+            "fieldType": { "type": "future-validator" },
+            "optional": false
+          }
+        }
+      },
+      "identifier": "folders.ts:listForParent",
+      "visibility": { "kind": "public" }
+    }
+  ]
+}

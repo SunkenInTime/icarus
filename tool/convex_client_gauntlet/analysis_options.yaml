@@ -1,0 +1,4 @@
+analyzer:
+  exclude:
+    - lib/_probe_caller.dart
+    - lib/_probe_generated/**
