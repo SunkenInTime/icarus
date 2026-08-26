@@ -2,11 +2,22 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/in_app_debug_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUpAll(() {
+    appProviderContainer = ProviderContainer();
+  });
+
+  tearDownAll(() {
+    appProviderContainer.dispose();
+  });
 
   late FakeSupabaseApi supabaseApi;
   late FakeConvexApi convexApi;
@@ -14,6 +25,7 @@ void main() {
   setUp(() {
     supabaseApi = FakeSupabaseApi();
     convexApi = FakeConvexApi();
+    appProviderContainer.read(inAppDebugProvider.notifier).clearLogs();
     AuthProvider.debugSupabaseApi = supabaseApi;
     AuthProvider.debugConvexApi = convexApi;
     AuthProvider.debugConvexAuthReadyTimeout = const Duration(milliseconds: 50);
@@ -125,6 +137,49 @@ void main() {
     final state = container.read(authProvider);
     expect(state.isAuthenticated, isTrue);
     expect(state.convexAuthStatus, ConvexAuthStatus.ready);
+  });
+
+  test('callback failure removes credentials from UI and diagnostics',
+      () async {
+    final callback = Uri.parse(
+      'icarus://auth/callback?code=callback-code-secret'
+      '#access_token=access-secret&refresh_token=refresh-secret',
+    );
+    supabaseApi.sessionFromUrlError = Exception(
+      'Provider rejected $callback '
+      '{"code_verifier":"verifier-secret"} '
+      'access_token%3Dencoded-secret%26token_type%3Dbearer',
+    );
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+
+    container.read(authProvider);
+    final handled =
+        await container.read(authProvider.notifier).handleAuthCallbackUri(
+              callback,
+              source: 'test',
+            );
+
+    expect(handled, isTrue);
+    expect(
+      container.read(authProvider).errorMessage,
+      'Failed to complete login. Please try again.',
+    );
+
+    final report = AppErrorReporter.buildClipboardReport(
+      appProviderContainer.read(inAppDebugProvider),
+    );
+    expect(report, contains('Failed auth callback [test]'));
+    expect(report, contains('redacted'));
+    for (final credential in [
+      'callback-code-secret',
+      'access-secret',
+      'refresh-secret',
+      'verifier-secret',
+      'encoded-secret',
+    ]) {
+      expect(report, isNot(contains(credential)));
+    }
   });
 
   test(
@@ -453,6 +508,7 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   bool emitInitialSessionOnListen = false;
   bool emitSignedInEventOnPasswordSignIn = false;
   Session? sessionFromUrlSession;
+  Object? sessionFromUrlError;
   int getSessionFromUrlCalls = 0;
   final List<MultiStreamController<AuthState>> _controllers =
       <MultiStreamController<AuthState>>[];
@@ -476,6 +532,9 @@ class FakeSupabaseApi implements AuthProviderSupabaseApi {
   @override
   Future<void> getSessionFromUrl(Uri uri) async {
     getSessionFromUrlCalls += 1;
+    if (sessionFromUrlError case final Object error?) {
+      throw error;
+    }
     if (sessionFromUrlSession case final Session session?) {
       currentSession = session;
       for (final controller in _controllers) {
