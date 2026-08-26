@@ -455,7 +455,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           final retryRevision =
               record?.latestServerRevision ?? rejectedOp.expectedRevision;
           if (retryRevision == null) continue;
-          final rebasedKind = rejectedOp.kind == StrategyOpKind.add &&
+          final isTombstoneRestore = rejectedOp.kind == StrategyOpKind.add &&
+              (rejectedOp.entityType == StrategyOpEntityType.element ||
+                  rejectedOp.entityType == StrategyOpEntityType.lineup) &&
+              (record?.lastError == 'missing_expected_revision' ||
+                  record?.lastError == 'revision_mismatch');
+          final rebasedKind = !isTombstoneRestore &&
+                  rejectedOp.kind == StrategyOpKind.add &&
                   (rejectedOp.entityType == StrategyOpEntityType.element ||
                       rejectedOp.entityType == StrategyOpEntityType.lineup)
               ? StrategyOpKind.patch

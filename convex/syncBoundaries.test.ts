@@ -725,6 +725,46 @@ describe("record-scoped write contract", () => {
       { status: "reject", reason: "revision_mismatch", latestRevision: 2 },
     ]);
 
+    const misclassifiedPatch = await applyOps(owner, "undo-restore-patch", [
+      {
+        opId: "restore-element-patch",
+        kind: "patch",
+        entityType: "element",
+        entityPublicId: elementId,
+        pagePublicId: pageA,
+        payload: textPayload("before delete"),
+        sortIndex: 0,
+        expectedRevision: 2,
+      },
+      {
+        opId: "restore-lineup-patch",
+        kind: "patch",
+        entityType: "lineup",
+        entityPublicId: lineupId,
+        pagePublicId: pageA,
+        payload: lineupPayload("before-delete-asset"),
+        sortIndex: 0,
+        expectedRevision: 2,
+      },
+    ]);
+    expect(misclassifiedPatch.results).toMatchObject([
+      { status: "ack", reason: "noop", appliedRevision: 2 },
+      { status: "ack", reason: "noop", appliedRevision: 2 },
+    ]);
+    const stillDeleted = (await owner.query(getPageSnapshot, {
+      strategyPublicId,
+      pagePublicId: pageA,
+    })) as {
+      elements: Array<{ publicId: string; deleted: boolean }>;
+      lineups: Array<{ publicId: string; deleted: boolean }>;
+    };
+    expect(stillDeleted.elements).toMatchObject([
+      { publicId: elementId, deleted: true },
+    ]);
+    expect(stillDeleted.lineups).toMatchObject([
+      { publicId: lineupId, deleted: true },
+    ]);
+
     const restored = await applyOps(owner, "undo-restore-current", [
       {
         opId: "restore-element-current",

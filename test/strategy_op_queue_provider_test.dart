@@ -254,6 +254,72 @@ void main() {
       expect(retried.op.expectedRevision, 1);
     });
 
+    test('explicit rejected retry preserves a tombstone restore add', () async {
+      const key = EntitySyncKey.element('page-1', 'element-1');
+      await store.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: key,
+        pending: const PendingOp(
+          op: StrategyOp(
+            opId: 'restore-op',
+            kind: StrategyOpKind.add,
+            entityType: StrategyOpEntityType.element,
+            entityPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'restore me'},
+            expectedRevision: 2,
+          ),
+          clientId: 'stable-client',
+        ),
+        status: DurableOutboxStatus.attention,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        lastError: 'revision_mismatch',
+        latestServerRevision: 3,
+      ));
+      final notifier = start();
+      await notifier.retryRejected(flushImmediately: false);
+
+      final retried = container!
+          .read(strategyOpQueueProvider)
+          .queuedByEntityKey[key]!
+          .pending
+          .op;
+      expect(retried.opId, isNot('restore-op'));
+      expect(retried.kind, StrategyOpKind.add);
+      expect(retried.expectedRevision, 3);
+    });
+
+    test('explicit rejected retry converts an active add collision to patch',
+        () async {
+      const key = EntitySyncKey.element('page-1', 'element-1');
+      await store.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: key,
+        pending: PendingOp(
+          op: elementOp(kind: StrategyOpKind.add),
+          clientId: 'stable-client',
+        ),
+        status: DurableOutboxStatus.attention,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        lastError: 'already_exists',
+        latestServerRevision: 2,
+      ));
+      final notifier = start();
+      await notifier.retryRejected(flushImmediately: false);
+
+      final retried = container!
+          .read(strategyOpQueueProvider)
+          .queuedByEntityKey[key]!
+          .pending
+          .op;
+      expect(retried.kind, StrategyOpKind.patch);
+      expect(retried.expectedRevision, 2);
+    });
+
     test('explicit rejected retry explains when no revision is available',
         () async {
       final saved = DurableOutboxRecord(
