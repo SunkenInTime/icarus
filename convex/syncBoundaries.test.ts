@@ -669,9 +669,9 @@ describe("record-scoped write contract", () => {
       },
     ]);
 
-    const restored = await applyOps(owner, "undo-restore", [
+    const missingRevision = await applyOps(owner, "undo-restore-missing", [
       {
-        opId: "restore-element",
+        opId: "restore-element-missing",
         kind: "add",
         entityType: "element",
         entityPublicId: elementId,
@@ -679,12 +679,70 @@ describe("record-scoped write contract", () => {
         payload: textPayload(restoredText),
       },
       {
-        opId: "restore-lineup",
+        opId: "restore-lineup-missing",
         kind: "add",
         entityType: "lineup",
         entityPublicId: lineupId,
         pagePublicId: pageA,
         payload: lineupPayload(restoredAsset),
+      },
+    ]);
+    expect(missingRevision.results).toMatchObject([
+      {
+        status: "reject",
+        reason: "missing_expected_revision",
+        latestRevision: 2,
+      },
+      {
+        status: "reject",
+        reason: "missing_expected_revision",
+        latestRevision: 2,
+      },
+    ]);
+
+    const staleRevision = await applyOps(owner, "undo-restore-stale", [
+      {
+        opId: "restore-element-stale",
+        kind: "add",
+        entityType: "element",
+        entityPublicId: elementId,
+        pagePublicId: pageA,
+        payload: textPayload(restoredText),
+        expectedRevision: 1,
+      },
+      {
+        opId: "restore-lineup-stale",
+        kind: "add",
+        entityType: "lineup",
+        entityPublicId: lineupId,
+        pagePublicId: pageA,
+        payload: lineupPayload(restoredAsset),
+        expectedRevision: 1,
+      },
+    ]);
+    expect(staleRevision.results).toMatchObject([
+      { status: "reject", reason: "revision_mismatch", latestRevision: 2 },
+      { status: "reject", reason: "revision_mismatch", latestRevision: 2 },
+    ]);
+
+    const restored = await applyOps(owner, "undo-restore-current", [
+      {
+        opId: "restore-element-current",
+        kind: "add",
+        entityType: "element",
+        entityPublicId: elementId,
+        pagePublicId: pageA,
+        payload: textPayload(restoredText),
+        expectedRevision: 2,
+      },
+      {
+        opId: "restore-lineup-current",
+        kind: "add",
+        entityType: "lineup",
+        entityPublicId: lineupId,
+        pagePublicId: pageA,
+        payload: lineupPayload(restoredAsset),
+        expectedRevision: 2,
       },
     ]);
     expect(restored.results).toMatchObject([

@@ -192,7 +192,13 @@ RemotePage _page(String id, int index, {int revision = 1, String? name}) {
   );
 }
 
-RemoteElement _textElement(String pageId, String id, String value) {
+RemoteElement _textElement(
+  String pageId,
+  String id,
+  String value, {
+  int revision = 1,
+  bool deleted = false,
+}) {
   final text = PlacedText(id: id, position: const Offset(10, 20))..text = value;
   final payload = Map<String, dynamic>.from(text.toJson())
     ..['elementType'] = 'text';
@@ -203,8 +209,8 @@ RemoteElement _textElement(String pageId, String id, String value) {
     elementType: 'text',
     payload: cloudElementPayload(kind: 'text', data: payload),
     sortIndex: 0,
-    revision: 1,
-    deleted: false,
+    revision: revision,
+    deleted: deleted,
   );
 }
 
@@ -212,6 +218,7 @@ RemotePageSnapshot _pageSnapshot(
   RemotePage page, {
   String? text,
   int contentRevision = 1,
+  List<RemoteElement>? elements,
   List<RemoteLineup> lineups = const [],
 }) {
   final now = DateTime.utc(2026);
@@ -223,9 +230,10 @@ RemotePageSnapshot _pageSnapshot(
       createdAt: now,
       updatedAt: now,
     ),
-    elements: text == null
-        ? const []
-        : [_textElement(page.publicId, 'text-${page.publicId}', text)],
+    elements: elements ??
+        (text == null
+            ? const []
+            : [_textElement(page.publicId, 'text-${page.publicId}', text)]),
     lineups: lineups,
     assetsById: const {},
   );
@@ -374,6 +382,42 @@ void main() {
       containsPair('mapData', Maps.mapNames[MapValue.ascent]),
     );
     expect(op.payload, containsPair('clearThemeProfileId', true));
+  });
+
+  test('tombstone restore op carries the remote entity revision', () async {
+    final page = _page('page-1', 0);
+    final element = _textElement(
+      page.publicId,
+      'restored-text',
+      'deleted remotely',
+      revision: 4,
+      deleted: true,
+    );
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, elements: [element]),
+    ));
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: element.publicId, position: const Offset(10, 20))
+        ..text = 'restored locally',
+    ]);
+    container.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
+
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            );
+
+    final op = desired![EntitySyncKey.element(page.publicId, element.publicId)];
+    expect(op, isNotNull);
+    expect(op!.kind, StrategyOpKind.add);
+    expect(op.expectedRevision, 4);
+    expect(op.toConvexJson()['expectedRevision'], 4);
   });
 
   test('active page update rehydrates without a strategy revision change',

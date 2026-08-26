@@ -410,9 +410,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
 
     for (final element in (snapshot.elementsByPage[page.publicId] ??
         const <RemoteElement>[])) {
-      if (element.deleted) {
-        continue;
-      }
       final key = EntitySyncKey.element(page.publicId, element.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
@@ -420,15 +417,12 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         payload: element.payload,
         sortIndex: element.sortIndex,
         revision: element.revision,
-        deleted: false,
+        deleted: element.deleted,
       );
     }
 
     for (final lineup
         in (snapshot.lineupsByPage[page.publicId] ?? const <RemoteLineup>[])) {
-      if (lineup.deleted) {
-        continue;
-      }
       final key = EntitySyncKey.lineup(page.publicId, lineup.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
@@ -436,7 +430,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         payload: lineup.payload,
         sortIndex: lineup.sortIndex,
         revision: lineup.revision,
-        deleted: false,
+        deleted: lineup.deleted,
       );
     }
 
@@ -641,13 +635,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         }
         return StrategyOp(
           opId: const Uuid().v4(),
-          kind: remote == null ? StrategyOpKind.add : StrategyOpKind.patch,
+          kind: remote == null || remote.deleted
+              ? StrategyOpKind.add
+              : StrategyOpKind.patch,
           entityType: StrategyOpEntityType.element,
           entityPublicId: entityId,
           pagePublicId: pageId,
           payload: overlay.desiredPayload,
           sortIndex: overlay.desiredSortIndex,
-          expectedRevision: remote == null ? null : (remote.revision),
+          expectedRevision: remote?.revision,
         );
       case ActivePageOverlayEntityType.lineup:
         if (entityId == null) {
@@ -665,7 +661,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         }
         return StrategyOp(
           opId: const Uuid().v4(),
-          kind: remote == null ? StrategyOpKind.add : StrategyOpKind.patch,
+          kind: remote == null || remote.deleted
+              ? StrategyOpKind.add
+              : StrategyOpKind.patch,
           entityType: StrategyOpEntityType.lineup,
           entityPublicId: entityId,
           pagePublicId: pageId,
@@ -681,9 +679,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     _NormalizedEntity? remote,
   ) {
     if (overlay.deletion) {
-      return remote == null;
+      return remote == null || remote.deleted;
     }
-    if (remote == null) {
+    if (remote == null || remote.deleted) {
       return false;
     }
     return _payloadsEquivalent(overlay.desiredPayload, remote.payload) &&
@@ -697,7 +695,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     if (identical(local, remote)) {
       return true;
     }
-    if (local == null || remote == null) {
+    if (local == null) {
+      return remote?.deleted ?? false;
+    }
+    if (remote == null) {
       return false;
     }
     return local.deleted == remote.deleted &&

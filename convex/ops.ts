@@ -712,6 +712,14 @@ async function applyElementOp(
         return rejected("element_strategy_mismatch");
       }
       if (existing.deleted) {
+        const mismatch = requireExpectedRevision(op, existing.revision);
+        if (mismatch !== null) {
+          return rejected(
+            mismatch.reason,
+            { revision: existing.revision, payload: existing.payload },
+            existing.pageId,
+          );
+        }
         const revision = existing.revision + 1;
         await ctx.db.patch(existing._id, {
           pageId: page._id,
@@ -875,6 +883,14 @@ async function applyLineupOp(
         return rejected("lineup_strategy_mismatch");
       }
       if (existing.deleted) {
+        const mismatch = requireExpectedRevision(op, existing.revision);
+        if (mismatch !== null) {
+          return rejected(
+            mismatch.reason,
+            { revision: existing.revision, payload: existing.payload },
+            existing.pageId,
+          );
+        }
         const revision = existing.revision + 1;
         await ctx.db.patch(existing._id, {
           pageId: page._id,
