@@ -15,6 +15,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The contract gate records the merge base with origin/icarus-cloud.
+          # Fetch all branch history so that ref exists on PR and push runs.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -73,7 +77,9 @@ jobs:
         working-directory: tool/convex_client_gauntlet
         run: |
           fvm dart pub get
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           fvm dart test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           fvm dart analyze
 
       - name: Analyze
