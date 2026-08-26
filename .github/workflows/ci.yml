@@ -68,6 +68,14 @@ jobs:
         shell: pwsh
         run: fvm flutter pub get
 
+      - name: Validate Convex Client Contract Gate
+        shell: pwsh
+        working-directory: tool/convex_client_gauntlet
+        run: |
+          fvm dart pub get
+          fvm dart test
+          fvm dart analyze
+
       - name: Analyze
         shell: pwsh
         run: fvm flutter analyze --no-fatal-infos
