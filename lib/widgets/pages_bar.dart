@@ -408,7 +408,7 @@ class _PagesBarState extends ConsumerState<PagesBar> {
   }
 
   _PageBarData? _buildCloudData(String? activePageId) {
-    final snapshot = ref.watch(remoteStrategySnapshotProvider).valueOrNull;
+    final snapshot = ref.watch(remoteEditorSnapshotProvider).valueOrNull;
     if (snapshot == null || snapshot.pages.isEmpty) {
       return null;
     }

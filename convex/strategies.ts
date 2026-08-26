@@ -37,7 +37,7 @@ type InitialPageInput = {
   publicId: string;
   name: string;
   isAttack: boolean;
-  settings?: Doc<"pages">["settings"];
+  settings?: Doc<"pageContents">["settings"];
 };
 
 function createPublicId(): string {
@@ -122,7 +122,7 @@ async function summarizeStrategies(
     publicId: string;
     name: string;
     mapData: string;
-    sequence: number;
+    revision: number;
     createdAt: number;
     updatedAt: number;
     role: StrategyRole;
@@ -167,7 +167,7 @@ async function summarizeStrategies(
       publicId: strategy.publicId,
       name: strategy.name,
       mapData: strategy.mapData,
-      sequence: strategy.sequence,
+      revision: strategy.revision,
       createdAt: strategy.createdAt,
       updatedAt: strategy.updatedAt,
       role,
@@ -287,12 +287,18 @@ async function insertInitialPage(
     now: number;
   },
 ) {
-  await ctx.db.insert("pages", {
+  const pageId = await ctx.db.insert("pages", {
     publicId: args.initialPage.publicId,
     strategyId: args.strategyId,
     name: args.initialPage.name,
     sortIndex: 0,
     isAttack: args.initialPage.isAttack,
+    revision: 1,
+    createdAt: args.now,
+    updatedAt: args.now,
+  });
+  await ctx.db.insert("pageContents", {
+    pageId,
     settings: args.initialPage.settings,
     revision: 1,
     createdAt: args.now,
@@ -345,7 +351,7 @@ async function createStrategyWithInitialPageRecord(
     folderId,
     name: args.name,
     mapData: args.mapData,
-    sequence: 0,
+    revision: 0,
     themeProfileId: args.themeProfileId,
     themeOverridePalette: args.themeOverridePalette,
     createdAt: now,
@@ -420,7 +426,7 @@ export const getHeader = query({
       publicId: strategy.publicId,
       name: strategy.name,
       mapData: strategy.mapData,
-      sequence: strategy.sequence,
+      revision: strategy.revision,
       createdAt: strategy.createdAt,
       updatedAt: strategy.updatedAt,
       themeProfileId: strategy.themeProfileId ?? null,
@@ -476,6 +482,7 @@ export const createWithInitialPage = mutation({
 export const update = mutation({
   args: {
     strategyPublicId: v.string(),
+    expectedRevision: v.number(),
     name: v.optional(v.string()),
     mapData: v.optional(v.string()),
     themeProfileId: v.optional(v.string()),
@@ -487,39 +494,64 @@ export const update = mutation({
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
 
-    const patch: Record<string, unknown> = {
-      updatedAt: Date.now(),
-      sequence: strategy.sequence + 1,
-    };
+    const patch: Record<string, unknown> = {};
 
-    if (args.name !== undefined) patch.name = args.name;
-    if (args.mapData !== undefined) patch.mapData = args.mapData;
+    if (args.name !== undefined && args.name !== strategy.name) {
+      patch.name = args.name;
+    }
+    if (args.mapData !== undefined && args.mapData !== strategy.mapData) {
+      patch.mapData = args.mapData;
+    }
 
     if (args.clearThemeProfileId === true) {
-      patch.themeProfileId = undefined;
-    } else if (args.themeProfileId !== undefined) {
+      if (strategy.themeProfileId !== undefined) {
+        patch.themeProfileId = undefined;
+      }
+    } else if (
+      args.themeProfileId !== undefined &&
+      args.themeProfileId !== strategy.themeProfileId
+    ) {
       patch.themeProfileId = args.themeProfileId;
     }
 
     if (args.clearThemeOverridePalette === true) {
-      patch.themeOverridePalette = undefined;
+      if (strategy.themeOverridePalette !== undefined) {
+        patch.themeOverridePalette = undefined;
+      }
     } else if (args.themeOverridePalette !== undefined) {
       patch.themeOverridePalette = args.themeOverridePalette;
     }
 
-    await ctx.db.patch(strategy._id, patch);
-    return { ok: true };
+    if (Object.keys(patch).length === 0) {
+      return { ok: true, reused: true, revision: strategy.revision };
+    }
+    if (args.expectedRevision !== strategy.revision) {
+      throw conflictError("Strategy revision mismatch");
+    }
+
+    const revision = strategy.revision + 1;
+    await ctx.db.patch(strategy._id, {
+      ...patch,
+      revision,
+      updatedAt: Date.now(),
+    });
+    return { ok: true, revision };
   },
 });
 
 export const move = mutation({
   args: {
     strategyPublicId: v.string(),
+    expectedRevision: v.number(),
     folderPublicId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
+
+    if (args.expectedRevision !== strategy.revision) {
+      throw conflictError("Strategy revision mismatch");
+    }
 
     let folderId;
     if (args.folderPublicId !== undefined) {
@@ -532,7 +564,7 @@ export const move = mutation({
 
     await ctx.db.patch(strategy._id, {
       folderId,
-      sequence: strategy.sequence + 1,
+      revision: strategy.revision + 1,
       updatedAt: Date.now(),
     });
 
@@ -543,10 +575,14 @@ export const move = mutation({
 export const deleteStrategy = mutation({
   args: {
     strategyPublicId: v.string(),
+    expectedRevision: v.number(),
   },
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "owner");
+    if (args.expectedRevision !== strategy.revision) {
+      throw conflictError("Strategy revision mismatch");
+    }
 
     const pages = await ctx.db
       .query("pages")
@@ -554,6 +590,13 @@ export const deleteStrategy = mutation({
       .collect();
 
     for (const page of pages) {
+      const pageContents = await ctx.db
+        .query("pageContents")
+        .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+        .collect();
+      for (const pageContent of pageContents) {
+        await ctx.db.delete(pageContent._id);
+      }
       await ctx.db.delete(page._id);
       await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
         pageId: page._id,

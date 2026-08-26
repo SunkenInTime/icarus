@@ -22,6 +22,7 @@ import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/strategy/strategy_page_apply.dart';
@@ -70,27 +71,18 @@ class StrategyPageSessionState {
 class _RemotePageHydrationKey {
   const _RemotePageHydrationKey({
     required this.strategyPublicId,
-    required this.sequence,
     required this.pageId,
     required this.fingerprint,
   });
 
   final String strategyPublicId;
-  final int sequence;
   final String pageId;
   final String fingerprint;
-
-  bool sameTargetAs(_RemotePageHydrationKey other) {
-    return strategyPublicId == other.strategyPublicId &&
-        sequence == other.sequence &&
-        pageId == other.pageId;
-  }
 
   @override
   bool operator ==(Object other) {
     return other is _RemotePageHydrationKey &&
         strategyPublicId == other.strategyPublicId &&
-        sequence == other.sequence &&
         pageId == other.pageId &&
         fingerprint == other.fingerprint;
   }
@@ -98,7 +90,6 @@ class _RemotePageHydrationKey {
   @override
   int get hashCode => Object.hash(
         strategyPublicId,
-        sequence,
         pageId,
         fingerprint,
       );
@@ -111,14 +102,12 @@ final strategyPageSessionProvider =
 
 class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   _RemotePageHydrationKey? _lastHydratedRemotePageKey;
-  _RemotePageHydrationKey? _lastSequenceAdvancedHydrationKey;
   bool _pendingRemoteReapply = false;
-  bool _pendingRemoteSequenceAdvanced = false;
 
   @override
   StrategyPageSessionState build() {
-    ref.listen<AsyncValue<RemoteStrategySnapshot?>>(
-      remoteStrategySnapshotProvider,
+    ref.listen<AsyncValue<RemoteEditorSnapshot?>>(
+      remoteEditorSnapshotProvider,
       (previous, next) {
         final strategyState = ref.read(strategyProvider);
         if (strategyState.source != StrategySource.cloud ||
@@ -150,29 +139,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           return;
         }
 
-        final prevSequence = previous?.valueOrNull?.header.sequence;
-        final sequenceChanged =
-            prevSequence == null || prevSequence != snapshot.header.sequence;
-        final sequenceAdvanced =
-            prevSequence != null && prevSequence != snapshot.header.sequence;
-
-        if (sequenceChanged) {
-          if (_lastHydratedRemotePageKey == hydrationKey) {
-            return;
-          }
+        if (_lastHydratedRemotePageKey != hydrationKey) {
           _requestRemoteRehydrate(
             targetPageId,
             hydrationKey: hydrationKey,
-            sequenceAdvanced: sequenceAdvanced,
-          );
-          return;
-        }
-
-        if (_shouldRehydrateLateSectionReplacement(hydrationKey)) {
-          _requestRemoteRehydrate(
-            targetPageId,
-            hydrationKey: hydrationKey,
-            sequenceAdvanced: false,
           );
         }
       },
@@ -180,6 +150,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
     ref.listen<StrategySaveState>(strategySaveStateProvider, (_, __) {
       _resumePendingRemoteReapplyIfPossible();
+    });
+
+    ref.listen<Map<String, String>>(textDraftProvider, (previous, next) {
+      if (next.isEmpty && (previous?.isNotEmpty ?? false)) {
+        _resumePendingRemoteReapplyIfPossible();
+      }
     });
 
     ref.listen<StrategyOpQueueState>(strategyOpQueueProvider, (previous, next) {
@@ -246,6 +222,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (pageId == state.activePageId) {
       return;
     }
+    final previousPageId = state.activePageId;
 
     final transitionState = ref.read(transitionProvider);
     final transitionNotifier = ref.read(transitionProvider.notifier);
@@ -269,11 +246,37 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       startAbilitySize: startSettings.abilitySize,
     );
 
-    await _switchToPage(
-      pageId,
-      animated: true,
-      direction: direction,
-    );
+    try {
+      await _switchToPage(
+        pageId,
+        animated: true,
+        direction: direction,
+      );
+    } catch (error, stackTrace) {
+      transitionNotifier.complete();
+      final strategyState = ref.read(strategyProvider);
+      state = state.copyWith(
+        activePageId: previousPageId,
+        clearActivePageId: previousPageId == null,
+        transitionState: PageTransitionState.idle,
+      );
+      ref.read(activePageLiveSyncProvider.notifier).setContext(
+            strategyPublicId: strategyState.strategyId,
+            activePageId: previousPageId,
+          );
+      if (strategyState.source == StrategySource.cloud) {
+        try {
+          await ref
+              .read(remoteEditorSnapshotProvider.notifier)
+              .setActivePage(previousPageId);
+        } catch (_) {
+          // Preserve the original switch failure; the live read can recover
+          // independently without leaving the transition state stuck.
+        }
+      }
+      _resumePendingRemoteReapplyIfPossible();
+      Error.throwWithStackTrace(error, stackTrace);
+    }
     final endSettings = ref.read(strategySettingsProvider);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -354,9 +357,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       isApplyingPage: false,
     );
     _lastHydratedRemotePageKey = null;
-    _lastSequenceAdvancedHydrationKey = null;
     _pendingRemoteReapply = false;
-    _pendingRemoteSequenceAdvanced = false;
     ref.read(activePageLiveSyncProvider.notifier).reset();
   }
 
@@ -378,11 +379,18 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     }
     await pageSource.flushCurrentPage();
     if (source == StrategySource.cloud) {
-      await ref.read(strategyOpQueueProvider.notifier).flushNow();
+      await ref
+          .read(strategyOpQueueProvider.notifier)
+          .flushNow()
+          .timeout(const Duration(milliseconds: 750), onTimeout: () {});
+      state = state.copyWith(activePageId: pageId);
       ref.read(activePageLiveSyncProvider.notifier).setContext(
             strategyPublicId: strategyId,
             activePageId: pageId,
           );
+      await ref
+          .read(remoteEditorSnapshotProvider.notifier)
+          .setActivePage(pageId);
     }
 
     final pageData = await pageSource.loadPage(pageId);
@@ -400,7 +408,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   Future<void> _rehydrateActivePageFromSource(
     String pageId, {
     _RemotePageHydrationKey? hydrationKey,
-    bool sequenceAdvanced = false,
   }) async {
     final strategyState = ref.read(strategyProvider);
     final strategyId = strategyState.strategyId;
@@ -420,7 +427,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       strategyId: strategyId,
       source: source,
       hydrationKey: hydrationKey,
-      sequenceAdvanced: sequenceAdvanced,
     );
   }
 
@@ -429,7 +435,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required String strategyId,
     required StrategySource source,
     _RemotePageHydrationKey? hydrationKey,
-    bool sequenceAdvanced = false,
   }) async {
     final preserveHistory = source == StrategySource.cloud &&
         _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
@@ -456,7 +461,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       _updateHydrationBookkeeping(
         pageData.pageId,
         hydrationKey: hydrationKey,
-        sequenceAdvanced: sequenceAdvanced,
       );
     } finally {
       state = state.copyWith(
@@ -489,7 +493,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
   String _resolveThemeProfileId(StrategySource source, String strategyId) {
     if (source == StrategySource.cloud) {
-      final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+      final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
       return snapshot?.header.themeProfileId ??
           MapThemeProfilesProvider.immutableDefaultProfileId;
     }
@@ -507,7 +511,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   ) {
     if (source == StrategySource.cloud) {
       final payload = ref
-          .read(remoteStrategySnapshotProvider)
+          .read(remoteEditorSnapshotProvider)
           .valueOrNull
           ?.header
           .themeOverridePalette;
@@ -527,31 +531,32 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   bool _canSafelyReapplyRemotePage() {
+    final saveState = ref.read(strategySaveStateProvider);
     return !state.isApplyingPage &&
-        state.transitionState == PageTransitionState.idle;
+        state.transitionState == PageTransitionState.idle &&
+        ref.read(textDraftProvider).isEmpty &&
+        !saveState.isDirty &&
+        !saveState.isSaving &&
+        !saveState.hasPendingCloudSync;
   }
 
   void _requestRemoteRehydrate(
     String pageId, {
     required _RemotePageHydrationKey hydrationKey,
-    required bool sequenceAdvanced,
   }) {
     if (_canSafelyReapplyRemotePage()) {
       unawaited(
         _rehydrateActivePageFromSource(
           pageId,
           hydrationKey: hydrationKey,
-          sequenceAdvanced: sequenceAdvanced,
         ),
       );
     } else {
       _pendingRemoteReapply = true;
-      _pendingRemoteSequenceAdvanced =
-          _pendingRemoteSequenceAdvanced || sequenceAdvanced;
     }
   }
 
-  String? _resolveHydrationTargetPage(RemoteStrategySnapshot snapshot) {
+  String? _resolveHydrationTargetPage(RemoteEditorSnapshot snapshot) {
     if (snapshot.pages.isEmpty) {
       return null;
     }
@@ -570,20 +575,16 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   void _updateHydrationBookkeeping(
     String pageId, {
     _RemotePageHydrationKey? hydrationKey,
-    bool sequenceAdvanced = false,
   }) {
     final key = hydrationKey ?? _currentRemotePageHydrationKey(pageId);
     if (key == null) {
       return;
     }
     _lastHydratedRemotePageKey = key;
-    if (sequenceAdvanced) {
-      _lastSequenceAdvancedHydrationKey = key;
-    }
   }
 
   _RemotePageHydrationKey? _currentRemotePageHydrationKey(String pageId) {
-    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
     if (snapshot == null) {
       return null;
     }
@@ -591,7 +592,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   }
 
   _RemotePageHydrationKey? _buildRemotePageHydrationKey(
-    RemoteStrategySnapshot snapshot,
+    RemoteEditorSnapshot snapshot,
     String pageId,
   ) {
     RemotePage? page;
@@ -602,6 +603,10 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       }
     }
     if (page == null) {
+      return null;
+    }
+    final pageSnapshot = snapshot.activePage;
+    if (pageSnapshot == null || pageSnapshot.page.publicId != pageId) {
       return null;
     }
 
@@ -621,7 +626,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         'sortIndex': page.sortIndex,
         'isAttack': page.isAttack,
         'revision': page.revision,
-        'settings': page.settings,
+        'contentRevision': pageSnapshot.content.revision,
+        'settings': pageSnapshot.content.settings,
       },
       'elements': [
         for (final element in elements)
@@ -660,7 +666,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
     return _RemotePageHydrationKey(
       strategyPublicId: snapshot.header.publicId,
-      sequence: snapshot.header.sequence,
       pageId: pageId,
       fingerprint: fingerprint,
     );
@@ -680,18 +685,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       return sortCompare;
     }
     return a.publicId.compareTo(b.publicId);
-  }
-
-  bool _shouldRehydrateLateSectionReplacement(
-    _RemotePageHydrationKey hydrationKey,
-  ) {
-    final lastHydratedKey = _lastHydratedRemotePageKey;
-    final sequenceAdvancedKey = _lastSequenceAdvancedHydrationKey;
-    return lastHydratedKey != null &&
-        sequenceAdvancedKey != null &&
-        hydrationKey.sameTargetAs(lastHydratedKey) &&
-        hydrationKey.sameTargetAs(sequenceAdvancedKey) &&
-        hydrationKey.fingerprint != lastHydratedKey.fingerprint;
   }
 
   Future<void> _reconcileAcks(
@@ -722,12 +715,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
               message: ack.reason,
               serverPayload: serverPayload,
               serverRevision: ack.latestRevision,
-              serverSequence: ack.latestSequence,
             ),
           );
     }
 
-    await ref.read(remoteStrategySnapshotProvider.notifier).refresh();
+    await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
+    if (!_canSafelyReapplyRemotePage()) {
+      _pendingRemoteReapply = true;
+      return;
+    }
     final activePageId = state.activePageId;
     final strategyId = strategyState.strategyId;
     if (activePageId != null && strategyId != null) {
@@ -737,11 +733,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
                 strategyPublicId: strategyId,
                 pageId: activePageId,
               );
-      ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
-            pageId: activePageId,
-            desiredOpsByEntityKey: desiredOpsByEntityKey,
-            flushImmediately: false,
-          );
+      if (desiredOpsByEntityKey != null) {
+        await ref.read(strategyOpQueueProvider.notifier).syncDesiredOpsForPage(
+              pageId: activePageId,
+              desiredOpsByEntityKey: desiredOpsByEntityKey,
+              flushImmediately: false,
+            );
+      }
       if (_canSafelyReapplyRemotePage()) {
         await _rehydrateActivePageFromSource(activePageId);
       } else {
@@ -756,16 +754,11 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     if (!_pendingRemoteReapply || !_canSafelyReapplyRemotePage()) {
       return;
     }
-    final sequenceAdvanced = _pendingRemoteSequenceAdvanced;
     _pendingRemoteReapply = false;
-    _pendingRemoteSequenceAdvanced = false;
     final pageId = state.activePageId;
     if (pageId != null) {
       unawaited(
-        _rehydrateActivePageFromSource(
-          pageId,
-          sequenceAdvanced: sequenceAdvanced,
-        ),
+        _rehydrateActivePageFromSource(pageId),
       );
     }
   }

@@ -2,9 +2,9 @@ import 'dart:convert';
 
 enum StrategyOpKind { add, move, patch, delete, reorder }
 
-enum StrategyOpEntityType { strategy, page, element, lineup }
+enum StrategyOpEntityType { strategy, page, pageContent, element, lineup }
 
-const currentCloudProtocolVersion = 1;
+const currentCloudProtocolVersion = 2;
 const currentCloudPayloadVersion = 1;
 
 typedef CloudPayload = Map<String, dynamic>;
@@ -43,12 +43,12 @@ Map<String, dynamic> cloudPayloadData(Object? payload) {
   if (payload is Map<String, dynamic>) {
     final data = payload['data'];
     if (data is Map<String, dynamic>) {
-      return data;
+      return _normalizeCloudPayloadData(data);
     }
     if (data is Map) {
-      return Map<String, dynamic>.from(data);
+      return _normalizeCloudPayloadData(Map<String, dynamic>.from(data));
     }
-    return payload;
+    return _normalizeCloudPayloadData(payload);
   }
   if (payload is Map) {
     return cloudPayloadData(Map<String, dynamic>.from(payload));
@@ -91,7 +91,6 @@ class StrategyOp {
     this.payload,
     this.sortIndex,
     this.expectedRevision,
-    this.expectedSequence,
   });
 
   final String opId;
@@ -102,7 +101,6 @@ class StrategyOp {
   final Object? payload;
   final int? sortIndex;
   final int? expectedRevision;
-  final int? expectedSequence;
 
   Map<String, dynamic> toConvexJson() {
     return {
@@ -114,13 +112,25 @@ class StrategyOp {
       if (payload != null) 'payload': payload,
       if (sortIndex != null) 'sortIndex': sortIndex,
       if (expectedRevision != null) 'expectedRevision': expectedRevision,
-      if (expectedSequence != null) 'expectedSequence': expectedSequence,
     };
+  }
+
+  factory StrategyOp.fromJson(Map<String, dynamic> json) {
+    return StrategyOp(
+      opId: json['opId'] as String,
+      kind: StrategyOpKind.values.byName(json['kind'] as String),
+      entityType:
+          StrategyOpEntityType.values.byName(json['entityType'] as String),
+      entityPublicId: json['entityPublicId'] as String?,
+      pagePublicId: json['pagePublicId'] as String?,
+      payload: json['payload'],
+      sortIndex: (json['sortIndex'] as num?)?.toInt(),
+      expectedRevision: (json['expectedRevision'] as num?)?.toInt(),
+    );
   }
 
   StrategyOp copyWith({
     int? expectedRevision,
-    int? expectedSequence,
   }) {
     return StrategyOp(
       opId: opId,
@@ -131,7 +141,6 @@ class StrategyOp {
       payload: payload,
       sortIndex: sortIndex,
       expectedRevision: expectedRevision ?? this.expectedRevision,
-      expectedSequence: expectedSequence ?? this.expectedSequence,
     );
   }
 }
@@ -164,8 +173,6 @@ class OpAck {
     required this.opId,
     required this.status,
     this.reason,
-    this.appliedSequence,
-    this.latestSequence,
     this.appliedRevision,
     this.latestRevision,
     this.latestPayload,
@@ -174,8 +181,6 @@ class OpAck {
   final String opId;
   final String status;
   final String? reason;
-  final int? appliedSequence;
-  final int? latestSequence;
   final int? appliedRevision;
   final int? latestRevision;
   final CloudPayload? latestPayload;
@@ -187,8 +192,6 @@ class OpAck {
       opId: json['opId'] as String,
       status: json['status'] as String,
       reason: json['reason'] as String?,
-      appliedSequence: (json['appliedSequence'] as num?)?.toInt(),
-      latestSequence: (json['latestSequence'] as num?)?.toInt(),
       appliedRevision: (json['appliedRevision'] as num?)?.toInt(),
       latestRevision: (json['latestRevision'] as num?)?.toInt(),
       latestPayload: json['latestPayload'] == null
@@ -207,7 +210,6 @@ class ConflictResolution {
     this.message,
     this.serverPayload,
     this.serverRevision,
-    this.serverSequence,
   });
 
   final ConflictResolutionType type;
@@ -215,7 +217,6 @@ class ConflictResolution {
   final String? message;
   final Map<String, dynamic>? serverPayload;
   final int? serverRevision;
-  final int? serverSequence;
 }
 
 class RemoteStrategyHeader {
@@ -223,7 +224,7 @@ class RemoteStrategyHeader {
     required this.publicId,
     required this.name,
     required this.mapData,
-    required this.sequence,
+    required this.revision,
     required this.createdAt,
     required this.updatedAt,
     this.themeProfileId,
@@ -234,7 +235,7 @@ class RemoteStrategyHeader {
   final String publicId;
   final String name;
   final String mapData;
-  final int sequence;
+  final int revision;
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? themeProfileId;
@@ -246,7 +247,7 @@ class RemoteStrategyHeader {
       publicId: json['publicId'] as String,
       name: json['name'] as String,
       mapData: json['mapData'] as String,
-      sequence: (json['sequence'] as num?)?.toInt() ?? 0,
+      revision: (json['revision'] as num?)?.toInt() ?? 0,
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         (json['createdAt'] as num?)?.toInt() ?? 0,
       ),
@@ -269,7 +270,8 @@ class RemotePage {
     required this.sortIndex,
     required this.isAttack,
     required this.revision,
-    this.settings,
+    required this.createdAt,
+    required this.updatedAt,
   });
 
   final String publicId;
@@ -278,7 +280,8 @@ class RemotePage {
   final int sortIndex;
   final bool isAttack;
   final int revision;
-  final CloudPayload? settings;
+  final DateTime createdAt;
+  final DateTime updatedAt;
 
   factory RemotePage.fromJson(Map<String, dynamic> json) {
     return RemotePage(
@@ -288,7 +291,39 @@ class RemotePage {
       sortIndex: (json['sortIndex'] as num).toInt(),
       isAttack: json['isAttack'] as bool? ?? true,
       revision: (json['revision'] as num?)?.toInt() ?? 0,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['createdAt'] as num?)?.toInt() ?? 0,
+      ),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['updatedAt'] as num?)?.toInt() ?? 0,
+      ),
+    );
+  }
+}
+
+class RemotePageContent {
+  const RemotePageContent({
+    required this.revision,
+    required this.createdAt,
+    required this.updatedAt,
+    this.settings,
+  });
+
+  final CloudPayload? settings;
+  final int revision;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory RemotePageContent.fromJson(Map<String, dynamic> json) {
+    return RemotePageContent(
       settings: cloudObjectPayloadOrNull(json['settings']),
+      revision: (json['revision'] as num?)?.toInt() ?? 0,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['createdAt'] as num?)?.toInt() ?? 0,
+      ),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(
+        (json['updatedAt'] as num?)?.toInt() ?? 0,
+      ),
     );
   }
 }
@@ -410,8 +445,79 @@ class RemoteImageAsset {
   }
 }
 
-class RemoteStrategySnapshot {
-  const RemoteStrategySnapshot({
+class RemoteStrategyShell {
+  const RemoteStrategyShell({
+    required this.header,
+    required this.pages,
+  });
+
+  final RemoteStrategyHeader header;
+  final List<RemotePage> pages;
+}
+
+class RemotePageSnapshot {
+  const RemotePageSnapshot({
+    required this.page,
+    required this.content,
+    required this.elements,
+    required this.lineups,
+    required this.assetsById,
+  });
+
+  final RemotePage page;
+  final RemotePageContent content;
+  final List<RemoteElement> elements;
+  final List<RemoteLineup> lineups;
+  final Map<String, RemoteImageAsset> assetsById;
+}
+
+/// The bounded live editor state: one strategy shell and at most one page body.
+class RemoteEditorSnapshot {
+  const RemoteEditorSnapshot({
+    required this.shell,
+    required this.activePage,
+  });
+
+  final RemoteStrategyShell shell;
+  final RemotePageSnapshot? activePage;
+
+  RemoteStrategyHeader get header => shell.header;
+  List<RemotePage> get pages => shell.pages;
+  Map<String, List<RemoteElement>> get elementsByPage => activePage == null
+      ? const <String, List<RemoteElement>>{}
+      : <String, List<RemoteElement>>{
+          activePage!.page.publicId: activePage!.elements,
+        };
+  Map<String, List<RemoteLineup>> get lineupsByPage => activePage == null
+      ? const <String, List<RemoteLineup>>{}
+      : <String, List<RemoteLineup>>{
+          activePage!.page.publicId: activePage!.lineups,
+        };
+  Map<String, RemoteImageAsset> get assetsById =>
+      activePage?.assetsById ?? const <String, RemoteImageAsset>{};
+
+  RemoteEditorSnapshot copyWith({
+    RemoteStrategyShell? shell,
+    RemotePageSnapshot? activePage,
+    bool clearActivePage = false,
+  }) {
+    return RemoteEditorSnapshot(
+      shell: shell ?? this.shell,
+      activePage: clearActivePage ? null : (activePage ?? this.activePage),
+    );
+  }
+}
+
+class RemoteFullPage {
+  const RemoteFullPage({required this.page, required this.content});
+
+  final RemotePage page;
+  final RemotePageContent content;
+}
+
+/// A one-shot whole-strategy value used only by explicit export/import flows.
+class RemoteFullStrategySnapshot {
+  const RemoteFullStrategySnapshot({
     required this.header,
     required this.pages,
     required this.elementsByPage,
@@ -420,59 +526,10 @@ class RemoteStrategySnapshot {
   });
 
   final RemoteStrategyHeader header;
-  final List<RemotePage> pages;
+  final List<RemoteFullPage> pages;
   final Map<String, List<RemoteElement>> elementsByPage;
   final Map<String, List<RemoteLineup>> lineupsByPage;
   final Map<String, RemoteImageAsset> assetsById;
-
-  RemoteStrategySnapshot copyWith({
-    RemoteStrategyHeader? header,
-    List<RemotePage>? pages,
-    Map<String, List<RemoteElement>>? elementsByPage,
-    Map<String, List<RemoteLineup>>? lineupsByPage,
-    Map<String, RemoteImageAsset>? assetsById,
-  }) {
-    return RemoteStrategySnapshot(
-      header: header ?? this.header,
-      pages: pages ?? this.pages,
-      elementsByPage: elementsByPage ?? this.elementsByPage,
-      lineupsByPage: lineupsByPage ?? this.lineupsByPage,
-      assetsById: assetsById ?? this.assetsById,
-    );
-  }
-
-  RemoteStrategySnapshot replaceHeader(RemoteStrategyHeader next) {
-    return copyWith(header: next);
-  }
-
-  RemoteStrategySnapshot replacePages(List<RemotePage> next) {
-    final pageIds = next.map((page) => page.publicId).toSet();
-    return copyWith(
-      pages: next,
-      elementsByPage: Map<String, List<RemoteElement>>.fromEntries(
-        elementsByPage.entries.where((entry) => pageIds.contains(entry.key)),
-      ),
-      lineupsByPage: Map<String, List<RemoteLineup>>.fromEntries(
-        lineupsByPage.entries.where((entry) => pageIds.contains(entry.key)),
-      ),
-    );
-  }
-
-  RemoteStrategySnapshot replaceAssets(List<RemoteImageAsset> next) {
-    return copyWith(
-      assetsById: {
-        for (final asset in next) asset.publicId: asset,
-      },
-    );
-  }
-
-  RemoteStrategySnapshot replaceElements(List<RemoteElement> next) {
-    return copyWith(elementsByPage: groupElementsByPage(next));
-  }
-
-  RemoteStrategySnapshot replaceLineups(List<RemoteLineup> next) {
-    return copyWith(lineupsByPage: groupLineupsByPage(next));
-  }
 
   static Map<String, List<RemoteElement>> groupElementsByPage(
     Iterable<RemoteElement> elements,
@@ -506,7 +563,7 @@ class CloudStrategySummary {
     required this.publicId,
     required this.name,
     required this.mapData,
-    required this.sequence,
+    required this.revision,
     required this.createdAt,
     required this.updatedAt,
     this.role,
@@ -516,7 +573,7 @@ class CloudStrategySummary {
   final String publicId;
   final String name;
   final String mapData;
-  final int sequence;
+  final int revision;
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? role;
@@ -527,7 +584,7 @@ class CloudStrategySummary {
       publicId: json['publicId'] as String,
       name: json['name'] as String,
       mapData: json['mapData'] as String,
-      sequence: (json['sequence'] as num?)?.toInt() ?? 0,
+      revision: (json['revision'] as num?)?.toInt() ?? 0,
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         (json['createdAt'] as num?)?.toInt() ?? 0,
       ),

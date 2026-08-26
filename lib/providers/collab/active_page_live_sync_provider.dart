@@ -91,22 +91,28 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }
 
   bool hasOverlayForPage(String pageId) {
-    return state.overlayByEntityKey.keys
-        .any((key) => key.pageId == pageId);
+    return state.overlayByEntityKey.keys.any((key) => key.pageId == pageId);
   }
 
   void recordAckBatch(List<AckedEntityIntent> intents) {
     state = state.copyWith(lastAckBatch: intents);
   }
 
-  Map<EntitySyncKey, StrategyOp> syncLocalPage({
+  Map<EntitySyncKey, StrategyOp>? syncLocalPage({
     required String strategyPublicId,
     required String pageId,
   }) {
     setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
-    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
-    if (snapshot == null) {
-      return const <EntitySyncKey, StrategyOp>{};
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    final remotePage = snapshot?.activePage;
+    if (snapshot == null ||
+        snapshot.header.publicId != strategyPublicId ||
+        remotePage == null ||
+        remotePage.page.publicId != pageId) {
+      _debugLog(
+        'sync.skip page=$pageId reason=missing_matching_remote_base',
+      );
+      return null;
     }
 
     final queueState = ref.read(strategyOpQueueProvider);
@@ -123,10 +129,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final pageKeys = <EntitySyncKey>{
       ...remoteEntities.keys,
       ...localEntities.keys,
-      ...state.overlayByEntityKey.keys
-          .where((key) => key.pageId == pageId),
-      ...queueState.queuedByEntityKey.keys
-          .where((key) => key.pageId == pageId),
+      ...state.overlayByEntityKey.keys.where((key) => key.pageId == pageId),
+      ...queueState.queuedByEntityKey.keys.where((key) => key.pageId == pageId),
       ...queueState.inFlightByEntityKey.keys
           .where((key) => key.pageId == pageId),
     };
@@ -237,8 +241,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     required String pageId,
   }) {
     setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
-    final snapshot = ref.read(remoteStrategySnapshotProvider).valueOrNull;
-    if (snapshot == null) {
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (snapshot == null ||
+        snapshot.header.publicId != strategyPublicId ||
+        snapshot.activePage?.page.publicId != pageId) {
       return null;
     }
 
@@ -263,14 +269,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       for (final lineup
           in (snapshot.lineupsByPage[page.publicId] ?? const <RemoteLineup>[]))
         if (!lineup.deleted)
-          EntitySyncKey.lineup(page.publicId, lineup.publicId): ProjectedPageLineup(
+          EntitySyncKey.lineup(page.publicId, lineup.publicId):
+              ProjectedPageLineup(
             publicId: lineup.publicId,
             payload: lineup.payload,
             sortIndex: lineup.sortIndex,
           ),
     };
 
-    var projectedSettingsPayload = page.settings;
+    var projectedSettingsPayload = snapshot.activePage?.content.settings;
     var projectedIsAttack = page.isAttack;
 
     final pageOverlays = state.overlayByEntityKey.entries.where(
@@ -279,16 +286,21 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     for (final entry in pageOverlays) {
       final overlay = entry.value;
       switch (overlay.entityType) {
-        case ActivePageOverlayEntityType.pageSettings:
+        case ActivePageOverlayEntityType.pageDescriptor:
           if (overlay.desiredPayload == null) {
             continue;
           }
           final decoded = _decodeObject(overlay.desiredPayload!);
-          projectedSettingsPayload =
-              cloudObjectPayloadOrNull(decoded['settings']);
           final isAttack = decoded['isAttack'];
           if (isAttack is bool) {
             projectedIsAttack = isAttack;
+          }
+          continue;
+        case ActivePageOverlayEntityType.pageContent:
+          if (overlay.desiredPayload != null) {
+            final decoded = _decodeObject(overlay.desiredPayload!);
+            projectedSettingsPayload =
+                cloudObjectPayloadOrNull(decoded['settings']);
           }
           continue;
         case ActivePageOverlayEntityType.element:
@@ -362,7 +374,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }
 
   Map<EntitySyncKey, _NormalizedEntity> _normalizedRemoteEntities(
-    RemoteStrategySnapshot snapshot,
+    RemoteEditorSnapshot snapshot,
     String pageId,
   ) {
     final page = _remotePageById(snapshot: snapshot, pageId: pageId);
@@ -370,25 +382,34 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       return const <EntitySyncKey, _NormalizedEntity>{};
     }
 
+    final pageSnapshot = snapshot.activePage;
+    if (pageSnapshot == null || pageSnapshot.page.publicId != page.publicId) {
+      return const <EntitySyncKey, _NormalizedEntity>{};
+    }
+
     final entities = <EntitySyncKey, _NormalizedEntity>{
-      EntitySyncKey.pageSettings(page.publicId): _NormalizedEntity(
-        key: EntitySyncKey.pageSettings(page.publicId),
-        overlayEntityType: ActivePageOverlayEntityType.pageSettings,
-        payload: _pagePayload(
-          settingsPayload: page.settings,
-          isAttack: page.isAttack,
-        ),
+      EntitySyncKey.pageDescriptor(page.publicId): _NormalizedEntity(
+        key: EntitySyncKey.pageDescriptor(page.publicId),
+        overlayEntityType: ActivePageOverlayEntityType.pageDescriptor,
+        payload: <String, dynamic>{'isAttack': page.isAttack},
         sortIndex: null,
         revision: page.revision,
+        deleted: false,
+      ),
+      EntitySyncKey.pageContent(page.publicId): _NormalizedEntity(
+        key: EntitySyncKey.pageContent(page.publicId),
+        overlayEntityType: ActivePageOverlayEntityType.pageContent,
+        payload: <String, dynamic>{
+          'settings': pageSnapshot.content.settings,
+        },
+        sortIndex: null,
+        revision: pageSnapshot.content.revision,
         deleted: false,
       ),
     };
 
     for (final element in (snapshot.elementsByPage[page.publicId] ??
         const <RemoteElement>[])) {
-      if (element.deleted) {
-        continue;
-      }
       final key = EntitySyncKey.element(page.publicId, element.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
@@ -396,15 +417,12 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         payload: element.payload,
         sortIndex: element.sortIndex,
         revision: element.revision,
-        deleted: false,
+        deleted: element.deleted,
       );
     }
 
     for (final lineup
         in (snapshot.lineupsByPage[page.publicId] ?? const <RemoteLineup>[])) {
-      if (lineup.deleted) {
-        continue;
-      }
       final key = EntitySyncKey.lineup(page.publicId, lineup.publicId);
       entities[key] = _NormalizedEntity(
         key: key,
@@ -412,7 +430,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         payload: lineup.payload,
         sortIndex: lineup.sortIndex,
         revision: lineup.revision,
-        deleted: false,
+        deleted: lineup.deleted,
       );
     }
 
@@ -423,14 +441,24 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       String pageId) {
     final entities = <EntitySyncKey, _NormalizedEntity>{};
 
-    final pageKey = EntitySyncKey.pageSettings(pageId);
-    entities[pageKey] = _NormalizedEntity(
-      key: pageKey,
-      overlayEntityType: ActivePageOverlayEntityType.pageSettings,
-      payload: _pagePayload(
-        settingsPayload: ref.read(strategySettingsProvider).toJson(),
-        isAttack: ref.read(mapProvider).isAttack,
-      ),
+    final descriptorKey = EntitySyncKey.pageDescriptor(pageId);
+    entities[descriptorKey] = _NormalizedEntity(
+      key: descriptorKey,
+      overlayEntityType: ActivePageOverlayEntityType.pageDescriptor,
+      payload: <String, dynamic>{
+        'isAttack': ref.read(mapProvider).isAttack,
+      },
+      sortIndex: null,
+      revision: 0,
+      deleted: false,
+    );
+    final contentKey = EntitySyncKey.pageContent(pageId);
+    entities[contentKey] = _NormalizedEntity(
+      key: contentKey,
+      overlayEntityType: ActivePageOverlayEntityType.pageContent,
+      payload: <String, dynamic>{
+        'settings': ref.read(strategySettingsProvider).toJson(),
+      },
       sortIndex: null,
       revision: 0,
       deleted: false,
@@ -443,8 +471,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       entities[key] = _NormalizedEntity(
         key: key,
         overlayEntityType: ActivePageOverlayEntityType.element,
-        payload:
-            cloudElementPayload(kind: envelope.kind.name, data: envelope.payload),
+        payload: cloudElementPayload(
+            kind: envelope.kind.name, data: envelope.payload),
         sortIndex: index,
         revision: 0,
         deleted: false,
@@ -573,11 +601,20 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }) {
     final entityId = overlay.entityKey.entityId;
     switch (overlay.entityType) {
-      case ActivePageOverlayEntityType.pageSettings:
+      case ActivePageOverlayEntityType.pageDescriptor:
         return StrategyOp(
           opId: const Uuid().v4(),
           kind: StrategyOpKind.patch,
           entityType: StrategyOpEntityType.page,
+          entityPublicId: pageId,
+          payload: overlay.desiredPayload,
+          expectedRevision: remote?.revision ?? overlay.baseRevision,
+        );
+      case ActivePageOverlayEntityType.pageContent:
+        return StrategyOp(
+          opId: const Uuid().v4(),
+          kind: StrategyOpKind.patch,
+          entityType: StrategyOpEntityType.pageContent,
           entityPublicId: pageId,
           payload: overlay.desiredPayload,
           expectedRevision: remote?.revision ?? overlay.baseRevision,
@@ -598,13 +635,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         }
         return StrategyOp(
           opId: const Uuid().v4(),
-          kind: remote == null ? StrategyOpKind.add : StrategyOpKind.patch,
+          kind: remote == null || remote.deleted
+              ? StrategyOpKind.add
+              : StrategyOpKind.patch,
           entityType: StrategyOpEntityType.element,
           entityPublicId: entityId,
           pagePublicId: pageId,
           payload: overlay.desiredPayload,
           sortIndex: overlay.desiredSortIndex,
-          expectedRevision: remote == null ? null : (remote.revision),
+          expectedRevision: remote?.revision,
         );
       case ActivePageOverlayEntityType.lineup:
         if (entityId == null) {
@@ -622,7 +661,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         }
         return StrategyOp(
           opId: const Uuid().v4(),
-          kind: remote == null ? StrategyOpKind.add : StrategyOpKind.patch,
+          kind: remote == null || remote.deleted
+              ? StrategyOpKind.add
+              : StrategyOpKind.patch,
           entityType: StrategyOpEntityType.lineup,
           entityPublicId: entityId,
           pagePublicId: pageId,
@@ -638,9 +679,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     _NormalizedEntity? remote,
   ) {
     if (overlay.deletion) {
-      return remote == null;
+      return remote == null || remote.deleted;
     }
-    if (remote == null) {
+    if (remote == null || remote.deleted) {
       return false;
     }
     return _payloadsEquivalent(overlay.desiredPayload, remote.payload) &&
@@ -654,7 +695,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     if (identical(local, remote)) {
       return true;
     }
-    if (local == null || remote == null) {
+    if (local == null) {
+      return remote?.deleted ?? false;
+    }
+    if (remote == null) {
       return false;
     }
     return local.deleted == remote.deleted &&
@@ -667,16 +711,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     return cloudJsonEquivalent(left, right);
   }
 
-  Map<String, dynamic> _pagePayload({
-    required Map<String, dynamic>? settingsPayload,
-    required bool isAttack,
-  }) {
-    return {
-      'settings': settingsPayload,
-      'isAttack': isAttack,
-    };
-  }
-
   void _debugLog(String message) {
     assert(() {
       log(message, name: 'active_page_live_sync');
@@ -685,7 +719,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }
 
   RemotePage? _remotePageById({
-    required RemoteStrategySnapshot snapshot,
+    required RemoteEditorSnapshot snapshot,
     required String pageId,
   }) {
     for (final page in snapshot.pages) {

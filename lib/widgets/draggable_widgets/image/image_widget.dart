@@ -171,7 +171,7 @@ class _ImageWidgetState extends ConsumerState<ImageWidget> {
     ));
     final strategyState = ref.watch(strategyProvider);
     final remoteAsset = ref
-        .watch(remoteStrategySnapshotProvider)
+        .watch(remoteEditorSnapshotProvider)
         .valueOrNull
         ?.assetsById[widget.id];
     final remoteUrl = remoteAsset?.url;

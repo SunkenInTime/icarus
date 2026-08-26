@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:developer';
 
-import 'package:convex_flutter/convex_flutter.dart';
+import 'package:icarus/collab/convex_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -19,6 +19,132 @@ import 'package:uuid/uuid.dart';
 final cloudMigrationProvider =
     NotifierProvider<CloudMigrationNotifier, bool>(CloudMigrationNotifier.new);
 
+final cloudMigrationApiProvider = Provider<CloudMigrationApi>((ref) {
+  return _DefaultCloudMigrationApi(
+    ref.read(convexStrategyRepositoryProvider),
+  );
+});
+
+abstract class CloudMigrationApi {
+  Future<void> createFolder({
+    required String publicId,
+    required String name,
+    String? parentFolderPublicId,
+    int? iconId,
+  });
+
+  Future<void> createStrategyWithInitialPage({
+    required String publicId,
+    required String name,
+    required String mapData,
+    required String initialPagePublicId,
+    required String initialPageName,
+    required bool initialPageIsAttack,
+    required Map<String, dynamic> initialPageSettings,
+    String? folderPublicId,
+    String? themeProfileId,
+    Map<String, dynamic>? themeOverridePalette,
+  });
+
+  Future<void> addPage({
+    required String strategyPublicId,
+    required String pagePublicId,
+    required String name,
+    required int sortIndex,
+    required bool isAttack,
+    required Map<String, dynamic> settings,
+    required int expectedRevision,
+  });
+
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+  });
+}
+
+class _DefaultCloudMigrationApi implements CloudMigrationApi {
+  const _DefaultCloudMigrationApi(this._repository);
+
+  final ConvexStrategyRepository _repository;
+
+  @override
+  Future<void> createFolder({
+    required String publicId,
+    required String name,
+    String? parentFolderPublicId,
+    int? iconId,
+  }) {
+    return _repository.createFolder(
+      publicId: publicId,
+      name: name,
+      parentFolderPublicId: parentFolderPublicId,
+      iconId: iconId,
+    );
+  }
+
+  @override
+  Future<void> createStrategyWithInitialPage({
+    required String publicId,
+    required String name,
+    required String mapData,
+    required String initialPagePublicId,
+    required String initialPageName,
+    required bool initialPageIsAttack,
+    required Map<String, dynamic> initialPageSettings,
+    String? folderPublicId,
+    String? themeProfileId,
+    Map<String, dynamic>? themeOverridePalette,
+  }) {
+    return _repository.createStrategyWithInitialPage(
+      publicId: publicId,
+      name: name,
+      mapData: mapData,
+      initialPagePublicId: initialPagePublicId,
+      initialPageName: initialPageName,
+      initialPageIsAttack: initialPageIsAttack,
+      initialPageSettings: initialPageSettings,
+      folderPublicId: folderPublicId,
+      themeProfileId: themeProfileId,
+      themeOverridePalette: themeOverridePalette,
+    );
+  }
+
+  @override
+  Future<void> addPage({
+    required String strategyPublicId,
+    required String pagePublicId,
+    required String name,
+    required int sortIndex,
+    required bool isAttack,
+    required Map<String, dynamic> settings,
+    required int expectedRevision,
+  }) async {
+    await ConvexClient.instance.mutation(name: 'pages:add', args: {
+      'strategyPublicId': strategyPublicId,
+      'pagePublicId': pagePublicId,
+      'name': name,
+      'sortIndex': sortIndex,
+      'isAttack': isAttack,
+      'settings': settings,
+      'expectedRevision': expectedRevision,
+    });
+  }
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+  }) {
+    return _repository.applyBatch(
+      strategyPublicId: strategyPublicId,
+      clientId: clientId,
+      ops: ops,
+    );
+  }
+}
+
 class CloudMigrationNotifier extends Notifier<bool> {
   @override
   bool build() => false;
@@ -27,21 +153,41 @@ class CloudMigrationNotifier extends Notifier<bool> {
     if (state) return;
     if (!ref.read(isCloudCollabEnabledProvider)) return;
 
-    final repo = ref.read(convexStrategyRepositoryProvider);
+    final api = ref.read(cloudMigrationApiProvider);
     final folders = Hive.box<Folder>(HiveBoxNames.foldersBox).values.toList();
     final strategies =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values.toList();
+    var migrationSucceeded = true;
+
+    Future<void> recordFailure({
+      required String source,
+      required Object error,
+      required StackTrace stackTrace,
+    }) async {
+      migrationSucceeded = false;
+      log(
+        'Cloud migration write failed at $source: $error',
+        name: 'cloud_migration',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      await _maybeReportCloudUnauthenticated(
+        source: source,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
 
     for (final folder in folders) {
       try {
-        await repo.createFolder(
+        await api.createFolder(
           publicId: folder.id,
           name: folder.name,
           parentFolderPublicId: folder.parentID,
           iconId: folder.iconId,
         );
       } catch (error, stackTrace) {
-        await _maybeReportCloudUnauthenticated(
+        await recordFailure(
           source: 'cloud_migration:create_folder',
           error: error,
           stackTrace: stackTrace,
@@ -55,7 +201,7 @@ class CloudMigrationNotifier extends Notifier<bool> {
       final firstPage = pages.isNotEmpty ? pages.first : null;
       final fallbackPageId = const Uuid().v4();
       try {
-        await repo.createStrategyWithInitialPage(
+        await api.createStrategyWithInitialPage(
           publicId: strategy.id,
           name: strategy.name,
           mapData: Maps.mapNames[strategy.mapData] ?? 'ascent',
@@ -70,7 +216,7 @@ class CloudMigrationNotifier extends Notifier<bool> {
           themeOverridePalette: strategy.themeOverridePalette?.toJson(),
         );
       } catch (error, stackTrace) {
-        await _maybeReportCloudUnauthenticated(
+        await recordFailure(
           source: 'cloud_migration:create_strategy',
           error: error,
           stackTrace: stackTrace,
@@ -92,16 +238,17 @@ class CloudMigrationNotifier extends Notifier<bool> {
           continue;
         }
         try {
-          await ConvexClient.instance.mutation(name: 'pages:add', args: {
-            'strategyPublicId': strategy.id,
-            'pagePublicId': page.id,
-            'name': page.name,
-            'sortIndex': page.sortIndex,
-            'isAttack': page.isAttack,
-            'settings': page.settings.toJson(),
-          });
+          await api.addPage(
+            strategyPublicId: strategy.id,
+            pagePublicId: page.id,
+            name: page.name,
+            sortIndex: page.sortIndex,
+            isAttack: page.isAttack,
+            settings: page.settings.toJson(),
+            expectedRevision: i - 1,
+          );
         } catch (error, stackTrace) {
-          await _maybeReportCloudUnauthenticated(
+          await recordFailure(
             source: 'cloud_migration:add_page',
             error: error,
             stackTrace: stackTrace,
@@ -118,23 +265,37 @@ class CloudMigrationNotifier extends Notifier<bool> {
 
       if (allOps.isNotEmpty) {
         try {
-          await repo.applyBatch(
+          final acknowledgements = await api.applyBatch(
             strategyPublicId: strategy.id,
             clientId: const Uuid().v4(),
             ops: allOps,
           );
+          final rejected = acknowledgements.where((ack) => !ack.isAck).toList();
+          if (acknowledgements.length != allOps.length || rejected.isNotEmpty) {
+            final rejectionReasons = rejected
+                .map((ack) => ack.reason ?? ack.status)
+                .toSet()
+                .join(', ');
+            await recordFailure(
+              source: 'cloud_migration:apply_batch',
+              error: StateError(
+                'Cloud migration batch was not fully acknowledged'
+                '${rejectionReasons.isEmpty ? '' : ': $rejectionReasons'}',
+              ),
+              stackTrace: StackTrace.current,
+            );
+          }
         } catch (error, stackTrace) {
-          await _maybeReportCloudUnauthenticated(
+          await recordFailure(
             source: 'cloud_migration:apply_batch',
             error: error,
             stackTrace: stackTrace,
           );
-          log('Cloud migration ops failed for ${strategy.id}: $error');
         }
       }
     }
 
-    state = true;
+    state = migrationSucceeded;
   }
 
   Future<void> _maybeReportCloudUnauthenticated({

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:developer';
 
-import 'package:convex_flutter/convex_flutter.dart';
+import 'package:icarus/collab/convex_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/app_navigator.dart';
@@ -21,6 +21,15 @@ enum ConvexAuthStatus {
 }
 
 final RegExp _convexCodeRegex = RegExp(r'"code"\s*:\s*"([A-Z_]+)"');
+
+const _sensitiveAuthKeys = {
+  'access_token',
+  'refresh_token',
+  'provider_token',
+  'provider_refresh_token',
+  'code',
+  'code_verifier',
+};
 
 String? _extractConvexErrorCodeFromText(String text) {
   final match = _convexCodeRegex.firstMatch(text);
@@ -53,15 +62,6 @@ bool isConvexUnauthenticatedError(Object error) {
 }
 
 String redactAuthUri(Uri uri) {
-  const sensitiveKeys = {
-    'access_token',
-    'refresh_token',
-    'provider_token',
-    'provider_refresh_token',
-    'code',
-    'code_verifier',
-  };
-
   String redactFragment(String fragment) {
     if (fragment.isEmpty) {
       return fragment;
@@ -73,7 +73,7 @@ String redactAuthUri(Uri uri) {
     }
 
     return params.entries.map((entry) {
-      final value = sensitiveKeys.contains(entry.key.toLowerCase())
+      final value = _sensitiveAuthKeys.contains(entry.key.toLowerCase())
           ? '<redacted>'
           : entry.value;
       return '${Uri.encodeQueryComponent(entry.key)}='
@@ -83,9 +83,10 @@ String redactAuthUri(Uri uri) {
 
   final queryParameters = <String, String>{};
   for (final entry in uri.queryParameters.entries) {
-    queryParameters[entry.key] = sensitiveKeys.contains(entry.key.toLowerCase())
-        ? '<redacted>'
-        : entry.value;
+    queryParameters[entry.key] =
+        _sensitiveAuthKeys.contains(entry.key.toLowerCase())
+            ? '<redacted>'
+            : entry.value;
   }
 
   return uri
@@ -94,6 +95,35 @@ String redactAuthUri(Uri uri) {
         fragment: redactFragment(uri.fragment),
       )
       .toString();
+}
+
+String redactAuthDiagnosticText(Object value) {
+  var redacted = value.toString();
+
+  for (final key in _sensitiveAuthKeys) {
+    final escapedKey = RegExp.escape(key);
+    final keyValuePattern = RegExp(
+      "([\"']?$escapedKey[\"']?\\s*(?:=|:)\\s*)([\"']?)"
+      "([^&#,;\\s}\\]\"']+)([\"']?)",
+      caseSensitive: false,
+    );
+    redacted = redacted.replaceAllMapped(
+      keyValuePattern,
+      (match) => '${match.group(1)}${match.group(2)}'
+          '<redacted>${match.group(4)}',
+    );
+
+    final encodedKeyValuePattern = RegExp(
+      '($escapedKey%3D)(.*?)(?=%26|\\s|\$)',
+      caseSensitive: false,
+    );
+    redacted = redacted.replaceAllMapped(
+      encodedKeyValuePattern,
+      (match) => '${match.group(1)}%3Credacted%3E',
+    );
+  }
+
+  return redacted;
 }
 
 class AppAuthState {
@@ -686,6 +716,10 @@ class AuthProvider extends Notifier<AppAuthState> {
   }
 
   Future<void> signOut() async {
+    // Invalidate any setup that is currently awaiting a Convex auth handle
+    // before the Supabase auth-state event has a chance to arrive. Otherwise a
+    // stale setup can resume during sign-out and surface a false auth incident.
+    _advanceAuthGeneration();
     state = state.copyWith(
       isLoading: true,
       isConvexUserReady: false,
@@ -772,23 +806,27 @@ class AuthProvider extends Notifier<AppAuthState> {
       );
       return true;
     } catch (error, stackTrace) {
+      final safeError = redactAuthDiagnosticText(error);
+      final safeStackTrace = StackTrace.fromString(
+        redactAuthDiagnosticText(stackTrace),
+      );
       log(
-        'Failed auth callback [$source]: $error',
+        'Failed auth callback [$source]: $safeError',
         name: 'auth',
-        error: error,
-        stackTrace: stackTrace,
+        error: safeError,
+        stackTrace: safeStackTrace,
       );
       AppErrorReporter.reportError(
         'Failed auth callback [$source]: ${redactAuthUri(uri)}',
         source: 'auth',
-        error: error,
-        stackTrace: stackTrace,
+        error: safeError,
+        stackTrace: safeStackTrace,
       );
       state = state.copyWith(
         isLoading: false,
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.incident,
-        errorMessage: 'Failed to complete login: $error',
+        errorMessage: 'Failed to complete login. Please try again.',
       );
       return true;
     }

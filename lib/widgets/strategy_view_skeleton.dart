@@ -159,7 +159,6 @@ class _SkeletonTopBar extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(left: 15, top: 15, bottom: 10, right: 15),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Row(
             children: [
@@ -171,35 +170,59 @@ class _SkeletonTopBar extends StatelessWidget {
               ),
             ],
           ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Container(
-              width: 280,
-              height: 40,
-              decoration: BoxDecoration(
-                color: _tone(Settings.tacticalVioletTheme.card, 0.95),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _tone(Settings.highlightColor, 0.82)),
-              ),
-              child: Center(
-                child: title == null || title.isEmpty
-                    ? const _SkeletonBlock(width: 158, height: 12, radius: 5)
-                    : Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: ShadTheme.of(context)
-                              .textTheme
-                              .small
-                              .copyWith(color: Colors.white70),
-                        ),
-                      ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 6,
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 280),
+                child: Container(
+                  width: double.infinity,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _tone(Settings.tacticalVioletTheme.card, 0.95),
+                    borderRadius: BorderRadius.circular(8),
+                    border:
+                        Border.all(color: _tone(Settings.highlightColor, 0.82)),
+                  ),
+                  child: Center(
+                    child: title == null || title.isEmpty
+                        ? const _SkeletonBlock(
+                            width: 158,
+                            height: 12,
+                            radius: 5,
+                          )
+                        : Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: ShadTheme.of(context)
+                                  .textTheme
+                                  .small
+                                  .copyWith(color: Colors.white70),
+                            ),
+                          ),
+                  ),
+                ),
               ),
             ),
           ),
-          const _SkeletonBlock(width: 238, height: 40, radius: 8),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 5,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 238),
+                child: const SizedBox(
+                  width: double.infinity,
+                  child: _SkeletonBlock(height: 40, radius: 8),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

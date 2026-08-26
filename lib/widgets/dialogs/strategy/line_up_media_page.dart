@@ -263,7 +263,7 @@ class _LineupMediaPageState extends ConsumerState<LineupMediaPage> {
     final String fullImagePath =
         path.join(imageFolderPath!.path, image.id + image.fileExtension);
     final file = File(fullImagePath);
-    final snapshot = ref.watch(remoteStrategySnapshotProvider).valueOrNull;
+    final snapshot = ref.watch(remoteEditorSnapshotProvider).valueOrNull;
     final fallbackUrl = snapshot?.assetsById[image.id]?.url;
 
     final ImageProvider<Object>? imageProvider = file.existsSync()

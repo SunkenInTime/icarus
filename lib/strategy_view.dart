@@ -211,29 +211,31 @@ class _StrategyViewState extends ConsumerState<StrategyView>
           Padding(
             padding:
                 const EdgeInsets.only(left: 15, top: 15, bottom: 10, right: 15),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final showDiscordLabel = constraints.maxWidth >= 1000;
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    ShadIconButton.ghost(
-                      foregroundColor: Colors.white,
-                      onPressed: _leaveToLibrary,
-                      icon: const Icon(Icons.home),
+                    Row(
+                      children: [
+                        ShadIconButton.ghost(
+                          foregroundColor: Colors.white,
+                          onPressed: _leaveToLibrary,
+                          icon: const Icon(Icons.home),
+                        ),
+                        const SizedBox(width: 5),
+                        const MapSelector(),
+                        if (kIsWeb)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8.0),
+                            child: DemoTag(),
+                          ),
+                      ],
                     ),
-                    const SizedBox(width: 5),
-                    const MapSelector(),
-                    if (kIsWeb)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8.0),
-                        child: DemoTag(),
-                      )
-                  ],
-                ),
-                const StrategyQuickSwitcher(),
-                Row(
-                  children: [
-                    TextButton(
+                    const StrategyQuickSwitcher(),
+                    if (showDiscordLabel)
+                      TextButton(
                         style: TextButton.styleFrom(
                           foregroundColor: Colors.white,
                         ),
@@ -243,18 +245,28 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                         child: const Row(
                           children: [
                             Text("Have any bugs? Join the Discord"),
-                            SizedBox(
-                              width: 10,
-                            ),
+                            SizedBox(width: 10),
                             Icon(
                               CustomIcons.discord,
                               color: Colors.white,
-                            )
+                            ),
                           ],
-                        )),
+                        ),
+                      )
+                    else
+                      Tooltip(
+                        message: 'Have any bugs? Join the Discord',
+                        child: ShadIconButton.ghost(
+                          foregroundColor: Colors.white,
+                          onPressed: () async {
+                            await launchUrl(Settings.dicordLink);
+                          },
+                          icon: const Icon(CustomIcons.discord),
+                        ),
+                      ),
                   ],
-                )
-              ],
+                );
+              },
             ),
           ),
           const Expanded(

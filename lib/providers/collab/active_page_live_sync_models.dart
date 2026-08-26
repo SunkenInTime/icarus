@@ -1,8 +1,19 @@
 import 'package:icarus/collab/collab_models.dart';
 
-enum ActivePageOverlayEntityType { pageSettings, element, lineup }
+enum ActivePageOverlayEntityType {
+  pageDescriptor,
+  pageContent,
+  element,
+  lineup
+}
 
-enum EntitySyncKeyKind { strategy, pageSettings, element, lineup }
+enum EntitySyncKeyKind {
+  strategy,
+  pageDescriptor,
+  pageContent,
+  element,
+  lineup
+}
 
 class EntitySyncKey {
   const EntitySyncKey._({
@@ -11,9 +22,16 @@ class EntitySyncKey {
     required this.entityId,
   });
 
-  const EntitySyncKey.pageSettings(String pageId)
+  const EntitySyncKey.pageDescriptor(String pageId)
       : this._(
-          kind: EntitySyncKeyKind.pageSettings,
+          kind: EntitySyncKeyKind.pageDescriptor,
+          pageId: pageId,
+          entityId: null,
+        );
+
+  const EntitySyncKey.pageContent(String pageId)
+      : this._(
+          kind: EntitySyncKeyKind.pageContent,
           pageId: pageId,
           entityId: null,
         );
@@ -51,7 +69,13 @@ class EntitySyncKey {
         if (pageId == null) {
           return null;
         }
-        return EntitySyncKey.pageSettings(pageId);
+        return EntitySyncKey.pageDescriptor(pageId);
+      case StrategyOpEntityType.pageContent:
+        final pageId = op.entityPublicId ?? op.pagePublicId;
+        if (pageId == null) {
+          return null;
+        }
+        return EntitySyncKey.pageContent(pageId);
       case StrategyOpEntityType.element:
         if (op.pagePublicId == null || op.entityPublicId == null) {
           return null;
@@ -72,8 +96,9 @@ class EntitySyncKey {
   ActivePageOverlayEntityType? get overlayType {
     return switch (kind) {
       EntitySyncKeyKind.strategy => null,
-      EntitySyncKeyKind.pageSettings =>
-        ActivePageOverlayEntityType.pageSettings,
+      EntitySyncKeyKind.pageDescriptor =>
+        ActivePageOverlayEntityType.pageDescriptor,
+      EntitySyncKeyKind.pageContent => ActivePageOverlayEntityType.pageContent,
       EntitySyncKeyKind.element => ActivePageOverlayEntityType.element,
       EntitySyncKeyKind.lineup => ActivePageOverlayEntityType.lineup,
     };
@@ -96,7 +121,8 @@ class EntitySyncKey {
     final encodedEntityId = _encodeEntityKeyPart(entityId ?? '');
     return switch (kind) {
       EntitySyncKeyKind.strategy => 'strategy',
-      EntitySyncKeyKind.pageSettings => 'page:$encodedPageId:settings',
+      EntitySyncKeyKind.pageDescriptor => 'page:$encodedPageId:descriptor',
+      EntitySyncKeyKind.pageContent => 'page:$encodedPageId:content',
       EntitySyncKeyKind.element => 'element:$encodedPageId:$encodedEntityId',
       EntitySyncKeyKind.lineup => 'lineup:$encodedPageId:$encodedEntityId',
     };

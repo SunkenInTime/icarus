@@ -21,9 +21,8 @@ enum _SyncStatus { synced, syncing, offline, attention }
 ///
 /// Renders nothing for local strategies. For cloud strategies it shows one of
 /// synced / syncing / offline / needs-attention, with a popover explaining the
-/// state and offering retry when something failed. Also surfaces conflicts
-/// (server rejected an edit and the view was rebased) as a toast — previously
-/// those were collected and never shown.
+/// state and offering recovery when something failed. Also surfaces conflicts
+/// (the server rejected an edit while retaining the local intent) as a toast.
 class CloudSyncStatusChip extends ConsumerStatefulWidget {
   const CloudSyncStatusChip({super.key});
 
@@ -72,10 +71,9 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
   void _showConflictToast() {
     _lastConflictToast = DateTime.now();
     Settings.showToast(
-      message:
-          'A collaborator changed this page — your view was updated to the '
-          'latest version.',
-      backgroundColor: Settings.tacticalVioletTheme.primary,
+      message: 'Another edit reached the cloud first. Your version is still on '
+          'this device and needs attention.',
+      backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
     ref.read(strategyConflictProvider.notifier).clearAll();
   }
@@ -86,18 +84,15 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
         .read(cloudMediaUploadQueueProvider.notifier)
         .retryNow(ignoreBackoff: true);
     final opQueue = ref.read(strategyOpQueueProvider.notifier);
+    await opQueue.retryPaused(flushImmediately: false);
+    await opQueue.retryRejected(flushImmediately: false);
     await opQueue.flushNow();
-    // If everything queued was already dropped (max attempts), flushNow is a
-    // no-op and the old error would pin the chip on "needs attention" with a
-    // Retry that does nothing — clear it; the page has since rebased onto
-    // the server state.
     opQueue.clearStaleError();
   }
 
   @override
   Widget build(BuildContext context) {
-    final source =
-        ref.watch(strategyProvider.select((state) => state.source));
+    final source = ref.watch(strategyProvider.select((state) => state.source));
     ref.listen(strategyConflictProvider, (previous, next) {
       _onConflicts(previous?.length ?? 0, next.length);
     });
@@ -107,17 +102,20 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
     }
 
     final saveState = ref.watch(strategySaveStateProvider);
+    final opQueueState = ref.watch(strategyOpQueueProvider);
     final isConnected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
 
     final _SyncStatus status;
-    if (!isConnected) {
-      status = _SyncStatus.offline;
-    } else if (saveState.cloudSyncError != null ||
+    if (opQueueState.needsAttention ||
+        saveState.cloudSyncError != null ||
         saveState.mediaSyncErrorCount > 0) {
       status = _SyncStatus.attention;
+    } else if (!isConnected) {
+      status = _SyncStatus.offline;
     } else if (saveState.isSaving ||
         saveState.hasPendingCloudSync ||
-        saveState.hasPendingMediaSync) {
+        saveState.hasPendingMediaSync ||
+        !opQueueState.durableLoaded) {
       status = _SyncStatus.syncing;
     } else {
       status = _SyncStatus.synced;
@@ -134,6 +132,7 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
       popover: (context) => _SyncStatusPopover(
         status: status,
         saveState: saveState,
+        hasRejectedWork: opQueueState.attentionByEntityKey.isNotEmpty,
         onRetry: _retry,
       ),
       child: Padding(
@@ -189,8 +188,7 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
   Color _chipBackground(_SyncStatus status) {
     switch (status) {
       case _SyncStatus.attention:
-        return Settings.tacticalVioletTheme.destructive
-            .withValues(alpha: 0.14);
+        return Settings.tacticalVioletTheme.destructive.withValues(alpha: 0.14);
       case _SyncStatus.offline:
       case _SyncStatus.syncing:
       case _SyncStatus.synced:
@@ -264,11 +262,13 @@ class _SyncStatusPopover extends StatelessWidget {
   const _SyncStatusPopover({
     required this.status,
     required this.saveState,
+    required this.hasRejectedWork,
     required this.onRetry,
   });
 
   final _SyncStatus status;
   final StrategySaveState saveState;
+  final bool hasRejectedWork;
   final Future<void> Function() onRetry;
 
   @override
@@ -312,7 +312,7 @@ class _SyncStatusPopover extends StatelessWidget {
               size: ShadButtonSize.sm,
               onPressed: onRetry,
               leading: const Icon(LucideIcons.refreshCw, size: 14),
-              child: const Text('Retry sync'),
+              child: Text(hasRejectedWork ? 'Keep my version' : 'Retry sync'),
             ),
           ],
         ],
@@ -351,8 +351,17 @@ class _SyncStatusPopover extends StatelessWidget {
   String get _attentionExplanation {
     final mediaErrors = saveState.mediaSyncErrorCount;
     final parts = <String>[];
+    if (hasRejectedWork) {
+      parts.add(
+        'Another edit reached the cloud first. Your version remains saved '
+        'on this device.',
+      );
+    }
     final error = saveState.cloudSyncError;
-    if (error != null) {
+    final retryUnavailable =
+        error?.toLowerCase().contains('cannot be retried automatically') ??
+            false;
+    if (error != null && (!hasRejectedWork || retryUnavailable)) {
       parts.add(_friendlyError(error));
     }
     if (mediaErrors > 0) {
@@ -365,12 +374,33 @@ class _SyncStatusPopover extends StatelessWidget {
     if (parts.isEmpty) {
       parts.add("Some changes haven't reached the cloud yet.");
     }
-    parts.add('Retry to send them now.');
+    parts.add(
+      hasRejectedWork
+          ? 'Choose Keep my version to send your retained edit again.'
+          : 'Retry to send them now.',
+    );
     return parts.join(' ');
   }
 
   static String _friendlyError(String raw) {
     final lower = raw.toLowerCase();
+    if (lower.contains('unreadable saved work')) {
+      return 'A saved cloud change could not be read. It remains on this '
+          'device; keep this strategy open and recover the outbox before '
+          'continuing.';
+    }
+    if (lower.contains('retry paused')) {
+      return 'A saved cloud change is paused after repeated failures. Retry '
+          'when the connection and account are healthy.';
+    }
+    if (lower.contains('needs attention')) {
+      return 'Another edit reached the cloud first. Your version remains '
+          'saved on this device.';
+    }
+    if (lower.contains('cannot be retried automatically')) {
+      return 'The server cannot match this retained edit to a current cloud '
+          'revision. It remains saved on this device.';
+    }
     if (lower.contains('auth')) {
       return 'Your cloud session needs to be refreshed — retry, or sign in '
           'again from the library.';

@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import { assertStrategyRole } from "./lib/auth";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
 import {
+  clampPageIndex,
   getPageByPublicId,
   getStrategyByPublicId,
   sortByNumberField,
@@ -13,42 +14,30 @@ import {
   invalidOpError,
   notFoundError,
   errorWithCode,
+  internalError,
 } from "./lib/errors";
-
-function settingsEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
-}
+import { serializePageDescriptor } from "./lib/snapshotSerialization";
+import { valuesEqual } from "./lib/canonicalValues";
 
 export const listForStrategy = query({
-  args: {
-    strategyPublicId: v.string(),
-  },
+  args: { strategyPublicId: v.string() },
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");
-
     const pages = await ctx.db
       .query("pages")
       .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
       .collect();
-
-    return sortByNumberField(pages, "sortIndex").map((page) => ({
-      publicId: page.publicId,
-      strategyPublicId: strategy.publicId,
-      name: page.name,
-      sortIndex: page.sortIndex,
-      isAttack: page.isAttack,
-      settings: page.settings ?? null,
-      revision: page.revision,
-      createdAt: page.createdAt,
-      updatedAt: page.updatedAt,
-    }));
+    return sortByNumberField(pages, "sortIndex").map((page) =>
+      serializePageDescriptor(strategy.publicId, page),
+    );
   },
 });
 
 export const add = mutation({
   args: {
     strategyPublicId: v.string(),
+    expectedRevision: v.number(),
     pagePublicId: v.string(),
     name: v.string(),
     sortIndex: v.number(),
@@ -58,61 +47,82 @@ export const add = mutation({
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
-
-    const now = Date.now();
     const existingPage = await ctx.db
       .query("pages")
       .withIndex("by_publicId", (q) => q.eq("publicId", args.pagePublicId))
       .first();
+    const pages = await ctx.db
+      .query("pages")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+      .collect();
+
     if (existingPage !== null) {
       if (existingPage.strategyId !== strategy._id) {
-        throw conflictError(`Page publicId already exists: ${args.pagePublicId}`);
+        throw conflictError(
+          `Page publicId already exists: ${args.pagePublicId}`,
+        );
       }
-
-      const settingsChanged = !settingsEqual(existingPage.settings, args.settings);
-      const hasChanges =
-        existingPage.name !== args.name ||
-        existingPage.sortIndex !== args.sortIndex ||
-        existingPage.isAttack !== args.isAttack ||
-        settingsChanged;
-      if (!hasChanges) {
-        return { ok: true, reused: true };
+      const pageContents = await ctx.db
+        .query("pageContents")
+        .withIndex("by_pageId", (q) => q.eq("pageId", existingPage._id))
+        .take(2);
+      if (pageContents.length !== 1) {
+        throw internalError(
+          "Each page must have exactly one page content row.",
+        );
       }
-
-      await ctx.db.patch(existingPage._id, {
-        name: args.name,
-        sortIndex: args.sortIndex,
-        isAttack: args.isAttack,
-        settings: args.settings,
-        revision: existingPage.revision + 1,
-        updatedAt: now,
-      });
-
-      await ctx.db.patch(strategy._id, {
-        sequence: strategy.sequence + 1,
-        updatedAt: now,
-      });
-      return { ok: true, reused: true };
+      const desiredSortIndex = clampPageIndex(
+        args.sortIndex,
+        Math.max(0, pages.length - 1),
+      );
+      const identical =
+        existingPage.name === args.name &&
+        existingPage.sortIndex === desiredSortIndex &&
+        existingPage.isAttack === args.isAttack &&
+        valuesEqual(pageContents[0]!.settings, args.settings);
+      if (identical) {
+        return { ok: true, reused: true, revision: strategy.revision };
+      }
+      throw conflictError(`Page publicId already exists: ${args.pagePublicId}`);
+    }
+    if (args.expectedRevision !== strategy.revision) {
+      throw conflictError("Strategy revision mismatch");
     }
 
-    await ctx.db.insert("pages", {
+    const now = Date.now();
+    const orderedPages = sortByNumberField(pages, "sortIndex");
+    const desiredSortIndex = clampPageIndex(args.sortIndex, orderedPages.length);
+    for (let index = 0; index < orderedPages.length; index += 1) {
+      const page = orderedPages[index]!;
+      const normalizedIndex = index >= desiredSortIndex ? index + 1 : index;
+      if (page.sortIndex !== normalizedIndex) {
+        await ctx.db.patch(page._id, {
+          sortIndex: normalizedIndex,
+          revision: page.revision + 1,
+          updatedAt: now,
+        });
+      }
+    }
+    const pageId = await ctx.db.insert("pages", {
       publicId: args.pagePublicId,
       strategyId: strategy._id,
       name: args.name,
-      sortIndex: args.sortIndex,
+      sortIndex: desiredSortIndex,
       isAttack: args.isAttack,
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("pageContents", {
+      pageId,
       settings: args.settings,
       revision: 1,
       createdAt: now,
       updatedAt: now,
     });
-
-    await ctx.db.patch(strategy._id, {
-      sequence: strategy.sequence + 1,
-      updatedAt: now,
-    });
-
-    return { ok: true };
+    const revision = strategy.revision + 1;
+    await ctx.db.patch(strategy._id, { revision, updatedAt: now });
+    return { ok: true, revision };
   },
 });
 
@@ -121,29 +131,29 @@ export const rename = mutation({
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
     name: v.string(),
+    expectedRevision: v.number(),
   },
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
-
     const page = await getPageByPublicId(ctx, args.pagePublicId);
     if (page.strategyId !== strategy._id) {
       throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
     }
+    if (page.name === args.name) {
+      return { ok: true, reused: true, revision: page.revision };
+    }
+    if (args.expectedRevision !== page.revision) {
+      throw conflictError("Page revision mismatch");
+    }
 
-    const now = Date.now();
+    const revision = page.revision + 1;
     await ctx.db.patch(page._id, {
       name: args.name,
-      revision: page.revision + 1,
-      updatedAt: now,
+      revision,
+      updatedAt: Date.now(),
     });
-
-    await ctx.db.patch(strategy._id, {
-      sequence: strategy.sequence + 1,
-      updatedAt: now,
-    });
-
-    return { ok: true };
+    return { ok: true, revision };
   },
 });
 
@@ -151,52 +161,59 @@ export const deletePage = mutation({
   args: {
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
+    expectedRevision: v.number(),
   },
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
-
     const pages = await ctx.db
       .query("pages")
       .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
       .collect();
-
+    const page = pages.find(
+      (candidate) => candidate.publicId === args.pagePublicId,
+    );
+    if (page === undefined) {
+      return { ok: true, reused: true, revision: strategy.revision };
+    }
     if (pages.length <= 1) {
       throw invalidOpError("Cannot delete last page");
     }
-
-    const page = await getPageByPublicId(ctx, args.pagePublicId);
-    if (page.strategyId !== strategy._id) {
-      throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
+    if (args.expectedRevision !== strategy.revision) {
+      throw conflictError("Strategy revision mismatch");
     }
 
+    const pageContents = await ctx.db
+      .query("pageContents")
+      .withIndex("by_pageId", (q) => q.eq("pageId", page._id))
+      .collect();
+    for (const pageContent of pageContents) {
+      await ctx.db.delete(pageContent._id);
+    }
     await ctx.db.delete(page._id);
-
     await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
       pageId: page._id,
     });
 
     const ordered = sortByNumberField(
-      pages.filter((p) => p._id !== page._id),
+      pages.filter((candidate) => candidate._id !== page._id),
       "sortIndex",
     );
-    for (let i = 0; i < ordered.length; i += 1) {
-      const current = ordered[i]!;
-      if (current.sortIndex !== i) {
+    const now = Date.now();
+    for (let index = 0; index < ordered.length; index += 1) {
+      const current = ordered[index]!;
+      if (current.sortIndex !== index) {
         await ctx.db.patch(current._id, {
-          sortIndex: i,
+          sortIndex: index,
           revision: current.revision + 1,
-          updatedAt: Date.now(),
+          updatedAt: now,
         });
       }
     }
 
-    await ctx.db.patch(strategy._id, {
-      sequence: strategy.sequence + 1,
-      updatedAt: Date.now(),
-    });
-
-    return { ok: true };
+    const revision = strategy.revision + 1;
+    await ctx.db.patch(strategy._id, { revision, updatedAt: now });
+    return { ok: true, revision };
   },
 });
 
@@ -204,44 +221,48 @@ export const reorder = mutation({
   args: {
     strategyPublicId: v.string(),
     orderedPagePublicIds: v.array(v.string()),
+    expectedRevision: v.number(),
   },
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
-
     const pages = await ctx.db
       .query("pages")
       .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
       .collect();
-
     if (pages.length !== args.orderedPagePublicIds.length) {
       throw invalidOpError("Page count mismatch");
     }
-
-    const pageByPublicId = new Map(pages.map((p) => [p.publicId, p]));
-    const now = Date.now();
-
-    for (let i = 0; i < args.orderedPagePublicIds.length; i += 1) {
-      const publicId = args.orderedPagePublicIds[i]!;
+    if (new Set(args.orderedPagePublicIds).size !== pages.length) {
+      throw invalidOpError("Page order must include each page exactly once");
+    }
+    const pageByPublicId = new Map(pages.map((page) => [page.publicId, page]));
+    const ordered = args.orderedPagePublicIds.map((publicId) => {
       const page = pageByPublicId.get(publicId);
-      if (!page) {
-        throw notFoundError("Page", publicId);
-      }
-      if (page.sortIndex !== i) {
+      if (page === undefined) throw notFoundError("Page", publicId);
+      return page;
+    });
+    if (ordered.every((page, index) => page.sortIndex === index)) {
+      return { ok: true, reused: true, revision: strategy.revision };
+    }
+    if (args.expectedRevision !== strategy.revision) {
+      throw conflictError("Strategy revision mismatch");
+    }
+
+    const now = Date.now();
+    for (let index = 0; index < ordered.length; index += 1) {
+      const page = ordered[index]!;
+      if (page.sortIndex !== index) {
         await ctx.db.patch(page._id, {
-          sortIndex: i,
+          sortIndex: index,
           revision: page.revision + 1,
           updatedAt: now,
         });
       }
     }
-
-    await ctx.db.patch(strategy._id, {
-      sequence: strategy.sequence + 1,
-      updatedAt: now,
-    });
-
-    return { ok: true };
+    const revision = strategy.revision + 1;
+    await ctx.db.patch(strategy._id, { revision, updatedAt: now });
+    return { ok: true, revision };
   },
 });
 

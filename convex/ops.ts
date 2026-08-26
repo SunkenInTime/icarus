@@ -1,40 +1,20 @@
 import { mutation, type MutationCtx } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
 import {
-  getElementByPublicId,
-  getLineupByPublicId,
-  getPageByPublicId,
+  clampPageIndex,
   getStrategyByPublicId,
+  sortByNumberField,
 } from "./lib/entities";
 import { strategyOpValidator } from "./lib/opTypes";
 import { assertSupportedCloudProtocol } from "./lib/cloudProtocol";
-import type { Doc } from "./_generated/dataModel";
+import { valuesEqual } from "./lib/canonicalValues";
 import { errorWithCode, invalidPayloadError } from "./lib/errors";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
 
-async function incrementSequence(ctx: any, strategy: any): Promise<any> {
-  const nextSequence = strategy.sequence + 1;
-  const now = Date.now();
-  await ctx.db.patch(strategy._id, {
-    sequence: nextSequence,
-    updatedAt: now,
-  });
-  return {
-    ...strategy,
-    sequence: nextSequence,
-    updatedAt: now,
-  };
-}
-
 type ElementPayload = Doc<"elements">["payload"];
 type LineupPayload = Doc<"lineups">["payload"];
-type ReplayEntityTable = "elements" | "lineups";
-type ReplayEntitySnapshot = {
-  revision: number;
-  payload: ElementPayload | LineupPayload;
-};
 type StrategyPatchPayload = {
   name?: string;
   mapData?: string;
@@ -45,32 +25,31 @@ type StrategyPatchPayload = {
 };
 type PagePayload = {
   name?: string;
-  settings?: Doc<"pages">["settings"];
+  settings?: Doc<"pageContents">["settings"];
   isAttack?: boolean;
 };
-
-async function getReplayEntitySnapshot(
-  ctx: MutationCtx,
-  tableName: ReplayEntityTable,
-  entityPublicId: string,
-  strategyId: Id<"strategies">,
-): Promise<ReplayEntitySnapshot | null> {
-  const entity =
-    tableName === "elements"
-      ? await ctx.db
-          .query("elements")
-          .withIndex("by_publicId", (q) => q.eq("publicId", entityPublicId))
-          .first()
-      : await ctx.db
-          .query("lineups")
-          .withIndex("by_publicId", (q) => q.eq("publicId", entityPublicId))
-          .first();
-
-  if (entity === null || entity.strategyId !== strategyId) {
-    return null;
-  }
-  return { revision: entity.revision, payload: entity.payload };
-}
+type StrategyOp = {
+  opId: string;
+  kind: "add" | "move" | "patch" | "delete" | "reorder";
+  entityType: "strategy" | "page" | "pageContent" | "element" | "lineup";
+  entityPublicId?: string;
+  pagePublicId?: string;
+  payload?: unknown;
+  sortIndex?: number;
+  expectedRevision?: number;
+};
+type TargetSnapshot = {
+  revision: number;
+  payload: unknown;
+};
+type OperationResult = {
+  status: "ack" | "reject";
+  reason?: string;
+  appliedRevision?: number;
+  latestRevision?: number;
+  latestPayload?: unknown;
+  eventPageId?: Id<"pages">;
+};
 
 function isRecord(payload: unknown): payload is Record<string, unknown> {
   return (
@@ -98,27 +77,18 @@ const strategyPatchPayloadKeys = new Set([
   "themeOverridePalette",
   "clearThemeOverridePalette",
 ]);
-
 const pagePayloadKeys = new Set(["name", "settings", "isAttack"]);
 
 function assertStrategyPatchPayload(payload: unknown): StrategyPatchPayload {
-  if (payload === undefined) {
-    return {};
-  }
-  if (!isRecord(payload)) {
-    throw invalidPayloadError("Invalid strategy payload");
-  }
+  if (payload === undefined) return {};
+  if (!isRecord(payload)) throw invalidPayloadError("Invalid strategy payload");
   assertKnownPayloadKeys(payload, strategyPatchPayloadKeys, "strategy");
   return payload as StrategyPatchPayload;
 }
 
 function assertPagePayload(payload: unknown): PagePayload {
-  if (payload === undefined) {
-    return {};
-  }
-  if (!isRecord(payload)) {
-    throw invalidPayloadError("Invalid page payload");
-  }
+  if (payload === undefined) return {};
+  if (!isRecord(payload)) throw invalidPayloadError("Invalid page payload");
   assertKnownPayloadKeys(payload, pagePayloadKeys, "page");
   return payload as PagePayload;
 }
@@ -128,8 +98,6 @@ function assertElementPayload(payload: unknown): ElementPayload {
     throw errorWithCode("MISSING_ELEMENT_PAYLOAD", "Missing element payload");
   }
   const kind = payload.kind;
-  const payloadVersion = payload.payloadVersion;
-  const data = payload.data;
   if (
     kind !== "agent" &&
     kind !== "ability" &&
@@ -138,16 +106,31 @@ function assertElementPayload(payload: unknown): ElementPayload {
     kind !== "image" &&
     kind !== "utility"
   ) {
-    throw errorWithCode("INVALID_ELEMENT_PAYLOAD_KIND", "Invalid element payload kind");
+    throw errorWithCode(
+      "INVALID_ELEMENT_PAYLOAD_KIND",
+      "Invalid element payload kind",
+    );
   }
-  if (typeof payloadVersion !== "number") {
-    throw errorWithCode("INVALID_ELEMENT_PAYLOAD_VERSION", "Invalid element payload version");
+  if (typeof payload.payloadVersion !== "number") {
+    throw errorWithCode(
+      "INVALID_ELEMENT_PAYLOAD_VERSION",
+      "Invalid element payload version",
+    );
   }
-  if (!isRecord(data)) {
-    throw errorWithCode("INVALID_ELEMENT_PAYLOAD_DATA", "Invalid element payload data");
+  if (!isRecord(payload.data)) {
+    throw errorWithCode(
+      "INVALID_ELEMENT_PAYLOAD_DATA",
+      "Invalid element payload data",
+    );
   }
-  if (typeof data.elementType === "string" && data.elementType !== kind) {
-    throw errorWithCode("ELEMENT_TYPE_PAYLOAD_KIND_MISMATCH", "elementType_payloadKind_mismatch");
+  if (
+    typeof payload.data.elementType === "string" &&
+    payload.data.elementType !== kind
+  ) {
+    throw errorWithCode(
+      "ELEMENT_TYPE_PAYLOAD_KIND_MISMATCH",
+      "elementType_payloadKind_mismatch",
+    );
   }
   return payload as ElementPayload;
 }
@@ -157,39 +140,24 @@ function assertLineupPayload(payload: unknown): LineupPayload {
     throw errorWithCode("MISSING_LINEUP_PAYLOAD", "Missing lineup payload");
   }
   if (payload.kind !== "lineupGroup") {
-    throw errorWithCode("INVALID_LINEUP_PAYLOAD_KIND", "Invalid lineup payload kind");
+    throw errorWithCode(
+      "INVALID_LINEUP_PAYLOAD_KIND",
+      "Invalid lineup payload kind",
+    );
   }
   if (typeof payload.payloadVersion !== "number") {
-    throw errorWithCode("INVALID_LINEUP_PAYLOAD_VERSION", "Invalid lineup payload version");
+    throw errorWithCode(
+      "INVALID_LINEUP_PAYLOAD_VERSION",
+      "Invalid lineup payload version",
+    );
   }
   if (!isRecord(payload.data)) {
-    throw errorWithCode("INVALID_LINEUP_PAYLOAD_DATA", "Invalid lineup payload data");
+    throw errorWithCode(
+      "INVALID_LINEUP_PAYLOAD_DATA",
+      "Invalid lineup payload data",
+    );
   }
   return payload as LineupPayload;
-}
-
-function normalizeComparableValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(normalizeComparableValue);
-  }
-  if (isRecord(value)) {
-    const result: Record<string, unknown> = {};
-    for (const key of Object.keys(value).sort()) {
-      const child = value[key];
-      if (child !== undefined) {
-        result[key] = normalizeComparableValue(child);
-      }
-    }
-    return result;
-  }
-  return value;
-}
-
-function valuesEqual(left: unknown, right: unknown): boolean {
-  return (
-    JSON.stringify(normalizeComparableValue(left)) ===
-    JSON.stringify(normalizeComparableValue(right))
-  );
 }
 
 function setIfChanged(
@@ -198,33 +166,858 @@ function setIfChanged(
   currentValue: unknown,
   nextValue: unknown,
 ): void {
-  if (!valuesEqual(currentValue, nextValue)) {
-    patch[key] = nextValue;
+  if (!valuesEqual(currentValue, nextValue)) patch[key] = nextValue;
+}
+
+function requireExpectedRevision(op: StrategyOp, currentRevision: number) {
+  if (op.expectedRevision === undefined) {
+    return { status: "reject" as const, reason: "missing_expected_revision" };
   }
+  if (op.expectedRevision !== currentRevision) {
+    return { status: "reject" as const, reason: "revision_mismatch" };
+  }
+  return null;
 }
 
-function hasChanges(patch: Record<string, unknown>): boolean {
-  return Object.keys(patch).length > 0;
-}
-
-async function patchStrategyAndIncrement(
-  ctx: any,
-  strategy: any,
-  patch: Record<string, unknown>,
-): Promise<any> {
-  const nextSequence = strategy.sequence + 1;
-  const now = Date.now();
-  await ctx.db.patch(strategy._id, {
-    ...patch,
-    sequence: nextSequence,
-    updatedAt: now,
-  });
+function strategyPayload(strategy: Doc<"strategies">) {
   return {
+    name: strategy.name,
+    mapData: strategy.mapData,
+    themeProfileId: strategy.themeProfileId ?? null,
+    themeOverridePalette: strategy.themeOverridePalette ?? null,
+  };
+}
+
+function pagePayload(page: Doc<"pages">) {
+  return {
+    name: page.name,
+    isAttack: page.isAttack,
+    sortIndex: page.sortIndex,
+  };
+}
+
+async function getPageByPublicIdOrNull(
+  ctx: MutationCtx,
+  publicId: string,
+): Promise<Doc<"pages"> | null> {
+  return await ctx.db
+    .query("pages")
+    .withIndex("by_publicId", (q) => q.eq("publicId", publicId))
+    .first();
+}
+
+async function getElementByPublicIdOrNull(
+  ctx: MutationCtx,
+  publicId: string,
+): Promise<Doc<"elements"> | null> {
+  return await ctx.db
+    .query("elements")
+    .withIndex("by_publicId", (q) => q.eq("publicId", publicId))
+    .first();
+}
+
+async function getLineupByPublicIdOrNull(
+  ctx: MutationCtx,
+  publicId: string,
+): Promise<Doc<"lineups"> | null> {
+  return await ctx.db
+    .query("lineups")
+    .withIndex("by_publicId", (q) => q.eq("publicId", publicId))
+    .first();
+}
+
+async function getPageContent(
+  ctx: MutationCtx,
+  pageId: Id<"pages">,
+): Promise<Doc<"pageContents">> {
+  const rows = await ctx.db
+    .query("pageContents")
+    .withIndex("by_pageId", (q) => q.eq("pageId", pageId))
+    .take(2);
+  if (rows.length !== 1) {
+    throw errorWithCode(
+      "INVALID_PAGE_CONTENT_COUNT",
+      "Each page must have exactly one page content row",
+    );
+  }
+  return rows[0]!;
+}
+
+async function getTargetSnapshot(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  op: StrategyOp,
+): Promise<TargetSnapshot | null> {
+  if (
+    op.entityType === "strategy" ||
+    (op.entityType === "page" && op.kind !== "patch")
+  ) {
+    return { revision: strategy.revision, payload: strategyPayload(strategy) };
+  }
+  const publicId = op.entityPublicId ?? op.pagePublicId;
+  if (publicId === undefined) return null;
+  if (op.entityType === "page") {
+    const page = await getPageByPublicIdOrNull(ctx, publicId);
+    if (page === null || page.strategyId !== strategy._id) return null;
+    return { revision: page.revision, payload: pagePayload(page) };
+  }
+  if (op.entityType === "pageContent") {
+    const page = await getPageByPublicIdOrNull(ctx, publicId);
+    if (page === null || page.strategyId !== strategy._id) return null;
+    const content = await getPageContent(ctx, page._id);
+    return {
+      revision: content.revision,
+      payload: { settings: content.settings ?? null },
+    };
+  }
+  if (op.entityType === "element") {
+    const element = await getElementByPublicIdOrNull(ctx, publicId);
+    if (element === null || element.strategyId !== strategy._id) return null;
+    return { revision: element.revision, payload: element.payload };
+  }
+  const lineup = await getLineupByPublicIdOrNull(ctx, publicId);
+  if (lineup === null || lineup.strategyId !== strategy._id) return null;
+  return { revision: lineup.revision, payload: lineup.payload };
+}
+
+function rejected(
+  reason: string,
+  snapshot?: TargetSnapshot | null,
+  eventPageId?: Id<"pages">,
+): OperationResult {
+  return {
+    status: "reject",
+    reason,
+    latestRevision: snapshot?.revision,
+    latestPayload: snapshot?.payload,
+    eventPageId,
+  };
+}
+
+function noop(revision?: number, eventPageId?: Id<"pages">): OperationResult {
+  return {
+    status: "ack",
+    reason: "noop",
+    appliedRevision: revision,
+    latestRevision: revision,
+    eventPageId,
+  };
+}
+
+async function applyStrategyOp(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  op: StrategyOp,
+): Promise<{ strategy: Doc<"strategies">; result: OperationResult }> {
+  if (op.kind !== "patch") {
+    throw errorWithCode("UNSUPPORTED_OP", "Unsupported strategy op");
+  }
+  const payload = assertStrategyPatchPayload(op.payload);
+  const patch: Record<string, unknown> = {};
+  if (payload.name !== undefined) {
+    setIfChanged(patch, "name", strategy.name, payload.name);
+  }
+  if (payload.mapData !== undefined) {
+    setIfChanged(patch, "mapData", strategy.mapData, payload.mapData);
+  }
+  if (payload.themeProfileId !== undefined) {
+    setIfChanged(
+      patch,
+      "themeProfileId",
+      strategy.themeProfileId,
+      payload.themeProfileId,
+    );
+  }
+  if (payload.clearThemeProfileId === true) {
+    setIfChanged(patch, "themeProfileId", strategy.themeProfileId, undefined);
+  }
+  if (payload.themeOverridePalette !== undefined) {
+    setIfChanged(
+      patch,
+      "themeOverridePalette",
+      strategy.themeOverridePalette,
+      payload.themeOverridePalette,
+    );
+  }
+  if (payload.clearThemeOverridePalette === true) {
+    setIfChanged(
+      patch,
+      "themeOverridePalette",
+      strategy.themeOverridePalette,
+      undefined,
+    );
+  }
+  if (Object.keys(patch).length === 0) {
+    return { strategy, result: noop(strategy.revision) };
+  }
+  const mismatch = requireExpectedRevision(op, strategy.revision);
+  if (mismatch !== null) {
+    return {
+      strategy,
+      result: rejected(mismatch.reason, {
+        revision: strategy.revision,
+        payload: strategyPayload(strategy),
+      }),
+    };
+  }
+
+  const revision = strategy.revision + 1;
+  const updatedAt = Date.now();
+  await ctx.db.patch(strategy._id, { ...patch, revision, updatedAt });
+  const updated = {
     ...strategy,
     ...patch,
-    sequence: nextSequence,
-    updatedAt: now,
+    revision,
+    updatedAt,
+  } as Doc<"strategies">;
+  return {
+    strategy: updated,
+    result: { status: "ack", appliedRevision: revision },
   };
+}
+
+async function applyPageOp(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  op: StrategyOp,
+): Promise<{ strategy: Doc<"strategies">; result: OperationResult }> {
+  const publicId = op.entityPublicId ?? op.pagePublicId;
+  if (publicId === undefined) {
+    throw errorWithCode("MISSING_PAGE_ID", "Missing page id");
+  }
+  const existing = await getPageByPublicIdOrNull(ctx, publicId);
+
+  if (op.kind === "add") {
+    const payload = assertPagePayload(op.payload);
+    if (existing !== null) {
+      if (existing.strategyId !== strategy._id) {
+        return { strategy, result: rejected("page_strategy_mismatch") };
+      }
+      const content = await getPageContent(ctx, existing._id);
+      const pages = await ctx.db
+        .query("pages")
+        .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+        .collect();
+      const desiredSortIndex = clampPageIndex(
+        op.sortIndex ?? 0,
+        Math.max(0, pages.length - 1),
+      );
+      const identical =
+        existing.name === (payload.name ?? "Page") &&
+        existing.sortIndex === desiredSortIndex &&
+        existing.isAttack === (payload.isAttack ?? true) &&
+        valuesEqual(content.settings, payload.settings);
+      if (identical) {
+        return { strategy, result: noop(strategy.revision, existing._id) };
+      }
+      return {
+        strategy,
+        result: rejected(
+          "already_exists",
+          { revision: strategy.revision, payload: pagePayload(existing) },
+          existing._id,
+        ),
+      };
+    }
+    const mismatch = requireExpectedRevision(op, strategy.revision);
+    if (mismatch !== null) {
+      return {
+        strategy,
+        result: rejected(mismatch.reason, {
+          revision: strategy.revision,
+          payload: strategyPayload(strategy),
+        }),
+      };
+    }
+
+    const now = Date.now();
+    const pages = await ctx.db
+      .query("pages")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+      .collect();
+    const orderedPages = sortByNumberField(pages, "sortIndex");
+    const desiredSortIndex = clampPageIndex(
+      op.sortIndex ?? 0,
+      orderedPages.length,
+    );
+    for (let index = 0; index < orderedPages.length; index += 1) {
+      const page = orderedPages[index]!;
+      const normalizedIndex = index >= desiredSortIndex ? index + 1 : index;
+      if (page.sortIndex !== normalizedIndex) {
+        await ctx.db.patch(page._id, {
+          sortIndex: normalizedIndex,
+          revision: page.revision + 1,
+          updatedAt: now,
+        });
+      }
+    }
+    const pageId = await ctx.db.insert("pages", {
+      publicId,
+      strategyId: strategy._id,
+      name: payload.name ?? "Page",
+      sortIndex: desiredSortIndex,
+      isAttack: payload.isAttack ?? true,
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("pageContents", {
+      pageId,
+      settings: payload.settings,
+      revision: 1,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const revision = strategy.revision + 1;
+    await ctx.db.patch(strategy._id, { revision, updatedAt: now });
+    return {
+      strategy: { ...strategy, revision, updatedAt: now },
+      result: { status: "ack", appliedRevision: revision, eventPageId: pageId },
+    };
+  }
+
+  if (op.kind === "delete") {
+    if (existing === null || existing.strategyId !== strategy._id) {
+      return { strategy, result: noop(strategy.revision) };
+    }
+    const mismatch = requireExpectedRevision(op, strategy.revision);
+    if (mismatch !== null) {
+      return {
+        strategy,
+        result: rejected(
+          mismatch.reason,
+          { revision: strategy.revision, payload: strategyPayload(strategy) },
+          existing._id,
+        ),
+      };
+    }
+    const pages = await ctx.db
+      .query("pages")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+      .collect();
+    if (pages.length <= 1) {
+      throw errorWithCode("INVALID_OP", "Cannot delete last page");
+    }
+    const contentRows = await ctx.db
+      .query("pageContents")
+      .withIndex("by_pageId", (q) => q.eq("pageId", existing._id))
+      .collect();
+    for (const content of contentRows) await ctx.db.delete(content._id);
+    await ctx.db.delete(existing._id);
+    await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
+      pageId: existing._id,
+    });
+    const now = Date.now();
+    const remaining = sortByNumberField(
+      pages.filter((page) => page._id !== existing._id),
+      "sortIndex",
+    );
+    for (let index = 0; index < remaining.length; index += 1) {
+      const page = remaining[index]!;
+      if (page.sortIndex !== index) {
+        await ctx.db.patch(page._id, {
+          sortIndex: index,
+          revision: page.revision + 1,
+          updatedAt: now,
+        });
+      }
+    }
+    const revision = strategy.revision + 1;
+    await ctx.db.patch(strategy._id, { revision, updatedAt: now });
+    return {
+      strategy: { ...strategy, revision, updatedAt: now },
+      result: {
+        status: "ack",
+        appliedRevision: revision,
+        eventPageId: existing._id,
+      },
+    };
+  }
+
+  if (existing === null || existing.strategyId !== strategy._id) {
+    return { strategy, result: rejected("not_found") };
+  }
+  if (op.kind === "reorder") {
+    const pages = await ctx.db
+      .query("pages")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+      .collect();
+    const orderedPages = sortByNumberField(pages, "sortIndex");
+    const currentIndex = orderedPages.findIndex(
+      (page) => page._id === existing._id,
+    );
+    const desiredSortIndex = clampPageIndex(
+      op.sortIndex ?? currentIndex,
+      Math.max(0, orderedPages.length - 1),
+    );
+    const reorderedPages = orderedPages.filter(
+      (page) => page._id !== existing._id,
+    );
+    reorderedPages.splice(desiredSortIndex, 0, existing);
+    const alreadyNormalized = reorderedPages.every(
+      (page, index) => page.sortIndex === index,
+    );
+    if (currentIndex === desiredSortIndex && alreadyNormalized) {
+      return { strategy, result: noop(strategy.revision, existing._id) };
+    }
+    const mismatch = requireExpectedRevision(op, strategy.revision);
+    if (mismatch !== null) {
+      return {
+        strategy,
+        result: rejected(
+          mismatch.reason,
+          { revision: strategy.revision, payload: strategyPayload(strategy) },
+          existing._id,
+        ),
+      };
+    }
+    const now = Date.now();
+    for (let index = 0; index < reorderedPages.length; index += 1) {
+      const page = reorderedPages[index]!;
+      if (page.sortIndex !== index) {
+        await ctx.db.patch(page._id, {
+          sortIndex: index,
+          revision: page.revision + 1,
+          updatedAt: now,
+        });
+      }
+    }
+    const revision = strategy.revision + 1;
+    await ctx.db.patch(strategy._id, { revision, updatedAt: now });
+    return {
+      strategy: { ...strategy, revision, updatedAt: now },
+      result: {
+        status: "ack",
+        appliedRevision: revision,
+        eventPageId: existing._id,
+      },
+    };
+  }
+  if (op.kind !== "patch") {
+    throw errorWithCode("UNSUPPORTED_OP", "Unsupported page op");
+  }
+  const payload = assertPagePayload(op.payload);
+  if (payload.settings !== undefined) {
+    throw errorWithCode(
+      "PAGE_SETTINGS_REQUIRE_PAGE_CONTENT",
+      "Page settings require a pageContent operation",
+    );
+  }
+  const patch: Record<string, unknown> = {};
+  if (payload.name !== undefined) {
+    setIfChanged(patch, "name", existing.name, payload.name);
+  }
+  if (payload.isAttack !== undefined) {
+    setIfChanged(patch, "isAttack", existing.isAttack, payload.isAttack);
+  }
+  if (Object.keys(patch).length === 0) {
+    return { strategy, result: noop(existing.revision, existing._id) };
+  }
+  const mismatch = requireExpectedRevision(op, existing.revision);
+  if (mismatch !== null) {
+    return {
+      strategy,
+      result: rejected(
+        mismatch.reason,
+        { revision: existing.revision, payload: pagePayload(existing) },
+        existing._id,
+      ),
+    };
+  }
+  const revision = existing.revision + 1;
+  await ctx.db.patch(existing._id, {
+    ...patch,
+    revision,
+    updatedAt: Date.now(),
+  });
+  return {
+    strategy,
+    result: {
+      status: "ack",
+      appliedRevision: revision,
+      eventPageId: existing._id,
+    },
+  };
+}
+
+async function applyPageContentOp(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  op: StrategyOp,
+): Promise<OperationResult> {
+  if (op.kind !== "patch") {
+    throw errorWithCode("UNSUPPORTED_OP", "Unsupported page content op");
+  }
+  const publicId = op.entityPublicId ?? op.pagePublicId;
+  if (publicId === undefined) {
+    throw errorWithCode("MISSING_PAGE_ID", "Missing page id");
+  }
+  const page = await getPageByPublicIdOrNull(ctx, publicId);
+  if (page === null || page.strategyId !== strategy._id) {
+    return rejected("not_found");
+  }
+  const payload = assertPagePayload(op.payload);
+  if (payload.name !== undefined || payload.isAttack !== undefined) {
+    throw errorWithCode(
+      "PAGE_DESCRIPTOR_REQUIRES_PAGE_OP",
+      "Page descriptor fields require a page operation",
+    );
+  }
+  const content = await getPageContent(ctx, page._id);
+  if (valuesEqual(content.settings, payload.settings)) {
+    return noop(content.revision, page._id);
+  }
+  const mismatch = requireExpectedRevision(op, content.revision);
+  if (mismatch !== null) {
+    return rejected(
+      mismatch.reason,
+      {
+        revision: content.revision,
+        payload: { settings: content.settings ?? null },
+      },
+      page._id,
+    );
+  }
+  const revision = content.revision + 1;
+  await ctx.db.patch(content._id, {
+    settings: payload.settings,
+    revision,
+    updatedAt: Date.now(),
+  });
+  return { status: "ack", appliedRevision: revision, eventPageId: page._id };
+}
+
+async function applyElementOp(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  op: StrategyOp,
+): Promise<OperationResult> {
+  const publicId = op.entityPublicId;
+  if (publicId === undefined) {
+    throw errorWithCode("MISSING_ENTITY_PUBLIC_ID", "Missing entityPublicId");
+  }
+  const existing = await getElementByPublicIdOrNull(ctx, publicId);
+
+  if (op.kind === "add") {
+    if (op.pagePublicId === undefined) {
+      throw errorWithCode("MISSING_PAGE_PUBLIC_ID", "Missing pagePublicId");
+    }
+    const page = await getPageByPublicIdOrNull(ctx, op.pagePublicId);
+    if (page === null || page.strategyId !== strategy._id) {
+      throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
+    }
+    const payload = assertElementPayload(op.payload);
+    if (existing !== null) {
+      if (existing.strategyId !== strategy._id) {
+        return rejected("element_strategy_mismatch");
+      }
+      if (existing.deleted) {
+        const mismatch = requireExpectedRevision(op, existing.revision);
+        if (mismatch !== null) {
+          return rejected(
+            mismatch.reason,
+            { revision: existing.revision, payload: existing.payload },
+            existing.pageId,
+          );
+        }
+        const revision = existing.revision + 1;
+        await ctx.db.patch(existing._id, {
+          pageId: page._id,
+          elementType: payload.kind,
+          payloadKind: payload.kind,
+          payloadVersion: payload.payloadVersion,
+          payload,
+          sortIndex: op.sortIndex ?? 0,
+          revision,
+          deleted: false,
+          updatedAt: Date.now(),
+        });
+        return {
+          status: "ack",
+          appliedRevision: revision,
+          eventPageId: page._id,
+        };
+      }
+      const identical =
+        existing.pageId === page._id &&
+        existing.elementType === payload.kind &&
+        valuesEqual(existing.payload, payload) &&
+        existing.sortIndex === (op.sortIndex ?? 0) &&
+        existing.deleted === false;
+      if (identical) return noop(existing.revision, existing.pageId);
+      return rejected(
+        "already_exists",
+        { revision: existing.revision, payload: existing.payload },
+        existing.pageId,
+      );
+    }
+    const now = Date.now();
+    await ctx.db.insert("elements", {
+      publicId,
+      strategyId: strategy._id,
+      pageId: page._id,
+      elementType: payload.kind,
+      payloadKind: payload.kind,
+      payloadVersion: payload.payloadVersion,
+      payload,
+      sortIndex: op.sortIndex ?? 0,
+      revision: 1,
+      deleted: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { status: "ack", appliedRevision: 1, eventPageId: page._id };
+  }
+
+  if (op.kind === "delete") {
+    if (existing === null || existing.strategyId !== strategy._id)
+      return noop();
+    if (existing.deleted) return noop(existing.revision, existing.pageId);
+    const mismatch = requireExpectedRevision(op, existing.revision);
+    if (mismatch !== null) {
+      return rejected(
+        mismatch.reason,
+        { revision: existing.revision, payload: existing.payload },
+        existing.pageId,
+      );
+    }
+    const revision = existing.revision + 1;
+    await ctx.db.patch(existing._id, {
+      deleted: true,
+      revision,
+      updatedAt: Date.now(),
+    });
+    return {
+      status: "ack",
+      appliedRevision: revision,
+      eventPageId: existing.pageId,
+    };
+  }
+
+  if (existing === null || existing.strategyId !== strategy._id) {
+    return rejected("not_found");
+  }
+  const patch: Record<string, unknown> = {};
+  let eventPageId = existing.pageId;
+  if (op.kind === "patch" || op.kind === "move") {
+    if (op.payload !== undefined) {
+      const payload = assertElementPayload(op.payload);
+      if (payload.kind !== existing.elementType) {
+        throw errorWithCode(
+          "ELEMENT_TYPE_PAYLOAD_KIND_MISMATCH",
+          "elementType_payloadKind_mismatch",
+        );
+      }
+      setIfChanged(patch, "payload", existing.payload, payload);
+      setIfChanged(patch, "payloadKind", existing.payloadKind, payload.kind);
+      setIfChanged(
+        patch,
+        "payloadVersion",
+        existing.payloadVersion,
+        payload.payloadVersion,
+      );
+    }
+    if (op.sortIndex !== undefined) {
+      setIfChanged(patch, "sortIndex", existing.sortIndex, op.sortIndex);
+    }
+    if (op.pagePublicId !== undefined) {
+      const page = await getPageByPublicIdOrNull(ctx, op.pagePublicId);
+      if (page === null || page.strategyId !== strategy._id) {
+        throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
+      }
+      setIfChanged(patch, "pageId", existing.pageId, page._id);
+      eventPageId = page._id;
+    }
+  } else if (op.kind === "reorder") {
+    setIfChanged(
+      patch,
+      "sortIndex",
+      existing.sortIndex,
+      op.sortIndex ?? existing.sortIndex,
+    );
+  } else {
+    throw errorWithCode("UNSUPPORTED_OP", "Unsupported element op");
+  }
+  if (Object.keys(patch).length === 0) {
+    return noop(existing.revision, eventPageId);
+  }
+  const mismatch = requireExpectedRevision(op, existing.revision);
+  if (mismatch !== null) {
+    return rejected(
+      mismatch.reason,
+      { revision: existing.revision, payload: existing.payload },
+      existing.pageId,
+    );
+  }
+  const revision = existing.revision + 1;
+  await ctx.db.patch(existing._id, {
+    ...patch,
+    revision,
+    updatedAt: Date.now(),
+  });
+  return { status: "ack", appliedRevision: revision, eventPageId };
+}
+
+async function applyLineupOp(
+  ctx: MutationCtx,
+  strategy: Doc<"strategies">,
+  op: StrategyOp,
+): Promise<OperationResult> {
+  const publicId = op.entityPublicId;
+  if (publicId === undefined) {
+    throw errorWithCode("MISSING_ENTITY_PUBLIC_ID", "Missing entityPublicId");
+  }
+  const existing = await getLineupByPublicIdOrNull(ctx, publicId);
+
+  if (op.kind === "add") {
+    if (op.pagePublicId === undefined) {
+      throw errorWithCode("MISSING_PAGE_PUBLIC_ID", "Missing pagePublicId");
+    }
+    const page = await getPageByPublicIdOrNull(ctx, op.pagePublicId);
+    if (page === null || page.strategyId !== strategy._id) {
+      throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
+    }
+    const payload = assertLineupPayload(op.payload);
+    if (existing !== null) {
+      if (existing.strategyId !== strategy._id) {
+        return rejected("lineup_strategy_mismatch");
+      }
+      if (existing.deleted) {
+        const mismatch = requireExpectedRevision(op, existing.revision);
+        if (mismatch !== null) {
+          return rejected(
+            mismatch.reason,
+            { revision: existing.revision, payload: existing.payload },
+            existing.pageId,
+          );
+        }
+        const revision = existing.revision + 1;
+        await ctx.db.patch(existing._id, {
+          pageId: page._id,
+          payloadKind: "lineupGroup",
+          payloadVersion: payload.payloadVersion,
+          payload,
+          sortIndex: op.sortIndex ?? 0,
+          revision,
+          deleted: false,
+          updatedAt: Date.now(),
+        });
+        return {
+          status: "ack",
+          appliedRevision: revision,
+          eventPageId: page._id,
+        };
+      }
+      const identical =
+        existing.pageId === page._id &&
+        valuesEqual(existing.payload, payload) &&
+        existing.sortIndex === (op.sortIndex ?? 0) &&
+        existing.deleted === false;
+      if (identical) return noop(existing.revision, existing.pageId);
+      return rejected(
+        "already_exists",
+        { revision: existing.revision, payload: existing.payload },
+        existing.pageId,
+      );
+    }
+    const now = Date.now();
+    await ctx.db.insert("lineups", {
+      publicId,
+      strategyId: strategy._id,
+      pageId: page._id,
+      payloadKind: "lineupGroup",
+      payloadVersion: payload.payloadVersion,
+      payload,
+      sortIndex: op.sortIndex ?? 0,
+      revision: 1,
+      deleted: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { status: "ack", appliedRevision: 1, eventPageId: page._id };
+  }
+
+  if (op.kind === "delete") {
+    if (existing === null || existing.strategyId !== strategy._id)
+      return noop();
+    if (existing.deleted) return noop(existing.revision, existing.pageId);
+    const mismatch = requireExpectedRevision(op, existing.revision);
+    if (mismatch !== null) {
+      return rejected(
+        mismatch.reason,
+        { revision: existing.revision, payload: existing.payload },
+        existing.pageId,
+      );
+    }
+    const revision = existing.revision + 1;
+    await ctx.db.patch(existing._id, {
+      deleted: true,
+      revision,
+      updatedAt: Date.now(),
+    });
+    return {
+      status: "ack",
+      appliedRevision: revision,
+      eventPageId: existing.pageId,
+    };
+  }
+
+  if (existing === null || existing.strategyId !== strategy._id) {
+    return rejected("not_found");
+  }
+  const patch: Record<string, unknown> = {};
+  let eventPageId = existing.pageId;
+  if (op.kind === "patch" || op.kind === "move") {
+    if (op.payload !== undefined) {
+      const payload = assertLineupPayload(op.payload);
+      setIfChanged(patch, "payload", existing.payload, payload);
+      setIfChanged(patch, "payloadKind", existing.payloadKind, payload.kind);
+      setIfChanged(
+        patch,
+        "payloadVersion",
+        existing.payloadVersion,
+        payload.payloadVersion,
+      );
+    }
+    if (op.sortIndex !== undefined) {
+      setIfChanged(patch, "sortIndex", existing.sortIndex, op.sortIndex);
+    }
+    if (op.pagePublicId !== undefined) {
+      const page = await getPageByPublicIdOrNull(ctx, op.pagePublicId);
+      if (page === null || page.strategyId !== strategy._id) {
+        throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
+      }
+      setIfChanged(patch, "pageId", existing.pageId, page._id);
+      eventPageId = page._id;
+    }
+  } else if (op.kind === "reorder") {
+    setIfChanged(
+      patch,
+      "sortIndex",
+      existing.sortIndex,
+      op.sortIndex ?? existing.sortIndex,
+    );
+  } else {
+    throw errorWithCode("UNSUPPORTED_OP", "Unsupported lineup op");
+  }
+  if (Object.keys(patch).length === 0) {
+    return noop(existing.revision, eventPageId);
+  }
+  const mismatch = requireExpectedRevision(op, existing.revision);
+  if (mismatch !== null) {
+    return rejected(
+      mismatch.reason,
+      { revision: existing.revision, payload: existing.payload },
+      existing.pageId,
+    );
+  }
+  const revision = existing.revision + 1;
+  await ctx.db.patch(existing._id, {
+    ...patch,
+    revision,
+    updatedAt: Date.now(),
+  });
+  return { status: "ack", appliedRevision: revision, eventPageId };
 }
 
 export const applyBatch = mutation({
@@ -236,13 +1029,15 @@ export const applyBatch = mutation({
   },
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
-
     let strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
-
     const results: Array<Record<string, unknown>> = [];
 
-    for (const op of args.ops) {
+    // Outcomes are per operation: accepted changes and visible rejections are
+    // committed together by this single Convex transaction. One stale op must
+    // not erase an independent op that the server already accepted.
+    for (const rawOp of args.ops) {
+      const op = rawOp as StrategyOp;
       const existingEvent = await ctx.db
         .query("operationEvents")
         .withIndex("by_strategyId_clientId_opId", (q) =>
@@ -252,688 +1047,70 @@ export const applyBatch = mutation({
             .eq("opId", op.opId),
         )
         .first();
-
       if (existingEvent !== null) {
-        let latestRevision: number | null = null;
-        let latestPayload: ElementPayload | LineupPayload | null = null;
-
-        if (op.entityType === "element" && op.entityPublicId !== undefined) {
-          const snapshot = await getReplayEntitySnapshot(
-            ctx,
-            "elements",
-            op.entityPublicId,
-            strategy._id,
-          );
-          if (snapshot !== null) {
-            latestRevision = snapshot.revision;
-            latestPayload = snapshot.payload;
-          }
-        } else if (op.entityType === "lineup" && op.entityPublicId !== undefined) {
-          const snapshot = await getReplayEntitySnapshot(
-            ctx,
-            "lineups",
-            op.entityPublicId,
-            strategy._id,
-          );
-          if (snapshot !== null) {
-            latestRevision = snapshot.revision;
-            latestPayload = snapshot.payload;
-          }
-        }
-
+        const latest = await getTargetSnapshot(ctx, strategy, op);
         results.push({
           opId: op.opId,
           status: existingEvent.status,
           reason: existingEvent.reason ?? null,
-          appliedSequence: existingEvent.appliedSequence ?? null,
-          expectedSequence: existingEvent.expectedSequence ?? null,
           appliedRevision: existingEvent.appliedRevision ?? null,
           expectedRevision: existingEvent.expectedRevision ?? null,
-          latestSequence: strategy.sequence,
-          latestRevision,
-          latestPayload,
+          latestRevision: latest?.revision ?? null,
+          latestPayload: latest?.payload ?? null,
         });
         continue;
       }
-      let status: "ack" | "reject" = "ack";
-      let reason: string | undefined;
-      let appliedRevision: number | undefined;
-      let latestRevision: number | undefined;
-      let latestPayload: ElementPayload | LineupPayload | undefined;
-      let eventPageId: Id<"pages"> | undefined;
-      let shouldRecordEvent = true;
-      const markNoop = (currentRevision?: number) => {
-        reason = "noop";
-        shouldRecordEvent = false;
-        if (currentRevision !== undefined) {
-          appliedRevision = currentRevision;
-        }
-      };
 
+      let result: OperationResult;
       try {
-        if (
-          op.expectedSequence !== undefined &&
-          op.expectedSequence !== strategy.sequence
-        ) {
-          status = "reject";
-          reason = "sequence_mismatch";
-        } else if (op.entityType === "strategy") {
-          if (op.kind !== "patch") {
-            throw errorWithCode("UNSUPPORTED_OP", "Unsupported strategy op");
-          }
-
-          const payload = assertStrategyPatchPayload(op.payload);
-          const patch: Record<string, unknown> = {};
-          if (typeof payload.name === "string") {
-            setIfChanged(patch, "name", strategy.name, payload.name);
-          }
-          if (typeof payload.mapData === "string") {
-            setIfChanged(patch, "mapData", strategy.mapData, payload.mapData);
-          }
-          if (typeof payload.themeProfileId === "string") {
-            setIfChanged(
-              patch,
-              "themeProfileId",
-              strategy.themeProfileId,
-              payload.themeProfileId,
-            );
-          }
-          if (payload.clearThemeProfileId === true) {
-            setIfChanged(
-              patch,
-              "themeProfileId",
-              strategy.themeProfileId,
-              undefined,
-            );
-          }
-          if (payload.themeOverridePalette !== undefined) {
-            setIfChanged(
-              patch,
-              "themeOverridePalette",
-              strategy.themeOverridePalette,
-              payload.themeOverridePalette,
-            );
-          }
-          if (payload.clearThemeOverridePalette === true) {
-            setIfChanged(
-              patch,
-              "themeOverridePalette",
-              strategy.themeOverridePalette,
-              undefined,
-            );
-          }
-
-          if (hasChanges(patch)) {
-            strategy = await patchStrategyAndIncrement(ctx, strategy, patch);
-          } else {
-            markNoop();
-          }
+        if (op.entityType === "strategy") {
+          const applied = await applyStrategyOp(ctx, strategy, op);
+          strategy = applied.strategy;
+          result = applied.result;
         } else if (op.entityType === "page") {
-          if (op.kind === "add") {
-            const pagePublicId = op.pagePublicId;
-            if (!pagePublicId) {
-              throw errorWithCode("MISSING_PAGE_PUBLIC_ID", "Missing pagePublicId");
-            }
-            const payload = assertPagePayload(op.payload);
-            const now = Date.now();
-            const existingPage = await ctx.db
-              .query("pages")
-              .withIndex("by_publicId", (q) => q.eq("publicId", pagePublicId))
-              .first();
-
-            if (existingPage !== null) {
-              if (existingPage.strategyId !== strategy._id) {
-                throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
-              }
-              eventPageId = existingPage._id;
-
-              const patch: Record<string, unknown> = {};
-              setIfChanged(
-                patch,
-                "name",
-                existingPage.name,
-                typeof payload.name === "string"
-                  ? payload.name
-                  : existingPage.name,
-              );
-              setIfChanged(
-                patch,
-                "sortIndex",
-                existingPage.sortIndex,
-                op.sortIndex ?? existingPage.sortIndex,
-              );
-              setIfChanged(
-                patch,
-                "isAttack",
-                existingPage.isAttack,
-                typeof payload.isAttack === "boolean"
-                  ? payload.isAttack
-                  : existingPage.isAttack,
-              );
-              setIfChanged(
-                patch,
-                "settings",
-                existingPage.settings,
-                payload.settings !== undefined
-                  ? payload.settings
-                  : existingPage.settings,
-              );
-
-              if (hasChanges(patch)) {
-                await ctx.db.patch(existingPage._id, {
-                  ...patch,
-                  revision: existingPage.revision + 1,
-                  updatedAt: now,
-                });
-                appliedRevision = existingPage.revision + 1;
-              } else {
-                markNoop(existingPage.revision);
-              }
-            } else {
-              const insertedPageId = await ctx.db.insert("pages", {
-                publicId: pagePublicId,
-                strategyId: strategy._id,
-                name: typeof payload.name === "string" ? payload.name : "Page",
-                sortIndex: op.sortIndex ?? 0,
-                isAttack: payload.isAttack === false ? false : true,
-                settings: payload.settings,
-                revision: 1,
-                createdAt: now,
-                updatedAt: now,
-              });
-              eventPageId = insertedPageId;
-              appliedRevision = 1;
-            }
-
-            if (shouldRecordEvent) {
-              strategy = await incrementSequence(ctx, strategy);
-            }
-          } else {
-            const pagePublicId = op.entityPublicId ?? op.pagePublicId;
-            if (!pagePublicId) {
-              throw errorWithCode("MISSING_PAGE_ID", "Missing page id");
-            }
-            const page = await getPageByPublicId(ctx, pagePublicId);
-            if (page.strategyId !== strategy._id) {
-              throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
-            }
-            eventPageId = page._id;
-
-            latestRevision = page.revision;
-
-            if (
-              op.expectedRevision !== undefined &&
-              op.expectedRevision !== page.revision
-            ) {
-              status = "reject";
-              reason = "revision_mismatch";
-            } else if (op.kind === "patch") {
-              const payload = assertPagePayload(op.payload);
-              const patch: Record<string, unknown> = {};
-              if (typeof payload.name === "string") {
-                setIfChanged(patch, "name", page.name, payload.name);
-              }
-              if (payload.settings !== undefined) {
-                setIfChanged(patch, "settings", page.settings, payload.settings);
-              }
-              if (typeof payload.isAttack === "boolean") {
-                setIfChanged(
-                  patch,
-                  "isAttack",
-                  page.isAttack,
-                  payload.isAttack,
-                );
-              }
-              if (hasChanges(patch)) {
-                await ctx.db.patch(page._id, {
-                  ...patch,
-                  revision: page.revision + 1,
-                  updatedAt: Date.now(),
-                });
-                appliedRevision = page.revision + 1;
-                strategy = await incrementSequence(ctx, strategy);
-              } else {
-                markNoop(page.revision);
-              }
-            } else if (op.kind === "delete") {
-              await ctx.db.delete(page._id);
-              await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
-                pageId: page._id,
-              });
-              appliedRevision = page.revision + 1;
-              strategy = await incrementSequence(ctx, strategy);
-            } else if (op.kind === "reorder") {
-              const nextSortIndex = op.sortIndex ?? page.sortIndex;
-              if (valuesEqual(page.sortIndex, nextSortIndex)) {
-                markNoop(page.revision);
-              } else {
-                await ctx.db.patch(page._id, {
-                  sortIndex: nextSortIndex,
-                  revision: page.revision + 1,
-                  updatedAt: Date.now(),
-                });
-                appliedRevision = page.revision + 1;
-                strategy = await incrementSequence(ctx, strategy);
-              }
-            } else {
-              throw errorWithCode("UNSUPPORTED_OP", "Unsupported page op");
-            }
-          }
+          const applied = await applyPageOp(ctx, strategy, op);
+          strategy = applied.strategy;
+          result = applied.result;
+        } else if (op.entityType === "pageContent") {
+          result = await applyPageContentOp(ctx, strategy, op);
         } else if (op.entityType === "element") {
-          if (op.kind === "add") {
-            const elementPublicId = op.entityPublicId;
-            const pagePublicId = op.pagePublicId;
-            if (!elementPublicId || !pagePublicId || !op.payload) {
-              throw errorWithCode(
-                "MISSING_ADD_ELEMENT_ARGS",
-                "Missing add element args",
-              );
-            }
-            const page = await getPageByPublicId(ctx, pagePublicId);
-            if (page.strategyId !== strategy._id) {
-              throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
-            }
-            eventPageId = page._id;
-            const payload = assertElementPayload(op.payload);
-            const elementType = payload.kind;
-            const now = Date.now();
-            const existingElement = await ctx.db
-              .query("elements")
-              .withIndex("by_publicId", (q) => q.eq("publicId", elementPublicId))
-              .first();
-
-            if (existingElement !== null) {
-              if (existingElement.strategyId !== strategy._id) {
-                throw errorWithCode(
-                  "ELEMENT_STRATEGY_MISMATCH",
-                  "Element strategy mismatch",
-                );
-              }
-              const patch: Record<string, unknown> = {};
-              setIfChanged(patch, "pageId", existingElement.pageId, page._id);
-              setIfChanged(
-                patch,
-                "elementType",
-                existingElement.elementType,
-                elementType,
-              );
-              setIfChanged(
-                patch,
-                "payloadKind",
-                existingElement.payloadKind,
-                payload.kind,
-              );
-              setIfChanged(
-                patch,
-                "payloadVersion",
-                existingElement.payloadVersion,
-                payload.payloadVersion,
-              );
-              setIfChanged(patch, "payload", existingElement.payload, payload);
-              setIfChanged(
-                patch,
-                "sortIndex",
-                existingElement.sortIndex,
-                op.sortIndex ?? existingElement.sortIndex,
-              );
-              setIfChanged(patch, "deleted", existingElement.deleted, false);
-
-              if (hasChanges(patch)) {
-                await ctx.db.patch(existingElement._id, {
-                  ...patch,
-                  revision: existingElement.revision + 1,
-                  updatedAt: now,
-                });
-                appliedRevision = existingElement.revision + 1;
-              } else {
-                markNoop(existingElement.revision);
-              }
-            } else {
-              await ctx.db.insert("elements", {
-                publicId: elementPublicId,
-                strategyId: strategy._id,
-                pageId: page._id,
-                elementType,
-                payloadKind: payload.kind,
-                payloadVersion: payload.payloadVersion,
-                payload,
-                sortIndex: op.sortIndex ?? 0,
-                revision: 1,
-                deleted: false,
-                createdAt: now,
-                updatedAt: now,
-              });
-              appliedRevision = 1;
-            }
-            if (shouldRecordEvent) {
-              strategy = await incrementSequence(ctx, strategy);
-            }
-          } else {
-            if (!op.entityPublicId) {
-              throw errorWithCode("MISSING_ENTITY_PUBLIC_ID", "Missing entityPublicId");
-            }
-            const element = await getElementByPublicId(ctx, op.entityPublicId);
-            if (element.strategyId !== strategy._id) {
-              throw errorWithCode(
-                "ELEMENT_STRATEGY_MISMATCH",
-                "Element strategy mismatch",
-              );
-            }
-            eventPageId = element.pageId;
-
-            latestRevision = element.revision;
-            latestPayload = element.payload;
-
-            if (
-              op.expectedRevision !== undefined &&
-              op.expectedRevision !== element.revision
-            ) {
-              status = "reject";
-              reason = "revision_mismatch";
-            } else if (op.kind === "delete") {
-              if (element.deleted) {
-                markNoop(element.revision);
-              } else {
-                await ctx.db.patch(element._id, {
-                  deleted: true,
-                  revision: element.revision + 1,
-                  updatedAt: Date.now(),
-                });
-                appliedRevision = element.revision + 1;
-                strategy = await incrementSequence(ctx, strategy);
-              }
-            } else if (op.kind === "patch" || op.kind === "move") {
-              const patch: Record<string, unknown> = {};
-              if (op.payload !== undefined) {
-                const payload = assertElementPayload(op.payload);
-                if (payload.kind !== element.elementType) {
-                  throw errorWithCode(
-                    "ELEMENT_TYPE_PAYLOAD_KIND_MISMATCH",
-                    "elementType_payloadKind_mismatch",
-                  );
-                }
-                setIfChanged(patch, "payload", element.payload, payload);
-                setIfChanged(
-                  patch,
-                  "payloadKind",
-                  element.payloadKind,
-                  payload.kind,
-                );
-                setIfChanged(
-                  patch,
-                  "payloadVersion",
-                  element.payloadVersion,
-                  payload.payloadVersion,
-                );
-              }
-              if (op.sortIndex !== undefined) {
-                setIfChanged(
-                  patch,
-                  "sortIndex",
-                  element.sortIndex,
-                  op.sortIndex,
-                );
-              }
-              if (op.pagePublicId !== undefined) {
-                const page = await getPageByPublicId(ctx, op.pagePublicId);
-                if (page.strategyId !== strategy._id) {
-                  throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
-                }
-                setIfChanged(patch, "pageId", element.pageId, page._id);
-                eventPageId = page._id;
-              }
-
-              if (hasChanges(patch)) {
-                await ctx.db.patch(element._id, {
-                  ...patch,
-                  revision: element.revision + 1,
-                  updatedAt: Date.now(),
-                });
-                appliedRevision = element.revision + 1;
-                strategy = await incrementSequence(ctx, strategy);
-              } else {
-                markNoop(element.revision);
-              }
-            } else if (op.kind === "reorder") {
-              const nextSortIndex = op.sortIndex ?? element.sortIndex;
-              if (valuesEqual(element.sortIndex, nextSortIndex)) {
-                markNoop(element.revision);
-              } else {
-                await ctx.db.patch(element._id, {
-                  sortIndex: nextSortIndex,
-                  revision: element.revision + 1,
-                  updatedAt: Date.now(),
-                });
-                appliedRevision = element.revision + 1;
-                strategy = await incrementSequence(ctx, strategy);
-              }
-            } else {
-              throw errorWithCode("UNSUPPORTED_OP", "Unsupported element op");
-            }
-          }
-        } else if (op.entityType === "lineup") {
-          if (op.kind === "add") {
-            const lineupPublicId = op.entityPublicId;
-            const pagePublicId = op.pagePublicId;
-            if (!lineupPublicId || !pagePublicId || !op.payload) {
-              throw errorWithCode("MISSING_ADD_LINEUP_ARGS", "Missing add lineup args");
-            }
-            const page = await getPageByPublicId(ctx, pagePublicId);
-            if (page.strategyId !== strategy._id) {
-              throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
-            }
-            eventPageId = page._id;
-            const payload = assertLineupPayload(op.payload);
-            const now = Date.now();
-            const existingLineup = await ctx.db
-              .query("lineups")
-              .withIndex("by_publicId", (q) => q.eq("publicId", lineupPublicId))
-              .first();
-
-            if (existingLineup !== null) {
-              if (existingLineup.strategyId !== strategy._id) {
-                throw errorWithCode(
-                  "LINEUP_STRATEGY_MISMATCH",
-                  "Lineup strategy mismatch",
-                );
-              }
-              const patch: Record<string, unknown> = {};
-              setIfChanged(patch, "pageId", existingLineup.pageId, page._id);
-              setIfChanged(
-                patch,
-                "payloadKind",
-                existingLineup.payloadKind,
-                payload.kind,
-              );
-              setIfChanged(
-                patch,
-                "payloadVersion",
-                existingLineup.payloadVersion,
-                payload.payloadVersion,
-              );
-              setIfChanged(patch, "payload", existingLineup.payload, payload);
-              setIfChanged(
-                patch,
-                "sortIndex",
-                existingLineup.sortIndex,
-                op.sortIndex ?? existingLineup.sortIndex,
-              );
-              setIfChanged(patch, "deleted", existingLineup.deleted, false);
-
-              if (hasChanges(patch)) {
-                await ctx.db.patch(existingLineup._id, {
-                  ...patch,
-                  revision: existingLineup.revision + 1,
-                  updatedAt: now,
-                });
-                appliedRevision = existingLineup.revision + 1;
-              } else {
-                markNoop(existingLineup.revision);
-              }
-            } else {
-              await ctx.db.insert("lineups", {
-                publicId: lineupPublicId,
-                strategyId: strategy._id,
-                pageId: page._id,
-                payloadKind: payload.kind,
-                payloadVersion: payload.payloadVersion,
-                payload,
-                sortIndex: op.sortIndex ?? 0,
-                revision: 1,
-                deleted: false,
-                createdAt: now,
-                updatedAt: now,
-              });
-              appliedRevision = 1;
-            }
-            if (shouldRecordEvent) {
-              strategy = await incrementSequence(ctx, strategy);
-            }
-          } else {
-            if (!op.entityPublicId) {
-              throw errorWithCode("MISSING_ENTITY_PUBLIC_ID", "Missing entityPublicId");
-            }
-            const lineup = await getLineupByPublicId(ctx, op.entityPublicId);
-            if (lineup.strategyId !== strategy._id) {
-              throw errorWithCode("LINEUP_STRATEGY_MISMATCH", "Lineup strategy mismatch");
-            }
-            eventPageId = lineup.pageId;
-
-            latestRevision = lineup.revision;
-            latestPayload = lineup.payload;
-
-            if (
-              op.expectedRevision !== undefined &&
-              op.expectedRevision !== lineup.revision
-            ) {
-              status = "reject";
-              reason = "revision_mismatch";
-            } else if (op.kind === "delete") {
-              if (lineup.deleted) {
-                markNoop(lineup.revision);
-              } else {
-                await ctx.db.patch(lineup._id, {
-                  deleted: true,
-                  revision: lineup.revision + 1,
-                  updatedAt: Date.now(),
-                });
-                appliedRevision = lineup.revision + 1;
-                strategy = await incrementSequence(ctx, strategy);
-              }
-            } else if (op.kind === "patch" || op.kind === "move") {
-              const patch: Record<string, unknown> = {};
-              if (op.payload !== undefined) {
-                const payload = assertLineupPayload(op.payload);
-                setIfChanged(patch, "payload", lineup.payload, payload);
-                setIfChanged(
-                  patch,
-                  "payloadKind",
-                  lineup.payloadKind,
-                  payload.kind,
-                );
-                setIfChanged(
-                  patch,
-                  "payloadVersion",
-                  lineup.payloadVersion,
-                  payload.payloadVersion,
-                );
-              }
-              if (op.sortIndex !== undefined) {
-                setIfChanged(
-                  patch,
-                  "sortIndex",
-                  lineup.sortIndex,
-                  op.sortIndex,
-                );
-              }
-              if (op.pagePublicId !== undefined) {
-                const page = await getPageByPublicId(ctx, op.pagePublicId);
-                if (page.strategyId !== strategy._id) {
-                  throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
-                }
-                setIfChanged(patch, "pageId", lineup.pageId, page._id);
-                eventPageId = page._id;
-              }
-              if (hasChanges(patch)) {
-                await ctx.db.patch(lineup._id, {
-                  ...patch,
-                  revision: lineup.revision + 1,
-                  updatedAt: Date.now(),
-                });
-                appliedRevision = lineup.revision + 1;
-                strategy = await incrementSequence(ctx, strategy);
-              } else {
-                markNoop(lineup.revision);
-              }
-            } else if (op.kind === "reorder") {
-              const nextSortIndex = op.sortIndex ?? lineup.sortIndex;
-              if (valuesEqual(lineup.sortIndex, nextSortIndex)) {
-                markNoop(lineup.revision);
-              } else {
-                await ctx.db.patch(lineup._id, {
-                  sortIndex: nextSortIndex,
-                  revision: lineup.revision + 1,
-                  updatedAt: Date.now(),
-                });
-                appliedRevision = lineup.revision + 1;
-                strategy = await incrementSequence(ctx, strategy);
-              }
-            } else {
-              throw errorWithCode("UNSUPPORTED_OP", "Unsupported lineup op");
-            }
-          }
+          result = await applyElementOp(ctx, strategy, op);
         } else {
-          throw errorWithCode("UNSUPPORTED_OP", "Unsupported entityType");
+          result = await applyLineupOp(ctx, strategy, op);
         }
       } catch (error) {
-        if (error instanceof ConvexError) {
-          status = "reject";
-          const code =
-            typeof error.data?.code === "string"
-              ? error.data.code
-              : "INTERNAL_ERROR";
-          reason = code.toLowerCase();
-          shouldRecordEvent = true;
-        } else {
-          throw error;
-        }
+        if (!(error instanceof ConvexError)) throw error;
+        const code =
+          typeof error.data?.code === "string"
+            ? error.data.code.toLowerCase()
+            : "internal_error";
+        const latest = await getTargetSnapshot(ctx, strategy, op);
+        result = rejected(code, latest);
       }
 
-      if (shouldRecordEvent) {
-        await ctx.db.insert("operationEvents", {
-          strategyId: strategy._id,
-          pageId: eventPageId,
-          clientId: args.clientId,
-          opId: op.opId,
-          opType: `${op.entityType}.${op.kind}`,
-          status,
-          reason,
-          expectedSequence: op.expectedSequence,
-          appliedSequence: status === "ack" ? strategy.sequence : undefined,
-          expectedRevision: op.expectedRevision,
-          appliedRevision,
-          createdAt: Date.now(),
-        });
-      }
-
+      await ctx.db.insert("operationEvents", {
+        strategyId: strategy._id,
+        pageId: result.eventPageId,
+        clientId: args.clientId,
+        opId: op.opId,
+        opType: `${op.entityType}.${op.kind}`,
+        status: result.status,
+        reason: result.reason,
+        expectedRevision: op.expectedRevision,
+        appliedRevision: result.appliedRevision,
+        createdAt: Date.now(),
+      });
       results.push({
         opId: op.opId,
-        status,
-        reason: reason ?? null,
-        appliedSequence: status === "ack" ? strategy.sequence : null,
-        expectedSequence: op.expectedSequence ?? null,
-        appliedRevision: appliedRevision ?? null,
+        status: result.status,
+        reason: result.reason ?? null,
+        appliedRevision: result.appliedRevision ?? null,
         expectedRevision: op.expectedRevision ?? null,
-        latestSequence: strategy.sequence,
-        latestRevision: latestRevision ?? null,
-        latestPayload: latestPayload ?? null,
+        latestRevision: result.latestRevision ?? null,
+        latestPayload: result.latestPayload ?? null,
       });
     }
 
-    return {
-      strategyPublicId: strategy.publicId,
-      sequence: strategy.sequence,
-      results,
-    };
+    return { strategyPublicId: strategy.publicId, results };
   },
 });

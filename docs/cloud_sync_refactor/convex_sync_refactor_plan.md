@@ -1,4 +1,9 @@
-# Convex Cloud Sync Refactor Plan
+# Convex cloud sync refactor plan
+
+Status: historical first-pass plan. Its strategy-level subscription work is
+already present in this branch. Do not continue its sequence-preserving design.
+For the current server boundary and durable outbox work, follow
+[`server_side_sync_boundaries_handoff.md`](server_side_sync_boundaries_handoff.md).
 
 ## Summary
 
@@ -56,7 +61,7 @@ Add model helpers:
 ### 1. Create The Workflow Doc
 
 - [x] Create `docs/cloud_sync_refactor/convex_sync_refactor_plan.md` and save this plan there.
-- [x] Use this file as the canonical implementation checklist for the workflow.
+- [x] Preserve this file as the historical checklist for the first query refactor.
 
 ### 2. Add Strategy-Level Element And Lineup Queries
 
@@ -141,9 +146,10 @@ Follow-up design:
 - Maintenance points: strategy create/update/move/delete, page add/patch/delete/reorder, share/collaborator changes
 - Trigger condition: implement only if optimized indexed library queries still show high read bytes or subscription churn
 
-### 10. Step Five Follow-Up Hint
+### 10. Superseded follow-up
 
-`strategy.sequence` and `updatedAt` are currently patched after accepted ops and act as the remote change clock. Splitting high-churn sync metadata away from stable strategy metadata could reduce header/library invalidations, but it must be planned separately because `StrategyPageSessionNotifier` depends on `header.sequence` for rehydration. Do not change this in the current refactor.
+This plan deferred the `strategy.sequence` hot-write. The current handoff linked
+at the top now owns that change and replaces sequence-gated hydration.
 
 ## Tests And Verification
 
@@ -199,6 +205,6 @@ Expected `fvm flutter analyze` result: no errors; pre-existing warnings/infos ma
 - Scope is data plumbing only.
 - Target documentation location is `docs/cloud_sync_refactor/convex_sync_refactor_plan.md`.
 - Keep current UI exactly as-is.
-- Keep `strategy.sequence` as the remote change clock for this refactor.
+- Historical choice: this pass kept `strategy.sequence` as the remote change clock.
 - Do not implement digest tables until after indexed query cleanup is measured.
 - Preserve current backend function names where possible; only add new functions for better Convex query shapes.
