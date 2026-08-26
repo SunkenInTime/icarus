@@ -315,6 +315,17 @@ class StrategyProvider extends Notifier<StrategyState> {
       ..setCloudSyncError(null);
   }
 
+  Future<OpAck?> _enqueueCloudPageDescriptorOp(StrategyOp op) async {
+    await enqueueOps([op]);
+    final queue = ref.read(strategyOpQueueProvider.notifier);
+    await queue.flushNow();
+    return ref
+        .read(strategyOpQueueProvider)
+        .lastAcks
+        .where((ack) => ack.opId == op.opId)
+        .firstOrNull;
+  }
+
   Future<void> notifyCloudMutation({bool flushImmediately = false}) async {
     _cloudMutationSyncScheduled = false;
     if (!_currentStrategyIsCloud()) {
@@ -584,22 +595,17 @@ class StrategyProvider extends Notifier<StrategyState> {
       final moved = ordered.removeAt(oldIndex);
       ordered.insert(targetIndex, moved);
 
-      try {
-        await ConvexClient.instance.mutation(name: "pages:reorder", args: {
-          "strategyPublicId": state.strategyId,
-          "orderedPagePublicIds": ordered.map((p) => p.publicId).toList(),
-          "expectedRevision": snapshot.header.revision,
-        });
-      } catch (error, stackTrace) {
-        final handled = await _reportCloudUnauthenticated(
-          source: 'strategy:pages_reorder',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        if (!handled) rethrow;
-        return;
+      final ack = await _enqueueCloudPageDescriptorOp(StrategyOp(
+        opId: const Uuid().v4(),
+        kind: StrategyOpKind.reorder,
+        entityType: StrategyOpEntityType.page,
+        entityPublicId: moved.publicId,
+        sortIndex: targetIndex,
+        expectedRevision: snapshot.header.revision,
+      ));
+      if (ack != null) {
+        await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       }
-      await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       return;
     }
 
@@ -654,32 +660,28 @@ class StrategyProvider extends Notifier<StrategyState> {
         ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
       final pageID = const Uuid().v4();
       final nextIndex = pages.length;
-      try {
-        await ConvexClient.instance.mutation(name: "pages:add", args: {
-          "strategyPublicId": state.strategyId,
-          "pagePublicId": pageID,
-          "name": name ?? "Page ${pages.length + 1}",
-          "sortIndex": nextIndex,
-          "isAttack": pages.isNotEmpty ? pages.last.isAttack : true,
-          "settings": ref.read(strategySettingsProvider).toJson(),
-          "expectedRevision": snapshot.header.revision,
-        });
-      } catch (error, stackTrace) {
-        final handled = await _reportCloudUnauthenticated(
-          source: 'strategy:pages_add',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        if (!handled) rethrow;
-        return;
+      final ack = await _enqueueCloudPageDescriptorOp(StrategyOp(
+        opId: const Uuid().v4(),
+        kind: StrategyOpKind.add,
+        entityType: StrategyOpEntityType.page,
+        entityPublicId: pageID,
+        payload: {
+          'name': name ?? 'Page ${pages.length + 1}',
+          'isAttack': pages.isNotEmpty ? pages.last.isAttack : true,
+          'settings': ref.read(strategySettingsProvider).toJson(),
+        },
+        sortIndex: nextIndex,
+        expectedRevision: snapshot.header.revision,
+      ));
+      if (ack?.isAck ?? false) {
+        await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
+        await ref
+            .read(strategyPageSessionProvider.notifier)
+            .setActivePageAnimated(
+              pageID,
+              direction: PageTransitionDirection.forward,
+            );
       }
-      await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
-      await ref
-          .read(strategyPageSessionProvider.notifier)
-          .setActivePageAnimated(
-            pageID,
-            direction: PageTransitionDirection.forward,
-          );
       return;
     }
 
@@ -734,23 +736,17 @@ class StrategyProvider extends Notifier<StrategyState> {
           .where((candidate) => candidate.publicId == pageId)
           .firstOrNull;
       if (page == null) return;
-      try {
-        await ConvexClient.instance.mutation(name: "pages:rename", args: {
-          "strategyPublicId": state.strategyId,
-          "pagePublicId": pageId,
-          "name": trimmed,
-          "expectedRevision": page.revision,
-        });
-      } catch (error, stackTrace) {
-        final handled = await _reportCloudUnauthenticated(
-          source: 'strategy:pages_rename',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        if (!handled) rethrow;
-        return;
+      final ack = await _enqueueCloudPageDescriptorOp(StrategyOp(
+        opId: const Uuid().v4(),
+        kind: StrategyOpKind.patch,
+        entityType: StrategyOpEntityType.page,
+        entityPublicId: pageId,
+        payload: {'name': trimmed},
+        expectedRevision: page.revision,
+      ));
+      if (ack != null) {
+        await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       }
-      await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       return;
     }
 
@@ -793,24 +789,17 @@ class StrategyProvider extends Notifier<StrategyState> {
             );
       }
 
-      try {
-        await ConvexClient.instance.mutation(name: "pages:delete", args: {
-          "strategyPublicId": state.strategyId,
-          "pagePublicId": pageId,
-          "expectedRevision": snapshot.header.revision,
-        });
-      } catch (error, stackTrace) {
-        final handled = await _reportCloudUnauthenticated(
-          source: 'strategy:pages_delete',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        if (!handled) rethrow;
-        return;
+      final ack = await _enqueueCloudPageDescriptorOp(StrategyOp(
+        opId: const Uuid().v4(),
+        kind: StrategyOpKind.delete,
+        entityType: StrategyOpEntityType.page,
+        entityPublicId: pageId,
+        expectedRevision: snapshot.header.revision,
+      ));
+      if (ack?.isAck ?? false) {
+        await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       }
-
-      await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
-      if (nextActivePageId != activePageId) {
+      if ((ack?.isAck ?? false) && nextActivePageId != activePageId) {
         await ref
             .read(strategyPageSessionProvider.notifier)
             .setActivePageAnimated(

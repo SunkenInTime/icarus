@@ -596,6 +596,88 @@ describe("record-scoped write contract", () => {
     });
   });
 
+  test("page descriptor operations all apply through the durable batch protocol", async () => {
+    vi.useFakeTimers();
+    try {
+      const { t, owner } = await createHarness();
+      await createBaseStrategy(owner);
+
+      const renamed = await applyOps(owner, "page-descriptors", [
+        {
+          opId: "rename-page-a",
+          kind: "patch",
+          entityType: "page",
+          entityPublicId: pageA,
+          payload: { name: "A renamed" },
+          expectedRevision: 1,
+        },
+      ]);
+      expect(renamed.results[0]).toMatchObject({
+        status: "ack",
+        appliedRevision: 2,
+      });
+
+      const added = await applyOps(owner, "page-descriptors", [
+        {
+          opId: "add-page-b",
+          kind: "add",
+          entityType: "page",
+          entityPublicId: pageB,
+          payload: { name: "B", isAttack: false, settings: settingsB },
+          sortIndex: 1,
+          expectedRevision: 0,
+        },
+      ]);
+      expect(added.results[0]).toMatchObject({
+        status: "ack",
+        appliedRevision: 1,
+      });
+
+      const reordered = await applyOps(owner, "page-descriptors", [
+        {
+          opId: "reorder-page-b",
+          kind: "reorder",
+          entityType: "page",
+          entityPublicId: pageB,
+          sortIndex: 0,
+          expectedRevision: 1,
+        },
+      ]);
+      expect(reordered.results[0]).toMatchObject({
+        status: "ack",
+        appliedRevision: 2,
+      });
+
+      const deleted = await applyOps(owner, "page-descriptors", [
+        {
+          opId: "delete-page-b",
+          kind: "delete",
+          entityType: "page",
+          entityPublicId: pageB,
+          expectedRevision: 2,
+        },
+      ]);
+      expect(deleted.results[0]).toMatchObject({
+        status: "ack",
+        appliedRevision: 3,
+      });
+
+      const shell = (await owner.query(getShell, {
+        strategyPublicId,
+      })) as {
+        header: { revision: number };
+        pages: Array<{ publicId: string; name: string; sortIndex: number }>;
+      };
+      expect(shell.header.revision).toBe(3);
+      expect(shell.pages).toMatchObject([
+        { publicId: pageA, name: "A renamed", sortIndex: 0 },
+      ]);
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("page add at an occupied position shifts siblings", async () => {
     const { owner } = await createHarness();
     await createBaseStrategy(owner);

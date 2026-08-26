@@ -101,6 +101,42 @@ void main() {
       expect(restored.pending.single.clientId, isNotEmpty);
     });
 
+    test('page descriptor mutation survives restart in the durable outbox',
+        () async {
+      final notifier = start();
+      await notifier.enqueue(
+        const StrategyOp(
+          opId: 'add-page',
+          kind: StrategyOpKind.add,
+          entityType: StrategyOpEntityType.page,
+          entityPublicId: 'page-2',
+          payload: {
+            'name': 'Execute',
+            'isAttack': true,
+            'settings': {
+              'agentSize': 1.0,
+              'abilitySize': 1.0,
+              'useNeutralTeamColors': false,
+            },
+          },
+          sortIndex: 1,
+          expectedRevision: 4,
+        ),
+        flushImmediately: false,
+      );
+      expect(store.values, hasLength(1));
+
+      start();
+
+      final restored = container!.read(strategyOpQueueProvider);
+      expect(restored.pending, hasLength(1));
+      final intent = restored.queuedByEntityKey.entries.single;
+      expect(intent.key, const EntitySyncKey.pageDescriptor('page-2'));
+      expect(intent.value.pending.op.opId, 'add-page');
+      expect(intent.value.pending.op.kind, StrategyOpKind.add);
+      expect(intent.value.pending.op.expectedRevision, 4);
+    });
+
     test('restart while in flight replays the same event key', () async {
       final saved = record(status: DurableOutboxStatus.inFlight);
       await store.put(saved);

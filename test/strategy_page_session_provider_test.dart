@@ -384,6 +384,133 @@ void main() {
     expect(op.payload, containsPair('clearThemeProfileId', true));
   });
 
+  test('cloud page reorder is persisted as a page descriptor op', () async {
+    final first = _page('page-1', 0);
+    final second = _page('page-2', 1);
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [first, second],
+        activePage: _pageSnapshot(first),
+        shellRevision: 17,
+      )),
+      queue: queue,
+    );
+
+    await container.read(strategyProvider.notifier).reorderPage(0, 2);
+
+    final intent = container
+        .read(strategyOpQueueProvider)
+        .queuedByEntityKey
+        .entries
+        .single;
+    final pending = intent.value.pending;
+    expect(pending.op.entityType, StrategyOpEntityType.page);
+    expect(pending.op.kind, StrategyOpKind.reorder);
+    expect(pending.op.entityPublicId, 'page-1');
+    expect(pending.op.sortIndex, 1);
+    expect(pending.op.expectedRevision, 17);
+    expect(intent.key, const EntitySyncKey.pageDescriptor('page-1'));
+    expect(queue.flushNowCount, 1);
+  });
+
+  test('cloud page add is persisted with its descriptor and content', () async {
+    final page = _page('page-1', 0);
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page),
+        shellRevision: 8,
+      )),
+      queue: queue,
+    );
+
+    await container.read(strategyProvider.notifier).addPage('Execute');
+
+    final intent = container
+        .read(strategyOpQueueProvider)
+        .queuedByEntityKey
+        .entries
+        .single;
+    final pending = intent.value.pending;
+    expect(pending.op.entityType, StrategyOpEntityType.page);
+    expect(pending.op.kind, StrategyOpKind.add);
+    expect(pending.op.entityPublicId, isNotEmpty);
+    expect(pending.op.sortIndex, 1);
+    expect(pending.op.expectedRevision, 8);
+    expect(pending.op.payload, {
+      'name': 'Execute',
+      'isAttack': true,
+      'settings': container.read(strategySettingsProvider).toJson(),
+    });
+    expect(
+      intent.key,
+      EntitySyncKey.pageDescriptor(pending.op.entityPublicId!),
+    );
+    expect(queue.flushNowCount, 1);
+  });
+
+  test('cloud page rename is persisted with the page revision', () async {
+    final page = _page('page-1', 0, revision: 6);
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page),
+      )),
+      queue: queue,
+    );
+
+    await container.read(strategyProvider.notifier).renamePage(
+          'page-1',
+          '  Retake  ',
+        );
+
+    final intent = container
+        .read(strategyOpQueueProvider)
+        .queuedByEntityKey
+        .entries
+        .single;
+    final pending = intent.value.pending;
+    expect(pending.op.entityType, StrategyOpEntityType.page);
+    expect(pending.op.kind, StrategyOpKind.patch);
+    expect(pending.op.entityPublicId, 'page-1');
+    expect(pending.op.payload, {'name': 'Retake'});
+    expect(pending.op.expectedRevision, 6);
+    expect(intent.key, const EntitySyncKey.pageDescriptor('page-1'));
+    expect(queue.flushNowCount, 1);
+  });
+
+  test('cloud page delete is persisted with the shell revision', () async {
+    final first = _page('page-1', 0);
+    final second = _page('page-2', 1);
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [first, second],
+        activePage: _pageSnapshot(first),
+        shellRevision: 12,
+      )),
+      queue: queue,
+    );
+
+    await container.read(strategyProvider.notifier).deletePage('page-2');
+
+    final intent = container
+        .read(strategyOpQueueProvider)
+        .queuedByEntityKey
+        .entries
+        .single;
+    final pending = intent.value.pending;
+    expect(pending.op.entityType, StrategyOpEntityType.page);
+    expect(pending.op.kind, StrategyOpKind.delete);
+    expect(pending.op.entityPublicId, 'page-2');
+    expect(pending.op.expectedRevision, 12);
+    expect(intent.key, const EntitySyncKey.pageDescriptor('page-2'));
+    expect(queue.flushNowCount, 1);
+  });
+
   test('tombstone restore op carries the remote entity revision', () async {
     final page = _page('page-1', 0);
     final element = _textElement(
