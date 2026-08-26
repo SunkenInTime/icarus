@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Run one chaos gauntlet before choosing Icarus's Dart client</title>
+  <script>
+    /* Runs before first paint so the theme never flashes. Keep it in <head>. */
+    (() => {
+      /* ?theme=light|dark forces a theme — used for automated verification. */
+      const forced = new URLSearchParams(location.search).get("theme");
+      let stored = null;
+      try { stored = localStorage.getItem("blueprint-theme"); } catch {}
+      const system = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      document.documentElement.dataset.theme = forced || stored || system;
+    })();
+  </script>
+  <style>
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+/* ---- palette ----------------------------------------------------------
+   Dark is the default. The inline <head> script sets data-theme from
+   localStorage or the system preference before first paint; the light
+   block below is the only override. Never hardcode a hex outside here —
+   inline SVG included. ------------------------------------------------ */
+:root {
+  color-scheme: dark;
+
+  /* background ramp, darkest to lightest: sunken · bg · tint · inset · hover · raised */
+  --bg-sunken: #000;
+  --bg: #050505;
+  --bg-tint: #0a0a09;
+  --bg-inset: #0d0d0d;
+  --bg-hover: #141414;
+  --bg-raised: #1b1b19;
+  --bg-translucent: rgba(5, 5, 5, .96);
+  --track: #111;
+
+  --fg: #d6d3cc;
+  --fg-strong: #f1efe8;
+  --fg-muted: #8b8983;
+  --fg-faint: #7a7872;
+
+  --line: #222;
+  --line-strong: #3d3d3d;
+
+  --accent: #7b96ff;
+  --ok: #6fcf8f;
+  --warn: #e8b866;
+  --danger: #ff7b72;
+
+  /* diagram series, ramping toward the accent */
+  --series-1: #44527f;
+  --series-2: #566ba9;
+  --series-3: #7b96ff;
+  --series-4: #817b9f;
+  --on-fill: #f1efe8;    /* label sitting on a series bar */
+  --on-accent: #050505;  /* label sitting on the accent bar */
+
+  /* theme-independent */
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+  --hatch: repeating-linear-gradient(-45deg, transparent, transparent 8px, var(--line) 8px, var(--line) 9px);
+  --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* background ramp, lightest page to deepest surface — warm greige paper,
+     not white. Separation from #fff comes from lightness (~1.28:1), not
+     hue: subtle off-whites flatten to pure white on cool-white-point
+     external monitors, but a genuinely darker page survives any display.
+     Don't lighten it back toward #f4f1e9. */
+  --bg-sunken: #ddd6c8;
+  --bg: #e8e3d9;
+  --bg-tint: #e3ddd1;
+  --bg-inset: #dfd8ca;
+  --bg-hover: #d6cebc;
+  --bg-raised: #cdc4af;
+  --bg-translucent: rgba(232, 227, 217, .96);
+  --track: #dbd4c4;
+
+  --fg: #3d3b35;
+  --fg-strong: #14130f;
+  --fg-muted: #5c5a52;
+  --fg-faint: #67635a;
+
+  --line: #d0c9b8;
+  --line-strong: #a09a8a;
+
+  --accent: #3849b8;
+  --ok: #256a41;
+  --warn: #7d540d;
+  --danger: #a52f27;
+
+  --series-1: #6a739b;
+  --series-2: #4f5d9e;
+  --series-3: #3849b8;
+  --series-4: #6f6890;
+  --on-fill: #fff;
+  --on-accent: #fff;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scrollbar-width: none; }
+html::-webkit-scrollbar { display: none; }
+body { margin: 0; min-height: 100vh; overflow-x: clip; background: var(--bg); color: var(--fg); font: 400 1rem/1.75 var(--sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+a { color: inherit; }
+button { color: inherit; font: inherit; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
+
+/* ---- ruled page grid: rail | content, hairlines run the full height ---- */
+.page-grid { display: grid; grid-template-columns: minmax(1rem, 1fr) 13rem minmax(0, 56rem) minmax(1rem, 1fr); }
+.topbar { position: relative; z-index: 20; border-bottom: 1px solid var(--line); background: var(--bg-translucent); }
+.topbar-grid::before, .hatch-grid::before { content: ""; grid-area: 1 / 2; border-left: 1px solid var(--line); pointer-events: none; }
+.topbar-row { grid-column: 3; min-height: 3rem; display: flex; align-items: stretch; justify-content: space-between; border-inline: 1px solid var(--line); }
+.wordmark { display: inline-flex; align-items: center; gap: .55rem; padding: 0 1.75rem; color: var(--fg-strong); font: 600 .7rem/1 var(--mono); letter-spacing: .18em; text-decoration: none; }
+.wordmark-mark { color: var(--accent); font-size: .8rem; }
+.top-actions { display: flex; align-items: stretch; }
+.top-action { display: inline-flex; align-items: center; padding: 0 1rem; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--fg-muted); cursor: pointer; font: 400 .62rem/1 var(--mono); letter-spacing: .16em; text-decoration: none; }
+.top-action:hover, .top-action:focus-visible { color: var(--fg-strong); background: var(--bg-hover); outline-offset: -1px; }
+.hatch { height: 1.4rem; border-bottom: 1px solid var(--line); background: var(--hatch); }
+.hatch-grid { height: 100%; }
+.hatch-cell { grid-column: 3; height: 100%; border-inline: 1px solid var(--line); }
+.body-grid { align-items: stretch; min-height: calc(100vh - 4.4rem); }
+
+/* ---- sticky rail ---- */
+.rail { grid-column: 2; min-width: 0; border-left: 1px solid var(--line); }
+.rail-sticky { position: sticky; top: 0; max-height: 100vh; overflow-y: auto; scrollbar-width: none; }
+.rail-sticky::-webkit-scrollbar { display: none; }
+.rail-block { padding: 1.1rem; border-bottom: 1px solid var(--line); }
+.rail-label, .kicker { margin: 0 0 .75rem; color: var(--fg-faint); font: 400 .68rem/1.4 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+.outline-list { display: flex; flex-direction: column; border-left: 1px solid var(--line); }
+.outline-link { margin-left: -1px; padding: .25rem 0 .25rem .75rem; border-left: 1px solid transparent; color: var(--fg-muted); font: 400 .75rem/1.45 var(--mono); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.outline-link[data-level="3"] { padding-left: 1.45rem; color: var(--fg-faint); }
+.outline-link:hover, .outline-link.active { color: var(--fg-strong); border-left-color: var(--accent); }
+.rail-text { margin: 0; color: var(--fg-muted); font-size: .8rem; line-height: 1.55; overflow-wrap: anywhere; }
+.rail-text + .rail-text { margin-top: .45rem; }
+.rail-metric { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; margin: 0; padding: .22rem 0; color: var(--fg-muted); font: 400 .66rem/1.5 var(--mono); }
+.rail-metric span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rail-metric + .rail-metric { border-top: 1px solid var(--line); }
+.rail-metric b { color: var(--fg-strong); font-weight: 600; white-space: nowrap; }
+.rail-metric b.good { color: var(--ok); }
+.rail-metric b.bad { color: var(--danger); }
+.rail-metric b.warn { color: var(--warn); }
+.rail-artifact { display: flex; align-items: baseline; gap: .45rem; padding: .3rem 0; color: var(--fg-muted); font: 400 .68rem/1.5 var(--mono); text-decoration: none; }
+.rail-artifact + .rail-artifact { border-top: 1px solid var(--line); }
+.rail-artifact .ext { flex: none; padding: 0 .3rem; border: 1px solid var(--line-strong); color: var(--fg-faint); font-size: .56rem; letter-spacing: .1em; }
+.rail-artifact .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.rail-artifact::after { content: "↓"; flex: none; color: var(--fg-faint); }
+.rail-artifact:hover { color: var(--fg-strong); }
+.rail-artifact:hover::after, .rail-artifact:hover .ext { color: var(--accent); border-color: var(--accent); }
+
+/* ---- document flow: prose inside --pad, blocks bleed past it ---- */
+.content { --pad: min(1.4rem, 5vw); grid-column: 3; min-width: 0; padding: 1.4rem var(--pad) 3rem; border-inline: 1px solid var(--line); }
+.document-flow { min-width: 0; }
+h1, h2, h3 { color: var(--fg-strong); font-family: var(--mono); text-wrap: pretty; scroll-margin-top: 5rem; }
+h1 { margin: 0 calc(-1 * var(--pad)) 1.4rem; padding: 0 var(--pad) 1.4rem; border-bottom: 1px solid var(--line); font-size: clamp(1.35rem, 3vw, 1.5rem); font-weight: 600; line-height: 1.35; letter-spacing: -.02em; }
+h2 { margin: 1.4rem calc(-1 * var(--pad)); padding: 0 var(--pad); font-size: 1.15rem; font-weight: 600; line-height: 1.4; letter-spacing: -.01em; }
+h2::before { content: ""; display: block; height: 1.1rem; margin: 0 calc(-1 * var(--pad)) 1.4rem; border-block: 1px solid var(--line); background: var(--hatch); }
+.document-flow > section:first-of-type h2::before { display: none; }
+h3 { margin: 1.8rem 0 .7rem; font-size: 1rem; font-weight: 600; line-height: 1.45; }
+/* Prose measure stays readable: paragraphs cap at ~72ch while tables,
+   charts, diffs, and pre keep the full column. Structural p's (titles,
+   colophon) span fully so their border rules reach the column lines. */
+p, ul, ol, blockquote { max-width: 72ch; }
+.diff-title, .diagram-title, .colophon, .source { max-width: none; }
+p { margin: 1rem 0; text-wrap: pretty; }
+.lede { color: var(--fg); font-size: 1.02rem; }
+strong { color: var(--fg-strong); font-weight: 600; }
+ul, ol { margin: .9rem 0; padding-left: 1.4rem; }
+li { margin: .3rem 0; }
+li::marker { color: var(--fg-faint); }
+code, pre { font-family: var(--mono); }
+code { padding: .1em .35em; border-radius: 2px; background: var(--bg-hover); color: var(--fg-strong); font-size: .85em; }
+pre { margin: 1.4rem calc(-1 * var(--pad)); padding: 1rem var(--pad); overflow-x: auto; border-block: 1px solid var(--line); background: var(--bg-inset); color: var(--fg); font-size: .82rem; line-height: 1.7; }
+pre code { padding: 0; background: transparent; color: inherit; font-size: 1em; }
+blockquote, .callout { margin: 1.2rem 0; padding: .1rem 0 .1rem 1rem; border-left: 2px solid var(--line-strong); color: var(--fg-muted); }
+.callout { border-left-color: var(--accent); color: var(--fg); }
+
+/* ---- tables ---- */
+.table-wrap { margin: 1.4rem calc(-1 * var(--pad)); overflow-x: auto; border-block: 1px solid var(--line); }
+table { width: 100%; border-collapse: collapse; background: var(--bg-tint); font-size: .85rem; }
+tbody tr:hover { background: var(--bg-hover); }
+th, td { padding: .55rem .7rem; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+th:first-child, td:first-child { border-left: 0; padding-left: var(--pad); }
+th:last-child, td:last-child { border-right: 0; padding-right: var(--pad); }
+th { background: var(--bg-raised); color: var(--fg-strong); font: 500 .72rem/1.45 var(--mono); white-space: nowrap; }
+
+/* ---- diagrams ---- */
+.diagram { margin: 1.4rem calc(-1 * var(--pad)); padding: 1.2rem var(--pad); overflow-x: auto; border-block: 1px solid var(--line); background: var(--bg-inset); }
+.diagram svg { display: block; width: 100%; min-width: 43rem; height: auto; font-family: var(--mono); }
+.diagram-title { margin: 0 0 .35rem; color: var(--fg-strong); font: 500 .78rem/1.45 var(--mono); }
+.diagram-note, .caption { margin: .35rem 0 0; color: var(--fg-muted); font-size: .78rem; line-height: 1.55; }
+.source { margin: .35rem 0 0; color: var(--fg-faint); font: 400 .68rem/1.6 var(--mono); }
+.table-wrap + .source, .diagram + .source, pre + .source { margin-top: -.9rem; margin-bottom: 1.4rem; }
+.legend { display: flex; flex-wrap: wrap; gap: .45rem 1rem; margin: .8rem 0 0; color: var(--fg-muted); font: 400 .7rem/1.4 var(--mono); }
+.legend span { display: inline-flex; align-items: center; gap: .38rem; }
+.legend i { width: .65rem; height: .65rem; border-radius: 1px; background: var(--legend, var(--accent)); }
+
+/* ---- chart hover ----
+   Any element inside .diagram carrying data-tip gets a hover highlight and
+   a fixed-position tooltip (the skeleton script positions #chart-tip). */
+.diagram [data-tip] { cursor: help; }
+.diagram [data-tip]:hover { filter: brightness(1.22); }
+.diagram rect[data-guide]:hover { fill: var(--accent-soft); filter: none; }
+.hover-guide line { stroke: var(--line-strong); stroke-dasharray: 3 3; }
+.hover-guide circle { fill: var(--accent); stroke: var(--bg-inset); stroke-width: 1.5; }
+.chart-tip { position: fixed; z-index: 60; max-width: 22rem; padding: .45rem .65rem; border: 1px solid var(--line-strong); background: var(--bg-raised); color: var(--fg-strong); font: 400 .68rem/1.55 var(--mono); white-space: pre-line; pointer-events: none; visibility: hidden; }
+
+/* ---- headline metrics ---- */
+.metric-line { display: flex; flex-wrap: wrap; gap: 0; margin: 1.35rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); }
+
+/* ---- code diffs ----
+   Preferred: @pierre/diffs rendered into .diff-block (see SKILL.md).
+   Fallback when the doc must stay fully offline: pre.diff with one span
+   per line, classed add / del / hunk. */
+.diff-block { margin: 1.4rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); background: var(--bg-inset); font-size: .8rem; }
+.diff-block .diff-title { display: flex; align-items: center; gap: 1rem; margin: 0; padding: .55rem var(--pad); border-bottom: 1px solid var(--line); color: var(--fg-strong); font: 500 .72rem/1.45 var(--mono); }
+.diff-toggle { align-self: stretch; margin-left: auto; padding: 0 0 0 1rem; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--fg-muted); cursor: pointer; font: 400 .62rem/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+.diff-toggle:hover, .diff-toggle:focus-visible { color: var(--fg-strong); }
+.diff-note { margin: 0; padding: .45rem var(--pad); border-block: 1px solid var(--line); background: var(--bg-tint); color: var(--fg-muted); font: 400 .72rem/1.55 var(--mono); }
+.diff-note::before { content: "// "; color: var(--accent); }
+.diff-block pre { margin: 0; border-block: 0; background: transparent; }
+pre.diff span { display: block; margin: 0 calc(-1 * var(--pad)); padding: 0 var(--pad); }
+pre.diff .add { background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--fg-strong); }
+pre.diff .del { background: color-mix(in srgb, var(--danger) 11%, transparent); color: var(--fg-muted); }
+pre.diff .hunk { color: var(--accent); }
+.metric { flex: 1 1 11rem; min-width: 0; padding: .8rem var(--pad); border-right: 1px solid var(--line); background: var(--bg-tint); }
+.metric:hover { background: var(--bg-hover); }
+.metric:last-child { border-right: 0; }
+.metric-value { display: block; color: var(--fg-strong); font: 600 1.15rem/1.25 var(--mono); }
+.metric-label { display: block; margin-top: .25rem; color: var(--fg-muted); font: 400 .68rem/1.45 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+
+/* ---- verdict colors ---- */
+.good { color: var(--ok); }
+.warn { color: var(--warn); }
+.bad { color: var(--danger); }
+.nowrap { white-space: nowrap; }
+
+/* ---- numbers: digits align in columns and metrics ---- */
+.metric-value, .rail-metric b, th, td { font-variant-numeric: tabular-nums; }
+
+/* ---- status chips: uppercase mono state markers ---- */
+.chip { display: inline-block; vertical-align: baseline; padding: .05rem .45rem; border: 1px solid var(--line-strong); color: var(--fg-muted); font: 500 .6rem/1.6 var(--mono); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+.chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+.chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.chip.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.chip.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+/* ---- appendix: collapsed raw evidence ---- */
+details.appendix { margin: 1.4rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); background: var(--bg-tint); }
+details.appendix > summary { padding: .6rem var(--pad); cursor: pointer; color: var(--fg-muted); font: 500 .68rem/1.5 var(--mono); letter-spacing: .14em; text-transform: uppercase; list-style: none; }
+details.appendix > summary::-webkit-details-marker { display: none; }
+details.appendix > summary::before { content: "+ "; color: var(--accent); }
+details.appendix[open] > summary::before { content: "− "; }
+details.appendix > summary:hover { background: var(--bg-hover); color: var(--fg-strong); }
+details.appendix pre, details.appendix .table-wrap { margin: 0; border-block-end: 0; border-top: 1px solid var(--line); }
+details.appendix p, details.appendix .source { margin: .6rem var(--pad) .9rem; }
+
+/* ---- colophon: document provenance footer ---- */
+.colophon { margin: 2.5rem calc(-1 * var(--pad)) 0; padding: .8rem var(--pad) 0; border-top: 1px solid var(--line); color: var(--fg-faint); font: 400 .68rem/1.7 var(--mono); }
+.colophon a { color: var(--fg-muted); }
+
+/* ---- heading anchors: hover a heading to grab its link ---- */
+.anchor-link { margin-left: .55rem; color: var(--fg-faint); font-size: .8em; font-weight: 400; text-decoration: none; opacity: 0; }
+h2:hover .anchor-link, h3:hover .anchor-link, .anchor-link:focus-visible { opacity: 1; }
+.anchor-link:hover { color: var(--accent); }
+
+.reading-progress { position: fixed; z-index: 50; inset: 0 0 0 auto; width: 4px; background: var(--track); pointer-events: none; }
+.reading-progress-fill { width: 100%; height: 100%; transform: scaleY(0); transform-origin: top; background: var(--line-strong); }
+
+@media (max-width: 1159px) {
+  .page-grid { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
+  .rail { display: none; }
+  .topbar-row, .hatch-cell, .content { border-inline: 0; }
+}
+@media (max-width: 699px) {
+  .top-action[data-optional] { display: none; }
+  .wordmark { padding-inline: 1.25rem; }
+  .content { padding-top: 1.5rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+@media print {
+  .topbar, .hatch, .rail, .reading-progress { display: none; }
+  .content { border-inline: 0; }
+}
+  </style>
+</head>
+<body>
+  <div class="reading-progress" aria-hidden="true"><div class="reading-progress-fill"></div></div>
+  <div class="chart-tip" id="chart-tip" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="page-grid topbar-grid">
+      <div class="topbar-row">
+        <!-- Wordmark: one glyph + one uppercase word naming the document class (PLAN, REPORT, SPEC, RFC). -->
+        <a class="wordmark" href="#top"><span class="wordmark-mark">◆</span> PLAN</a>
+        <nav class="top-actions" aria-label="Document actions">
+          <button class="top-action" type="button" id="toggle-theme" aria-live="polite">LIGHT</button>
+          <button class="top-action" type="button" id="copy-link">COPY LINK</button>
+          <a class="top-action" data-optional href="#top">TOP</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <div class="hatch" aria-hidden="true">
+    <div class="page-grid hatch-grid"><div class="hatch-cell"></div></div>
+  </div>
+
+  <div class="page-grid body-grid">
+    <aside class="rail" aria-label="Document rail">
+      <div class="rail-sticky">
+        <div class="rail-block" id="outline-block">
+          <p class="rail-label">Outline</p>
+          <nav class="outline-list" id="outline-list" aria-label="Document outline"></nav>
+        </div>
+        <div class="rail-block" id="rail-metrics-block" hidden>
+          <p class="rail-label">Key figures</p>
+          <div id="rail-metrics"></div>
+        </div>
+        <div class="rail-block" id="rail-artifacts-block" hidden>
+          <p class="rail-label">Artifacts</p>
+          <nav id="rail-artifacts" aria-label="Referenced artifacts"></nav>
+        </div>
+        <div class="rail-block">
+          <p class="rail-label">Document</p>
+          <p class="rail-text" id="rail-title"></p>
+          <p class="rail-text" id="rail-status"></p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content" id="document">
+      <article class="document-flow">
+        <p class="kicker">Icarus cloud · Ready to execute · Data safety</p>
+        <h1 id="top">Run one chaos gauntlet before choosing Icarus's Dart client</h1>
+        <p class="lede">Dartvex is the leading candidate because it targets the typed Dart API and build simplicity Icarus wants. <code>convex_flutter</code> still has the stronger native sync lineage and already runs in the app. Put both behind the same Icarus transport, run <strong>50 seeded trials and 50,000 operations per client</strong>, then choose from evidence. Do not build a custom generator or migrate the app before this gate closes.</p>
+
+        <section>
+          <h2 id="decision">Decision before implementation</h2>
+
+          <div class="metric-line" aria-label="Planned gauntlet acceptance figures">
+            <div class="metric"><span class="metric-value">2</span><span class="metric-label">client adapters</span></div>
+            <div class="metric"><span class="metric-value">50</span><span class="metric-label">deterministic seeds</span></div>
+            <div class="metric"><span class="metric-value">50,000</span><span class="metric-label">operations per SDK</span></div>
+            <div class="metric"><span class="metric-value good">0</span><span class="metric-label">correctness faults allowed</span></div>
+          </div>
+
+          <blockquote class="callout"><p><strong>Recommended decision:</strong> test Dartvex first and adopt it if it preserves every operation, catches a contract break at compile time, and stays within 20% of <code>convex_flutter</code> on profile-run latency and memory. Otherwise keep <code>convex_flutter</code> and return to the fallback generator plan.</p></blockquote>
+
+          <p>Confidence is medium. Repository structure, package source, public issue state, and current Icarus call paths were inspected on 2026-08-25 and 2026-08-26. Neither client has run this Icarus workload yet. Raw throughput is not the first gate because a fast client that loses one library operation is disqualified.</p>
+
+          <p>This document does not replace Convex, redesign page-scoped sync, change Hive models, or change the <code>.ica</code> format. It selects the Dart client and contract tooling used below those stable product rules.</p>
+        </section>
+
+        <section>
+          <h2 id="starting-point">Start from the current cloud branch, not this documentation base</h2>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Ref</th><th>SHA on 2026-08-26</th><th>Use</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td><code>origin/icarus-cloud</code></td><td><code>e59402e</code></td><td>Implementation base after refreshing remote refs</td><td class="good">current at capture</td></tr>
+                <tr><td><code>t3code/evaluate-spacetime-db</code></td><td><code>a797e1a</code> before this handoff commit</td><td>Research and handoff only</td><td class="warn">23 commits behind</td></tr>
+                <tr><td>Common ancestor</td><td><code>277fc14</code></td><td>Explains the branch distance</td><td>historical</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: <code>git fetch --prune origin</code>, <code>git rev-parse</code>, <code>git merge-base</code>, and <code>git rev-list --left-right --count</code> run in this worktree on 2026-08-26. Refresh again before implementation.</p>
+
+          <pre><code># Create an isolated implementation worktree from the refreshed cloud branch
+git fetch --prune origin
+git rev-parse origin/icarus-cloud
+git worktree add ../icarus-convex-client-gauntlet \
+  -b t3code/convex-client-gauntlet origin/icarus-cloud
+cd ../icarus-convex-client-gauntlet
+git status --short --branch</code></pre>
+          <p class="caption">Keep this documentation worktree intact. Record the refreshed cloud SHA in the result report. Do not assume <code>e59402e</code> is still current.</p>
+
+          <p>Before editing, read <a href="../../AGENTS.md">AGENTS.md</a>, <a href="../../CONTEXT.md">CONTEXT.md</a>, and <a href="server_side_sync_boundaries_handoff.md">the page-scoped sync handoff</a>. Read <a href="../../DESIGN.md">DESIGN.md</a> before changing visible sync state. The library, durable outbox, operation IDs, revisions, and round-trip behavior remain Icarus-owned.</p>
+        </section>
+
+        <section>
+          <h2 id="why-two-adapters">Make the comparison fair with one Icarus interface</h2>
+
+          <p>Icarus already abstracts the Supabase and Convex auth boundary in <a href="../../lib/providers/auth_provider.dart">auth_provider.dart</a>. The strategy repository and operation queue still reach into the <code>convex_flutter</code> singleton. Extract that dependency once, then give both candidates identical arguments, lifecycle calls, auth tokens, and fault timing.</p>
+
+          <div class="diagram" role="img" aria-label="Two Dart client adapters run through one Icarus interface and one fault schedule against the same Convex deployment">
+            <p class="diagram-title">One application contract · two replaceable clients · one authoritative result</p>
+            <svg viewBox="0 0 760 230" aria-hidden="true">
+              <rect x="24" y="78" width="144" height="62" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="IcarusConvexTransport&#10;Owns the shared query, mutation, watch, auth, and reconnect contract"/>
+              <text x="96" y="103" fill="var(--fg)" font-size="11" text-anchor="middle">ICARUS</text>
+              <text x="96" y="121" fill="var(--fg-muted)" font-size="10" text-anchor="middle">TRANSPORT</text>
+
+              <line x1="168" y1="94" x2="238" y2="64" stroke="var(--line-strong)"/>
+              <path d="M238 64 L229 62 L233 70 Z" fill="var(--line-strong)"/>
+              <line x1="168" y1="124" x2="238" y2="156" stroke="var(--line-strong)"/>
+              <path d="M238 156 L229 149 L226 157 Z" fill="var(--line-strong)"/>
+
+              <rect x="240" y="30" width="150" height="62" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="Dartvex adapter&#10;Pure Dart runtime plus generated bindings under evaluation"/>
+              <text x="315" y="57" fill="var(--fg)" font-size="11" text-anchor="middle">DARTVEX</text>
+              <text x="315" y="75" fill="var(--fg-muted)" font-size="10" text-anchor="middle">ADAPTER</text>
+
+              <rect x="240" y="128" width="150" height="62" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="convex_flutter adapter&#10;Existing Icarus runtime and baseline behavior"/>
+              <text x="315" y="155" fill="var(--fg)" font-size="11" text-anchor="middle">CONVEX_FLUTTER</text>
+              <text x="315" y="173" fill="var(--fg-muted)" font-size="10" text-anchor="middle">ADAPTER</text>
+
+              <line x1="390" y1="61" x2="474" y2="94" stroke="var(--line-strong)"/>
+              <path d="M474 94 L465 86 L463 95 Z" fill="var(--line-strong)"/>
+              <line x1="390" y1="159" x2="474" y2="126" stroke="var(--line-strong)"/>
+              <path d="M474 126 L463 125 L465 134 Z" fill="var(--line-strong)"/>
+
+              <rect x="476" y="78" width="120" height="62" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Team development deployment&#10;Both adapters use the same backend, users, data, and operation schedule"/>
+              <text x="536" y="103" fill="var(--fg)" font-size="11" text-anchor="middle">CONVEX</text>
+              <text x="536" y="121" fill="var(--fg-muted)" font-size="10" text-anchor="middle">DEV</text>
+
+              <line x1="596" y1="109" x2="646" y2="109" stroke="var(--line-strong)"/>
+              <path d="M646 109 L637 104 L637 114 Z" fill="var(--line-strong)"/>
+              <rect x="648" y="78" width="88" height="62" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="Fresh verifier client&#10;Downloads the final full snapshot with no local cache"/>
+              <text x="692" y="103" fill="var(--fg)" font-size="11" text-anchor="middle">CLIENT C</text>
+              <text x="692" y="121" fill="var(--fg-muted)" font-size="10" text-anchor="middle">VERIFY</text>
+
+              <line x1="96" y1="140" x2="96" y2="190" stroke="var(--accent)" stroke-dasharray="4 4"/>
+              <text x="96" y="211" fill="var(--accent)" font-size="10" text-anchor="middle">SAME SEED + FAULTS</text>
+            </svg>
+          </div>
+          <p class="source">Source: current seams in <code>lib/providers/auth_provider.dart</code>, <code>lib/collab/convex_strategy_repository.dart</code>, and <code>lib/providers/collab/strategy_op_queue_provider.dart</code>.</p>
+
+          <h3 id="transport-contract">Transport contract</h3>
+          <ul>
+            <li>Query, mutation, action, and subscribed query operations.</li>
+            <li>Connection state, reconnect, subscription cancellation, and client disposal.</li>
+            <li>Supabase access-token delivery, forced refresh, auth-state confirmation, and sign-out.</li>
+            <li>Structured errors that omit tokens, signed URLs, and strategy payloads.</li>
+          </ul>
+
+          <p>Do not let either adapter own the outbox, operation IDs, revision rules, payload versions, Hive storage, or <code>.ica</code> conversion. Those are common Icarus logic. A package cannot win by silently changing them.</p>
+        </section>
+
+        <section>
+          <h2 id="contract-test">First prove that generated Dart catches contract drift</h2>
+
+          <p>Use a stable fixture such as <code>folders:listForParent</code>. Generate the Dart API, compile one correct caller, then rename one argument and one result field in a temporary Convex function-spec fixture. Regenerate and require the old caller to fail analysis at the affected fields.</p>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Check</th><th>Required result</th><th>Failure means</th></tr></thead>
+              <tbody>
+                <tr><td>Function rename</td><td>Old generated method no longer compiles</td><td class="bad">Names remain stringly typed</td></tr>
+                <tr><td>Argument rename</td><td>Old named argument no longer compiles</td><td class="bad">Arguments remain raw maps</td></tr>
+                <tr><td>Result-field rename</td><td>Old field access no longer compiles</td><td class="bad">Results still expose <code>dynamic</code></td></tr>
+                <tr><td>Unsupported validator</td><td>Generation stops with function and field path</td><td class="bad">The generator weakens the contract</td></tr>
+                <tr><td>Second generation</td><td>No repository diff</td><td class="bad">Output is not deterministic</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: Dara's requested outcome, less JSON plumbing and stronger generated Dart APIs. The fallback mapping rules are documented in <a href="convex_dart_codegen_reference.md">convex_dart_codegen_reference.md</a>.</p>
+
+          <p>If Dartvex generates function names but leaves public results as <code>dynamic</code>, it has not solved the job. Stop the runtime comparison and record that gap before writing new generator code.</p>
+        </section>
+
+        <section>
+          <h2 id="chaos-test">Then run the cloud round-trip chaos test</h2>
+
+          <p>Use <a data-artifact href="../../test/fixtures/strategy_integrity/base-test-v43.ica">base-test-v43.ica</a> as the initial library artifact. Clients A and B use two disposable Supabase users with access to the same strategy. A clean client C performs final verification with no local cache.</p>
+
+          <h3 id="workload">Workload per seed</h3>
+          <ol>
+            <li>Import the fixture and wait until the server snapshot matches its canonical form.</li>
+            <li>Subscribe A and B to the strategy shell and active page.</li>
+            <li>Run 1,000 deterministic operations across page descriptors, page content, elements, lineups, and page order.</li>
+            <li>Create two same-revision edits on the same entity. One must land and one must become a visible conflict.</li>
+            <li>Fetch the full snapshot through C, export it, canonicalize it, and compare it with the reference reducer's expected state.</li>
+          </ol>
+
+          <h3 id="fault-schedule">Fault schedule</h3>
+          <ul>
+            <li>Dispose and recreate the client at seeded intervals, including while a mutation result is unresolved.</li>
+            <li>Hold the connection offline for 2 to 10 seconds while new edits enter the common test outbox.</li>
+            <li>Cancel and recreate the active-page subscription while the other client continues editing.</li>
+            <li>Present one rejected or expired access token, refresh the Supabase session, and require Convex authentication to recover without losing queued work.</li>
+            <li>Background and resume the Flutter app while subscriptions and pending operations exist.</li>
+          </ul>
+
+          <p>The current app refreshes a Supabase session when its token expires within one minute. Preserve that behavior and test it through each adapter. Use publishable client credentials and disposable test accounts. Never place a Supabase service-role key in Flutter, the test log, a fixture, or committed configuration.</p>
+
+          <pre><code># Intended correctness entry points after the comparison test exists
+fvm flutter test integration_test/convex_client_gauntlet_test.dart \
+  -d macos \
+  --dart-define=ICARUS_CONVEX_ADAPTER=convex_flutter
+
+fvm flutter test integration_test/convex_client_gauntlet_test.dart \
+  -d macos \
+  --dart-define=ICARUS_CONVEX_ADAPTER=dartvex</code></pre>
+          <p class="caption">Run the same seed list, users, deployment, starting fixture, and fault timing for both adapters. Load test-user credentials from untracked local configuration.</p>
+
+          <h3 id="restart-boundary">Keep the current outbox limitation out of the SDK score</h3>
+          <p>The current outbox is memory-only. A full process restart can therefore lose common Icarus state before either SDK sees it. For this comparison, persist the seeded operation ledger in the test runner and replay the same <code>clientId</code> and <code>opId</code> after recreating the client. Test the real durable app outbox separately under the page-scoped sync plan.</p>
+        </section>
+
+        <section>
+          <h2 id="winner-rule">Apply one winner rule without negotiation after the run</h2>
+
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Evidence</th><th>Dartvex wins when</th><th><code>convex_flutter</code> wins when</th></tr></thead>
+              <tbody>
+                <tr><td>Data correctness</td><td class="good">50 of 50 seeds converge with no lost or duplicated effect</td><td>Dartvex has any SDK-caused correctness fault that the baseline does not</td></tr>
+                <tr><td>Conflict honesty</td><td class="good">Every stale same-entity edit is rejected and surfaced</td><td>Dartvex hides, overwrites, or stalls a conflict</td></tr>
+                <tr><td>Auth recovery</td><td class="good">The rotated token is confirmed and queued work resumes once</td><td>Dartvex loops, stays stale, or replays incorrectly</td></tr>
+                <tr><td>Contract drift</td><td class="good">Argument and result changes fail Dart analysis</td><td>Dartvex leaves the changed boundary as <code>dynamic</code></td></tr>
+                <tr><td>Profile performance</td><td class="good">p95 remote convergence and peak memory stay within 20% of baseline</td><td>Dartvex exceeds either limit across paired profile runs</td></tr>
+                <tr><td>Build proof</td><td class="good">macOS, Windows, and web targets required by the branch compile</td><td>A required target cannot ship without maintaining a package fork</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: Icarus library and sync-status guarantees in <code>AGENTS.md</code>. The 20% performance margin is this evaluation's declared decision threshold, not a measured result.</p>
+
+          <p>Any lost operation, duplicate effect, silent conflict, stale subscription after reconnect, false synced state, or final canonical mismatch is one correctness fault. One fault loses the gate. Do not average it away.</p>
+
+          <p>If both adapters fail the same seed at the same common Icarus boundary, neither wins. Fix the shared implementation or the test, then rerun. If both pass, Dartvex wins only when its codegen also closes the compile-time contract.</p>
+        </section>
+
+        <section>
+          <h2 id="delivery">Deliver evidence, not a package swap</h2>
+
+          <ul>
+            <li>One injected Icarus client interface and two adapters.</li>
+            <li>One deterministic contract-drift test and one real deployment chaos test.</li>
+            <li>Machine-readable results with seed, adapter, SDK version, commit, platform, fault schedule, correctness counters, p95 latency, reconnect time, CPU, and peak memory.</li>
+            <li>A short result document naming the winner and linking every failing seed or profile run.</li>
+            <li>No broad migration, custom generator, production deployment change, or removal of <code>convex_flutter</code> in the comparison PR.</li>
+          </ul>
+
+          <p>Run profile measurements in alternating adapter order to reduce backend and network drift. Use at least 10 paired runs after the 50 correctness seeds. Report the median of each adapter's paired p95 values and peak memory. Do not claim a speed win from debug builds.</p>
+
+          <pre><code># Baseline and final repository gates
+npm ci
+npx tsc --noEmit
+fvm flutter pub get
+fvm flutter test test/collab_sync_models_test.dart
+fvm flutter test test/strategy_page_session_provider_test.dart
+fvm flutter test test/providers/auth_provider_test.dart
+fvm flutter test
+fvm flutter analyze --no-fatal-infos
+fvm flutter build web
+git diff --check</code></pre>
+          <p class="caption">Use <code>fvm flutter</code> so ambient Flutter versions do not decide the result. Record pre-existing warnings instead of changing unrelated code.</p>
+
+          <p>If Dartvex wins, open a separate migration PR against the refreshed <code>icarus-cloud</code> head. If it loses, use <a href="convex_dart_codegen_handoff.md">the fallback Convex Dart codegen handoff</a>. That document remains intentionally unimplemented until this comparison finishes.</p>
+        </section>
+
+        <section>
+          <h2 id="stop-conditions">Stop conditions</h2>
+          <ul>
+            <li>The selected Convex deployment is production or contains public user data.</li>
+            <li>The comparison requires weakening a server validator or changing an Icarus payload solely to satisfy one SDK.</li>
+            <li>The refreshed cloud branch has incompatible client-abstraction or codegen work already in progress.</li>
+            <li>Fault injection cannot give both adapters the same operation and timing semantics.</li>
+            <li>A destructive development-deployment reset is proposed without verifying that only team data exists.</li>
+            <li>Unrelated dirty changes overlap auth, repository, queue, sync-state, or generated files.</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2 id="appendix">Appendix</h2>
+          <details class="appendix">
+            <summary>Research inputs and repeatable inspection commands</summary>
+            <pre><code># Current Icarus dependency and direct client seams
+rg -n "convex_flutter|ConvexClient.instance|setAuthWithRefresh" \
+  pubspec.yaml lib test
+
+# Branch distance captured for this handoff
+git fetch --prune origin
+git rev-parse HEAD
+git rev-parse origin/icarus-cloud
+git merge-base HEAD origin/icarus-cloud
+git rev-list --left-right --count HEAD...origin/icarus-cloud
+
+# Upstream sources to refresh before pinning versions
+# https://github.com/AndreFrelicot/dartvex
+# https://pub.dev/packages/dartvex
+# https://pub.dev/packages/dartvex_codegen
+# https://github.com/jkuldev/convex_flutter
+# https://pub.dev/packages/convex_flutter</code></pre>
+            <p class="source">Captured 2026-08-26 · repository at <code>a797e1a</code> before documentation changes · upstream package research refreshed 2026-08-25.</p>
+          </details>
+        </section>
+
+        <p class="colophon">Generated 2026-08-26 · Codex with Dara · inputs: Icarus commit <code>a797e1a</code>, refreshed <code>origin/icarus-cloud</code> at <code>e59402e</code>, current auth, repository, queue, strategy-integrity fixture, upstream Dartvex and <code>convex_flutter</code> sources · revision v1</p>
+      </article>
+    </main>
+  </div>
+
+  <script>
+    const title = document.querySelector("h1");
+    const status = document.querySelector(".kicker");
+    document.title = title?.textContent || "Document";
+    document.getElementById("rail-title").textContent = title?.textContent || "Document";
+    document.getElementById("rail-status").textContent = status?.textContent || "";
+
+    const themeButton = document.getElementById("toggle-theme");
+    const paintTheme = () => {
+      const light = document.documentElement.dataset.theme === "light";
+      themeButton.textContent = light ? "DARK" : "LIGHT";
+      themeButton.setAttribute("aria-label", `Switch to ${light ? "dark" : "light"} theme`);
+    };
+    paintTheme();
+    themeButton.addEventListener("click", () => {
+      const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("blueprint-theme", next); } catch {}
+      paintTheme();
+    });
+
+    /* The rail earns its width: mirror the headline metrics so key figures
+       stay visible while scrolling, and drop the outline when the document
+       is too short for it to help. */
+    const railMetrics = document.getElementById("rail-metrics");
+    const firstMetrics = [...document.querySelectorAll("#document .metric-line .metric")].slice(0, 4);
+    firstMetrics.forEach((metric) => {
+      const value = metric.querySelector(".metric-value");
+      const label = metric.querySelector(".metric-label");
+      if (!value || !label) return;
+      const row = document.createElement("p");
+      row.className = "rail-metric";
+      const name = document.createElement("span");
+      name.textContent = label.textContent;
+      const figure = document.createElement("b");
+      figure.textContent = value.textContent;
+      for (const verdict of ["good", "warn", "bad"]) {
+        if (value.classList.contains(verdict)) figure.classList.add(verdict);
+      }
+      row.append(name, figure);
+      railMetrics.appendChild(row);
+    });
+    document.getElementById("rail-metrics-block").hidden = !railMetrics.childElementCount;
+
+    /* Artifacts: every file the document references, collected into rail
+       download links. Links and images are picked up automatically by
+       extension; force-include anything else with data-artifact (empty on
+       an <a> to use its href, or data-artifact="url" on any element).
+       Override the display name with data-artifact-name. */
+    const railArtifacts = document.getElementById("rail-artifacts");
+    const ARTIFACT_EXT = /\.(zip|tar|tar\.gz|tgz|gz|7z|csv|tsv|json|jsonl|ndjson|parquet|xlsx|pdf|png|jpe?g|gif|svg|webp|mp4|txt|log|sql|patch|diff|ipynb|js|ts|sh|py|ya?ml|toml|md)(?=$|[?#])/i;
+    const seenArtifacts = new Set();
+    document.querySelectorAll("#document a[href], #document img[src], #document [data-artifact]").forEach((el) => {
+      const url = el.dataset?.artifact || el.getAttribute("href") || el.getAttribute("src") || "";
+      if (!url || url.startsWith("#") || url.startsWith("data:") || url.startsWith("javascript:")) return;
+      if (!el.hasAttribute("data-artifact") && !ARTIFACT_EXT.test(url)) return;
+      if (seenArtifacts.has(url)) return;
+      seenArtifacts.add(url);
+      const name = el.dataset.artifactName
+        || decodeURIComponent(url.split(/[?#]/)[0].split("/").pop() || url);
+      const ext = (name.match(/\.([a-z0-9]+)$/i)?.[1] || "file").toUpperCase();
+      const row = document.createElement("a");
+      row.className = "rail-artifact";
+      row.href = url;
+      row.setAttribute("download", "");
+      const tag = document.createElement("span");
+      tag.className = "ext";
+      tag.textContent = ext;
+      const label = document.createElement("span");
+      label.className = "name";
+      label.textContent = name;
+      row.append(tag, label);
+      railArtifacts.appendChild(row);
+    });
+    document.getElementById("rail-artifacts-block").hidden = !railArtifacts.childElementCount;
+
+    const outline = document.getElementById("outline-list");
+    const headings = [...document.querySelectorAll("#document h2[id], #document h3[id]")];
+    if (headings.length < 3) document.getElementById("outline-block").hidden = true;
+    const links = headings.map((heading) => {
+      const link = document.createElement("a");
+      link.className = "outline-link";
+      link.href = `#${heading.id}`;
+      link.textContent = heading.textContent;
+      link.dataset.level = heading.tagName.slice(1);
+      outline.appendChild(link);
+
+      /* hover anchor: click navigates and copies the absolute link */
+      const anchor = document.createElement("a");
+      anchor.className = "anchor-link";
+      anchor.href = `#${heading.id}`;
+      anchor.textContent = "§";
+      anchor.setAttribute("aria-label", `Copy link to ${heading.textContent}`);
+      anchor.addEventListener("click", () => {
+        const url = `${location.origin}${location.pathname}#${heading.id}`;
+        try { navigator.clipboard.writeText(url); } catch {}
+      });
+      heading.appendChild(anchor);
+      return link;
+    });
+
+    /* Chart tooltips: any [data-tip] inside a .diagram shows its text in a
+       fixed tooltip that follows the pointer. Newlines in data-tip render
+       as line breaks (white-space: pre-line). */
+    const chartTip = document.getElementById("chart-tip");
+    /* Line indicator: a hit rect carrying data-guide (the series' y at that
+       interval, in viewBox units; space-separate several ys for several
+       series) gets a dashed vertical guide plus a dot per y on hover.
+       data-guide-fill="var(--danger)" colors the dots; default accent. */
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const hideGuides = () => document.querySelectorAll(".hover-guide").forEach((g) => g.setAttribute("visibility", "hidden"));
+    const showGuide = (mark) => {
+      const svg = mark.ownerSVGElement;
+      if (!svg || mark.dataset.guide === undefined || mark.tagName !== "rect") return;
+      let guide = svg.querySelector(".hover-guide");
+      if (!guide) {
+        guide = document.createElementNS(SVG_NS, "g");
+        guide.setAttribute("class", "hover-guide");
+        guide.setAttribute("pointer-events", "none");
+        guide.appendChild(document.createElementNS(SVG_NS, "line"));
+        svg.appendChild(guide);
+      }
+      const x = mark.dataset.guideX !== undefined
+        ? +mark.dataset.guideX
+        : +mark.getAttribute("x") + +mark.getAttribute("width") / 2;
+      const line = guide.querySelector("line");
+      line.setAttribute("x1", x);
+      line.setAttribute("x2", x);
+      line.setAttribute("y1", mark.getAttribute("y"));
+      line.setAttribute("y2", +mark.getAttribute("y") + +mark.getAttribute("height"));
+      guide.querySelectorAll("circle").forEach((dot) => dot.remove());
+      mark.dataset.guide.trim().split(/\s+/).filter(Boolean).forEach((cy) => {
+        const dot = document.createElementNS(SVG_NS, "circle");
+        dot.setAttribute("cx", x);
+        dot.setAttribute("cy", cy);
+        dot.setAttribute("r", 3);
+        if (mark.dataset.guideFill) dot.style.fill = mark.dataset.guideFill;
+        guide.appendChild(dot);
+      });
+      guide.setAttribute("visibility", "visible");
+    };
+    const moveTip = (event) => {
+      const mark = event.target.closest("[data-tip]");
+      hideGuides();
+      if (!mark) { chartTip.style.visibility = "hidden"; return; }
+      chartTip.textContent = mark.dataset.tip;
+      chartTip.style.visibility = "visible";
+      const x = Math.min(event.clientX + 14, innerWidth - chartTip.offsetWidth - 8);
+      const y = Math.min(event.clientY + 14, innerHeight - chartTip.offsetHeight - 8);
+      chartTip.style.left = `${x}px`;
+      chartTip.style.top = `${y}px`;
+      showGuide(mark);
+    };
+    document.querySelectorAll(".diagram").forEach((diagram) => {
+      diagram.addEventListener("mousemove", moveTip);
+      diagram.addEventListener("mouseleave", () => { chartTip.style.visibility = "hidden"; hideGuides(); });
+    });
+
+    const progress = document.querySelector(".reading-progress-fill");
+    const updateProgress = () => {
+      const max = document.documentElement.scrollHeight - innerHeight;
+      const ratio = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+      progress.style.transform = `scaleY(${ratio})`;
+    };
+
+    const activateOutline = () => {
+      if (!headings.length) return;
+      const current = headings.reduce((active, heading) =>
+        heading.getBoundingClientRect().top <= 120 ? heading : active, headings[0]);
+      links.forEach((link) => link.classList.toggle("active", link.hash === `#${current.id}`));
+    };
+
+    const updateScrollState = () => {
+      updateProgress();
+      activateOutline();
+    };
+    addEventListener("scroll", updateScrollState, { passive: true });
+    addEventListener("resize", updateProgress, { passive: true });
+    updateScrollState();
+
+    document.getElementById("copy-link").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      try {
+        await navigator.clipboard.writeText(location.href);
+        button.textContent = "COPIED";
+      } catch {
+        button.textContent = "COPY FAILED";
+      }
+      setTimeout(() => { button.textContent = "COPY LINK"; }, 1400);
+    });
+  </script>
+</body>
+</html>
