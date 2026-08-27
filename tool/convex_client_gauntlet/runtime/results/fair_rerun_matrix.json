@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "evaluation": "convex_dart_client_fair_rerun",
+  "harnessCommit": "bf421ffef06b5d04749c77bda182f8f0a53796fe",
+  "deployment": "local:127.0.0.1:3210",
+  "baseFixture": {
+    "path": "test/fixtures/strategy_integrity/base-test-v43.ica",
+    "sha256": "8544873d608a0ad885b2e6042a383596a0b1dc37514034281b4e4eec6168756a"
+  },
+  "tooling": {
+    "dartvex": {
+      "version": "0.2.0",
+      "strictGatePassed": true,
+      "explicitResultRenameCaught": true,
+      "missingReturnRejectedByIcarusWrapper": true,
+      "unsupportedValidatorRejectedByIcarusWrapper": true,
+      "deterministicGeneration": true,
+      "stableReturnSurfaceCompleteForRuntime": false
+    },
+    "convex_flutter": {
+      "version": "3.0.1",
+      "generatedContractBoundary": false,
+      "flutterRustBridgeVersion": "2.11.1 pinned",
+      "resolvedFlutterRustBridgeWithoutPin": "2.13.0 incompatible with packaged 2.11.1 bindings"
+    }
+  },
+  "correctness": {
+    "equivalentSeedZeroTrace": true,
+    "equivalentSeedZeroFaultSchedule": true,
+    "dartvex": {
+      "status": "passed",
+      "seedsCompleted": 50,
+      "operationsCompleted": 50000,
+      "acknowledged": 45500,
+      "visibleRevisionRejects": 4500,
+      "unresolved": 0,
+      "authRefreshAccepted": true,
+      "queuedBatchReplayedExactlyOnce": true,
+      "processRestartRecovered": true,
+      "allCanonicalVerifierHashesPassed": true,
+      "allIcaRoundTripsPassed": true,
+      "reportSha256": "284ba45543dc5ec76932d0b949569f7973a452222651dbd028fdac631e7fed8e"
+    },
+    "convex_flutter": {
+      "status": "failed",
+      "seed": 0,
+      "operationsCompletedBeforeFailure": 500,
+      "acknowledged": 450,
+      "visibleRevisionRejects": 50,
+      "unresolvedBeforeFault": 0,
+      "losingCondition": "auth_refresh_recovery_failed",
+      "freshTokenAccepted": false,
+      "queuedBatchReplayedExactlyOnce": false,
+      "reportSha256": "9e9fbcc00ef9665338e6aa3d1b8d17fd3f8a81710914eb687858013e151de520"
+    }
+  },
+  "profile": {
+    "status": "blocked_by_correctness_gate",
+    "pairedRuns": 0,
+    "reason": "convex_flutter did not recover queued work after Supabase refreshSession and reconnect"
+  },
+  "verdict": {
+    "runtimeGateWinner": "dartvex",
+    "adoptionWinner": null,
+    "applicationDependencyChanged": false,
+    "nextStep": "Do not migrate yet. Complete and prove Dartvex's stable generated return surface, and separately fix or replace convex_flutter auth recovery before another comparison."
+  }
+}
