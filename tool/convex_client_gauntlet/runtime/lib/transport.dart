@@ -13,6 +13,10 @@ abstract interface class IcarusConvexTransport {
 
   Future<void> authenticate(String? token);
 
+  Future<void> injectRejectedAuth(String token);
+
+  Future<void> recoverAuth(String token);
+
   Future<Object?> mutation(String path, Map<String, Object?> arguments);
 
   Future<Object?> query(String path, Map<String, Object?> arguments);
@@ -58,6 +62,12 @@ final class DartvexTransport implements IcarusConvexTransport {
 
   @override
   Future<void> authenticate(String? token) => _client.setAuth(token);
+
+  @override
+  Future<void> injectRejectedAuth(String token) => _client.setAuth(token);
+
+  @override
+  Future<void> recoverAuth(String token) => _client.setAuth(token);
 
   @override
   Future<Object?> mutation(String path, Map<String, Object?> arguments) async {
@@ -128,6 +138,7 @@ final class ConvexFlutterTransport implements IcarusConvexTransport {
 
   final convex_flutter.ConvexClient _client;
   convex_flutter.AuthHandleWrapper? _authHandle;
+  String? _nextAuthToken;
   int _bytesSent = 0;
   int _bytesReceived = 0;
 
@@ -153,17 +164,33 @@ final class ConvexFlutterTransport implements IcarusConvexTransport {
   int get bytesReceived => _bytesReceived;
 
   @override
-  Future<void> authenticate(String? token) async {
+  Future<void> authenticate(String? token) => _replaceRefreshHandle(token);
+
+  @override
+  Future<void> injectRejectedAuth(String token) => _replaceRefreshHandle(token);
+
+  @override
+  Future<void> recoverAuth(String token) async {
+    if (_authHandle == null) {
+      throw StateError('convex_flutter has no refresh handle to recover');
+    }
+    // Keep the rejected handle alive. The native client asks this callback for
+    // a fresh token when it reconnects after the server rejects the old one.
+    _nextAuthToken = token;
+  }
+
+  Future<void> _replaceRefreshHandle(String? token) async {
     _authHandle?.dispose();
     _authHandle = null;
+    _nextAuthToken = null;
     await _client.clearAuth();
-    // The package's native refresh handle cancels asynchronously and clears
-    // auth as it exits. Let that cancellation settle before installing the
-    // replacement handle so it cannot erase the fresh token afterward.
-    await Future<void>.delayed(const Duration(milliseconds: 25));
+    // The native handle clears auth asynchronously when its cancellation wakes.
+    // Let that task settle before creating the replacement handle.
+    await Future<void>.delayed(const Duration(milliseconds: 50));
     if (token == null) return;
+    _nextAuthToken = token;
     _authHandle = await _client.setAuthWithRefresh(
-      fetchToken: () async => token,
+      fetchToken: () async => _nextAuthToken,
     );
   }
 
@@ -242,6 +269,7 @@ final class ConvexFlutterTransport implements IcarusConvexTransport {
   Future<void> close() async {
     _authHandle?.dispose();
     _authHandle = null;
+    _nextAuthToken = null;
     _client.dispose();
   }
 

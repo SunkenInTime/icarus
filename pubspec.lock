@@ -252,10 +252,9 @@ packages:
   convex_flutter:
     dependency: "direct main"
     description:
-      name: convex_flutter
-      sha256: db3bca4e3e6792eadadba9a662225ccb743c287f4550879f67885cd40a2198f2
-      url: "https://pub.dev"
-    source: hosted
+      path: "third_party/convex_flutter"
+      relative: true
+    source: path
     version: "3.0.1"
   cross_file:
     dependency: "direct main"

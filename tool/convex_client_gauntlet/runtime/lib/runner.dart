@@ -9,6 +9,11 @@ import 'workload.dart';
 
 typedef TransportFactory = Future<IcarusConvexTransport> Function();
 
+const rejectedExpiredAccessToken =
+    'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.'
+    'eyJleHAiOjB9.'
+    'rejected';
+
 final class GauntletFailure implements Exception {
   const GauntletFailure(this.code, this.message);
 
@@ -383,6 +388,8 @@ final class GauntletRunner {
         'rejectedTokenObserved': false,
         'refreshSessionCalled': false,
         'tokenChanged': false,
+        'reconnectCalled': false,
+        'recoveryMs': null,
         'acceptedAfterRefresh': false,
         'queuedBatchReplayedExactlyOnce': false,
       },
@@ -412,7 +419,7 @@ final class GauntletRunner {
     auth['exercised'] = true;
     var rejected = false;
     try {
-      await candidate.authenticate('invalid.invalid.invalid');
+      await candidate.injectRejectedAuth(rejectedExpiredAccessToken);
       await candidate
           .mutation('ops:applyBatch', {
             'strategyPublicId': strategyId(seed),
@@ -437,10 +444,10 @@ final class GauntletRunner {
     }
     auth['refreshSessionCalled'] = true;
     auth['tokenChanged'] = nextSession.accessToken != oldAccessToken;
-    // Make the rejected-to-fresh transition explicit. convex_flutter can retain
-    // its rejected auth state when one static token is replaced directly.
-    await candidate.authenticate(null);
-    await candidate.authenticate(nextSession.accessToken);
+    final recovery = Stopwatch()..start();
+    await candidate.recoverAuth(nextSession.accessToken);
+    await candidate.reconnect();
+    auth['reconnectCalled'] = true;
     Object? me;
     for (var attempt = 0; attempt < 20 && me == null; attempt += 1) {
       await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -458,6 +465,8 @@ final class GauntletRunner {
         'Fresh access token was not accepted within the bounded recovery window',
       );
     }
+    recovery.stop();
+    auth['recoveryMs'] = recovery.elapsedMicroseconds / 1000;
     auth['acceptedAfterRefresh'] = true;
     return nextSession;
   }

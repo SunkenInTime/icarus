@@ -9,7 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  convex_flutter: 3.0.1
+  convex_flutter:
+    path: ../../../third_party/convex_flutter
   crypto: 3.0.7
   dartvex: 0.2.0
   # convex_flutter's generated Rust bridge is pinned to this runtime version.
