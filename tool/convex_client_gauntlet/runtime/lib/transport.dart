@@ -174,8 +174,9 @@ final class ConvexFlutterTransport implements IcarusConvexTransport {
     if (_authHandle == null) {
       throw StateError('convex_flutter has no refresh handle to recover');
     }
-    // Keep the rejected handle alive. The native client asks this callback for
-    // a fresh token when it reconnects after the server rejects the old one.
+    // The stored upstream callback reads this value during the reconnect that
+    // follows the auth rejection. Replacing the callback here could leave the
+    // new request queued behind the reconnect backoff.
     _nextAuthToken = token;
   }
 

@@ -2,7 +2,7 @@ mod frb_generated;
 use std::{
     collections::{BTreeMap, HashMap},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -178,6 +178,7 @@ pub struct MobileConvexClient {
     client_id: String,              // Client ID for authentication
     client: OnceCell<ConvexClient>, // Lazy-initialized Convex client
     rt: tokio::runtime::Runtime,    // Tokio runtime for async operations
+    auth_generation: Arc<AtomicU64>,
     // Channel sender for WebSocket state change notifications
     state_change_sender: Arc<Mutex<Option<tokio::sync::mpsc::Sender<ConvexWebSocketState>>>>,
 }
@@ -197,6 +198,7 @@ impl MobileConvexClient {
             client_id,
             client: OnceCell::new(),
             rt,
+            auth_generation: Arc::new(AtomicU64::new(0)),
             state_change_sender: Arc::new(Mutex::new(None)),
         }
     }
@@ -444,6 +446,9 @@ impl MobileConvexClient {
 
     /// Internal method for setting authentication.
     async fn internal_set_auth(&self, token: Option<String>) -> anyhow::Result<()> {
+        // Invalidate any older refresh handle before replacing its callback.
+        // A delayed disposal from that handle must not clear this auth state.
+        self.auth_generation.fetch_add(1, Ordering::SeqCst);
         let mut client = self.connected_client().await?;
         self.rt
             .spawn(async move { client.set_auth(token).await })
@@ -465,6 +470,7 @@ impl MobileConvexClient {
     ) -> Result<AuthHandle, ClientError> {
         let is_authenticated = Arc::new(AtomicBool::new(false));
         let (cancel_sender, cancel_receiver) = oneshot::channel::<()>();
+        let generation = self.auth_generation.fetch_add(1, Ordering::SeqCst) + 1;
 
         let mut client = self.connected_client().await?;
         let fetch_token = Arc::new(fetch_token);
@@ -492,8 +498,20 @@ impl MobileConvexClient {
         client.set_auth_callback(Some(callback)).await;
 
         let cancel_is_authenticated = is_authenticated.clone();
+        let cancel_auth_generation = self.auth_generation.clone();
         self.rt.spawn(async move {
             let _ = cancel_receiver.await;
+            if cancel_auth_generation
+                .compare_exchange(
+                    generation,
+                    generation + 1,
+                    Ordering::SeqCst,
+                    Ordering::SeqCst,
+                )
+                .is_err()
+            {
+                return;
+            }
             let mut client = client.clone();
             client.set_auth_callback(None).await;
             if cancel_is_authenticated.swap(false, Ordering::SeqCst) {

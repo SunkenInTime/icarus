@@ -14,6 +14,10 @@ reconnect. The old adapter owned a separate expiry timer and called static
 `set_auth`, which could leave the client disconnected after the server rejected
 an expired token.
 
+Auth handles also carry an internal generation. Disposal only clears auth when
+the handle still owns the current generation, so a delayed cancellation from a
+replaced handle cannot erase the fresh callback.
+
 No generated Dart or Rust bridge file is edited: the public bridge signature is
 unchanged. The hand-written changes are limited to `rust/src/lib.rs` and the
 minimum `convex` crate version in `rust/Cargo.toml`; `rust/Cargo.lock` is
