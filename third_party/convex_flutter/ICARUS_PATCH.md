@@ -18,14 +18,18 @@ Auth handles also carry an internal generation. Disposal only clears auth when
 the handle still owns the current generation, so a delayed cancellation from a
 replaced handle cannot erase the fresh callback.
 
-No generated Dart or Rust bridge file is edited: the public bridge signature is
-unchanged. The hand-written changes are limited to `rust/src/lib.rs` and the
-minimum `convex` crate version in `rust/Cargo.toml`; `rust/Cargo.lock` is
-regenerated with:
+The native manual reconnect API calls the Icarus-patched `convex` 0.10.4 crate
+in `../convex_rs`. It waits for a real connecting-to-connected transition; the
+published package method only ran its configured health query.
+
+Generated Dart and Rust bridge files are never hand-edited. They are regenerated
+from `rust/src/lib.rs` with `flutter_rust_bridge_codegen` 2.11.1. Hand-written
+changes are limited to the Dart client implementation, `rust/src/lib.rs`, and
+the local `convex` dependency in `rust/Cargo.toml`.
 
 ```sh
 cd third_party/convex_flutter/rust
-cargo update -p convex --precise 0.10.4
+flutter_rust_bridge_codegen generate
 ```
 
 This directory can be removed once a published `convex_flutter` release uses a

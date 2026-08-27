@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:convex_flutter/src/impl/convex_client_interface.dart';
 import 'package:convex_flutter/src/impl/convex_client_factory.dart';
-import 'package:convex_flutter/src/rust/lib.dart' show WebSocketConnectionState, SubscriptionHandle, AuthHandle;
+import 'package:convex_flutter/src/rust/lib.dart'
+    show WebSocketConnectionState, SubscriptionHandle, AuthHandle;
 import 'package:convex_flutter/src/connection_status.dart';
 import 'package:convex_flutter/src/convex_config.dart';
 import 'package:convex_flutter/src/app_lifecycle_event.dart';
@@ -141,10 +142,7 @@ class ConvexClient {
   }) async {
     if (_instance == null) {
       await initialize(
-        ConvexConfig(
-          deploymentUrl: deploymentUrl,
-          clientId: clientId,
-        ),
+        ConvexConfig(deploymentUrl: deploymentUrl, clientId: clientId),
       );
     }
     return _instance!;
@@ -177,8 +175,7 @@ class ConvexClient {
   Future<String> mutation({
     required String name,
     required Map<String, dynamic> args,
-  }) =>
-      _impl.mutation(name: name, args: args);
+  }) => _impl.mutation(name: name, args: args);
 
   /// Executes a Convex action operation with timeout.
   ///
@@ -190,8 +187,7 @@ class ConvexClient {
   Future<String> action({
     required String name,
     required Map<String, dynamic> args,
-  }) =>
-      _impl.action(name: name, args: args);
+  }) => _impl.action(name: name, args: args);
 
   /// Creates a real-time subscription to a Convex query.
   ///
@@ -206,13 +202,12 @@ class ConvexClient {
     required Map<String, dynamic> args,
     required void Function(String) onUpdate,
     required void Function(String, String?) onError,
-  }) =>
-      _impl.subscribe(
-        name: name,
-        args: args,
-        onUpdate: onUpdate,
-        onError: onError,
-      );
+  }) => _impl.subscribe(
+    name: name,
+    args: args,
+    onUpdate: onUpdate,
+    onError: onError,
+  );
 
   // ============================================================================
   // Authentication API
@@ -357,8 +352,8 @@ class ConvexClient {
 
   /// Attempts to reconnect to the Convex backend.
   ///
-  /// This method calls [checkConnection] and returns true if the
-  /// connection check succeeds, false otherwise.
+  /// This method restarts the native WebSocket and returns true after the
+  /// connection-state stream observes the complete reconnect transition.
   ///
   /// Typically called after the app resumes from background or
   /// after detecting a network interruption.

@@ -8,8 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'lib.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `connected_client`, `decode_jwt_expiry`, `handle_direct_function_result`, `internal_action`, `internal_mutation`, `internal_set_auth`, `internal_subscribe`, `new`, `new`, `parse_json_args`
-// These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `JwtClaims`
+// These functions are ignored because they are not marked as `pub`: `connected_client`, `handle_direct_function_result`, `internal_action`, `internal_mutation`, `internal_set_auth`, `internal_subscribe`, `new`, `new`, `parse_json_args`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `fmt`, `fmt`, `fmt`, `from`, `from`
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<AuthHandle>>
@@ -94,16 +93,16 @@ abstract class MobileConvexClient implements RustOpaqueInterface {
     required Map<String, String> args,
   });
 
+  /// Forces a WebSocket reconnect while retaining current client state.
+  Future<void> reconnectNow({required String reason});
+
   /// Sets authentication token for the client.
   Future<void> setAuth({String? token});
 
-  /// Sets authentication with automatic token refresh.
+  /// Sets authentication with token refresh on every WebSocket reconnect.
   ///
-  /// The `fetch_token` callback is called:
-  /// - Immediately to get the initial token
-  /// - Automatically when the token is about to expire (60 seconds before expiry)
-  ///
-  /// The `on_auth_change` callback is called whenever auth state changes.
+  /// The callback is owned by the upstream Convex client so authentication
+  /// and query state are replayed together after a disconnect.
   ///
   /// Returns an AuthHandle that can be used to dispose the auth session.
   Future<AuthHandle> setAuthWithRefresh({

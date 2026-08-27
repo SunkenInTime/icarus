@@ -390,6 +390,9 @@ final class GauntletRunner {
         'tokenChanged': false,
         'reconnectCalled': false,
         'recoveryMs': null,
+        'freshTokenAcceptedMs': null,
+        'manualReconnectMs': null,
+        'postReconnectAcceptedMs': null,
         'acceptedAfterRefresh': false,
         'queuedBatchReplayedExactlyOnce': false,
       },
@@ -445,20 +448,53 @@ final class GauntletRunner {
     auth['refreshSessionCalled'] = true;
     auth['tokenChanged'] = nextSession.accessToken != oldAccessToken;
     final recovery = Stopwatch()..start();
+    final recoveryDeadline = DateTime.now().add(const Duration(seconds: 20));
     await candidate.recoverAuth(nextSession.accessToken);
-    await candidate.reconnect();
+
+    Future<Object?> waitForCurrentUser() async {
+      while (DateTime.now().isBefore(recoveryDeadline)) {
+        final remaining = recoveryDeadline.difference(DateTime.now());
+        final attemptTimeout = remaining < const Duration(seconds: 1)
+            ? remaining
+            : const Duration(seconds: 1);
+        try {
+          final me = await candidate
+              .query('users:me', const {})
+              .timeout(attemptTimeout);
+          if (me != null) return me;
+        } catch (_) {
+          // The auth-error reconnect may still be fetching the fresh token.
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      return null;
+    }
+
+    var me = await waitForCurrentUser();
+    if (me == null) {
+      throw const GauntletFailure(
+        'auth_refresh_recovery_failed',
+        'Fresh access token was not accepted within the bounded recovery window',
+      );
+    }
+    auth['freshTokenAcceptedMs'] = recovery.elapsedMicroseconds / 1000;
+
     auth['reconnectCalled'] = true;
-    Object? me;
-    for (var attempt = 0; attempt < 20 && me == null; attempt += 1) {
-      await Future<void>.delayed(const Duration(milliseconds: 250));
+    final remaining = recoveryDeadline.difference(DateTime.now());
+    if (remaining <= Duration.zero) {
+      me = null;
+    } else {
       try {
-        me = await candidate
-            .query('users:me', const {})
-            .timeout(const Duration(milliseconds: 750));
+        final reconnectDuration = await candidate.reconnect().timeout(
+          remaining,
+        );
+        auth['manualReconnectMs'] = reconnectDuration.inMicroseconds / 1000;
+        me = await waitForCurrentUser();
       } catch (_) {
-        // The transport may still be replaying its auth state after reconnect.
+        me = null;
       }
     }
+    auth['postReconnectAcceptedMs'] = recovery.elapsedMicroseconds / 1000;
     if (me == null) {
       throw const GauntletFailure(
         'auth_refresh_recovery_failed',

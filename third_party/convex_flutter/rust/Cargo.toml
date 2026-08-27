@@ -11,7 +11,7 @@ flutter_rust_bridge = "=2.11.1"
 tokio = { version = "1", features = ["full"] }
 android_logger = { version = "0.14.1" }
 log = { version = "0.4.21" }
-convex = { version = "0.10.4", features = ["rustls-tls-webpki-roots"] }
+convex = { path = "../../convex_rs", features = ["rustls-tls-webpki-roots"] }
 anyhow = { version = "1.0.86" }
 thiserror = { version = "1.0.61" }
 tokio-stream = { features = [ "io-util", "sync" ], version = "0.1" }

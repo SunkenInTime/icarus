@@ -64,7 +64,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 1095084362;
+  int get rustContentHash => -829523767;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -127,6 +127,11 @@ abstract class RustLibApi extends BaseApi {
     required MobileConvexClient that,
     required String name,
     required Map<String, String> args,
+  });
+
+  Future<void> crateMobileConvexClientReconnectNow({
+    required MobileConvexClient that,
+    required String reason,
   });
 
   Future<void> crateMobileConvexClientSetAuth({
@@ -606,6 +611,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateMobileConvexClientReconnectNow({
+    required MobileConvexClient that,
+    required String reason,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerMobileConvexClient(
+            that,
+            serializer,
+          );
+          sse_encode_String(reason, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 12,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_client_error,
+        ),
+        constMeta: kCrateMobileConvexClientReconnectNowConstMeta,
+        argValues: [that, reason],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateMobileConvexClientReconnectNowConstMeta =>
+      const TaskConstMeta(
+        debugName: "MobileConvexClient_reconnect_now",
+        argNames: ["that", "reason"],
+      );
+
+  @override
   Future<void> crateMobileConvexClientSetAuth({
     required MobileConvexClient that,
     String? token,
@@ -622,7 +665,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 13,
             port: port_,
           );
         },
@@ -668,7 +711,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 14,
             port: port_,
           );
         },
@@ -719,7 +762,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 14,
+            funcId: 15,
             port: port_,
           );
         },
@@ -751,7 +794,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 15)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 16)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_unit,
@@ -2181,17 +2224,18 @@ class MobileConvexClientImpl extends RustOpaque implements MobileConvexClient {
     args: args,
   );
 
+  /// Forces a WebSocket reconnect while retaining current client state.
+  Future<void> reconnectNow({required String reason}) => RustLib.instance.api
+      .crateMobileConvexClientReconnectNow(that: this, reason: reason);
+
   /// Sets authentication token for the client.
   Future<void> setAuth({String? token}) => RustLib.instance.api
       .crateMobileConvexClientSetAuth(that: this, token: token);
 
-  /// Sets authentication with automatic token refresh.
+  /// Sets authentication with token refresh on every WebSocket reconnect.
   ///
-  /// The `fetch_token` callback is called:
-  /// - Immediately to get the initial token
-  /// - Automatically when the token is about to expire (60 seconds before expiry)
-  ///
-  /// The `on_auth_change` callback is called whenever auth state changes.
+  /// The callback is owned by the upstream Convex client so authentication
+  /// and query state are replayed together after a disconnect.
   ///
   /// Returns an AuthHandle that can be used to dispose the auth session.
   Future<AuthHandle> setAuthWithRefresh({

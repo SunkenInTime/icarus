@@ -76,7 +76,9 @@ class NativeConvexClient implements IConvexClient {
     // Setup lifecycle observer
     client._lifecycleObserver = AppLifecycleObserver(
       onLifecycleChange: (event) {
-        client._lifecycleController.add(event);
+        if (!client._lifecycleController.isClosed) {
+          client._lifecycleController.add(event);
+        }
       },
     );
 
@@ -87,19 +89,29 @@ class NativeConvexClient implements IConvexClient {
   ///
   /// This must be called before any queries/mutations to capture all state changes.
   Future<void> _setupConnectionStateListener() async {
-    debugPrint('=== [NativeConvexClient] Setting up WebSocket state listener ===');
-    debugPrint('=== [NativeConvexClient] Current state: ${_currentConnectionState.name} ===');
+    debugPrint(
+      '=== [NativeConvexClient] Setting up WebSocket state listener ===',
+    );
+    debugPrint(
+      '=== [NativeConvexClient] Current state: ${_currentConnectionState.name} ===',
+    );
 
     try {
       await _rustClient.onWebsocketStateChange(
         onStateChange: (state) async {
-          debugPrint('=== [NativeConvexClient] State changed: ${state.name} ===');
+          debugPrint(
+            '=== [NativeConvexClient] State changed: ${state.name} ===',
+          );
           _currentConnectionState = state;
-          _connectionStateController.add(state);
+          if (!_connectionStateController.isClosed) {
+            _connectionStateController.add(state);
+          }
           debugPrint('=== [NativeConvexClient] Stream emission complete ===');
         },
       );
-      debugPrint('=== [NativeConvexClient] Listener registered successfully ===');
+      debugPrint(
+        '=== [NativeConvexClient] Listener registered successfully ===',
+      );
     } catch (e) {
       debugPrint('ERROR: [NativeConvexClient] Listener setup failed: $e');
       rethrow;
@@ -167,7 +179,9 @@ class NativeConvexClient implements IConvexClient {
     _currentAuthHandle = null;
 
     await _rustClient.setAuth(token: token);
-    _authStateController.add(token != null);
+    if (!_authStateController.isClosed) {
+      _authStateController.add(token != null);
+    }
   }
 
   @override
@@ -182,7 +196,9 @@ class NativeConvexClient implements IConvexClient {
       fetchToken: () async => await tokenFetcher(),
       onAuthChange: (bool isAuth) async {
         onAuthChange?.call(isAuth);
-        _authStateController.add(isAuth);
+        if (!_authStateController.isClosed) {
+          _authStateController.add(isAuth);
+        }
       },
     );
 
@@ -195,7 +211,9 @@ class NativeConvexClient implements IConvexClient {
     _currentAuthHandle?.dispose();
     _currentAuthHandle = null;
     await _rustClient.setAuth(token: null);
-    _authStateController.add(false);
+    if (!_authStateController.isClosed) {
+      _authStateController.add(false);
+    }
   }
 
   @override
@@ -213,7 +231,8 @@ class NativeConvexClient implements IConvexClient {
       _connectionStateController.stream;
 
   @override
-  WebSocketConnectionState get currentConnectionState => _currentConnectionState;
+  WebSocketConnectionState get currentConnectionState =>
+      _currentConnectionState;
 
   @override
   bool get isConnected =>
@@ -243,12 +262,26 @@ class NativeConvexClient implements IConvexClient {
 
   @override
   Future<bool> reconnect() async {
+    final states = StreamIterator(connectionState);
+    var sawConnecting = false;
+    final deadline = DateTime.now().add(config.operationTimeout);
     try {
-      final status = await checkConnection();
-      return status == ConnectionStatus.connected;
-    } catch (e) {
-      // If healthCheckQuery not configured, just return false
+      await _rustClient.reconnectNow(reason: 'convex_flutter:manual');
+      while (DateTime.now().isBefore(deadline)) {
+        final remaining = deadline.difference(DateTime.now());
+        if (!await states.moveNext().timeout(remaining)) return false;
+        if (states.current == WebSocketConnectionState.connecting) {
+          sawConnecting = true;
+        } else if (sawConnecting &&
+            states.current == WebSocketConnectionState.connected) {
+          return true;
+        }
+      }
       return false;
+    } on TimeoutException {
+      return false;
+    } finally {
+      await states.cancel();
     }
   }
 

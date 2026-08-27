@@ -250,20 +250,13 @@ final class ConvexFlutterTransport implements IcarusConvexTransport {
   @override
   Future<Duration> reconnect() async {
     final stopwatch = Stopwatch()..start();
-    final deadline = DateTime.now().add(const Duration(seconds: 20));
-    while (DateTime.now().isBefore(deadline)) {
-      try {
-        final connected = await _client.reconnect().timeout(
-          const Duration(seconds: 1),
-        );
-        if (connected) return stopwatch.elapsed;
-      } catch (_) {
-        // The public reconnect call is a health query rather than a socket
-        // transition. Poll it within the shared bounded recovery window.
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 250));
+    final connected = await _client.reconnect().timeout(
+      const Duration(seconds: 20),
+    );
+    if (!connected) {
+      throw StateError('convex_flutter did not complete its reconnect');
     }
-    throw StateError('convex_flutter failed to reconnect within 20 seconds');
+    return stopwatch.elapsed;
   }
 
   @override

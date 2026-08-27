@@ -456,6 +456,17 @@ impl MobileConvexClient {
             .map_err(|e| e.into())
     }
 
+    /// Forces a WebSocket reconnect while retaining current client state.
+    #[frb]
+    pub async fn reconnect_now(&self, reason: String) -> Result<(), ClientError> {
+        let mut client = self.connected_client().await?;
+        self.rt
+            .spawn(async move { client.reconnect_now(&reason).await })
+            .await
+            .map_err(|e| ClientError::InternalError { msg: e.to_string() })?;
+        Ok(())
+    }
+
     /// Sets authentication with token refresh on every WebSocket reconnect.
     ///
     /// The callback is owned by the upstream Convex client so authentication
