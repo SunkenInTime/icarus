@@ -1,24 +1,40 @@
 # Convex Dart client gauntlet result
 
-Status: decision complete
+Status: first gate recorded; runtime decision reopened on 2026-08-26
 
 Base: `origin/icarus-cloud` at
 `e59402eedee9035cf14693fbd26fe8b097d6abfa` on 2026-08-26
 
 Candidate versions: `dartvex` 0.2.0 and `dartvex_codegen` 0.2.0
 
-Decision: keep `convex_flutter`
+Decision: no client winner yet
+
+## Fairness correction
+
+The first gate found a real fail-open strictness gap in Dartvex 0.2.0, but its
+result-field leg regenerated the baseline fixture instead of exercising a
+renamed result fixture. Because that baseline declares `returns: null`, it
+could not test whether a typed generated caller catches result drift.
+
+A diagnostic control with an explicit object return passed baseline analysis
+and then failed analysis with exit 3 after `publicId` was renamed to
+`folderPublicId`. The runtime comparison still has not run. The corrected,
+authoritative next-step plan is
+[convex_dart_client_fair_rerun_handoff.html](convex_dart_client_fair_rerun_handoff.html).
 
 ## Result
 
-Dartvex fails the mandatory compile-time contract gate. Icarus therefore keeps
-`convex_flutter` and does not run the runtime chaos or profile stages.
+The original run stopped at the compile-time contract gate and therefore did
+not run the runtime chaos or profile stages. Treat that stop as a recorded
+strictness finding, not as a final package verdict.
 
 The stable `folders:listForParent` function declares argument validators but
 no `returns:` validator. Convex represents that result as `returns: null` in a
 function spec. Dartvex 0.2.0 deliberately maps the absent result contract to
 `Future<dynamic>`. A caller that reads `result.first.publicId` still passes Dart
-analysis, so a server result-field rename is not caught at compile time.
+analysis. The committed runner did not actually rename a result field, so this
+observation does not establish whether a complete generated return type catches
+that change.
 
 Dartvex also treats an unknown validator as a warning and generates the
 affected field as `dynamic`. Generation exits zero instead of stopping at the
@@ -31,7 +47,7 @@ performance observations and cannot be averaged away.
 | --- | --- | --- | --- |
 | Function rename | Old method fails analysis | Analysis exits 3 | Pass |
 | Argument rename | Old named argument fails analysis | Analysis exits 3 | Pass |
-| Result-field rename | Old field access fails analysis | Generated return is `dynamic`; analysis exits 0 | **Fail** |
+| Result-field rename | Old field access fails analysis | No result rename was exercised; baseline return is `dynamic`; analysis exits 0 | **Invalid leg** |
 | Unsupported validator | Generation exits nonzero with a path | Warning with path; generation exits 0 and emits `dynamic` | **Fail** |
 | Second generation | No repository diff | No generated-file change | Pass |
 
@@ -98,6 +114,7 @@ three existing non-constant `IconData` sites in `folder_provider.dart`,
 change those files. Disabling icon tree shaking proves the web target otherwise
 compiles; the pre-existing release-build cleanup remains separate work.
 
-The fallback typed-binding generator remains separate work. It may add explicit
-public result validators and preserve `convex_flutter`, but it must not be
-folded into this comparison result.
+The next comparison may add explicit public result validators and a thin,
+Icarus-owned strict wrapper that rejects warnings and unexpected `dynamic`.
+Writing a replacement generator or package fork remains out of scope until that
+smaller compensation is tested.
