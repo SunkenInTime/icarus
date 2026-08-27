@@ -6,7 +6,7 @@
       "args": {
         "type": "object",
         "value": {
-          "parentPublicId": {
+          "parentFolderPublicId": {
             "fieldType": { "type": "string" },
             "optional": true
           },
@@ -28,7 +28,7 @@
         "value": {
           "type": "object",
           "value": {
-            "publicId": { "fieldType": { "type": "string" }, "optional": false },
+            "folderPublicId": { "fieldType": { "type": "string" }, "optional": false },
             "name": { "fieldType": { "type": "string" }, "optional": false },
             "iconId": { "fieldType": { "type": "union", "value": [{ "type": "number" }, { "type": "null" }] }, "optional": false },
             "iconCodePoint": { "fieldType": { "type": "union", "value": [{ "type": "number" }, { "type": "null" }] }, "optional": false },

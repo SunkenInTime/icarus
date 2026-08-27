@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
-import 'package:dartvex_codegen/dartvex_codegen.dart';
+import 'package:crypto/crypto.dart';
+import 'strict_codegen.dart';
 
 const _dartvexVersion = '0.2.0';
 const _dartvexCodegenVersion = '0.2.0';
@@ -19,21 +21,12 @@ Future<ContractGateResult> evaluateContractGate({String? packageRoot}) async {
   final generated = Directory('${root.path}/lib/_probe_generated');
   final caller = File('${root.path}/lib/_probe_caller.dart');
 
-  Future<_Generation> generate(String fixtureName) async {
-    final logs = <String>[];
-    final errors = <String>[];
-    final exitCode = await runConvexCodegen(
-      <String>[
-        'generate',
-        '--spec-file',
-        '${root.path}/fixtures/$fixtureName',
-        '--output',
-        generated.path,
-      ],
-      log: logs.add,
-      errorLog: errors.add,
+  Future<StrictGenerationResult> generate(String fixtureName) async {
+    return runStrictConvexCodegen(
+      specFile: '${root.path}/fixtures/$fixtureName',
+      outputDirectory: generated,
+      stableModulePaths: const <String>['modules/folders.dart'],
     );
-    return _Generation(exitCode: exitCode, logs: logs, errors: errors);
   }
 
   Future<_Analysis> analyzeCaller() async {
@@ -66,11 +59,13 @@ Future<ContractGateResult> evaluateContractGate({String? packageRoot}) async {
       'Future<dynamic> listForParent',
     );
     final firstGeneration = _directorySnapshot(generated);
+    final firstGenerationHash = _snapshotSha256(firstGeneration);
 
     final secondGenerationResult = await generate(
       'folders_list_for_parent.json',
     );
     final secondGeneration = _directorySnapshot(generated);
+    final secondGenerationHash = _snapshotSha256(secondGeneration);
     final deterministic =
         secondGenerationResult.exitCode == 0 &&
         _snapshotsEqual(firstGeneration, secondGeneration);
@@ -86,7 +81,14 @@ Future<ContractGateResult> evaluateContractGate({String? packageRoot}) async {
     final argumentRenameAnalysis = await analyzeCaller();
 
     await generate('folders_list_for_parent.json');
+    final resultRenameGeneration = await generate(
+      'folders_result_renamed.json',
+    );
     final resultFieldAnalysis = await analyzeCaller();
+
+    final missingReturnGeneration = await generate(
+      'folders_missing_return.json',
+    );
 
     final unsupportedGeneration = await generate(
       'folders_unsupported_validator.json',
@@ -96,26 +98,30 @@ Future<ContractGateResult> evaluateContractGate({String? packageRoot}) async {
     ).readAsStringSync();
 
     final functionRenameCaught =
-        functionRenameGeneration.exitCode == 0 &&
+        functionRenameGeneration.accepted &&
         functionRenameAnalysis.exitCode != 0;
     final argumentRenameCaught =
-        argumentRenameGeneration.exitCode == 0 &&
+        argumentRenameGeneration.accepted &&
         argumentRenameAnalysis.exitCode != 0;
     final resultRenameCaught =
-        !resultIsDynamic && resultFieldAnalysis.exitCode != 0;
-    final unsupportedRejected = unsupportedGeneration.exitCode != 0;
+        resultRenameGeneration.accepted &&
+        !resultIsDynamic &&
+        resultFieldAnalysis.exitCode != 0;
+    final missingReturnRejected = !missingReturnGeneration.accepted;
+    final unsupportedRejected = !unsupportedGeneration.accepted;
     final baselineCompiles =
-        baselineGeneration.exitCode == 0 && baselineAnalysis.exitCode == 0;
+        baselineGeneration.accepted && baselineAnalysis.exitCode == 0;
     final gatePassed =
         baselineCompiles &&
         functionRenameCaught &&
         argumentRenameCaught &&
         resultRenameCaught &&
+        missingReturnRejected &&
         unsupportedRejected &&
         deterministic;
 
     final report = <String, Object?>{
-      'schemaVersion': 1,
+      'schemaVersion': 2,
       'evaluation': 'convex_dart_client_contract_gate',
       'baseCommit': _gitBaseCommit(root),
       'adapterCandidate': 'dartvex',
@@ -125,12 +131,17 @@ Future<ContractGateResult> evaluateContractGate({String? packageRoot}) async {
       'dartVersion': Platform.version,
       'fixture': 'folders:listForParent',
       'baselineCompiles': baselineCompiles,
+      'baselineAnalysisExitCode': baselineAnalysis.exitCode,
+      'baselineAnalysisDiagnostics': _sanitizeDiagnostics(<String>[
+        baselineAnalysis.output,
+      ], root),
       'checks': <Map<String, Object?>>[
         <String, Object?>{
           'id': 'function_rename',
           'required': 'old_generated_method_fails_analysis',
           'status': functionRenameCaught ? 'pass' : 'fail',
           'generationExitCode': functionRenameGeneration.exitCode,
+          'rawGenerationExitCode': functionRenameGeneration.rawExitCode,
           'analysisExitCode': functionRenameAnalysis.exitCode,
         },
         <String, Object?>{
@@ -138,36 +149,53 @@ Future<ContractGateResult> evaluateContractGate({String? packageRoot}) async {
           'required': 'old_named_argument_fails_analysis',
           'status': argumentRenameCaught ? 'pass' : 'fail',
           'generationExitCode': argumentRenameGeneration.exitCode,
+          'rawGenerationExitCode': argumentRenameGeneration.rawExitCode,
           'analysisExitCode': argumentRenameAnalysis.exitCode,
         },
         <String, Object?>{
           'id': 'result_field_rename',
           'required': 'old_result_field_fails_analysis',
           'status': resultRenameCaught ? 'pass' : 'fail',
+          'generationExitCode': resultRenameGeneration.exitCode,
+          'rawGenerationExitCode': resultRenameGeneration.rawExitCode,
           'analysisExitCode': resultFieldAnalysis.exitCode,
           'generatedReturnType': resultIsDynamic ? 'dynamic' : 'typed',
           'detail': resultIsDynamic
-              ? 'The unvalidated Convex result is absent from function-spec and the old dynamic field access still analyzes.'
-              : 'The generated result is typed.',
+              ? 'The generated result is unexpectedly dynamic.'
+              : 'The explicit return is typed and the renamed result rejects the unchanged caller.',
+        },
+        <String, Object?>{
+          'id': 'missing_return_schema',
+          'required': 'strict_generation_rejects_public_dynamic_result',
+          'status': missingReturnRejected ? 'pass' : 'fail',
+          'generationExitCode': missingReturnGeneration.exitCode,
+          'rawGenerationExitCode': missingReturnGeneration.rawExitCode,
+          'diagnostics': _sanitizeDiagnostics(
+            missingReturnGeneration.diagnostics,
+            root,
+          ),
         },
         <String, Object?>{
           'id': 'unsupported_validator',
           'required': 'generation_stops_with_function_and_field_path',
           'status': unsupportedRejected ? 'pass' : 'fail',
           'generationExitCode': unsupportedGeneration.exitCode,
+          'rawGenerationExitCode': unsupportedGeneration.rawExitCode,
           'generatedFieldType':
               unsupportedSource.contains('dynamic futureField')
               ? 'dynamic'
               : 'not_dynamic',
-          'diagnostics': _sanitizeDiagnostics(<String>[
-            ...unsupportedGeneration.logs,
-            ...unsupportedGeneration.errors,
-          ], root),
+          'diagnostics': _sanitizeDiagnostics(
+            unsupportedGeneration.diagnostics,
+            root,
+          ),
         },
         <String, Object?>{
           'id': 'deterministic_regeneration',
           'required': 'second_generation_has_no_diff',
           'status': deterministic ? 'pass' : 'fail',
+          'firstSha256': firstGenerationHash,
+          'secondSha256': secondGenerationHash,
           'changedFiles': _changedFiles(firstGeneration, secondGeneration),
         },
       ],
@@ -270,6 +298,18 @@ List<String> _changedFiles(
       .toList(growable: false);
 }
 
+String _snapshotSha256(Map<String, List<int>> snapshot) {
+  final bytes = BytesBuilder(copy: false);
+  for (final entry in snapshot.entries) {
+    bytes
+      ..add(utf8.encode(entry.key))
+      ..addByte(0)
+      ..add(entry.value)
+      ..addByte(0);
+  }
+  return sha256.convert(bytes.takeBytes()).toString();
+}
+
 bool _bytesEqual(List<int> left, List<int> right) {
   if (left.length != right.length) {
     return false;
@@ -280,18 +320,6 @@ bool _bytesEqual(List<int> left, List<int> right) {
     }
   }
   return true;
-}
-
-final class _Generation {
-  const _Generation({
-    required this.exitCode,
-    required this.logs,
-    required this.errors,
-  });
-
-  final int exitCode;
-  final List<String> logs;
-  final List<String> errors;
 }
 
 final class _Analysis {
@@ -308,6 +336,6 @@ Future<String> readFirstFolderPublicId(ConvexApi api) async {
   final result = await api.folders.listForParent(
     parentFolderPublicId: const Optional.of('parent-folder'),
   );
-  return result.first.publicId as String;
+  return result.first.publicId;
 }
 ''';

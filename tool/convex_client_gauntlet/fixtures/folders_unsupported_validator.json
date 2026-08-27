@@ -13,7 +13,7 @@
           }
         }
       },
-      "identifier": "folders.ts:listForParent",
+      "identifier": "folders.js:listForParent",
       "visibility": { "kind": "public" }
     }
   ]

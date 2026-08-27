@@ -101,11 +101,31 @@ const folderScopeValidator = v.optional(
   v.union(v.literal("owned"), v.literal("shared"), v.literal("all")),
 );
 
+const folderSummaryValidator = v.object({
+  publicId: v.string(),
+  name: v.string(),
+  iconId: v.union(v.number(), v.null()),
+  iconCodePoint: v.union(v.number(), v.null()),
+  iconFontFamily: v.union(v.string(), v.null()),
+  iconFontPackage: v.union(v.string(), v.null()),
+  color: v.union(v.string(), v.null()),
+  customColorValue: v.union(v.number(), v.null()),
+  parentFolderPublicId: v.union(v.string(), v.null()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  role: v.union(
+    v.literal("owner"),
+    v.literal("editor"),
+    v.literal("viewer"),
+  ),
+});
+
 export const listForParent = query({
   args: {
     parentFolderPublicId: v.optional(v.string()),
     scope: folderScopeValidator,
   },
+  returns: v.array(folderSummaryValidator),
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     const scope = args.scope ?? "owned";
