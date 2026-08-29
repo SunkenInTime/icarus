@@ -28,6 +28,9 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmController = TextEditingController();
+  final FocusNode _emailFocusNode = FocusNode();
+  final FocusNode _passwordFocusNode = FocusNode();
+  final FocusNode _confirmFocusNode = FocusNode();
   bool _submitting = false;
   bool _isSignUp = false;
   bool _waitingForDiscord = false;
@@ -46,6 +49,9 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
+    _confirmFocusNode.dispose();
     super.dispose();
   }
 
@@ -158,52 +164,57 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            MergeSemantics(
-              child: Semantics(
-                key: const ValueKey('auth-email-field'),
-                label: 'Email',
-                child: CustomTextField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  autofillHints: const [AutofillHints.email],
-                  hintText: 'Email',
-                  textInputAction: TextInputAction.next,
-                  hasError: _errorField == _AuthField.email,
-                ),
+            AuthTextFieldSemantics(
+              key: const ValueKey('auth-email-field'),
+              label: 'Email',
+              controller: _emailController,
+              focusNode: _emailFocusNode,
+              child: CustomTextField(
+                controller: _emailController,
+                focusNode: _emailFocusNode,
+                keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.email],
+                hintText: 'Email',
+                textInputAction: TextInputAction.next,
+                hasError: _errorField == _AuthField.email,
               ),
             ),
             const SizedBox(height: 10),
-            MergeSemantics(
-              child: Semantics(
-                key: const ValueKey('auth-password-field'),
-                label: 'Password',
-                child: CustomTextField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  autofillHints: const [AutofillHints.password],
-                  hintText: 'Password',
-                  textInputAction:
-                      _isSignUp ? TextInputAction.next : TextInputAction.done,
-                  onSubmitted: _isSignUp ? null : (_) => _submit(),
-                  hasError: _errorField == _AuthField.password,
-                ),
+            AuthTextFieldSemantics(
+              key: const ValueKey('auth-password-field'),
+              label: 'Password',
+              controller: _passwordController,
+              focusNode: _passwordFocusNode,
+              obscureText: true,
+              child: CustomTextField(
+                controller: _passwordController,
+                focusNode: _passwordFocusNode,
+                obscureText: true,
+                autofillHints: const [AutofillHints.password],
+                hintText: 'Password',
+                textInputAction:
+                    _isSignUp ? TextInputAction.next : TextInputAction.done,
+                onSubmitted: _isSignUp ? null : (_) => _submit(),
+                hasError: _errorField == _AuthField.password,
               ),
             ),
             if (_isSignUp) ...[
               const SizedBox(height: 10),
-              MergeSemantics(
-                child: Semantics(
-                  key: const ValueKey('auth-confirm-password-field'),
-                  label: 'Confirm password',
-                  child: CustomTextField(
-                    controller: _confirmController,
-                    obscureText: true,
-                    autofillHints: const [AutofillHints.password],
-                    hintText: 'Confirm password',
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _submit(),
-                    hasError: _errorField == _AuthField.confirm,
-                  ),
+              AuthTextFieldSemantics(
+                key: const ValueKey('auth-confirm-password-field'),
+                label: 'Confirm password',
+                controller: _confirmController,
+                focusNode: _confirmFocusNode,
+                obscureText: true,
+                child: CustomTextField(
+                  controller: _confirmController,
+                  focusNode: _confirmFocusNode,
+                  obscureText: true,
+                  autofillHints: const [AutofillHints.password],
+                  hintText: 'Confirm password',
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _submit(),
+                  hasError: _errorField == _AuthField.confirm,
                 ),
               ),
             ],
@@ -286,6 +297,86 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class AuthTextFieldSemantics extends StatefulWidget {
+  const AuthTextFieldSemantics({
+    super.key,
+    required this.label,
+    required this.controller,
+    required this.focusNode,
+    required this.child,
+    this.obscureText = false,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final Widget child;
+  final bool obscureText;
+
+  @override
+  State<AuthTextFieldSemantics> createState() => _AuthTextFieldSemanticsState();
+}
+
+class _AuthTextFieldSemanticsState extends State<AuthTextFieldSemantics> {
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_refresh);
+    widget.focusNode.addListener(_refresh);
+  }
+
+  @override
+  void didUpdateWidget(covariant AuthTextFieldSemantics oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_refresh);
+      widget.controller.addListener(_refresh);
+    }
+    if (oldWidget.focusNode != widget.focusNode) {
+      oldWidget.focusNode.removeListener(_refresh);
+      widget.focusNode.addListener(_refresh);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_refresh);
+    widget.focusNode.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  void _setText(String value) {
+    widget.controller.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+    widget.focusNode.requestFocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = widget.controller.text;
+    return Semantics(
+      label: widget.label,
+      value: widget.obscureText ? '•' * text.length : text,
+      textField: true,
+      enabled: true,
+      obscured: widget.obscureText,
+      focusable: true,
+      focused: widget.focusNode.hasFocus,
+      onTap: widget.focusNode.requestFocus,
+      onSetText: _setText,
+      onDidGainAccessibilityFocus: widget.focusNode.requestFocus,
+      excludeSemantics: true,
+      child: widget.child,
     );
   }
 }

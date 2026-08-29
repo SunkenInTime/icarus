@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -26,8 +28,24 @@ void main() {
     expect(find.byKey(const ValueKey('auth-submit-button')), findsOneWidget);
     expect(_textFieldNodes(tester), hasLength(2));
     expect(
-      tester.getSemantics(find.byKey(const ValueKey('auth-email-field'))).label,
-      'Email',
+      _textFieldNodes(tester).map((node) => node.flagsCollection.isEnabled),
+      everyElement(ui.Tristate.isTrue),
+    );
+    expect(
+      _textFieldNodes(tester).map(
+        (node) => node.getSemanticsData().hasAction(SemanticsAction.setText),
+      ),
+      everyElement(isTrue),
+    );
+    tester.semantics.performAction(
+      find.semantics.byLabel('Email'),
+      SemanticsAction.setText,
+      args: 'coach@example.com',
+    );
+    await tester.pump();
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('auth-email-field'))).value,
+      'coach@example.com',
     );
 
     await tester.tap(find.byKey(const ValueKey('auth-mode-switch')));

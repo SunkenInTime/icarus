@@ -7,6 +7,7 @@ class CustomTextField extends ConsumerWidget {
   const CustomTextField({
     super.key,
     this.controller,
+    this.focusNode,
     this.hintText,
     this.textAlign,
     this.minLines,
@@ -19,6 +20,7 @@ class CustomTextField extends ConsumerWidget {
     this.hasError = false,
   });
   final TextEditingController? controller;
+  final FocusNode? focusNode;
   final String? hintText;
   final TextAlign? textAlign;
   final int? minLines;
@@ -44,6 +46,7 @@ class CustomTextField extends ConsumerWidget {
               )
             : null,
         controller: controller,
+        focusNode: focusNode,
         textAlign: textAlign ?? TextAlign.start,
         minLines: minLines,
         maxLines: maxLines ?? 1,
