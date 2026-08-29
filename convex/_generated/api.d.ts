@@ -22,6 +22,7 @@ import type * as lib_errors from "../lib/errors.js";
 import type * as lib_imageAssets from "../lib/imageAssets.js";
 import type * as lib_opTypes from "../lib/opTypes.js";
 import type * as lib_payloadValidators from "../lib/payloadValidators.js";
+import type * as lib_publicValidators from "../lib/publicValidators.js";
 import type * as lib_r2 from "../lib/r2.js";
 import type * as lib_snapshotSerialization from "../lib/snapshotSerialization.js";
 import type * as lineups from "../lineups.js";
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   "lib/imageAssets": typeof lib_imageAssets;
   "lib/opTypes": typeof lib_opTypes;
   "lib/payloadValidators": typeof lib_payloadValidators;
+  "lib/publicValidators": typeof lib_publicValidators;
   "lib/r2": typeof lib_r2;
   "lib/snapshotSerialization": typeof lib_snapshotSerialization;
   lineups: typeof lineups;

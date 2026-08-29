@@ -18,9 +18,14 @@ import {
 } from "./lib/errors";
 import { serializePageDescriptor } from "./lib/snapshotSerialization";
 import { valuesEqual } from "./lib/canonicalValues";
+import {
+  pageDescriptorValidator,
+  revisionResultValidator,
+} from "./lib/publicValidators";
 
 export const listForStrategy = query({
   args: { strategyPublicId: v.string() },
+  returns: v.array(pageDescriptorValidator),
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");
@@ -44,6 +49,7 @@ export const add = mutation({
     isAttack: v.boolean(),
     settings: v.optional(strategySettingsValidator),
   },
+  returns: revisionResultValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
@@ -81,7 +87,7 @@ export const add = mutation({
         existingPage.isAttack === args.isAttack &&
         valuesEqual(pageContents[0]!.settings, args.settings);
       if (identical) {
-        return { ok: true, reused: true, revision: strategy.revision };
+        return { ok: true, reused: true, revision: strategy.revision } as const;
       }
       throw conflictError(`Page publicId already exists: ${args.pagePublicId}`);
     }
@@ -122,7 +128,7 @@ export const add = mutation({
     });
     const revision = strategy.revision + 1;
     await ctx.db.patch(strategy._id, { revision, updatedAt: now });
-    return { ok: true, revision };
+    return { ok: true, revision } as const;
   },
 });
 
@@ -133,6 +139,7 @@ export const rename = mutation({
     name: v.string(),
     expectedRevision: v.number(),
   },
+  returns: revisionResultValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
@@ -141,7 +148,7 @@ export const rename = mutation({
       throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
     }
     if (page.name === args.name) {
-      return { ok: true, reused: true, revision: page.revision };
+      return { ok: true, reused: true, revision: page.revision } as const;
     }
     if (args.expectedRevision !== page.revision) {
       throw conflictError("Page revision mismatch");
@@ -153,16 +160,17 @@ export const rename = mutation({
       revision,
       updatedAt: Date.now(),
     });
-    return { ok: true, revision };
+    return { ok: true, revision } as const;
   },
 });
 
-export const deletePage = mutation({
+const deletePage = mutation({
   args: {
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
     expectedRevision: v.number(),
   },
+  returns: revisionResultValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
@@ -174,7 +182,7 @@ export const deletePage = mutation({
       (candidate) => candidate.publicId === args.pagePublicId,
     );
     if (page === undefined) {
-      return { ok: true, reused: true, revision: strategy.revision };
+      return { ok: true, reused: true, revision: strategy.revision } as const;
     }
     if (pages.length <= 1) {
       throw invalidOpError("Cannot delete last page");
@@ -213,7 +221,7 @@ export const deletePage = mutation({
 
     const revision = strategy.revision + 1;
     await ctx.db.patch(strategy._id, { revision, updatedAt: now });
-    return { ok: true, revision };
+    return { ok: true, revision } as const;
   },
 });
 
@@ -223,6 +231,7 @@ export const reorder = mutation({
     orderedPagePublicIds: v.array(v.string()),
     expectedRevision: v.number(),
   },
+  returns: revisionResultValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
@@ -243,7 +252,7 @@ export const reorder = mutation({
       return page;
     });
     if (ordered.every((page, index) => page.sortIndex === index)) {
-      return { ok: true, reused: true, revision: strategy.revision };
+      return { ok: true, reused: true, revision: strategy.revision } as const;
     }
     if (args.expectedRevision !== strategy.revision) {
       throw conflictError("Strategy revision mismatch");
@@ -262,7 +271,7 @@ export const reorder = mutation({
     }
     const revision = strategy.revision + 1;
     await ctx.db.patch(strategy._id, { revision, updatedAt: now });
-    return { ok: true, revision };
+    return { ok: true, revision } as const;
   },
 });
 

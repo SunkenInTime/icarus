@@ -15,12 +15,14 @@ import {
   serializePageContent,
   serializePageDescriptor,
 } from "./lib/snapshotSerialization";
+import { pageSnapshotValidator } from "./lib/publicValidators";
 
 export const getSnapshot = query({
   args: {
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
   },
+  returns: pageSnapshotValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");

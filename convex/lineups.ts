@@ -3,12 +3,14 @@ import { v } from "convex/values";
 import { assertStrategyRole } from "./lib/auth";
 import { getPageByPublicId, getStrategyByPublicId } from "./lib/entities";
 import { errorWithCode } from "./lib/errors";
+import { lineupValidator } from "./lib/publicValidators";
 
 export const listForPage = query({
   args: {
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
   },
+  returns: v.array(lineupValidator),
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");
@@ -43,6 +45,7 @@ export const listForStrategy = query({
   args: {
     strategyPublicId: v.string(),
   },
+  returns: v.array(lineupValidator),
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");

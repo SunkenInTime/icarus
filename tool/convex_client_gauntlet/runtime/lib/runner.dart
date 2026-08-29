@@ -588,7 +588,9 @@ final class GauntletRunner {
       final snapshot = await verifier.query('strategy:getFullSnapshot', {
         'strategyPublicId': strategyId(seed),
       });
-      final folders = await verifier.query('folders:listAll', {'scope': 'all'});
+      final folders = await verifier.query('folders:listTree', {
+        'scope': 'all',
+      });
       final canonical = canonicalSnapshot(
         seed: seed,
         snapshot: snapshot,
@@ -645,7 +647,9 @@ final class GauntletRunner {
       final snapshot = await verifier.query('strategy:getFullSnapshot', {
         'strategyPublicId': strategyId(seed),
       });
-      final folders = await verifier.query('folders:listAll', {'scope': 'all'});
+      final folders = await verifier.query('folders:listTree', {
+        'scope': 'all',
+      });
       return canonicalHash(
         canonicalSnapshot(seed: seed, snapshot: snapshot, folders: folders),
       );

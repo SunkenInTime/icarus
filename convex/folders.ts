@@ -13,6 +13,11 @@ import {
   forbiddenError,
   invalidOpError,
 } from "./lib/errors";
+import {
+  createResultValidator,
+  folderSummaryValidator,
+  okResultValidator,
+} from "./lib/publicValidators";
 
 type FolderScope = "owned" | "shared" | "all";
 type AnyCtx = QueryCtx | MutationCtx;
@@ -101,74 +106,6 @@ const folderScopeValidator = v.optional(
   v.union(v.literal("owned"), v.literal("shared"), v.literal("all")),
 );
 
-const folderSummaryValidator = v.object({
-  publicId: v.string(),
-  name: v.string(),
-  iconId: v.union(v.number(), v.null()),
-  iconCodePoint: v.union(v.number(), v.null()),
-  iconFontFamily: v.union(v.string(), v.null()),
-  iconFontPackage: v.union(v.string(), v.null()),
-  color: v.union(v.string(), v.null()),
-  customColorValue: v.union(v.number(), v.null()),
-  parentFolderPublicId: v.union(v.string(), v.null()),
-  createdAt: v.number(),
-  updatedAt: v.number(),
-  role: v.union(
-    v.literal("owner"),
-    v.literal("editor"),
-    v.literal("viewer"),
-  ),
-});
-
-export const listForParent = query({
-  args: {
-    parentFolderPublicId: v.optional(v.string()),
-    scope: folderScopeValidator,
-  },
-  returns: v.array(folderSummaryValidator),
-  handler: async (ctx, args) => {
-    const user = await requireCurrentUser(ctx);
-    const scope = args.scope ?? "owned";
-
-    let parentFolderId: Id<"folders"> | undefined;
-    if (args.parentFolderPublicId !== undefined) {
-      const parent = await getFolderByPublicId(ctx, args.parentFolderPublicId);
-      await assertFolderRole(ctx, parent, "viewer");
-      parentFolderId = parent._id;
-    }
-
-    const accessible = await listAccessibleFoldersForScope(
-      ctx,
-      user._id,
-      scope,
-    );
-    const folderLookup = new Map(
-      accessible.map(({ folder }) => [folder._id, folder]),
-    );
-
-    return accessible
-      .filter(({ folder }) => folder.parentFolderId === parentFolderId)
-      .sort((a, b) => a.folder.createdAt - b.folder.createdAt)
-      .map(({ folder, role }) => ({
-        publicId: folder.publicId,
-        name: folder.name,
-        iconId: folder.iconId ?? null,
-        iconCodePoint: folder.iconCodePoint ?? null,
-        iconFontFamily: folder.iconFontFamily ?? null,
-        iconFontPackage: folder.iconFontPackage ?? null,
-        color: folder.color ?? null,
-        customColorValue: folder.customColorValue ?? null,
-        parentFolderPublicId:
-          folder.parentFolderId === undefined
-            ? null
-            : (folderLookup.get(folder.parentFolderId)?.publicId ?? null),
-        createdAt: folder.createdAt,
-        updatedAt: folder.updatedAt,
-        role,
-      }));
-  },
-});
-
 export const create = mutation({
   args: {
     publicId: v.string(),
@@ -181,6 +118,7 @@ export const create = mutation({
     color: v.optional(v.string()),
     customColorValue: v.optional(v.number()),
   },
+  returns: createResultValidator,
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     const now = Date.now();
@@ -201,7 +139,7 @@ export const create = mutation({
       .collect();
     const existingOwned = existing.find((item) => item.ownerId === user._id);
     if (existingOwned !== undefined) {
-      return { ok: true, reused: true };
+      return { ok: true, reused: true } as const;
     }
     if (existing.length > 0) {
       throw conflictError(`Folder publicId already exists: ${args.publicId}`);
@@ -222,7 +160,7 @@ export const create = mutation({
       updatedAt: now,
     });
 
-    return { ok: true };
+    return { ok: true } as const;
   },
 });
 
@@ -240,6 +178,7 @@ export const update = mutation({
     customColorValue: v.optional(v.number()),
     clearCustomColorValue: v.optional(v.boolean()),
   },
+  returns: okResultValidator,
   handler: async (ctx, args) => {
     const folder = await getFolderByPublicId(ctx, args.folderPublicId);
     const { role } = await assertFolderRole(ctx, folder, "owner");
@@ -290,14 +229,15 @@ export const update = mutation({
     }
 
     await ctx.db.patch(folder._id, patch);
-    return { ok: true };
+    return { ok: true } as const;
   },
 });
 
-export const listAll = query({
+export const listTree = query({
   args: {
     scope: folderScopeValidator,
   },
+  returns: v.array(folderSummaryValidator),
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     const scope = args.scope ?? "all";
@@ -337,6 +277,7 @@ export const move = mutation({
     folderPublicId: v.string(),
     parentFolderPublicId: v.optional(v.string()),
   },
+  returns: okResultValidator,
   handler: async (ctx, args) => {
     const folder = await getFolderByPublicId(ctx, args.folderPublicId);
     const { role } = await assertFolderRole(ctx, folder, "owner");
@@ -360,14 +301,15 @@ export const move = mutation({
       updatedAt: Date.now(),
     });
 
-    return { ok: true };
+    return { ok: true } as const;
   },
 });
 
-export const deleteFolder = mutation({
+const deleteFolder = mutation({
   args: {
     folderPublicId: v.string(),
   },
+  returns: okResultValidator,
   handler: async (ctx, args) => {
     const folder = await getFolderByPublicId(ctx, args.folderPublicId);
     const { role } = await assertFolderRole(ctx, folder, "owner");
@@ -409,7 +351,7 @@ export const deleteFolder = mutation({
     }
 
     await ctx.db.delete(folder._id);
-    return { ok: true };
+    return { ok: true } as const;
   },
 });
 

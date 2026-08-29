@@ -31,7 +31,7 @@ Future<void> main(List<String> arguments) async {
     final snapshot = await convex.query('strategy:getFullSnapshot', {
       'strategyPublicId': strategyId(0),
     });
-    final folders = await convex.query('folders:listAll', {'scope': 'all'});
+    final folders = await convex.query('folders:listTree', {'scope': 'all'});
     final canonical = canonicalSnapshot(
       seed: 0,
       snapshot: snapshot,

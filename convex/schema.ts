@@ -154,6 +154,7 @@ export default defineSchema({
     .index("by_strategyId", ["strategyId"]),
   imageAssets: defineTable({
     publicId: v.string(),
+    uploadAttemptPublicId: v.optional(v.string()),
     provider: v.optional(v.union(v.literal("convex"), v.literal("r2"))),
     strategyId: v.optional(v.id("strategies")),
     createdByUserId: v.optional(v.id("users")),
@@ -181,6 +182,7 @@ export default defineSchema({
     storagePath: v.optional(v.string()),
   })
     .index("by_publicId", ["publicId"])
+    .index("by_uploadAttemptPublicId", ["uploadAttemptPublicId"])
     .index("by_strategyId", ["strategyId"])
     .index("by_strategyId_and_uploadStatus_and_updatedAt", [
       "strategyId",

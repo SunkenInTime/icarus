@@ -4,6 +4,9 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "audit:convex-contract": "node tool/audit_convex_contract.mjs",
+    "snapshot:convex-contract": "node tool/snapshot_convex_contract.mjs",
+    "snapshot:convex-contract:check": "node tool/snapshot_convex_contract.mjs --check",
     "test:convex": "vitest run --config vitest.config.ts"
   },
   "devDependencies": {

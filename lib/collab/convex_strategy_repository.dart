@@ -54,7 +54,7 @@ class ConvexStrategyRepository {
 
   Stream<List<CloudFolderSummary>> watchAllFolders() {
     return _watchList(
-      name: 'folders:listAll',
+      name: 'folders:listTree',
       args: const {'scope': 'all'},
       fromJson: CloudFolderSummary.fromJson,
     );
@@ -65,13 +65,15 @@ class ConvexStrategyRepository {
     String scope = 'owned',
   }) {
     return _watchList(
-      name: 'folders:listForParent',
-      args: {
-        if (parentFolderPublicId != null)
-          'parentFolderPublicId': parentFolderPublicId,
-        'scope': scope,
-      },
+      name: 'folders:listTree',
+      args: {'scope': scope},
       fromJson: CloudFolderSummary.fromJson,
+    ).map(
+      (folders) => folders
+          .where(
+            (folder) => folder.parentFolderPublicId == parentFolderPublicId,
+          )
+          .toList(growable: false),
     );
   }
 

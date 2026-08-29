@@ -15,6 +15,7 @@ import {
 } from "./lib/imageAssets";
 import {
   action,
+  internalAction,
   internalMutation,
   internalQuery,
   query,
@@ -42,6 +43,11 @@ import {
   invalidPayloadError,
   notFoundError,
 } from "./lib/errors";
+import {
+  imageAssetValidator,
+  imageProviderValidator,
+  okResultValidator,
+} from "./lib/publicValidators";
 
 type AnyCtx = MutationCtx | QueryCtx;
 
@@ -53,7 +59,9 @@ type DeletionTarget = {
 
 const maxDeletionBatch = 100;
 
-const providerValidator = v.union(v.literal("convex"), v.literal("r2"));
+function createUploadAttemptPublicId(): string {
+  return crypto.randomUUID();
+}
 
 async function collectReferencedAssetIdsForStrategy(
   ctx: AnyCtx,
@@ -165,6 +173,15 @@ export const generateUploadUrl = action({
     width: v.optional(v.number()),
     height: v.optional(v.number()),
   },
+  returns: v.object({
+    provider: v.literal("r2"),
+    uploadId: v.string(),
+    objectKey: v.string(),
+    uploadUrl: v.string(),
+    requiredHeaders: v.record(v.string(), v.string()),
+    expiresAt: v.number(),
+    maxBytes: v.number(),
+  }),
   handler: async (ctx, args) => {
     const config = getR2Config();
     const validated = validateImageUploadMetadata({
@@ -179,11 +196,17 @@ export const generateUploadUrl = action({
       fileExtension: validated.fileExtension,
     });
 
-    const intent: { uploadId: Id<"imageAssets">; objectKey: string } =
+    const uploadAttemptPublicId = createUploadAttemptPublicId();
+    const intent: {
+      uploadId: Id<"imageAssets">;
+      uploadAttemptPublicId: string;
+      objectKey: string;
+    } =
       await ctx.runMutation(internal.images.createR2UploadIntent, {
         strategyPublicId: args.strategyPublicId,
         assetPublicId: args.assetPublicId,
         objectKey,
+        uploadAttemptPublicId,
         mimeType: validated.mimeType,
         fileExtension: validated.fileExtension,
         byteSize: args.byteSize,
@@ -198,7 +221,7 @@ export const generateUploadUrl = action({
 
     return {
       provider: "r2" as const,
-      uploadId: intent.uploadId,
+      uploadId: intent.uploadAttemptPublicId,
       objectKey: intent.objectKey,
       uploadUrl: signed.uploadUrl,
       requiredHeaders: signed.requiredHeaders,
@@ -213,6 +236,7 @@ export const createR2UploadIntent = internalMutation({
     strategyPublicId: v.string(),
     assetPublicId: v.string(),
     objectKey: v.string(),
+    uploadAttemptPublicId: v.string(),
     mimeType: v.string(),
     fileExtension: v.string(),
     byteSize: v.optional(v.number()),
@@ -238,6 +262,7 @@ export const createR2UploadIntent = internalMutation({
       strategyId: strategy._id,
       createdByUserId: user._id,
       objectKey: args.objectKey,
+      uploadAttemptPublicId: args.uploadAttemptPublicId,
       uploadStatus: "pending",
       fileExtension: args.fileExtension,
       mimeType: args.mimeType,
@@ -248,7 +273,11 @@ export const createR2UploadIntent = internalMutation({
       updatedAt: now,
     });
 
-    return { uploadId, objectKey: args.objectKey };
+    return {
+      uploadId,
+      uploadAttemptPublicId: args.uploadAttemptPublicId,
+      objectKey: args.objectKey,
+    };
   },
 });
 
@@ -256,8 +285,8 @@ export const completeUpload = action({
   args: {
     strategyPublicId: v.string(),
     assetPublicId: v.string(),
-    provider: v.optional(providerValidator),
-    uploadId: v.optional(v.id("imageAssets")),
+    provider: v.optional(imageProviderValidator),
+    uploadId: v.optional(v.string()),
     objectKey: v.optional(v.string()),
     storageId: v.optional(v.id("_storage")),
     etag: v.optional(v.string()),
@@ -267,14 +296,18 @@ export const completeUpload = action({
     width: v.optional(v.number()),
     height: v.optional(v.number()),
   },
+  returns: v.union(
+    v.object({ ok: v.literal(true), provider: v.literal("convex") }),
+    v.object({
+      ok: v.literal(true),
+      provider: v.literal("r2"),
+      url: v.string(),
+    }),
+  ),
   handler: async (
     ctx,
     args,
-  ): Promise<{
-    ok: true;
-    provider: Provider;
-    url?: string | null;
-  }> => {
+  ) => {
     if (args.storageId !== undefined || args.provider === "convex") {
       await ctx.runMutation(internal.images.completeLegacyUpload, {
         strategyPublicId: args.strategyPublicId,
@@ -285,7 +318,7 @@ export const completeUpload = action({
         width: args.width,
         height: args.height,
       });
-      return { ok: true, provider: "convex" };
+      return { ok: true, provider: "convex" } as const;
     }
 
     if (args.uploadId === undefined) {
@@ -302,7 +335,7 @@ export const completeUpload = action({
     } = await ctx.runQuery(internal.images.getR2UploadIntentForCompletion, {
       strategyPublicId: args.strategyPublicId,
       assetPublicId: args.assetPublicId,
-      uploadId: args.uploadId,
+      uploadAttemptPublicId: args.uploadId,
     });
 
     if (args.objectKey !== undefined && args.objectKey !== intent.objectKey) {
@@ -313,7 +346,7 @@ export const completeUpload = action({
     }
     if (intent.uploadStatus === "active") {
       return {
-        ok: true,
+        ok: true as const,
         provider: "r2" as const,
         url: publicR2UrlForObjectKey(intent.objectKey),
       };
@@ -371,7 +404,7 @@ export const completeUpload = action({
     }
 
     return {
-      ok: true,
+      ok: true as const,
       provider: "r2" as const,
       url: publicR2UrlForObjectKey(intent.objectKey),
     };
@@ -382,13 +415,18 @@ export const getR2UploadIntentForCompletion = internalQuery({
   args: {
     strategyPublicId: v.string(),
     assetPublicId: v.string(),
-    uploadId: v.id("imageAssets"),
+    uploadAttemptPublicId: v.string(),
   },
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
 
-    const asset = await ctx.db.get(args.uploadId);
+    const asset = await ctx.db
+      .query("imageAssets")
+      .withIndex("by_uploadAttemptPublicId", (q) =>
+        q.eq("uploadAttemptPublicId", args.uploadAttemptPublicId),
+      )
+      .unique();
     if (
       asset === null ||
       asset.strategyId !== strategy._id ||
@@ -492,7 +530,7 @@ export const markR2UploadFailed = internalMutation({
       uploadStatus: "failed",
       updatedAt: Date.now(),
     });
-    return { ok: true };
+    return { ok: true } as const;
   },
 });
 
@@ -574,6 +612,7 @@ export const listForStrategy = query({
   args: {
     strategyPublicId: v.string(),
   },
+  returns: v.array(imageAssetValidator),
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");
@@ -601,6 +640,7 @@ export const getAssetUrl = query({
     strategyPublicId: v.string(),
     assetPublicId: v.string(),
   },
+  returns: v.object({ url: v.union(v.string(), v.null()) }),
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "viewer");
@@ -638,6 +678,7 @@ export const deleteAssetRef = action({
     strategyPublicId: v.string(),
     assetPublicId: v.string(),
   },
+  returns: okResultValidator,
   handler: async (ctx, args) => {
     const target: DeletionTarget = await ctx.runQuery(
       internal.images.getAssetDeletionTarget,
@@ -652,7 +693,7 @@ export const deleteAssetRef = action({
       strategyPublicId: args.strategyPublicId,
       assetIds: [target.assetId],
     });
-    return { ok: true };
+    return { ok: true } as const;
   },
 });
 
@@ -711,7 +752,7 @@ export const markDeletedAssetRefsForStrategy = internalMutation({
   },
 });
 
-export const listPotentiallyStale = query({
+export const listPotentiallyStale = internalQuery({
   args: {
     strategyPublicId: v.string(),
     limit: v.optional(v.number()),
@@ -748,7 +789,7 @@ export const listPotentiallyStale = query({
   },
 });
 
-export const sweepStaleUploadsForStrategy = action({
+export const sweepStaleUploadsForStrategy = internalAction({
   args: {
     strategyPublicId: v.string(),
     staleBefore: v.number(),

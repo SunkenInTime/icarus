@@ -4,9 +4,12 @@ import {
   getCanonicalExternalId,
 } from "./lib/auth";
 import { unauthenticatedError } from "./lib/errors";
+import { okResultValidator } from "./lib/publicValidators";
+import { v } from "convex/values";
 
 export const ensureCurrentUser = mutation({
   args: {},
+  returns: okResultValidator,
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (identity === null) {
@@ -26,21 +29,33 @@ export const ensureCurrentUser = mutation({
         avatarUrl,
         updatedAt: Date.now(),
       });
-      return existingUser._id;
+      return { ok: true as const };
     }
 
-    return await ctx.db.insert("users", {
+    await ctx.db.insert("users", {
       externalId,
       displayName,
       avatarUrl,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
+    return { ok: true as const };
   },
 });
 
 export const me = query({
   args: {},
+  returns: v.union(
+    v.object({
+      id: v.string(),
+      externalId: v.string(),
+      displayName: v.string(),
+      avatarUrl: v.union(v.string(), v.null()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }),
+    v.null(),
+  ),
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (identity === null) {
@@ -54,7 +69,7 @@ export const me = query({
     }
 
     return {
-      id: user._id,
+      id: user.externalId,
       externalId: user.externalId,
       displayName: user.displayName,
       avatarUrl: user.avatarUrl ?? null,
