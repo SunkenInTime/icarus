@@ -157,6 +157,7 @@ class FolderProvider extends Notifier<String?> {
           error: error,
           stackTrace: stackTrace,
         );
+        return;
       }
       if (_currentFolderIdForWorkspace(LibraryWorkspace.cloud) == folderID) {
         updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
