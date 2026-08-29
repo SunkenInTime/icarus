@@ -21,6 +21,13 @@ import {
   forbiddenError,
 } from "./lib/errors";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
+import {
+  createResultValidator,
+  okResultValidator,
+  revisionResultValidator,
+  strategyHeaderValidator,
+  strategySummaryValidator,
+} from "./lib/publicValidators";
 
 type StrategyScope = "owned" | "shared" | "all";
 
@@ -126,10 +133,12 @@ async function summarizeStrategies(
     createdAt: number;
     updatedAt: number;
     role: StrategyRole;
-    attackLabel: string;
+    attackLabel: "Unknown" | "Mixed" | "Attack" | "Defend";
     folderPublicId: string | null;
     themeProfileId: string | null;
-    themeOverridePalette: Doc<"strategies">["themeOverridePalette"] | null;
+    themeOverridePalette:
+      | NonNullable<Doc<"strategies">["themeOverridePalette"]>
+      | null;
   }> => {
     const pagesPromise = ctx.db
       .query("pages")
@@ -148,7 +157,7 @@ async function summarizeStrategies(
       folderPromise,
       folderRolePromise,
     ]);
-    let attackLabel = "Unknown";
+    let attackLabel: "Unknown" | "Mixed" | "Attack" | "Defend" = "Unknown";
     if (pages.length > 0) {
       const first = pages[0]!.isAttack;
       const mixed = pages.some((page) => page.isAttack !== first);
@@ -337,7 +346,7 @@ async function createStrategyWithInitialPageRecord(
         now,
       });
     }
-    return { ok: true, reused: true };
+    return { ok: true, reused: true } as const;
   }
   if (existing.length > 0) {
     throw conflictError(`Strategy publicId already exists: ${args.publicId}`);
@@ -364,7 +373,7 @@ async function createStrategyWithInitialPageRecord(
     now,
   });
 
-  return { ok: true };
+  return { ok: true } as const;
 }
 
 export const listForFolder = query({
@@ -372,6 +381,7 @@ export const listForFolder = query({
     folderPublicId: v.optional(v.string()),
     scope: strategyScopeValidator,
   },
+  returns: v.array(strategySummaryValidator),
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     const scope = args.scope ?? "owned";
@@ -395,6 +405,7 @@ export const listForFolder = query({
 
 export const listSharedWithMe = query({
   args: {},
+  returns: v.array(strategySummaryValidator),
   handler: async (ctx) => {
     const user = await requireCurrentUser(ctx);
     const memberships = await ctx.db
@@ -418,6 +429,7 @@ export const getHeader = query({
   args: {
     strategyPublicId: v.string(),
   },
+  returns: strategyHeaderValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { role } = await assertStrategyRole(ctx, strategy, "viewer");
@@ -445,6 +457,7 @@ export const create = mutation({
     themeProfileId: v.optional(v.string()),
     themeOverridePalette: v.optional(mapThemePaletteValidator),
   },
+  returns: createResultValidator,
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     return await createStrategyWithInitialPageRecord(ctx, args, user._id, {
@@ -468,6 +481,7 @@ export const createWithInitialPage = mutation({
     themeProfileId: v.optional(v.string()),
     themeOverridePalette: v.optional(mapThemePaletteValidator),
   },
+  returns: createResultValidator,
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     return await createStrategyWithInitialPageRecord(ctx, args, user._id, {
@@ -490,6 +504,7 @@ export const update = mutation({
     themeOverridePalette: v.optional(mapThemePaletteValidator),
     clearThemeOverridePalette: v.optional(v.boolean()),
   },
+  returns: revisionResultValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
@@ -523,7 +538,7 @@ export const update = mutation({
     }
 
     if (Object.keys(patch).length === 0) {
-      return { ok: true, reused: true, revision: strategy.revision };
+      return { ok: true, reused: true, revision: strategy.revision } as const;
     }
     if (args.expectedRevision !== strategy.revision) {
       throw conflictError("Strategy revision mismatch");
@@ -535,7 +550,7 @@ export const update = mutation({
       revision,
       updatedAt: Date.now(),
     });
-    return { ok: true, revision };
+    return { ok: true, revision } as const;
   },
 });
 
@@ -545,6 +560,7 @@ export const move = mutation({
     expectedRevision: v.number(),
     folderPublicId: v.optional(v.string()),
   },
+  returns: revisionResultValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
@@ -562,21 +578,23 @@ export const move = mutation({
       folderId = folder._id;
     }
 
+    const revision = strategy.revision + 1;
     await ctx.db.patch(strategy._id, {
       folderId,
-      revision: strategy.revision + 1,
+      revision,
       updatedAt: Date.now(),
     });
 
-    return { ok: true };
+    return { ok: true, revision } as const;
   },
 });
 
-export const deleteStrategy = mutation({
+const deleteStrategy = mutation({
   args: {
     strategyPublicId: v.string(),
     expectedRevision: v.number(),
   },
+  returns: okResultValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "owner");
@@ -620,7 +638,7 @@ export const deleteStrategy = mutation({
     }
 
     await ctx.db.delete(strategy._id);
-    return { ok: true };
+    return { ok: true } as const;
   },
 });
 

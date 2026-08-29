@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:math' as math;
 
-import 'package:icarus/collab/convex_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -11,6 +10,7 @@ import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:uuid/uuid.dart';
 
 class StrategyOpQueueState {
@@ -455,26 +455,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           final retryRevision =
               record?.latestServerRevision ?? rejectedOp.expectedRevision;
           if (retryRevision == null) continue;
-          final isTombstoneRestore = rejectedOp.kind == StrategyOpKind.add &&
-              (rejectedOp.entityType == StrategyOpEntityType.element ||
-                  rejectedOp.entityType == StrategyOpEntityType.lineup) &&
-              (record?.lastError == 'missing_expected_revision' ||
-                  record?.lastError == 'revision_mismatch');
-          final rebasedKind = !isTombstoneRestore &&
-                  rejectedOp.kind == StrategyOpKind.add &&
-                  (rejectedOp.entityType == StrategyOpEntityType.element ||
-                      rejectedOp.entityType == StrategyOpEntityType.lineup)
-              ? StrategyOpKind.patch
-              : rejectedOp.kind;
-          final rebasedOp = StrategyOp(
-            opId: const Uuid().v4(),
-            kind: rebasedKind,
-            entityType: rejectedOp.entityType,
-            entityPublicId: rejectedOp.entityPublicId,
-            pagePublicId: rejectedOp.pagePublicId,
-            payload: rejectedOp.payload,
-            sortIndex: rejectedOp.sortIndex,
-            expectedRevision: retryRevision,
+          final isTombstoneRestore =
+              (rejectedOp is ElementAddOp || rejectedOp is LineupAddOp) &&
+                  (record?.lastError == 'missing_expected_revision' ||
+                      record?.lastError == 'revision_mismatch');
+          final rebasedOp = _rebaseRejectedOp(
+            rejectedOp,
+            retryRevision,
+            preserveAdd: isTombstoneRestore,
           );
           final pending = PendingOp(
             op: rebasedOp,
@@ -541,7 +529,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     if (!auth.isAuthenticated ||
         !auth.isConvexUserReady ||
-        !ConvexClient.instance.isConnected) {
+        !ref.read(convexConnectionSnapshotProvider)) {
       final message = !auth.isAuthenticated
           ? 'Not authenticated for cloud sync.'
           : (!auth.isConvexUserReady
@@ -638,37 +626,32 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       state.attentionByEntityKey,
     );
     final acked = <AckedEntityIntent>[];
-    try {
-      for (final ack in acks) {
-        final sent = byOpId[ack.opId];
-        if (sent == null) continue;
-        inFlight.remove(sent.entityKey);
-        acked.add(AckedEntityIntent(
+    for (final ack in acks) {
+      final sent = byOpId[ack.opId];
+      if (sent == null) continue;
+      inFlight.remove(sent.entityKey);
+      acked.add(AckedEntityIntent(
+        entityKey: sent.entityKey,
+        op: sent.pending.op,
+        ack: ack,
+      ));
+      final current = _recordForActiveKey(sent.entityKey);
+      if (current?.pending.op.opId != ack.opId) continue;
+      if (ack.isAck) {
+        await _removeRecordIfCurrent(sent.entityKey, ack.opId);
+      } else {
+        final rejected = current!.copyWith(
+          status: DurableOutboxStatus.attention,
+          updatedAt: DateTime.now(),
+          lastError: ack.reason ?? 'The server rejected this change.',
+          latestServerRevision: ack.latestRevision,
+        );
+        await _putRecord(rejected);
+        attention[sent.entityKey] = QueuedEntityIntent(
           entityKey: sent.entityKey,
-          op: sent.pending.op,
-          ack: ack,
-        ));
-        final current = _recordForActiveKey(sent.entityKey);
-        if (current?.pending.op.opId != ack.opId) continue;
-        if (ack.isAck) {
-          await _removeRecordIfCurrent(sent.entityKey, ack.opId);
-        } else {
-          final rejected = current!.copyWith(
-            status: DurableOutboxStatus.attention,
-            updatedAt: DateTime.now(),
-            lastError: ack.reason ?? 'The server rejected this change.',
-            latestServerRevision: ack.latestRevision,
-          );
-          await _putRecord(rejected);
-          attention[sent.entityKey] = QueuedEntityIntent(
-            entityKey: sent.entityKey,
-            pending: sent.pending,
-          );
-        }
+          pending: sent.pending,
+        );
       }
-    } catch (error, stackTrace) {
-      _recordPersistenceFailure(error, stackTrace);
-      return;
     }
     final attentionMessage = _loadedAttentionMessage(
       loadIssues: state.loadIssues,
@@ -844,31 +827,250 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   StrategyOp? _mergeQueuedIntent(StrategyOp existing, StrategyOp desired) {
-    if (desired.kind == StrategyOpKind.delete &&
-        existing.kind == StrategyOpKind.add) return null;
-    if (existing.kind == StrategyOpKind.add &&
-        desired.kind == StrategyOpKind.patch) {
-      return StrategyOp(
-        opId: existing.opId,
-        kind: StrategyOpKind.add,
-        entityType: existing.entityType,
-        entityPublicId: existing.entityPublicId,
-        pagePublicId: existing.pagePublicId,
-        payload: desired.payload ?? existing.payload,
-        sortIndex: desired.sortIndex ?? existing.sortIndex,
-        expectedRevision: existing.expectedRevision,
-      );
+    if ((existing is PageAddOp && desired is PageDeleteOp) ||
+        (existing is ElementAddOp && desired is ElementDeleteOp) ||
+        (existing is LineupAddOp && desired is LineupDeleteOp)) {
+      return null;
     }
-    return StrategyOp(
-      opId: existing.opId,
-      kind: desired.kind,
-      entityType: desired.entityType,
-      entityPublicId: desired.entityPublicId ?? existing.entityPublicId,
-      pagePublicId: desired.pagePublicId ?? existing.pagePublicId,
-      payload: desired.payload ?? existing.payload,
-      sortIndex: desired.sortIndex ?? existing.sortIndex,
-      expectedRevision: desired.expectedRevision ?? existing.expectedRevision,
-    );
+    final replacementOpId = const Uuid().v4();
+    if (existing case PageAddOp()) {
+      if (desired case PagePatchOp()) {
+        return PageAddOp(
+          opId: replacementOpId,
+          pagePublicId: existing.pagePublicId,
+          payload: {...existing.payload, ...desired.payload},
+          sortIndex: existing.sortIndex,
+          expectedStrategyRevision: existing.expectedStrategyRevision,
+        );
+      }
+    }
+    if (existing case ElementAddOp()) {
+      if (desired case ElementPatchOp()) {
+        return ElementAddOp(
+          opId: replacementOpId,
+          elementPublicId: existing.elementPublicId,
+          pagePublicId: desired.pagePublicId ?? existing.pagePublicId,
+          payload: desired.payload ?? existing.payload,
+          sortIndex: desired.sortIndex ?? existing.sortIndex,
+          expectedElementRevision: existing.expectedElementRevision,
+        );
+      }
+    }
+    if (existing case LineupAddOp()) {
+      if (desired case LineupPatchOp()) {
+        return LineupAddOp(
+          opId: replacementOpId,
+          lineupPublicId: existing.lineupPublicId,
+          pagePublicId: desired.pagePublicId ?? existing.pagePublicId,
+          payload: desired.payload ?? existing.payload,
+          sortIndex: desired.sortIndex ?? existing.sortIndex,
+          expectedLineupRevision: existing.expectedLineupRevision,
+        );
+      }
+    }
+    if (existing case StrategyPatchOp()) {
+      if (desired case StrategyPatchOp()) {
+        return StrategyPatchOp(
+          opId: replacementOpId,
+          payload: {...existing.payload, ...desired.payload},
+          expectedStrategyRevision: desired.expectedStrategyRevision,
+        );
+      }
+    }
+    if (existing case PagePatchOp()) {
+      if (desired case PagePatchOp()) {
+        return PagePatchOp(
+          opId: replacementOpId,
+          pagePublicId: desired.pagePublicId,
+          payload: {...existing.payload, ...desired.payload},
+          expectedPageRevision: desired.expectedPageRevision,
+        );
+      }
+    }
+    if (existing case ElementPatchOp()) {
+      if (desired case ElementPatchOp()) {
+        return ElementPatchOp(
+          opId: replacementOpId,
+          elementPublicId: desired.elementPublicId,
+          pagePublicId: desired.pagePublicId ?? existing.pagePublicId,
+          payload: desired.payload ?? existing.payload,
+          sortIndex: desired.sortIndex ?? existing.sortIndex,
+          expectedElementRevision: desired.expectedElementRevision,
+        );
+      }
+    }
+    if (existing case LineupPatchOp()) {
+      if (desired case LineupPatchOp()) {
+        return LineupPatchOp(
+          opId: replacementOpId,
+          lineupPublicId: desired.lineupPublicId,
+          pagePublicId: desired.pagePublicId ?? existing.pagePublicId,
+          payload: desired.payload ?? existing.payload,
+          sortIndex: desired.sortIndex ?? existing.sortIndex,
+          expectedLineupRevision: desired.expectedLineupRevision,
+        );
+      }
+    }
+    return desired.withOpId(replacementOpId);
+  }
+
+  StrategyOp _rebaseRejectedOp(
+    StrategyOp op,
+    int revision, {
+    required bool preserveAdd,
+  }) {
+    final opId = const Uuid().v4();
+    return switch (op) {
+      StrategyPatchOp(:final payload) => StrategyPatchOp(
+          opId: opId,
+          payload: payload,
+          expectedStrategyRevision: revision,
+        ),
+      PageAddOp(:final pagePublicId, :final payload, :final sortIndex) =>
+        PageAddOp(
+          opId: opId,
+          pagePublicId: pagePublicId,
+          payload: payload,
+          sortIndex: sortIndex,
+          expectedStrategyRevision: revision,
+        ),
+      PagePatchOp(:final pagePublicId, :final payload) => PagePatchOp(
+          opId: opId,
+          pagePublicId: pagePublicId,
+          payload: payload,
+          expectedPageRevision: revision,
+        ),
+      PageDeleteOp(:final pagePublicId) => PageDeleteOp(
+          opId: opId,
+          pagePublicId: pagePublicId,
+          expectedStrategyRevision: revision,
+        ),
+      PageReorderOp(:final pagePublicId, :final sortIndex) => PageReorderOp(
+          opId: opId,
+          pagePublicId: pagePublicId,
+          sortIndex: sortIndex,
+          expectedStrategyRevision: revision,
+        ),
+      PageContentPatchOp(:final pagePublicId, :final settings) =>
+        PageContentPatchOp(
+          opId: opId,
+          pagePublicId: pagePublicId,
+          settings: settings,
+          expectedPageContentRevision: revision,
+        ),
+      ElementAddOp(
+        :final elementPublicId,
+        :final pagePublicId,
+        :final payload,
+        :final sortIndex,
+      ) =>
+        preserveAdd
+            ? ElementAddOp(
+                opId: opId,
+                elementPublicId: elementPublicId,
+                pagePublicId: pagePublicId,
+                payload: payload,
+                sortIndex: sortIndex,
+                expectedElementRevision: revision,
+              )
+            : ElementPatchOp(
+                opId: opId,
+                elementPublicId: elementPublicId,
+                pagePublicId: pagePublicId,
+                payload: payload,
+                sortIndex: sortIndex,
+                expectedElementRevision: revision,
+              ),
+      ElementPatchOp(
+        :final elementPublicId,
+        :final pagePublicId,
+        :final payload,
+        :final sortIndex,
+      ) =>
+        ElementPatchOp(
+          opId: opId,
+          elementPublicId: elementPublicId,
+          pagePublicId: pagePublicId,
+          payload: payload,
+          sortIndex: sortIndex,
+          expectedElementRevision: revision,
+        ),
+      ElementDeleteOp(:final elementPublicId, :final pagePublicId) =>
+        ElementDeleteOp(
+          opId: opId,
+          elementPublicId: elementPublicId,
+          pagePublicId: pagePublicId,
+          expectedElementRevision: revision,
+        ),
+      ElementReorderOp(
+        :final elementPublicId,
+        :final pagePublicId,
+        :final sortIndex,
+      ) =>
+        ElementReorderOp(
+          opId: opId,
+          elementPublicId: elementPublicId,
+          pagePublicId: pagePublicId,
+          sortIndex: sortIndex,
+          expectedElementRevision: revision,
+        ),
+      LineupAddOp(
+        :final lineupPublicId,
+        :final pagePublicId,
+        :final payload,
+        :final sortIndex,
+      ) =>
+        preserveAdd
+            ? LineupAddOp(
+                opId: opId,
+                lineupPublicId: lineupPublicId,
+                pagePublicId: pagePublicId,
+                payload: payload,
+                sortIndex: sortIndex,
+                expectedLineupRevision: revision,
+              )
+            : LineupPatchOp(
+                opId: opId,
+                lineupPublicId: lineupPublicId,
+                pagePublicId: pagePublicId,
+                payload: payload,
+                sortIndex: sortIndex,
+                expectedLineupRevision: revision,
+              ),
+      LineupPatchOp(
+        :final lineupPublicId,
+        :final pagePublicId,
+        :final payload,
+        :final sortIndex,
+      ) =>
+        LineupPatchOp(
+          opId: opId,
+          lineupPublicId: lineupPublicId,
+          pagePublicId: pagePublicId,
+          payload: payload,
+          sortIndex: sortIndex,
+          expectedLineupRevision: revision,
+        ),
+      LineupDeleteOp(:final lineupPublicId, :final pagePublicId) =>
+        LineupDeleteOp(
+          opId: opId,
+          lineupPublicId: lineupPublicId,
+          pagePublicId: pagePublicId,
+          expectedLineupRevision: revision,
+        ),
+      LineupReorderOp(
+        :final lineupPublicId,
+        :final pagePublicId,
+        :final sortIndex,
+      ) =>
+        LineupReorderOp(
+          opId: opId,
+          lineupPublicId: lineupPublicId,
+          pagePublicId: pagePublicId,
+          sortIndex: sortIndex,
+          expectedLineupRevision: revision,
+        ),
+    };
   }
 
   String? _loadedAttentionMessage({

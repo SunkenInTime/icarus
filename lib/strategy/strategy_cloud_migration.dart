@@ -77,11 +77,9 @@ void appendMigratedPageOps(
     final lineupId = nextUniqueMigrationId(group.id, usedLineupIds);
     final lineupPayload = cloudLineupPayload(group)..['id'] = lineupId;
     ops.add(
-      StrategyOp(
+      LineupAddOp(
         opId: const Uuid().v4(),
-        kind: StrategyOpKind.add,
-        entityType: StrategyOpEntityType.lineup,
-        entityPublicId: lineupId,
+        lineupPublicId: lineupId,
         pagePublicId: page.id,
         payload: cloudLineupGroupPayload(lineupPayload),
         sortIndex: lineupOrder++,
@@ -108,11 +106,9 @@ StrategyOp buildMigratedElementOp(
   Map<String, dynamic> payload,
   int sortIndex,
 ) {
-  return StrategyOp(
+  return ElementAddOp(
     opId: const Uuid().v4(),
-    kind: StrategyOpKind.add,
-    entityType: StrategyOpEntityType.element,
-    entityPublicId: elementId,
+    elementPublicId: elementId,
     pagePublicId: pagePublicId,
     payload: cloudElementPayload(
       kind: payload['elementType'] as String? ?? 'generic',

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:developer';
 
-import 'package:icarus/collab/convex_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -120,15 +119,15 @@ class _DefaultCloudMigrationApi implements CloudMigrationApi {
     required Map<String, dynamic> settings,
     required int expectedRevision,
   }) async {
-    await ConvexClient.instance.mutation(name: 'pages:add', args: {
-      'strategyPublicId': strategyPublicId,
-      'pagePublicId': pagePublicId,
-      'name': name,
-      'sortIndex': sortIndex,
-      'isAttack': isAttack,
-      'settings': settings,
-      'expectedRevision': expectedRevision,
-    });
+    await _repository.addPage(
+      strategyPublicId: strategyPublicId,
+      pagePublicId: pagePublicId,
+      name: name,
+      sortIndex: sortIndex,
+      isAttack: isAttack,
+      settings: settings,
+      expectedRevision: expectedRevision,
+    );
   }
 
   @override

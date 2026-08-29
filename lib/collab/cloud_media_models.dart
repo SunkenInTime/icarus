@@ -152,23 +152,6 @@ class CloudImageUploadIntent {
   final Map<String, String> requiredHeaders;
   final DateTime expiresAt;
   final int maxBytes;
-
-  factory CloudImageUploadIntent.fromJson(Map<String, dynamic> json) {
-    final headers = json['requiredHeaders'];
-    return CloudImageUploadIntent(
-      provider: json['provider'] as String? ?? 'r2',
-      uploadId: json['uploadId'] as String,
-      objectKey: json['objectKey'] as String,
-      uploadUrl: json['uploadUrl'] as String,
-      requiredHeaders: headers is Map
-          ? headers.map((key, value) => MapEntry('$key', '$value'))
-          : const <String, String>{},
-      expiresAt: DateTime.fromMillisecondsSinceEpoch(
-        (json['expiresAt'] as num).toInt(),
-      ),
-      maxBytes: (json['maxBytes'] as num?)?.toInt() ?? 0,
-    );
-  }
 }
 
 Map<String, dynamic> cloudImagePayloadFromPlacedImage(PlacedImage image) {

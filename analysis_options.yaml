@@ -11,6 +11,9 @@ analyzer:
   exclude:
     - build/**
     - lib/hive/hive_adapters.g.dart
+    - third_party/**
+    - tool/convex_client_gauntlet/**
+    - tool/icarus_convex_codegen/**
   errors:
     curly_braces_in_flow_control_structures: ignore
 include: package:flutter_lints/flutter.yaml

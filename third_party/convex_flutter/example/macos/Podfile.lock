@@ -1,0 +1,22 @@
+PODS:
+  - convex_flutter (0.0.1):
+    - FlutterMacOS
+  - FlutterMacOS (1.0.0)
+
+DEPENDENCIES:
+  - convex_flutter (from `Flutter/ephemeral/.symlinks/plugins/convex_flutter/macos`)
+  - FlutterMacOS (from `Flutter/ephemeral`)
+
+EXTERNAL SOURCES:
+  convex_flutter:
+    :path: Flutter/ephemeral/.symlinks/plugins/convex_flutter/macos
+  FlutterMacOS:
+    :path: Flutter/ephemeral
+
+SPEC CHECKSUMS:
+  convex_flutter: a9d12846e80c8a2238282775fa9eb9c906efcea4
+  FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
+
+PODFILE CHECKSUM: 54d867c82ac51cbd61b565781b9fada492027009
+
+COCOAPODS: 1.16.2

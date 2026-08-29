@@ -28,6 +28,9 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmController = TextEditingController();
+  final FocusNode _emailFocusNode = FocusNode();
+  final FocusNode _passwordFocusNode = FocusNode();
+  final FocusNode _confirmFocusNode = FocusNode();
   bool _submitting = false;
   bool _isSignUp = false;
   bool _waitingForDiscord = false;
@@ -46,6 +49,9 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
     _emailController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
+    _emailFocusNode.dispose();
+    _passwordFocusNode.dispose();
+    _confirmFocusNode.dispose();
     super.dispose();
   }
 
@@ -158,53 +164,41 @@ class _AuthDialogState extends ConsumerState<AuthDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            MergeSemantics(
-              child: Semantics(
-                key: const ValueKey('auth-email-field'),
-                label: 'Email',
-                child: CustomTextField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  autofillHints: const [AutofillHints.email],
-                  hintText: 'Email',
-                  textInputAction: TextInputAction.next,
-                  hasError: _errorField == _AuthField.email,
-                ),
-              ),
+            CustomTextField(
+              key: const ValueKey('auth-email-field'),
+              controller: _emailController,
+              focusNode: _emailFocusNode,
+              keyboardType: TextInputType.emailAddress,
+              autofillHints: const [AutofillHints.email],
+              hintText: 'Email',
+              textInputAction: TextInputAction.next,
+              hasError: _errorField == _AuthField.email,
             ),
             const SizedBox(height: 10),
-            MergeSemantics(
-              child: Semantics(
-                key: const ValueKey('auth-password-field'),
-                label: 'Password',
-                child: CustomTextField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  autofillHints: const [AutofillHints.password],
-                  hintText: 'Password',
-                  textInputAction:
-                      _isSignUp ? TextInputAction.next : TextInputAction.done,
-                  onSubmitted: _isSignUp ? null : (_) => _submit(),
-                  hasError: _errorField == _AuthField.password,
-                ),
-              ),
+            CustomTextField(
+              key: const ValueKey('auth-password-field'),
+              controller: _passwordController,
+              focusNode: _passwordFocusNode,
+              obscureText: true,
+              autofillHints: const [AutofillHints.password],
+              hintText: 'Password',
+              textInputAction:
+                  _isSignUp ? TextInputAction.next : TextInputAction.done,
+              onSubmitted: _isSignUp ? null : (_) => _submit(),
+              hasError: _errorField == _AuthField.password,
             ),
             if (_isSignUp) ...[
               const SizedBox(height: 10),
-              MergeSemantics(
-                child: Semantics(
-                  key: const ValueKey('auth-confirm-password-field'),
-                  label: 'Confirm password',
-                  child: CustomTextField(
-                    controller: _confirmController,
-                    obscureText: true,
-                    autofillHints: const [AutofillHints.password],
-                    hintText: 'Confirm password',
-                    textInputAction: TextInputAction.done,
-                    onSubmitted: (_) => _submit(),
-                    hasError: _errorField == _AuthField.confirm,
-                  ),
-                ),
+              CustomTextField(
+                key: const ValueKey('auth-confirm-password-field'),
+                controller: _confirmController,
+                focusNode: _confirmFocusNode,
+                obscureText: true,
+                autofillHints: const [AutofillHints.password],
+                hintText: 'Confirm password',
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _submit(),
+                hasError: _errorField == _AuthField.confirm,
               ),
             ],
             const SizedBox(height: 12),

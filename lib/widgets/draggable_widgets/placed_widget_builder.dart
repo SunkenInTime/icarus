@@ -926,7 +926,20 @@ class _LineUpAgents extends ConsumerWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        for (final group in groups) LineUpGroupAgentWidget(group: group),
+        for (final group in groups)
+          LineUpGroupAgentWidget(
+            group: group,
+            onDragEnd: (details) {
+              final renderBox = context.findRenderObject() as RenderBox;
+              final localOffset = renderBox.globalToLocal(details.offset);
+              final position =
+                  CoordinateSystem.instance.screenToCoordinate(localOffset);
+              ref.read(lineUpProvider.notifier).updateGroupAgentPosition(
+                    groupId: group.id,
+                    position: position,
+                  );
+            },
+          ),
       ],
     );
   }
@@ -945,7 +958,21 @@ class _LineUpAbilities extends ConsumerWidget {
       children: [
         for (final group in groups)
           for (final item in group.items)
-            LineUpItemAbilityWidget(groupId: group.id, item: item),
+            LineUpItemAbilityWidget(
+              groupId: group.id,
+              item: item,
+              onDragEnd: (details) {
+                final renderBox = context.findRenderObject() as RenderBox;
+                final localOffset = renderBox.globalToLocal(details.offset);
+                final position =
+                    CoordinateSystem.instance.screenToCoordinate(localOffset);
+                ref.read(lineUpProvider.notifier).updateItemAbilityPosition(
+                      groupId: group.id,
+                      itemId: item.id,
+                      position: position,
+                    );
+              },
+            ),
       ],
     );
   }

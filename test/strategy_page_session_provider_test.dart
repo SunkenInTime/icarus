@@ -21,6 +21,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -152,11 +153,10 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   void reject(StrategyOp op) {
     final key = EntitySyncKey.forStrategyOp(op)!;
     final pending = PendingOp(op: op, clientId: 'test-client');
-    final ack = OpAck(
+    final ack = RejectedOpAck(
       opId: op.opId,
-      status: 'reject',
-      reason: 'revision_mismatch',
-      latestRevision: 2,
+      rejectionReason: OpRejectionReason.revisionMismatch,
+      current: const ElementCurrentSnapshot(revision: 2, value: {}),
     );
     state = state.copyWith(
       queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
@@ -265,7 +265,7 @@ RemoteLineup _lineup(String pageId, String id) {
             'ability': <Object?, Object?>{
               'id': 'ability-$id',
               'isDeleted': false,
-              'data': <Object?, Object?>{'type': 'sova', 'index': 2},
+              'data': <Object?, Object?>{'type': 'sova', 'index': 2.0},
               'position': <Object?, Object?>{'dx': 30, 'dy': 40},
               'isAlly': true,
               'rotation': 0,
@@ -338,6 +338,19 @@ Future<ProviderContainer> _cloudContainer({
   return container;
 }
 
+Future<ProviderContainer> _syncContainer({
+  required _FakeRemoteEditorNotifier remote,
+  required _FakeStrategyOpQueueNotifier queue,
+}) async {
+  final container = ProviderContainer(overrides: [
+    remoteEditorSnapshotProvider.overrideWith(() => remote),
+    strategyOpQueueProvider.overrideWith(() => queue),
+  ]);
+  addTearDown(container.dispose);
+  await container.read(remoteEditorSnapshotProvider.future);
+  return container;
+}
+
 Future<Box<StrategyData>> _openStrategyBox() async {
   final temp = await Directory.systemTemp.createTemp('icarus-page-session-');
   Hive.init(temp.path);
@@ -376,7 +389,7 @@ void main() {
     final op = container.read(strategyOpQueueProvider).pending.single.op;
     expect(op.entityType, StrategyOpEntityType.strategy);
     expect(op.expectedRevision, 17);
-    expect(op.toConvexJson()['expectedRevision'], 17);
+    expect(op.toConvexJson()['expectedStrategyRevision'], 17);
     expect(
       op.payload,
       containsPair('mapData', Maps.mapNames[MapValue.ascent]),
@@ -524,7 +537,7 @@ void main() {
       pages: [page],
       activePage: _pageSnapshot(page, elements: [element]),
     ));
-    final container = await _cloudContainer(
+    final container = await _syncContainer(
       remote: remote,
       queue: _FakeStrategyOpQueueNotifier(),
     );
@@ -532,7 +545,10 @@ void main() {
       PlacedText(id: element.publicId, position: const Offset(10, 20))
         ..text = 'restored locally',
     ]);
-    container.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
+    container.read(activePageLiveSyncProvider.notifier).markPageHydrated(
+          strategyPublicId: 'cloud-strategy',
+          pageId: page.publicId,
+        );
 
     final desired =
         container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
@@ -544,7 +560,7 @@ void main() {
     expect(op, isNotNull);
     expect(op!.kind, StrategyOpKind.add);
     expect(op.expectedRevision, 4);
-    expect(op.toConvexJson()['expectedRevision'], 4);
+    expect(op.toConvexJson()['expectedElementRevision'], 4);
   });
 
   test('active page update rehydrates without a strategy revision change',
@@ -621,6 +637,10 @@ void main() {
     expect(session.transitionState, PageTransitionState.idle);
     expect(container.read(transitionProvider).active, isFalse);
     expect(remote.selectedPageIds, [pageTwo.publicId, pageOne.publicId]);
+    expect(
+      container.read(activePageLiveSyncProvider).hydratedPageId,
+      pageOne.publicId,
+    );
   });
 
   test('remote hydration waits until an unchanged text draft is dismissed',
@@ -793,7 +813,7 @@ void main() {
       pages: [pageOne, pageTwo],
       activePage: _pageSnapshot(pageTwo, text: 'remote-two'),
     ));
-    final container = await _cloudContainer(
+    final container = await _syncContainer(
       remote: remote,
       queue: _FakeStrategyOpQueueNotifier(),
     );
@@ -845,6 +865,73 @@ void main() {
     expect(
       desired[EntitySyncKey.element(page.publicId, 'text-page-1')]?.kind,
       StrategyOpKind.patch,
+    );
+  });
+
+  test('unhydrated canvas cannot author a remote lineup deletion', () async {
+    final page = _page('page-1', 0);
+    final lineup = _lineup(page.publicId, 'lineup-1');
+    final container = await _syncContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, lineups: [lineup]),
+      )),
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    container.read(activePageLiveSyncProvider.notifier).setContext(
+          strategyPublicId: 'cloud-strategy',
+          activePageId: page.publicId,
+        );
+
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            );
+
+    expect(desired, isNull);
+  });
+
+  test('new remote lineup is not inferred as a local deletion', () async {
+    final page = _page('page-1', 0);
+    final before = _editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, text: 'remote'),
+    );
+    final remote = _FakeRemoteEditorNotifier(before);
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    container.read(strategySaveStateProvider.notifier).markDirty();
+    remote.setSnapshot(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(
+        page,
+        text: 'remote',
+        contentRevision: 2,
+        lineups: [_lineup(page.publicId, 'lineup-1')],
+      ),
+    ));
+
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            );
+
+    expect(desired, isNotNull);
+    expect(
+      desired![EntitySyncKey.lineup(page.publicId, 'lineup-1')],
+      isNull,
     );
   });
 

@@ -269,6 +269,13 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           await ref
               .read(remoteEditorSnapshotProvider.notifier)
               .setActivePage(previousPageId);
+          final strategyId = strategyState.strategyId;
+          if (strategyId != null && previousPageId != null) {
+            ref.read(activePageLiveSyncProvider.notifier).markPageHydrated(
+                  strategyPublicId: strategyId,
+                  pageId: previousPageId,
+                );
+          }
         } catch (_) {
           // Preserve the original switch failure; the live read can recover
           // independently without leaving the transition state stuck.
@@ -420,6 +427,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
           strategyPublicId: strategyId,
           activePageId: pageId,
         );
+    if (source == StrategySource.cloud) {
+      ref.read(activePageLiveSyncProvider.notifier).markPageUnhydrated(
+            strategyPublicId: strategyId,
+            pageId: pageId,
+          );
+    }
     final pageData =
         await _resolvePageSource(strategyId, source).loadPage(pageId);
     await _applyLoadedPageData(
@@ -458,6 +471,12 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         themeOverridePalette: themeOverridePalette,
         preserveHistory: preserveHistory,
       );
+      if (source == StrategySource.cloud) {
+        ref.read(activePageLiveSyncProvider.notifier).markPageHydrated(
+              strategyPublicId: strategyId,
+              pageId: pageData.pageId,
+            );
+      }
       _updateHydrationBookkeeping(
         pageData.pageId,
         hydrationKey: hydrationKey,

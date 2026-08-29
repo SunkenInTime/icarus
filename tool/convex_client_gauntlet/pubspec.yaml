@@ -1,0 +1,13 @@
+name: icarus_convex_client_gauntlet
+publish_to: none
+
+environment:
+  sdk: ">=3.11.0 <4.0.0"
+
+dependencies:
+  crypto: 3.0.7
+  dartvex: 0.2.0
+  dartvex_codegen: 0.2.0
+
+dev_dependencies:
+  test: 1.26.3

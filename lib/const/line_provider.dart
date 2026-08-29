@@ -374,6 +374,32 @@ class LineUpProvider extends Notifier<LineUpState> {
     updateGroup(group.copyWith(items: items));
   }
 
+  void updateGroupAgentPosition({
+    required String groupId,
+    required Offset position,
+  }) {
+    final group = getGroupById(groupId);
+    if (group == null) return;
+    updateGroup(
+      group.copyWith(agent: group.agent.copyWith(position: position)),
+    );
+  }
+
+  void updateItemAbilityPosition({
+    required String groupId,
+    required String itemId,
+    required Offset position,
+  }) {
+    final item = getItemById(groupId: groupId, itemId: itemId);
+    if (item == null) return;
+    updateItem(
+      groupId: groupId,
+      item: item.copyWith(
+        ability: item.ability.copyWith(position: position),
+      ),
+    );
+  }
+
   void deleteItem({
     required String groupId,
     required String itemId,

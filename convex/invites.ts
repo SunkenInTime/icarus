@@ -14,12 +14,41 @@ import {
   notFoundError,
   errorWithCode,
 } from "./lib/errors";
+import {
+  accessRoleValidator,
+  collaboratorRoleValidator,
+  okResultValidator,
+} from "./lib/publicValidators";
+
+const invitePreviewValidator = v.object({
+  token: v.string(),
+  strategyPublicId: v.string(),
+  inviteRole: collaboratorRoleValidator,
+  hasAccessAlready: v.boolean(),
+  revoked: v.boolean(),
+  expiresAt: v.union(v.number(), v.null()),
+  createdAt: v.number(),
+});
+
+const inviteSummaryValidator = v.object({
+  token: v.string(),
+  role: collaboratorRoleValidator,
+  createdAt: v.number(),
+  expiresAt: v.union(v.number(), v.null()),
+  revokedAt: v.union(v.number(), v.null()),
+  redeemed: v.boolean(),
+});
 
 export const get = query({
   args: {
     token: v.optional(v.string()),
     strategyPublicId: v.optional(v.string()),
   },
+  returns: v.union(
+    invitePreviewValidator,
+    v.array(inviteSummaryValidator),
+    v.null(),
+  ),
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
 
@@ -66,7 +95,7 @@ export const get = query({
           createdAt: invite.createdAt,
           expiresAt: invite.expiresAt ?? null,
           revokedAt: invite.revokedAt ?? null,
-          redeemedByUserId: invite.redeemedByUserId ?? null,
+          redeemed: invite.redeemedByUserId !== undefined,
         }));
     }
 
@@ -81,6 +110,7 @@ export const create = mutation({
     role: v.union(v.literal("editor"), v.literal("viewer")),
     expiresAt: v.optional(v.number()),
   },
+  returns: okResultValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { user, role } = await assertStrategyRole(ctx, strategy, "owner");
@@ -99,7 +129,7 @@ export const create = mutation({
       updatedAt: now,
     });
 
-    return { ok: true };
+    return { ok: true } as const;
   },
 });
 
@@ -107,6 +137,11 @@ export const redeem = mutation({
   args: {
     token: v.string(),
   },
+  returns: v.object({
+    ok: v.literal(true),
+    strategyPublicId: v.string(),
+    role: accessRoleValidator,
+  }),
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     const invite = await ctx.db
@@ -172,7 +207,7 @@ export const redeem = mutation({
       ok: true,
       strategyPublicId: strategy.publicId,
       role: strategy.ownerId === user._id ? "owner" : redeemedRole,
-    };
+    } as const;
   },
 });
 
@@ -181,6 +216,7 @@ export const revoke = mutation({
     strategyPublicId: v.string(),
     token: v.string(),
   },
+  returns: okResultValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { role } = await assertStrategyRole(ctx, strategy, "owner");
@@ -202,6 +238,6 @@ export const revoke = mutation({
       updatedAt: Date.now(),
     });
 
-    return { ok: true };
+    return { ok: true } as const;
   },
 });

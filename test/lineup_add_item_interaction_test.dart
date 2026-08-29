@@ -375,6 +375,56 @@ void main() {
     expect(resizedAbilityTopLeft.dy, closeTo(expectedAbilityTopLeft.dy, 0.001));
   });
 
+  testWidgets('persistent lineup markers remain draggable after completion',
+      (tester) async {
+    final container = _createContainer();
+    final group = _breachGroup();
+    container.read(lineUpProvider.notifier).addGroup(group);
+
+    CoordinateSystem(playAreaSize: const Size(900, 600));
+    await _pumpHarness(
+      tester,
+      container: container,
+      child: const SizedBox(
+        width: 900,
+        height: 600,
+        child: LineUpOverlay(),
+      ),
+    );
+
+    final abilityFinder =
+        find.byKey(const ValueKey('lineup-ability-drag-breach-item'));
+    final initialAbilityTopLeft = tester.getTopLeft(abilityFinder);
+    const abilityDelta = Offset(-55, 65);
+    await tester.drag(abilityFinder, abilityDelta);
+    await tester.pump();
+
+    var updated = container.read(lineUpProvider).groups.single;
+    final expectedAbilityPosition = CoordinateSystem.instance
+        .screenToCoordinate(initialAbilityTopLeft + abilityDelta);
+    expect(
+      updated.items.single.ability.position.dx,
+      closeTo(expectedAbilityPosition.dx, 0.001),
+    );
+    expect(
+      updated.items.single.ability.position.dy,
+      closeTo(expectedAbilityPosition.dy, 0.001),
+    );
+
+    final agentFinder =
+        find.byKey(const ValueKey('lineup-agent-drag-breach-group'));
+    final initialAgentTopLeft = tester.getTopLeft(agentFinder);
+    const agentDelta = Offset(70, 45);
+    await tester.drag(agentFinder, agentDelta);
+    await tester.pump();
+
+    updated = container.read(lineUpProvider).groups.single;
+    final expectedAgentPosition = CoordinateSystem.instance
+        .screenToCoordinate(initialAgentTopLeft + agentDelta);
+    expect(updated.agent.position.dx, closeTo(expectedAgentPosition.dx, 0.001));
+    expect(updated.agent.position.dy, closeTo(expectedAgentPosition.dy, 0.001));
+  });
+
   testWidgets('locked add-item mode rejects dragging a different agent',
       (tester) async {
     final container = _createContainer();

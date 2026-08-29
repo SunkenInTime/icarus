@@ -267,7 +267,7 @@ class RemoteEditorSnapshotNotifier
     required Object error,
     StackTrace? stackTrace,
   }) {
-    if (isConvexUnauthenticatedMessage(error.toString())) {
+    if (isConvexUnauthenticatedError(error)) {
       unawaited(ref.read(authProvider.notifier).reportConvexUnauthenticated(
             source: source,
             error: error,

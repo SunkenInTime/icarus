@@ -1,5 +1,5 @@
 import { mutation, type MutationCtx } from "./_generated/server";
-import { ConvexError, v } from "convex/values";
+import { ConvexError, v, type Infer } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertStrategyRole } from "./lib/auth";
 import {
@@ -7,7 +7,13 @@ import {
   getStrategyByPublicId,
   sortByNumberField,
 } from "./lib/entities";
-import { strategyOpValidator } from "./lib/opTypes";
+import {
+  applyBatchResultValidator,
+  currentOpSnapshotValidator,
+  operationResultValidator,
+  strategyOpValidator,
+  type StrategyOp as WireStrategyOp,
+} from "./lib/opTypes";
 import { assertSupportedCloudProtocol } from "./lib/cloudProtocol";
 import { valuesEqual } from "./lib/canonicalValues";
 import { errorWithCode, invalidPayloadError } from "./lib/errors";
@@ -30,7 +36,8 @@ type PagePayload = {
 };
 type StrategyOp = {
   opId: string;
-  kind: "add" | "move" | "patch" | "delete" | "reorder";
+  type: WireStrategyOp["type"];
+  kind: "add" | "patch" | "delete" | "reorder";
   entityType: "strategy" | "page" | "pageContent" | "element" | "lineup";
   entityPublicId?: string;
   pagePublicId?: string;
@@ -43,13 +50,178 @@ type TargetSnapshot = {
   payload: unknown;
 };
 type OperationResult = {
-  status: "ack" | "reject";
+  status: "ack" | "reject" | "failed";
   reason?: string;
   appliedRevision?: number;
   latestRevision?: number;
   latestPayload?: unknown;
+  code?: string;
+  rawCode?: string;
+  message?: string;
   eventPageId?: Id<"pages">;
 };
+
+type CurrentTarget = StrategyOp["entityType"];
+type PublicOperationResult = Infer<typeof operationResultValidator>;
+
+function normalizeOp(op: WireStrategyOp): StrategyOp {
+  switch (op.type) {
+    case "strategy.patch":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "patch",
+        entityType: "strategy",
+        payload: op.payload,
+        expectedRevision: op.expectedStrategyRevision,
+      };
+    case "page.add":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "add",
+        entityType: "page",
+        entityPublicId: op.pagePublicId,
+        pagePublicId: op.pagePublicId,
+        payload: op.payload,
+        sortIndex: op.sortIndex,
+        expectedRevision: op.expectedStrategyRevision,
+      };
+    case "page.patch":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "patch",
+        entityType: "page",
+        entityPublicId: op.pagePublicId,
+        pagePublicId: op.pagePublicId,
+        payload: op.payload,
+        expectedRevision: op.expectedPageRevision,
+      };
+    case "page.delete":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "delete",
+        entityType: "page",
+        entityPublicId: op.pagePublicId,
+        pagePublicId: op.pagePublicId,
+        expectedRevision: op.expectedStrategyRevision,
+      };
+    case "page.reorder":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "reorder",
+        entityType: "page",
+        entityPublicId: op.pagePublicId,
+        pagePublicId: op.pagePublicId,
+        sortIndex: op.sortIndex,
+        expectedRevision: op.expectedStrategyRevision,
+      };
+    case "pageContent.patch":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "patch",
+        entityType: "pageContent",
+        entityPublicId: op.pagePublicId,
+        pagePublicId: op.pagePublicId,
+        payload: { settings: op.settings },
+        expectedRevision: op.expectedPageContentRevision,
+      };
+    case "element.add":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "add",
+        entityType: "element",
+        entityPublicId: op.elementPublicId,
+        pagePublicId: op.pagePublicId,
+        payload: op.payload,
+        sortIndex: op.sortIndex,
+        expectedRevision: op.expectedElementRevision,
+      };
+    case "element.patch":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "patch",
+        entityType: "element",
+        entityPublicId: op.elementPublicId,
+        pagePublicId: op.pagePublicId,
+        payload: op.payload,
+        sortIndex: op.sortIndex,
+        expectedRevision: op.expectedElementRevision,
+      };
+    case "element.delete":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "delete",
+        entityType: "element",
+        entityPublicId: op.elementPublicId,
+        pagePublicId: op.pagePublicId,
+        expectedRevision: op.expectedElementRevision,
+      };
+    case "element.reorder":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "reorder",
+        entityType: "element",
+        entityPublicId: op.elementPublicId,
+        pagePublicId: op.pagePublicId,
+        sortIndex: op.sortIndex,
+        expectedRevision: op.expectedElementRevision,
+      };
+    case "lineup.add":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "add",
+        entityType: "lineup",
+        entityPublicId: op.lineupPublicId,
+        pagePublicId: op.pagePublicId,
+        payload: op.payload,
+        sortIndex: op.sortIndex,
+        expectedRevision: op.expectedLineupRevision,
+      };
+    case "lineup.patch":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "patch",
+        entityType: "lineup",
+        entityPublicId: op.lineupPublicId,
+        pagePublicId: op.pagePublicId,
+        payload: op.payload,
+        sortIndex: op.sortIndex,
+        expectedRevision: op.expectedLineupRevision,
+      };
+    case "lineup.delete":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "delete",
+        entityType: "lineup",
+        entityPublicId: op.lineupPublicId,
+        pagePublicId: op.pagePublicId,
+        expectedRevision: op.expectedLineupRevision,
+      };
+    case "lineup.reorder":
+      return {
+        opId: op.opId,
+        type: op.type,
+        kind: "reorder",
+        entityType: "lineup",
+        entityPublicId: op.lineupPublicId,
+        pagePublicId: op.pagePublicId,
+        sortIndex: op.sortIndex,
+        expectedRevision: op.expectedLineupRevision,
+      };
+  }
+}
 
 function isRecord(payload: unknown): payload is Record<string, unknown> {
   return (
@@ -304,6 +476,82 @@ function noop(revision?: number, eventPageId?: Id<"pages">): OperationResult {
   };
 }
 
+function currentTargetForOp(op: StrategyOp): CurrentTarget {
+  if (
+    op.entityType === "page" &&
+    (op.kind === "add" || op.kind === "delete" || op.kind === "reorder")
+  ) {
+    return "strategy";
+  }
+  return op.entityType;
+}
+
+function isRejectionReason(
+  reason: string,
+): reason is Extract<PublicOperationResult, { status: "rejected" }>["reason"] {
+  return (
+    reason === "already_exists" ||
+    reason === "element_strategy_mismatch" ||
+    reason === "lineup_strategy_mismatch" ||
+    reason === "missing_expected_revision" ||
+    reason === "not_found" ||
+    reason === "page_strategy_mismatch" ||
+    reason === "revision_mismatch"
+  );
+}
+
+function toPublicResult(
+  op: StrategyOp,
+  result: OperationResult,
+): PublicOperationResult {
+  if (result.status === "failed") {
+    return {
+      opId: op.opId,
+      status: "failed",
+      code: result.code ?? "INTERNAL_ERROR",
+      rawCode: result.rawCode ?? "INTERNAL_ERROR",
+      message: result.message ?? "Unexpected Convex function failure",
+    };
+  }
+  if (result.status === "ack" && result.reason === "noop") {
+    return {
+      opId: op.opId,
+      status: "noop",
+      ...(result.appliedRevision === undefined
+        ? {}
+        : { currentRevision: result.appliedRevision }),
+    };
+  }
+  if (result.status === "ack") {
+    if (result.appliedRevision === undefined) {
+      throw new Error(`Applied op ${op.opId} did not return a revision`);
+    }
+    return {
+      opId: op.opId,
+      status: "applied",
+      appliedRevision: result.appliedRevision,
+    };
+  }
+  const reason = result.reason ?? "not_found";
+  if (!isRejectionReason(reason)) {
+    throw new Error(`Unknown op rejection reason: ${reason}`);
+  }
+  return {
+    opId: op.opId,
+    status: "rejected",
+    reason,
+    ...(result.latestRevision === undefined || result.latestPayload === undefined
+      ? {}
+      : {
+          current: {
+            type: currentTargetForOp(op),
+            revision: result.latestRevision,
+            value: result.latestPayload,
+          } as Infer<typeof currentOpSnapshotValidator>,
+        }),
+  };
+}
+
 async function applyStrategyOp(
   ctx: MutationCtx,
   strategy: Doc<"strategies">,
@@ -414,7 +662,7 @@ async function applyPageOp(
         strategy,
         result: rejected(
           "already_exists",
-          { revision: strategy.revision, payload: pagePayload(existing) },
+          { revision: strategy.revision, payload: strategyPayload(strategy) },
           existing._id,
         ),
       };
@@ -799,7 +1047,7 @@ async function applyElementOp(
   }
   const patch: Record<string, unknown> = {};
   let eventPageId = existing.pageId;
-  if (op.kind === "patch" || op.kind === "move") {
+  if (op.kind === "patch") {
     if (op.payload !== undefined) {
       const payload = assertElementPayload(op.payload);
       if (payload.kind !== existing.elementType) {
@@ -967,7 +1215,7 @@ async function applyLineupOp(
   }
   const patch: Record<string, unknown> = {};
   let eventPageId = existing.pageId;
-  if (op.kind === "patch" || op.kind === "move") {
+  if (op.kind === "patch") {
     if (op.payload !== undefined) {
       const payload = assertLineupPayload(op.payload);
       setIfChanged(patch, "payload", existing.payload, payload);
@@ -1027,17 +1275,18 @@ export const applyBatch = mutation({
     clientProtocolVersion: v.number(),
     ops: v.array(strategyOpValidator),
   },
+  returns: applyBatchResultValidator,
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     let strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
-    const results: Array<Record<string, unknown>> = [];
+    const results: PublicOperationResult[] = [];
 
     // Outcomes are per operation: accepted changes and visible rejections are
     // committed together by this single Convex transaction. One stale op must
     // not erase an independent op that the server already accepted.
     for (const rawOp of args.ops) {
-      const op = rawOp as StrategyOp;
+      const op = normalizeOp(rawOp);
       const existingEvent = await ctx.db
         .query("operationEvents")
         .withIndex("by_strategyId_clientId_opId", (q) =>
@@ -1049,15 +1298,23 @@ export const applyBatch = mutation({
         .first();
       if (existingEvent !== null) {
         const latest = await getTargetSnapshot(ctx, strategy, op);
-        results.push({
-          opId: op.opId,
-          status: existingEvent.status,
-          reason: existingEvent.reason ?? null,
-          appliedRevision: existingEvent.appliedRevision ?? null,
-          expectedRevision: existingEvent.expectedRevision ?? null,
-          latestRevision: latest?.revision ?? null,
-          latestPayload: latest?.payload ?? null,
-        });
+        const replayResult: OperationResult =
+          existingEvent.status === "failed"
+            ? {
+                status: "failed",
+                code: existingEvent.code,
+                rawCode: existingEvent.rawCode,
+                message: existingEvent.message,
+              }
+            : existingEvent.status === "rejected"
+              ? {
+                  status: "reject",
+                  reason: existingEvent.reason,
+                  latestRevision: latest?.revision,
+                  latestPayload: latest?.payload,
+                }
+              : noop(latest?.revision);
+        results.push(toPublicResult(op, replayResult));
         continue;
       }
 
@@ -1080,35 +1337,48 @@ export const applyBatch = mutation({
         }
       } catch (error) {
         if (!(error instanceof ConvexError)) throw error;
-        const code =
+        const rawCode =
           typeof error.data?.code === "string"
-            ? error.data.code.toLowerCase()
-            : "internal_error";
-        const latest = await getTargetSnapshot(ctx, strategy, op);
-        result = rejected(code, latest);
+            ? error.data.code
+            : "INTERNAL_ERROR";
+        const message =
+          typeof error.data?.message === "string"
+            ? error.data.message
+            : error.message;
+        result = {
+          status: "failed",
+          code: rawCode,
+          rawCode,
+          message,
+        };
       }
+
+      const publicResult = toPublicResult(op, result);
 
       await ctx.db.insert("operationEvents", {
         strategyId: strategy._id,
         pageId: result.eventPageId,
         clientId: args.clientId,
         opId: op.opId,
-        opType: `${op.entityType}.${op.kind}`,
-        status: result.status,
-        reason: result.reason,
+        opType: op.type,
+        status: publicResult.status,
+        reason:
+          publicResult.status === "rejected" ? publicResult.reason : undefined,
+        code: publicResult.status === "failed" ? publicResult.code : undefined,
+        rawCode:
+          publicResult.status === "failed" ? publicResult.rawCode : undefined,
+        message:
+          publicResult.status === "failed" ? publicResult.message : undefined,
         expectedRevision: op.expectedRevision,
-        appliedRevision: result.appliedRevision,
+        appliedRevision:
+          publicResult.status === "applied"
+            ? publicResult.appliedRevision
+            : publicResult.status === "noop"
+              ? publicResult.currentRevision
+              : undefined,
         createdAt: Date.now(),
       });
-      results.push({
-        opId: op.opId,
-        status: result.status,
-        reason: result.reason ?? null,
-        appliedRevision: result.appliedRevision ?? null,
-        expectedRevision: op.expectedRevision ?? null,
-        latestRevision: result.latestRevision ?? null,
-        latestPayload: result.latestPayload ?? null,
-      });
+      results.push(publicResult);
     }
 
     return { strategyPublicId: strategy.publicId, results };

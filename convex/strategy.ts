@@ -16,6 +16,10 @@ import {
   serializeStrategyHeader,
 } from "./lib/snapshotSerialization";
 import { internalError } from "./lib/errors";
+import {
+  fullStrategySnapshotValidator,
+  strategyShellValidator,
+} from "./lib/publicValidators";
 
 async function getPageContent(
   ctx: QueryCtx,
@@ -35,6 +39,7 @@ export const getShell = query({
   args: {
     strategyPublicId: v.string(),
   },
+  returns: strategyShellValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { role } = await assertStrategyRole(ctx, strategy, "viewer");
@@ -56,6 +61,7 @@ export const getFullSnapshot = query({
   args: {
     strategyPublicId: v.string(),
   },
+  returns: fullStrategySnapshotValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     const { role } = await assertStrategyRole(ctx, strategy, "viewer");

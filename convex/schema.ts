@@ -154,6 +154,7 @@ export default defineSchema({
     .index("by_strategyId", ["strategyId"]),
   imageAssets: defineTable({
     publicId: v.string(),
+    uploadAttemptPublicId: v.optional(v.string()),
     provider: v.optional(v.union(v.literal("convex"), v.literal("r2"))),
     strategyId: v.optional(v.id("strategies")),
     createdByUserId: v.optional(v.id("users")),
@@ -181,6 +182,7 @@ export default defineSchema({
     storagePath: v.optional(v.string()),
   })
     .index("by_publicId", ["publicId"])
+    .index("by_uploadAttemptPublicId", ["uploadAttemptPublicId"])
     .index("by_strategyId", ["strategyId"])
     .index("by_strategyId_and_uploadStatus_and_updatedAt", [
       "strategyId",
@@ -201,8 +203,16 @@ export default defineSchema({
     clientId: v.string(),
     opId: v.string(),
     opType: v.string(),
-    status: v.union(v.literal("ack"), v.literal("reject")),
+    status: v.union(
+      v.literal("applied"),
+      v.literal("noop"),
+      v.literal("rejected"),
+      v.literal("failed"),
+    ),
     reason: v.optional(v.string()),
+    code: v.optional(v.string()),
+    rawCode: v.optional(v.string()),
+    message: v.optional(v.string()),
     expectedRevision: v.optional(v.number()),
     appliedRevision: v.optional(v.number()),
     createdAt: v.number(),

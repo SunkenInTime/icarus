@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
@@ -311,7 +312,11 @@ void main() {
 
   test('real unauthenticated error still creates auth incident', () async {
     supabaseApi.currentSession = fakeSession();
-    convexApi.mutationError = Exception('{"code":"UNAUTHENTICATED"}');
+    convexApi.mutationError = const ConvexClientFunctionError(
+      rawCode: 'UNAUTHENTICATED',
+      message: 'Authentication required',
+      data: null,
+    );
     final container = ProviderContainer();
     addTearDown(container.dispose);
 
@@ -467,16 +472,12 @@ class FakeConvexApi implements AuthProviderConvexApi {
   }
 
   @override
-  Future<String> mutation({
-    required String name,
-    required Map<String, dynamic> args,
-  }) async {
+  Future<void> ensureCurrentUser() async {
     mutationCalls += 1;
-    lastMutationName = name;
+    lastMutationName = 'users:ensureCurrentUser';
     if (mutationError case final Object error?) {
       throw error;
     }
-    return '{}';
   }
 
   @override

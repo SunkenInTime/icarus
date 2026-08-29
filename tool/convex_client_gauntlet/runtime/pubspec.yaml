@@ -1,0 +1,24 @@
+name: icarus_convex_runtime_gauntlet
+description: Isolated symmetric runtime comparison for Icarus Convex clients.
+publish_to: none
+version: 0.0.0
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  convex_flutter:
+    path: ../../../third_party/convex_flutter
+  crypto: 3.0.7
+  dartvex: 0.2.0
+  # convex_flutter's generated Rust bridge is pinned to this runtime version.
+  flutter_rust_bridge: 2.11.1
+  http: 1.6.0
+  supabase: 2.10.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  lints: 6.0.0

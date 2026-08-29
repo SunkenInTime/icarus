@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
@@ -42,25 +42,19 @@ class StrategyTileViewData {
     );
   }
 
-  factory StrategyTileViewData.fromCloudSummary(CloudStrategySummary strategy) {
-    MapValue? mapValue;
-    for (final entry in Maps.mapNames.entries) {
-      if (entry.value == strategy.mapData) {
-        mapValue = entry.key;
-        break;
-      }
-    }
-    final attackLabel = strategy.attackLabel ?? 'Unknown';
+  factory StrategyTileViewData.fromCloudEntry(CloudStrategyEntry entry) {
+    final strategy = entry.strategy;
+    final attackLabel = entry.attackLabel;
     return StrategyTileViewData(
       name: strategy.name,
-      mapName: _mapName(mapValue),
+      mapName: _mapName(strategy.mapData),
       attackLabel: attackLabel,
       attackColor: _attackColor(attackLabel),
       thumbnailAsset:
-          'assets/maps/thumbnails/${strategy.mapData}_thumbnail.webp',
-      lastEditedLabel: _timeAgo(strategy.updatedAt),
+          'assets/maps/thumbnails/${Maps.mapNames[strategy.mapData]}_thumbnail.webp',
+      lastEditedLabel: _timeAgo(strategy.lastEdited),
       agentTypes: const [],
-      cloudBadge: cloudBadgeKindForRole(strategy.role),
+      cloudBadge: cloudBadgeKindForRole(entry.role),
     );
   }
 

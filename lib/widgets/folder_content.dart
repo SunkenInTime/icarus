@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
-import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
@@ -121,7 +121,7 @@ class FolderContent extends ConsumerWidget {
       );
     }
     final folders = (foldersAsync.valueOrNull ?? const [])
-        .map(FolderProvider.cloudSummaryToFolder)
+        .map((entry) => entry.folder)
         .toList(growable: false);
     final strategies = strategiesAsync.valueOrNull ?? const [];
     final isSharedWithMe = cloudSection == CloudLibrarySection.sharedWithMe;
@@ -200,24 +200,27 @@ class FolderContent extends ConsumerWidget {
     return filtered;
   }
 
-  List<CloudStrategySummary> _filterCloudStrategies(
+  List<CloudStrategyEntry> _filterCloudStrategies(
     WidgetRef ref,
-    List<CloudStrategySummary> strategies,
+    List<CloudStrategyEntry> strategies,
   ) {
     final search = ref.watch(strategySearchQueryProvider).trim().toLowerCase();
     final filter = ref.watch(strategyFilterProvider);
     final filtered = [...strategies];
     if (search.isNotEmpty) {
       filtered.retainWhere(
-        (strategy) => strategy.name.toLowerCase().contains(search),
+        (entry) => entry.strategy.name.toLowerCase().contains(search),
       );
     }
 
-    Comparator<CloudStrategySummary> comparator = switch (filter.sortBy) {
-      SortBy.alphabetical => (a, b) =>
-          a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-      SortBy.dateCreated => (a, b) => a.createdAt.compareTo(b.createdAt),
-      SortBy.dateUpdated => (a, b) => a.updatedAt.compareTo(b.updatedAt),
+    Comparator<CloudStrategyEntry> comparator = switch (filter.sortBy) {
+      SortBy.alphabetical => (a, b) => a.strategy.name
+          .toLowerCase()
+          .compareTo(b.strategy.name.toLowerCase()),
+      SortBy.dateCreated => (a, b) =>
+          a.strategy.createdAt.compareTo(b.strategy.createdAt),
+      SortBy.dateUpdated => (a, b) =>
+          a.strategy.lastEdited.compareTo(b.strategy.lastEdited),
     };
 
     final direction = filter.sortOrder == SortOrder.ascending ? 1 : -1;
@@ -230,7 +233,7 @@ class FolderContent extends ConsumerWidget {
     WidgetRef ref, {
     required List<Folder> folders,
     required List<StrategyData> localStrategies,
-    required List<CloudStrategySummary> cloudStrategies,
+    required List<CloudStrategyEntry> cloudStrategies,
     required bool isCloud,
     Key? emptyStateKey,
     IconData? emptyStateIcon,

@@ -4,6 +4,7 @@ import 'dart:ui' show PlatformDispatcher;
 
 import 'package:app_links/app_links.dart';
 import 'package:icarus/collab/convex_client.dart';
+import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -140,6 +141,7 @@ Future<void> main(List<String> args) async {
       await Hive.openBox<AppPreferences>(HiveBoxNames.appPreferencesBox);
       await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
       await Hive.openBox<dynamic>(HiveBoxNames.strategyOutboxBox);
+      await prepareDurableStrategyOutbox();
 
       await MapThemeProfilesProvider.bootstrap();
 
@@ -150,7 +152,7 @@ Future<void> main(List<String> args) async {
           deploymentUrl: 'https://majestic-eel-413.convex.cloud',
           clientId: 'dev:majestic-eel-413',
           operationTimeout: Duration(seconds: 30),
-          healthCheckQuery: 'health:ping',
+          healthCheckQuery: defaultConvexHealthCheckQuery,
         ),
       );
 

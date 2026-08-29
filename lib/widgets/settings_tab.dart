@@ -7,6 +7,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
+import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
@@ -1181,12 +1182,11 @@ class _SignedInAccountRow extends ConsumerWidget {
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         children: [
-          CircleAvatar(
+          AccountAvatar(
             radius: 16,
             backgroundColor: theme.muted,
-            foregroundImage:
-                avatarUrl != null ? NetworkImage(avatarUrl) : null,
-            child: Text(
+            avatarUrl: avatarUrl,
+            fallback: Text(
               authState.displayName.characters.first.toUpperCase(),
               style: TextStyle(
                 fontSize: 13,

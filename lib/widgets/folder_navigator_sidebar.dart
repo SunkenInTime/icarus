@@ -55,7 +55,7 @@ class FolderNavigatorSidebar extends ConsumerWidget {
     if (isCloud) {
       final cloudFolders =
           (ref.watch(cloudAllFoldersProvider).valueOrNull ?? const [])
-              .map(FolderProvider.cloudSummaryToFolder)
+              .map((entry) => entry.folder)
               .toList(growable: false);
       return _SidebarShell(
         folders: cloudFolders,
@@ -530,8 +530,7 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
     final selected = widget.selectedFolderId == folder.id;
     final hasChildren = widget.node.children.isNotEmpty;
     final showChildren = hasChildren && (_expanded || widget.forceExpanded);
-    final showMenuButton =
-        _hovered || selected || _menuButtonController.isOpen;
+    final showMenuButton = _hovered || selected || _menuButtonController.isOpen;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -661,8 +660,8 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
     final allFolders =
         ref.read(cloudAllFoldersProvider).valueOrNull ?? const [];
     final cloudRole = allFolders
-        .where((item) => item.publicId == folder.id)
-        .map((item) => item.role)
+        .where((entry) => entry.folder.id == folder.id)
+        .map((entry) => entry.role)
         .firstOrNull;
     final canManage = !isCloud || cloudRole == 'owner';
 

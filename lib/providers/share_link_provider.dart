@@ -65,12 +65,11 @@ class ShareLinkController extends Notifier<String?> {
           .select(CloudLibrarySection.sharedWithMe);
       ref.read(folderProvider.notifier).updateWorkspaceFolderId(
             LibraryWorkspace.cloud,
-            response['folderPublicId'] as String?,
+            response.folderPublicId,
           );
 
-      final targetType = response['targetType'] as String? ?? 'item';
       Settings.showToast(
-        message: targetType == 'folder'
+        message: response.targetType == 'folder'
             ? 'Shared folder added to your library.'
             : 'Shared strategy added to your library.',
         backgroundColor: Settings.tacticalVioletTheme.primary,

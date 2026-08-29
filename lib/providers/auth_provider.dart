@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer';
 
 import 'package:icarus/collab/convex_client.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/app_navigator.dart';
@@ -20,8 +21,6 @@ enum ConvexAuthStatus {
   incident,
 }
 
-final RegExp _convexCodeRegex = RegExp(r'"code"\s*:\s*"([A-Z_]+)"');
-
 const _sensitiveAuthKeys = {
   'access_token',
   'refresh_token',
@@ -31,34 +30,8 @@ const _sensitiveAuthKeys = {
   'code_verifier',
 };
 
-String? _extractConvexErrorCodeFromText(String text) {
-  final match = _convexCodeRegex.firstMatch(text);
-  final code = match?.group(1);
-  if (code == null || code.isEmpty) {
-    return null;
-  }
-  return code;
-}
-
-bool isConvexUnauthenticatedMessage(String message) {
-  final normalized = message.toUpperCase();
-  final code = _extractConvexErrorCodeFromText(normalized);
-  if (code == 'UNAUTHENTICATED') {
-    return true;
-  }
-
-  return normalized.contains('UNAUTHENTICATED');
-}
-
 bool isConvexUnauthenticatedError(Object error) {
-  if (error is Map) {
-    final code = error['code']?.toString().toUpperCase();
-    if (code == 'UNAUTHENTICATED') {
-      return true;
-    }
-  }
-
-  return isConvexUnauthenticatedMessage(error.toString());
+  return isTypedConvexUnauthenticatedError(error);
 }
 
 String redactAuthUri(Uri uri) {
@@ -257,10 +230,7 @@ abstract class AuthProviderConvexApi {
   String? get currentConnectionStateLabel;
   Future<void> clearAuth();
   Future<bool> reconnect();
-  Future<String> mutation({
-    required String name,
-    required Map<String, dynamic> args,
-  });
+  Future<void> ensureCurrentUser();
 }
 
 abstract class AuthProviderSupabaseApi {
@@ -332,11 +302,9 @@ class _DefaultAuthProviderConvexApi implements AuthProviderConvexApi {
   Future<bool> reconnect() => _client.reconnect();
 
   @override
-  Future<String> mutation({
-    required String name,
-    required Map<String, dynamic> args,
-  }) =>
-      _client.mutation(name: name, args: args);
+  Future<void> ensureCurrentUser() async {
+    await ConvexStrategyRepository.fromClient(_client).ensureCurrentUser();
+  }
 }
 
 class _DefaultAuthProviderSupabaseApi implements AuthProviderSupabaseApi {
@@ -1139,7 +1107,7 @@ class AuthProvider extends Notifier<AppAuthState> {
         'Convex auth ready [$trigger] via $readinessSource',
         name: 'auth',
       );
-      await _convexApi.mutation(name: 'users:ensureCurrentUser', args: {});
+      await _convexApi.ensureCurrentUser();
       if (!_isAuthContextCurrent(
         generation: generation,
         sessionFingerprint: sessionFingerprint,

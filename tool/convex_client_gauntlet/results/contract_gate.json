@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 2,
+  "evaluation": "convex_dart_client_contract_gate",
+  "baseCommit": "e59402eedee9035cf14693fbd26fe8b097d6abfa",
+  "adapterCandidate": "dartvex",
+  "sdkVersion": "0.2.0",
+  "codegenVersion": "0.2.0",
+  "platform": "macos-arm64",
+  "dartVersion": "3.11.0 (stable) (Mon Feb 9 00:38:07 2026 -0800) on \"macos_arm64\"",
+  "fixture": "folders:listForParent",
+  "baselineCompiles": true,
+  "baselineAnalysisExitCode": 0,
+  "baselineAnalysisDiagnostics": [
+    "Analyzing _probe_caller.dart, _probe_generated...\nNo issues found!"
+  ],
+  "checks": [
+    {
+      "id": "function_rename",
+      "required": "old_generated_method_fails_analysis",
+      "status": "pass",
+      "generationExitCode": 0,
+      "rawGenerationExitCode": 0,
+      "analysisExitCode": 3
+    },
+    {
+      "id": "argument_rename",
+      "required": "old_named_argument_fails_analysis",
+      "status": "pass",
+      "generationExitCode": 0,
+      "rawGenerationExitCode": 0,
+      "analysisExitCode": 3
+    },
+    {
+      "id": "result_field_rename",
+      "required": "old_result_field_fails_analysis",
+      "status": "pass",
+      "generationExitCode": 0,
+      "rawGenerationExitCode": 0,
+      "analysisExitCode": 3,
+      "generatedReturnType": "typed",
+      "detail": "The explicit return is typed and the renamed result rejects the unchanged caller."
+    },
+    {
+      "id": "missing_return_schema",
+      "required": "strict_generation_rejects_public_dynamic_result",
+      "status": "pass",
+      "generationExitCode": 2,
+      "rawGenerationExitCode": 0,
+      "diagnostics": [
+        "modules/folders.dart: public method listForParent has an unexpected dynamic result."
+      ]
+    },
+    {
+      "id": "unsupported_validator",
+      "required": "generation_stops_with_function_and_field_path",
+      "status": "pass",
+      "generationExitCode": 2,
+      "rawGenerationExitCode": 0,
+      "generatedFieldType": "dynamic",
+      "diagnostics": [
+        "Warning: folders.js:listForParent → returns → field \"futureField\": Unknown Convex type \"future-validator\"; generated as dynamic."
+      ]
+    },
+    {
+      "id": "deterministic_regeneration",
+      "required": "second_generation_has_no_diff",
+      "status": "pass",
+      "firstSha256": "ea6a3655ead9e0250282424593fa1be36907c55d7de8386bb5503d80b985bc36",
+      "secondSha256": "ea6a3655ead9e0250282424593fa1be36907c55d7de8386bb5503d80b985bc36",
+      "changedFiles": []
+    }
+  ],
+  "gatePassed": true,
+  "decision": "continue_runtime_gauntlet",
+  "runtimeGauntlet": {
+    "status": "pending",
+    "reason": null,
+    "correctnessSeedsRun": 0,
+    "operationsRun": 0,
+    "pairedProfileRuns": 0,
+    "p95RemoteConvergenceMs": null,
+    "peakMemoryBytes": null
+  }
+}

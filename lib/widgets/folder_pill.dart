@@ -74,8 +74,8 @@ class _FolderPillState extends ConsumerState<FolderPill>
     final allFolders =
         ref.read(cloudAllFoldersProvider).valueOrNull ?? const [];
     return allFolders
-        .where((folder) => folder.publicId == widget.folder.id)
-        .map((folder) => folder.role)
+        .where((entry) => entry.folder.id == widget.folder.id)
+        .map((entry) => entry.role)
         .firstOrNull;
   }
 

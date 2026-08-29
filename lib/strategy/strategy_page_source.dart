@@ -266,8 +266,13 @@ class CloudStrategyPageSource implements StrategyPageSource {
         parsedLineUpGroups.add(LineUpGroup.fromJson(
           cloudPayloadData(lineup.payload),
         ));
-      } catch (_) {
-        // Ignore malformed payloads during hydration.
+      } catch (error, stackTrace) {
+        Error.throwWithStackTrace(
+          FormatException(
+            'Cloud lineup ${lineup.publicId} could not be hydrated: $error',
+          ),
+          stackTrace,
+        );
       }
     }
 
@@ -370,12 +375,10 @@ class CloudStrategyPageSource implements StrategyPageSource {
 
     await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
           entityKey: const EntitySyncKey.strategy(),
-          desiredOp: StrategyOp(
+          desiredOp: StrategyPatchOp(
             opId: const Uuid().v4(),
-            kind: StrategyOpKind.patch,
-            entityType: StrategyOpEntityType.strategy,
             payload: payload,
-            expectedRevision: header.revision,
+            expectedStrategyRevision: header.revision,
           ),
           flushImmediately: false,
         );
@@ -439,8 +442,13 @@ class CloudStrategyPageSource implements StrategyPageSource {
         parsedLineUpGroups.add(LineUpGroup.fromJson(
           cloudPayloadData(lineup.payload),
         ));
-      } catch (_) {
-        // Ignore malformed payloads during hydration.
+      } catch (error, stackTrace) {
+        Error.throwWithStackTrace(
+          FormatException(
+            'Cloud lineup ${lineup.publicId} could not be hydrated: $error',
+          ),
+          stackTrace,
+        );
       }
     }
 

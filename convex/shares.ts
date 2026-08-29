@@ -14,6 +14,10 @@ import {
   errorWithCode,
   conflictError,
 } from "./lib/errors";
+import {
+  accessRoleValidator,
+  okResultValidator,
+} from "./lib/publicValidators";
 
 const targetTypeValidator = v.union(v.literal("strategy"), v.literal("folder"));
 const collaboratorRoleValidator = v.union(v.literal("viewer"), v.literal("editor"));
@@ -38,6 +42,14 @@ export const list = query({
     targetType: targetTypeValidator,
     targetPublicId: v.string(),
   },
+  returns: v.array(
+    v.object({
+      token: v.string(),
+      role: collaboratorRoleValidator,
+      createdAt: v.number(),
+      revokedAt: v.union(v.number(), v.null()),
+    }),
+  ),
   handler: async (ctx, args) => {
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
 
@@ -76,6 +88,7 @@ export const create = mutation({
     token: v.string(),
     role: collaboratorRoleValidator,
   },
+  returns: okResultValidator,
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
@@ -105,7 +118,7 @@ export const create = mutation({
       updatedAt: Date.now(),
     });
 
-    return { ok: true };
+    return { ok: true } as const;
   },
 });
 
@@ -115,6 +128,7 @@ export const revoke = mutation({
     targetPublicId: v.string(),
     token: v.string(),
   },
+  returns: okResultValidator,
   handler: async (ctx, args) => {
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
 
@@ -145,7 +159,7 @@ export const revoke = mutation({
       updatedAt: Date.now(),
     });
 
-    return { ok: true };
+    return { ok: true } as const;
   },
 });
 
@@ -153,6 +167,21 @@ export const redeem = mutation({
   args: {
     token: v.string(),
   },
+  returns: v.union(
+    v.object({
+      ok: v.literal(true),
+      targetType: v.literal("strategy"),
+      strategyPublicId: v.string(),
+      folderPublicId: v.union(v.string(), v.null()),
+      role: accessRoleValidator,
+    }),
+    v.object({
+      ok: v.literal(true),
+      targetType: v.literal("folder"),
+      folderPublicId: v.string(),
+      role: accessRoleValidator,
+    }),
+  ),
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     const link = await ctx.db
@@ -218,7 +247,7 @@ export const redeem = mutation({
         strategyPublicId: strategy.publicId,
         folderPublicId: folder?.publicId ?? null,
         role: strategy.ownerId === user._id ? "owner" : redeemedRole,
-      };
+      } as const;
     }
 
     const folder = link.folderId === undefined ? null : await ctx.db.get(link.folderId);
@@ -263,6 +292,6 @@ export const redeem = mutation({
       targetType: "folder",
       folderPublicId: folder.publicId,
       role: folder.ownerId === user._id ? "owner" : redeemedRole,
-    };
+    } as const;
   },
 });

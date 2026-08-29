@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -36,7 +36,7 @@ class StrategyTile extends ConsumerStatefulWidget {
   }) : strategyData = null;
 
   final StrategyData? strategyData;
-  final CloudStrategySummary? cloudStrategy;
+  final CloudStrategyEntry? cloudStrategy;
   final bool canRename;
   final bool canDuplicate;
   final bool canDelete;
@@ -58,19 +58,14 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   bool get _isCloud => widget.cloudStrategy != null;
   bool get _canShare => _isCloud && widget.cloudStrategy?.role == 'owner';
   String get _strategyId =>
-      widget.strategyData?.id ?? widget.cloudStrategy!.publicId;
+      widget.strategyData?.id ?? widget.cloudStrategy!.strategy.id;
   String get _strategyName =>
-      widget.strategyData?.name ?? widget.cloudStrategy!.name;
+      widget.strategyData?.name ?? widget.cloudStrategy!.strategy.name;
   MapValue? get _mapValue {
     final strategy = widget.strategyData;
     if (strategy != null) return strategy.mapData;
 
-    final mapData = widget.cloudStrategy?.mapData;
-    if (mapData == null) return null;
-    for (final entry in Maps.mapNames.entries) {
-      if (entry.value == mapData) return entry.key;
-    }
-    return null;
+    return widget.cloudStrategy?.strategy.mapData;
   }
 
   bool get _isAttack {
@@ -83,7 +78,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
 
   StrategyTileViewData get _viewData => widget.strategyData != null
       ? StrategyTileViewData.fromStrategy(widget.strategyData!)
-      : StrategyTileViewData.fromCloudSummary(widget.cloudStrategy!);
+      : StrategyTileViewData.fromCloudEntry(widget.cloudStrategy!);
 
   @override
   void dispose() {
@@ -151,13 +146,9 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                       child: ShadContextMenuRegion(
                         controller: _menuButtonController,
                         items: _buildMenuItems(),
-                        child: ShadIconButton.secondary(
-                          width: 28,
-                          height: 28,
-                          onPressed: () {
-                            _menuButtonController.toggle();
-                          },
-                          icon: const Icon(Icons.more_vert_outlined),
+                        child: StrategyTileActionsButton(
+                          strategyName: _strategyName,
+                          onPressed: _menuButtonController.toggle,
                         ),
                       ),
                     ),
@@ -171,41 +162,68 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     );
   }
 
-  List<ShadContextMenuItem> _buildMenuItems() {
+  List<Widget> _buildMenuItems() {
     return [
-      ShadContextMenuItem(
+      _buildMenuItem(
+        label: 'Rename',
         leading: const Icon(LucideIcons.pencil),
-        onPressed: widget.canRename ? () => _showRenameDialog() : null,
-        child: const Text('Rename'),
+        enabled: widget.canRename,
+        onPressed: _showRenameDialog,
       ),
-      ShadContextMenuItem(
+      _buildMenuItem(
+        label: 'Duplicate',
         leading: const Icon(LucideIcons.copy),
-        onPressed: widget.canDuplicate ? () => _duplicateStrategy() : null,
-        child: const Text('Duplicate'),
+        enabled: widget.canDuplicate,
+        onPressed: _duplicateStrategy,
       ),
-      ShadContextMenuItem(
+      _buildMenuItem(
+        label: 'Export',
         leading: const Icon(LucideIcons.upload),
-        onPressed: () => _exportStrategy(),
-        child: const Text('Export'),
+        onPressed: _exportStrategy,
       ),
       if (_canShare)
-        ShadContextMenuItem(
+        _buildMenuItem(
+          label: 'Share',
           leading: const Icon(LucideIcons.link2),
           onPressed: _showShareDialog,
-          child: const Text('Share'),
         ),
-      ShadContextMenuItem(
+      _buildMenuItem(
+        label: 'Delete',
         leading: Icon(
           LucideIcons.trash2,
           color: Settings.tacticalVioletTheme.destructive,
         ),
-        onPressed: widget.canDelete ? () => _showDeleteDialog() : null,
-        child: Text(
-          'Delete',
-          style: TextStyle(color: Settings.tacticalVioletTheme.destructive),
-        ),
+        enabled: widget.canDelete,
+        onPressed: _showDeleteDialog,
+        textStyle: TextStyle(color: Settings.tacticalVioletTheme.destructive),
       ),
     ];
+  }
+
+  Widget _buildMenuItem({
+    required String label,
+    required Widget leading,
+    required VoidCallback onPressed,
+    bool enabled = true,
+    TextStyle? textStyle,
+  }) {
+    void activate() {
+      _menuButtonController.hide();
+      _rightClickMenuController.hide();
+      onPressed();
+    }
+
+    return StrategyTileMenuActionSemantics(
+      label: '$label $_strategyName',
+      enabled: enabled,
+      onPressed: enabled ? activate : null,
+      child: ShadContextMenuItem(
+        leading: leading,
+        enabled: enabled,
+        onPressed: enabled ? activate : null,
+        child: Text(label, style: textStyle),
+      ),
+    );
   }
 
   Future<void> _openStrategy(BuildContext context) async {
@@ -290,6 +308,61 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         name: _strategyName,
         source: _isCloud ? StrategySource.cloud : StrategySource.local,
       ),
+    );
+  }
+}
+
+class StrategyTileActionsButton extends StatelessWidget {
+  const StrategyTileActionsButton({
+    super.key,
+    required this.strategyName,
+    required this.onPressed,
+  });
+
+  final String strategyName;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = 'More actions for $strategyName';
+    return Semantics(
+      label: label,
+      button: true,
+      onTap: onPressed,
+      excludeSemantics: true,
+      child: ShadIconButton.secondary(
+        width: 28,
+        height: 28,
+        onPressed: onPressed,
+        icon: const Icon(Icons.more_vert_outlined),
+      ),
+    );
+  }
+}
+
+class StrategyTileMenuActionSemantics extends StatelessWidget {
+  const StrategyTileMenuActionSemantics({
+    super.key,
+    required this.label,
+    required this.enabled,
+    required this.onPressed,
+    required this.child,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback? onPressed;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: label,
+      button: true,
+      enabled: enabled,
+      onTap: onPressed,
+      excludeSemantics: true,
+      child: child,
     );
   }
 }

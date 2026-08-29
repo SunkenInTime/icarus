@@ -1,0 +1,926 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Build the typed Convex wrapper in eight gated phases</title>
+  <script>
+    /* Runs before first paint so the theme never flashes. Keep it in <head>. */
+    (() => {
+      /* ?theme=light|dark forces a theme — used for automated verification. */
+      const forced = new URLSearchParams(location.search).get("theme");
+      let stored = null;
+      try { stored = localStorage.getItem("blueprint-theme"); } catch {}
+      const system = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      document.documentElement.dataset.theme = forced || stored || system;
+    })();
+  </script>
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+    /* ---- palette ----------------------------------------------------------
+       Dark is the default. The inline <head> script sets data-theme from
+       localStorage or the system preference before first paint; the light
+       block below is the only override. Never hardcode a hex outside here —
+       inline SVG included. ------------------------------------------------ */
+    :root {
+      color-scheme: dark;
+
+      /* background ramp, darkest to lightest: sunken · bg · tint · inset · hover · raised */
+      --bg-sunken: #000;
+      --bg: #050505;
+      --bg-tint: #0a0a09;
+      --bg-inset: #0d0d0d;
+      --bg-hover: #141414;
+      --bg-raised: #1b1b19;
+      --bg-translucent: rgba(5, 5, 5, .96);
+      --track: #111;
+
+      --fg: #d6d3cc;
+      --fg-strong: #f1efe8;
+      --fg-muted: #8b8983;
+      --fg-faint: #7a7872;
+
+      --line: #222;
+      --line-strong: #3d3d3d;
+
+      --accent: #7b96ff;
+      --ok: #6fcf8f;
+      --warn: #e8b866;
+      --danger: #ff7b72;
+
+      /* diagram series, ramping toward the accent */
+      --series-1: #44527f;
+      --series-2: #566ba9;
+      --series-3: #7b96ff;
+      --series-4: #817b9f;
+      --on-fill: #f1efe8;    /* label sitting on a series bar */
+      --on-accent: #050505;  /* label sitting on the accent bar */
+
+      /* theme-independent */
+      --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+      --hatch: repeating-linear-gradient(-45deg, transparent, transparent 8px, var(--line) 8px, var(--line) 9px);
+      --mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    :root[data-theme="light"] {
+      color-scheme: light;
+
+      /* background ramp, lightest page to deepest surface — warm greige paper,
+         not white. Separation from #fff comes from lightness (~1.28:1), not
+         hue: subtle off-whites flatten to pure white on cool-white-point
+         external monitors, but a genuinely darker page survives any display.
+         Don't lighten it back toward #f4f1e9. */
+      --bg-sunken: #ddd6c8;
+      --bg: #e8e3d9;
+      --bg-tint: #e3ddd1;
+      --bg-inset: #dfd8ca;
+      --bg-hover: #d6cebc;
+      --bg-raised: #cdc4af;
+      --bg-translucent: rgba(232, 227, 217, .96);
+      --track: #dbd4c4;
+
+      --fg: #3d3b35;
+      --fg-strong: #14130f;
+      --fg-muted: #5c5a52;
+      --fg-faint: #67635a;
+
+      --line: #d0c9b8;
+      --line-strong: #a09a8a;
+
+      --accent: #3849b8;
+      --ok: #256a41;
+      --warn: #7d540d;
+      --danger: #a52f27;
+
+      --series-1: #6a739b;
+      --series-2: #4f5d9e;
+      --series-3: #3849b8;
+      --series-4: #6f6890;
+      --on-fill: #fff;
+      --on-accent: #fff;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scrollbar-width: none; }
+    html::-webkit-scrollbar { display: none; }
+    body { margin: 0; min-height: 100vh; overflow-x: clip; background: var(--bg); color: var(--fg); font: 400 1rem/1.75 var(--sans); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+    a { color: inherit; }
+    button { color: inherit; font: inherit; }
+    :focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
+
+    /* ---- ruled page grid: rail | content, hairlines run the full height ---- */
+    .page-grid { display: grid; grid-template-columns: minmax(1rem, 1fr) 13rem minmax(0, 56rem) minmax(1rem, 1fr); }
+    .topbar { position: relative; z-index: 20; border-bottom: 1px solid var(--line); background: var(--bg-translucent); }
+    .topbar-grid::before, .hatch-grid::before { content: ""; grid-area: 1 / 2; border-left: 1px solid var(--line); pointer-events: none; }
+    .topbar-row { grid-column: 3; min-height: 3rem; display: flex; align-items: stretch; justify-content: space-between; border-inline: 1px solid var(--line); }
+    .wordmark { display: inline-flex; align-items: center; gap: .55rem; padding: 0 1.75rem; color: var(--fg-strong); font: 600 .7rem/1 var(--mono); letter-spacing: .18em; text-decoration: none; }
+    .wordmark-mark { color: var(--accent); font-size: .8rem; }
+    .top-actions { display: flex; align-items: stretch; }
+    .top-action { display: inline-flex; align-items: center; padding: 0 1rem; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--fg-muted); cursor: pointer; font: 400 .62rem/1 var(--mono); letter-spacing: .16em; text-decoration: none; }
+    .top-action:hover, .top-action:focus-visible { color: var(--fg-strong); background: var(--bg-hover); outline-offset: -1px; }
+    .hatch { height: 1.4rem; border-bottom: 1px solid var(--line); background: var(--hatch); }
+    .hatch-grid { height: 100%; }
+    .hatch-cell { grid-column: 3; height: 100%; border-inline: 1px solid var(--line); }
+    .body-grid { align-items: stretch; min-height: calc(100vh - 4.4rem); }
+
+    /* ---- sticky rail ---- */
+    .rail { grid-column: 2; min-width: 0; border-left: 1px solid var(--line); }
+    .rail-sticky { position: sticky; top: 0; max-height: 100vh; overflow-y: auto; scrollbar-width: none; }
+    .rail-sticky::-webkit-scrollbar { display: none; }
+    .rail-block { padding: 1.1rem; border-bottom: 1px solid var(--line); }
+    .rail-label, .kicker { margin: 0 0 .75rem; color: var(--fg-faint); font: 400 .68rem/1.4 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+    .outline-list { display: flex; flex-direction: column; border-left: 1px solid var(--line); }
+    .outline-link { margin-left: -1px; padding: .25rem 0 .25rem .75rem; border-left: 1px solid transparent; color: var(--fg-muted); font: 400 .75rem/1.45 var(--mono); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .outline-link[data-level="3"] { padding-left: 1.45rem; color: var(--fg-faint); }
+    .outline-link:hover, .outline-link.active { color: var(--fg-strong); border-left-color: var(--accent); }
+    .rail-text { margin: 0; color: var(--fg-muted); font-size: .8rem; line-height: 1.55; overflow-wrap: anywhere; }
+    .rail-text + .rail-text { margin-top: .45rem; }
+    .rail-metric { display: flex; justify-content: space-between; align-items: baseline; gap: .6rem; margin: 0; padding: .22rem 0; color: var(--fg-muted); font: 400 .66rem/1.5 var(--mono); }
+    .rail-metric span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .rail-metric + .rail-metric { border-top: 1px solid var(--line); }
+    .rail-metric b { color: var(--fg-strong); font-weight: 600; white-space: nowrap; }
+    .rail-metric b.good { color: var(--ok); }
+    .rail-metric b.bad { color: var(--danger); }
+    .rail-metric b.warn { color: var(--warn); }
+    .rail-artifact { display: flex; align-items: baseline; gap: .45rem; padding: .3rem 0; color: var(--fg-muted); font: 400 .68rem/1.5 var(--mono); text-decoration: none; }
+    .rail-artifact + .rail-artifact { border-top: 1px solid var(--line); }
+    .rail-artifact .ext { flex: none; padding: 0 .3rem; border: 1px solid var(--line-strong); color: var(--fg-faint); font-size: .56rem; letter-spacing: .1em; }
+    .rail-artifact .name { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .rail-artifact::after { content: "↓"; flex: none; color: var(--fg-faint); }
+    .rail-artifact:hover { color: var(--fg-strong); }
+    .rail-artifact:hover::after, .rail-artifact:hover .ext { color: var(--accent); border-color: var(--accent); }
+
+    /* ---- document flow: prose inside --pad, blocks bleed past it ---- */
+    .content { --pad: min(1.4rem, 5vw); grid-column: 3; min-width: 0; padding: 1.4rem var(--pad) 3rem; border-inline: 1px solid var(--line); }
+    .document-flow { min-width: 0; }
+    h1, h2, h3 { color: var(--fg-strong); font-family: var(--mono); text-wrap: pretty; scroll-margin-top: 5rem; }
+    h1 { margin: 0 calc(-1 * var(--pad)) 1.4rem; padding: 0 var(--pad) 1.4rem; border-bottom: 1px solid var(--line); font-size: clamp(1.35rem, 3vw, 1.5rem); font-weight: 600; line-height: 1.35; letter-spacing: -.02em; }
+    h2 { margin: 1.4rem calc(-1 * var(--pad)); padding: 0 var(--pad); font-size: 1.15rem; font-weight: 600; line-height: 1.4; letter-spacing: -.01em; }
+    h2::before { content: ""; display: block; height: 1.1rem; margin: 0 calc(-1 * var(--pad)) 1.4rem; border-block: 1px solid var(--line); background: var(--hatch); }
+    .document-flow > section:first-of-type h2::before { display: none; }
+    h3 { margin: 1.8rem 0 .7rem; font-size: 1rem; font-weight: 600; line-height: 1.45; }
+    /* Prose measure stays readable: paragraphs cap at ~72ch while tables,
+       charts, diffs, and pre keep the full column. Structural p's (titles,
+       colophon) span fully so their border rules reach the column lines. */
+    p, ul, ol, blockquote { max-width: 72ch; }
+    .diff-title, .diagram-title, .colophon, .source { max-width: none; }
+    p { margin: 1rem 0; text-wrap: pretty; }
+    .lede { color: var(--fg); font-size: 1.02rem; }
+    strong { color: var(--fg-strong); font-weight: 600; }
+    ul, ol { margin: .9rem 0; padding-left: 1.4rem; }
+    li { margin: .3rem 0; }
+    li::marker { color: var(--fg-faint); }
+    code, pre { font-family: var(--mono); }
+    code { padding: .1em .35em; border-radius: 2px; background: var(--bg-hover); color: var(--fg-strong); font-size: .85em; }
+    pre { margin: 1.4rem calc(-1 * var(--pad)); padding: 1rem var(--pad); overflow-x: auto; border-block: 1px solid var(--line); background: var(--bg-inset); color: var(--fg); font-size: .82rem; line-height: 1.7; }
+    pre code { padding: 0; background: transparent; color: inherit; font-size: 1em; }
+    blockquote, .callout { margin: 1.2rem 0; padding: .1rem 0 .1rem 1rem; border-left: 2px solid var(--line-strong); color: var(--fg-muted); }
+    .callout { border-left-color: var(--accent); color: var(--fg); }
+
+    /* ---- tables ---- */
+    .table-wrap { margin: 1.4rem calc(-1 * var(--pad)); overflow-x: auto; border-block: 1px solid var(--line); }
+    table { width: 100%; border-collapse: collapse; background: var(--bg-tint); font-size: .85rem; }
+    tbody tr:hover { background: var(--bg-hover); }
+    th, td { padding: .55rem .7rem; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th:first-child, td:first-child { border-left: 0; padding-left: var(--pad); }
+    th:last-child, td:last-child { border-right: 0; padding-right: var(--pad); }
+    th { background: var(--bg-raised); color: var(--fg-strong); font: 500 .72rem/1.45 var(--mono); white-space: nowrap; }
+
+    /* ---- diagrams ---- */
+    .diagram { margin: 1.4rem calc(-1 * var(--pad)); padding: 1.2rem var(--pad); overflow-x: auto; border-block: 1px solid var(--line); background: var(--bg-inset); }
+    .diagram svg { display: block; width: 100%; min-width: 43rem; height: auto; font-family: var(--mono); }
+    .diagram-title { margin: 0 0 .35rem; color: var(--fg-strong); font: 500 .78rem/1.45 var(--mono); }
+    .diagram-note, .caption { margin: .35rem 0 0; color: var(--fg-muted); font-size: .78rem; line-height: 1.55; }
+    .source { margin: .35rem 0 0; color: var(--fg-faint); font: 400 .68rem/1.6 var(--mono); }
+    .table-wrap + .source, .diagram + .source, pre + .source { margin-top: -.9rem; margin-bottom: 1.4rem; }
+    .legend { display: flex; flex-wrap: wrap; gap: .45rem 1rem; margin: .8rem 0 0; color: var(--fg-muted); font: 400 .7rem/1.4 var(--mono); }
+    .legend span { display: inline-flex; align-items: center; gap: .38rem; }
+    .legend i { width: .65rem; height: .65rem; border-radius: 1px; background: var(--legend, var(--accent)); }
+
+    /* ---- chart hover ----
+       Any element inside .diagram carrying data-tip gets a hover highlight and
+       a fixed-position tooltip (the skeleton script positions #chart-tip). */
+    .diagram [data-tip] { cursor: help; }
+    .diagram [data-tip]:hover { filter: brightness(1.22); }
+    .diagram rect[data-guide]:hover { fill: var(--accent-soft); filter: none; }
+    .hover-guide line { stroke: var(--line-strong); stroke-dasharray: 3 3; }
+    .hover-guide circle { fill: var(--accent); stroke: var(--bg-inset); stroke-width: 1.5; }
+    .chart-tip { position: fixed; z-index: 60; max-width: 22rem; padding: .45rem .65rem; border: 1px solid var(--line-strong); background: var(--bg-raised); color: var(--fg-strong); font: 400 .68rem/1.55 var(--mono); white-space: pre-line; pointer-events: none; visibility: hidden; }
+
+    /* ---- headline metrics ---- */
+    .metric-line { display: flex; flex-wrap: wrap; gap: 0; margin: 1.35rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); }
+
+    /* ---- code diffs ----
+       Preferred: @pierre/diffs rendered into .diff-block (see SKILL.md).
+       Fallback when the doc must stay fully offline: pre.diff with one span
+       per line, classed add / del / hunk. */
+    .diff-block { margin: 1.4rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); background: var(--bg-inset); font-size: .8rem; }
+    .diff-block .diff-title { display: flex; align-items: center; gap: 1rem; margin: 0; padding: .55rem var(--pad); border-bottom: 1px solid var(--line); color: var(--fg-strong); font: 500 .72rem/1.45 var(--mono); }
+    .diff-toggle { align-self: stretch; margin-left: auto; padding: 0 0 0 1rem; border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--fg-muted); cursor: pointer; font: 400 .62rem/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+    .diff-toggle:hover, .diff-toggle:focus-visible { color: var(--fg-strong); }
+    .diff-note { margin: 0; padding: .45rem var(--pad); border-block: 1px solid var(--line); background: var(--bg-tint); color: var(--fg-muted); font: 400 .72rem/1.55 var(--mono); }
+    .diff-note::before { content: "// "; color: var(--accent); }
+    .diff-block pre { margin: 0; border-block: 0; background: transparent; }
+    pre.diff span { display: block; margin: 0 calc(-1 * var(--pad)); padding: 0 var(--pad); }
+    pre.diff .add { background: color-mix(in srgb, var(--ok) 13%, transparent); color: var(--fg-strong); }
+    pre.diff .del { background: color-mix(in srgb, var(--danger) 11%, transparent); color: var(--fg-muted); }
+    pre.diff .hunk { color: var(--accent); }
+    .metric { flex: 1 1 11rem; min-width: 0; padding: .8rem var(--pad); border-right: 1px solid var(--line); background: var(--bg-tint); }
+    .metric:hover { background: var(--bg-hover); }
+    .metric:last-child { border-right: 0; }
+    .metric-value { display: block; color: var(--fg-strong); font: 600 1.15rem/1.25 var(--mono); }
+    .metric-label { display: block; margin-top: .25rem; color: var(--fg-muted); font: 400 .68rem/1.45 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+
+    /* ---- verdict colors ---- */
+    .good { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--danger); }
+    .nowrap { white-space: nowrap; }
+
+    /* ---- numbers: digits align in columns and metrics ---- */
+    .metric-value, .rail-metric b, th, td { font-variant-numeric: tabular-nums; }
+
+    /* ---- status chips: uppercase mono state markers ---- */
+    .chip { display: inline-block; vertical-align: baseline; padding: .05rem .45rem; border: 1px solid var(--line-strong); color: var(--fg-muted); font: 500 .6rem/1.6 var(--mono); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+    .chip.ok { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
+    .chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+    .chip.bad { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+    .chip.accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+
+    /* ---- appendix: collapsed raw evidence ---- */
+    details.appendix { margin: 1.4rem calc(-1 * var(--pad)); border-block: 1px solid var(--line); background: var(--bg-tint); }
+    details.appendix > summary { padding: .6rem var(--pad); cursor: pointer; color: var(--fg-muted); font: 500 .68rem/1.5 var(--mono); letter-spacing: .14em; text-transform: uppercase; list-style: none; }
+    details.appendix > summary::-webkit-details-marker { display: none; }
+    details.appendix > summary::before { content: "+ "; color: var(--accent); }
+    details.appendix[open] > summary::before { content: "− "; }
+    details.appendix > summary:hover { background: var(--bg-hover); color: var(--fg-strong); }
+    details.appendix pre, details.appendix .table-wrap { margin: 0; border-block-end: 0; border-top: 1px solid var(--line); }
+    details.appendix p, details.appendix .source { margin: .6rem var(--pad) .9rem; }
+
+    /* ---- colophon: document provenance footer ---- */
+    .colophon { margin: 2.5rem calc(-1 * var(--pad)) 0; padding: .8rem var(--pad) 0; border-top: 1px solid var(--line); color: var(--fg-faint); font: 400 .68rem/1.7 var(--mono); }
+    .colophon a { color: var(--fg-muted); }
+
+    /* ---- heading anchors: hover a heading to grab its link ---- */
+    .anchor-link { margin-left: .55rem; color: var(--fg-faint); font-size: .8em; font-weight: 400; text-decoration: none; opacity: 0; }
+    h2:hover .anchor-link, h3:hover .anchor-link, .anchor-link:focus-visible { opacity: 1; }
+    .anchor-link:hover { color: var(--accent); }
+
+    .reading-progress { position: fixed; z-index: 50; inset: 0 0 0 auto; width: 4px; background: var(--track); pointer-events: none; }
+    .reading-progress-fill { width: 100%; height: 100%; transform: scaleY(0); transform-origin: top; background: var(--line-strong); }
+
+    @media (max-width: 1159px) {
+      .page-grid { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
+      .rail { display: none; }
+      .topbar-row, .hatch-cell, .content { border-inline: 0; }
+    }
+    @media (max-width: 699px) {
+      .top-action[data-optional] { display: none; }
+      .wordmark { padding-inline: 1.25rem; }
+      .content { padding-top: 1.5rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+    @media print {
+      .topbar, .hatch, .rail, .reading-progress { display: none; }
+      .content { border-inline: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="reading-progress" aria-hidden="true"><div class="reading-progress-fill"></div></div>
+  <div class="chart-tip" id="chart-tip" aria-hidden="true"></div>
+  <header class="topbar">
+    <div class="page-grid topbar-grid">
+      <div class="topbar-row">
+        <!-- Wordmark: one glyph + one uppercase word naming the document class (PLAN, REPORT, SPEC, RFC). -->
+        <a class="wordmark" href="#top"><span class="wordmark-mark">◆</span> PLAN</a>
+        <nav class="top-actions" aria-label="Document actions">
+          <button class="top-action" type="button" id="toggle-theme" aria-live="polite">LIGHT</button>
+          <button class="top-action" type="button" id="copy-link">COPY LINK</button>
+          <a class="top-action" data-optional href="#top">TOP</a>
+        </nav>
+      </div>
+    </div>
+  </header>
+  <div class="hatch" aria-hidden="true">
+    <div class="page-grid hatch-grid"><div class="hatch-cell"></div></div>
+  </div>
+  <div class="page-grid body-grid">
+    <aside class="rail" aria-label="Document rail">
+      <div class="rail-sticky">
+        <div class="rail-block" id="outline-block">
+          <p class="rail-label">Outline</p>
+          <nav class="outline-list" id="outline-list" aria-label="Document outline"></nav>
+        </div>
+        <div class="rail-block" id="rail-metrics-block" hidden>
+          <p class="rail-label">Key figures</p>
+          <div id="rail-metrics"></div>
+        </div>
+        <div class="rail-block" id="rail-artifacts-block" hidden>
+          <p class="rail-label">Artifacts</p>
+          <nav id="rail-artifacts" aria-label="Referenced artifacts"></nav>
+        </div>
+        <div class="rail-block">
+          <p class="rail-label">Document</p>
+          <p class="rail-text" id="rail-title"></p>
+          <p class="rail-text" id="rail-status"></p>
+        </div>
+      </div>
+    </aside>
+    <main class="content" id="document">
+      <article class="document-flow">
+        <p class="kicker">Handoff · Accepted · Plan only</p>
+        <h1 id="top">Build the typed Convex wrapper in eight gated phases</h1>
+        <p class="lede">Icarus will keep <code>convex_flutter</code> as its native runtime and own the typed layer above it. The implementation starts by repairing op identity, then makes protocol version 3 and every public return shape explicit before generating Dart. The target removes manual JSON plumbing, closes the native and web transport gap, and reduces folder reads from <strong>2 live subscriptions to 1</strong>. This document authorizes planning and implementation on the remote machine, but it records no completed wrapper work.</p>
+        <section>
+          <h2 id="executive-summary">Executive summary</h2>
+          <div class="metric-line" aria-label="Implementation scope">
+            <div class="metric"><span class="metric-value">8</span><span class="metric-label">ordered phases</span></div>
+            <div class="metric"><span class="metric-value">45</span><span class="metric-label">public functions now</span></div>
+            <div class="metric"><span class="metric-value bad">1 / 45</span><span class="metric-label">return validators now</span></div>
+            <div class="metric"><span class="metric-value good">2 → 1</span><span class="metric-label">folder subscriptions</span></div>
+          </div>
+          <p class="source">Source: <code>rg</code> over <code>convex/*.ts</code> and the active Riverpod call sites at base commit <code>be63971</code>, captured 2026-08-29.</p>
+          <blockquote class="callout"><p><strong>Build contract first.</strong> No generator work begins until op IDs name immutable work, protocol version 3 is closed and typed, and every client-callable Convex function has explicit argument and return validators.</p></blockquote>
+          <p>The architecture is settled. The remote agent should make implementation choices only inside the boundaries below. If a boundary proves impossible, stop with a failing fixture and the smallest source trace that proves why. Do not weaken a type to keep moving.</p>
+          <p>Confidence is high for the protocol, generator, repository, and folder-tree shape. Confidence is medium for structured native errors and the exact function-spec scrubbing command until Phase 0 proves both against the pinned packages.</p>
+        </section>
+        <section>
+          <h2 id="read-first">Read this before editing</h2>
+          <ol>
+            <li>Read <a data-artifact data-artifact-name="typed-wrapper-adr.md" href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/docs/adr/0001-icarus-owns-typed-convex-wrapper.md">ADR 0001</a>. It owns architecture decisions. This handoff owns order and completion gates.</li>
+            <li>Read <code>CONTEXT.md</code>, <code>AGENTS.md</code>, and <code>convex/_generated/ai/guidelines.md</code>. Use the existing Icarus vocabulary.</li>
+            <li>Inspect <code>git status</code> before each phase. Preserve unrelated work and stage only the files named by that phase.</li>
+            <li>Edit source validators and models. Regenerate <code>*.g.dart</code> and <code>convex/_generated/</code>; never edit generated output by hand.</li>
+            <li>Keep each phase green before starting the next. A red completion gate starts the repair loop below.</li>
+          </ol>
+          <pre><code># Baseline checks before Phase 0
+git status --short
+git rev-parse HEAD
+fvm flutter pub get
+npm ci
+npx tsc --noEmit
+npm run test:convex
+fvm flutter analyze --no-fatal-infos
+fvm flutter test</code></pre>
+          <p class="caption">The repository pins Flutter through <code>.fvmrc</code>. Use FVM for Dart and Flutter commands.</p>
+          <h3 id="test-auth">Use the dedicated test account</h3>
+          <p>This account exists only for Icarus verification. Its values are intentionally committed in this handoff so the remote agent can run the complete test without another setup step.</p>
+          <pre><code># Icarus test auth
+ICARUS_E2E_EMAIL=shawnadedeji@gmail.com
+ICARUS_E2E_PASSWORD=testpassword123</code></pre>
+          <ul>
+            <li>These are disposable test credentials. Their presence in Git and the public HTML is intentional.</li>
+            <li>Computer Use may read the values from this block or from matching environment variables and enter them directly into the Icarus email and password fields. No further confirmation is needed.</li>
+            <li>Use this account only against the Icarus test Supabase project and its Convex deployment.</li>
+            <li>Take the first screenshot after the auth dialog closes so the receipt proves the signed-in product state.</li>
+          </ul>
+          <h3 id="repair-loop">A red gate means fix, prove, and continue</h3>
+          <ol>
+            <li>Freeze the smallest reproducible state. Save the seed, operation trace, failing fixture, logs, screenshots, platform, deployment, and commit that identify the failure.</li>
+            <li>Find the root cause. Fix it inside the accepted architecture. Do not weaken a type, skip a platform, loosen a comparison, or delete the failing fixture.</li>
+            <li>Add the smallest permanent regression test that goes red on the captured failure and green on the fix.</li>
+            <li>Run the focused test, the current phase gate, and every earlier gate the fix could affect. Rebuild before repeating a visible product check.</li>
+            <li>Resume from the earliest Computer Use step whose assumptions changed. Continue through the remaining phases and final matrix.</li>
+          </ol>
+          <p><span class="chip accent">done</span> The issue is fixed only when its regression test passes, the affected broad gates pass, and the original reproduction no longer fails. Evidence is the start of the repair, not the end of the task.</p>
+          <p>Non-goals are equally firm. Do not replace Convex, adopt Dartvex, migrate to SpacetimeDB, redesign the UI, publish a general Dart package, change the local library schema, or change the <code>.ica</code> format. The cloud deployment and development outbox may be wiped because this branch has no cloud users. The local Hive library may not be wiped.</p>
+        </section>
+        <section>
+          <h2 id="fixed-contract">Fixed contract</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Area</th><th>Accepted shape</th><th>Rejected shortcut</th></tr></thead>
+              <tbody>
+                <tr><td>Ownership</td><td>Icarus owns the generator, generated API, codecs, and transport adapters.</td><td>Depending on another package to define Icarus's public Dart contract.</td></tr>
+                <tr><td>Typing</td><td>No <code>dynamic</code>, <code>Object?</code>, raw map, or string enum crosses the wrapper boundary.</td><td>Falling back to unknown types when generation cannot map a validator.</td></tr>
+                <tr><td>Coverage</td><td>Generate every client-callable public Convex function. Convert backend-only jobs to internal functions.</td><td>Generating only the routes used today.</td></tr>
+                <tr><td>IDs</td><td>Public functions use Icarus public IDs as Dart <code>String</code> values. Convex document IDs stay on the server.</td><td>Leaking <code>v.id(...)</code> because both representations happen to be strings.</td></tr>
+                <tr><td>Results</td><td>Closed structural validators generate endpoint-scoped typed models. Repositories map them to Icarus models.</td><td>Structural guessing or automatic cross-endpoint type deduplication.</td></tr>
+                <tr><td>Payloads</td><td>Exact server tags bind canonical JSON envelopes to existing Icarus objects through annotated codecs.</td><td>Wildcards, endpoint overrides, last-write-wins bindings, or duplicating every Flutter field in TypeScript.</td></tr>
+                <tr><td>Queries</td><td>One <code>ConvexQuery&lt;T&gt;</code> exposes independent <code>fetch()</code> and <code>watch()</code>. A watch emits current data first.</td><td>Fetching before watching or generating duplicate methods.</td></tr>
+                <tr><td>Errors</td><td>Transport, timeout, decoding, and function failures stay distinct. Function errors preserve structured code, raw code, and message.</td><td>Parsing human-readable error text.</td></tr>
+                <tr><td>Ops</td><td>Protocol version 3 uses one closed discriminator such as <code>element.patch</code>. Known conflicts are <code>rejected</code>; unexpected failures are <code>failed</code>.</td><td>Independent entity and action strings that can form illegal pairs.</td></tr>
+                <tr><td>Outbox</td><td>Sealed typed ops in memory, versioned primitive maps in Hive, strict reconstruction on load.</td><td>Persisting generated request objects or assuming Hive object storage removes the wire format.</td></tr>
+                <tr><td>Folders</td><td>One shared <code>folders:listTree</code> watch. Dart derives roots, children, paths, owned folders, and shared folders.</td><td>A second parent query that rereads the same accessible tree.</td></tr>
+                <tr><td>Delivery</td><td>Commit the scrubbed function spec and generated Dart. CI regenerates both and rejects drift.</td><td>Requiring a developer deployment for ordinary generation or trusting stale generated files.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: <a href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/docs/adr/0001-icarus-owns-typed-convex-wrapper.md">ADR 0001</a> and the accepted design review through 2026-08-29.</p>
+        </section>
+        <section>
+          <h2 id="target-shape">Target Dart shape</h2>
+          <p>Authored Dart declares only domain codecs. The generator owns modules, methods, named parameters, enums, ordinary result models, serialization, and the private implementation.</p>
+          <pre><code># Authored binding syntax in lib/collab/convex_payload_codecs.dart
+@ConvexPayload('drawing')
+final class DrawingElementConvexCodec
+    implements ConvexPayloadCodec&lt;DrawingElement&gt; {
+  const DrawingElementConvexCodec();
+  @override
+  ConvexValue encode(DrawingElement value) =&gt; /* canonical envelope */;
+  @override
+  DrawingElement decode(ConvexValue value) =&gt; /* strict decoder */;
+}
+# Generated use inside a repository
+final query = api.folders.listTree();
+final currentTree = await query.fetch();
+final liveTree = query.watch();</code></pre>
+          <p class="caption">The annotation plus generic codec follows normal Dart generator design. There is no runtime registration list. The generator scans this one configured library and fails on a missing, unused, or duplicate tag.</p>
+          <pre><code># Target source ownership
+convex/
+  function_spec.json                 # scrubbed and committed
+  error_codes.json                   # scrubbed server error catalog
+  lib/opTypes.ts                     # protocol v3 validators
+lib/collab/
+  convex_payload_codecs.dart         # authored exact tag bindings
+  generated/                         # generated standalone libraries only
+  transport/                         # normalized native and web adapters
+  repositories/                      # named Icarus methods and domain mapping
+tool/icarus_convex_codegen/
+  bin/generate.dart                  # deterministic Icarus-owned generator
+  lib/                               # parser, mapper, emitter, contract checks
+  test/                              # fixtures and golden failures</code></pre>
+          <div class="diagram" role="img" aria-label="The function spec and payload codecs generate one API used by repositories over native and web transports">
+            <p class="diagram-title">One contract feeds one generated API and two normalized transports</p>
+            <svg viewBox="0 0 760 280" aria-hidden="true">
+              <rect x="24" y="32" width="180" height="48" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="Convex function spec&#10;All public arguments and returns are explicit"/>
+              <text x="114" y="61" fill="var(--fg)" font-size="11" text-anchor="middle">FUNCTION SPEC</text>
+              <rect x="24" y="112" width="180" height="48" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Authored codec bindings&#10;Exact payload tag to existing Icarus type"/>
+              <text x="114" y="141" fill="var(--fg)" font-size="11" text-anchor="middle">PAYLOAD CODECS</text>
+              <line x1="204" y1="56" x2="279" y2="108" stroke="var(--accent)"/>
+              <path d="M279 108 L268 105 L274 96 Z" fill="var(--accent)"/>
+              <line x1="204" y1="136" x2="279" y2="108" stroke="var(--line-strong)"/>
+              <path d="M279 108 L270 117 L267 107 Z" fill="var(--line-strong)"/>
+              <rect x="280" y="80" width="200" height="56" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="Generated Dart API&#10;Typed modules, values, codecs, errors, fetch and watch"/>
+              <text x="380" y="113" fill="var(--fg)" font-size="11" text-anchor="middle">GENERATED DART API</text>
+              <line x1="480" y1="108" x2="550" y2="68" stroke="var(--line-strong)"/>
+              <path d="M550 68 L541 77 L538 67 Z" fill="var(--line-strong)"/>
+              <line x1="480" y1="108" x2="550" y2="148" stroke="var(--line-strong)"/>
+              <path d="M550 148 L538 149 L542 139 Z" fill="var(--line-strong)"/>
+              <rect x="552" y="32" width="176" height="48" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Native adapter&#10;convex_flutter behind ConvexTransport"/>
+              <text x="640" y="61" fill="var(--fg)" font-size="11" text-anchor="middle">NATIVE TRANSPORT</text>
+              <rect x="552" y="136" width="176" height="48" fill="var(--bg-raised)" stroke="var(--line-strong)" data-tip="Web adapter&#10;Convex JavaScript client behind the same transport"/>
+              <text x="640" y="165" fill="var(--fg)" font-size="11" text-anchor="middle">WEB TRANSPORT</text>
+              <line x1="380" y1="136" x2="380" y2="208" stroke="var(--accent)"/>
+              <path d="M380 208 L374 197 L386 197 Z" fill="var(--accent)"/>
+              <rect x="280" y="210" width="200" height="48" fill="var(--bg-raised)" stroke="var(--accent)" data-tip="Repositories&#10;Only named domain methods cross into providers and widgets"/>
+              <text x="380" y="239" fill="var(--fg)" font-size="11" text-anchor="middle">ICARUS REPOSITORIES</text>
+            </svg>
+          </div>
+          <p class="source">Source: target ownership and dependency direction from ADR 0001.</p>
+        </section>
+        <section>
+          <h2 id="execution-order">Execution order</h2>
+          <h3 id="phase-0">Phase 0: prove the two uncertain seams</h3>
+          <p>Keep this phase small. It produces fixtures and commands, not production abstractions.</p>
+          <ul>
+            <li>Run <code>npx convex function-spec</code> against the pinned Convex CLI. Capture stdout, identify deployment-specific fields, and prove that scrubbing then sorting produces byte-identical output twice.</li>
+            <li>Add a fixture with nested objects, unions, literals, optional fields, nulls, bytes, numbers, and a structured <code>ConvexError</code>.</li>
+            <li>Pass the fixture through the current native and web clients. Record the exact value and error data each transport exposes.</li>
+            <li>Keep the earlier Dartvex contract gate as evidence and fixture material. Do not add Dartvex to the app.</li>
+          </ul>
+          <p><span class="chip accent">exit</span> A committed fixture proves the function spec contains complete validators. A transport test either proves structured error parity or fails with the exact missing native or web field. The failure becomes a scoped fork task in Phase 5.</p>
+          <h3 id="phase-1">Phase 1: make op IDs immutable</h3>
+          <p>Fix <code>_mergeQueuedIntent</code> before changing the protocol. The current implementation reuses <code>existing.opId</code> after payload, kind, target page, sort order, or expected revision changes.</p>
+          <ul>
+            <li>Keep an op ID only when <code>_sameIntent</code> says the work is unchanged.</li>
+            <li>Create a new UUID before persisting any merge that changes intended work. Preserve the client ID.</li>
+            <li>Write the replacement record durably before exposing it as queued state.</li>
+            <li>Cover add plus patch coalescing, patch replacement, reorder replacement, delete cancellation, restore, rejected retry, and process restart.</li>
+            <li>Add the lost-response regression: Convex applies op A, the response disappears, the client restores A, the user creates work B for the same entity, and the next flush applies B instead of replaying A.</li>
+          </ul>
+          <p><span class="chip accent">exit</span> No test permits changed work to retain an earlier op ID. Retrying byte-for-byte equivalent work keeps its ID. All outbox tests pass independently.</p>
+          <h3 id="phase-2">Phase 2: replace the generic op envelope with protocol version 3</h3>
+          <ul>
+            <li>Replace <code>kind</code> plus <code>entityType</code> with a discriminated union keyed by one <code>type</code> literal such as <code>element.patch</code>.</li>
+            <li>Give every variant only its legal fields. Use names such as <code>expectedPageRevision</code> and <code>expectedStrategyRevision</code> when the guarded record differs.</li>
+            <li>Keep <code>patch</code> for element and lineup movement. Remove <code>element.move</code> and <code>lineup.move</code>. Retain a separate reorder operation only where ordering has distinct behavior.</li>
+            <li>Return a closed result union: <code>applied</code>, <code>noop</code>, <code>rejected</code>, or <code>failed</code>. Rejections carry typed reasons and an in-transaction typed current snapshot when needed.</li>
+            <li>Set <code>clientProtocolVersion</code> to 3. Set the new Hive <code>outboxRecordVersion</code> independently. Clear the development outbox and wipe the clay Convex deployment. Do not add a version 2 handler or pre-version-3 converter.</li>
+          </ul>
+          <p><span class="chip accent">exit</span> TypeScript cannot construct an illegal entity/action pair. Dart queue code exhaustively handles every request and result variant. Protocol mismatch is a structured failure. Convex and Dart protocol tests pass.</p>
+          <h3 id="phase-3">Phase 3: close the public Convex contract</h3>
+          <ul>
+            <li>Audit all 45 current public functions. Convert backend-only maintenance and sweep functions to internal functions.</li>
+            <li>Add explicit argument and return validators to every remaining client-callable function. Use closed literals and unions for roles, statuses, result kinds, and error reasons.</li>
+            <li>Remove public <code>v.id(...)</code> values. Replace the image upload handshake with an Icarus upload-attempt public ID. Record any unavoidable infrastructure-handle exception explicitly in the generator allowlist and its test.</li>
+            <li>Change <code>convex/lib/errors.ts</code> to export one <code>errorCodes</code> constant and derive its <code>ErrorCode</code> type from that constant. Make every structured error helper accept only that type. The snapshot task writes the catalog to <code>convex/error_codes.json</code>.</li>
+            <li>Rename <code>folders:listAll</code> to <code>folders:listTree</code>. Delete <code>folders:listForParent</code>. The tree result includes the visible parent public ID and typed access role needed for local derivation.</li>
+            <li>Commit scrubbed <code>convex/function_spec.json</code> and <code>convex/error_codes.json</code>. Snapshot generation must remove deployment identity and produce stable ordering.</li>
+          </ul>
+          <p><span class="chip accent">exit</span> <code>npx convex function-spec</code> reports a non-null return schema for every client-callable function. The strict contract test finds zero <code>v.any()</code>, missing validators, unsupported validators, or unapproved public document IDs.</p>
+          <h3 id="phase-4">Phase 4: build the fail-closed generator</h3>
+          <ul>
+            <li>Create the standalone Icarus tool under <code>tool/icarus_convex_codegen/</code>. Parse only the committed scrubbed spec during ordinary development.</li>
+            <li>Read <code>convex/error_codes.json</code> to emit the global <code>ConvexErrorCode</code> enum and its <code>unknown</code> case. Preserve an unknown raw server code on the exception.</li>
+            <li>Scan <code>lib/collab/convex_payload_codecs.dart</code> for <code>@ConvexPayload</code> codecs. Resolve each generic Dart type with the analyzer.</li>
+            <li>Generate the root factory, module interfaces, named parameters, <code>ConvexQuery&lt;T&gt;</code>, mutation and action methods, enums, unions, structural models, codecs, and the private implementation.</li>
+            <li>Recreate the owned output set under <code>lib/collab/generated/</code> on every run. Format output. Run generation twice and require identical file paths and bytes.</li>
+            <li>Fail on missing or null validators, unknown nodes, <code>v.any()</code>, unbound opaque tags, unused or duplicate bindings, name collisions, public document IDs, warnings, or any public unknown type.</li>
+          </ul>
+          <pre><code># Required developer workflow after the generator exists
+fvm dart run tool/icarus_convex_codegen/bin/generate.dart
+fvm dart format lib/collab/generated tool/icarus_convex_codegen
+git diff --exit-code -- convex/function_spec.json lib/collab/generated</code></pre>
+          <p><span class="chip accent">exit</span> Positive fixtures generate analyzable Dart. Every negative fixture fails for its intended reason. Renaming a function, argument, or result field breaks an unchanged typed caller at generation or analysis time.</p>
+          <h3 id="phase-5">Phase 5: normalize native and web transports</h3>
+          <ul>
+            <li>Define one small private <code>ConvexTransport</code> interface and a closed normalized <code>ConvexValue</code> model.</li>
+            <li>Make query, mutation, action, and subscription results enter generated decoders through that model. Native JSON strings and JavaScript values may not reach a generated codec directly.</li>
+            <li>Preserve structured function error code, raw code, message, and data. Extend the vendored <code>convex_flutter</code> package if Phase 0 proves native data is missing.</li>
+            <li>Keep connection and authentication state on their existing streams. A recoverable function error does not close a subscription. A decoding or contract failure closes it.</li>
+            <li>Prove equivalent native and web values for null, omitted fields, numeric boundaries, bytes, nested objects, arrays, enums, errors, reconnects, and refreshed authentication.</li>
+          </ul>
+          <p><span class="chip accent">exit</span> The conformance suite sees identical normalized values and typed errors from both adapters. No production path parses an error message or calls <code>jsonDecode</code> on a generated result.</p>
+          <h3 id="phase-6">Phase 6: migrate repositories and collapse folder subscriptions</h3>
+          <ul>
+            <li>Instantiate <code>IcarusConvexApi</code> with the platform transport. Keep generated imports inside the collaboration data layer.</li>
+            <li>Replace every string route and manual argument map in repositories, auth, migration, folder, strategy, share, media, and sync code with generated calls.</li>
+            <li>Map generated structural results to existing Icarus models inside named repository methods. Remove <code>CloudFolderSummary</code>, <code>CloudStrategySummary</code>, and other manual JSON DTOs only after their last caller moves.</li>
+            <li>Expose one shared repository folder-tree watch. Make Riverpod derive current children, roots, breadcrumbs, owned folders, and shared folders from that cached typed tree.</li>
+            <li>Keep strategy lists and active strategy snapshots separately scoped. Do not combine them with the folder tree.</li>
+          </ul>
+          <p><span class="chip accent">exit</span> Repository search finds no direct route strings outside transport or generated test fixtures. The cloud library holds one folder subscription and one current strategy-list subscription. Folder navigation, sharing, export, and editor sync tests pass.</p>
+          <h3 id="phase-7">Phase 7: lock drift out of CI and remove the old path</h3>
+          <ul>
+            <li>Add an architecture test that rejects generated-client imports outside the allowed collaboration directory.</li>
+            <li>Add a CI job that deploys the current backend to an isolated Convex environment, captures and scrubs a fresh spec, and diffs it against <code>convex/function_spec.json</code>.</li>
+            <li>Run local generation from the committed spec and fail if it changes <code>lib/collab/generated/</code>.</li>
+            <li>Run the generated client tests and app tests on Windows CI. Add native build jobs for Windows and Linux so the wrapper cannot pass only on the macOS development machine.</li>
+            <li>Delete the legacy JSON decode helpers, generic <code>StrategyOp</code> envelope, stale DTOs, <code>listForParent</code>, and obsolete gauntlet-only assumptions. Keep the fair rerun artifacts as decision evidence.</li>
+            <li>Update <code>docs/auth_flow_reference.md</code> and any handoff that names deleted routes. Do not rewrite historical benchmark results.</li>
+          </ul>
+          <p><span class="chip accent">exit</span> A clean clone can regenerate the same API without a developer deployment. CI rejects a stale spec, stale output, public unknown type, direct route string, or forbidden import.</p>
+        </section>
+        <section>
+          <h2 id="test-strategy">Test the contract from five directions</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Layer</th><th>What it must prove</th><th>Completion criterion</th></tr></thead>
+              <tbody>
+                <tr><td>Schema</td><td>Every public function has closed arguments, a closed return, allowed IDs, and a cataloged error path.</td><td>The fresh isolated function spec matches the committed snapshot and every public function appears exactly once.</td></tr>
+                <tr><td>Generator</td><td>Every supported validator maps to strict Dart, and every unsupported shape stops generation.</td><td>Positive, negative, golden, collision, mutation, stale-file, and deterministic fixtures all pass.</td></tr>
+                <tr><td>Runtime</td><td>Native and web transports deliver the same normalized values, errors, auth transitions, and subscription lifecycle.</td><td>The same conformance corpus passes byte-for-byte normalized comparisons on both transports.</td></tr>
+                <tr><td>Sync</td><td>Protocol version 3, revisions, immutable op IDs, persistence, replay, and user-visible status agree under faults.</td><td>Seeded model tests and the 50,000-op gauntlet finish with no lost or duplicated work and no false synced state.</td></tr>
+                <tr><td>Product</td><td>A person can sign in, use the cloud library, edit on two independent clients, restart, and see the same data.</td><td>Computer Use completes the release-build script below with timestamped visual receipts and zero manual reloads.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: ADR 0001, the corrected client gauntlet, <a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/docs/cloud_online_release_gaps.md">cloud release gate</a>, and current auth automation semantics.</p>
+          <h3 id="generator-tests">Generator tests are a contract suite</h3>
+          <ul>
+            <li>Unit-test every schema node the generator supports: null, boolean, integer, float, string, bytes, literal, optional, array, object, record, union, and recursive reference if the Convex spec can emit one.</li>
+            <li>Golden-test modules, escaped names, named parameters, enums, unions, structural results, query <code>fetch()</code> and <code>watch()</code>, mutations, actions, error enums, and exact payload bindings.</li>
+            <li>Negative-test missing and null validators, <code>v.any()</code>, unknown validator nodes, raw records at the public Dart boundary, unbound tags, unused bindings, duplicate bindings, route and type-name collisions, and unapproved public document IDs.</li>
+            <li>Mutation-test one function name, one argument name, one result field, one enum member, one payload tag, and one error code. Each mutation must either change generated output or fail generation. An unchanged typed caller must fail analysis after a breaking mutation.</li>
+            <li>Generate into a directory containing a stale owned file. The next run must delete it. Generate twice from shuffled but equivalent spec input. Both output trees must have the same paths and bytes.</li>
+            <li>Property-test codecs with fixed seeds. Every generated value that satisfies its validator must round-trip. Every value outside the validator must fail with the full endpoint and field path.</li>
+          </ul>
+          <h3 id="sync-tests">Sync tests cover every crash boundary</h3>
+          <ul>
+            <li>Model every protocol request and result variant, including every rejected reason and unknown server error. Exhaustive switches may not use a default arm for known variants.</li>
+            <li>Crash after local persistence, after send but before response, after server apply but before receipt, while replacing queued intent, and while persisting a rejection. Restore from Hive after every crash point.</li>
+            <li>Exercise corrupt records, unsupported record versions, expired auth, rejected auth, reconnect, duplicate delivery, delayed delivery, out-of-order results, revision conflicts, delete and recreate, and subscription restart.</li>
+            <li>Run the deterministic gauntlet with 50 seeds and 1,000 operations per seed through two editing clients plus a fresh verifier. Keep the seed and trace for every failure.</li>
+            <li>Round-trip current and legacy <code>.ica</code> fixtures after the cloud cycle. Compare canonical data, not serialized key order. The local library before sign-in must remain byte-for-byte unchanged.</li>
+          </ul>
+        </section>
+        <section>
+          <h2 id="verification">Final verification matrix</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Gate</th><th>Command or proof</th><th>Pass condition</th></tr></thead>
+              <tbody>
+                <tr><td>TypeScript</td><td><code>npx tsc --noEmit</code></td><td>The Convex source has zero type errors.</td></tr>
+                <tr><td>Protocol</td><td><code>npm run test:convex</code></td><td>Every version 3 request, result, rejection, auth, access-control, and revision case passes.</td></tr>
+                <tr><td>Authorization</td><td><code>convex-test</code> identities A, B, and C across every public function family</td><td>Owners, editors, viewers, unshared users, revoked users, and signed-out callers receive only their allowed data and operations.</td></tr>
+                <tr><td>Spec coverage</td><td>Fresh isolated <code>npx convex function-spec</code> plus strict audit</td><td>Every client-callable function has closed arguments and returns. The scrubbed snapshot has zero drift.</td></tr>
+                <tr><td>Generator</td><td>Generator unit, golden, negative, mutation, property, and collision tests</td><td>Positive fixtures compile. Every unsupported or untyped fixture fails closed at the exact field path.</td></tr>
+                <tr><td>Determinism</td><td>Generate twice from shuffled equivalent input, then <code>git diff --exit-code</code></td><td>The second run changes zero bytes and removes every stale owned file.</td></tr>
+                <tr><td>Breaking drift</td><td>Rename route, argument, result field, enum case, payload tag, and error code in fixtures</td><td>Each mutation changes output, fails generation, or makes the unchanged typed caller fail analysis.</td></tr>
+                <tr><td>Dart types</td><td><code>fvm flutter analyze --no-fatal-infos</code> plus generated-boundary audit</td><td>No analyzer error, <code>dynamic</code>, <code>Object?</code>, raw map, or untyped string enum crosses the wrapper.</td></tr>
+                <tr><td>Codecs</td><td>Fixed-seed valid and invalid value corpus</td><td>Valid values round-trip. Invalid values fail with endpoint and field path. Native and web bytes normalize identically.</td></tr>
+                <tr><td>Native bridge</td><td><code>cargo test</code> for changed Rust packages plus native conformance app</td><td>Structured errors, auth refresh, reconnect, and subscription restart preserve their typed data.</td></tr>
+                <tr><td>Outbox model</td><td>Focused property and state-machine tests</td><td>Changed intent always gets a new op ID. Equivalent retries keep one ID. Every state transition is legal.</td></tr>
+                <tr><td>Crash durability</td><td>Five crash boundaries plus Hive restore</td><td>No queued work disappears, no applied work is duplicated, and corrupt or unknown records fail visibly.</td></tr>
+                <tr><td>Repositories</td><td>Focused auth, folder, strategy, share, media, migration, and sync integration tests</td><td>Every endpoint family uses generated calls and maps structural results to Icarus models.</td></tr>
+                <tr><td>Flutter behavior</td><td><code>fvm flutter test</code></td><td>All unit, widget, provider, semantics, and integration tests pass.</td></tr>
+                <tr><td>Round trip</td><td>Current and legacy <code>.ica</code> import and export fixtures</td><td>Every fixture returns with no data loss. Signing in changes zero local-library bytes.</td></tr>
+                <tr><td>Web release</td><td><code>fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons</code></td><td>The release build succeeds through the web transport.</td></tr>
+                <tr><td>macOS release</td><td><code>fvm flutter build macos</code></td><td>The release app succeeds through <code>convex_flutter</code>.</td></tr>
+                <tr><td>Windows release</td><td>Windows CI tests plus <code>fvm flutter build windows</code></td><td>The generated client, native package, full tests, and release build pass on Windows.</td></tr>
+                <tr><td>Linux release</td><td>Linux CI tests plus <code>fvm flutter build linux</code></td><td>The generated client, native package, full tests, and release build pass on Linux.</td></tr>
+                <tr><td>Folder cost</td><td>Count live subscriptions during repeated navigation</td><td>One folder-tree subscription remains active. Navigation opens no parent subscription and performs no extra Convex call.</td></tr>
+                <tr><td>Gauntlet</td><td>50 seeds, 1,000 operations per seed, two editors, one fresh verifier</td><td>Zero lost ops, duplicates, unresolved results, stale subscriptions, false synced states, or snapshot mismatches.</td></tr>
+                <tr><td>Performance</td><td>10 paired before-and-after profile trials with alternating order</td><td>Report median and p95 convergence, reconnect, CPU, RSS, transfer, and bundle size. Investigate any median regression above 10% before merge.</td></tr>
+                <tr><td>Visible product</td><td>Computer Use on macOS release plus web release</td><td>The full script below passes without manual reload, hidden errors, access-token leakage, or a false synced state.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: repository CI commands, the corrected client gauntlet, ADR 0001, and the implementation gates above.</p>
+          <pre><code># Final local gate on macOS after the new tool exists
+npx tsc --noEmit
+npm run test:convex
+(cd tool/icarus_convex_codegen &amp;&amp; fvm dart pub get &amp;&amp; fvm dart analyze &amp;&amp; fvm dart test)
+fvm dart run tool/icarus_convex_codegen/bin/generate.dart
+fvm dart run tool/icarus_convex_codegen/bin/generate.dart
+git diff --exit-code -- convex/function_spec.json convex/error_codes.json lib/collab/generated
+fvm flutter analyze --no-fatal-infos
+fvm flutter test
+fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons
+fvm flutter build macos
+cargo test --manifest-path third_party/convex_flutter/rust/Cargo.toml
+cargo test --manifest-path third_party/convex_rs/Cargo.toml
+git status --short</code></pre>
+          <p class="caption">The final status may contain only the intended source, snapshot, generated output, tests, and documentation for this implementation.</p>
+          <h3 id="computer-use-gate">Computer Use gate: prove the built product</h3>
+          <p>This is a release-build acceptance run, not a demo against mocked providers. Use the final macOS app and the final web build against the same test deployment. The two clients may share the supplied account, but they must not share local storage.</p>
+          <ol>
+            <li>Record the commit SHA, Convex deployment, Supabase project, app version, UTC start time, macOS version, and browser version. Create a unique run name such as <code>typed-wrapper-e2e-20260829T143000Z</code>.</li>
+            <li>Launch <code>build/macos/Build/Products/Release/icarus.app</code> through Computer Use. Start signed out. Count the local library and export one known local strategy. Keep that export for the final byte comparison.</li>
+            <li>Open the login dialog. Enter the email and password from <a href="#test-auth">the test-auth block</a>, then submit. Decline any password-save prompt.</li>
+            <li>After the dialog closes, capture the first screenshot. Confirm Cloud becomes available and the signed-in account indicator appears. Confirm the local library count and known strategy remain unchanged.</li>
+            <li>In Cloud, create a top-level folder named with the run name, create one child folder, and create a strategy inside it. Add two pages, an element, and a lineup. Wait for the visible sync chip to say <strong>Synced</strong>.</li>
+            <li>Serve the release web build and open it in a clean browser profile. Sign in with the same test credentials. Without reloading, confirm the folder tree, child folder, strategy, pages, element, and lineup appear.</li>
+            <li>Rename the child folder in web. Move the strategy between the two run folders. Patch the element and lineup positions. Confirm macOS receives each change without a reload and keeps the correct breadcrumb.</li>
+            <li>Edit the same strategy from both clients. Exercise an accepted edit and an intentional stale-revision edit. The accepted edit must converge. The rejected edit must produce the documented visible state and must never flash <strong>Synced</strong>.</li>
+            <li>Close the macOS app after it reaches <strong>Synced</strong>. Reopen it through Computer Use and confirm the complete cloud state. Sign out, sign in again, and confirm the same state one more time.</li>
+            <li>Export the cloud strategy, import it into local mode under a new name, and compare its canonical content with the cloud copy. Compare the original local export from step 2 with a fresh export. Both comparisons must lose zero supported data.</li>
+            <li>Review the accessibility tree after every navigation or asynchronous state change. Use fresh element indices. If a required control is missing, add a stable semantic label and widget test, rebuild, and restart this run.</li>
+            <li>Capture screenshots after sign-in, initial sync, cross-client rename and move, accepted edit, rejected edit, restart readback, and round trip. Record timestamps so the receipts can be matched to logs and server events.</li>
+            <li>After evidence is saved, delete only the cloud folder whose exact name starts with this run name. Keep the original local library untouched. Record cleanup success in the receipt.</li>
+          </ol>
+          <p>The supplied credential proves same-account sync across independent clients. It does not prove cross-account sharing or revocation. The automated authorization matrix remains mandatory unless Dara supplies separate live accounts B and C. Do not create accounts to make the live script look complete.</p>
+          <p><span class="chip bad">red loop</span> Pause the run on data loss, an access-control leak, a reconnect loop, a stale subscription, an unreadable record, or any moment where <strong>Synced</strong> is shown while work is still local, rejected, failed, or uncertain. Preserve the run data and logs, fix the root cause, add a regression test, rebuild, and restart at the earliest affected step. Then finish the script.</p>
+          <p class="source">Source: <a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/docs/cloud_online_release_gaps.md">cloud release gate</a>, <a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/test/widgets/cloud_beta_automation_semantics_test.dart">auth automation semantics</a>, current sync-status keys, and the Computer Use workflow.</p>
+        </section>
+        <section>
+          <h2 id="commit-plan">Commit boundaries and stop conditions</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Commit</th><th>Contains</th><th>Must be green before push</th></tr></thead>
+              <tbody>
+                <tr><td>1</td><td>Immutable op-ID repair and regression tests</td><td>Focused outbox tests and Flutter analysis</td></tr>
+                <tr><td>2</td><td>Protocol version 3, development wipe path, typed outcomes</td><td>Convex protocol tests and Dart sync tests</td></tr>
+                <tr><td>3</td><td>Public validators, internalized jobs, scrubbed spec</td><td>Convex tests and strict spec audit</td></tr>
+                <tr><td>4</td><td>Generator, bindings, generated API, contract fixtures</td><td>Generator tests, deterministic regeneration, analysis</td></tr>
+                <tr><td>5</td><td>Normalized transports and any required fork extension</td><td>Native and web conformance suite</td></tr>
+                <tr><td>6</td><td>Repository migration, one folder tree, DTO removal</td><td>Flutter tests, web build, macOS build</td></tr>
+                <tr><td>7</td><td>CI drift gates, architecture test, reference cleanup</td><td>Full final verification matrix</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: dependency order in ADR 0001. Each commit is reviewable and leaves the branch buildable.</p>
+          <h3 id="pr-delivery">Use one draft PR with reviewable phase commits</h3>
+          <p>Use one pull request, not a stack. The protocol, function spec, generator, transports, and repository migration describe one contract. A stacked review would make each earlier PR expose a temporary shape, repeat generated-code review, and force every later branch to rebase after a contract fix.</p>
+          <ol>
+            <li>Open one draft PR after the first green phase commit so Windows, Linux, and macOS CI can run throughout implementation. Keep the seven phase commits separate and buildable.</li>
+            <li>Push after each phase. Treat CI failures with the same evidence, fix, regression, rerun loop. Do not request final review while a phase or platform is red.</li>
+            <li>Write the PR description as a map: accepted architecture, phase commits, generated files, protocol change, test matrix, Computer Use receipts, performance comparison, and known non-goals.</li>
+            <li>After all seven phases and the full final matrix pass, mark the PR ready and trigger Greptile. Old draft reviews do not count unless they apply to the current head SHA.</li>
+            <li>For each actionable Greptile finding, verify it against current source, fix it, add or strengthen a regression test, run focused and broad gates, commit, push, and request a fresh review with <code>@greptileai</code>.</li>
+            <li>Poll the current SHA until every required check is green, Greptile reports 5/5 or no actionable findings, and a thread-aware read finds no unresolved actionable review thread. A summary comment alone is not proof.</li>
+            <li>Finish with a clean local branch whose SHA matches the PR head. Report the PR URL, final SHA, commits added during review, every verification result, and any skipped gate with its exact blocker.</li>
+          </ol>
+          <p><span class="chip accent">decision</span> One large diff is the cost. Phase commits, a file map, and receipts make it reviewable without paying the larger coordination cost of a PR stack.</p>
+          <p>Use the repair loop for ordinary failures. Ask Dara only when one of these blocks progress:</p>
+          <ul>
+            <li>The only path forward would weaken an accepted contract or change a user-selected design decision.</li>
+            <li>The fix would change the local Hive schema, require a local migration, or change the <code>.ica</code> format. Those are outside this plan.</li>
+            <li>A required deployment permission, signing identity, or supported-platform runner is unavailable after safe in-scope alternatives are exhausted.</li>
+            <li>Two current requirements conflict and the repository does not contain evidence that resolves the conflict.</li>
+          </ul>
+        </section>
+        <section>
+          <h2 id="appendix">Source inventory</h2>
+          <details class="appendix">
+            <summary>Current seams the implementation must retire or preserve</summary>
+            <pre><code># Current manual boundary
+lib/collab/convex_strategy_repository.dart
+lib/collab/collab_models.dart
+lib/collab/convex_client.dart
+lib/collab/src/convex_client_native.dart
+lib/collab/src/convex_client_web.dart
+# Durable sync and replay
+lib/collab/durable_strategy_outbox.dart
+lib/providers/collab/strategy_op_queue_provider.dart
+lib/providers/collab/active_page_live_sync_models.dart
+convex/ops.ts
+convex/lib/opTypes.ts
+# Folder subscription collapse
+convex/folders.ts
+lib/providers/collab/remote_library_provider.dart
+lib/widgets/folder_content.dart
+lib/widgets/folder_navigator_sidebar.dart
+lib/widgets/current_path_bar.dart
+# Contract and runtime evidence
+tool/convex_client_gauntlet/
+docs/cloud_sync_refactor/convex_dart_client_fair_rerun_result.md</code></pre>
+            <p class="source">Repository audit at <code>be63971</code> on 2026-08-29.</p>
+          </details>
+          <details class="appendix">
+            <summary>Decision evidence and reusable fixtures</summary>
+            <ul>
+              <li><a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/docs/cloud_sync_refactor/convex_dart_client_fair_rerun_result.md">Fair rerun result</a></li>
+              <li><a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/tool/convex_client_gauntlet/results/contract_gate.json">Contract gate result</a></li>
+              <li><a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/tool/convex_client_gauntlet/runtime/results/paired_profile_macos.json">Paired macOS profile</a></li>
+              <li><a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/CONTEXT.md">Icarus glossary</a></li>
+            </ul>
+          </details>
+        </section>
+        <p class="colophon">Generated 2026-08-29 · Codex with Dara's accepted design decisions · repository base <code>be63971</code> · verification expansion based on <code>2191788</code> · source audit on macOS · revision v3 · implementation not started</p>
+      </article>
+    </main>
+  </div>
+  <script>
+    const title = document.querySelector("h1");
+    const status = document.querySelector(".kicker");
+    document.title = title?.textContent || "Document";
+    document.getElementById("rail-title").textContent = title?.textContent || "Document";
+    document.getElementById("rail-status").textContent = status?.textContent || "";
+    const themeButton = document.getElementById("toggle-theme");
+    const paintTheme = () => {
+      const light = document.documentElement.dataset.theme === "light";
+      themeButton.textContent = light ? "DARK" : "LIGHT";
+      themeButton.setAttribute("aria-label", `Switch to ${light ? "dark" : "light"} theme`);
+    };
+    paintTheme();
+    themeButton.addEventListener("click", () => {
+      const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem("blueprint-theme", next); } catch {}
+      paintTheme();
+    });
+    /* The rail earns its width: mirror the headline metrics so key figures
+       stay visible while scrolling, and drop the outline when the document
+       is too short for it to help. */
+    const railMetrics = document.getElementById("rail-metrics");
+    const firstMetrics = [...document.querySelectorAll("#document .metric-line .metric")].slice(0, 4);
+    firstMetrics.forEach((metric) => {
+      const value = metric.querySelector(".metric-value");
+      const label = metric.querySelector(".metric-label");
+      if (!value || !label) return;
+      const row = document.createElement("p");
+      row.className = "rail-metric";
+      const name = document.createElement("span");
+      name.textContent = label.textContent;
+      const figure = document.createElement("b");
+      figure.textContent = value.textContent;
+      for (const verdict of ["good", "warn", "bad"]) {
+        if (value.classList.contains(verdict)) figure.classList.add(verdict);
+      }
+      row.append(name, figure);
+      railMetrics.appendChild(row);
+    });
+    document.getElementById("rail-metrics-block").hidden = !railMetrics.childElementCount;
+    /* Artifacts: every file the document references, collected into rail
+       download links. Links and images are picked up automatically by
+       extension; force-include anything else with data-artifact (empty on
+       an <a> to use its href, or data-artifact="url" on any element).
+       Override the display name with data-artifact-name. */
+    const railArtifacts = document.getElementById("rail-artifacts");
+    const ARTIFACT_EXT = /\.(zip|tar|tar\.gz|tgz|gz|7z|csv|tsv|json|jsonl|ndjson|parquet|xlsx|pdf|png|jpe?g|gif|svg|webp|mp4|txt|log|sql|patch|diff|ipynb|js|ts|sh|py|ya?ml|toml|md)(?=$|[?#])/i;
+    const seenArtifacts = new Set();
+    document.querySelectorAll("#document a[href], #document img[src], #document [data-artifact]").forEach((el) => {
+      const url = el.dataset?.artifact || el.getAttribute("href") || el.getAttribute("src") || "";
+      if (!url || url.startsWith("#") || url.startsWith("data:") || url.startsWith("javascript:")) return;
+      if (!el.hasAttribute("data-artifact") && !ARTIFACT_EXT.test(url)) return;
+      if (seenArtifacts.has(url)) return;
+      seenArtifacts.add(url);
+      const name = el.dataset.artifactName
+        || decodeURIComponent(url.split(/[?#]/)[0].split("/").pop() || url);
+      const ext = (name.match(/\.([a-z0-9]+)$/i)?.[1] || "file").toUpperCase();
+      const row = document.createElement("a");
+      row.className = "rail-artifact";
+      row.href = url;
+      row.setAttribute("download", "");
+      const tag = document.createElement("span");
+      tag.className = "ext";
+      tag.textContent = ext;
+      const label = document.createElement("span");
+      label.className = "name";
+      label.textContent = name;
+      row.append(tag, label);
+      railArtifacts.appendChild(row);
+    });
+    document.getElementById("rail-artifacts-block").hidden = !railArtifacts.childElementCount;
+    const outline = document.getElementById("outline-list");
+    const headings = [...document.querySelectorAll("#document h2[id], #document h3[id]")];
+    if (headings.length < 3) document.getElementById("outline-block").hidden = true;
+    const links = headings.map((heading) => {
+      const link = document.createElement("a");
+      link.className = "outline-link";
+      link.href = `#${heading.id}`;
+      link.textContent = heading.textContent;
+      link.dataset.level = heading.tagName.slice(1);
+      outline.appendChild(link);
+      /* hover anchor: click navigates and copies the absolute link */
+      const anchor = document.createElement("a");
+      anchor.className = "anchor-link";
+      anchor.href = `#${heading.id}`;
+      anchor.textContent = "§";
+      anchor.setAttribute("aria-label", `Copy link to ${heading.textContent}`);
+      anchor.addEventListener("click", () => {
+        const url = `${location.origin}${location.pathname}#${heading.id}`;
+        try { navigator.clipboard.writeText(url); } catch {}
+      });
+      heading.appendChild(anchor);
+      return link;
+    });
+    /* Chart tooltips: any [data-tip] inside a .diagram shows its text in a
+       fixed tooltip that follows the pointer. Newlines in data-tip render
+       as line breaks (white-space: pre-line). */
+    const chartTip = document.getElementById("chart-tip");
+    /* Line indicator: a hit rect carrying data-guide (the series' y at that
+       interval, in viewBox units; space-separate several ys for several
+       series) gets a dashed vertical guide plus a dot per y on hover.
+       data-guide-fill="var(--danger)" colors the dots; default accent. */
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const hideGuides = () => document.querySelectorAll(".hover-guide").forEach((g) => g.setAttribute("visibility", "hidden"));
+    const showGuide = (mark) => {
+      const svg = mark.ownerSVGElement;
+      if (!svg || mark.dataset.guide === undefined || mark.tagName !== "rect") return;
+      let guide = svg.querySelector(".hover-guide");
+      if (!guide) {
+        guide = document.createElementNS(SVG_NS, "g");
+        guide.setAttribute("class", "hover-guide");
+        guide.setAttribute("pointer-events", "none");
+        guide.appendChild(document.createElementNS(SVG_NS, "line"));
+        svg.appendChild(guide);
+      }
+      const x = mark.dataset.guideX !== undefined
+        ? +mark.dataset.guideX
+        : +mark.getAttribute("x") + +mark.getAttribute("width") / 2;
+      const line = guide.querySelector("line");
+      line.setAttribute("x1", x);
+      line.setAttribute("x2", x);
+      line.setAttribute("y1", mark.getAttribute("y"));
+      line.setAttribute("y2", +mark.getAttribute("y") + +mark.getAttribute("height"));
+      guide.querySelectorAll("circle").forEach((dot) => dot.remove());
+      mark.dataset.guide.trim().split(/\s+/).filter(Boolean).forEach((cy) => {
+        const dot = document.createElementNS(SVG_NS, "circle");
+        dot.setAttribute("cx", x);
+        dot.setAttribute("cy", cy);
+        dot.setAttribute("r", 3);
+        if (mark.dataset.guideFill) dot.style.fill = mark.dataset.guideFill;
+        guide.appendChild(dot);
+      });
+      guide.setAttribute("visibility", "visible");
+    };
+    const moveTip = (event) => {
+      const mark = event.target.closest("[data-tip]");
+      hideGuides();
+      if (!mark) { chartTip.style.visibility = "hidden"; return; }
+      chartTip.textContent = mark.dataset.tip;
+      chartTip.style.visibility = "visible";
+      const x = Math.min(event.clientX + 14, innerWidth - chartTip.offsetWidth - 8);
+      const y = Math.min(event.clientY + 14, innerHeight - chartTip.offsetHeight - 8);
+      chartTip.style.left = `${x}px`;
+      chartTip.style.top = `${y}px`;
+      showGuide(mark);
+    };
+    document.querySelectorAll(".diagram").forEach((diagram) => {
+      diagram.addEventListener("mousemove", moveTip);
+      diagram.addEventListener("mouseleave", () => { chartTip.style.visibility = "hidden"; hideGuides(); });
+    });
+    const progress = document.querySelector(".reading-progress-fill");
+    const updateProgress = () => {
+      const max = document.documentElement.scrollHeight - innerHeight;
+      const ratio = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+      progress.style.transform = `scaleY(${ratio})`;
+    };
+    const activateOutline = () => {
+      if (!headings.length) return;
+      const current = headings.reduce((active, heading) =>
+        heading.getBoundingClientRect().top <= 120 ? heading : active, headings[0]);
+      links.forEach((link) => link.classList.toggle("active", link.hash === `#${current.id}`));
+    };
+    const updateScrollState = () => {
+      updateProgress();
+      activateOutline();
+    };
+    addEventListener("scroll", updateScrollState, { passive: true });
+    addEventListener("resize", updateProgress, { passive: true });
+    updateScrollState();
+    document.getElementById("copy-link").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      try {
+        await navigator.clipboard.writeText(location.href);
+        button.textContent = "COPIED";
+      } catch {
+        button.textContent = "COPY FAILED";
+      }
+      setTimeout(() => { button.textContent = "COPY LINK"; }, 1400);
+    });
+  </script>
+</body>
+</html>

@@ -30,6 +30,7 @@ import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
+import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
@@ -1025,17 +1026,11 @@ class _AccountAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isAuthenticated && avatarUrl != null) {
-      return CircleAvatar(
-        radius: 14,
-        backgroundImage: NetworkImage(avatarUrl!),
-      );
-    }
-
-    return CircleAvatar(
+    return AccountAvatar(
       radius: 14,
       backgroundColor: Settings.tacticalVioletTheme.card,
-      child: Icon(
+      avatarUrl: isAuthenticated ? avatarUrl : null,
+      fallback: Icon(
         isAuthenticated ? Icons.person : LucideIcons.userRound,
         size: 15,
       ),

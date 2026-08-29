@@ -6,7 +6,15 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 
-const durableOutboxRecordVersion = 1;
+const durableOutboxRecordVersion = 2;
+const durableOutboxVersionKey = '__outbox_record_version__';
+
+Future<void> prepareDurableStrategyOutbox() async {
+  final box = Hive.box<dynamic>(HiveBoxNames.strategyOutboxBox);
+  if (box.get(durableOutboxVersionKey) == durableOutboxRecordVersion) return;
+  await box.clear();
+  await box.put(durableOutboxVersionKey, durableOutboxRecordVersion);
+}
 
 enum DurableOutboxStatus { queued, inFlight, paused, attention }
 
@@ -178,6 +186,7 @@ class HiveDurableStrategyOutboxStore implements DurableStrategyOutboxStore {
     final issues = <DurableOutboxLoadIssue>[];
     for (final key in _box.keys) {
       final storageKey = key.toString();
+      if (storageKey == durableOutboxVersionKey) continue;
       try {
         final raw = _box.get(key);
         final decoded = raw is String ? jsonDecode(raw) : raw;

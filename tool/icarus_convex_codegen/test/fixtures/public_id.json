@@ -1,0 +1,11 @@
+{
+  "functions": [
+    {
+      "args": { "type": "object", "value": { "documentId": { "fieldType": { "type": "id", "tableName": "strategies" }, "optional": false } } },
+      "functionType": "Query",
+      "identifier": "fixture.js:publicId",
+      "returns": { "type": "null" },
+      "visibility": { "kind": "public" }
+    }
+  ]
+}
