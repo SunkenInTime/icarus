@@ -114,7 +114,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           fvm dart test
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          fvm dart analyze
+          # Analyze this package only. The nested runtime fixtures are separate
+          # Flutter packages and are validated by the Linux runtime job after
+          # their own dependencies have been resolved.
+          fvm dart analyze bin lib test
 
       - name: Validate Icarus Convex Generator
         shell: pwsh
