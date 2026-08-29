@@ -23,6 +23,8 @@ class ActivePageLiveSyncState {
   const ActivePageLiveSyncState({
     this.strategyPublicId,
     this.activePageId,
+    this.hydratedPageId,
+    this.hydratedEntityKeys = const <EntitySyncKey>{},
     this.remoteBaseRevisionByEntity = const <EntitySyncKey, int>{},
     this.overlayByEntityKey = const <EntitySyncKey, ActivePageOverlayEntry>{},
     this.lastAckBatch = const <AckedEntityIntent>[],
@@ -30,6 +32,8 @@ class ActivePageLiveSyncState {
 
   final String? strategyPublicId;
   final String? activePageId;
+  final String? hydratedPageId;
+  final Set<EntitySyncKey> hydratedEntityKeys;
   final Map<EntitySyncKey, int> remoteBaseRevisionByEntity;
   final Map<EntitySyncKey, ActivePageOverlayEntry> overlayByEntityKey;
   final List<AckedEntityIntent> lastAckBatch;
@@ -38,6 +42,9 @@ class ActivePageLiveSyncState {
     String? strategyPublicId,
     String? activePageId,
     bool clearActivePageId = false,
+    String? hydratedPageId,
+    bool clearHydratedPage = false,
+    Set<EntitySyncKey>? hydratedEntityKeys,
     Map<EntitySyncKey, int>? remoteBaseRevisionByEntity,
     Map<EntitySyncKey, ActivePageOverlayEntry>? overlayByEntityKey,
     List<AckedEntityIntent>? lastAckBatch,
@@ -46,6 +53,9 @@ class ActivePageLiveSyncState {
       strategyPublicId: strategyPublicId ?? this.strategyPublicId,
       activePageId:
           clearActivePageId ? null : (activePageId ?? this.activePageId),
+      hydratedPageId:
+          clearHydratedPage ? null : (hydratedPageId ?? this.hydratedPageId),
+      hydratedEntityKeys: hydratedEntityKeys ?? this.hydratedEntityKeys,
       remoteBaseRevisionByEntity:
           remoteBaseRevisionByEntity ?? this.remoteBaseRevisionByEntity,
       overlayByEntityKey: overlayByEntityKey ?? this.overlayByEntityKey,
@@ -77,16 +87,43 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     required String? strategyPublicId,
     required String? activePageId,
   }) {
+    final contextChanged = strategyPublicId != state.strategyPublicId ||
+        activePageId != state.activePageId;
     state = state.copyWith(
       strategyPublicId: strategyPublicId,
       activePageId: activePageId,
       clearActivePageId: activePageId == null,
+      clearHydratedPage: contextChanged,
+      hydratedEntityKeys:
+          contextChanged ? const <EntitySyncKey>{} : state.hydratedEntityKeys,
       remoteBaseRevisionByEntity: strategyPublicId == state.strategyPublicId
           ? state.remoteBaseRevisionByEntity
           : const <EntitySyncKey, int>{},
       overlayByEntityKey: strategyPublicId == state.strategyPublicId
           ? state.overlayByEntityKey
           : const <EntitySyncKey, ActivePageOverlayEntry>{},
+    );
+  }
+
+  void markPageUnhydrated({
+    required String strategyPublicId,
+    required String pageId,
+  }) {
+    setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
+    state = state.copyWith(
+      clearHydratedPage: true,
+      hydratedEntityKeys: const <EntitySyncKey>{},
+    );
+  }
+
+  void markPageHydrated({
+    required String strategyPublicId,
+    required String pageId,
+  }) {
+    setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
+    state = state.copyWith(
+      hydratedPageId: pageId,
+      hydratedEntityKeys: _normalizedLocalEntities(pageId).keys.toSet(),
     );
   }
 
@@ -103,6 +140,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     required String pageId,
   }) {
     setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
+    if (state.hydratedPageId != pageId) {
+      _debugLog('sync.skip page=$pageId reason=page_not_hydrated');
+      return null;
+    }
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
     final remotePage = snapshot?.activePage;
     if (snapshot == null ||
@@ -181,6 +222,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       }
 
       if (local == null && remote != null) {
+        final wasHydratedLocally = state.hydratedEntityKeys.contains(key);
+        if (!wasHydratedLocally &&
+            existingOverlay == null &&
+            !shouldPreserveTouched) {
+          _debugLog(
+            'overlay.skip $key reason=remote_not_yet_hydrated_locally',
+          );
+          continue;
+        }
         final overlay = ActivePageOverlayEntry(
           entityKey: key,
           entityType: remote.overlayEntityType,

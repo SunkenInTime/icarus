@@ -266,8 +266,13 @@ class CloudStrategyPageSource implements StrategyPageSource {
         parsedLineUpGroups.add(LineUpGroup.fromJson(
           cloudPayloadData(lineup.payload),
         ));
-      } catch (_) {
-        // Ignore malformed payloads during hydration.
+      } catch (error, stackTrace) {
+        Error.throwWithStackTrace(
+          FormatException(
+            'Cloud lineup ${lineup.publicId} could not be hydrated: $error',
+          ),
+          stackTrace,
+        );
       }
     }
 
@@ -437,8 +442,13 @@ class CloudStrategyPageSource implements StrategyPageSource {
         parsedLineUpGroups.add(LineUpGroup.fromJson(
           cloudPayloadData(lineup.payload),
         ));
-      } catch (_) {
-        // Ignore malformed payloads during hydration.
+      } catch (error, stackTrace) {
+        Error.throwWithStackTrace(
+          FormatException(
+            'Cloud lineup ${lineup.publicId} could not be hydrated: $error',
+          ),
+          stackTrace,
+        );
       }
     }
 

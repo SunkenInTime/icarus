@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 
@@ -410,7 +411,7 @@ void main() {
             'id': 'item-1',
             'ability': <Object?, Object?>{
               'id': 'ability-1',
-              'data': <Object?, Object?>{'type': 'sova', 'index': 2},
+              'data': <Object?, Object?>{'type': 'sova', 'index': 2.0},
               'position': <Object?, Object?>{'dx': 30, 'dy': 40},
               'lineUpID': 'lineup-1',
             },
@@ -426,6 +427,26 @@ void main() {
 
     expect(group.id, 'lineup-1');
     expect(group.items.single.notes, 'proof');
+  });
+
+  test('ability info accepts Convex float64 integers and rejects fractions',
+      () {
+    const converter = AbilityInfoConverter();
+
+    expect(
+      converter.fromJson(<String, dynamic>{
+        'type': 'sova',
+        'index': 2.0,
+      }).index,
+      2,
+    );
+    expect(
+      () => converter.fromJson(<String, dynamic>{
+        'type': 'sova',
+        'index': 2.5,
+      }),
+      throwsFormatException,
+    );
   });
 
   group('separate remote read models', () {

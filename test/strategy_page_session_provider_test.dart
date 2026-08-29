@@ -21,6 +21,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
@@ -264,7 +265,7 @@ RemoteLineup _lineup(String pageId, String id) {
             'ability': <Object?, Object?>{
               'id': 'ability-$id',
               'isDeleted': false,
-              'data': <Object?, Object?>{'type': 'sova', 'index': 2},
+              'data': <Object?, Object?>{'type': 'sova', 'index': 2.0},
               'position': <Object?, Object?>{'dx': 30, 'dy': 40},
               'isAlly': true,
               'rotation': 0,
@@ -333,6 +334,19 @@ Future<ProviderContainer> _cloudContainer({
         isOpen: true,
       ));
   container.listen(strategyPageSessionProvider, (_, __) {});
+  await container.read(remoteEditorSnapshotProvider.future);
+  return container;
+}
+
+Future<ProviderContainer> _syncContainer({
+  required _FakeRemoteEditorNotifier remote,
+  required _FakeStrategyOpQueueNotifier queue,
+}) async {
+  final container = ProviderContainer(overrides: [
+    remoteEditorSnapshotProvider.overrideWith(() => remote),
+    strategyOpQueueProvider.overrideWith(() => queue),
+  ]);
+  addTearDown(container.dispose);
   await container.read(remoteEditorSnapshotProvider.future);
   return container;
 }
@@ -523,7 +537,7 @@ void main() {
       pages: [page],
       activePage: _pageSnapshot(page, elements: [element]),
     ));
-    final container = await _cloudContainer(
+    final container = await _syncContainer(
       remote: remote,
       queue: _FakeStrategyOpQueueNotifier(),
     );
@@ -531,7 +545,10 @@ void main() {
       PlacedText(id: element.publicId, position: const Offset(10, 20))
         ..text = 'restored locally',
     ]);
-    container.read(strategyProvider.notifier).consumeScheduledCloudPageSync();
+    container.read(activePageLiveSyncProvider.notifier).markPageHydrated(
+          strategyPublicId: 'cloud-strategy',
+          pageId: page.publicId,
+        );
 
     final desired =
         container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
@@ -620,6 +637,10 @@ void main() {
     expect(session.transitionState, PageTransitionState.idle);
     expect(container.read(transitionProvider).active, isFalse);
     expect(remote.selectedPageIds, [pageTwo.publicId, pageOne.publicId]);
+    expect(
+      container.read(activePageLiveSyncProvider).hydratedPageId,
+      pageOne.publicId,
+    );
   });
 
   test('remote hydration waits until an unchanged text draft is dismissed',
@@ -792,7 +813,7 @@ void main() {
       pages: [pageOne, pageTwo],
       activePage: _pageSnapshot(pageTwo, text: 'remote-two'),
     ));
-    final container = await _cloudContainer(
+    final container = await _syncContainer(
       remote: remote,
       queue: _FakeStrategyOpQueueNotifier(),
     );
@@ -844,6 +865,73 @@ void main() {
     expect(
       desired[EntitySyncKey.element(page.publicId, 'text-page-1')]?.kind,
       StrategyOpKind.patch,
+    );
+  });
+
+  test('unhydrated canvas cannot author a remote lineup deletion', () async {
+    final page = _page('page-1', 0);
+    final lineup = _lineup(page.publicId, 'lineup-1');
+    final container = await _syncContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, lineups: [lineup]),
+      )),
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    container.read(activePageLiveSyncProvider.notifier).setContext(
+          strategyPublicId: 'cloud-strategy',
+          activePageId: page.publicId,
+        );
+
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            );
+
+    expect(desired, isNull);
+  });
+
+  test('new remote lineup is not inferred as a local deletion', () async {
+    final page = _page('page-1', 0);
+    final before = _editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, text: 'remote'),
+    );
+    final remote = _FakeRemoteEditorNotifier(before);
+    final container = await _cloudContainer(
+      remote: remote,
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    container.read(strategySaveStateProvider.notifier).markDirty();
+    remote.setSnapshot(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(
+        page,
+        text: 'remote',
+        contentRevision: 2,
+        lineups: [_lineup(page.publicId, 'lineup-1')],
+      ),
+    ));
+
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            );
+
+    expect(desired, isNotNull);
+    expect(
+      desired![EntitySyncKey.lineup(page.publicId, 'lineup-1')],
+      isNull,
     );
   });
 
