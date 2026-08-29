@@ -1,0 +1,11 @@
+{
+  "functions": [
+    {
+      "args": { "type": "object", "value": { "foo-bar": { "fieldType": { "type": "string" }, "optional": false }, "foo_bar": { "fieldType": { "type": "string" }, "optional": false } } },
+      "functionType": "Query",
+      "identifier": "fixture.js:nameCollision",
+      "returns": { "type": "null" },
+      "visibility": { "kind": "public" }
+    }
+  ]
+}

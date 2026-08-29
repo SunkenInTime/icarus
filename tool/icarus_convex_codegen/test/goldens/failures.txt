@@ -1,0 +1,4 @@
+missing_return.json|fixture.js:missingReturn.returns is missing a validator
+unsupported_validator.json|fixture.js:unsupported.args.future uses unsupported validator future-validator
+public_id.json|fixture.js:publicId.args.documentId exposes Convex id strategies
+name_collision.json|FixtureNameCollisionArgs has colliding field names at foo_bar

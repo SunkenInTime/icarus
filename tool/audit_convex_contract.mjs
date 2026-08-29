@@ -18,6 +18,7 @@ const errorsSource = readFileSync(
 const failures = [];
 const supportedValidatorTypes = new Set([
   "array",
+  "bigint",
   "boolean",
   "bytes",
   "id",
