@@ -5,11 +5,53 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
+  testWidgets('shared text fields expose live editable semantics',
+      (tester) async {
+    final semanticsHandle = tester.ensureSemantics();
+    final controller = TextEditingController(text: 'child-final');
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      _testApp(
+        CustomTextField(
+          key: const ValueKey('shared-editable-field'),
+          controller: controller,
+          hintText: 'Folder Name',
+        ),
+      ),
+    );
+
+    final node = tester.getSemantics(
+      find.byKey(const ValueKey('shared-editable-field')),
+    );
+    expect(node.flagsCollection.isEnabled, ui.Tristate.isTrue);
+    expect(node.getSemanticsData().hasAction(SemanticsAction.setText), isTrue);
+    expect(node.label, 'Folder Name');
+    expect(node.value, 'child-final');
+
+    tester.semantics.performAction(
+      find.semantics.byLabel('Folder Name'),
+      SemanticsAction.setText,
+      args: 'child-renamed-web',
+    );
+    await tester.pump();
+
+    expect(controller.text, 'child-renamed-web');
+    expect(
+      tester
+          .getSemantics(find.byKey(const ValueKey('shared-editable-field')))
+          .value,
+      'child-renamed-web',
+    );
+    semanticsHandle.dispose();
+  });
+
   testWidgets('auth dialog exposes stable fields and actions', (tester) async {
     final semanticsHandle = tester.ensureSemantics();
     tester.view.physicalSize = const Size(1280, 800);
