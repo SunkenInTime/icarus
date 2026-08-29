@@ -2,6 +2,7 @@
 // Generated from convex/function_spec.json by tool/icarus_convex_codegen.
 // ignore_for_file: prefer_const_constructors, unused_element, unused_import
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import '../transport/convex_transport.dart';
@@ -26,14 +27,55 @@ final class ConvexQuery<T> {
 
   Future<T> fetch() => _invoke(() => _transport.query(_name, _args), _decode);
 
-  Stream<T> watch() async* {
-    try {
-      await for (final value in _transport.subscribe(_name, _args)) {
-        yield _decode(value);
-      }
-    } on ConvexTransportError catch (error) {
-      throw ConvexFunctionException.fromTransport(error);
-    }
+  Stream<T> watch() {
+    late final StreamController<T> controller;
+    StreamSubscription<ConvexValue>? subscription;
+    var active = false;
+
+    controller = StreamController<T>(
+      onListen: () {
+        active = true;
+        subscription = _transport
+            .subscribe(_name, _args)
+            .listen(
+              (value) {
+                if (!active) return;
+                try {
+                  controller.add(_decode(value));
+                } catch (error, stackTrace) {
+                  active = false;
+                  controller.addError(error, stackTrace);
+                  subscription?.cancel();
+                  controller.close();
+                }
+              },
+              onError: (Object error, StackTrace stackTrace) {
+                if (!active) return;
+                if (error is ConvexTransportError) {
+                  controller.addError(
+                    ConvexFunctionException.fromTransport(error),
+                    stackTrace,
+                  );
+                  return;
+                }
+                active = false;
+                controller.addError(error, stackTrace);
+                subscription?.cancel();
+                controller.close();
+              },
+              onDone: () {
+                if (!active) return;
+                active = false;
+                controller.close();
+              },
+            );
+      },
+      onCancel: () {
+        active = false;
+        return subscription?.cancel();
+      },
+    );
+    return controller.stream;
   }
 }
 

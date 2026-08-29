@@ -8,12 +8,7 @@ sealed class ConvexValue {
     if (value is bool) return ConvexBoolean(value);
     if (value is int) return ConvexInteger(value);
     if (value is BigInt) return ConvexBigInt(value);
-    if (value is double) {
-      if (!value.isFinite) {
-        throw FormatException('Convex numbers must be finite, received $value');
-      }
-      return ConvexFloat(value);
-    }
+    if (value is double) return ConvexFloat(value);
     if (value is String) return ConvexString(value);
     if (value is Uint8List) return ConvexBytes(value);
     if (value is List) {
@@ -126,6 +121,16 @@ final class ConvexTransportError implements Exception {
 
   @override
   String toString() => 'ConvexTransportError($rawCode, $message)';
+}
+
+final class ConvexNormalizationError implements Exception {
+  const ConvexNormalizationError(this.path, this.cause);
+
+  final String path;
+  final Object cause;
+
+  @override
+  String toString() => 'ConvexNormalizationError($path, $cause)';
 }
 
 abstract interface class ConvexTransport {

@@ -381,6 +381,7 @@ String _emitApi(MappedContract contract) {
   final moduleNames = functionsByModule.keys.toList()..sort();
   final out = StringBuffer()
     ..writeln(_header())
+    ..writeln("import 'dart:async';")
     ..writeln("import 'dart:typed_data';")
     ..writeln()
     ..writeln("import '../transport/convex_transport.dart';")
@@ -706,9 +707,6 @@ double _decodeNumber(ConvexValue value, String path) {
 }
 
 ConvexValue _encodeNumber(double value, String path) {
-  if (!value.isFinite) {
-    throw ConvexEncodingException(path, 'number must be finite');
-  }
   return ConvexFloat(value);
 }
 
@@ -790,14 +788,53 @@ final class ConvexQuery<T> {
         _decode,
       );
 
-  Stream<T> watch() async* {
-    try {
-      await for (final value in _transport.subscribe(_name, _args)) {
-        yield _decode(value);
-      }
-    } on ConvexTransportError catch (error) {
-      throw ConvexFunctionException.fromTransport(error);
-    }
+  Stream<T> watch() {
+    late final StreamController<T> controller;
+    StreamSubscription<ConvexValue>? subscription;
+    var active = false;
+
+    controller = StreamController<T>(
+      onListen: () {
+        active = true;
+        subscription = _transport.subscribe(_name, _args).listen(
+          (value) {
+            if (!active) return;
+            try {
+              controller.add(_decode(value));
+            } catch (error, stackTrace) {
+              active = false;
+              controller.addError(error, stackTrace);
+              subscription?.cancel();
+              controller.close();
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (!active) return;
+            if (error is ConvexTransportError) {
+              controller.addError(
+                ConvexFunctionException.fromTransport(error),
+                stackTrace,
+              );
+              return;
+            }
+            active = false;
+            controller.addError(error, stackTrace);
+            subscription?.cancel();
+            controller.close();
+          },
+          onDone: () {
+            if (!active) return;
+            active = false;
+            controller.close();
+          },
+        );
+      },
+      onCancel: () {
+        active = false;
+        return subscription?.cancel();
+      },
+    );
+    return controller.stream;
   }
 }
 

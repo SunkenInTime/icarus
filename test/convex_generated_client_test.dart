@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
@@ -6,7 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_payload_codecs.dart';
 import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/collab/src/convex_client_types.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/collab/transport/convex_transport_adapter.dart';
 
 void main() {
   test('generated query fetch and watch decode the same typed folder tree',
@@ -83,8 +86,14 @@ void main() {
     final bytes = Uint8List.fromList([0, 1, 127, 128, 255]);
     final decodedBytes = ConvexValue.fromDart(bytes).toDart() as Uint8List;
     expect(decodedBytes, bytes);
-    expect(() => ConvexValue.fromDart(double.nan), throwsFormatException);
-    expect(() => ConvexValue.fromDart(double.infinity), throwsFormatException);
+    expect(
+      (ConvexValue.fromDart(double.nan).toDart() as double).isNaN,
+      isTrue,
+    );
+    expect(
+      ConvexValue.fromDart(double.infinity).toDart(),
+      double.infinity,
+    );
   });
 
   test('annotated payload codecs enforce their exact server tag', () {
@@ -103,9 +112,111 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('platform transport normalizes native and web value shapes identically',
+      () async {
+    final raw = <String, Object?>{
+      'nullValue': null,
+      'integerValue': 9223372036854775807,
+      'bigintValue': BigInt.parse('-9223372036854775808'),
+      'floatValue': -0.0,
+      'bytesValue': Uint8List.fromList([0, 127, 255]),
+      'nested': [
+        true,
+        {'present': 'yes'},
+      ],
+    };
+    final nativeLike = PlatformConvexTransport(
+      _ScriptedValueSource(result: raw),
+    );
+    final webLike = PlatformConvexTransport(
+      _ScriptedValueSource(result: Map<String, Object?>.from(raw)),
+    );
+
+    final nativeValue = await nativeLike.query(
+      'fixture:values',
+      ConvexObject(const {}),
+    );
+    final webValue = await webLike.query(
+      'fixture:values',
+      ConvexObject(const {}),
+    );
+
+    expect(_describeConvexValue(nativeValue), _describeConvexValue(webValue));
+    final object = nativeValue as ConvexObject;
+    expect(object.value.containsKey('omitted'), isFalse);
+    expect(
+      (object.value['bytesValue'] as ConvexBytes).value,
+      Uint8List.fromList([0, 127, 255]),
+    );
+    expect(
+      (object.value['floatValue'] as ConvexFloat).value.isNegative,
+      isTrue,
+    );
+  });
+
+  test('recoverable function error does not close a generated watch', () async {
+    final source = _ScriptedValueSource(
+      result: _folderTreeValue().toDart(),
+      subscriptionEvents: [
+        _folderTreeValue(name: 'Before error').toDart(),
+        const ConvexClientFunctionError(
+          rawCode: 'CONFLICT',
+          message: 'retryable conflict',
+          data: {'code': 'CONFLICT', 'revision': 4},
+        ),
+        _folderTreeValue(name: 'After error').toDart(),
+      ],
+    );
+    final api = IcarusConvexApi(PlatformConvexTransport(source));
+    final names = <String>[];
+    final errors = <Object>[];
+    final receivedSecondValue = Completer<void>();
+    final subscription = api.folders.listTree().watch().listen(
+      (folders) {
+        names.add(folders.single.name);
+        if (names.length == 2) receivedSecondValue.complete();
+      },
+      onError: (Object error) => errors.add(error),
+    );
+
+    await receivedSecondValue.future.timeout(const Duration(seconds: 2));
+    await subscription.cancel();
+
+    expect(names, ['Before error', 'After error']);
+    expect(errors, [isA<ConvexFunctionException>()]);
+    final error = errors.single as ConvexFunctionException;
+    expect(error.code, ConvexErrorCode.conflict);
+    expect(error.rawCode, 'CONFLICT');
+    expect(source.handle.cancelled, isTrue);
+  });
+
+  test('normalization failure closes a generated watch', () async {
+    final source = _ScriptedValueSource(
+      result: _folderTreeValue().toDart(),
+      subscriptionEvents: [DateTime.utc(2026), _folderTreeValue().toDart()],
+    );
+    final api = IcarusConvexApi(PlatformConvexTransport(source));
+    final errors = <Object>[];
+    final done = Completer<void>();
+
+    api.folders.listTree().watch().listen(
+          (_) => fail('A contract-failed watch must not emit another value'),
+          onError: (Object error) => errors.add(error),
+          onDone: done.complete,
+        );
+    await done.future.timeout(const Duration(seconds: 2));
+
+    expect(errors, [isA<ConvexNormalizationError>()]);
+    expect(source.handle.cancelled, isTrue);
+  });
 }
 
-ConvexArray _folderTreeValue({String role = 'owner'}) => ConvexArray([
+ConvexArray _folderTreeValue({
+  String role = 'owner',
+  String name = 'Defaults',
+}) =>
+    ConvexArray([
       ConvexObject({
         'color': const ConvexNull(),
         'createdAt': const ConvexInteger(1),
@@ -114,13 +225,36 @@ ConvexArray _folderTreeValue({String role = 'owner'}) => ConvexArray([
         'iconFontFamily': const ConvexNull(),
         'iconFontPackage': const ConvexNull(),
         'iconId': const ConvexNull(),
-        'name': const ConvexString('Defaults'),
+        'name': ConvexString(name),
         'parentFolderPublicId': const ConvexNull(),
         'publicId': const ConvexString('folder-1'),
         'role': ConvexString(role),
         'updatedAt': const ConvexInteger(2),
       }),
     ]);
+
+Object? _describeConvexValue(ConvexValue value) => switch (value) {
+      ConvexNull() => 'null',
+      ConvexBoolean(:final value) => ['boolean', value],
+      ConvexInteger(:final value) => ['integer', value],
+      ConvexFloat(:final value) => [
+          'float',
+          value == 0 && value.isNegative ? '-0' : value,
+        ],
+      ConvexBigInt(:final value) => ['bigint', value.toString()],
+      ConvexString(:final value) => ['string', value],
+      ConvexBytes(:final value) => ['bytes', ...value],
+      ConvexArray(:final value) => [
+          'array',
+          ...value.map(_describeConvexValue),
+        ],
+      ConvexObject(:final value) => {
+          'object': {
+            for (final entry in value.entries)
+              entry.key: _describeConvexValue(entry.value),
+          },
+        },
+    };
 
 Object? _randomJsonValue(Random random, int depth) {
   if (depth == 0) {
@@ -179,4 +313,60 @@ final class _FakeTransport implements ConvexTransport {
   Stream<ConvexValue> subscribe(String name, ConvexObject args) async* {
     yield await _respond(name, args);
   }
+}
+
+final class _ScriptedValueSource implements ConvexClientValueSource {
+  _ScriptedValueSource({
+    required this.result,
+    this.subscriptionEvents = const [],
+  });
+
+  final Object? result;
+  final List<Object?> subscriptionEvents;
+  final _TestSubscriptionHandle handle = _TestSubscriptionHandle();
+
+  @override
+  Future<Object?> actionValue({
+    required String name,
+    required Map<String, Object?> args,
+  }) async =>
+      result;
+
+  @override
+  Future<Object?> mutationValue({
+    required String name,
+    required Map<String, Object?> args,
+  }) async =>
+      result;
+
+  @override
+  Future<Object?> queryValue(String name, Map<String, Object?> args) async =>
+      result;
+
+  @override
+  Future<SubscriptionHandle> subscribeValue({
+    required String name,
+    required Map<String, Object?> args,
+    required void Function(Object? value) onUpdate,
+    required void Function(ConvexClientFunctionError error) onError,
+  }) async {
+    scheduleMicrotask(() {
+      for (final event in subscriptionEvents) {
+        if (handle.cancelled) return;
+        if (event is ConvexClientFunctionError) {
+          onError(event);
+        } else {
+          onUpdate(event);
+        }
+      }
+    });
+    return handle;
+  }
+}
+
+final class _TestSubscriptionHandle implements SubscriptionHandle {
+  bool cancelled = false;
+
+  @override
+  void cancel() => cancelled = true;
 }

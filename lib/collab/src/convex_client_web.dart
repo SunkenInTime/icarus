@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
+import 'dart:typed_data';
 
 import 'package:icarus/collab/src/convex_client_types.dart';
 
@@ -30,7 +31,29 @@ extension type _JsConnectionState._(JSObject _) implements JSObject {
   external bool get isWebSocketConnected;
 }
 
-class ConvexClient {
+@JS('BigInt')
+external JSBigInt _createJsBigInt(String value);
+
+@JS('String')
+external String _jsString(JSAny? value);
+
+@JS('Object.keys')
+external JSArray<JSString> _jsObjectKeys(JSObject value);
+
+extension type _JsUint8ArrayView._(JSObject _) implements JSObject {
+  external JSArrayBuffer get buffer;
+}
+
+@JS('Uint8Array')
+extension type _JsReadableUint8Array._(JSObject _) implements JSObject {
+  external _JsReadableUint8Array(JSArrayBuffer buffer);
+
+  external int get length;
+
+  external int operator [](int index);
+}
+
+class ConvexClient implements ConvexClientValueSource {
   ConvexClient._(this._client, this.config) {
     _setConnectionState(
       _client.connectionState().isWebSocketConnected
@@ -94,6 +117,11 @@ class ConvexClient {
     return _awaitResult('Query $name', _client.query(name, args.jsify()));
   }
 
+  @override
+  Future<Object?> queryValue(String name, Map<String, Object?> args) {
+    return _awaitValue('Query $name', _client.query(name, _toJsConvex(args)));
+  }
+
   Future<String> mutation({
     required String name,
     required Map<String, dynamic> args,
@@ -104,11 +132,33 @@ class ConvexClient {
     );
   }
 
+  @override
+  Future<Object?> mutationValue({
+    required String name,
+    required Map<String, Object?> args,
+  }) {
+    return _awaitValue(
+      'Mutation $name',
+      _client.mutation(name, _toJsConvex(args)),
+    );
+  }
+
   Future<String> action({
     required String name,
     required Map<String, dynamic> args,
   }) {
     return _awaitResult('Action $name', _client.action(name, args.jsify()));
+  }
+
+  @override
+  Future<Object?> actionValue({
+    required String name,
+    required Map<String, Object?> args,
+  }) {
+    return _awaitValue(
+      'Action $name',
+      _client.action(name, _toJsConvex(args)),
+    );
   }
 
   Future<SubscriptionHandle> subscribe({
@@ -126,6 +176,32 @@ class ConvexClient {
     final unsubscribe = _client.onUpdate(
       name,
       args.jsify(),
+      updateCallback,
+      errorCallback,
+    );
+    return _WebSubscriptionHandle(
+      unsubscribe: unsubscribe,
+      updateCallback: updateCallback,
+      errorCallback: errorCallback,
+    );
+  }
+
+  @override
+  Future<SubscriptionHandle> subscribeValue({
+    required String name,
+    required Map<String, Object?> args,
+    required void Function(Object? value) onUpdate,
+    required void Function(ConvexClientFunctionError error) onError,
+  }) async {
+    final updateCallback = ((JSAny? value, JSAny? _) {
+      onUpdate(_fromJsConvex(value));
+    }).toJS;
+    final errorCallback = ((JSAny? error, JSAny? _) {
+      onError(_jsFunctionError(error));
+    }).toJS;
+    final unsubscribe = _client.onUpdate(
+      name,
+      _toJsConvex(args),
       updateCallback,
       errorCallback,
     );
@@ -212,6 +288,20 @@ class ConvexClient {
     }
   }
 
+  Future<Object?> _awaitValue(
+    String operation,
+    JSPromise<JSAny?> promise,
+  ) async {
+    try {
+      final result = await promise.toDart.timeout(config.operationTimeout);
+      return _fromJsConvex(result);
+    } on TimeoutException {
+      throw TimeoutException('$operation timed out', config.operationTimeout);
+    } catch (error) {
+      throw _jsFunctionError(error);
+    }
+  }
+
   void _setConnectionState(WebSocketConnectionState next) {
     if (_connectionState == next) {
       return;
@@ -244,6 +334,87 @@ class ConvexClient {
       return 'Unknown Convex error';
     }
   }
+
+  ConvexClientFunctionError _jsFunctionError(Object? error) {
+    JSAny? jsError;
+    try {
+      jsError = error as JSAny?;
+    } catch (_) {
+      return ConvexClientFunctionError(
+        rawCode: 'CONVEX_ERROR',
+        message: error?.toString() ?? 'Unknown Convex error',
+        data: null,
+      );
+    }
+
+    Object? data;
+    String? objectCode;
+    String message = _jsErrorMessage(jsError);
+    try {
+      final object = jsError as JSObject;
+      final rawData = object.getProperty<JSAny?>('data'.toJS);
+      data = _fromJsConvex(rawData);
+      final rawObjectCode = object.getProperty<JSAny?>('code'.toJS);
+      objectCode = rawObjectCode == null ? null : _jsString(rawObjectCode);
+    } catch (_) {}
+    final dataMap = data is Map ? data : const <Object?, Object?>{};
+    final rawCode = dataMap['code']?.toString() ?? objectCode ?? 'CONVEX_ERROR';
+    final structuredMessage = dataMap['message'];
+    if (structuredMessage is String && structuredMessage.isNotEmpty) {
+      message = structuredMessage;
+    }
+    return ConvexClientFunctionError(
+      rawCode: rawCode,
+      message: message,
+      data: data,
+    );
+  }
+}
+
+JSAny? _toJsConvex(Object? value) {
+  if (value is BigInt) return _createJsBigInt(value.toString());
+  if (value is Uint8List) {
+    final array = Uint8List.fromList(value).toJS;
+    return _JsUint8ArrayView._(array).buffer;
+  }
+  if (value is List) {
+    return value.map(_toJsConvex).toList(growable: false).toJS;
+  }
+  if (value is Map) {
+    final object = JSObject();
+    for (final entry in value.entries) {
+      object.setProperty(entry.key.toString().toJS, _toJsConvex(entry.value));
+    }
+    return object;
+  }
+  return value.jsify();
+}
+
+Object? _fromJsConvex(JSAny? value) {
+  if (value == null) return null;
+  if (value.isA<JSBigInt>()) return BigInt.parse(_jsString(value));
+  if (value.isA<JSArrayBuffer>()) {
+    final bytes = _JsReadableUint8Array(value as JSArrayBuffer);
+    return Uint8List.fromList([
+      for (var index = 0; index < bytes.length; index += 1) bytes[index],
+    ]);
+  }
+  if (value.isA<JSArray<JSAny?>>()) {
+    return (value as JSArray<JSAny?>)
+        .toDart
+        .map(_fromJsConvex)
+        .toList(growable: false);
+  }
+  if (value.isA<JSObject>()) {
+    final object = value as JSObject;
+    return <String, Object?>{
+      for (final key in _jsObjectKeys(object).toDart)
+        key.toDart: _fromJsConvex(
+          object.getProperty<JSAny?>(key),
+        ),
+    };
+  }
+  return value.dartify();
 }
 
 class _WebSubscriptionHandle implements SubscriptionHandle {

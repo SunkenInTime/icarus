@@ -62,9 +62,6 @@ double _decodeNumber(ConvexValue value, String path) {
 }
 
 ConvexValue _encodeNumber(double value, String path) {
-  if (!value.isFinite) {
-    throw ConvexEncodingException(path, 'number must be finite');
-  }
   return ConvexFloat(value);
 }
 
