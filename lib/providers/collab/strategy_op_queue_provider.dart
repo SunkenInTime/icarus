@@ -846,10 +846,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   StrategyOp? _mergeQueuedIntent(StrategyOp existing, StrategyOp desired) {
     if (desired.kind == StrategyOpKind.delete &&
         existing.kind == StrategyOpKind.add) return null;
+    final replacementOpId = const Uuid().v4();
     if (existing.kind == StrategyOpKind.add &&
         desired.kind == StrategyOpKind.patch) {
       return StrategyOp(
-        opId: existing.opId,
+        opId: replacementOpId,
         kind: StrategyOpKind.add,
         entityType: existing.entityType,
         entityPublicId: existing.entityPublicId,
@@ -860,7 +861,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       );
     }
     return StrategyOp(
-      opId: existing.opId,
+      opId: replacementOpId,
       kind: desired.kind,
       entityType: desired.entityType,
       entityPublicId: desired.entityPublicId ?? existing.entityPublicId,

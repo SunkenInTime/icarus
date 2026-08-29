@@ -386,9 +386,119 @@ void main() {
       await notifier.enqueue(elementOp(opId: 'patch', value: 'b'));
       final pending = container!.read(strategyOpQueueProvider).pending.single;
       expect(pending.op.kind, StrategyOpKind.add);
-      expect(pending.op.opId, 'op-1');
+      expect(pending.op.opId, isNot(anyOf('op-1', 'patch')));
       expect(pending.op.payload, {'value': 'b'});
       expect(store.values, hasLength(1));
+      expect((store.values.values.single as Map)['opId'], pending.op.opId);
+    });
+
+    test('byte-for-byte equivalent work keeps its durable op ID', () async {
+      final notifier = start();
+      await notifier.enqueue(elementOp(), flushImmediately: false);
+      await notifier.enqueue(
+        elementOp(opId: 'unused-equivalent-id'),
+        flushImmediately: false,
+      );
+
+      final pending = container!.read(strategyOpQueueProvider).pending.single;
+      expect(pending.op.opId, 'op-1');
+      expect((store.values.values.single as Map)['opId'], 'op-1');
+    });
+
+    test('patch replacement gets a new durable op ID', () async {
+      final notifier = start();
+      await notifier.enqueue(elementOp(), flushImmediately: false);
+      await notifier.enqueue(
+        elementOp(opId: 'desired-patch', value: 'b'),
+        flushImmediately: false,
+      );
+
+      final pending = container!.read(strategyOpQueueProvider).pending.single;
+      expect(pending.op.opId, isNot(anyOf('op-1', 'desired-patch')));
+      expect(pending.op.payload, {'value': 'b'});
+      expect((store.values.values.single as Map)['opId'], pending.op.opId);
+    });
+
+    test('reorder replacement gets a new durable op ID', () async {
+      final notifier = start();
+      const first = StrategyOp(
+        opId: 'reorder-a',
+        kind: StrategyOpKind.reorder,
+        entityType: StrategyOpEntityType.page,
+        entityPublicId: 'page-1',
+        sortIndex: 1,
+        expectedRevision: 2,
+      );
+      const second = StrategyOp(
+        opId: 'reorder-b',
+        kind: StrategyOpKind.reorder,
+        entityType: StrategyOpEntityType.page,
+        entityPublicId: 'page-1',
+        sortIndex: 3,
+        expectedRevision: 2,
+      );
+      await notifier.enqueue(first, flushImmediately: false);
+      await notifier.enqueue(second, flushImmediately: false);
+
+      final pending = container!.read(strategyOpQueueProvider).pending.single;
+      expect(pending.op.opId, isNot(anyOf('reorder-a', 'reorder-b')));
+      expect(pending.op.sortIndex, 3);
+    });
+
+    test('delete cancels a queued add and removes its durable record',
+        () async {
+      final notifier = start();
+      await notifier.enqueue(
+        elementOp(kind: StrategyOpKind.add),
+        flushImmediately: false,
+      );
+      await notifier.enqueue(
+        elementOp(opId: 'delete', kind: StrategyOpKind.delete),
+        flushImmediately: false,
+      );
+
+      expect(container!.read(strategyOpQueueProvider).pending, isEmpty);
+      expect(store.values, isEmpty);
+    });
+
+    test('restoring after a queued delete creates new immutable work',
+        () async {
+      final notifier = start();
+      await notifier.enqueue(
+        elementOp(opId: 'delete', kind: StrategyOpKind.delete),
+        flushImmediately: false,
+      );
+      await notifier.enqueue(
+        elementOp(opId: 'restore', kind: StrategyOpKind.add, value: 'restored'),
+        flushImmediately: false,
+      );
+
+      final pending = container!.read(strategyOpQueueProvider).pending.single;
+      expect(pending.op.opId, isNot(anyOf('delete', 'restore')));
+      expect(pending.op.kind, StrategyOpKind.add);
+      expect(pending.op.payload, {'value': 'restored'});
+    });
+
+    test('lost response then new work cannot replay the applied op ID',
+        () async {
+      await store.put(
+        record(status: DurableOutboxStatus.inFlight, opId: 'applied-a'),
+      );
+      final notifier = start();
+
+      await notifier.enqueue(
+        elementOp(opId: 'work-b', value: 'b'),
+        flushImmediately: false,
+      );
+
+      final pending = container!.read(strategyOpQueueProvider).pending.single;
+      expect(pending.op.opId, isNot(anyOf('applied-a', 'work-b')));
+      expect(pending.op.payload, {'value': 'b'});
+      final durable = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durable.pending.op.opId, pending.op.opId);
+      expect(durable.pending.op.payload, {'value': 'b'});
     });
   });
 
@@ -419,6 +529,51 @@ void main() {
     await enqueue;
     expect(container.read(strategyOpQueueProvider).pending, hasLength(1));
   });
+
+  test('replacement stays hidden until the durable record is written',
+      () async {
+    final store = _BlockingReplacementStore();
+    final container = ProviderContainer(overrides: [
+      durableStrategyOutboxStoreProvider.overrideWithValue(store),
+    ]);
+    addTearDown(container.dispose);
+    final notifier = container.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('strategy-1', accountId: 'account-a');
+    container
+        .read(cloudCollabModeProvider.notifier)
+        .setForceLocalFallback(true);
+    const first = StrategyOp(
+      opId: 'first',
+      kind: StrategyOpKind.patch,
+      entityType: StrategyOpEntityType.element,
+      entityPublicId: 'element-1',
+      pagePublicId: 'page-1',
+      payload: {'value': 'a'},
+      expectedRevision: 1,
+    );
+    const desired = StrategyOp(
+      opId: 'desired',
+      kind: StrategyOpKind.patch,
+      entityType: StrategyOpEntityType.element,
+      entityPublicId: 'element-1',
+      pagePublicId: 'page-1',
+      payload: {'value': 'b'},
+      expectedRevision: 1,
+    );
+    await notifier.enqueue(first, flushImmediately: false);
+
+    final replacement = notifier.enqueue(desired, flushImmediately: false);
+    await Future<void>.delayed(Duration.zero);
+    final beforeWrite = container.read(strategyOpQueueProvider).pending.single;
+    expect(beforeWrite.op.opId, 'first');
+    expect(beforeWrite.op.payload, {'value': 'a'});
+
+    store.allowReplacement.complete();
+    await replacement;
+    final afterWrite = container.read(strategyOpQueueProvider).pending.single;
+    expect(afterWrite.op.opId, isNot(anyOf('first', 'desired')));
+    expect(afterWrite.op.payload, {'value': 'b'});
+  });
 }
 
 class _BlockingStore extends MemoryDurableStrategyOutboxStore {
@@ -427,6 +582,20 @@ class _BlockingStore extends MemoryDurableStrategyOutboxStore {
   @override
   Future<void> put(DurableOutboxRecord record) async {
     await allowWrite.future;
+    await super.put(record);
+  }
+}
+
+class _BlockingReplacementStore extends MemoryDurableStrategyOutboxStore {
+  final allowReplacement = Completer<void>();
+  var _writes = 0;
+
+  @override
+  Future<void> put(DurableOutboxRecord record) async {
+    _writes += 1;
+    if (_writes == 2) {
+      await allowReplacement.future;
+    }
     await super.put(record);
   }
 }
