@@ -65,14 +65,25 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 if (kIsWeb) {
                   Settings.showToast(
                     message:
-                        'This feature is only supported in the Windows version.',
+                        'This feature is only supported in the desktop app.',
                     backgroundColor: Settings.tacticalVioletTheme.destructive,
                   );
                   return;
                 }
 
-                await StrategyImportExportService(ref)
-                    .exportFile(ref.read(strategyProvider).strategyId!);
+                final strategy = ref.read(strategyProvider);
+                final strategyId = strategy.strategyId;
+                if (strategyId == null || strategy.source == null) {
+                  throw StateError('No strategy is open for export.');
+                }
+
+                final exporter = StrategyImportExportService(ref);
+                switch (strategy.source!) {
+                  case StrategySource.cloud:
+                    await exporter.exportCloudStrategy(strategyId);
+                  case StrategySource.local:
+                    await exporter.exportFile(strategyId);
+                }
               },
               icon: const Icon(Icons.file_upload),
             ),
@@ -85,7 +96,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 if (kIsWeb) {
                   Settings.showToast(
                     message:
-                        'This feature is only supported in the Windows version.',
+                        'This feature is only supported in the desktop app.',
                     backgroundColor: Settings.tacticalVioletTheme.destructive,
                   );
                   return;

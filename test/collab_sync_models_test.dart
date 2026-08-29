@@ -5,6 +5,7 @@ import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/json_converters.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/strategy/strategy_import_export.dart';
 
 void main() {
   group('CloudCollabModeState', () {
@@ -446,6 +447,68 @@ void main() {
         'index': 2.5,
       }),
       throwsFormatException,
+    );
+  });
+
+  test('cloud export fails closed instead of dropping a malformed lineup', () {
+    final now = DateTime.utc(2026, 8, 29);
+    const strategyId = 'strategy-1';
+    const pageId = 'page-1';
+    final snapshot = RemoteFullStrategySnapshot(
+      header: RemoteStrategyHeader(
+        publicId: strategyId,
+        name: 'Cloud strategy',
+        mapData: 'ascent',
+        revision: 1,
+        createdAt: now,
+        updatedAt: now,
+      ),
+      pages: [
+        RemoteFullPage(
+          page: RemotePage(
+            publicId: pageId,
+            strategyPublicId: strategyId,
+            name: 'Page 1',
+            sortIndex: 0,
+            isAttack: true,
+            revision: 1,
+            createdAt: now,
+            updatedAt: now,
+          ),
+          content: RemotePageContent(
+            revision: 1,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        ),
+      ],
+      elementsByPage: const <String, List<RemoteElement>>{},
+      lineupsByPage: const <String, List<RemoteLineup>>{
+        pageId: [
+          RemoteLineup(
+            publicId: 'lineup-1',
+            strategyPublicId: strategyId,
+            pagePublicId: pageId,
+            payload: <String, dynamic>{'invalid': true},
+            sortIndex: 0,
+            revision: 1,
+            deleted: false,
+          ),
+        ],
+      },
+      assetsById: const <String, RemoteImageAsset>{},
+    );
+
+    expect(
+      () => StrategyImportExportService.strategyDataFromRemoteSnapshotForTest(
+          snapshot),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('Cloud lineup lineup-1 could not be exported'),
+        ),
+      ),
     );
   });
 

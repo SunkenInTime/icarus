@@ -2401,8 +2401,13 @@ class StrategyImportExportService {
               assetIds.add(image.id);
             }
           }
-        } catch (_) {
-          continue;
+        } catch (error, stackTrace) {
+          Error.throwWithStackTrace(
+            FormatException(
+              'Cloud lineup ${lineup.publicId} could not be exported: $error',
+            ),
+            stackTrace,
+          );
         }
       }
     }
@@ -2452,8 +2457,15 @@ class StrategyImportExportService {
     await zipStrategy(id: id, outputFilePath: outputFile);
   }
 
-  StrategyData _strategyDataFromRemoteSnapshot(
-      RemoteFullStrategySnapshot snapshot) {
+  @visibleForTesting
+  static StrategyData strategyDataFromRemoteSnapshotForTest(
+    RemoteFullStrategySnapshot snapshot,
+  ) =>
+      _strategyDataFromRemoteSnapshot(snapshot);
+
+  static StrategyData _strategyDataFromRemoteSnapshot(
+    RemoteFullStrategySnapshot snapshot,
+  ) {
     final pages = <StrategyPage>[];
     final mapValue = Maps.mapNames.entries
         .where((entry) => entry.value == snapshot.header.mapData)
@@ -2497,8 +2509,19 @@ class StrategyImportExportService {
             case 'utility':
               utilityData.add(PlacedUtility.fromJson(payload));
               break;
+            default:
+              throw FormatException(
+                'Unsupported cloud element type: ${element.elementType}',
+              );
           }
-        } catch (_) {}
+        } catch (error, stackTrace) {
+          Error.throwWithStackTrace(
+            FormatException(
+              'Cloud element ${element.publicId} could not be exported: $error',
+            ),
+            stackTrace,
+          );
+        }
       }
 
       final parsedLineUpGroups = <LineUpGroup>[];
@@ -2508,7 +2531,14 @@ class StrategyImportExportService {
           parsedLineUpGroups.add(
             LineUpGroup.fromJson(cloudPayloadData(lineup.payload)),
           );
-        } catch (_) {}
+        } catch (error, stackTrace) {
+          Error.throwWithStackTrace(
+            FormatException(
+              'Cloud lineup ${lineup.publicId} could not be exported: $error',
+            ),
+            stackTrace,
+          );
+        }
       }
 
       StrategySettings settings = StrategySettings();
@@ -2516,7 +2546,15 @@ class StrategyImportExportService {
       if (settingsPayload != null && settingsPayload.isNotEmpty) {
         try {
           settings = StrategySettings.fromJson(settingsPayload);
-        } catch (_) {}
+        } catch (error, stackTrace) {
+          Error.throwWithStackTrace(
+            FormatException(
+              'Cloud page ${remotePage.publicId} settings could not be '
+              'exported: $error',
+            ),
+            stackTrace,
+          );
+        }
       }
 
       pages.add(
@@ -2542,7 +2580,15 @@ class StrategyImportExportService {
     if (rawPalette != null && rawPalette.isNotEmpty) {
       try {
         overridePalette = MapThemePalette.fromJson(rawPalette);
-      } catch (_) {}
+      } catch (error, stackTrace) {
+        Error.throwWithStackTrace(
+          FormatException(
+            'Cloud strategy ${snapshot.header.publicId} theme could not be '
+            'exported: $error',
+          ),
+          stackTrace,
+        );
+      }
     }
 
     return StrategyData(
