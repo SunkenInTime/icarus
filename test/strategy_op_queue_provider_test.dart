@@ -3,10 +3,16 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
+import 'package:icarus/collab/generated/generated.dart';
+import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
   group('Entity sync revision domains', () {
@@ -591,6 +597,166 @@ void main() {
     expect(afterWrite.op.opId, isNot(anyOf('first', 'desired')));
     expect(afterWrite.op.payload, {'value': 'b'});
   });
+
+  group('acknowledgement persistence recovery', () {
+    test('accepted ack remove failure restores the batch for retry', () async {
+      final store = _OneShotAckFailureStore(failRemove: true);
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _AckRepository(reject: false),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+
+      await notifier.enqueue(_cloudElementOp(), flushImmediately: false);
+      await notifier.flushNow();
+
+      _expectBatchRestored(container, store);
+    });
+
+    test('rejected ack put failure restores the batch for retry', () async {
+      final store = _OneShotAckFailureStore(failAttentionPut: true);
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _AckRepository(reject: true),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+
+      await notifier.enqueue(_cloudElementOp(), flushImmediately: false);
+      await notifier.flushNow();
+
+      _expectBatchRestored(container, store);
+    });
+  });
+}
+
+ProviderContainer _cloudQueueContainer({
+  required DurableStrategyOutboxStore store,
+  required ConvexStrategyRepository repository,
+}) {
+  return ProviderContainer(overrides: [
+    durableStrategyOutboxStoreProvider.overrideWithValue(store),
+    convexStrategyRepositoryProvider.overrideWithValue(repository),
+    authProvider.overrideWith(_CloudReadyAuthProvider.new),
+    convexConnectionSnapshotProvider.overrideWithValue(true),
+  ]);
+}
+
+ElementPatchOp _cloudElementOp() {
+  return const ElementPatchOp(
+    opId: 'op-1',
+    elementPublicId: 'element-1',
+    pagePublicId: 'page-1',
+    payload: {'value': 'safe'},
+    expectedElementRevision: 1,
+  );
+}
+
+void _expectBatchRestored(
+  ProviderContainer container,
+  MemoryDurableStrategyOutboxStore store,
+) {
+  final current = container.read(strategyOpQueueProvider);
+  expect(current.isFlushing, isFalse);
+  expect(current.inFlightByEntityKey, isEmpty);
+  expect(current.queuedByEntityKey, hasLength(1));
+  expect(current.queuedByEntityKey.values.single.pending.attempts, 1);
+  final durable = DurableOutboxRecord.fromJson(
+    Map<String, dynamic>.from(store.values.values.single as Map),
+  );
+  expect(durable.status, DurableOutboxStatus.queued);
+  expect(durable.pending.attempts, 1);
+}
+
+class _CloudReadyAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: User(
+          id: 'account-a',
+          appMetadata: <String, dynamic>{},
+          userMetadata: <String, dynamic>{},
+          aud: 'authenticated',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        ),
+      );
+}
+
+class _AckRepository extends ConvexStrategyRepository {
+  _AckRepository({required this.reject})
+      : super(IcarusConvexApi(_UnusedTransport()));
+
+  final bool reject;
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+  }) async {
+    return [
+      for (final op in ops)
+        if (reject)
+          RejectedOpAck(
+            opId: op.opId,
+            rejectionReason: OpRejectionReason.revisionMismatch,
+          )
+        else
+          AppliedOpAck(opId: op.opId, revision: 2),
+    ];
+  }
+}
+
+class _OneShotAckFailureStore extends MemoryDurableStrategyOutboxStore {
+  _OneShotAckFailureStore({
+    this.failRemove = false,
+    this.failAttentionPut = false,
+  });
+
+  bool failRemove;
+  bool failAttentionPut;
+
+  @override
+  Future<void> put(DurableOutboxRecord record) async {
+    if (failAttentionPut && record.status == DurableOutboxStatus.attention) {
+      failAttentionPut = false;
+      throw StateError('attention write failed');
+    }
+    await super.put(record);
+  }
+
+  @override
+  Future<void> remove(String storageKey) async {
+    if (failRemove) {
+      failRemove = false;
+      throw StateError('accepted ack removal failed');
+    }
+    await super.remove(storageKey);
+  }
+}
+
+class _UnusedTransport implements ConvexTransport {
+  @override
+  Future<ConvexValue> action(String name, ConvexObject args) =>
+      throw UnimplementedError();
+
+  @override
+  Future<ConvexValue> mutation(String name, ConvexObject args) =>
+      throw UnimplementedError();
+
+  @override
+  Future<ConvexValue> query(String name, ConvexObject args) =>
+      throw UnimplementedError();
+
+  @override
+  Stream<ConvexValue> subscribe(String name, ConvexObject args) =>
+      throw UnimplementedError();
 }
 
 class _BlockingStore extends MemoryDurableStrategyOutboxStore {

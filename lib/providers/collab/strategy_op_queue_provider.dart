@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:math' as math;
 
-import 'package:icarus/collab/convex_client.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -11,6 +10,7 @@ import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:uuid/uuid.dart';
 
 class StrategyOpQueueState {
@@ -529,7 +529,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     if (!auth.isAuthenticated ||
         !auth.isConvexUserReady ||
-        !ConvexClient.instance.isConnected) {
+        !ref.read(convexConnectionSnapshotProvider)) {
       final message = !auth.isAuthenticated
           ? 'Not authenticated for cloud sync.'
           : (!auth.isConvexUserReady
@@ -626,37 +626,32 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       state.attentionByEntityKey,
     );
     final acked = <AckedEntityIntent>[];
-    try {
-      for (final ack in acks) {
-        final sent = byOpId[ack.opId];
-        if (sent == null) continue;
-        inFlight.remove(sent.entityKey);
-        acked.add(AckedEntityIntent(
+    for (final ack in acks) {
+      final sent = byOpId[ack.opId];
+      if (sent == null) continue;
+      inFlight.remove(sent.entityKey);
+      acked.add(AckedEntityIntent(
+        entityKey: sent.entityKey,
+        op: sent.pending.op,
+        ack: ack,
+      ));
+      final current = _recordForActiveKey(sent.entityKey);
+      if (current?.pending.op.opId != ack.opId) continue;
+      if (ack.isAck) {
+        await _removeRecordIfCurrent(sent.entityKey, ack.opId);
+      } else {
+        final rejected = current!.copyWith(
+          status: DurableOutboxStatus.attention,
+          updatedAt: DateTime.now(),
+          lastError: ack.reason ?? 'The server rejected this change.',
+          latestServerRevision: ack.latestRevision,
+        );
+        await _putRecord(rejected);
+        attention[sent.entityKey] = QueuedEntityIntent(
           entityKey: sent.entityKey,
-          op: sent.pending.op,
-          ack: ack,
-        ));
-        final current = _recordForActiveKey(sent.entityKey);
-        if (current?.pending.op.opId != ack.opId) continue;
-        if (ack.isAck) {
-          await _removeRecordIfCurrent(sent.entityKey, ack.opId);
-        } else {
-          final rejected = current!.copyWith(
-            status: DurableOutboxStatus.attention,
-            updatedAt: DateTime.now(),
-            lastError: ack.reason ?? 'The server rejected this change.',
-            latestServerRevision: ack.latestRevision,
-          );
-          await _putRecord(rejected);
-          attention[sent.entityKey] = QueuedEntityIntent(
-            entityKey: sent.entityKey,
-            pending: sent.pending,
-          );
-        }
+          pending: sent.pending,
+        );
       }
-    } catch (error, stackTrace) {
-      _recordPersistenceFailure(error, stackTrace);
-      return;
     }
     final attentionMessage = _loadedAttentionMessage(
       loadIssues: state.loadIssues,
