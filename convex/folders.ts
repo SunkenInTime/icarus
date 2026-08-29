@@ -102,6 +102,34 @@ async function listAccessibleFoldersForScope(
   return results;
 }
 
+async function assertFolderMoveIsAcyclic(
+  ctx: MutationCtx,
+  folderId: Id<"folders">,
+  proposedParent: Doc<"folders">,
+): Promise<void> {
+  const visited = new Set<Id<"folders">>();
+  let current = proposedParent;
+
+  while (true) {
+    if (current._id === folderId) {
+      throw invalidOpError("Folder move would create a cycle");
+    }
+    if (visited.has(current._id)) {
+      throw invalidOpError("Parent folder hierarchy contains a cycle");
+    }
+    visited.add(current._id);
+
+    if (current.parentFolderId === undefined) {
+      return;
+    }
+    const parent = await ctx.db.get(current.parentFolderId);
+    if (parent === null) {
+      throw invalidOpError("Parent folder hierarchy is invalid");
+    }
+    current = parent;
+  }
+}
+
 const folderScopeValidator = v.optional(
   v.union(v.literal("owned"), v.literal("shared"), v.literal("all")),
 );
@@ -293,6 +321,7 @@ export const move = mutation({
       if (parentAccess.role !== "owner" || parent.ownerId !== folder.ownerId) {
         throw forbiddenError();
       }
+      await assertFolderMoveIsAcyclic(ctx, folder._id, parent);
       parentFolderId = parent._id;
     }
 
