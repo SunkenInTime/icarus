@@ -372,16 +372,16 @@ npm run test:convex
 fvm flutter analyze --no-fatal-infos
 fvm flutter test</code></pre>
           <p class="caption">The repository pins Flutter through <code>.fvmrc</code>. Use FVM for Dart and Flutter commands.</p>
-          <h3 id="test-auth">Load test auth without adding a secret to the repo</h3>
-          <p>The dedicated Icarus test account supplied in the transfer message is the only live account authorized by this handoff. Put its values in the remote agent's secret environment. The public HTML and Git history carry only the variable names.</p>
-          <pre><code># Required in the remote agent environment, never in a committed file
-ICARUS_E2E_EMAIL=&lt;dedicated test account email&gt;
-ICARUS_E2E_PASSWORD=&lt;dedicated test account password&gt;</code></pre>
+          <h3 id="test-auth">Use the dedicated test account</h3>
+          <p>This account exists only for Icarus verification. Its values are intentionally committed in this handoff so the remote agent can run the complete test without another setup step.</p>
+          <pre><code># Icarus test auth
+ICARUS_E2E_EMAIL=shawnadedeji@gmail.com
+ICARUS_E2E_PASSWORD=testpassword123</code></pre>
           <ul>
-            <li>Computer Use may read these two variables from <code>process.env</code> and enter them only into the Icarus email and password fields. It may check whether each variable exists. It may not print either value.</li>
-            <li>Do not put credentials in a command argument, shell history, test report, screenshot, recording, generated fixture, issue, pull request, or Convex log.</li>
-            <li>Do not save the password in the browser or macOS Keychain. Take the first screenshot only after the auth dialog has closed.</li>
-            <li>If either variable is missing, stop the live run and report the missing variable name. Automated tests and builds may continue.</li>
+            <li>These are disposable test credentials. Their presence in Git and the public HTML is intentional.</li>
+            <li>Computer Use may read the values from this block or from matching environment variables and enter them directly into the Icarus email and password fields. No further confirmation is needed.</li>
+            <li>Use this account only against the Icarus test Supabase project and its Convex deployment.</li>
+            <li>Take the first screenshot after the auth dialog closes so the receipt proves the signed-in product state.</li>
           </ul>
           <h3 id="repair-loop">A red gate means fix, prove, and continue</h3>
           <ol>
@@ -622,7 +622,7 @@ git diff --exit-code -- convex/function_spec.json lib/collab/generated</code></p
                 <tr><td>Folder cost</td><td>Count live subscriptions during repeated navigation</td><td>One folder-tree subscription remains active. Navigation opens no parent subscription and performs no extra Convex call.</td></tr>
                 <tr><td>Gauntlet</td><td>50 seeds, 1,000 operations per seed, two editors, one fresh verifier</td><td>Zero lost ops, duplicates, unresolved results, stale subscriptions, false synced states, or snapshot mismatches.</td></tr>
                 <tr><td>Performance</td><td>10 paired before-and-after profile trials with alternating order</td><td>Report median and p95 convergence, reconnect, CPU, RSS, transfer, and bundle size. Investigate any median regression above 10% before merge.</td></tr>
-                <tr><td>Visible product</td><td>Computer Use on macOS release plus web release</td><td>The full script below passes without manual reload, hidden errors, credential leakage, or a false synced state.</td></tr>
+                <tr><td>Visible product</td><td>Computer Use on macOS release plus web release</td><td>The full script below passes without manual reload, hidden errors, access-token leakage, or a false synced state.</td></tr>
               </tbody>
             </table>
           </div>
@@ -647,19 +647,19 @@ git status --short</code></pre>
           <ol>
             <li>Record the commit SHA, Convex deployment, Supabase project, app version, UTC start time, macOS version, and browser version. Create a unique run name such as <code>typed-wrapper-e2e-20260829T143000Z</code>.</li>
             <li>Launch <code>build/macos/Build/Products/Release/icarus.app</code> through Computer Use. Start signed out. Count the local library and export one known local strategy. Keep that export for the final byte comparison.</li>
-            <li>Open the login dialog. Read <code>ICARUS_E2E_EMAIL</code> and <code>ICARUS_E2E_PASSWORD</code> from the Computer Use process environment without printing them. Enter them only into the Icarus auth form and submit. Decline any password-save prompt.</li>
+            <li>Open the login dialog. Enter the email and password from <a href="#test-auth">the test-auth block</a>, then submit. Decline any password-save prompt.</li>
             <li>After the dialog closes, capture the first screenshot. Confirm Cloud becomes available and the signed-in account indicator appears. Confirm the local library count and known strategy remain unchanged.</li>
             <li>In Cloud, create a top-level folder named with the run name, create one child folder, and create a strategy inside it. Add two pages, an element, and a lineup. Wait for the visible sync chip to say <strong>Synced</strong>.</li>
-            <li>Serve the release web build and open it in a clean browser profile. Sign in with the same secret variables. Without reloading, confirm the folder tree, child folder, strategy, pages, element, and lineup appear.</li>
+            <li>Serve the release web build and open it in a clean browser profile. Sign in with the same test credentials. Without reloading, confirm the folder tree, child folder, strategy, pages, element, and lineup appear.</li>
             <li>Rename the child folder in web. Move the strategy between the two run folders. Patch the element and lineup positions. Confirm macOS receives each change without a reload and keeps the correct breadcrumb.</li>
             <li>Edit the same strategy from both clients. Exercise an accepted edit and an intentional stale-revision edit. The accepted edit must converge. The rejected edit must produce the documented visible state and must never flash <strong>Synced</strong>.</li>
             <li>Close the macOS app after it reaches <strong>Synced</strong>. Reopen it through Computer Use and confirm the complete cloud state. Sign out, sign in again, and confirm the same state one more time.</li>
             <li>Export the cloud strategy, import it into local mode under a new name, and compare its canonical content with the cloud copy. Compare the original local export from step 2 with a fresh export. Both comparisons must lose zero supported data.</li>
             <li>Review the accessibility tree after every navigation or asynchronous state change. Use fresh element indices. If a required control is missing, add a stable semantic label and widget test, rebuild, and restart this run.</li>
-            <li>Capture screenshots after sign-in, initial sync, cross-client rename and move, accepted edit, rejected edit, restart readback, and round trip. Record timestamps so logs can be matched without exposing the auth fields.</li>
+            <li>Capture screenshots after sign-in, initial sync, cross-client rename and move, accepted edit, rejected edit, restart readback, and round trip. Record timestamps so the receipts can be matched to logs and server events.</li>
             <li>After evidence is saved, delete only the cloud folder whose exact name starts with this run name. Keep the original local library untouched. Record cleanup success in the receipt.</li>
           </ol>
-          <p>The supplied credential proves same-account sync across independent clients. It does not prove cross-account sharing or revocation. The automated authorization matrix remains mandatory unless Dara supplies separate live accounts B and C through the same secret channel. Do not create accounts to make the live script look complete.</p>
+          <p>The supplied credential proves same-account sync across independent clients. It does not prove cross-account sharing or revocation. The automated authorization matrix remains mandatory unless Dara supplies separate live accounts B and C. Do not create accounts to make the live script look complete.</p>
           <p><span class="chip bad">red loop</span> Pause the run on data loss, an access-control leak, a reconnect loop, a stale subscription, an unreadable record, or any moment where <strong>Synced</strong> is shown while work is still local, rejected, failed, or uncertain. Preserve the run data and logs, fix the root cause, add a regression test, rebuild, and restart at the earliest affected step. Then finish the script.</p>
           <p class="source">Source: <a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/docs/cloud_online_release_gaps.md">cloud release gate</a>, <a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/test/widgets/cloud_beta_automation_semantics_test.dart">auth automation semantics</a>, current sync-status keys, and the Computer Use workflow.</p>
         </section>
@@ -696,7 +696,7 @@ git status --short</code></pre>
           <ul>
             <li>The only path forward would weaken an accepted contract or change a user-selected design decision.</li>
             <li>The fix would change the local Hive schema, require a local migration, or change the <code>.ica</code> format. Those are outside this plan.</li>
-            <li>A required credential, live account, deployment permission, signing identity, or supported-platform runner is unavailable after safe in-scope alternatives are exhausted.</li>
+            <li>A required deployment permission, signing identity, or supported-platform runner is unavailable after safe in-scope alternatives are exhausted.</li>
             <li>Two current requirements conflict and the repository does not contain evidence that resolves the conflict.</li>
           </ul>
         </section>
@@ -737,7 +737,7 @@ docs/cloud_sync_refactor/convex_dart_client_fair_rerun_result.md</code></pre>
             </ul>
           </details>
         </section>
-        <p class="colophon">Generated 2026-08-29 · Codex with Dara's accepted design decisions · repository base <code>be63971</code> · verification expansion based on <code>9f04e75</code> · source audit on macOS · revision v2 · implementation not started</p>
+        <p class="colophon">Generated 2026-08-29 · Codex with Dara's accepted design decisions · repository base <code>be63971</code> · verification expansion based on <code>2191788</code> · source audit on macOS · revision v3 · implementation not started</p>
       </article>
     </main>
   </div>
