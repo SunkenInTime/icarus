@@ -360,17 +360,38 @@
             <li>Read <code>CONTEXT.md</code>, <code>AGENTS.md</code>, and <code>convex/_generated/ai/guidelines.md</code>. Use the existing Icarus vocabulary.</li>
             <li>Inspect <code>git status</code> before each phase. Preserve unrelated work and stage only the files named by that phase.</li>
             <li>Edit source validators and models. Regenerate <code>*.g.dart</code> and <code>convex/_generated/</code>; never edit generated output by hand.</li>
-            <li>Keep each phase green before starting the next. A red completion gate means the phase is still in progress.</li>
+            <li>Keep each phase green before starting the next. A red completion gate starts the repair loop below.</li>
           </ol>
           <pre><code># Baseline checks before Phase 0
 git status --short
 git rev-parse HEAD
 fvm flutter pub get
 npm ci
+npx tsc --noEmit
 npm run test:convex
 fvm flutter analyze --no-fatal-infos
 fvm flutter test</code></pre>
           <p class="caption">The repository pins Flutter through <code>.fvmrc</code>. Use FVM for Dart and Flutter commands.</p>
+          <h3 id="test-auth">Load test auth without adding a secret to the repo</h3>
+          <p>The dedicated Icarus test account supplied in the transfer message is the only live account authorized by this handoff. Put its values in the remote agent's secret environment. The public HTML and Git history carry only the variable names.</p>
+          <pre><code># Required in the remote agent environment, never in a committed file
+ICARUS_E2E_EMAIL=&lt;dedicated test account email&gt;
+ICARUS_E2E_PASSWORD=&lt;dedicated test account password&gt;</code></pre>
+          <ul>
+            <li>Computer Use may read these two variables from <code>process.env</code> and enter them only into the Icarus email and password fields. It may check whether each variable exists. It may not print either value.</li>
+            <li>Do not put credentials in a command argument, shell history, test report, screenshot, recording, generated fixture, issue, pull request, or Convex log.</li>
+            <li>Do not save the password in the browser or macOS Keychain. Take the first screenshot only after the auth dialog has closed.</li>
+            <li>If either variable is missing, stop the live run and report the missing variable name. Automated tests and builds may continue.</li>
+          </ul>
+          <h3 id="repair-loop">A red gate means fix, prove, and continue</h3>
+          <ol>
+            <li>Freeze the smallest reproducible state. Save the seed, operation trace, failing fixture, logs, screenshots, platform, deployment, and commit that identify the failure.</li>
+            <li>Find the root cause. Fix it inside the accepted architecture. Do not weaken a type, skip a platform, loosen a comparison, or delete the failing fixture.</li>
+            <li>Add the smallest permanent regression test that goes red on the captured failure and green on the fix.</li>
+            <li>Run the focused test, the current phase gate, and every earlier gate the fix could affect. Rebuild before repeating a visible product check.</li>
+            <li>Resume from the earliest Computer Use step whose assumptions changed. Continue through the remaining phases and final matrix.</li>
+          </ol>
+          <p><span class="chip accent">done</span> The issue is fixed only when its regression test passes, the affected broad gates pass, and the original reproduction no longer fails. Evidence is the start of the repair, not the end of the task.</p>
           <p>Non-goals are equally firm. Do not replace Convex, adopt Dartvex, migrate to SpacetimeDB, redesign the UI, publish a general Dart package, change the local library schema, or change the <code>.ica</code> format. The cloud deployment and development outbox may be wiped because this branch has no cloud users. The local Hive library may not be wiped.</p>
         </section>
         <section>
@@ -534,10 +555,44 @@ git diff --exit-code -- convex/function_spec.json lib/collab/generated</code></p
             <li>Add an architecture test that rejects generated-client imports outside the allowed collaboration directory.</li>
             <li>Add a CI job that deploys the current backend to an isolated Convex environment, captures and scrubs a fresh spec, and diffs it against <code>convex/function_spec.json</code>.</li>
             <li>Run local generation from the committed spec and fail if it changes <code>lib/collab/generated/</code>.</li>
+            <li>Run the generated client tests and app tests on Windows CI. Add native build jobs for Windows and Linux so the wrapper cannot pass only on the macOS development machine.</li>
             <li>Delete the legacy JSON decode helpers, generic <code>StrategyOp</code> envelope, stale DTOs, <code>listForParent</code>, and obsolete gauntlet-only assumptions. Keep the fair rerun artifacts as decision evidence.</li>
             <li>Update <code>docs/auth_flow_reference.md</code> and any handoff that names deleted routes. Do not rewrite historical benchmark results.</li>
           </ul>
           <p><span class="chip accent">exit</span> A clean clone can regenerate the same API without a developer deployment. CI rejects a stale spec, stale output, public unknown type, direct route string, or forbidden import.</p>
+        </section>
+        <section>
+          <h2 id="test-strategy">Test the contract from five directions</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Layer</th><th>What it must prove</th><th>Completion criterion</th></tr></thead>
+              <tbody>
+                <tr><td>Schema</td><td>Every public function has closed arguments, a closed return, allowed IDs, and a cataloged error path.</td><td>The fresh isolated function spec matches the committed snapshot and every public function appears exactly once.</td></tr>
+                <tr><td>Generator</td><td>Every supported validator maps to strict Dart, and every unsupported shape stops generation.</td><td>Positive, negative, golden, collision, mutation, stale-file, and deterministic fixtures all pass.</td></tr>
+                <tr><td>Runtime</td><td>Native and web transports deliver the same normalized values, errors, auth transitions, and subscription lifecycle.</td><td>The same conformance corpus passes byte-for-byte normalized comparisons on both transports.</td></tr>
+                <tr><td>Sync</td><td>Protocol version 3, revisions, immutable op IDs, persistence, replay, and user-visible status agree under faults.</td><td>Seeded model tests and the 50,000-op gauntlet finish with no lost or duplicated work and no false synced state.</td></tr>
+                <tr><td>Product</td><td>A person can sign in, use the cloud library, edit on two independent clients, restart, and see the same data.</td><td>Computer Use completes the release-build script below with timestamped visual receipts and zero manual reloads.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source">Source: ADR 0001, the corrected client gauntlet, <a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/docs/cloud_online_release_gaps.md">cloud release gate</a>, and current auth automation semantics.</p>
+          <h3 id="generator-tests">Generator tests are a contract suite</h3>
+          <ul>
+            <li>Unit-test every schema node the generator supports: null, boolean, integer, float, string, bytes, literal, optional, array, object, record, union, and recursive reference if the Convex spec can emit one.</li>
+            <li>Golden-test modules, escaped names, named parameters, enums, unions, structural results, query <code>fetch()</code> and <code>watch()</code>, mutations, actions, error enums, and exact payload bindings.</li>
+            <li>Negative-test missing and null validators, <code>v.any()</code>, unknown validator nodes, raw records at the public Dart boundary, unbound tags, unused bindings, duplicate bindings, route and type-name collisions, and unapproved public document IDs.</li>
+            <li>Mutation-test one function name, one argument name, one result field, one enum member, one payload tag, and one error code. Each mutation must either change generated output or fail generation. An unchanged typed caller must fail analysis after a breaking mutation.</li>
+            <li>Generate into a directory containing a stale owned file. The next run must delete it. Generate twice from shuffled but equivalent spec input. Both output trees must have the same paths and bytes.</li>
+            <li>Property-test codecs with fixed seeds. Every generated value that satisfies its validator must round-trip. Every value outside the validator must fail with the full endpoint and field path.</li>
+          </ul>
+          <h3 id="sync-tests">Sync tests cover every crash boundary</h3>
+          <ul>
+            <li>Model every protocol request and result variant, including every rejected reason and unknown server error. Exhaustive switches may not use a default arm for known variants.</li>
+            <li>Crash after local persistence, after send but before response, after server apply but before receipt, while replacing queued intent, and while persisting a rejection. Restore from Hive after every crash point.</li>
+            <li>Exercise corrupt records, unsupported record versions, expired auth, rejected auth, reconnect, duplicate delivery, delayed delivery, out-of-order results, revision conflicts, delete and recreate, and subscription restart.</li>
+            <li>Run the deterministic gauntlet with 50 seeds and 1,000 operations per seed through two editing clients plus a fresh verifier. Keep the seed and trace for every failure.</li>
+            <li>Round-trip current and legacy <code>.ica</code> fixtures after the cloud cycle. Compare canonical data, not serialized key order. The local library before sign-in must remain byte-for-byte unchanged.</li>
+          </ul>
         </section>
         <section>
           <h2 id="verification">Final verification matrix</h2>
@@ -545,31 +600,68 @@ git diff --exit-code -- convex/function_spec.json lib/collab/generated</code></p
             <table>
               <thead><tr><th>Gate</th><th>Command or proof</th><th>Pass condition</th></tr></thead>
               <tbody>
-                <tr><td>Protocol</td><td><code>npm run test:convex</code></td><td>All Convex tests pass, including every v3 request and result variant.</td></tr>
-                <tr><td>Generator</td><td>Generator unit, golden, collision, and drift tests</td><td>Positive fixtures compile. Every unsupported or untyped fixture fails closed.</td></tr>
-                <tr><td>Determinism</td><td>Generate twice, then <code>git diff --exit-code</code></td><td>Second run changes zero bytes and leaves no stale files.</td></tr>
-                <tr><td>Dart types</td><td><code>fvm flutter analyze --no-fatal-infos</code></td><td>No analyzer error and no generated public unknown type.</td></tr>
-                <tr><td>Flutter behavior</td><td><code>fvm flutter test</code></td><td>All unit and widget tests pass.</td></tr>
-                <tr><td>Web</td><td><code>fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons</code></td><td>Release web build succeeds through the web transport.</td></tr>
-                <tr><td>macOS</td><td><code>fvm flutter build macos</code></td><td>Release macOS build succeeds through <code>convex_flutter</code>.</td></tr>
-                <tr><td>Transport</td><td>Native and web conformance fixtures</td><td>Equivalent values and errors normalize identically.</td></tr>
-                <tr><td>Durability</td><td>Lost-response plus process-restart outbox test</td><td>No changed work reuses an applied op ID. No queued work disappears.</td></tr>
-                <tr><td>Round trip</td><td>Existing and legacy <code>.ica</code> import/export fixtures</td><td>Every fixture returns with no data loss.</td></tr>
-                <tr><td>Folder cost</td><td>Instrument subscriptions on the cloud library screen</td><td>One folder-tree subscription remains active. Navigation opens no parent subscription.</td></tr>
-                <tr><td>Gauntlet</td><td>Correctness seeds with two clients and a fresh verifier</td><td>Zero lost ops, duplicates, unresolved results, stale subscriptions, false synced states, or snapshot mismatches.</td></tr>
+                <tr><td>TypeScript</td><td><code>npx tsc --noEmit</code></td><td>The Convex source has zero type errors.</td></tr>
+                <tr><td>Protocol</td><td><code>npm run test:convex</code></td><td>Every version 3 request, result, rejection, auth, access-control, and revision case passes.</td></tr>
+                <tr><td>Authorization</td><td><code>convex-test</code> identities A, B, and C across every public function family</td><td>Owners, editors, viewers, unshared users, revoked users, and signed-out callers receive only their allowed data and operations.</td></tr>
+                <tr><td>Spec coverage</td><td>Fresh isolated <code>npx convex function-spec</code> plus strict audit</td><td>Every client-callable function has closed arguments and returns. The scrubbed snapshot has zero drift.</td></tr>
+                <tr><td>Generator</td><td>Generator unit, golden, negative, mutation, property, and collision tests</td><td>Positive fixtures compile. Every unsupported or untyped fixture fails closed at the exact field path.</td></tr>
+                <tr><td>Determinism</td><td>Generate twice from shuffled equivalent input, then <code>git diff --exit-code</code></td><td>The second run changes zero bytes and removes every stale owned file.</td></tr>
+                <tr><td>Breaking drift</td><td>Rename route, argument, result field, enum case, payload tag, and error code in fixtures</td><td>Each mutation changes output, fails generation, or makes the unchanged typed caller fail analysis.</td></tr>
+                <tr><td>Dart types</td><td><code>fvm flutter analyze --no-fatal-infos</code> plus generated-boundary audit</td><td>No analyzer error, <code>dynamic</code>, <code>Object?</code>, raw map, or untyped string enum crosses the wrapper.</td></tr>
+                <tr><td>Codecs</td><td>Fixed-seed valid and invalid value corpus</td><td>Valid values round-trip. Invalid values fail with endpoint and field path. Native and web bytes normalize identically.</td></tr>
+                <tr><td>Native bridge</td><td><code>cargo test</code> for changed Rust packages plus native conformance app</td><td>Structured errors, auth refresh, reconnect, and subscription restart preserve their typed data.</td></tr>
+                <tr><td>Outbox model</td><td>Focused property and state-machine tests</td><td>Changed intent always gets a new op ID. Equivalent retries keep one ID. Every state transition is legal.</td></tr>
+                <tr><td>Crash durability</td><td>Five crash boundaries plus Hive restore</td><td>No queued work disappears, no applied work is duplicated, and corrupt or unknown records fail visibly.</td></tr>
+                <tr><td>Repositories</td><td>Focused auth, folder, strategy, share, media, migration, and sync integration tests</td><td>Every endpoint family uses generated calls and maps structural results to Icarus models.</td></tr>
+                <tr><td>Flutter behavior</td><td><code>fvm flutter test</code></td><td>All unit, widget, provider, semantics, and integration tests pass.</td></tr>
+                <tr><td>Round trip</td><td>Current and legacy <code>.ica</code> import and export fixtures</td><td>Every fixture returns with no data loss. Signing in changes zero local-library bytes.</td></tr>
+                <tr><td>Web release</td><td><code>fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons</code></td><td>The release build succeeds through the web transport.</td></tr>
+                <tr><td>macOS release</td><td><code>fvm flutter build macos</code></td><td>The release app succeeds through <code>convex_flutter</code>.</td></tr>
+                <tr><td>Windows release</td><td>Windows CI tests plus <code>fvm flutter build windows</code></td><td>The generated client, native package, full tests, and release build pass on Windows.</td></tr>
+                <tr><td>Linux release</td><td>Linux CI tests plus <code>fvm flutter build linux</code></td><td>The generated client, native package, full tests, and release build pass on Linux.</td></tr>
+                <tr><td>Folder cost</td><td>Count live subscriptions during repeated navigation</td><td>One folder-tree subscription remains active. Navigation opens no parent subscription and performs no extra Convex call.</td></tr>
+                <tr><td>Gauntlet</td><td>50 seeds, 1,000 operations per seed, two editors, one fresh verifier</td><td>Zero lost ops, duplicates, unresolved results, stale subscriptions, false synced states, or snapshot mismatches.</td></tr>
+                <tr><td>Performance</td><td>10 paired before-and-after profile trials with alternating order</td><td>Report median and p95 convergence, reconnect, CPU, RSS, transfer, and bundle size. Investigate any median regression above 10% before merge.</td></tr>
+                <tr><td>Visible product</td><td>Computer Use on macOS release plus web release</td><td>The full script below passes without manual reload, hidden errors, credential leakage, or a false synced state.</td></tr>
               </tbody>
             </table>
           </div>
           <p class="source">Source: repository CI commands, the corrected client gauntlet, ADR 0001, and the implementation gates above.</p>
-          <pre><code># Final local gate on macOS
+          <pre><code># Final local gate on macOS after the new tool exists
+npx tsc --noEmit
 npm run test:convex
+(cd tool/icarus_convex_codegen &amp;&amp; fvm dart pub get &amp;&amp; fvm dart analyze &amp;&amp; fvm dart test)
 fvm dart run tool/icarus_convex_codegen/bin/generate.dart
+fvm dart run tool/icarus_convex_codegen/bin/generate.dart
+git diff --exit-code -- convex/function_spec.json convex/error_codes.json lib/collab/generated
 fvm flutter analyze --no-fatal-infos
 fvm flutter test
 fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons
 fvm flutter build macos
+cargo test --manifest-path third_party/convex_flutter/rust/Cargo.toml
+cargo test --manifest-path third_party/convex_rs/Cargo.toml
 git status --short</code></pre>
           <p class="caption">The final status may contain only the intended source, snapshot, generated output, tests, and documentation for this implementation.</p>
+          <h3 id="computer-use-gate">Computer Use gate: prove the built product</h3>
+          <p>This is a release-build acceptance run, not a demo against mocked providers. Use the final macOS app and the final web build against the same test deployment. The two clients may share the supplied account, but they must not share local storage.</p>
+          <ol>
+            <li>Record the commit SHA, Convex deployment, Supabase project, app version, UTC start time, macOS version, and browser version. Create a unique run name such as <code>typed-wrapper-e2e-20260829T143000Z</code>.</li>
+            <li>Launch <code>build/macos/Build/Products/Release/icarus.app</code> through Computer Use. Start signed out. Count the local library and export one known local strategy. Keep that export for the final byte comparison.</li>
+            <li>Open the login dialog. Read <code>ICARUS_E2E_EMAIL</code> and <code>ICARUS_E2E_PASSWORD</code> from the Computer Use process environment without printing them. Enter them only into the Icarus auth form and submit. Decline any password-save prompt.</li>
+            <li>After the dialog closes, capture the first screenshot. Confirm Cloud becomes available and the signed-in account indicator appears. Confirm the local library count and known strategy remain unchanged.</li>
+            <li>In Cloud, create a top-level folder named with the run name, create one child folder, and create a strategy inside it. Add two pages, an element, and a lineup. Wait for the visible sync chip to say <strong>Synced</strong>.</li>
+            <li>Serve the release web build and open it in a clean browser profile. Sign in with the same secret variables. Without reloading, confirm the folder tree, child folder, strategy, pages, element, and lineup appear.</li>
+            <li>Rename the child folder in web. Move the strategy between the two run folders. Patch the element and lineup positions. Confirm macOS receives each change without a reload and keeps the correct breadcrumb.</li>
+            <li>Edit the same strategy from both clients. Exercise an accepted edit and an intentional stale-revision edit. The accepted edit must converge. The rejected edit must produce the documented visible state and must never flash <strong>Synced</strong>.</li>
+            <li>Close the macOS app after it reaches <strong>Synced</strong>. Reopen it through Computer Use and confirm the complete cloud state. Sign out, sign in again, and confirm the same state one more time.</li>
+            <li>Export the cloud strategy, import it into local mode under a new name, and compare its canonical content with the cloud copy. Compare the original local export from step 2 with a fresh export. Both comparisons must lose zero supported data.</li>
+            <li>Review the accessibility tree after every navigation or asynchronous state change. Use fresh element indices. If a required control is missing, add a stable semantic label and widget test, rebuild, and restart this run.</li>
+            <li>Capture screenshots after sign-in, initial sync, cross-client rename and move, accepted edit, rejected edit, restart readback, and round trip. Record timestamps so logs can be matched without exposing the auth fields.</li>
+            <li>After evidence is saved, delete only the cloud folder whose exact name starts with this run name. Keep the original local library untouched. Record cleanup success in the receipt.</li>
+          </ol>
+          <p>The supplied credential proves same-account sync across independent clients. It does not prove cross-account sharing or revocation. The automated authorization matrix remains mandatory unless Dara supplies separate live accounts B and C through the same secret channel. Do not create accounts to make the live script look complete.</p>
+          <p><span class="chip bad">red loop</span> Pause the run on data loss, an access-control leak, a reconnect loop, a stale subscription, an unreadable record, or any moment where <strong>Synced</strong> is shown while work is still local, rejected, failed, or uncertain. Preserve the run data and logs, fix the root cause, add a regression test, rebuild, and restart at the earliest affected step. Then finish the script.</p>
+          <p class="source">Source: <a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/docs/cloud_online_release_gaps.md">cloud release gate</a>, <a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/test/widgets/cloud_beta_automation_semantics_test.dart">auth automation semantics</a>, current sync-status keys, and the Computer Use workflow.</p>
         </section>
         <section>
           <h2 id="commit-plan">Commit boundaries and stop conditions</h2>
@@ -588,14 +680,24 @@ git status --short</code></pre>
             </table>
           </div>
           <p class="source">Source: dependency order in ADR 0001. Each commit is reviewable and leaves the branch buildable.</p>
-          <p>Stop and report evidence instead of improvising when any of these occurs:</p>
+          <h3 id="pr-delivery">Use one draft PR with reviewable phase commits</h3>
+          <p>Use one pull request, not a stack. The protocol, function spec, generator, transports, and repository migration describe one contract. A stacked review would make each earlier PR expose a temporary shape, repeat generated-code review, and force every later branch to rebase after a contract fix.</p>
+          <ol>
+            <li>Open one draft PR after the first green phase commit so Windows, Linux, and macOS CI can run throughout implementation. Keep the seven phase commits separate and buildable.</li>
+            <li>Push after each phase. Treat CI failures with the same evidence, fix, regression, rerun loop. Do not request final review while a phase or platform is red.</li>
+            <li>Write the PR description as a map: accepted architecture, phase commits, generated files, protocol change, test matrix, Computer Use receipts, performance comparison, and known non-goals.</li>
+            <li>After all seven phases and the full final matrix pass, mark the PR ready and trigger Greptile. Old draft reviews do not count unless they apply to the current head SHA.</li>
+            <li>For each actionable Greptile finding, verify it against current source, fix it, add or strengthen a regression test, run focused and broad gates, commit, push, and request a fresh review with <code>@greptileai</code>.</li>
+            <li>Poll the current SHA until every required check is green, Greptile reports 5/5 or no actionable findings, and a thread-aware read finds no unresolved actionable review thread. A summary comment alone is not proof.</li>
+            <li>Finish with a clean local branch whose SHA matches the PR head. Report the PR URL, final SHA, commits added during review, every verification result, and any skipped gate with its exact blocker.</li>
+          </ol>
+          <p><span class="chip accent">decision</span> One large diff is the cost. Phase commits, a file map, and receipts make it reviewable without paying the larger coordination cost of a PR stack.</p>
+          <p>Use the repair loop for ordinary failures. Ask Dara only when one of these blocks progress:</p>
           <ul>
-            <li>The function spec omits validator information required for a type.</li>
-            <li>A generated public declaration would require <code>dynamic</code>, <code>Object?</code>, a raw map, or an untyped string enum.</li>
-            <li>The native or web transport cannot expose structured function error data. Extend the owned adapter or fork; do not parse messages.</li>
-            <li>A public Convex document ID cannot be replaced without changing the intended product contract. Record the exact endpoint and use before requesting an exception.</li>
-            <li>A phase changes the local Hive library, local migrations, or <code>.ica</code> round trip. That is outside this plan.</li>
-            <li>The sync chip can claim synced while an op is unreadable, paused, rejected, failed, or still local.</li>
+            <li>The only path forward would weaken an accepted contract or change a user-selected design decision.</li>
+            <li>The fix would change the local Hive schema, require a local migration, or change the <code>.ica</code> format. Those are outside this plan.</li>
+            <li>A required credential, live account, deployment permission, signing identity, or supported-platform runner is unavailable after safe in-scope alternatives are exhausted.</li>
+            <li>Two current requirements conflict and the repository does not contain evidence that resolves the conflict.</li>
           </ul>
         </section>
         <section>
@@ -635,7 +737,7 @@ docs/cloud_sync_refactor/convex_dart_client_fair_rerun_result.md</code></pre>
             </ul>
           </details>
         </section>
-        <p class="colophon">Generated 2026-08-29 · Codex with Dara's accepted design decisions · repository base <code>be63971</code> · source audit on macOS · revision v1 · implementation not started</p>
+        <p class="colophon">Generated 2026-08-29 · Codex with Dara's accepted design decisions · repository base <code>be63971</code> · verification expansion based on <code>9f04e75</code> · source audit on macOS · revision v2 · implementation not started</p>
       </article>
     </main>
   </div>
