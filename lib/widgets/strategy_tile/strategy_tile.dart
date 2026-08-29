@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -36,7 +36,7 @@ class StrategyTile extends ConsumerStatefulWidget {
   }) : strategyData = null;
 
   final StrategyData? strategyData;
-  final CloudStrategySummary? cloudStrategy;
+  final CloudStrategyEntry? cloudStrategy;
   final bool canRename;
   final bool canDuplicate;
   final bool canDelete;
@@ -58,19 +58,14 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
   bool get _isCloud => widget.cloudStrategy != null;
   bool get _canShare => _isCloud && widget.cloudStrategy?.role == 'owner';
   String get _strategyId =>
-      widget.strategyData?.id ?? widget.cloudStrategy!.publicId;
+      widget.strategyData?.id ?? widget.cloudStrategy!.strategy.id;
   String get _strategyName =>
-      widget.strategyData?.name ?? widget.cloudStrategy!.name;
+      widget.strategyData?.name ?? widget.cloudStrategy!.strategy.name;
   MapValue? get _mapValue {
     final strategy = widget.strategyData;
     if (strategy != null) return strategy.mapData;
 
-    final mapData = widget.cloudStrategy?.mapData;
-    if (mapData == null) return null;
-    for (final entry in Maps.mapNames.entries) {
-      if (entry.value == mapData) return entry.key;
-    }
-    return null;
+    return widget.cloudStrategy?.strategy.mapData;
   }
 
   bool get _isAttack {
@@ -83,7 +78,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
 
   StrategyTileViewData get _viewData => widget.strategyData != null
       ? StrategyTileViewData.fromStrategy(widget.strategyData!)
-      : StrategyTileViewData.fromCloudSummary(widget.cloudStrategy!);
+      : StrategyTileViewData.fromCloudEntry(widget.cloudStrategy!);
 
   @override
   void dispose() {

@@ -26,7 +26,12 @@ function sortObjectKeys(value) {
 
 function readFunctionSpec() {
   const executable = process.platform === "win32" ? "npx.cmd" : "npx";
-  const raw = execFileSync(executable, ["convex", "function-spec"], {
+  const args = ["convex", "function-spec"];
+  const previewName = process.env.CONVEX_PREVIEW_NAME;
+  if (previewName) {
+    args.push("--preview-name", previewName);
+  }
+  const raw = execFileSync(executable, args, {
     cwd: repositoryRoot,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,

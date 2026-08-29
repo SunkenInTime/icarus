@@ -1158,25 +1158,6 @@ class RemoteStrategyHeader {
   final String? themeProfileId;
   final CloudPayload? themeOverridePalette;
   final String? role;
-
-  factory RemoteStrategyHeader.fromJson(Map<String, dynamic> json) {
-    return RemoteStrategyHeader(
-      publicId: json['publicId'] as String,
-      name: json['name'] as String,
-      mapData: json['mapData'] as String,
-      revision: (json['revision'] as num?)?.toInt() ?? 0,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(
-        (json['createdAt'] as num?)?.toInt() ?? 0,
-      ),
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(
-        (json['updatedAt'] as num?)?.toInt() ?? 0,
-      ),
-      themeProfileId: json['themeProfileId'] as String?,
-      themeOverridePalette:
-          cloudObjectPayloadOrNull(json['themeOverridePalette']),
-      role: json['role'] as String?,
-    );
-  }
 }
 
 class RemotePage {
@@ -1199,23 +1180,6 @@ class RemotePage {
   final int revision;
   final DateTime createdAt;
   final DateTime updatedAt;
-
-  factory RemotePage.fromJson(Map<String, dynamic> json) {
-    return RemotePage(
-      publicId: json['publicId'] as String,
-      strategyPublicId: json['strategyPublicId'] as String,
-      name: json['name'] as String,
-      sortIndex: (json['sortIndex'] as num).toInt(),
-      isAttack: json['isAttack'] as bool? ?? true,
-      revision: (json['revision'] as num?)?.toInt() ?? 0,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(
-        (json['createdAt'] as num?)?.toInt() ?? 0,
-      ),
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(
-        (json['updatedAt'] as num?)?.toInt() ?? 0,
-      ),
-    );
-  }
 }
 
 class RemotePageContent {
@@ -1230,19 +1194,6 @@ class RemotePageContent {
   final int revision;
   final DateTime createdAt;
   final DateTime updatedAt;
-
-  factory RemotePageContent.fromJson(Map<String, dynamic> json) {
-    return RemotePageContent(
-      settings: cloudObjectPayloadOrNull(json['settings']),
-      revision: (json['revision'] as num?)?.toInt() ?? 0,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(
-        (json['createdAt'] as num?)?.toInt() ?? 0,
-      ),
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(
-        (json['updatedAt'] as num?)?.toInt() ?? 0,
-      ),
-    );
-  }
 }
 
 class RemoteElement {
@@ -1267,19 +1218,6 @@ class RemoteElement {
   final bool deleted;
 
   Map<String, dynamic> decodedPayload() => cloudPayloadData(payload);
-
-  factory RemoteElement.fromJson(Map<String, dynamic> json) {
-    return RemoteElement(
-      publicId: json['publicId'] as String,
-      strategyPublicId: json['strategyPublicId'] as String,
-      pagePublicId: json['pagePublicId'] as String,
-      elementType: json['elementType'] as String,
-      payload: Map<String, dynamic>.from(json['payload'] as Map),
-      sortIndex: (json['sortIndex'] as num?)?.toInt() ?? 0,
-      revision: (json['revision'] as num?)?.toInt() ?? 0,
-      deleted: json['deleted'] as bool? ?? false,
-    );
-  }
 }
 
 class RemoteLineup {
@@ -1300,18 +1238,6 @@ class RemoteLineup {
   final int sortIndex;
   final int revision;
   final bool deleted;
-
-  factory RemoteLineup.fromJson(Map<String, dynamic> json) {
-    return RemoteLineup(
-      publicId: json['publicId'] as String,
-      strategyPublicId: json['strategyPublicId'] as String,
-      pagePublicId: json['pagePublicId'] as String,
-      payload: Map<String, dynamic>.from(json['payload'] as Map),
-      sortIndex: (json['sortIndex'] as num?)?.toInt() ?? 0,
-      revision: (json['revision'] as num?)?.toInt() ?? 0,
-      deleted: json['deleted'] as bool? ?? false,
-    );
-  }
 }
 
 class RemoteImageAsset {
@@ -1340,26 +1266,6 @@ class RemoteImageAsset {
   final DateTime? uploadedAt;
   final String? url;
   final String? legacyStoragePath;
-
-  factory RemoteImageAsset.fromJson(Map<String, dynamic> json) {
-    return RemoteImageAsset(
-      publicId: json['publicId'] as String,
-      provider: json['provider'] as String? ?? 'convex',
-      uploadStatus: json['uploadStatus'] as String? ?? 'active',
-      fileExtension: json['fileExtension'] as String? ?? '',
-      mimeType: json['mimeType'] as String?,
-      width: (json['width'] as num?)?.toInt(),
-      height: (json['height'] as num?)?.toInt(),
-      byteSize: (json['byteSize'] as num?)?.toInt(),
-      uploadedAt: json['uploadedAt'] == null
-          ? null
-          : DateTime.fromMillisecondsSinceEpoch(
-              (json['uploadedAt'] as num).toInt(),
-            ),
-      url: json['url'] as String?,
-      legacyStoragePath: json['legacyStoragePath'] as String?,
-    );
-  }
 }
 
 class RemoteStrategyShell {
@@ -1475,58 +1381,6 @@ class RemoteFullStrategySnapshot {
   }
 }
 
-class CloudStrategySummary {
-  const CloudStrategySummary({
-    required this.publicId,
-    required this.name,
-    required this.mapData,
-    required this.revision,
-    required this.createdAt,
-    required this.updatedAt,
-    this.role,
-    this.attackLabel,
-  });
-
-  final String publicId;
-  final String name;
-  final String mapData;
-  final int revision;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-  final String? role;
-  final String? attackLabel;
-}
-
-class CloudFolderSummary {
-  const CloudFolderSummary({
-    required this.publicId,
-    required this.name,
-    required this.createdAt,
-    required this.updatedAt,
-    this.role,
-    this.parentFolderPublicId,
-    this.iconId,
-    this.iconCodePoint,
-    this.iconFontFamily,
-    this.iconFontPackage,
-    this.color,
-    this.customColorValue,
-  });
-
-  final String publicId;
-  final String name;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-  final String? role;
-  final String? parentFolderPublicId;
-  final int? iconId;
-  final int? iconCodePoint;
-  final String? iconFontFamily;
-  final String? iconFontPackage;
-  final String? color;
-  final int? customColorValue;
-}
-
 class ShareLinkSummary {
   const ShareLinkSummary({
     required this.token,
@@ -1541,4 +1395,18 @@ class ShareLinkSummary {
   final DateTime? revokedAt;
 
   bool get isRevoked => revokedAt != null;
+}
+
+class ShareRedemption {
+  const ShareRedemption({
+    required this.targetType,
+    required this.role,
+    this.folderPublicId,
+    this.strategyPublicId,
+  });
+
+  final String targetType;
+  final String role;
+  final String? folderPublicId;
+  final String? strategyPublicId;
 }

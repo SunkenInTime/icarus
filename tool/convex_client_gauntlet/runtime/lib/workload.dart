@@ -10,6 +10,8 @@ const baseFixturePath = 'test/fixtures/strategy_integrity/base-test-v43.ica';
 const baseFixtureSha256 =
     '8544873d608a0ad885b2e6042a383596a0b1dc37514034281b4e4eec6168756a';
 
+enum _ContentEntity { element, lineup }
+
 String seedPrefix(int seed) => 'seed-$seed-';
 String strategyId(int seed) => '${seedPrefix(seed)}strategy';
 String folderId(int seed) => '${seedPrefix(seed)}folder';
@@ -21,19 +23,17 @@ List<Map<String, Object?>> buildOperationTrace(int seed) {
   var sequence = 0;
 
   void add(Map<String, Object?> operation) {
-    operations.add(
-      _toProtocol3Op(<String, Object?>{
-        'opId': '${seedPrefix(seed)}op-${sequence.toString().padLeft(4, '0')}',
-        ...operation,
-      }),
-    );
+    operations.add(<String, Object?>{
+      'opId': '${seedPrefix(seed)}op-${sequence.toString().padLeft(4, '0')}',
+      ...operation,
+    });
     sequence += 1;
   }
 
   for (var cycle = 0; cycle < 80; cycle += 1) {
     _addRevisionCycle(
       add: add,
-      entityType: 'element',
+      entity: _ContentEntity.element,
       publicId:
           '${seedPrefix(seed)}element-${cycle.toString().padLeft(3, '0')}',
       pagePublicId: initialPageId(seed),
@@ -46,7 +46,7 @@ List<Map<String, Object?>> buildOperationTrace(int seed) {
   for (var cycle = 0; cycle < 10; cycle += 1) {
     _addRevisionCycle(
       add: add,
-      entityType: 'lineup',
+      entity: _ContentEntity.lineup,
       publicId: '${seedPrefix(seed)}lineup-${cycle.toString().padLeft(3, '0')}',
       pagePublicId: initialPageId(seed),
       payloadBuilder: (variant) => _lineupPayload(seed, cycle, variant),
@@ -57,99 +57,84 @@ List<Map<String, Object?>> buildOperationTrace(int seed) {
 
   final secondPage = secondaryPageId(seed);
   add({
-    'kind': 'add',
-    'entityType': 'page',
-    'entityPublicId': secondPage,
+    'type': 'page.add',
+    'pagePublicId': secondPage,
     'payload': {'name': 'Secondary', 'isAttack': false},
     'sortIndex': 1,
-    'expectedRevision': 0,
+    'expectedStrategyRevision': 0,
   });
   add({
-    'kind': 'patch',
-    'entityType': 'page',
-    'entityPublicId': secondPage,
+    'type': 'page.patch',
+    'pagePublicId': secondPage,
     'payload': {'name': 'Secondary A'},
-    'expectedRevision': 1,
+    'expectedPageRevision': 1,
   });
   add({
-    'kind': 'reorder',
-    'entityType': 'page',
-    'entityPublicId': secondPage,
+    'type': 'page.reorder',
+    'pagePublicId': secondPage,
     'sortIndex': 0,
-    'expectedRevision': 1,
+    'expectedStrategyRevision': 1,
   });
   add({
-    'kind': 'patch',
-    'entityType': 'page',
-    'entityPublicId': secondPage,
+    'type': 'page.patch',
+    'pagePublicId': secondPage,
     'payload': {'name': 'Secondary B'},
-    'expectedRevision': 3,
+    'expectedPageRevision': 3,
   });
   add({
-    'kind': 'delete',
-    'entityType': 'page',
-    'entityPublicId': secondPage,
-    'expectedRevision': 2,
+    'type': 'page.delete',
+    'pagePublicId': secondPage,
+    'expectedStrategyRevision': 2,
   });
   add({
-    'kind': 'delete',
-    'entityType': 'page',
-    'entityPublicId': secondPage,
-    'expectedRevision': 2,
+    'type': 'page.delete',
+    'pagePublicId': secondPage,
+    'expectedStrategyRevision': 2,
   });
   add({
-    'kind': 'add',
-    'entityType': 'page',
-    'entityPublicId': secondPage,
+    'type': 'page.add',
+    'pagePublicId': secondPage,
     'payload': {'name': 'Secondary C', 'isAttack': false},
     'sortIndex': 1,
-    'expectedRevision': 3,
+    'expectedStrategyRevision': 3,
   });
   add({
-    'kind': 'patch',
-    'entityType': 'page',
-    'entityPublicId': secondPage,
+    'type': 'page.patch',
+    'pagePublicId': secondPage,
     'payload': {'name': 'Secondary D'},
-    'expectedRevision': 1,
+    'expectedPageRevision': 1,
   });
   add({
-    'kind': 'reorder',
-    'entityType': 'page',
-    'entityPublicId': secondPage,
+    'type': 'page.reorder',
+    'pagePublicId': secondPage,
     'sortIndex': 0,
-    'expectedRevision': 4,
+    'expectedStrategyRevision': 4,
   });
   add({
-    'kind': 'patch',
-    'entityType': 'page',
-    'entityPublicId': secondPage,
+    'type': 'page.patch',
+    'pagePublicId': secondPage,
     'payload': {'name': 'Secondary final'},
-    'expectedRevision': 3,
+    'expectedPageRevision': 3,
   });
 
   for (var index = 0; index < 10; index += 1) {
     add({
-      'kind': 'patch',
-      'entityType': 'strategy',
-      'entityPublicId': strategyId(seed),
+      'type': 'strategy.patch',
       'payload': {'name': 'Gauntlet seed $seed revision $index'},
-      'expectedRevision': 5 + index,
+      'expectedStrategyRevision': 5 + index,
     });
   }
 
   for (var index = 0; index < 80; index += 1) {
     add({
-      'kind': 'patch',
-      'entityType': 'pageContent',
-      'entityPublicId': initialPageId(seed),
-      'payload': {
-        'settings': {
-          'agentSize': 36 + (index % 5),
-          'abilitySize': 26 + (index % 3),
-          'useNeutralTeamColors': index.isEven,
-        },
+      'type': 'pageContent.patch',
+      'pagePublicId': initialPageId(seed),
+      'settings': {
+        'agentSize': 36 + (index % 5),
+        'abilitySize': 26 + (index % 3),
+        'useNeutralTeamColors': index.isEven,
       },
-      'expectedRevision': 1 + index,
+      'expectedPageContentRevision': 1 + index,
     });
   }
 
@@ -164,87 +149,86 @@ List<Map<String, Object?>> buildOperationTrace(int seed) {
 
 void _addRevisionCycle({
   required void Function(Map<String, Object?>) add,
-  required String entityType,
+  required _ContentEntity entity,
   required String publicId,
   required String pagePublicId,
   required Map<String, Object?> Function(int variant) payloadBuilder,
   required int initialSortIndex,
   required int finalSortIndex,
 }) {
+  final publicIdKey = switch (entity) {
+    _ContentEntity.element => 'elementPublicId',
+    _ContentEntity.lineup => 'lineupPublicId',
+  };
+  final revisionKey = switch (entity) {
+    _ContentEntity.element => 'expectedElementRevision',
+    _ContentEntity.lineup => 'expectedLineupRevision',
+  };
+  final typePrefix = entity.name;
   add({
-    'kind': 'add',
-    'entityType': entityType,
-    'entityPublicId': publicId,
+    'type': '$typePrefix.add',
+    publicIdKey: publicId,
     'pagePublicId': pagePublicId,
     'payload': payloadBuilder(0),
     'sortIndex': initialSortIndex,
   });
   add({
-    'kind': 'patch',
-    'entityType': entityType,
-    'entityPublicId': publicId,
+    'type': '$typePrefix.patch',
+    publicIdKey: publicId,
     'payload': payloadBuilder(1),
-    'expectedRevision': 1,
+    revisionKey: 1,
   });
   add({
-    'kind': 'patch',
-    'entityType': entityType,
-    'entityPublicId': publicId,
+    'type': '$typePrefix.patch',
+    publicIdKey: publicId,
     'payload': payloadBuilder(2),
-    'expectedRevision': 1,
+    revisionKey: 1,
   });
   add({
-    'kind': 'patch',
-    'entityType': entityType,
-    'entityPublicId': publicId,
+    'type': '$typePrefix.patch',
+    publicIdKey: publicId,
     'payload': payloadBuilder(3),
-    'expectedRevision': 2,
+    revisionKey: 2,
   });
   add({
-    'kind': 'reorder',
-    'entityType': entityType,
-    'entityPublicId': publicId,
+    'type': '$typePrefix.reorder',
+    publicIdKey: publicId,
     'pagePublicId': pagePublicId,
     'sortIndex': finalSortIndex - 1,
-    'expectedRevision': 3,
+    revisionKey: 3,
   });
   add({
-    'kind': 'delete',
-    'entityType': entityType,
-    'entityPublicId': publicId,
+    'type': '$typePrefix.delete',
+    publicIdKey: publicId,
     'pagePublicId': pagePublicId,
-    'expectedRevision': 4,
+    revisionKey: 4,
   });
   add({
-    'kind': 'add',
-    'entityType': entityType,
-    'entityPublicId': publicId,
+    'type': '$typePrefix.add',
+    publicIdKey: publicId,
     'pagePublicId': pagePublicId,
     'payload': payloadBuilder(4),
     'sortIndex': finalSortIndex - 2,
-    'expectedRevision': 5,
+    revisionKey: 5,
   });
   add({
-    'kind': 'patch',
-    'entityType': entityType,
-    'entityPublicId': publicId,
+    'type': '$typePrefix.patch',
+    publicIdKey: publicId,
     'payload': payloadBuilder(5),
-    'expectedRevision': 6,
+    revisionKey: 6,
   });
   add({
-    'kind': 'reorder',
-    'entityType': entityType,
-    'entityPublicId': publicId,
+    'type': '$typePrefix.reorder',
+    publicIdKey: publicId,
     'pagePublicId': pagePublicId,
     'sortIndex': finalSortIndex,
-    'expectedRevision': 7,
+    revisionKey: 7,
   });
   add({
-    'kind': 'patch',
-    'entityType': entityType,
-    'entityPublicId': publicId,
+    'type': '$typePrefix.patch',
+    publicIdKey: publicId,
     'payload': payloadBuilder(6),
-    'expectedRevision': 8,
+    revisionKey: 8,
   });
 }
 
@@ -353,9 +337,8 @@ List<Map<String, Object?>> baseElementOps(int seed) {
   return [
     {
       'opId': '${seedPrefix(seed)}base-circle',
-      'kind': 'add',
-      'entityType': 'element',
-      'entityPublicId': '${seedPrefix(seed)}utility-circle-current',
+      'type': 'element.add',
+      'elementPublicId': '${seedPrefix(seed)}utility-circle-current',
       'pagePublicId': initialPageId(seed),
       'sortIndex': 0,
       'payload': basePayload(
@@ -371,9 +354,8 @@ List<Map<String, Object?>> baseElementOps(int seed) {
     },
     {
       'opId': '${seedPrefix(seed)}base-rectangle',
-      'kind': 'add',
-      'entityType': 'element',
-      'entityPublicId': '${seedPrefix(seed)}utility-rectangle-current',
+      'type': 'element.add',
+      'elementPublicId': '${seedPrefix(seed)}utility-rectangle-current',
       'pagePublicId': initialPageId(seed),
       'sortIndex': 1,
       'payload': basePayload(
@@ -387,113 +369,7 @@ List<Map<String, Object?>> baseElementOps(int seed) {
         opacity: 30,
       ),
     },
-  ].map(_toProtocol3Op).toList(growable: false);
-}
-
-Map<String, Object?> _toProtocol3Op(Map<String, Object?> op) {
-  if (op['type'] case final String _) return op;
-
-  final opId = op['opId'] as String;
-  final kind = op['kind'] as String;
-  final entity = op['entityType'] as String;
-  final publicId = op['entityPublicId'] ?? op['pagePublicId'];
-  final expectedRevision = op['expectedRevision'];
-
-  switch ('$entity.$kind') {
-    case 'strategy.patch':
-      return {
-        'opId': opId,
-        'type': 'strategy.patch',
-        'payload': op['payload'] ?? <String, Object?>{},
-        'expectedStrategyRevision': expectedRevision,
-      };
-    case 'page.add':
-      return {
-        'opId': opId,
-        'type': 'page.add',
-        'pagePublicId': publicId,
-        'payload': op['payload'] ?? <String, Object?>{},
-        'sortIndex': op['sortIndex'] ?? 0,
-        'expectedStrategyRevision': expectedRevision,
-      };
-    case 'page.patch':
-      return {
-        'opId': opId,
-        'type': 'page.patch',
-        'pagePublicId': publicId,
-        'payload': op['payload'] ?? <String, Object?>{},
-        'expectedPageRevision': expectedRevision,
-      };
-    case 'page.delete':
-      return {
-        'opId': opId,
-        'type': 'page.delete',
-        'pagePublicId': publicId,
-        'expectedStrategyRevision': expectedRevision,
-      };
-    case 'page.reorder':
-      return {
-        'opId': opId,
-        'type': 'page.reorder',
-        'pagePublicId': publicId,
-        'sortIndex': op['sortIndex'],
-        'expectedStrategyRevision': expectedRevision,
-      };
-    case 'pageContent.patch':
-      final payload = op['payload'] as Map<String, Object?>;
-      return {
-        'opId': opId,
-        'type': 'pageContent.patch',
-        'pagePublicId': publicId,
-        'settings': payload['settings'],
-        'expectedPageContentRevision': expectedRevision,
-      };
-    case 'element.add':
-    case 'element.patch':
-    case 'element.delete':
-    case 'element.reorder':
-      return _toProtocol3ContentOp(
-        op: op,
-        opId: opId,
-        kind: kind,
-        entity: 'element',
-      );
-    case 'lineup.add':
-    case 'lineup.patch':
-    case 'lineup.delete':
-    case 'lineup.reorder':
-      return _toProtocol3ContentOp(
-        op: op,
-        opId: opId,
-        kind: kind,
-        entity: 'lineup',
-      );
-  }
-  throw StateError('Illegal gauntlet op pair: $entity.$kind');
-}
-
-Map<String, Object?> _toProtocol3ContentOp({
-  required Map<String, Object?> op,
-  required String opId,
-  required String kind,
-  required String entity,
-}) {
-  final revisionKey = entity == 'element'
-      ? 'expectedElementRevision'
-      : 'expectedLineupRevision';
-  final result = <String, Object?>{
-    'opId': opId,
-    'type': '$entity.$kind',
-    '${entity}PublicId': op['entityPublicId'],
-  };
-  if (op['pagePublicId'] != null) result['pagePublicId'] = op['pagePublicId'];
-  if (op['payload'] != null) result['payload'] = op['payload'];
-  if (op['sortIndex'] != null) result['sortIndex'] = op['sortIndex'];
-  if (kind == 'add' && op['sortIndex'] == null) result['sortIndex'] = 0;
-  if (op['expectedRevision'] != null) {
-    result[revisionKey] = op['expectedRevision'];
-  }
-  return result;
+  ];
 }
 
 String canonicalJson(Object? value) => jsonEncode(_sortJson(value));

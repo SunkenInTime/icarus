@@ -1,10 +1,16 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
 import 'package:icarus/collab/transport/convex_transport_adapter.dart';
+import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/domain/folder.dart';
+import 'package:icarus/providers/user_preferences_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 
 final convexStrategyRepositoryProvider = Provider<ConvexStrategyRepository>(
   (ref) => ConvexStrategyRepository.fromClient(ConvexClient.instance),
@@ -24,18 +30,18 @@ class ConvexStrategyRepository {
     await _api.users.ensureCurrentUser();
   }
 
-  Stream<List<CloudFolderSummary>> watchAllFolders() {
+  Stream<List<CloudFolderEntry>> watchAllFolders() {
     return _api.folders
         .listTree(
           scope: const ConvexOptional.present(FoldersListTreeArgsScope.all),
         )
         .watch()
         .map(
-          (folders) => folders.map(_folderSummary).toList(growable: false),
+          (folders) => folders.map(_folderEntry).toList(growable: false),
         );
   }
 
-  Stream<List<CloudStrategySummary>> watchStrategiesForFolder(
+  Stream<List<CloudStrategyEntry>> watchStrategiesForFolder(
     String? folderPublicId, {
     String scope = 'owned',
   }) {
@@ -47,14 +53,14 @@ class ConvexStrategyRepository {
         .watch()
         .map(
           (strategies) =>
-              strategies.map(_strategySummary).toList(growable: false),
+              strategies.map(_strategyEntry).toList(growable: false),
         );
   }
 
-  Stream<List<CloudStrategySummary>> watchSharedStrategies() {
+  Stream<List<CloudStrategyEntry>> watchSharedStrategies() {
     return _api.strategies.listSharedWithMe().watch().map(
           (strategies) =>
-              strategies.map(_strategySummary).toList(growable: false),
+              strategies.map(_strategyEntry).toList(growable: false),
         );
   }
 
@@ -203,13 +209,7 @@ class ConvexStrategyRepository {
       clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       ops: typedOps,
     );
-    return result.results.indexed
-        .map(
-          (entry) => OpAck.fromJson(
-            _object(entry.$2.encode('results[${entry.$1}]')),
-          ),
-        )
-        .toList(growable: false);
+    return result.results.map(_opAck).toList(growable: false);
   }
 
   Future<void> createFolder({
@@ -425,9 +425,27 @@ class ConvexStrategyRepository {
     );
   }
 
-  Future<Map<String, dynamic>> redeemShareLink(String token) async {
+  Future<ShareRedemption> redeemShareLink(String token) async {
     final result = await _api.shares.redeem(token: token);
-    return _object(result.encode('shares.redeem.result'));
+    return switch (result) {
+      SharesRedeemResultFolder(:final folderPublicId, :final role) =>
+        ShareRedemption(
+          targetType: 'folder',
+          folderPublicId: folderPublicId,
+          role: role.wireName,
+        ),
+      SharesRedeemResultStrategy(
+        :final folderPublicId,
+        :final strategyPublicId,
+        :final role,
+      ) =>
+        ShareRedemption(
+          targetType: 'strategy',
+          folderPublicId: folderPublicId,
+          strategyPublicId: strategyPublicId,
+          role: role.wireName,
+        ),
+    };
   }
 }
 
@@ -438,127 +456,292 @@ bool isTypedConvexUnauthenticatedError(Object error) {
           error.rawCode == ConvexErrorCode.unauthenticated.wireName);
 }
 
-CloudFolderSummary _folderSummary(FoldersListTreeResultItem folder) {
-  return CloudFolderSummary(
-    publicId: folder.publicId,
-    name: folder.name,
-    createdAt: _dateTime(folder.createdAt),
-    updatedAt: _dateTime(folder.updatedAt),
+CloudFolderEntry _folderEntry(FoldersListTreeResultItem folder) {
+  return (
+    folder: Folder(
+      id: folder.publicId,
+      name: folder.name,
+      dateCreated: _dateTime(folder.createdAt),
+      parentID: folder.parentFolderPublicId,
+      iconId: folderIconIdFromCloud(
+        iconId: folder.iconId?.toInt(),
+        codePoint: folder.iconCodePoint?.toInt(),
+        fontFamily: folder.iconFontFamily,
+        fontPackage: folder.iconFontPackage,
+      ),
+      color: folderColorFromWireName(folder.color),
+      customColor: folderCustomColorFromCloud(folder.customColorValue?.toInt()),
+    ),
     role: folder.role.wireName,
-    parentFolderPublicId: folder.parentFolderPublicId,
-    iconId: folder.iconId?.toInt(),
-    iconCodePoint: folder.iconCodePoint?.toInt(),
-    iconFontFamily: folder.iconFontFamily,
-    iconFontPackage: folder.iconFontPackage,
-    color: folder.color,
-    customColorValue: folder.customColorValue?.toInt(),
   );
 }
 
-CloudStrategySummary _strategySummary(
+CloudStrategyEntry _strategyEntry(
   StrategiesListForFolderResultItem strategy,
 ) {
-  return CloudStrategySummary(
-    publicId: strategy.publicId,
-    name: strategy.name,
-    mapData: strategy.mapData,
+  return (
+    strategy: StrategyData(
+      id: strategy.publicId,
+      name: strategy.name,
+      mapData: _mapValue(strategy.mapData),
+      versionNumber: Settings.versionNumber,
+      lastEdited: _dateTime(strategy.updatedAt),
+      createdAt: _dateTime(strategy.createdAt),
+      folderID: strategy.folderPublicId,
+      themeProfileId: strategy.themeProfileId,
+      themeOverridePalette: _mapThemePalette(strategy.themeOverridePalette),
+    ),
     revision: strategy.revision.toInt(),
-    createdAt: _dateTime(strategy.createdAt),
-    updatedAt: _dateTime(strategy.updatedAt),
     role: strategy.role.wireName,
     attackLabel: strategy.attackLabel.wireName,
   );
 }
 
+MapValue _mapValue(String wireName) {
+  for (final entry in Maps.mapNames.entries) {
+    if (entry.value == wireName) return entry.key;
+  }
+  throw ConvexDecodingException(
+    'strategies.listForFolder.result.mapData',
+    'unknown Icarus map $wireName',
+  );
+}
+
+MapThemePalette? _mapThemePalette(
+  OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette? palette,
+) {
+  final value = _themePaletteValue(palette);
+  return value == null ? null : MapThemePalette.fromJson(value);
+}
+
 RemoteStrategyShell _strategyShell(StrategyGetShellResult result) {
   return RemoteStrategyShell(
-    header: RemoteStrategyHeader.fromJson(
-      _object(result.header.encode('header')),
-    ),
-    pages: result.pages.indexed
-        .map(
-          (entry) => RemotePage.fromJson(
-            _object(entry.$2.encode('pages[${entry.$1}]')),
-          ),
-        )
-        .toList(growable: false),
+    header: _strategyHeader(result.header),
+    pages: result.pages.map(_page).toList(growable: false),
   );
 }
 
 RemotePageSnapshot _pageSnapshot(PageGetSnapshotResult result) {
-  final assets = result.assets.indexed
-      .map(
-        (entry) => RemoteImageAsset.fromJson(
-          _object(entry.$2.encode('assets[${entry.$1}]')),
-        ),
-      )
-      .toList(growable: false);
+  final assets = result.assets.map(_imageAsset).toList(growable: false);
   return RemotePageSnapshot(
-    page: RemotePage.fromJson(_object(result.page.encode('page'))),
-    content: RemotePageContent.fromJson(
-      _object(result.content.encode('content')),
-    ),
-    elements: result.elements.indexed
-        .map(
-          (entry) => RemoteElement.fromJson(
-            _object(entry.$2.encode('elements[${entry.$1}]')),
-          ),
-        )
-        .toList(growable: false),
-    lineups: result.lineups.indexed
-        .map(
-          (entry) => RemoteLineup.fromJson(
-            _object(entry.$2.encode('lineups[${entry.$1}]')),
-          ),
-        )
-        .toList(growable: false),
+    page: _page(result.page),
+    content: _pageContent(result.content),
+    elements: result.elements.map(_element).toList(growable: false),
+    lineups: result.lineups.map(_lineup).toList(growable: false),
     assetsById: {for (final asset in assets) asset.publicId: asset},
   );
 }
 
 RemoteFullStrategySnapshot _fullSnapshot(StrategyGetFullSnapshotResult result) {
-  final pages = result.pages.indexed.map((entry) {
-    final json = _object(entry.$2.encode('pages[${entry.$1}]'));
+  final pages = result.pages.map((page) {
     return RemoteFullPage(
-      page: RemotePage.fromJson(json),
-      content: RemotePageContent.fromJson({
-        'settings': json['settings'],
-        'revision': json['contentRevision'],
-        'createdAt': json['contentCreatedAt'],
-        'updatedAt': json['contentUpdatedAt'],
-      }),
+      page: RemotePage(
+        publicId: page.publicId,
+        strategyPublicId: page.strategyPublicId,
+        name: page.name,
+        sortIndex: page.sortIndex.toInt(),
+        isAttack: page.isAttack,
+        revision: page.revision.toInt(),
+        createdAt: _dateTime(page.createdAt),
+        updatedAt: _dateTime(page.updatedAt),
+      ),
+      content: RemotePageContent(
+        settings: _settingsValue(page.settings),
+        revision: page.contentRevision.toInt(),
+        createdAt: _dateTime(page.contentCreatedAt),
+        updatedAt: _dateTime(page.contentUpdatedAt),
+      ),
     );
   }).toList(growable: false);
-  final elements = result.elements.indexed
-      .map(
-        (entry) => RemoteElement.fromJson(
-          _object(entry.$2.encode('elements[${entry.$1}]')),
-        ),
-      )
-      .toList(growable: false);
-  final lineups = result.lineups.indexed
-      .map(
-        (entry) => RemoteLineup.fromJson(
-          _object(entry.$2.encode('lineups[${entry.$1}]')),
-        ),
-      )
-      .toList(growable: false);
-  final assets = result.assets.indexed
-      .map(
-        (entry) => RemoteImageAsset.fromJson(
-          _object(entry.$2.encode('assets[${entry.$1}]')),
-        ),
-      )
-      .toList(growable: false);
+  final elements = result.elements.map(_element).toList(growable: false);
+  final lineups = result.lineups.map(_lineup).toList(growable: false);
+  final assets = result.assets.map(_imageAsset).toList(growable: false);
   return RemoteFullStrategySnapshot(
-    header: RemoteStrategyHeader.fromJson(
-      _object(result.header.encode('header')),
-    ),
+    header: _strategyHeader(result.header),
     pages: pages,
     elementsByPage: RemoteFullStrategySnapshot.groupElementsByPage(elements),
     lineupsByPage: RemoteFullStrategySnapshot.groupLineupsByPage(lineups),
     assetsById: {for (final asset in assets) asset.publicId: asset},
   );
+}
+
+RemoteStrategyHeader _strategyHeader(StrategiesGetHeaderResult header) {
+  return RemoteStrategyHeader(
+    publicId: header.publicId,
+    name: header.name,
+    mapData: header.mapData,
+    revision: header.revision.toInt(),
+    createdAt: _dateTime(header.createdAt),
+    updatedAt: _dateTime(header.updatedAt),
+    themeProfileId: header.themeProfileId,
+    themeOverridePalette: _themePaletteValue(header.themeOverridePalette),
+    role: header.role.wireName,
+  );
+}
+
+RemotePage _page(PageGetSnapshotResultPage page) {
+  return RemotePage(
+    publicId: page.publicId,
+    strategyPublicId: page.strategyPublicId,
+    name: page.name,
+    sortIndex: page.sortIndex.toInt(),
+    isAttack: page.isAttack,
+    revision: page.revision.toInt(),
+    createdAt: _dateTime(page.createdAt),
+    updatedAt: _dateTime(page.updatedAt),
+  );
+}
+
+RemotePageContent _pageContent(PageGetSnapshotResultContent content) {
+  return RemotePageContent(
+    settings: _settingsValue(content.settings),
+    revision: content.revision.toInt(),
+    createdAt: _dateTime(content.createdAt),
+    updatedAt: _dateTime(content.updatedAt),
+  );
+}
+
+RemoteElement _element(ElementsListForPageResultItem element) {
+  return RemoteElement(
+    publicId: element.publicId,
+    strategyPublicId: element.strategyPublicId,
+    pagePublicId: element.pagePublicId,
+    elementType: element.elementType.wireName,
+    payload: element.payload,
+    sortIndex: element.sortIndex.toInt(),
+    revision: element.revision.toInt(),
+    deleted: element.deleted,
+  );
+}
+
+RemoteLineup _lineup(LineupsListForPageResultItem lineup) {
+  return RemoteLineup(
+    publicId: lineup.publicId,
+    strategyPublicId: lineup.strategyPublicId,
+    pagePublicId: lineup.pagePublicId,
+    payload: lineup.payload,
+    sortIndex: lineup.sortIndex.toInt(),
+    revision: lineup.revision.toInt(),
+    deleted: lineup.deleted,
+  );
+}
+
+RemoteImageAsset _imageAsset(ImagesListForStrategyResultItem asset) {
+  return RemoteImageAsset(
+    publicId: asset.publicId,
+    provider: asset.provider.wireName,
+    uploadStatus: asset.uploadStatus.wireName,
+    fileExtension: asset.fileExtension,
+    mimeType: asset.mimeType,
+    width: asset.width?.toInt(),
+    height: asset.height?.toInt(),
+    byteSize: asset.byteSize?.toInt(),
+    uploadedAt: asset.uploadedAt == null ? null : _dateTime(asset.uploadedAt!),
+    url: asset.url,
+    legacyStoragePath: asset.legacyStoragePath,
+  );
+}
+
+OpAck _opAck(OpsApplyBatchResultResultsItem result) {
+  return switch (result) {
+    OpsApplyBatchResultResultsItemApplied(
+      :final opId,
+      :final appliedRevision
+    ) =>
+      AppliedOpAck(opId: opId, revision: appliedRevision.toInt()),
+    OpsApplyBatchResultResultsItemNoop(:final opId, :final currentRevision) =>
+      NoopOpAck(
+        opId: opId,
+        currentRevision:
+            currentRevision.isPresent ? currentRevision.value.toInt() : null,
+      ),
+    OpsApplyBatchResultResultsItemRejected(
+      :final opId,
+      :final reason,
+      :final current,
+    ) =>
+      RejectedOpAck(
+        opId: opId,
+        rejectionReason: OpRejectionReason.fromWireName(reason.wireName),
+        current: current.isPresent ? _currentSnapshot(current.value) : null,
+      ),
+    OpsApplyBatchResultResultsItemFailed(
+      :final opId,
+      :final code,
+      :final rawCode,
+      :final message,
+    ) =>
+      FailedOpAck(
+        opId: opId,
+        code: code,
+        rawCode: rawCode,
+        message: message,
+      ),
+  };
+}
+
+CurrentOpSnapshot _currentSnapshot(
+  OpsApplyBatchResultResultsItemRejectedCurrent current,
+) {
+  return switch (current) {
+    OpsApplyBatchResultResultsItemRejectedCurrentStrategy(
+      :final revision,
+      :final value,
+    ) =>
+      StrategyCurrentSnapshot(
+        revision: revision.toInt(),
+        value: {
+          'name': value.name,
+          'mapData': value.mapData,
+          'themeProfileId': value.themeProfileId,
+          'themeOverridePalette': _themePaletteValue(
+            value.themeOverridePalette,
+          ),
+        },
+      ),
+    OpsApplyBatchResultResultsItemRejectedCurrentPage(
+      :final revision,
+      :final value,
+    ) =>
+      PageCurrentSnapshot(
+        revision: revision.toInt(),
+        value: {
+          'name': value.name,
+          'sortIndex': value.sortIndex,
+          'isAttack': value.isAttack,
+        },
+      ),
+    OpsApplyBatchResultResultsItemRejectedCurrentPageContent(
+      :final revision,
+      :final value,
+    ) =>
+      PageContentCurrentSnapshot(
+        revision: revision.toInt(),
+        value: {'settings': _settingsValue(value.settings)},
+      ),
+    OpsApplyBatchResultResultsItemRejectedCurrentElement(
+      :final revision,
+      :final value,
+    ) =>
+      ElementCurrentSnapshot(revision: revision.toInt(), value: value),
+    OpsApplyBatchResultResultsItemRejectedCurrentLineup(
+      :final revision,
+      :final value,
+    ) =>
+      LineupCurrentSnapshot(revision: revision.toInt(), value: value),
+  };
+}
+
+CloudPayload? _themePaletteValue(
+  OpsApplyBatchArgsOpsItemStrategyPatchPayloadThemeOverridePalette? palette,
+) {
+  return palette == null ? null : _object(palette.encode('theme'));
+}
+
+CloudPayload? _settingsValue(
+  OpsApplyBatchArgsOpsItemPageAddPayloadSettings? settings,
+) {
+  return settings == null ? null : _object(settings.encode('settings'));
 }
 
 Map<String, dynamic> _object(ConvexObject value) {

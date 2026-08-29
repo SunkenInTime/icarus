@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
-import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/domain/folder.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
@@ -14,73 +15,7 @@ import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:uuid/uuid.dart';
 
-enum FolderColor {
-  generic,
-  red,
-  blue,
-  green,
-  orange,
-  purple,
-  custom,
-}
-
-class Folder extends HiveObject {
-  String name;
-  final String id;
-  final DateTime dateCreated;
-  String? parentID; // null for root folders, clearer than empty string
-  int iconId;
-  FolderColor color;
-  Color? customColor;
-
-  Folder({
-    required this.name,
-    required this.id,
-    required this.dateCreated,
-    int? iconId,
-    IconData? icon,
-    this.color = FolderColor.red,
-    this.parentID, // Optional, defaults to null (root)
-    this.customColor,
-  }) : iconId = iconId ??
-            (icon == null
-                ? FolderIconRegistry.defaultId
-                : FolderIconRegistry.idForLegacyIconData(icon));
-
-  static Map<FolderColor, Color> folderColorMap = {
-    FolderColor.red: Colors.red,
-    FolderColor.blue: Colors.blue,
-    FolderColor.green: Colors.green,
-    FolderColor.orange: Colors.orange,
-    FolderColor.purple: Colors.purple,
-    FolderColor.generic: Settings.tacticalVioletTheme.card,
-  };
-
-  static List<FolderColor> folderColors = [
-    FolderColor.red,
-    FolderColor.blue,
-    FolderColor.green,
-    FolderColor.orange,
-    FolderColor.purple,
-    FolderColor.generic,
-  ];
-
-  @Deprecated('Use iconId and FolderIconRegistry instead.')
-  IconData get icon => FolderIconRegistry.legacyIconDataForId(iconId);
-
-  @Deprecated('Use iconId and FolderIconRegistry instead.')
-  set icon(IconData icon) {
-    iconId = FolderIconRegistry.idForLegacyIconData(icon);
-  }
-
-  @Deprecated('Use FolderIconRegistry.pickerEntries instead.')
-  static List<IconData> get folderIcons => [
-        for (final entry in FolderIconRegistry.pickerEntries)
-          if (entry.iconData != null) entry.iconData!,
-      ];
-
-  bool get isRoot => parentID == null;
-}
+export 'package:icarus/domain/folder.dart' show Folder, FolderColor;
 
 final folderProvider =
     NotifierProvider<FolderProvider, String?>(FolderProvider.new);
@@ -88,55 +23,6 @@ final folderProvider =
 class FolderProvider extends Notifier<String?> {
   String? _localCurrentFolderId;
   String? _cloudCurrentFolderId;
-
-  static FolderColor decodeFolderColor(String? raw) {
-    if (raw == null) {
-      return FolderColor.generic;
-    }
-    for (final value in FolderColor.values) {
-      if (value.name == raw) {
-        return value;
-      }
-    }
-    return FolderColor.generic;
-  }
-
-  static IconData decodeFolderIcon(
-    CloudFolderSummary folder, {
-    IconData fallback = Icons.drive_folder_upload,
-  }) {
-    final codePoint = folder.iconCodePoint;
-    if (codePoint == null) {
-      return fallback;
-    }
-    return IconData(
-      codePoint,
-      fontFamily: folder.iconFontFamily,
-      fontPackage: folder.iconFontPackage,
-    );
-  }
-
-  static int decodeFolderIconId(CloudFolderSummary folder) {
-    final iconId = folder.iconId;
-    if (iconId != null && FolderIconRegistry.isKnownId(iconId)) {
-      return iconId;
-    }
-    return FolderIconRegistry.idForLegacyIconData(decodeFolderIcon(folder));
-  }
-
-  static Folder cloudSummaryToFolder(CloudFolderSummary folder) {
-    return Folder(
-      name: folder.name,
-      id: folder.publicId,
-      dateCreated: folder.createdAt,
-      iconId: decodeFolderIconId(folder),
-      color: decodeFolderColor(folder.color),
-      parentID: folder.parentFolderPublicId,
-      customColor: folder.customColorValue == null
-          ? null
-          : Color(folder.customColorValue!),
-    );
-  }
 
   Future<Folder> createFolder({
     required String name,
@@ -249,11 +135,11 @@ class FolderProvider extends Notifier<String?> {
 
   Folder? findCloudFolderByID(
     String id,
-    Iterable<CloudFolderSummary> cloudFolders,
+    Iterable<CloudFolderEntry> cloudFolders,
   ) {
     return cloudFolders
-        .where((folder) => folder.publicId == id)
-        .map(cloudSummaryToFolder)
+        .where((entry) => entry.folder.id == id)
+        .map((entry) => entry.folder)
         .firstOrNull;
   }
 

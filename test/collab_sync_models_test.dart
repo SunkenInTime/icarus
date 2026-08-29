@@ -429,31 +429,31 @@ void main() {
   });
 
   group('separate remote read models', () {
-    final header = RemoteStrategyHeader.fromJson({
-      'publicId': 'strat-1',
-      'name': 'Cloud',
-      'mapData': 'ascent',
-      'revision': 3,
-      'createdAt': 1,
-      'updatedAt': 2,
-      'themeOverridePalette': {'base': '#111111'},
-    });
-    final page = RemotePage.fromJson({
-      'publicId': 'page-1',
-      'strategyPublicId': 'strat-1',
-      'name': 'Page 1',
-      'sortIndex': 0,
-      'isAttack': true,
-      'revision': 2,
-      'createdAt': 1,
-      'updatedAt': 2,
-    });
-    final content = RemotePageContent.fromJson({
-      'settings': {'agentSize': 35.0},
-      'revision': 7,
-      'createdAt': 1,
-      'updatedAt': 2,
-    });
+    final header = RemoteStrategyHeader(
+      publicId: 'strat-1',
+      name: 'Cloud',
+      mapData: 'ascent',
+      revision: 3,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(2),
+      themeOverridePalette: const {'base': '#111111'},
+    );
+    final page = RemotePage(
+      publicId: 'page-1',
+      strategyPublicId: 'strat-1',
+      name: 'Page 1',
+      sortIndex: 0,
+      isAttack: true,
+      revision: 2,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(2),
+    );
+    final content = RemotePageContent(
+      settings: const {'agentSize': 35.0},
+      revision: 7,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(2),
+    );
 
     test('shell carries descriptors but no page content', () {
       final shell = RemoteStrategyShell(header: header, pages: [page]);
@@ -498,16 +498,19 @@ void main() {
   });
 
   group('RemoteImageAsset', () {
-    test('parses R2 metadata', () {
-      final asset = RemoteImageAsset.fromJson({
-        'publicId': 'asset-1',
-        'provider': 'r2',
-        'uploadStatus': 'active',
-        'fileExtension': '.png',
-        'byteSize': 42,
-        'uploadedAt': 1700000000000,
-        'url': 'https://media.example.com/asset-1.png',
-      });
+    test('retains typed R2 metadata', () {
+      final asset = RemoteImageAsset(
+        publicId: 'asset-1',
+        provider: 'r2',
+        uploadStatus: 'active',
+        fileExtension: '.png',
+        width: null,
+        height: null,
+        byteSize: 42,
+        uploadedAt: DateTime.fromMillisecondsSinceEpoch(1700000000000),
+        url: 'https://media.example.com/asset-1.png',
+        legacyStoragePath: null,
+      );
       expect(asset.provider, 'r2');
       expect(asset.byteSize, 42);
     });

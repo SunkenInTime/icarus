@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/folder_icons.dart';
+import 'package:icarus/domain/folder.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
-import 'package:icarus/providers/folder_provider.dart';
 
 void main() {
-  test('cloud folder summary adapts to local folder model defaults', () {
-    final summary = CloudFolderSummary(
-      publicId: 'folder-1',
+  test('cloud folder values adapt to local folder model defaults', () {
+    final folder = Folder(
+      id: 'folder-1',
       name: 'Set Plays',
-      createdAt: DateTime(2026, 1, 1),
-      updatedAt: DateTime(2026, 1, 2),
-      parentFolderPublicId: 'parent-1',
+      dateCreated: DateTime(2026, 1, 1),
+      parentID: 'parent-1',
+      iconId: folderIconIdFromCloud(
+        iconId: null,
+        codePoint: null,
+        fontFamily: null,
+        fontPackage: null,
+      ),
+      color: folderColorFromWireName(null),
     );
-
-    final folder = FolderProvider.cloudSummaryToFolder(summary);
 
     expect(folder.id, 'folder-1');
     expect(folder.name, 'Set Plays');
@@ -25,18 +28,20 @@ void main() {
     expect(folder.customColor, isNull);
   });
 
-  test('cloud folder summary preserves icon and color metadata', () {
-    final summary = CloudFolderSummary(
-      publicId: 'folder-2',
+  test('cloud folder values preserve icon and color metadata', () {
+    final folder = Folder(
+      id: 'folder-2',
       name: 'Execs',
-      createdAt: DateTime(2026, 1, 1),
-      updatedAt: DateTime(2026, 1, 2),
-      iconId: FolderIconRegistry.duelistRoleId,
-      color: 'red',
-      customColorValue: 0xFF123456,
+      dateCreated: DateTime(2026, 1, 1),
+      iconId: folderIconIdFromCloud(
+        iconId: FolderIconRegistry.duelistRoleId,
+        codePoint: null,
+        fontFamily: null,
+        fontPackage: null,
+      ),
+      color: folderColorFromWireName('red'),
+      customColor: folderCustomColorFromCloud(0xFF123456),
     );
-
-    final folder = FolderProvider.cloudSummaryToFolder(summary);
 
     expect(folder.iconId, FolderIconRegistry.duelistRoleId);
     expect(folder.color, FolderColor.red);

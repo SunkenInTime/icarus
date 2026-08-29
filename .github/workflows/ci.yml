@@ -7,6 +7,40 @@ on:
   pull_request:
 
 jobs:
+  convex-contract:
+    runs-on: ubuntu-latest
+    env:
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
+      CONVEX_PREVIEW_NAME: typed-wrapper-contract-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Require Convex preview deploy key
+        shell: bash
+        run: |
+          if [[ -z "$CONVEX_DEPLOY_KEY" ]]; then
+            echo "Add the CONVEX_PREVIEW_DEPLOY_KEY repository secret so CI can create an isolated contract deployment."
+            exit 1
+          fi
+
+      - name: Install Convex dependencies
+        run: npm ci
+
+      - name: Deploy isolated Convex contract
+        run: npx convex deploy --preview-create "$CONVEX_PREVIEW_NAME" --typecheck enable
+
+      - name: Compare fresh scrubbed contract
+        run: |
+          npm run snapshot:convex-contract:check
+          npm run audit:convex-contract
+          git diff --exit-code -- convex/function_spec.json convex/error_codes.json convex/_generated
+
   validate:
     runs-on: windows-latest
     env:
@@ -82,6 +116,25 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           fvm dart analyze
 
+      - name: Validate Icarus Convex Generator
+        shell: pwsh
+        working-directory: tool/icarus_convex_codegen
+        run: |
+          fvm dart pub get
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          fvm dart analyze
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          fvm dart test
+
+      - name: Reject Generated Client Drift
+        shell: pwsh
+        run: |
+          fvm dart run tool/icarus_convex_codegen/bin/generate.dart
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          fvm dart run tool/icarus_convex_codegen/bin/generate.dart
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff --exit-code -- lib/collab/generated
+
       - name: Analyze
         shell: pwsh
         run: fvm flutter analyze --no-fatal-infos
@@ -91,3 +144,92 @@ jobs:
       - name: Run Tests
         shell: pwsh
         run: fvm flutter test
+      - name: Test Native Convex Bridge
+        shell: pwsh
+        run: |
+          cargo test --manifest-path third_party/convex_flutter/rust/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path third_party/convex_rs/Cargo.toml
+      - name: Build Windows Client
+        shell: pwsh
+        run: fvm flutter build windows --no-tree-shake-icons
+
+  linux:
+    runs-on: ubuntu-latest
+    env:
+      FVM_HOME: ${{ github.workspace }}/.fvm_cache
+      PUB_CACHE: ${{ github.workspace }}/.pub-cache
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+
+      - name: Install Linux build dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+
+      - name: Cache Pub Packages
+        uses: actions/cache@v4
+        with:
+          path: .pub-cache
+          key: ${{ runner.os }}-pub-${{ hashFiles('**/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pub-
+
+      - name: Cache FVM SDK
+        uses: actions/cache@v4
+        with:
+          path: .fvm_cache
+          key: ${{ runner.os }}-fvm-${{ hashFiles('.fvmrc') }}
+          restore-keys: |
+            ${{ runner.os }}-fvm-
+
+      - name: Add Pub Cache To PATH
+        shell: bash
+        run: echo "$PUB_CACHE/bin" >> "$GITHUB_PATH"
+
+      - name: Install FVM and Flutter SDK
+        shell: bash
+        run: |
+          dart pub global activate fvm
+          fvm install
+
+      - name: Get Dependencies
+        run: fvm flutter pub get
+
+      - name: Validate Icarus Convex Generator
+        working-directory: tool/icarus_convex_codegen
+        run: |
+          fvm dart pub get
+          fvm dart analyze
+          fvm dart test
+
+      - name: Validate Protocol V3 Gauntlet Workload
+        working-directory: tool/convex_client_gauntlet/runtime
+        run: |
+          fvm flutter pub get
+          fvm dart analyze lib test tool
+          fvm flutter test test/workload_test.dart
+
+      - name: Reject Generated Client Drift
+        run: |
+          fvm dart run tool/icarus_convex_codegen/bin/generate.dart
+          fvm dart run tool/icarus_convex_codegen/bin/generate.dart
+          git diff --exit-code -- lib/collab/generated
+
+      - name: Analyze
+        run: fvm flutter analyze --no-fatal-infos
+
+      - name: Run Tests
+        run: fvm flutter test
+
+      - name: Test Native Convex Bridge
+        run: |
+          cargo test --manifest-path third_party/convex_flutter/rust/Cargo.toml
+          cargo test --manifest-path third_party/convex_rs/Cargo.toml
+
+      - name: Build Linux Client
+        run: fvm flutter build linux --no-tree-shake-icons

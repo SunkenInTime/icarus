@@ -20,7 +20,7 @@ class CurrentPathBar extends ConsumerWidget {
     final currentFolderId = ref.watch(folderProvider);
     final cloudFolders = isCloud
         ? (ref.watch(cloudAllFoldersProvider).valueOrNull ?? const [])
-            .map(FolderProvider.cloudSummaryToFolder)
+            .map((entry) => entry.folder)
             .toList(growable: false)
         : null;
     final currentFolder = currentFolderId == null
@@ -134,9 +134,7 @@ class FolderTab extends ConsumerWidget {
           final targetSection = folder == null
               ? CloudLibrarySection.home
               : ref.read(cloudLibrarySectionProvider);
-          ref
-              .read(cloudLibrarySectionProvider.notifier)
-              .select(targetSection);
+          ref.read(cloudLibrarySectionProvider.notifier).select(targetSection);
         }
         ref.read(folderProvider.notifier).updateID(folder?.id);
       },

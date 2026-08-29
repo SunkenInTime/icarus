@@ -15,29 +15,31 @@ void main() {
         first.map((operation) => operation['opId']).toSet(),
         hasLength(operationsPerSeed),
       );
+      for (final operation in first) {
+        expect(operation['type'], isA<String>());
+        expect(operation, isNot(contains('kind')));
+        expect(operation, isNot(contains('entityType')));
+        expect(operation, isNot(contains('entityPublicId')));
+        expect(operation, isNot(contains('expectedRevision')));
+      }
     }
   });
 
   test('the trace covers every synced entity boundary', () {
     final trace = buildOperationTrace(0);
+    final types = trace.map((operation) => operation['type'] as String);
     expect(
-      trace.map((operation) => operation['entityType']).toSet(),
-      containsAll(<String>[
+      types.map((type) => type.split('.').first).toSet(),
+      containsAll(<String>{
         'strategy',
         'page',
         'pageContent',
         'element',
         'lineup',
-      ]),
+      }),
     );
-    expect(
-      trace.where((operation) => operation['kind'] == 'delete'),
-      isNotEmpty,
-    );
-    expect(
-      trace.where((operation) => operation['kind'] == 'reorder'),
-      isNotEmpty,
-    );
+    expect(types.where((type) => type.endsWith('.delete')), isNotEmpty);
+    expect(types.where((type) => type.endsWith('.reorder')), isNotEmpty);
   });
 
   test('canonical snapshots exclude transport clocks', () {

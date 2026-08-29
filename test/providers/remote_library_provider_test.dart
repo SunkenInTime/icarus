@@ -2,15 +2,17 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/const/maps.dart';
+import 'package:icarus/domain/folder.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 
 void main() {
-  test('repository maps the typed folder tree into Icarus summaries', () async {
+  test('repository maps the typed folder tree into Icarus folders', () async {
     final transport = _RecordingTransport();
     final repository = ConvexStrategyRepository(IcarusConvexApi(transport));
     final firstTree = repository.watchAllFolders().first;
@@ -27,7 +29,7 @@ void main() {
           'iconFontFamily': 'MaterialIcons',
           'iconFontPackage': null,
           'color': 'blue',
-          'customColorValue': null,
+          'customColorValue': 0xff123456,
           'parentFolderPublicId': null,
           'createdAt': 1700000000000,
           'updatedAt': 1700000001000,
@@ -39,13 +41,49 @@ void main() {
     final folders = await firstTree;
     expect(transport.subscriptionCount['folders:listTree'], 1);
     expect(transport.lastArgs['folders:listTree']?.toDart(), {'scope': 'all'});
-    expect(folders.single.publicId, 'folder-1');
-    expect(folders.single.iconId, 7);
+    expect(folders.single.folder.id, 'folder-1');
+    expect(folders.single.folder.iconId, 7);
+    expect(folders.single.folder.color, FolderColor.blue);
+    expect(folders.single.folder.customColor?.toARGB32(), 0xff123456);
     expect(folders.single.role, 'owner');
+  });
+
+  test('repository maps typed strategy rows into Icarus strategies', () async {
+    final transport = _RecordingTransport();
+    final repository = ConvexStrategyRepository(IcarusConvexApi(transport));
+    final firstList = repository.watchStrategiesForFolder(null).first;
+    await Future<void>.delayed(Duration.zero);
+
+    transport.emitSubscription(
+      'strategies:listForFolder',
+      ConvexValue.fromDart([
+        {
+          'publicId': 'strategy-1',
+          'name': 'A Split',
+          'mapData': 'ascent',
+          'folderPublicId': null,
+          'revision': 4,
+          'createdAt': 1700000000000,
+          'updatedAt': 1700000001000,
+          'themeProfileId': null,
+          'themeOverridePalette': null,
+          'role': 'owner',
+          'attackLabel': 'Attack',
+        },
+      ]),
+    );
+
+    final entry = (await firstList).single;
+    expect(entry.strategy.id, 'strategy-1');
+    expect(entry.strategy.mapData, MapValue.ascent);
+    expect(entry.strategy.folderID, isNull);
     expect(
-      folders.single.updatedAt,
+      entry.strategy.lastEdited,
       DateTime.fromMillisecondsSinceEpoch(1700000001000),
     );
+    expect(entry.revision, 4);
+    expect(entry.role, 'owner');
+    expect(entry.attackLabel, 'Attack');
   });
 
   test('folder views share one cached tree subscription', () async {
@@ -81,18 +119,20 @@ void main() {
     expect(repository.folderWatchCount, 1);
 
     repository.folders.add([
-      CloudFolderSummary(
-        publicId: 'owned-root',
-        name: 'Owned',
-        createdAt: DateTime(2026),
-        updatedAt: DateTime(2026),
+      (
+        folder: Folder(
+          id: 'owned-root',
+          name: 'Owned',
+          dateCreated: DateTime(2026),
+        ),
         role: 'owner',
       ),
-      CloudFolderSummary(
-        publicId: 'shared-root',
-        name: 'Shared',
-        createdAt: DateTime(2026),
-        updatedAt: DateTime(2026),
+      (
+        folder: Folder(
+          id: 'shared-root',
+          name: 'Shared',
+          dateCreated: DateTime(2026),
+        ),
         role: 'editor',
       ),
     ]);
@@ -103,7 +143,10 @@ void main() {
     }
 
     expect(
-      container.read(cloudFoldersProvider).valueOrNull?.map((f) => f.publicId),
+      container
+          .read(cloudFoldersProvider)
+          .valueOrNull
+          ?.map((entry) => entry.folder.id),
       ['owned-root'],
     );
   });
@@ -123,11 +166,11 @@ class _ReadyAuthProvider extends AuthProvider {
 class _CountingRepository extends ConvexStrategyRepository {
   _CountingRepository() : super(IcarusConvexApi(_RecordingTransport()));
 
-  final folders = StreamController<List<CloudFolderSummary>>.broadcast();
+  final folders = StreamController<List<CloudFolderEntry>>.broadcast();
   int folderWatchCount = 0;
 
   @override
-  Stream<List<CloudFolderSummary>> watchAllFolders() {
+  Stream<List<CloudFolderEntry>> watchAllFolders() {
     folderWatchCount += 1;
     return folders.stream;
   }

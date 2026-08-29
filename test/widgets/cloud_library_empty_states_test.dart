@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
@@ -72,10 +72,10 @@ Widget _cloudApp(
         () => _CloudSectionNotifier(section),
       ),
       cloudFoldersProvider.overrideWith(
-        (_) => Stream.value(const <CloudFolderSummary>[]),
+        (_) => Stream.value(const <CloudFolderEntry>[]),
       ),
       cloudStrategiesProvider.overrideWith(
-        (_) => Stream.value(const <CloudStrategySummary>[]),
+        (_) => Stream.value(const <CloudStrategyEntry>[]),
       ),
     ],
     child: ShadApp(home: Scaffold(body: child)),

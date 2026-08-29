@@ -25,6 +25,9 @@ These are the files that define the current behavior:
 
 - `lib/main.dart`
 - `lib/providers/auth_provider.dart`
+- `lib/collab/convex_strategy_repository.dart`
+- `lib/collab/generated/`
+- `lib/collab/transport/`
 - `lib/widgets/dialogs/auth/auth_dialog.dart`
 - `convex/auth.config.ts`
 - `convex/users.ts`
@@ -43,7 +46,7 @@ await ConvexClient.initialize(
     deploymentUrl: 'https://majestic-eel-413.convex.cloud',
     clientId: 'dev:majestic-eel-413',
     operationTimeout: Duration(seconds: 30),
-    healthCheckQuery: 'health:ping',
+    healthCheckQuery: defaultConvexHealthCheckQuery,
   ),
 );
 
@@ -308,11 +311,17 @@ Why this exists:
 
 ## 9. The app provisions a Convex `users` row after auth is ready
 
-Once Convex says the token is accepted, the app immediately runs:
+Once Convex says the token is accepted, the app immediately runs the named
+auth boundary:
 
 ```dart
-await _convexApi.mutation(name: 'users:ensureCurrentUser', args: {});
+await _convexApi.ensureCurrentUser();
 ```
+
+The default auth adapter delegates that method to
+`ConvexStrategyRepository.ensureCurrentUser()`. Inside `lib/collab/`, the
+repository calls the generated `api.users.ensureCurrentUser()` method. Auth
+code does not spell a route or construct a raw argument map.
 
 That mutation does this:
 
@@ -338,16 +347,17 @@ export const ensureCurrentUser = mutation({
         avatarUrl,
         updatedAt: Date.now(),
       });
-      return existingUser._id;
+      return { ok: true as const };
     }
 
-    return await ctx.db.insert("users", {
+    await ctx.db.insert("users", {
       externalId,
       displayName,
       avatarUrl,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
+    return { ok: true as const };
   },
 });
 ```
@@ -500,22 +510,24 @@ Why this matters:
 
 ## 14. Real cloud queries and mutations depend on this contract
 
-The repository calls Convex functions directly:
+The repository is the only application boundary that sees generated structural
+types. It calls the typed module and maps the result to the Icarus folder model:
 
 ```dart
-final response = await _client.query('folders:listForParent', {
-  if (parentFolderPublicId != null)
-    'parentFolderPublicId': parentFolderPublicId,
-});
+return _api.folders
+    .listTree(
+      scope: const ConvexOptional.present(FoldersListTreeArgsScope.all),
+    )
+    .watch()
+    .map((folders) => folders.map(_folderEntry).toList(growable: false));
 ```
 
 Backend functions enforce auth immediately:
 
 ```ts
-export const listForParent = query({
-  args: {
-    parentFolderPublicId: v.optional(v.string()),
-  },
+export const listTree = query({
+  args: { scope: folderScopeValidator },
+  returns: v.array(folderSummaryValidator),
   handler: async (ctx, args) => {
     const user = await requireCurrentUser(ctx);
     // ...
@@ -530,8 +542,10 @@ export const applyBatch = mutation({
   args: {
     strategyPublicId: v.string(),
     clientId: v.string(),
+    clientProtocolVersion: v.literal(3),
     ops: v.array(strategyOpValidator),
   },
+  returns: applyBatchResultValidator,
   handler: async (ctx, args) => {
     let strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
@@ -560,18 +574,16 @@ export function unauthenticatedError(): ConvexError<{
 }
 ```
 
-The Flutter client looks for that code in either structured payloads or error strings:
+The transport preserves that data as a structured error. The generated client
+maps the raw code to `ConvexErrorCode`, and the collaboration boundary checks
+the typed values without parsing the message:
 
 ```dart
-bool isConvexUnauthenticatedError(Object error) {
-  if (error is Map) {
-    final code = error['code']?.toString().toUpperCase();
-    if (code == 'UNAUTHENTICATED') {
-      return true;
-    }
-  }
-
-  return isConvexUnauthenticatedMessage(error.toString());
+bool isTypedConvexUnauthenticatedError(Object error) {
+  return (error is ConvexFunctionException &&
+          error.code == ConvexErrorCode.unauthenticated) ||
+      (error is ConvexClientFunctionError &&
+          error.rawCode == ConvexErrorCode.unauthenticated.wireName);
 }
 ```
 
@@ -617,8 +629,8 @@ The flow is stable because each layer has a single responsibility:
 - **Supabase** proves who the user is and issues JWTs.
 - **Flutter authProvider** owns session lifecycle, token refresh, deep link handling, and bridge state.
 - **Convex auth config** teaches Convex how to verify Supabase JWTs.
-- `**users:ensureCurrentUser`** converts external identity into an app-level `users` row.
-- `**requireCurrentUser` / `assertStrategyRole**` protect actual business data and collaboration rules.
+- **`users:ensureCurrentUser`** converts external identity into an app-level `users` row.
+- **`requireCurrentUser` / `assertStrategyRole`** protect actual business data and collaboration rules.
 - **Cloud feature gates** stop the UI from using Convex too early.
 - **Incident handling** gives recovery behavior when Supabase and Convex drift apart.
 
