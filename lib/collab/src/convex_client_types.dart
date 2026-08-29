@@ -1,3 +1,5 @@
+const defaultConvexHealthCheckQuery = 'health:ping';
+
 class ConvexConfig {
   const ConvexConfig({
     required this.deploymentUrl,

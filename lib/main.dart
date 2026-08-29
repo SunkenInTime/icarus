@@ -152,7 +152,7 @@ Future<void> main(List<String> args) async {
           deploymentUrl: 'https://majestic-eel-413.convex.cloud',
           clientId: 'dev:majestic-eel-413',
           operationTimeout: Duration(seconds: 30),
-          healthCheckQuery: 'health:ping',
+          healthCheckQuery: defaultConvexHealthCheckQuery,
         ),
       );
 

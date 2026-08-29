@@ -513,16 +513,16 @@ void main() {
     });
   });
 
-  test('CloudImageUploadIntent parses upload headers', () {
-    final intent = CloudImageUploadIntent.fromJson({
-      'provider': 'r2',
-      'uploadId': 'upload-1',
-      'objectKey': 'strategies/s/images/a.png',
-      'uploadUrl': 'https://example.invalid/key',
-      'requiredHeaders': {'Content-Type': 'image/png'},
-      'expiresAt': 1700000000000,
-      'maxBytes': 1024,
-    });
+  test('CloudImageUploadIntent retains typed upload headers', () {
+    final intent = CloudImageUploadIntent(
+      provider: 'r2',
+      uploadId: 'upload-1',
+      objectKey: 'strategies/s/images/a.png',
+      uploadUrl: 'https://example.invalid/key',
+      requiredHeaders: const {'Content-Type': 'image/png'},
+      expiresAt: DateTime.fromMillisecondsSinceEpoch(1700000000000),
+      maxBytes: 1024,
+    );
     expect(intent.requiredHeaders['Content-Type'], 'image/png');
     expect(intent.maxBytes, 1024);
   });

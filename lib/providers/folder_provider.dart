@@ -1,4 +1,3 @@
-import 'package:icarus/collab/convex_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
@@ -265,9 +264,7 @@ class FolderProvider extends Notifier<String?> {
     final targetWorkspace = workspace ?? _currentWorkspace;
     if (targetWorkspace == LibraryWorkspace.cloud) {
       try {
-        await ConvexClient.instance.mutation(name: 'folders:delete', args: {
-          'folderPublicId': folderID,
-        });
+        await ref.read(convexStrategyRepositoryProvider).deleteFolder(folderID);
       } catch (error, stackTrace) {
         await _maybeReportCloudUnauthenticated(
           source: 'folder:delete',
@@ -315,22 +312,19 @@ class FolderProvider extends Notifier<String?> {
       final iconFontFamily = newIcon?.fontFamily;
       final iconFontPackage = newIcon?.fontPackage;
       try {
-        final args = <String, Object>{
-          'folderPublicId': folder.id,
-          'name': newName,
-          'iconId': newIconId,
-          if (newIcon != null) 'iconCodePoint': newIcon.codePoint,
-          if (iconFontFamily != null) 'iconFontFamily': iconFontFamily,
-          if (iconFontFamily == null) 'clearIconFontFamily': true,
-          if (iconFontPackage != null) 'iconFontPackage': iconFontPackage,
-          if (iconFontPackage == null) 'clearIconFontPackage': true,
-          'color': newColor.name,
-          if (newCustomColor != null)
-            'customColorValue': newCustomColor.toARGB32(),
-          if (newCustomColor == null) 'clearCustomColorValue': true,
-        };
-        await ConvexClient.instance
-            .mutation(name: 'folders:update', args: args);
+        await ref.read(convexStrategyRepositoryProvider).updateFolder(
+              folderPublicId: folder.id,
+              name: newName,
+              iconId: newIconId,
+              iconCodePoint: newIcon?.codePoint,
+              iconFontFamily: iconFontFamily,
+              clearIconFontFamily: iconFontFamily == null,
+              iconFontPackage: iconFontPackage,
+              clearIconFontPackage: iconFontPackage == null,
+              color: newColor.name,
+              customColorValue: newCustomColor?.toARGB32(),
+              clearCustomColorValue: newCustomColor == null,
+            );
         ref.invalidate(cloudFoldersProvider);
         ref.invalidate(cloudAllFoldersProvider);
       } catch (error, stackTrace) {
@@ -358,10 +352,10 @@ class FolderProvider extends Notifier<String?> {
     final targetWorkspace = workspace ?? _currentWorkspace;
     if (targetWorkspace == LibraryWorkspace.cloud) {
       try {
-        await ConvexClient.instance.mutation(name: 'folders:move', args: {
-          'folderPublicId': folderID,
-          if (parentID != null) 'parentFolderPublicId': parentID,
-        });
+        await ref.read(convexStrategyRepositoryProvider).moveFolder(
+              folderPublicId: folderID,
+              parentFolderPublicId: parentID,
+            );
       } catch (error, stackTrace) {
         await _maybeReportCloudUnauthenticated(
           source: 'folder:move',

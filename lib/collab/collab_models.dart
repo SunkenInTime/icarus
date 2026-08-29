@@ -1495,23 +1495,6 @@ class CloudStrategySummary {
   final DateTime updatedAt;
   final String? role;
   final String? attackLabel;
-
-  factory CloudStrategySummary.fromJson(Map<String, dynamic> json) {
-    return CloudStrategySummary(
-      publicId: json['publicId'] as String,
-      name: json['name'] as String,
-      mapData: json['mapData'] as String,
-      revision: (json['revision'] as num?)?.toInt() ?? 0,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(
-        (json['createdAt'] as num?)?.toInt() ?? 0,
-      ),
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(
-        (json['updatedAt'] as num?)?.toInt() ?? 0,
-      ),
-      role: json['role'] as String?,
-      attackLabel: json['attackLabel'] as String?,
-    );
-  }
 }
 
 class CloudFolderSummary {
@@ -1542,27 +1525,6 @@ class CloudFolderSummary {
   final String? iconFontPackage;
   final String? color;
   final int? customColorValue;
-
-  factory CloudFolderSummary.fromJson(Map<String, dynamic> json) {
-    return CloudFolderSummary(
-      publicId: json['publicId'] as String,
-      name: json['name'] as String,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(
-        (json['createdAt'] as num?)?.toInt() ?? 0,
-      ),
-      updatedAt: DateTime.fromMillisecondsSinceEpoch(
-        (json['updatedAt'] as num?)?.toInt() ?? 0,
-      ),
-      role: json['role'] as String?,
-      parentFolderPublicId: json['parentFolderPublicId'] as String?,
-      iconId: (json['iconId'] as num?)?.toInt(),
-      iconCodePoint: (json['iconCodePoint'] as num?)?.toInt(),
-      iconFontFamily: json['iconFontFamily'] as String?,
-      iconFontPackage: json['iconFontPackage'] as String?,
-      color: json['color'] as String?,
-      customColorValue: (json['customColorValue'] as num?)?.toInt(),
-    );
-  }
 }
 
 class ShareLinkSummary {
@@ -1579,19 +1541,4 @@ class ShareLinkSummary {
   final DateTime? revokedAt;
 
   bool get isRevoked => revokedAt != null;
-
-  factory ShareLinkSummary.fromJson(Map<String, dynamic> json) {
-    return ShareLinkSummary(
-      token: json['token'] as String,
-      role: json['role'] as String,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(
-        (json['createdAt'] as num?)?.toInt() ?? 0,
-      ),
-      revokedAt: json['revokedAt'] == null
-          ? null
-          : DateTime.fromMillisecondsSinceEpoch(
-              (json['revokedAt'] as num).toInt(),
-            ),
-    );
-  }
 }

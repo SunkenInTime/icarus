@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
-import 'package:icarus/collab/convex_client.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/placed_classes.dart';
@@ -1011,11 +1010,11 @@ class StrategyProvider extends Notifier<StrategyState> {
                 .read(convexStrategyRepositoryProvider)
                 .fetchShell(strategyID);
         if (shell == null) return;
-        await ConvexClient.instance.mutation(name: "strategies:update", args: {
-          "strategyPublicId": strategyID,
-          "name": newName,
-          "expectedRevision": shell.header.revision,
-        });
+        await ref.read(convexStrategyRepositoryProvider).updateStrategyName(
+              strategyPublicId: strategyID,
+              name: newName,
+              expectedRevision: shell.header.revision,
+            );
       } catch (error, stackTrace) {
         final handled = await _reportCloudUnauthenticated(
           source: 'strategy:rename',
@@ -1088,16 +1087,15 @@ class StrategyProvider extends Notifier<StrategyState> {
           final page = fullPage.page;
           final newPageId = const Uuid().v4();
           pageIdMap[page.publicId] = newPageId;
-          await ConvexClient.instance.mutation(name: "pages:add", args: {
-            "strategyPublicId": newStrategyID,
-            "pagePublicId": newPageId,
-            "name": page.name,
-            "sortIndex": page.sortIndex,
-            "isAttack": page.isAttack,
-            if (fullPage.content.settings != null)
-              "settings": fullPage.content.settings,
-            "expectedRevision": expectedStrategyRevision,
-          });
+          await ref.read(convexStrategyRepositoryProvider).addPage(
+                strategyPublicId: newStrategyID,
+                pagePublicId: newPageId,
+                name: page.name,
+                sortIndex: page.sortIndex,
+                isAttack: page.isAttack,
+                settings: fullPage.content.settings,
+                expectedRevision: expectedStrategyRevision,
+              );
           expectedStrategyRevision += 1;
         }
 
@@ -1200,10 +1198,10 @@ class StrategyProvider extends Notifier<StrategyState> {
         final shell = await ref
             .read(convexStrategyRepositoryProvider)
             .fetchShell(strategyID);
-        await ConvexClient.instance.mutation(name: "strategies:delete", args: {
-          "strategyPublicId": strategyID,
-          "expectedRevision": shell.header.revision,
-        });
+        await ref.read(convexStrategyRepositoryProvider).deleteStrategy(
+              strategyPublicId: strategyID,
+              expectedRevision: shell.header.revision,
+            );
       } catch (error, stackTrace) {
         final handled = await _reportCloudUnauthenticated(
           source: 'strategy:delete',
@@ -1433,11 +1431,11 @@ class StrategyProvider extends Notifier<StrategyState> {
           final shell = await ref
               .read(convexStrategyRepositoryProvider)
               .fetchShell(strategyID);
-          await ConvexClient.instance.mutation(name: "strategies:move", args: {
-            "strategyPublicId": strategyID,
-            if (parentID != null) "folderPublicId": parentID,
-            "expectedRevision": shell.header.revision,
-          });
+          await ref.read(convexStrategyRepositoryProvider).moveStrategy(
+                strategyPublicId: strategyID,
+                folderPublicId: parentID,
+                expectedRevision: shell.header.revision,
+              );
         } catch (error, stackTrace) {
           await _reportCloudUnauthenticated(
             source: 'strategy:move',
