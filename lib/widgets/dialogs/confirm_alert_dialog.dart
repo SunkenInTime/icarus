@@ -20,6 +20,9 @@ class ConfirmAlertDialog extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    void cancel() => Navigator.of(context).pop(false);
+    void confirm() => Navigator.of(context).pop(true);
+
     return ShadDialog.alert(
       title: Text(title),
       description: Padding(
@@ -27,25 +30,40 @@ class ConfirmAlertDialog extends ConsumerWidget {
         child: Text(content),
       ),
       actions: [
-        ShadButton.secondary(
-          child: Text(cancelText),
-          onPressed: () {
-            Navigator.of(context).pop(false);
-          },
+        Semantics(
+          key: const ValueKey('confirm-alert-cancel'),
+          label: cancelText,
+          button: true,
+          onTap: cancel,
+          excludeSemantics: true,
+          child: ShadButton.secondary(
+            onPressed: cancel,
+            child: Text(cancelText),
+          ),
         ),
         if (isDestructive)
-          ShadButton.destructive(
-            child: Text(confirmText),
-            onPressed: () {
-              Navigator.of(context).pop(true);
-            },
+          Semantics(
+            key: const ValueKey('confirm-alert-confirm'),
+            label: confirmText,
+            button: true,
+            onTap: confirm,
+            excludeSemantics: true,
+            child: ShadButton.destructive(
+              onPressed: confirm,
+              child: Text(confirmText),
+            ),
           )
         else
-          ShadButton(
-            child: Text(confirmText),
-            onPressed: () {
-              Navigator.of(context).pop(true);
-            },
+          Semantics(
+            key: const ValueKey('confirm-alert-confirm'),
+            label: confirmText,
+            button: true,
+            onTap: confirm,
+            excludeSemantics: true,
+            child: ShadButton(
+              onPressed: confirm,
+              child: Text(confirmText),
+            ),
           ),
       ],
     );
