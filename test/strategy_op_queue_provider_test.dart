@@ -51,16 +51,36 @@ void main() {
       String value = 'a',
       StrategyOpKind kind = StrategyOpKind.patch,
     }) {
-      return StrategyOp(
-        opId: opId,
-        kind: kind,
-        entityType: StrategyOpEntityType.element,
-        entityPublicId: elementId,
-        pagePublicId: 'page-1',
-        payload: {'value': value},
-        sortIndex: 0,
-        expectedRevision: kind == StrategyOpKind.add ? null : 1,
-      );
+      return switch (kind) {
+        StrategyOpKind.add => ElementAddOp(
+            opId: opId,
+            elementPublicId: elementId,
+            pagePublicId: 'page-1',
+            payload: {'value': value},
+            sortIndex: 0,
+          ),
+        StrategyOpKind.patch => ElementPatchOp(
+            opId: opId,
+            elementPublicId: elementId,
+            pagePublicId: 'page-1',
+            payload: {'value': value},
+            sortIndex: 0,
+            expectedElementRevision: 1,
+          ),
+        StrategyOpKind.delete => ElementDeleteOp(
+            opId: opId,
+            elementPublicId: elementId,
+            pagePublicId: 'page-1',
+            expectedElementRevision: 1,
+          ),
+        StrategyOpKind.reorder => ElementReorderOp(
+            opId: opId,
+            elementPublicId: elementId,
+            pagePublicId: 'page-1',
+            sortIndex: 0,
+            expectedElementRevision: 1,
+          ),
+      };
     }
 
     DurableOutboxRecord record({
@@ -105,11 +125,9 @@ void main() {
         () async {
       final notifier = start();
       await notifier.enqueue(
-        const StrategyOp(
+        const PageAddOp(
           opId: 'add-page',
-          kind: StrategyOpKind.add,
-          entityType: StrategyOpEntityType.page,
-          entityPublicId: 'page-2',
+          pagePublicId: 'page-2',
           payload: {
             'name': 'Execute',
             'isAttack': true,
@@ -120,7 +138,7 @@ void main() {
             },
           },
           sortIndex: 1,
-          expectedRevision: 4,
+          expectedStrategyRevision: 4,
         ),
         flushImmediately: false,
       );
@@ -216,6 +234,16 @@ void main() {
       expect(store.values, contains('broken'));
     });
 
+    test('protocol-v2 outbox records fail closed instead of converting', () {
+      final legacy = record(status: DurableOutboxStatus.queued).toJson()
+        ..['outboxVersion'] = 1;
+
+      expect(
+        () => DurableOutboxRecord.fromJson(legacy),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
     test('reconciliation replaces rejected immutable opId before removal',
         () async {
       final saved = record(status: DurableOutboxStatus.attention);
@@ -297,14 +325,13 @@ void main() {
         strategyPublicId: 'strategy-1',
         entityKey: key,
         pending: const PendingOp(
-          op: StrategyOp(
+          op: ElementAddOp(
             opId: 'restore-op',
-            kind: StrategyOpKind.add,
-            entityType: StrategyOpEntityType.element,
-            entityPublicId: 'element-1',
+            elementPublicId: 'element-1',
             pagePublicId: 'page-1',
             payload: {'value': 'restore me'},
-            expectedRevision: 2,
+            sortIndex: 0,
+            expectedElementRevision: 2,
           ),
           clientId: 'stable-client',
         ),
@@ -421,21 +448,17 @@ void main() {
 
     test('reorder replacement gets a new durable op ID', () async {
       final notifier = start();
-      const first = StrategyOp(
+      const first = PageReorderOp(
         opId: 'reorder-a',
-        kind: StrategyOpKind.reorder,
-        entityType: StrategyOpEntityType.page,
-        entityPublicId: 'page-1',
+        pagePublicId: 'page-1',
         sortIndex: 1,
-        expectedRevision: 2,
+        expectedStrategyRevision: 2,
       );
-      const second = StrategyOp(
+      const second = PageReorderOp(
         opId: 'reorder-b',
-        kind: StrategyOpKind.reorder,
-        entityType: StrategyOpEntityType.page,
-        entityPublicId: 'page-1',
+        pagePublicId: 'page-1',
         sortIndex: 3,
-        expectedRevision: 2,
+        expectedStrategyRevision: 2,
       );
       await notifier.enqueue(first, flushImmediately: false);
       await notifier.enqueue(second, flushImmediately: false);
@@ -514,14 +537,12 @@ void main() {
     container
         .read(cloudCollabModeProvider.notifier)
         .setForceLocalFallback(true);
-    final enqueue = notifier.enqueue(const StrategyOp(
+    final enqueue = notifier.enqueue(const ElementPatchOp(
       opId: 'op-1',
-      kind: StrategyOpKind.patch,
-      entityType: StrategyOpEntityType.element,
-      entityPublicId: 'element-1',
+      elementPublicId: 'element-1',
       pagePublicId: 'page-1',
       payload: {'value': 'safe'},
-      expectedRevision: 1,
+      expectedElementRevision: 1,
     ));
     await Future<void>.delayed(Duration.zero);
     expect(container.read(strategyOpQueueProvider).pending, isEmpty);
@@ -542,23 +563,19 @@ void main() {
     container
         .read(cloudCollabModeProvider.notifier)
         .setForceLocalFallback(true);
-    const first = StrategyOp(
+    const first = ElementPatchOp(
       opId: 'first',
-      kind: StrategyOpKind.patch,
-      entityType: StrategyOpEntityType.element,
-      entityPublicId: 'element-1',
+      elementPublicId: 'element-1',
       pagePublicId: 'page-1',
       payload: {'value': 'a'},
-      expectedRevision: 1,
+      expectedElementRevision: 1,
     );
-    const desired = StrategyOp(
+    const desired = ElementPatchOp(
       opId: 'desired',
-      kind: StrategyOpKind.patch,
-      entityType: StrategyOpEntityType.element,
-      entityPublicId: 'element-1',
+      elementPublicId: 'element-1',
       pagePublicId: 'page-1',
       payload: {'value': 'b'},
-      expectedRevision: 1,
+      expectedElementRevision: 1,
     );
     await notifier.enqueue(first, flushImmediately: false);
 

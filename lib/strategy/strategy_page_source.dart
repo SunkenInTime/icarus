@@ -370,12 +370,10 @@ class CloudStrategyPageSource implements StrategyPageSource {
 
     await ref.read(strategyOpQueueProvider.notifier).syncDesiredGenericOp(
           entityKey: const EntitySyncKey.strategy(),
-          desiredOp: StrategyOp(
+          desiredOp: StrategyPatchOp(
             opId: const Uuid().v4(),
-            kind: StrategyOpKind.patch,
-            entityType: StrategyOpEntityType.strategy,
             payload: payload,
-            expectedRevision: header.revision,
+            expectedStrategyRevision: header.revision,
           ),
           flushImmediately: false,
         );

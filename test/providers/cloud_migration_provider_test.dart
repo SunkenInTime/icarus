@@ -125,7 +125,7 @@ class FakeCloudMigrationApi implements CloudMigrationApi {
     required List<StrategyOp> ops,
   }) async {
     return [
-      for (final op in ops) OpAck(opId: op.opId, status: 'ack'),
+      for (final op in ops) NoopOpAck(opId: op.opId),
     ];
   }
 }

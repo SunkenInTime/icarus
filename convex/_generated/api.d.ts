@@ -15,6 +15,7 @@ import type * as health from "../health.js";
 import type * as images from "../images.js";
 import type * as invites from "../invites.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_canonicalValues from "../lib/canonicalValues.js";
 import type * as lib_cloudProtocol from "../lib/cloudProtocol.js";
 import type * as lib_entities from "../lib/entities.js";
 import type * as lib_errors from "../lib/errors.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   images: typeof images;
   invites: typeof invites;
   "lib/auth": typeof lib_auth;
+  "lib/canonicalValues": typeof lib_canonicalValues;
   "lib/cloudProtocol": typeof lib_cloudProtocol;
   "lib/entities": typeof lib_entities;
   "lib/errors": typeof lib_errors;

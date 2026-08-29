@@ -105,11 +105,112 @@ async function applyOps(
   return (await owner.mutation(applyBatch, {
     strategyPublicId,
     clientId,
-    clientProtocolVersion: 2,
-    ops,
+    clientProtocolVersion: 3,
+    ops: ops.map(toProtocol3Op),
   })) as {
     strategyPublicId: string;
     results: Array<Record<string, unknown>>;
+  };
+}
+
+function toProtocol3Op(op: Record<string, unknown>): Record<string, unknown> {
+  if (typeof op.type === "string") return op;
+  const opId = op.opId;
+  const kind = op.kind;
+  const entityType = op.entityType;
+  const expectedRevision = op.expectedRevision;
+  if (typeof opId !== "string" || typeof kind !== "string") {
+    throw new Error("Invalid test op");
+  }
+  if (entityType === "strategy" && kind === "patch") {
+    return {
+      opId,
+      type: "strategy.patch",
+      payload: op.payload ?? {},
+      expectedStrategyRevision: expectedRevision,
+    };
+  }
+  if (entityType === "page") {
+    const pagePublicId = op.entityPublicId ?? op.pagePublicId;
+    if (kind === "add") {
+      return {
+        opId,
+        type: "page.add",
+        pagePublicId,
+        payload: op.payload ?? {},
+        sortIndex: op.sortIndex ?? 0,
+        expectedStrategyRevision: expectedRevision,
+      };
+    }
+    if (kind === "patch") {
+      return {
+        opId,
+        type: "page.patch",
+        pagePublicId,
+        payload: op.payload ?? {},
+        expectedPageRevision: expectedRevision,
+      };
+    }
+    if (kind === "delete") {
+      return {
+        opId,
+        type: "page.delete",
+        pagePublicId,
+        expectedStrategyRevision: expectedRevision,
+      };
+    }
+    if (kind === "reorder") {
+      return {
+        opId,
+        type: "page.reorder",
+        pagePublicId,
+        sortIndex: op.sortIndex,
+        expectedStrategyRevision: expectedRevision,
+      };
+    }
+  }
+  if (entityType === "pageContent" && kind === "patch") {
+    const payload = op.payload as { settings?: unknown } | undefined;
+    return {
+      opId,
+      type: "pageContent.patch",
+      pagePublicId: op.entityPublicId ?? op.pagePublicId,
+      settings: payload?.settings,
+      expectedPageContentRevision: expectedRevision,
+    };
+  }
+  if (entityType === "element") {
+    return toProtocol3ContentOp(op, opId, kind, "element");
+  }
+  if (entityType === "lineup") {
+    return toProtocol3ContentOp(op, opId, kind, "lineup");
+  }
+  throw new Error(`Illegal test op pair: ${entityType}.${kind}`);
+}
+
+function toProtocol3ContentOp(
+  op: Record<string, unknown>,
+  opId: string,
+  kind: string,
+  entity: "element" | "lineup",
+): Record<string, unknown> {
+  const capitalized = entity === "element" ? "Element" : "Lineup";
+  const idKey = `${entity}PublicId`;
+  const expectedKey = `expected${capitalized}Revision`;
+  return {
+    opId,
+    type: `${entity}.${kind}`,
+    [idKey]: op.entityPublicId,
+    ...({ pagePublicId: op.pagePublicId ?? pageA }),
+    ...(op.payload === undefined ? {} : { payload: op.payload }),
+    ...((kind === "add" || kind === "reorder") && op.sortIndex === undefined
+      ? { sortIndex: 0 }
+      : op.sortIndex === undefined
+        ? {}
+        : { sortIndex: op.sortIndex }),
+    ...(op.expectedRevision === undefined
+      ? {}
+      : { [expectedKey]: op.expectedRevision }),
   };
 }
 
@@ -147,7 +248,7 @@ async function addPageB(owner: Harness, expectedRevision: number) {
       expectedRevision,
     },
   ]);
-  expect(response.results[0]).toMatchObject({ status: "ack" });
+  expect(response.results[0]).toMatchObject({ status: "applied" });
 }
 
 async function seedTwoPageContent(t: Harness, owner: Harness) {
@@ -360,7 +461,7 @@ describe("record-scoped write contract", () => {
       },
     ]);
     expect(response.results[0]).toMatchObject({
-      status: "ack",
+      status: "applied",
       appliedRevision: 2,
     });
     expect(await getStrategyRow(t)).toEqual(before);
@@ -386,7 +487,7 @@ describe("record-scoped write contract", () => {
       },
     ]);
     expect(response.results[0]).toMatchObject({
-      status: "ack",
+      status: "applied",
       appliedRevision: beforePage.content.revision + 1,
     });
     const afterPage = (await owner.query(getPageSnapshot, {
@@ -446,8 +547,8 @@ describe("record-scoped write contract", () => {
       },
     ]);
     expect(response.results.map((result) => result.status)).toEqual([
-      "ack",
-      "ack",
+      "applied",
+      "applied",
     ]);
   });
 
@@ -484,11 +585,11 @@ describe("record-scoped write contract", () => {
       },
     ]);
     expect(response.results).toMatchObject([
-      { status: "ack", appliedRevision: 2 },
+      { status: "applied", appliedRevision: 2 },
       {
-        status: "reject",
+        status: "rejected",
         reason: "revision_mismatch",
-        latestRevision: 2,
+        current: { type: "element", revision: 2 },
       },
     ]);
     const snapshot = (await owner.query(getPageSnapshot, {
@@ -528,7 +629,7 @@ describe("record-scoped write contract", () => {
       },
     ]);
     expect(accepted.results[0]).toMatchObject({
-      status: "ack",
+      status: "applied",
       appliedRevision: 1,
     });
 
@@ -544,9 +645,9 @@ describe("record-scoped write contract", () => {
       },
     ]);
     expect(rejected.results[0]).toMatchObject({
-      status: "reject",
+      status: "rejected",
       reason: "revision_mismatch",
-      latestRevision: 1,
+      current: { type: "strategy", revision: 1 },
     });
   });
 
@@ -566,7 +667,7 @@ describe("record-scoped write contract", () => {
       },
     ]);
     expect(accepted.results[0]).toMatchObject({
-      status: "ack",
+      status: "applied",
       appliedRevision: 2,
     });
     const shell = (await owner.query(getShell, {
@@ -590,9 +691,9 @@ describe("record-scoped write contract", () => {
       },
     ]);
     expect(rejected.results[0]).toMatchObject({
-      status: "reject",
+      status: "rejected",
       reason: "revision_mismatch",
-      latestRevision: 2,
+      current: { type: "strategy", revision: 2 },
     });
   });
 
@@ -613,7 +714,7 @@ describe("record-scoped write contract", () => {
         },
       ]);
       expect(renamed.results[0]).toMatchObject({
-        status: "ack",
+        status: "applied",
         appliedRevision: 2,
       });
 
@@ -629,7 +730,7 @@ describe("record-scoped write contract", () => {
         },
       ]);
       expect(added.results[0]).toMatchObject({
-        status: "ack",
+        status: "applied",
         appliedRevision: 1,
       });
 
@@ -644,7 +745,7 @@ describe("record-scoped write contract", () => {
         },
       ]);
       expect(reordered.results[0]).toMatchObject({
-        status: "ack",
+        status: "applied",
         appliedRevision: 2,
       });
 
@@ -658,7 +759,7 @@ describe("record-scoped write contract", () => {
         },
       ]);
       expect(deleted.results[0]).toMatchObject({
-        status: "ack",
+        status: "applied",
         appliedRevision: 3,
       });
 
@@ -694,7 +795,7 @@ describe("record-scoped write contract", () => {
       },
     ]);
     expect(response.results[0]).toMatchObject({
-      status: "ack",
+      status: "applied",
       appliedRevision: 1,
     });
 
@@ -771,14 +872,14 @@ describe("record-scoped write contract", () => {
     ]);
     expect(missingRevision.results).toMatchObject([
       {
-        status: "reject",
+        status: "rejected",
         reason: "missing_expected_revision",
-        latestRevision: 2,
+        current: { type: "element", revision: 2 },
       },
       {
-        status: "reject",
+        status: "rejected",
         reason: "missing_expected_revision",
-        latestRevision: 2,
+        current: { type: "lineup", revision: 2 },
       },
     ]);
 
@@ -803,8 +904,16 @@ describe("record-scoped write contract", () => {
       },
     ]);
     expect(staleRevision.results).toMatchObject([
-      { status: "reject", reason: "revision_mismatch", latestRevision: 2 },
-      { status: "reject", reason: "revision_mismatch", latestRevision: 2 },
+      {
+        status: "rejected",
+        reason: "revision_mismatch",
+        current: { type: "element", revision: 2 },
+      },
+      {
+        status: "rejected",
+        reason: "revision_mismatch",
+        current: { type: "lineup", revision: 2 },
+      },
     ]);
 
     const misclassifiedPatch = await applyOps(owner, "undo-restore-patch", [
@@ -830,8 +939,8 @@ describe("record-scoped write contract", () => {
       },
     ]);
     expect(misclassifiedPatch.results).toMatchObject([
-      { status: "ack", reason: "noop", appliedRevision: 2 },
-      { status: "ack", reason: "noop", appliedRevision: 2 },
+      { status: "noop", currentRevision: 2 },
+      { status: "noop", currentRevision: 2 },
     ]);
     const stillDeleted = (await owner.query(getPageSnapshot, {
       strategyPublicId,
@@ -868,8 +977,8 @@ describe("record-scoped write contract", () => {
       },
     ]);
     expect(restored.results).toMatchObject([
-      { status: "ack", appliedRevision: 3 },
-      { status: "ack", appliedRevision: 3 },
+      { status: "applied", appliedRevision: 3 },
+      { status: "applied", appliedRevision: 3 },
     ]);
 
     const snapshot = (await owner.query(getPageSnapshot, {
@@ -1070,15 +1179,14 @@ describe("replay safety after operation event expiry", () => {
 
     const identical = await applyOps(owner, "replay-add", [original]);
     expect(identical.results[0]).toMatchObject({
-      status: "ack",
-      reason: "noop",
+      status: "noop",
     });
 
     const different = await applyOps(owner, "replay-add-different", [
       { ...original, opId: "different-add", payload: textPayload("different") },
     ]);
     expect(different.results[0]).toMatchObject({
-      status: "reject",
+      status: "rejected",
       reason: "already_exists",
     });
   });
@@ -1117,9 +1225,8 @@ describe("replay safety after operation event expiry", () => {
       },
     ]);
     expect(response.results[0]).toMatchObject({
-      status: "ack",
-      reason: "noop",
-      appliedRevision: 2,
+      status: "noop",
+      currentRevision: 2,
     });
   });
 
@@ -1155,10 +1262,13 @@ describe("replay safety after operation event expiry", () => {
       },
     ]);
     expect(response.results[0]).toMatchObject({
-      status: "reject",
+      status: "rejected",
       reason: "revision_mismatch",
-      latestRevision: 2,
-      latestPayload: textPayload("newer"),
+      current: {
+        type: "element",
+        revision: 2,
+        value: textPayload("newer"),
+      },
     });
   });
 
@@ -1175,8 +1285,7 @@ describe("replay safety after operation event expiry", () => {
       },
     ]);
     expect(response.results[0]).toMatchObject({
-      status: "ack",
-      reason: "noop",
+      status: "noop",
     });
   });
 
@@ -1215,9 +1324,75 @@ describe("replay safety after operation event expiry", () => {
       },
     ]);
     expect(response.results[0]).toMatchObject({
-      status: "ack",
-      reason: "noop",
-      appliedRevision: 2,
+      status: "noop",
+      currentRevision: 2,
+    });
+  });
+});
+
+describe("cloud protocol v3 boundary", () => {
+  test("old clients receive a structured upgrade error", async () => {
+    const { owner } = await createHarness();
+
+    const error = await owner
+      .mutation(applyBatch, {
+        strategyPublicId,
+        clientId: "old-client",
+        clientProtocolVersion: 2,
+        ops: [],
+      })
+      .then(
+        () => null,
+        (caught: unknown) => caught as { data?: unknown },
+      );
+    expect(error).not.toBeNull();
+    expect(typeof error?.data).toBe("string");
+    expect(JSON.parse(error?.data as string)).toEqual({
+      code: "CLIENT_UPGRADE_REQUIRED",
+      message: "Client upgrade required",
+    });
+  });
+
+  test("the wire validator rejects an illegal operation discriminator", async () => {
+    const { owner } = await createHarness();
+
+    await expect(
+      owner.mutation(applyBatch, {
+        strategyPublicId,
+        clientId: "illegal-op",
+        clientProtocolVersion: 3,
+        ops: [
+          {
+            opId: "illegal-page-delete",
+            type: "page.delete",
+            elementPublicId: "element-a",
+            expectedStrategyRevision: 0,
+          },
+        ],
+      }),
+    ).rejects.toThrow();
+  });
+
+  test("function errors become closed failed outcomes", async () => {
+    const { owner } = await createHarness();
+    await createBaseStrategy(owner);
+
+    const response = await applyOps(owner, "failed-outcome", [
+      {
+        opId: "page-settings-on-descriptor",
+        type: "page.patch",
+        pagePublicId: pageA,
+        payload: { settings: settingsB },
+        expectedPageRevision: 1,
+      },
+    ]);
+
+    expect(response.results[0]).toEqual({
+      opId: "page-settings-on-descriptor",
+      status: "failed",
+      code: "PAGE_SETTINGS_REQUIRE_PAGE_CONTENT",
+      rawCode: "PAGE_SETTINGS_REQUIRE_PAGE_CONTENT",
+      message: "Page settings require a pageContent operation",
     });
   });
 });

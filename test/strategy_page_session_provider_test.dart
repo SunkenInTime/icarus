@@ -152,11 +152,10 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
   void reject(StrategyOp op) {
     final key = EntitySyncKey.forStrategyOp(op)!;
     final pending = PendingOp(op: op, clientId: 'test-client');
-    final ack = OpAck(
+    final ack = RejectedOpAck(
       opId: op.opId,
-      status: 'reject',
-      reason: 'revision_mismatch',
-      latestRevision: 2,
+      rejectionReason: OpRejectionReason.revisionMismatch,
+      current: const ElementCurrentSnapshot(revision: 2, value: {}),
     );
     state = state.copyWith(
       queuedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
@@ -376,7 +375,7 @@ void main() {
     final op = container.read(strategyOpQueueProvider).pending.single.op;
     expect(op.entityType, StrategyOpEntityType.strategy);
     expect(op.expectedRevision, 17);
-    expect(op.toConvexJson()['expectedRevision'], 17);
+    expect(op.toConvexJson()['expectedStrategyRevision'], 17);
     expect(
       op.payload,
       containsPair('mapData', Maps.mapNames[MapValue.ascent]),
@@ -544,7 +543,7 @@ void main() {
     expect(op, isNotNull);
     expect(op!.kind, StrategyOpKind.add);
     expect(op.expectedRevision, 4);
-    expect(op.toConvexJson()['expectedRevision'], 4);
+    expect(op.toConvexJson()['expectedElementRevision'], 4);
   });
 
   test('active page update rehydrates without a strategy revision change',

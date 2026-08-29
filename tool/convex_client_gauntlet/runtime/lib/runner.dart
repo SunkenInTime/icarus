@@ -341,7 +341,8 @@ final class GauntletRunner {
       'ops': baseElementOps(seed),
     });
     final statuses = _parseStatuses(result);
-    if (statuses.length != 2 || statuses.any((status) => status != 'ack')) {
+    if (statuses.length != 2 ||
+        statuses.any((status) => status != 'applied' && status != 'noop')) {
       throw StateError(
         'Failed to materialize base-test-v43.ica for seed $seed',
       );
@@ -544,7 +545,10 @@ final class GauntletRunner {
         '${batch.length} operations',
       );
     }
-    if (statuses.any((status) => status != 'ack' && status != 'reject')) {
+    if (statuses.any(
+      (status) =>
+          status != 'applied' && status != 'noop' && status != 'rejected',
+    )) {
       throw StateError('Batch $batchIndex returned an unresolved result');
     }
     return _BatchDelivery(statuses: statuses, attempts: attempts);
@@ -557,10 +561,12 @@ final class GauntletRunner {
   ) {
     report['acknowledged'] =
         (report['acknowledged'] as int) +
-        delivery.statuses.where((status) => status == 'ack').length;
+        delivery.statuses
+            .where((status) => status == 'applied' || status == 'noop')
+            .length;
     report['rejected'] =
         (report['rejected'] as int) +
-        delivery.statuses.where((status) => status == 'reject').length;
+        delivery.statuses.where((status) => status == 'rejected').length;
     report['retryCount'] =
         (report['retryCount'] as int) + delivery.attempts - 1;
     (report['batchLatencyMs'] as List<Object?>).add(
@@ -607,7 +613,8 @@ final class GauntletRunner {
       final rejected = report['rejected'] as int;
       if (acknowledged != 910 || rejected != 90) {
         throw StateError(
-          'Seed $seed resolved $acknowledged ack / $rejected reject, '
+          'Seed $seed resolved $acknowledged applied/noop / '
+          '$rejected rejected, '
           'expected 910 / 90',
         );
       }

@@ -602,75 +602,84 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final entityId = overlay.entityKey.entityId;
     switch (overlay.entityType) {
       case ActivePageOverlayEntityType.pageDescriptor:
-        return StrategyOp(
+        return PagePatchOp(
           opId: const Uuid().v4(),
-          kind: StrategyOpKind.patch,
-          entityType: StrategyOpEntityType.page,
-          entityPublicId: pageId,
-          payload: overlay.desiredPayload,
-          expectedRevision: remote?.revision ?? overlay.baseRevision,
+          pagePublicId: pageId,
+          payload: Map<String, dynamic>.from(overlay.desiredPayload as Map),
+          expectedPageRevision: remote?.revision ?? overlay.baseRevision,
         );
       case ActivePageOverlayEntityType.pageContent:
-        return StrategyOp(
+        final payload = Map<String, dynamic>.from(
+          overlay.desiredPayload as Map,
+        );
+        return PageContentPatchOp(
           opId: const Uuid().v4(),
-          kind: StrategyOpKind.patch,
-          entityType: StrategyOpEntityType.pageContent,
-          entityPublicId: pageId,
-          payload: overlay.desiredPayload,
-          expectedRevision: remote?.revision ?? overlay.baseRevision,
+          pagePublicId: pageId,
+          settings: Map<String, dynamic>.from(payload['settings'] as Map),
+          expectedPageContentRevision: remote?.revision ?? overlay.baseRevision,
         );
       case ActivePageOverlayEntityType.element:
         if (entityId == null) {
           return null;
         }
         if (overlay.deletion) {
-          return StrategyOp(
+          return ElementDeleteOp(
             opId: const Uuid().v4(),
-            kind: StrategyOpKind.delete,
-            entityType: StrategyOpEntityType.element,
-            entityPublicId: entityId,
+            elementPublicId: entityId,
             pagePublicId: pageId,
-            expectedRevision: remote?.revision ?? overlay.baseRevision,
+            expectedElementRevision: remote?.revision ?? overlay.baseRevision,
           );
         }
-        return StrategyOp(
-          opId: const Uuid().v4(),
-          kind: remote == null || remote.deleted
-              ? StrategyOpKind.add
-              : StrategyOpKind.patch,
-          entityType: StrategyOpEntityType.element,
-          entityPublicId: entityId,
-          pagePublicId: pageId,
-          payload: overlay.desiredPayload,
-          sortIndex: overlay.desiredSortIndex,
-          expectedRevision: remote?.revision,
-        );
+        final payload =
+            Map<String, dynamic>.from(overlay.desiredPayload as Map);
+        return remote == null || remote.deleted
+            ? ElementAddOp(
+                opId: const Uuid().v4(),
+                elementPublicId: entityId,
+                pagePublicId: pageId,
+                payload: payload,
+                sortIndex: overlay.desiredSortIndex ?? 0,
+                expectedElementRevision: remote?.revision,
+              )
+            : ElementPatchOp(
+                opId: const Uuid().v4(),
+                elementPublicId: entityId,
+                pagePublicId: pageId,
+                payload: payload,
+                sortIndex: overlay.desiredSortIndex,
+                expectedElementRevision: remote.revision,
+              );
       case ActivePageOverlayEntityType.lineup:
         if (entityId == null) {
           return null;
         }
         if (overlay.deletion) {
-          return StrategyOp(
+          return LineupDeleteOp(
             opId: const Uuid().v4(),
-            kind: StrategyOpKind.delete,
-            entityType: StrategyOpEntityType.lineup,
-            entityPublicId: entityId,
+            lineupPublicId: entityId,
             pagePublicId: pageId,
-            expectedRevision: remote?.revision ?? overlay.baseRevision,
+            expectedLineupRevision: remote?.revision ?? overlay.baseRevision,
           );
         }
-        return StrategyOp(
-          opId: const Uuid().v4(),
-          kind: remote == null || remote.deleted
-              ? StrategyOpKind.add
-              : StrategyOpKind.patch,
-          entityType: StrategyOpEntityType.lineup,
-          entityPublicId: entityId,
-          pagePublicId: pageId,
-          payload: overlay.desiredPayload,
-          sortIndex: overlay.desiredSortIndex,
-          expectedRevision: remote?.revision,
-        );
+        final payload =
+            Map<String, dynamic>.from(overlay.desiredPayload as Map);
+        return remote == null || remote.deleted
+            ? LineupAddOp(
+                opId: const Uuid().v4(),
+                lineupPublicId: entityId,
+                pagePublicId: pageId,
+                payload: payload,
+                sortIndex: overlay.desiredSortIndex ?? 0,
+                expectedLineupRevision: remote?.revision,
+              )
+            : LineupPatchOp(
+                opId: const Uuid().v4(),
+                lineupPublicId: entityId,
+                pagePublicId: pageId,
+                payload: payload,
+                sortIndex: overlay.desiredSortIndex,
+                expectedLineupRevision: remote.revision,
+              );
     }
   }
 

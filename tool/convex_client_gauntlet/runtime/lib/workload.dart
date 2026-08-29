@@ -4,7 +4,7 @@ import 'package:crypto/crypto.dart';
 
 const operationsPerSeed = 1000;
 const operationBatchSize = 50;
-const cloudProtocolVersion = 2;
+const cloudProtocolVersion = 3;
 const payloadVersion = 1;
 const baseFixturePath = 'test/fixtures/strategy_integrity/base-test-v43.ica';
 const baseFixtureSha256 =
@@ -21,10 +21,12 @@ List<Map<String, Object?>> buildOperationTrace(int seed) {
   var sequence = 0;
 
   void add(Map<String, Object?> operation) {
-    operations.add(<String, Object?>{
-      'opId': '${seedPrefix(seed)}op-${sequence.toString().padLeft(4, '0')}',
-      ...operation,
-    });
+    operations.add(
+      _toProtocol3Op(<String, Object?>{
+        'opId': '${seedPrefix(seed)}op-${sequence.toString().padLeft(4, '0')}',
+        ...operation,
+      }),
+    );
     sequence += 1;
   }
 
@@ -202,6 +204,7 @@ void _addRevisionCycle({
     'kind': 'reorder',
     'entityType': entityType,
     'entityPublicId': publicId,
+    'pagePublicId': pagePublicId,
     'sortIndex': finalSortIndex - 1,
     'expectedRevision': 3,
   });
@@ -209,6 +212,7 @@ void _addRevisionCycle({
     'kind': 'delete',
     'entityType': entityType,
     'entityPublicId': publicId,
+    'pagePublicId': pagePublicId,
     'expectedRevision': 4,
   });
   add({
@@ -231,6 +235,7 @@ void _addRevisionCycle({
     'kind': 'reorder',
     'entityType': entityType,
     'entityPublicId': publicId,
+    'pagePublicId': pagePublicId,
     'sortIndex': finalSortIndex,
     'expectedRevision': 7,
   });
@@ -382,7 +387,113 @@ List<Map<String, Object?>> baseElementOps(int seed) {
         opacity: 30,
       ),
     },
-  ];
+  ].map(_toProtocol3Op).toList(growable: false);
+}
+
+Map<String, Object?> _toProtocol3Op(Map<String, Object?> op) {
+  if (op['type'] case final String _) return op;
+
+  final opId = op['opId'] as String;
+  final kind = op['kind'] as String;
+  final entity = op['entityType'] as String;
+  final publicId = op['entityPublicId'] ?? op['pagePublicId'];
+  final expectedRevision = op['expectedRevision'];
+
+  switch ('$entity.$kind') {
+    case 'strategy.patch':
+      return {
+        'opId': opId,
+        'type': 'strategy.patch',
+        'payload': op['payload'] ?? <String, Object?>{},
+        'expectedStrategyRevision': expectedRevision,
+      };
+    case 'page.add':
+      return {
+        'opId': opId,
+        'type': 'page.add',
+        'pagePublicId': publicId,
+        'payload': op['payload'] ?? <String, Object?>{},
+        'sortIndex': op['sortIndex'] ?? 0,
+        'expectedStrategyRevision': expectedRevision,
+      };
+    case 'page.patch':
+      return {
+        'opId': opId,
+        'type': 'page.patch',
+        'pagePublicId': publicId,
+        'payload': op['payload'] ?? <String, Object?>{},
+        'expectedPageRevision': expectedRevision,
+      };
+    case 'page.delete':
+      return {
+        'opId': opId,
+        'type': 'page.delete',
+        'pagePublicId': publicId,
+        'expectedStrategyRevision': expectedRevision,
+      };
+    case 'page.reorder':
+      return {
+        'opId': opId,
+        'type': 'page.reorder',
+        'pagePublicId': publicId,
+        'sortIndex': op['sortIndex'],
+        'expectedStrategyRevision': expectedRevision,
+      };
+    case 'pageContent.patch':
+      final payload = op['payload'] as Map<String, Object?>;
+      return {
+        'opId': opId,
+        'type': 'pageContent.patch',
+        'pagePublicId': publicId,
+        'settings': payload['settings'],
+        'expectedPageContentRevision': expectedRevision,
+      };
+    case 'element.add':
+    case 'element.patch':
+    case 'element.delete':
+    case 'element.reorder':
+      return _toProtocol3ContentOp(
+        op: op,
+        opId: opId,
+        kind: kind,
+        entity: 'element',
+      );
+    case 'lineup.add':
+    case 'lineup.patch':
+    case 'lineup.delete':
+    case 'lineup.reorder':
+      return _toProtocol3ContentOp(
+        op: op,
+        opId: opId,
+        kind: kind,
+        entity: 'lineup',
+      );
+  }
+  throw StateError('Illegal gauntlet op pair: $entity.$kind');
+}
+
+Map<String, Object?> _toProtocol3ContentOp({
+  required Map<String, Object?> op,
+  required String opId,
+  required String kind,
+  required String entity,
+}) {
+  final revisionKey = entity == 'element'
+      ? 'expectedElementRevision'
+      : 'expectedLineupRevision';
+  final result = <String, Object?>{
+    'opId': opId,
+    'type': '$entity.$kind',
+    '${entity}PublicId': op['entityPublicId'],
+  };
+  if (op['pagePublicId'] != null) result['pagePublicId'] = op['pagePublicId'];
+  if (op['payload'] != null) result['payload'] = op['payload'];
+  if (op['sortIndex'] != null) result['sortIndex'] = op['sortIndex'];
+  if (kind == 'add' && op['sortIndex'] == null) result['sortIndex'] = 0;
+  if (op['expectedRevision'] != null) {
+    result[revisionKey] = op['expectedRevision'];
+  }
+  return result;
 }
 
 String canonicalJson(Object? value) => jsonEncode(_sortJson(value));

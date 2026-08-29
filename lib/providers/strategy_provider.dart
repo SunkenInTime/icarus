@@ -441,12 +441,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       return null;
     }
 
-    return StrategyOp(
+    return StrategyPatchOp(
       opId: const Uuid().v4(),
-      kind: StrategyOpKind.patch,
-      entityType: StrategyOpEntityType.strategy,
-      entityPublicId: strategyId,
-      expectedRevision: snapshot.header.revision,
+      expectedStrategyRevision: snapshot.header.revision,
       payload: {
         'mapData': localMapData,
         if (localThemeProfileId != null) 'themeProfileId': localThemeProfileId,
@@ -595,13 +592,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       final moved = ordered.removeAt(oldIndex);
       ordered.insert(targetIndex, moved);
 
-      final ack = await _enqueueCloudPageDescriptorOp(StrategyOp(
+      final ack = await _enqueueCloudPageDescriptorOp(PageReorderOp(
         opId: const Uuid().v4(),
-        kind: StrategyOpKind.reorder,
-        entityType: StrategyOpEntityType.page,
-        entityPublicId: moved.publicId,
+        pagePublicId: moved.publicId,
         sortIndex: targetIndex,
-        expectedRevision: snapshot.header.revision,
+        expectedStrategyRevision: snapshot.header.revision,
       ));
       if (ack != null) {
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
@@ -660,18 +655,16 @@ class StrategyProvider extends Notifier<StrategyState> {
         ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
       final pageID = const Uuid().v4();
       final nextIndex = pages.length;
-      final ack = await _enqueueCloudPageDescriptorOp(StrategyOp(
+      final ack = await _enqueueCloudPageDescriptorOp(PageAddOp(
         opId: const Uuid().v4(),
-        kind: StrategyOpKind.add,
-        entityType: StrategyOpEntityType.page,
-        entityPublicId: pageID,
+        pagePublicId: pageID,
         payload: {
           'name': name ?? 'Page ${pages.length + 1}',
           'isAttack': pages.isNotEmpty ? pages.last.isAttack : true,
           'settings': ref.read(strategySettingsProvider).toJson(),
         },
         sortIndex: nextIndex,
-        expectedRevision: snapshot.header.revision,
+        expectedStrategyRevision: snapshot.header.revision,
       ));
       if (ack?.isAck ?? false) {
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
@@ -736,13 +729,11 @@ class StrategyProvider extends Notifier<StrategyState> {
           .where((candidate) => candidate.publicId == pageId)
           .firstOrNull;
       if (page == null) return;
-      final ack = await _enqueueCloudPageDescriptorOp(StrategyOp(
+      final ack = await _enqueueCloudPageDescriptorOp(PagePatchOp(
         opId: const Uuid().v4(),
-        kind: StrategyOpKind.patch,
-        entityType: StrategyOpEntityType.page,
-        entityPublicId: pageId,
+        pagePublicId: pageId,
         payload: {'name': trimmed},
-        expectedRevision: page.revision,
+        expectedPageRevision: page.revision,
       ));
       if (ack != null) {
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
@@ -789,12 +780,10 @@ class StrategyProvider extends Notifier<StrategyState> {
             );
       }
 
-      final ack = await _enqueueCloudPageDescriptorOp(StrategyOp(
+      final ack = await _enqueueCloudPageDescriptorOp(PageDeleteOp(
         opId: const Uuid().v4(),
-        kind: StrategyOpKind.delete,
-        entityType: StrategyOpEntityType.page,
-        entityPublicId: pageId,
-        expectedRevision: snapshot.header.revision,
+        pagePublicId: pageId,
+        expectedStrategyRevision: snapshot.header.revision,
       ));
       if (ack?.isAck ?? false) {
         await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
@@ -1125,11 +1114,9 @@ class StrategyProvider extends Notifier<StrategyState> {
             payloadMap.putIfAbsent("elementType", () => element.elementType);
             final newElementId = const Uuid().v4();
             payloadMap["id"] = newElementId;
-            ops.add(StrategyOp(
+            ops.add(ElementAddOp(
               opId: const Uuid().v4(),
-              kind: StrategyOpKind.add,
-              entityType: StrategyOpEntityType.element,
-              entityPublicId: newElementId,
+              elementPublicId: newElementId,
               pagePublicId: newPageId,
               payload: cloudElementPayload(
                 kind:
@@ -1146,11 +1133,9 @@ class StrategyProvider extends Notifier<StrategyState> {
             final newLineupId = const Uuid().v4();
             final lineupPayload = cloudPayloadData(lineup.payload)
               ..["id"] = newLineupId;
-            ops.add(StrategyOp(
+            ops.add(LineupAddOp(
               opId: const Uuid().v4(),
-              kind: StrategyOpKind.add,
-              entityType: StrategyOpEntityType.lineup,
-              entityPublicId: newLineupId,
+              lineupPublicId: newLineupId,
               pagePublicId: newPageId,
               payload: cloudLineupGroupPayload(lineupPayload),
               sortIndex: lineup.sortIndex,
@@ -1369,18 +1354,13 @@ class StrategyProvider extends Notifier<StrategyState> {
 
       final ops = [
         for (final fullPage in snapshot.pages)
-          StrategyOp(
+          PageContentPatchOp(
             opId: const Uuid().v4(),
-            kind: StrategyOpKind.patch,
-            entityType: StrategyOpEntityType.pageContent,
-            entityPublicId: fullPage.page.publicId,
             pagePublicId: fullPage.page.publicId,
-            payload: {
-              'settings': transform(_settingsFromPayloadOrDefault(
-                fullPage.content.settings,
-              )).toJson(),
-            },
-            expectedRevision: fullPage.content.revision,
+            settings: transform(_settingsFromPayloadOrDefault(
+              fullPage.content.settings,
+            )).toJson(),
+            expectedPageContentRevision: fullPage.content.revision,
           ),
       ];
 

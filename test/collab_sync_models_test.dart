@@ -45,36 +45,316 @@ void main() {
 
   group('StrategyOp protocol', () {
     test('serializes record revision without a global sequence', () {
-      const op = StrategyOp(
+      const op = PageContentPatchOp(
         opId: 'op-1',
-        kind: StrategyOpKind.patch,
-        entityType: StrategyOpEntityType.pageContent,
-        entityPublicId: 'page-1',
-        payload: {'settings': <String, dynamic>{}},
-        expectedRevision: 4,
+        pagePublicId: 'page-1',
+        settings: <String, dynamic>{},
+        expectedPageContentRevision: 4,
       );
 
       final json = op.toConvexJson();
-      expect(currentCloudProtocolVersion, 2);
-      expect(json['entityType'], 'pageContent');
-      expect(json['expectedRevision'], 4);
+      expect(currentCloudProtocolVersion, 3);
+      expect(json['type'], 'pageContent.patch');
+      expect(json['expectedPageContentRevision'], 4);
       expect(json.containsKey('expectedSequence'), isFalse);
-      expect(StrategyOp.fromJson(json).entityType,
-          StrategyOpEntityType.pageContent);
+      expect(StrategyOp.fromJson(json), isA<PageContentPatchOp>());
     });
 
-    test('copyWith preserves identity', () {
-      const original = StrategyOp(
+    test('withOpId changes identity without changing typed intent', () {
+      const original = LineupPatchOp(
         opId: 'op-2',
-        kind: StrategyOpKind.patch,
-        entityType: StrategyOpEntityType.lineup,
-        entityPublicId: 'lineup-1',
+        lineupPublicId: 'lineup-1',
         pagePublicId: 'page-1',
+        expectedLineupRevision: 3,
       );
-      final updated = original.copyWith(expectedRevision: 9);
-      expect(updated.opId, original.opId);
+      final updated = original.withOpId('op-3');
+      expect(updated.opId, 'op-3');
       expect(updated.entityPublicId, original.entityPublicId);
-      expect(updated.expectedRevision, 9);
+      expect(updated.expectedRevision, 3);
+      expect(updated.type, StrategyOpType.lineupPatch);
+    });
+
+    test('every operation emits only its protocol-v3 fields', () {
+      const payload = <String, dynamic>{'value': 1};
+      const ops = <StrategyOp>[
+        StrategyPatchOp(
+          opId: '1',
+          payload: payload,
+          expectedStrategyRevision: 1,
+        ),
+        PageAddOp(
+          opId: '2',
+          pagePublicId: 'page',
+          payload: payload,
+          sortIndex: 2,
+          expectedStrategyRevision: 1,
+        ),
+        PagePatchOp(
+          opId: '3',
+          pagePublicId: 'page',
+          payload: payload,
+          expectedPageRevision: 3,
+        ),
+        PageDeleteOp(
+          opId: '4',
+          pagePublicId: 'page',
+          expectedStrategyRevision: 4,
+        ),
+        PageReorderOp(
+          opId: '5',
+          pagePublicId: 'page',
+          sortIndex: 5,
+          expectedStrategyRevision: 4,
+        ),
+        PageContentPatchOp(
+          opId: '6',
+          pagePublicId: 'page',
+          settings: payload,
+          expectedPageContentRevision: 6,
+        ),
+        ElementAddOp(
+          opId: '7',
+          elementPublicId: 'element',
+          pagePublicId: 'page',
+          payload: payload,
+          sortIndex: 7,
+        ),
+        ElementPatchOp(
+          opId: '8',
+          elementPublicId: 'element',
+          pagePublicId: 'other-page',
+          payload: payload,
+          sortIndex: 8,
+          expectedElementRevision: 8,
+        ),
+        ElementDeleteOp(
+          opId: '9',
+          elementPublicId: 'element',
+          pagePublicId: 'page',
+          expectedElementRevision: 9,
+        ),
+        ElementReorderOp(
+          opId: '10',
+          elementPublicId: 'element',
+          pagePublicId: 'page',
+          sortIndex: 10,
+          expectedElementRevision: 10,
+        ),
+        LineupAddOp(
+          opId: '11',
+          lineupPublicId: 'lineup',
+          pagePublicId: 'page',
+          payload: payload,
+          sortIndex: 11,
+        ),
+        LineupPatchOp(
+          opId: '12',
+          lineupPublicId: 'lineup',
+          pagePublicId: 'other-page',
+          payload: payload,
+          sortIndex: 12,
+          expectedLineupRevision: 12,
+        ),
+        LineupDeleteOp(
+          opId: '13',
+          lineupPublicId: 'lineup',
+          pagePublicId: 'page',
+          expectedLineupRevision: 13,
+        ),
+        LineupReorderOp(
+          opId: '14',
+          lineupPublicId: 'lineup',
+          pagePublicId: 'page',
+          sortIndex: 14,
+          expectedLineupRevision: 14,
+        ),
+      ];
+      const expected = <Map<String, dynamic>>[
+        {
+          'opId': '1',
+          'type': 'strategy.patch',
+          'payload': payload,
+          'expectedStrategyRevision': 1,
+        },
+        {
+          'opId': '2',
+          'type': 'page.add',
+          'pagePublicId': 'page',
+          'payload': payload,
+          'sortIndex': 2,
+          'expectedStrategyRevision': 1,
+        },
+        {
+          'opId': '3',
+          'type': 'page.patch',
+          'pagePublicId': 'page',
+          'payload': payload,
+          'expectedPageRevision': 3,
+        },
+        {
+          'opId': '4',
+          'type': 'page.delete',
+          'pagePublicId': 'page',
+          'expectedStrategyRevision': 4,
+        },
+        {
+          'opId': '5',
+          'type': 'page.reorder',
+          'pagePublicId': 'page',
+          'sortIndex': 5,
+          'expectedStrategyRevision': 4,
+        },
+        {
+          'opId': '6',
+          'type': 'pageContent.patch',
+          'pagePublicId': 'page',
+          'settings': payload,
+          'expectedPageContentRevision': 6,
+        },
+        {
+          'opId': '7',
+          'type': 'element.add',
+          'elementPublicId': 'element',
+          'pagePublicId': 'page',
+          'payload': payload,
+          'sortIndex': 7,
+        },
+        {
+          'opId': '8',
+          'type': 'element.patch',
+          'elementPublicId': 'element',
+          'pagePublicId': 'other-page',
+          'payload': payload,
+          'sortIndex': 8,
+          'expectedElementRevision': 8,
+        },
+        {
+          'opId': '9',
+          'type': 'element.delete',
+          'elementPublicId': 'element',
+          'pagePublicId': 'page',
+          'expectedElementRevision': 9,
+        },
+        {
+          'opId': '10',
+          'type': 'element.reorder',
+          'elementPublicId': 'element',
+          'pagePublicId': 'page',
+          'sortIndex': 10,
+          'expectedElementRevision': 10,
+        },
+        {
+          'opId': '11',
+          'type': 'lineup.add',
+          'lineupPublicId': 'lineup',
+          'pagePublicId': 'page',
+          'payload': payload,
+          'sortIndex': 11,
+        },
+        {
+          'opId': '12',
+          'type': 'lineup.patch',
+          'lineupPublicId': 'lineup',
+          'pagePublicId': 'other-page',
+          'payload': payload,
+          'sortIndex': 12,
+          'expectedLineupRevision': 12,
+        },
+        {
+          'opId': '13',
+          'type': 'lineup.delete',
+          'lineupPublicId': 'lineup',
+          'pagePublicId': 'page',
+          'expectedLineupRevision': 13,
+        },
+        {
+          'opId': '14',
+          'type': 'lineup.reorder',
+          'lineupPublicId': 'lineup',
+          'pagePublicId': 'page',
+          'sortIndex': 14,
+          'expectedLineupRevision': 14,
+        },
+      ];
+
+      for (var index = 0; index < ops.length; index += 1) {
+        final json = ops[index].toConvexJson();
+        expect(json, expected[index]);
+        expect(json, isNot(contains('kind')));
+        expect(json, isNot(contains('entityType')));
+        expect(StrategyOp.fromJson(json).toConvexJson(), json);
+      }
+    });
+  });
+
+  group('closed operation results', () {
+    test('decodes applied, noop, rejected, and failed variants', () {
+      expect(
+        OpAck.fromJson({
+          'opId': 'applied',
+          'status': 'applied',
+          'appliedRevision': 2,
+        }),
+        isA<AppliedOpAck>(),
+      );
+      expect(
+        OpAck.fromJson({
+          'opId': 'noop',
+          'status': 'noop',
+          'currentRevision': 3,
+        }),
+        isA<NoopOpAck>(),
+      );
+      final rejected = OpAck.fromJson({
+        'opId': 'rejected',
+        'status': 'rejected',
+        'reason': 'revision_mismatch',
+        'current': {
+          'type': 'page',
+          'revision': 4,
+          'value': {'name': 'Current', 'isAttack': true, 'sortIndex': 0},
+        },
+      });
+      expect(rejected, isA<RejectedOpAck>());
+      expect(rejected.latestRevision, 4);
+      expect(rejected.latestPayload?['name'], 'Current');
+      final failed = OpAck.fromJson({
+        'opId': 'failed',
+        'status': 'failed',
+        'code': 'INTERNAL_ERROR',
+        'rawCode': 'NEW_SERVER_CODE',
+        'message': 'Server failed safely',
+      });
+      expect(failed, isA<FailedOpAck>());
+      expect((failed as FailedOpAck).rawCode, 'NEW_SERVER_CODE');
+      expect(failed.isAck, isFalse);
+    });
+
+    test('decodes every closed rejection reason', () {
+      for (final reason in OpRejectionReason.values) {
+        final result = OpAck.fromJson({
+          'opId': reason.name,
+          'status': 'rejected',
+          'reason': reason.wireName,
+        });
+        expect((result as RejectedOpAck).rejectionReason, reason);
+      }
+    });
+
+    test('rejects unknown result and current-snapshot discriminators', () {
+      expect(
+        () => OpAck.fromJson({'opId': 'x', 'status': 'future'}),
+        throwsFormatException,
+      );
+      expect(
+        () => OpAck.fromJson({
+          'opId': 'x',
+          'status': 'rejected',
+          'reason': 'revision_mismatch',
+          'current': {'type': 'future', 'revision': 1, 'value': {}},
+        }),
+        throwsFormatException,
+      );
     });
   });
 
