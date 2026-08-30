@@ -174,18 +174,28 @@ function Invoke-LibraryProbe {
     }
 
     $probe = Get-Content $probePath -Raw | ConvertFrom-Json
-    $canonicalBytes = [System.Text.Encoding]::UTF8.GetBytes(
-        [string]$probe.canonicalCurrentState
-    )
     $hasher = [System.Security.Cryptography.SHA256]::Create()
     try {
+        $invariantHash = [System.BitConverter]::ToString(
+            $hasher.ComputeHash(
+                [System.Text.Encoding]::UTF8.GetBytes(
+                    [string]$probe.preservationInvariants
+                )
+            )
+        ).Replace("-", "").ToLowerInvariant()
+        $hasher.Initialize()
         $canonicalHash = [System.BitConverter]::ToString(
-            $hasher.ComputeHash($canonicalBytes)
+            $hasher.ComputeHash(
+                [System.Text.Encoding]::UTF8.GetBytes(
+                    [string]$probe.canonicalCurrentState
+                )
+            )
         ).Replace("-", "").ToLowerInvariant()
     }
     finally {
         $hasher.Dispose()
     }
+    $probe | Add-Member -NotePropertyName invariantSha256 -NotePropertyValue $invariantHash
     $probe | Add-Member -NotePropertyName canonicalSha256 -NotePropertyValue $canonicalHash
     return $probe
 }
@@ -226,6 +236,9 @@ try {
     $runningProcess = $null
     $afterUpgrade = Get-StrategyLibraryEvidence
     $candidateProbe = Invoke-LibraryProbe -Stage "candidate"
+    if ($candidateProbe.invariantSha256 -ne $publicProbe.invariantSha256) {
+        throw "The release-candidate upgrade changed Strategy, page, or entity identity and ordering invariants."
+    }
     if ($candidateProbe.canonicalSha256 -ne $publicProbe.canonicalSha256) {
         throw "The release-candidate upgrade changed the normalized Strategy library semantics."
     }
@@ -237,6 +250,9 @@ try {
     $runningProcess = $null
     $afterRollback = Get-StrategyLibraryEvidence
     $rollbackProbe = Invoke-LibraryProbe -Stage "rollback"
+    if ($rollbackProbe.invariantSha256 -ne $candidateProbe.invariantSha256) {
+        throw "Rolling back to the public build changed Strategy, page, or entity identity and ordering invariants."
+    }
     if ($rollbackProbe.canonicalSha256 -ne $candidateProbe.canonicalSha256) {
         throw "Rolling back to the public build changed the Strategy library semantics."
     }
@@ -258,6 +274,7 @@ try {
         publicStoredVersions = $publicProbe.storedVersions
         candidateStoredVersions = $candidateProbe.storedVersions
         rollbackStoredVersions = $rollbackProbe.storedVersions
+        preservationInvariantSha256 = $candidateProbe.invariantSha256
         normalizedLibrarySha256 = $candidateProbe.canonicalSha256
         publicLibraryBytes = $beforeUpgrade.byteSize
         publicLibrarySha256 = $beforeUpgrade.sha256

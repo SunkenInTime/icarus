@@ -58,7 +58,8 @@ Completed against the current candidate:
 - The Windows CI gate now installs public 3.2.3 and imports the real v35
   `base-test.ica` fixture pinned to repository commit `fddec2b0`. It verifies
   the fixture SHA, a responsive app window, and a non-empty Strategy library.
-  A read-only probe normalizes the public library through the current migration
+  A read-only probe compares stable Strategy, page, and entity identities and
+  ordering, then normalizes the public library through the current migration
   path and compares its complete semantic fingerprint after the candidate
   upgrade and after rollback. The rollback must also leave the candidate Hive
   bytes untouched. The installer and JSON receipt are uploaded together.

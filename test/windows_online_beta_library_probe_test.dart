@@ -39,6 +39,66 @@ void main() {
           reason: 'The historical .ica fixture was not imported.',
         );
 
+        final preservationInvariants = <String, Object?>{
+          'strategies': strategies
+              .map(
+                (strategy) => <String, Object?>{
+                  'id': strategy.id,
+                  'name': strategy.name,
+                  'map': strategy.mapData.name,
+                  'folderID': strategy.folderID,
+                  'pages': strategy.pages
+                      .map(
+                        (page) => <String, Object?>{
+                          'id': page.id,
+                          'sortIndex': page.sortIndex,
+                          'name': page.name,
+                          'isAttack': page.isAttack,
+                          'drawingIDs': page.drawingData
+                              .map((element) => element.id)
+                              .toList(growable: false),
+                          'agentIDs': page.agentData
+                              .map((agent) => agent.id)
+                              .toList(growable: false),
+                          'abilityIDs': page.abilityData
+                              .map((ability) => ability.id)
+                              .toList(growable: false),
+                          'textIDs': page.textData
+                              .map((text) => text.id)
+                              .toList(growable: false),
+                          'imageIDs': page.imageData
+                              .map((image) => image.id)
+                              .toList(growable: false),
+                          'utilityIDs': page.utilityData
+                              .map((utility) => utility.id)
+                              .toList(growable: false),
+                          'lineups': page.lineUpGroups
+                              .map(
+                                (group) => <String, Object?>{
+                                  'id': group.id,
+                                  'agentID': group.agent.id,
+                                  'items': group.items
+                                      .map(
+                                        (item) => <String, Object?>{
+                                          'id': item.id,
+                                          'abilityID': item.ability.id,
+                                          'imageIDs': item.images
+                                              .map((image) => image.id)
+                                              .toList(growable: false),
+                                        },
+                                      )
+                                      .toList(growable: false),
+                                },
+                              )
+                              .toList(growable: false),
+                        },
+                      )
+                      .toList(growable: false),
+                },
+              )
+              .toList(growable: false),
+        };
+
         final canonicalStrategies = <Map<String, Object?>>[];
         for (final storedStrategy in strategies) {
           expect(storedStrategy.pages, isNotEmpty);
@@ -69,6 +129,7 @@ void main() {
             'storedVersions': strategies
                 .map((strategy) => strategy.versionNumber)
                 .toList(growable: false),
+            'preservationInvariants': jsonEncode(preservationInvariants),
             'canonicalCurrentState': jsonEncode(<String, Object?>{
               'strategies': canonicalStrategies,
             }),
