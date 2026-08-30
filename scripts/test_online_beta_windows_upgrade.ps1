@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ReleaseCandidateInstaller,
     [string]$PublicInstallerUrl = "https://github.com/SunkenInTime/icarus/releases/download/3.2.3/icarus-setup-3.2.3.exe",
+    [string]$PublicInstallerSha256 = "58e489dbdc5f338747fbe0681137cd86052e1bda727dbfe2b938861043a57870",
     [string]$PublicVersion = "3.2.3",
     [string]$ReleaseCandidateVersion = "",
     [string]$PublicFixtureUrl = "https://raw.githubusercontent.com/SunkenInTime/icarus/fddec2b0b6163cf3962863db18ab0f06ea467773/base-test.ica",
@@ -213,6 +214,11 @@ if ($hadPreexistingSupport) {
 $runningProcess = $null
 try {
     Invoke-WebRequest -Uri $PublicInstallerUrl -OutFile $publicInstaller
+    $observedPublicInstallerSha256 =
+        (Get-FileHash -Path $publicInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($observedPublicInstallerSha256 -ne $PublicInstallerSha256.ToLowerInvariant()) {
+        throw "Public installer checksum mismatch. Expected $PublicInstallerSha256, observed $observedPublicInstallerSha256."
+    }
     Invoke-WebRequest -Uri $PublicFixtureUrl -OutFile $fixtureFullPath
     $observedFixtureSha256 =
         (Get-FileHash -Path $fixtureFullPath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -263,6 +269,7 @@ try {
 
     $evidence = [ordered]@{
         publicInstallerUrl = $PublicInstallerUrl
+        publicInstallerSha256 = $observedPublicInstallerSha256
         publicVersion = $observedPublicVersion
         releaseCandidateVersion = $observedCandidateVersion
         rollbackVersion = $observedRollbackVersion

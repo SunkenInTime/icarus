@@ -57,7 +57,8 @@ Completed against the current candidate:
   The isolated app did not touch the normal Icarus application-support path.
 - The Windows CI gate now installs public 3.2.3 and imports the real v35
   `base-test.ica` fixture pinned to repository commit `fddec2b0`. It verifies
-  the fixture SHA, a responsive app window, and a non-empty Strategy library.
+  the GitHub release asset digest and fixture SHA before executing either
+  input, then requires a responsive app window and a non-empty Strategy library.
   A read-only probe compares stable Strategy, page, and entity identities and
   ordering, then normalizes the public library through the current migration
   path and compares its complete semantic fingerprint after the candidate
