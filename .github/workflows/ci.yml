@@ -24,7 +24,10 @@ jobs:
       CONVEX_PREVIEW_NAME: typed-wrapper-contract-${{ github.event.pull_request.number || github.ref_name }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
 
       - uses: actions/setup-node@v4
         with:
@@ -201,7 +204,10 @@ jobs:
       PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
 
       - uses: dart-lang/setup-dart@v1
 

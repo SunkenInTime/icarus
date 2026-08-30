@@ -23,8 +23,9 @@ but they do not prove that every on-screen state is legible in the built app.
 This receipt belongs to the release-candidate branch cut from
 `icarus-cloud` at `ce9beec189e35f48cced623e161aa55f2642e782`.
 Freeze the shippable SHA to the pull-request head after every required check is
-green. On pull requests the Windows job explicitly checks out that source SHA,
-instead of GitHub's temporary merge commit, and includes it in the artifact name.
+green. On pull requests every CI job explicitly checks out that source SHA,
+instead of GitHub's temporary merge commit, and the Windows job includes it in
+the artifact name.
 
 Completed against the current candidate:
 
@@ -202,7 +203,7 @@ fvm flutter build macos --no-tree-shake-icons
 On the pull request, CI also builds the Windows installer, runs
 `scripts/test_online_beta_windows_upgrade.ps1`, and uploads the installer plus
 its evidence JSON under an artifact name containing the exact source-branch
-commit SHA. The job explicitly checks out that same SHA.
+commit SHA. Every CI job explicitly checks out that same SHA.
 
 Expected on 2026-08-29: no analyzer errors, six existing info notices, 387
 Flutter tests green, 30 Convex tests green, TypeScript green, the contract audit
