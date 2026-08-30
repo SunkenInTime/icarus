@@ -24,20 +24,26 @@ class SelectableIconButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final hasShortcutLabel = shortcutLabel != null && shortcutLabel!.isNotEmpty;
 
-    final button = ShadTooltip(
-      builder: (context) => Text(tooltip ?? ''),
-      child: ShadIconButton.secondary(
-        padding: EdgeInsets.zero,
-        icon: icon,
-        backgroundColor: isSelected
-            ? hoverBackgroundColor ?? Settings.tacticalVioletTheme.primary
-            : null,
-        hoverBackgroundColor: isSelected
-            ? hoverBackgroundColor ?? Settings.tacticalVioletTheme.primary
-            : null,
-        onPressed: onPressed,
-      ),
+    Widget button = ShadIconButton.secondary(
+      padding: EdgeInsets.zero,
+      icon: icon,
+      backgroundColor: isSelected
+          ? hoverBackgroundColor ?? Settings.tacticalVioletTheme.primary
+          : null,
+      hoverBackgroundColor: isSelected
+          ? hoverBackgroundColor ?? Settings.tacticalVioletTheme.primary
+          : null,
+      onPressed: onPressed,
     );
+
+    // No tooltip text means no ShadTooltip wrapper; an empty tooltip bubble
+    // would still pop up on hover otherwise.
+    if (tooltip != null && tooltip!.isNotEmpty) {
+      button = ShadTooltip(
+        builder: (context) => Text(tooltip!),
+        child: button,
+      );
+    }
 
     if (!hasShortcutLabel) return button;
     return SizedBox(

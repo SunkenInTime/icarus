@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
+import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
@@ -13,11 +14,14 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_visibility_context_menu.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_vision_cone_composite.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_deadlock_barrier_mesh_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'dart:math' as math;
 
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
+import 'package:shadcn_ui/shadcn_ui.dart';
 
 bool _shouldShowRotatableHandle(
   Ability ability,
@@ -190,10 +194,29 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
       }
     }
 
+    final visionSpec = AbilityVisionConeSpec.forAbility(abilityRef.data);
+    if (!widget.isLineUp &&
+        visionSpec != null &&
+        abilityRef.visualState.showVisionCone) {
+      return _buildVisionConeAbility(
+        visionSpec: visionSpec,
+        abilityRef: abilityRef,
+        abilityData: abilityData,
+        contextMenuItems: contextMenuItems,
+        coordinateSystem: coordinateSystem,
+        mapScale: mapScale,
+        abilitySize: abilitySize,
+        index: index,
+        isAlly: isAlly,
+      );
+    }
+
     if (isRotatable(abilityData)) {
       final screenPosition = screenPositionForWidget(
         widget: widget.ability,
         coordinateSystem: coordinateSystem,
+        mapScale: mapScale,
+        abilitySize: abilitySize,
       );
       final isCenterSquare = abilityData is CenterSquareAbility;
       final isResizableSquare = abilityData is ResizableSquareAbility;
@@ -384,6 +407,8 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
     final screenPosition = screenPositionForWidget(
       widget: widget.ability,
       coordinateSystem: coordinateSystem,
+      mapScale: mapScale,
+      abilitySize: abilitySize,
     );
     return Positioned(
       left: screenPosition.dx,
@@ -433,6 +458,156 @@ class _PlacedAbilityWidgetState extends ConsumerState<PlacedAbilityWidget> {
           visualState: abilityRef.visualState,
           watchMouse: true,
           contextMenuItems: contextMenuItems,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVisionConeAbility({
+    required AbilityVisionConeSpec visionSpec,
+    required PlacedAbility abilityRef,
+    required Ability abilityData,
+    required List<ShadContextMenuItem>? contextMenuItems,
+    required CoordinateSystem coordinateSystem,
+    required double mapScale,
+    required double abilitySize,
+    required int index,
+    required bool isAlly,
+  }) {
+    final screenPosition = screenPositionForWidget(
+      widget: abilityRef,
+      coordinateSystem: coordinateSystem,
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
+    const coneAnchor = ViewConeWidget.anchorPointVirtual;
+    final scaledConeAnchor = coneAnchor.scale(
+      coordinateSystem.scaleFactor,
+      coordinateSystem.scaleFactor,
+    );
+    final childOffset = abilityVisionConeChildOffsetScreen(
+      coordinateSystem: coordinateSystem,
+      ability: abilityData,
+      mapScale: mapScale,
+      abilitySize: abilitySize,
+    );
+    final resolvedLength = visionSpec.resolveLength(
+      storedLength: localLength ?? 0,
+      mapScale: mapScale,
+    );
+
+    Widget buildAbilityChild({required bool watchMouse}) {
+      return abilityData.createWidget(
+        id: watchMouse ? widget.id : null,
+        isAlly: isAlly,
+        mapScale: mapScale,
+        armLengthsMeters: abilityRef.armLengthsMeters,
+        visualState: abilityRef.visualState,
+        watchMouse: watchMouse,
+        contextMenuItems: watchMouse ? contextMenuItems : null,
+      );
+    }
+
+    return Positioned(
+      left: screenPosition.dx - childOffset.dx,
+      top: screenPosition.dy - childOffset.dy,
+      child: RotatableWidget(
+        rotation: localRotation!,
+        isDragging: isDragging,
+        origin: coneAnchor,
+        buttonTop: coneAnchor.dy - resolvedLength - 7.5,
+        buttonLeft: coneAnchor.dx - 7.5,
+        onPanStart: (_) {
+          final box = context.findRenderObject() as RenderBox;
+          rotationOrigin = box.localToGlobal(scaledConeAnchor);
+        },
+        onPanUpdate: (details) {
+          if (rotationOrigin == Offset.zero) return;
+
+          final delta = details.globalPosition - rotationOrigin;
+          final nextRotation = math.atan2(delta.dy, delta.dx) + (math.pi / 2);
+          final nextLength = visionSpec.storedLengthFromRendered(
+            renderedLength: coordinateSystem.normalize(delta.distance) /
+                ref.watch(screenZoomProvider),
+            mapScale: mapScale,
+          );
+
+          setState(() {
+            localRotation = nextRotation;
+            localLength = nextLength;
+          });
+        },
+        onPanEnd: (_) {
+          ref.read(abilityProvider.notifier).updateRotation(
+                index,
+                localRotation!,
+                localLength ?? 0,
+              );
+          setState(() {
+            rotationOrigin = Offset.zero;
+          });
+        },
+        child: Draggable<PlacedWidget>(
+          data: widget.data,
+          dragAnchorStrategy: (draggable, context, position) {
+            final renderObject = context.findRenderObject()! as RenderBox;
+            final rotatedPosition = rotateOffset(
+              renderObject.globalToLocal(position),
+              scaledConeAnchor,
+              localRotation!,
+            );
+
+            return ref
+                .read(screenZoomProvider.notifier)
+                .zoomOffset(rotatedPosition);
+          },
+          feedback: Opacity(
+            opacity: Settings.feedbackOpacity,
+            child: ZoomTransform(
+              child: AbilityVisionConeComposite(
+                ability: abilityRef,
+                spec: visionSpec,
+                rotation: localRotation!,
+                length: localLength ?? 0,
+                mapScale: mapScale,
+                abilitySize: abilitySize,
+                clipToGeometry: false,
+                child: buildAbilityChild(watchMouse: false),
+              ),
+            ),
+          ),
+          childWhenDragging: const SizedBox.shrink(),
+          onDragStarted: () {
+            final shouldDuplicate = ref.read(duplicateDragModifierProvider);
+            final duplicateId = shouldDuplicate
+                ? ref.read(abilityProvider.notifier).duplicateAbilityAt(
+                      sourceId: abilityRef.id,
+                      position: abilityRef.position,
+                    )
+                : null;
+            setState(() {
+              isDragging = true;
+              _activeDragId = duplicateId ?? abilityRef.id;
+            });
+          },
+          onDragEnd: (details) {
+            final dragId = _activeDragId ?? abilityRef.id;
+            setState(() {
+              isDragging = false;
+              _activeDragId = null;
+            });
+            widget.onDragEnd(details, dragId);
+          },
+          child: AbilityVisionConeComposite(
+            ability: abilityRef,
+            spec: visionSpec,
+            rotation: localRotation!,
+            length: localLength ?? 0,
+            mapScale: mapScale,
+            abilitySize: abilitySize,
+            applyRotation: false,
+            child: buildAbilityChild(watchMouse: true),
+          ),
         ),
       ),
     );

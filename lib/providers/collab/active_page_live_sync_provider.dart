@@ -768,7 +768,28 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }
 
   bool _payloadsEquivalent(Object? left, Object? right) {
-    return cloudJsonEquivalent(left, right);
+    return cloudJsonEquivalent(
+      _withAbilityVisionDefaults(left),
+      _withAbilityVisionDefaults(right),
+    );
+  }
+
+  Object? _withAbilityVisionDefaults(Object? value) {
+    if (value is List) {
+      return [for (final item in value) _withAbilityVisionDefaults(item)];
+    }
+    if (value is! Map) {
+      return value;
+    }
+    final normalized = <String, dynamic>{
+      for (final entry in value.entries)
+        entry.key.toString(): _withAbilityVisionDefaults(entry.value),
+    };
+    final visualState = normalized['visualState'];
+    if (visualState is Map<String, dynamic>) {
+      visualState.putIfAbsent('showVisionCone', () => true);
+    }
+    return normalized;
   }
 
   void _debugLog(String message) {

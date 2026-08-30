@@ -10,17 +10,122 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_filter_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
-import 'package:icarus/widgets/dot_painter.dart';
+import 'package:icarus/widgets/drop_insertion_indicator.dart';
+import 'package:icarus/widgets/folder_card.dart';
 import 'package:icarus/widgets/folder_pill.dart';
+import 'package:icarus/widgets/hover_dot_grid.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+@visibleForTesting
+bool strategyBelongsToVisibleFolder({
+  required StrategyData strategy,
+  required String? currentFolderId,
+  required Set<String> existingFolderIds,
+}) {
+  if (currentFolderId != null) {
+    return strategy.folderID == currentFolderId;
+  }
+
+  final strategyFolderId = strategy.folderID;
+  return strategyFolderId == null ||
+      !existingFolderIds.contains(strategyFolderId);
+}
+
+@visibleForTesting
+bool folderBelongsToVisibleParent({
+  required Folder folder,
+  required String? currentFolderId,
+}) {
+  return folder.parentID == currentFolderId;
+}
+
+@visibleForTesting
+DateTime folderLastUpdated({
+  required Folder folder,
+  required Iterable<Folder> allFolders,
+  required Iterable<StrategyData> allStrategies,
+}) {
+  var latest = folder.dateCreated;
+  for (final strategy in strategiesInFolderTree(
+    folder: folder,
+    allFolders: allFolders,
+    allStrategies: allStrategies,
+  )) {
+    if (strategy.lastEdited.isAfter(latest)) {
+      latest = strategy.lastEdited;
+    }
+  }
+  return latest;
+}
+
+@visibleForTesting
+List<StrategyData> strategiesInFolderTree({
+  required Folder folder,
+  required Iterable<Folder> allFolders,
+  required Iterable<StrategyData> allStrategies,
+}) {
+  final folderIds = _folderAndDescendantIds(folder, allFolders);
+  return [
+    for (final strategy in allStrategies)
+      if (strategy.folderID != null && folderIds.contains(strategy.folderID))
+        strategy,
+  ];
+}
+
+@visibleForTesting
+int compareFoldersForSort({
+  required Folder a,
+  required Folder b,
+  required SortBy sortBy,
+  required Iterable<Folder> allFolders,
+  required Iterable<StrategyData> allStrategies,
+}) {
+  final result = switch (sortBy) {
+    SortBy.alphabetical => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    SortBy.dateCreated => a.dateCreated.compareTo(b.dateCreated),
+    SortBy.dateUpdated => folderLastUpdated(
+        folder: a,
+        allFolders: allFolders,
+        allStrategies: allStrategies,
+      ).compareTo(
+        folderLastUpdated(
+          folder: b,
+          allFolders: allFolders,
+          allStrategies: allStrategies,
+        ),
+      ),
+  };
+  if (result != 0) return result;
+  return a.id.compareTo(b.id);
+}
+
+Set<String> _folderAndDescendantIds(Folder root, Iterable<Folder> allFolders) {
+  final foldersByParent = <String, List<Folder>>{};
+  for (final folder in allFolders) {
+    final parentID = folder.parentID;
+    if (parentID == null) continue;
+    (foldersByParent[parentID] ??= []).add(folder);
+  }
+
+  final ids = <String>{};
+  final pending = <Folder>[root];
+  while (pending.isNotEmpty) {
+    final current = pending.removeLast();
+    if (!ids.add(current.id)) continue;
+    pending.addAll(foldersByParent[current.id] ?? const []);
+  }
+  return ids;
+}
 
 class FolderContent extends ConsumerWidget {
   FolderContent({
@@ -70,17 +175,38 @@ class FolderContent extends ConsumerWidget {
         return ValueListenableBuilder<Box<Folder>>(
           valueListenable: foldersBoxListenable,
           builder: (context, folderBox, _) {
-            final folders = folderBox.values
-                .where((item) => item.parentID == folder?.id)
+            final allFolders = folderBox.values.toList();
+            final allStrategies = strategyBox.values.toList();
+            final existingFolderIds = allFolders.map((item) => item.id).toSet();
+            final folders = allFolders
+                .where(
+                  (item) => folderBelongsToVisibleParent(
+                    folder: item,
+                    currentFolderId: folder?.id,
+                  ),
+                )
                 .toList();
-            final strategies = strategyBox.values
-                .where((item) => item.folderID == folder?.id)
+            final strategies = allStrategies
+                .where(
+                  (item) => strategyBelongsToVisibleFolder(
+                    strategy: item,
+                    currentFolderId: folder?.id,
+                    existingFolderIds: existingFolderIds,
+                  ),
+                )
                 .toList();
             return _buildScaffold(
               context,
               ref,
-              folders: _filterFolders(ref, folders),
+              folders: _filterFolders(
+                ref,
+                folders,
+                allFolders: allFolders,
+                allStrategies: allStrategies,
+              ),
               localStrategies: _filterLocalStrategies(ref, strategies),
+              allLocalFolders: allFolders,
+              allLocalStrategies: allStrategies,
               cloudStrategies: const [],
               isCloud: false,
               emptyStateTitle: 'No strategies available',
@@ -163,16 +289,38 @@ class FolderContent extends ConsumerWidget {
     );
   }
 
-  List<Folder> _filterFolders(WidgetRef ref, List<Folder> folders) {
+  List<Folder> _filterFolders(
+    WidgetRef ref,
+    List<Folder> folders, {
+    List<Folder> allFolders = const [],
+    List<StrategyData> allStrategies = const [],
+  }) {
     final search = ref.watch(strategySearchQueryProvider).trim().toLowerCase();
+    final filter = ref.watch(strategyFilterProvider);
     final filtered = [...folders];
     if (search.isNotEmpty) {
       filtered.retainWhere(
         (folder) => folder.name.toLowerCase().contains(search),
       );
     }
-    filtered.sort((a, b) => a.dateCreated.compareTo(b.dateCreated));
-    return filtered;
+    final direction = filter.sortOrder == SortOrder.ascending ? 1 : -1;
+    filtered.sort(
+      (a, b) =>
+          direction *
+          (allFolders.isEmpty
+              ? a.dateCreated.compareTo(b.dateCreated)
+              : compareFoldersForSort(
+                  a: a,
+                  b: b,
+                  sortBy: filter.sortBy,
+                  allFolders: allFolders,
+                  allStrategies: allStrategies,
+                )),
+    );
+    final pinned = ref.watch(pinnedItemsProvider);
+    return search.isEmpty && pinned.isNotEmpty
+        ? sortPinnedItemsFirst(filtered, pinned, (item) => item.id)
+        : filtered;
   }
 
   List<StrategyData> _filterLocalStrategies(
@@ -197,7 +345,10 @@ class FolderContent extends ConsumerWidget {
 
     final direction = filter.sortOrder == SortOrder.ascending ? 1 : -1;
     filtered.sort((a, b) => direction * comparator(a, b));
-    return filtered;
+    final pinned = ref.watch(pinnedItemsProvider);
+    return search.isEmpty && pinned.isNotEmpty
+        ? sortPinnedItemsFirst(filtered, pinned, (item) => item.id)
+        : filtered;
   }
 
   List<CloudStrategyEntry> _filterCloudStrategies(
@@ -234,6 +385,8 @@ class FolderContent extends ConsumerWidget {
     required List<Folder> folders,
     required List<StrategyData> localStrategies,
     required List<CloudStrategyEntry> cloudStrategies,
+    List<Folder> allLocalFolders = const [],
+    List<StrategyData> allLocalStrategies = const [],
     required bool isCloud,
     Key? emptyStateKey,
     IconData? emptyStateIcon,
@@ -282,7 +435,7 @@ class FolderContent extends ConsumerWidget {
     final Widget content = LayoutBuilder(
       builder: (context, constraints) {
         const double minTileWidth = 250;
-        const double spacing = 20;
+        final spacing = isCloud ? 20.0 : strategyTileGridSpacing;
         const double padding = 32;
         final crossAxisCount = math.max(
           1,
@@ -296,25 +449,52 @@ class FolderContent extends ConsumerWidget {
             if (folders.isNotEmpty)
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  padding: EdgeInsets.fromLTRB(
+                    isCloud ? 16 : 16 - folderCardGutterOutset,
+                    16,
+                    isCloud ? 16 : 16 - folderCardGutterOutset,
+                    8,
+                  ),
                   child: Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
+                    spacing: isCloud ? 10 : 0,
+                    runSpacing: isCloud ? 10 : 14,
                     children: folders
-                        .map((folder) => FolderPill(folder: folder))
+                        .map(
+                          (folder) => isCloud
+                              ? FolderPill(folder: folder)
+                              : FolderCard(
+                                  key: ValueKey(folder.id),
+                                  data: FolderCardViewData(
+                                    folder: folder,
+                                    strategies: strategiesInFolderTree(
+                                      folder: folder,
+                                      allFolders: allLocalFolders,
+                                      allStrategies: allLocalStrategies,
+                                    ),
+                                    folderCount: allLocalFolders
+                                        .where(
+                                          (item) => item.parentID == folder.id,
+                                        )
+                                        .length,
+                                  ),
+                                ),
+                        )
                         .toList(),
                   ),
                 ),
               ),
             if (hasStrategies)
               SliverPadding(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.all(
+                  isCloud ? 16 : 16 - strategyTileGutterOutset,
+                ),
                 sliver: SliverGrid(
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: crossAxisCount,
-                    mainAxisExtent: 250,
-                    crossAxisSpacing: 20,
-                    mainAxisSpacing: 20,
+                    mainAxisExtent:
+                        isCloud ? 250 : strategyTileGridMainAxisExtent,
+                    crossAxisSpacing: isCloud ? 20 : 0,
+                    mainAxisSpacing: isCloud ? 20 : 0,
                   ),
                   delegate: SliverChildListDelegate.fixed(
                     [
@@ -357,82 +537,90 @@ class FolderContent extends ConsumerWidget {
         );
       },
     );
-    final wrappedContent = isCloud ? content : IcaDropTarget(child: content);
+    final wrappedContent = isCloud
+        ? content
+        : IcaDropTarget(
+            child: DropInsertionIndicatorScope(child: content),
+          );
 
-    return Stack(
-      children: [
-        const Positioned.fill(
-          child: Padding(
-            padding: EdgeInsets.all(4.0),
-            child: DotGrid(),
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => dismissLibraryContextMenus(ref),
+      child: Stack(
+        children: [
+          const Positioned.fill(
+            child: Padding(
+              padding: EdgeInsets.all(4.0),
+              child: HoverDotGrid(),
+            ),
           ),
-        ),
-        Positioned.fill(
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(top: 4.0, left: 16, right: 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      spacing: 8,
-                      children: [
-                        _SortSelect<SortBy>(
-                          currentValue:
-                              ref.watch(strategyFilterProvider).sortBy,
-                          labels: StrategyFilterProvider.sortByLabels,
-                          values: SortBy.values,
-                          onChanged: (value) => ref
-                              .read(strategyFilterProvider.notifier)
-                              .setSortBy(value),
-                        ),
-                        _SortSelect<SortOrder>(
-                          currentValue:
-                              ref.watch(strategyFilterProvider).sortOrder,
-                          labels: StrategyFilterProvider.sortOrderLabels,
-                          values: SortOrder.values,
-                          onChanged: (value) => ref
-                              .read(strategyFilterProvider.notifier)
-                              .setSortOrder(value),
-                        ),
-                      ],
-                    ),
-                    SizedBox(
-                      height: 40,
-                      child: SearchTextField(
-                        controller: searchController,
-                        collapsedWidth: 40,
-                        expandedWidth: 250,
-                        compact: true,
-                        onChanged: (value) {},
+          Positioned.fill(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 4.0, left: 16, right: 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        spacing: 8,
+                        children: [
+                          _SortSelect<SortBy>(
+                            currentValue:
+                                ref.watch(strategyFilterProvider).sortBy,
+                            labels: StrategyFilterProvider.sortByLabels,
+                            values: SortBy.values,
+                            onChanged: (value) => ref
+                                .read(strategyFilterProvider.notifier)
+                                .setSortBy(value),
+                          ),
+                          _SortSelect<SortOrder>(
+                            currentValue:
+                                ref.watch(strategyFilterProvider).sortOrder,
+                            labels: StrategyFilterProvider.sortOrderLabels,
+                            values: SortOrder.values,
+                            onChanged: (value) => ref
+                                .read(strategyFilterProvider.notifier)
+                                .setSortOrder(value),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeOutCubic,
-                  child: (folders.isEmpty && !hasStrategies)
-                      ? KeyedSubtree(
-                          key: const ValueKey('library-empty'),
-                          child: isCloud
-                              ? emptyState
-                              : IcaDropTarget(child: emptyState),
-                        )
-                      : KeyedSubtree(
-                          key: const ValueKey('library-content'),
-                          child: wrappedContent,
+                      SizedBox(
+                        height: 40,
+                        child: SearchTextField(
+                          controller: searchController,
+                          collapsedWidth: 40,
+                          expandedWidth: 250,
+                          compact: true,
+                          onChanged: (value) {},
                         ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeOutCubic,
+                    child: (folders.isEmpty && !hasStrategies)
+                        ? KeyedSubtree(
+                            key: const ValueKey('library-empty'),
+                            child: isCloud
+                                ? emptyState
+                                : IcaDropTarget(child: emptyState),
+                          )
+                        : KeyedSubtree(
+                            key: const ValueKey('library-content'),
+                            child: wrappedContent,
+                          ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -538,7 +726,7 @@ class _LibraryMessageState extends StatelessWidget {
         const Positioned.fill(
           child: Padding(
             padding: EdgeInsets.all(4.0),
-            child: DotGrid(),
+            child: HoverDotGrid(),
           ),
         ),
         Center(
@@ -633,7 +821,7 @@ class _LibraryLoadingSkeletonState extends State<_LibraryLoadingSkeleton>
         const Positioned.fill(
           child: Padding(
             padding: EdgeInsets.all(4.0),
-            child: DotGrid(),
+            child: HoverDotGrid(),
           ),
         ),
         Positioned.fill(

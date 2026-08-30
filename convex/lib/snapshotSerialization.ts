@@ -25,6 +25,9 @@ export function serializePageDescriptor(
     publicId: page.publicId,
     strategyPublicId,
     name: page.name,
+    ...(page.isAutoNamed === undefined
+      ? {}
+      : { isAutoNamed: page.isAutoNamed }),
     sortIndex: page.sortIndex,
     isAttack: page.isAttack,
     revision: page.revision,

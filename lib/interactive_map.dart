@@ -23,30 +23,8 @@ import 'package:icarus/widgets/lineup_control_buttons.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:icarus/widgets/image_drop_target.dart';
 import 'package:icarus/widgets/line_up_placer.dart';
+import 'package:icarus/widgets/map_svg_color_mapper.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-
-class _MapSvgColorMapper extends ColorMapper {
-  const _MapSvgColorMapper(this.replacements);
-
-  final Map<int, Color> replacements;
-
-  @override
-  Color substitute(
-    String? id,
-    String elementName,
-    String attributeName,
-    Color color,
-  ) {
-    final opaqueColorValue = (color.toARGB32() & 0x00FFFFFF) | 0xFF000000;
-    final replacement = replacements[opaqueColorValue];
-    if (replacement == null) {
-      return color;
-    }
-    // Keep per-element opacity from the original SVG.
-    final alpha = (color.a * 255.0).round().clamp(0, 255);
-    return replacement.withAlpha(alpha);
-  }
-}
 
 class InteractiveMap extends ConsumerStatefulWidget {
   const InteractiveMap({
@@ -58,10 +36,6 @@ class InteractiveMap extends ConsumerStatefulWidget {
 }
 
 class _InteractiveMapState extends ConsumerState<InteractiveMap> {
-  static const Color _mapBaseSourceColor = Color(0xFF271406);
-  static const Color _mapDetailSourceColor = Color(0xFFB27C40);
-  static const Color _mapHighlightSourceColor = Color(0xFFF08234);
-
   final controller = TransformationController();
   Size? _lastViewportSize;
   Size? _lastPlayAreaSize;
@@ -143,12 +117,17 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   @override
   Widget build(BuildContext context) {
     bool isAttack = ref.watch(mapProvider).isAttack;
+    final transitionPresentation = ref.watch(
+      transitionProvider.select(
+        (state) => (
+          hideView: state.hideView,
+          active: state.active,
+          phase: state.phase,
+        ),
+      ),
+    );
     final effectivePalette = ref.watch(effectiveMapThemePaletteProvider);
-    final mapColorMapper = _MapSvgColorMapper({
-      _mapBaseSourceColor.toARGB32(): effectivePalette.baseColor,
-      _mapDetailSourceColor.toARGB32(): effectivePalette.detailColor,
-      _mapHighlightSourceColor.toARGB32(): effectivePalette.highlightColor,
-    });
+    final mapColorMapper = MapSvgColorMapper.forPalette(effectivePalette);
 
     String assetName =
         'assets/maps/${Maps.mapNames[ref.watch(mapProvider).currentMap]}_map${isAttack ? "" : "_defense"}.svg';
@@ -260,7 +239,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                     },
                                     child: Padding(
                                       padding: const EdgeInsets.all(4.0),
-                                      child: DotGrid(),
+                                      child: RepaintBoundary(child: DotGrid()),
                                     ),
                                   ),
                                 ),
@@ -277,11 +256,13 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                           .read(abilityBarProvider.notifier)
                                           .updateData(null);
                                     },
-                                    child: SvgPicture.asset(
-                                      assetName,
-                                      colorMapper: mapColorMapper,
-                                      semanticsLabel: 'Map',
-                                      fit: BoxFit.contain,
+                                    child: RepaintBoundary(
+                                      child: SvgPicture.asset(
+                                        assetName,
+                                        colorMapper: mapColorMapper,
+                                        semanticsLabel: 'Map',
+                                        fit: BoxFit.contain,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -330,7 +311,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                     ),
                                   ),
                                 Positioned.fill(
-                                  child: ref.watch(transitionProvider).hideView
+                                  child: transitionPresentation.hideView
                                       ? SizedBox.shrink()
                                       : Opacity(
                                           opacity: ref.watch(
@@ -342,38 +323,49 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                         ),
                                 ),
                                 Positioned.fill(
-                                  child: ref.watch(transitionProvider).hideView
+                                  child: transitionPresentation.hideView
                                       ? IgnorePointer(
                                           child: LineUpOverlay(),
                                         )
                                       : SizedBox.shrink(),
                                 ),
                                 Positioned.fill(
-                                  child: ref.watch(transitionProvider).active
-                                      ? PageTransitionOverlay()
+                                  child: transitionPresentation.active
+                                      ? RepaintBoundary(
+                                          child: PageTransitionOverlay(),
+                                        )
                                       : SizedBox.shrink(),
                                 ),
                                 Positioned.fill(
-                                  child: ref
-                                              .watch(transitionProvider)
-                                              .hideView &&
-                                          ref.watch(transitionProvider).phase ==
+                                  child: transitionPresentation.hideView &&
+                                          transitionPresentation.phase ==
                                               PageTransitionPhase.preparing
                                       ? TemporaryWidgetBuilder()
                                       : SizedBox.shrink(),
                                 ),
                                 // Painting
                                 Positioned.fill(
-                                  child: Opacity(
-                                    opacity:
-                                        ref.watch(interactionStateProvider) ==
-                                                InteractionState.lineUpPlacing
-                                            ? 0.2
-                                            : 1.0,
-                                    child: Transform.flip(
-                                        flipX: !isAttack,
-                                        flipY: !isAttack,
-                                        child: InteractivePainter()),
+                                  // Nested Consumer so the per-frame fade-in
+                                  // progress only rebuilds the drawing layer.
+                                  child: Consumer(
+                                    builder: (context, ref, _) {
+                                      final transitionOpacity = ref.watch(
+                                        drawingsTransitionOpacityProvider,
+                                      );
+                                      final lineUpOpacity =
+                                          ref.watch(interactionStateProvider) ==
+                                                  InteractionState.lineUpPlacing
+                                              ? 0.2
+                                              : 1.0;
+                                      return Opacity(
+                                        opacity:
+                                            transitionOpacity * lineUpOpacity,
+                                        child: Transform.flip(
+                                            flipX: !isAttack,
+                                            flipY: !isAttack,
+                                            child: InteractivePainter()),
+                                      );
+                                    },
                                   ),
                                 ),
                                 if (ref.watch(interactionStateProvider) ==

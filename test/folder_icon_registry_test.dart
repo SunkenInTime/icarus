@@ -87,6 +87,27 @@ void main() {
     );
   });
 
+  test('folder icon registry exposes filtered picker groups', () {
+    expect(
+      FolderIconRegistry.pickerEntriesFor(FolderIconCategory.symbol)
+          .map((entry) => entry.category)
+          .toSet(),
+      {FolderIconCategory.symbol},
+    );
+    expect(
+      FolderIconRegistry.pickerEntriesFor(FolderIconCategory.role)
+          .map((entry) => entry.id),
+      containsAll([
+        FolderIconRegistry.controllerRoleId,
+        FolderIconRegistry.duelistRoleId,
+        FolderIconRegistry.initiatorRoleId,
+        FolderIconRegistry.sentinelRoleId,
+      ]),
+    );
+    expect(FolderIconRegistry.isKnownId(2000), isFalse);
+    expect(FolderIconRegistry.resolve(2000).id, FolderIconRegistry.defaultId);
+  });
+
   test('legacy IconData values migrate to registry ids', () {
     expect(
       FolderIconRegistry.idForLegacyIconData(Icons.flag),

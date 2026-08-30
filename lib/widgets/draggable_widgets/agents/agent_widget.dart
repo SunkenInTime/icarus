@@ -6,14 +6,16 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
+import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -72,6 +74,8 @@ const Color _mutedEnemyBGColor = Color.fromARGB(255, 70, 50, 50);
 /// Muted outline colors for dead agents
 const Color _mutedAllyOutlineColor = Color.fromARGB(100, 100, 100, 100);
 const Color _mutedEnemyOutlineColor = Color.fromARGB(100, 120, 80, 80);
+const double _agentQuickActionSize = 36;
+const double _agentQuickActionGap = 4;
 
 class AgentWidget extends ConsumerWidget {
   const AgentWidget({
@@ -83,6 +87,7 @@ class AgentWidget extends ConsumerWidget {
     this.state = AgentState.none,
     this.forcedAgentSize,
     this.deadStateProgress,
+    this.isInteractive = true,
   });
 
   final String? lineUpId;
@@ -92,20 +97,27 @@ class AgentWidget extends ConsumerWidget {
   final AgentState state;
   final double? forcedAgentSize;
   final double? deadStateProgress;
+  final bool isInteractive;
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1.0;
-    final agentSize =
-        forcedAgentSize ?? ref.watch(strategySettingsProvider).agentSize;
-    final useNeutralTeamColors =
-        ref.watch(strategySettingsProvider).useNeutralTeamColors;
+    final strategySettings = ref.watch(strategySettingsProvider);
+    final agentSize = forcedAgentSize ?? strategySettings.agentSize;
+    final useNeutralTeamColors = strategySettings.useNeutralTeamColors;
     final isScreenshot = ref.watch(screenshotProvider);
+    final canInteract = isInteractive &&
+        !isScreenshot &&
+        (lineUpId != null || (id?.isNotEmpty ?? false));
+    final mapState = canInteract ? ref.watch(mapProvider) : null;
+    final mapScale =
+        mapState == null ? 1.0 : (Maps.mapScale[mapState.currentMap] ?? 1.0);
     final deadProgress =
         (deadStateProgress ?? (state == AgentState.dead ? 1.0 : 0.0))
             .clamp(0.0, 1.0);
     final hasDeadStyling = deadProgress > 0;
-    final hoverTarget = ref.watch(hoveredLineUpTargetProvider);
+    final hoverTarget = canInteract && lineUpId != null
+        ? ref.watch(hoveredLineUpTargetProvider)
+        : null;
     final isLineUpHovered =
         lineUpId != null && (hoverTarget?.matchesAgent(lineUpId!) ?? false);
 
@@ -179,34 +191,46 @@ class AgentWidget extends ConsumerWidget {
     );
 
     final scaledSize = coordinateSystem.scale(agentSize);
-    final deleteTarget = lineUpId != null
-        ? HoveredDeleteTarget.lineup(id: lineUpId!, ownerToken: Object())
-        : (id?.isNotEmpty ?? false)
-            ? HoveredDeleteTarget.agent(id: id!, ownerToken: Object())
+    final deleteTarget = !canInteract
+        ? null
+        : lineUpId != null
+            ? HoveredDeleteTarget.lineup(id: lineUpId!, ownerToken: Object())
+            : (id?.isNotEmpty ?? false)
+                ? HoveredDeleteTarget.agent(id: id!, ownerToken: Object())
+                : null;
+    final placedAgentNode =
+        canInteract && lineUpId == null && (id?.isNotEmpty ?? false)
+            ? ref.watch(
+                agentProvider.select((agents) {
+                  for (final entry in agents) {
+                    if (entry.id == id) return entry;
+                  }
+                  return null;
+                }),
+              )
             : null;
-    final plainAgent = lineUpId == null && (id?.isNotEmpty ?? false)
-        ? ref.watch(
-            agentProvider.select(
-              (agents) => agents.whereType<PlacedAgent>().firstWhere(
-                    (entry) => entry.id == id,
-                    orElse: () => PlacedAgent(
-                      type: agent.type,
-                      position: Offset.zero,
-                      id: '',
-                    ),
-                  ),
-            ),
-          )
-        : null;
-
+    final plainAgent = placedAgentNode is PlacedAgent ? placedAgentNode : null;
+    final viewConeAgent =
+        placedAgentNode is PlacedViewConeAgent ? placedAgentNode : null;
+    final adjacentPageCopyItems =
+        canInteract && lineUpId == null && placedAgentNode != null
+            ? buildAdjacentPageCopyMenuItems(ref, placedAgentNode.id)
+            : const <ShadContextMenuItem>[];
+    final hasContextMenuItemsBelow = canInteract &&
+        (lineUpId != null ||
+            (plainAgent != null && plainAgent.id.isNotEmpty) ||
+            viewConeAgent != null ||
+            adjacentPageCopyItems.isNotEmpty);
     final contextMenuItems = <ShadContextMenuItem>[
-      if (!isScreenshot)
+      if (canInteract)
         ShadContextMenuItem.raw(
           variant: ShadContextMenuItemVariant.primary,
-          height: 36,
+          height: _agentQuickActionSize,
           closeOnTap: false,
-          padding: const EdgeInsets.only(bottom: 4),
-          insetPadding: const EdgeInsets.only(left: 4, right: 4),
+          padding: hasContextMenuItemsBelow
+              ? const EdgeInsets.only(bottom: _agentQuickActionGap)
+              : EdgeInsets.zero,
+          insetPadding: EdgeInsets.zero,
           backgroundColor: Colors.transparent,
           selectedBackgroundColor: Colors.transparent,
           child: _AgentAbilityContextMenuRow(
@@ -215,7 +239,7 @@ class AgentWidget extends ConsumerWidget {
             mapScale: mapScale,
           ),
         ),
-      if (lineUpId != null)
+      if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.plus),
           child: const Text('Add Lineup Item'),
@@ -232,7 +256,7 @@ class AgentWidget extends ConsumerWidget {
             ref.read(lineUpProvider.notifier).startNewItemForGroup(lineUpId!);
           },
         ),
-      if (lineUpId != null)
+      if (canInteract && lineUpId != null)
         ShadContextMenuItem(
           leading: Icon(
             Icons.delete,
@@ -243,7 +267,25 @@ class AgentWidget extends ConsumerWidget {
             ref.read(lineUpProvider.notifier).deleteGroupById(lineUpId!);
           },
         ),
-      if (lineUpId == null && plainAgent != null && plainAgent.id.isNotEmpty)
+      if (canInteract && viewConeAgent != null)
+        ShadContextMenuItem(
+          leading: const Icon(LucideIcons.eyeOff),
+          child: const Text('Remove View Cone'),
+          onPressed: () {
+            ref.read(actionProvider.notifier).performTransaction(
+              groups: const [ActionGroup.agent],
+              mutation: () {
+                ref
+                    .read(agentProvider.notifier)
+                    .convertViewConeAgentToPlain(id: viewConeAgent.id);
+              },
+            );
+          },
+        ),
+      if (canInteract &&
+          lineUpId == null &&
+          plainAgent != null &&
+          plainAgent.id.isNotEmpty)
         ShadContextMenuItem(
           leading: const Icon(LucideIcons.plus),
           child: const Text('Create Lineup'),
@@ -254,12 +296,13 @@ class AgentWidget extends ConsumerWidget {
             ref.read(lineUpProvider.notifier).startNewGroup(plainAgent);
           },
         ),
+      ...adjacentPageCopyItems,
     ];
 
     Widget agentCard;
     // Use Ink + InkWell so the ripple shows on top of the background
 
-    if (isLineUp || isScreenshot) {
+    if (isLineUp || !canInteract) {
       agentCard = Container(
         decoration: decoration,
         width: scaledSize,
@@ -288,6 +331,10 @@ class AgentWidget extends ConsumerWidget {
       );
     }
 
+    if (!canInteract) {
+      return RepaintBoundary(child: agentCard);
+    }
+
     return MouseWatch(
       lineUpId: lineUpId,
       cursor: SystemMouseCursors.click,
@@ -311,20 +358,24 @@ class _AgentAbilityContextMenuRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return Row(
-      spacing: 4,
-      // crossAxisAlignment: CrossAxisAlignment.start,
-      //
-      mainAxisSize: MainAxisSize.max,
-      // mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        for (final ability in agent.abilities)
-          _AgentAbilityContextMenuButton(
-            ability: ability,
-            isAlly: isAlly,
-            mapScale: mapScale,
-          ),
-      ],
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        minWidth: (agent.abilities.length * _agentQuickActionSize) +
+            ((agent.abilities.length + 1) * _agentQuickActionGap),
+      ),
+      child: Row(
+        spacing: _agentQuickActionGap,
+        mainAxisSize: MainAxisSize.max,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (final ability in agent.abilities)
+            _AgentAbilityContextMenuButton(
+              ability: ability,
+              isAlly: isAlly,
+              mapScale: mapScale,
+            ),
+        ],
+      ),
     );
   }
 }
@@ -414,8 +465,8 @@ class _AgentAbilityContextMenuButtonState
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
             curve: Curves.easeOutCubic,
-            width: 36,
-            height: 36,
+            width: _agentQuickActionSize,
+            height: _agentQuickActionSize,
             padding: const EdgeInsets.all(5),
             decoration: BoxDecoration(
               color: background,

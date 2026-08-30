@@ -2561,6 +2561,7 @@ class StrategyImportExportService {
         StrategyPage(
           id: remotePage.publicId,
           name: remotePage.name,
+          isAutoNamed: remotePage.isAutoNamed,
           drawingData: drawingData,
           agentData: agentData,
           abilityData: abilityData,

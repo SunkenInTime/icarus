@@ -4,17 +4,31 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/library_context_menu_provider.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy_view.dart';
+import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/delete_strategy_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/rename_strategy_dialog.dart';
-import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
+import 'package:icarus/widgets/drag_tilt_feedback.dart';
+import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/strategy_tile/strategy_tile_sections.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+
+const double strategyTileGridSpacing = 20;
+const double strategyTileGutterOutset = strategyTileGridSpacing / 2;
+const double strategyTileMainAxisExtent = 250;
+const double strategyTileGridMainAxisExtent =
+    strategyTileMainAxisExtent + strategyTileGridSpacing;
+const double strategyTileOuterRadius = 16;
+const double strategyTileInnerPadding = 8;
+const double strategyTileInnerRadius =
+    strategyTileOuterRadius - strategyTileInnerPadding;
 
 class StrategyTile extends ConsumerStatefulWidget {
   const StrategyTile.local({
@@ -46,14 +60,72 @@ class StrategyTile extends ConsumerStatefulWidget {
   ConsumerState<ConsumerStatefulWidget> createState() => _StrategyTileState();
 }
 
+class StrategyTileActionsButton extends StatelessWidget {
+  const StrategyTileActionsButton({
+    super.key,
+    required this.strategyName,
+    required this.onPressed,
+  });
+
+  final String strategyName;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = 'More actions for $strategyName';
+    return Semantics(
+      label: label,
+      button: true,
+      onTap: onPressed,
+      excludeSemantics: true,
+      child: ShadIconButton.secondary(
+        width: 28,
+        height: 28,
+        onPressed: onPressed,
+        icon: const Icon(Icons.more_vert_outlined),
+      ),
+    );
+  }
+}
+
+class StrategyTileMenuActionSemantics extends StatelessWidget {
+  const StrategyTileMenuActionSemantics({
+    super.key,
+    required this.label,
+    required this.enabled,
+    required this.onPressed,
+    required this.child,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback? onPressed;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: label,
+      button: true,
+      enabled: enabled,
+      onTap: onPressed,
+      excludeSemantics: true,
+      child: child,
+    );
+  }
+}
+
 class _StrategyTileState extends ConsumerState<StrategyTile> {
   Color _highlightColor = Settings.tacticalVioletTheme.border;
   bool _isLoading = false;
+  bool _menuButtonWasOpenOnPointerDown = false;
+  DropInsertionSide? _pinnedDropSide;
 
   final ShadContextMenuController _menuButtonController =
       ShadContextMenuController();
   final ShadContextMenuController _rightClickMenuController =
       ShadContextMenuController();
+  final DragTiltController _dragTiltController = DragTiltController();
 
   bool get _isCloud => widget.cloudStrategy != null;
   bool get _canShare => _isCloud && widget.cloudStrategy?.role == 'owner';
@@ -61,13 +133,8 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
       widget.strategyData?.id ?? widget.cloudStrategy!.strategy.id;
   String get _strategyName =>
       widget.strategyData?.name ?? widget.cloudStrategy!.strategy.name;
-  MapValue? get _mapValue {
-    final strategy = widget.strategyData;
-    if (strategy != null) return strategy.mapData;
-
-    return widget.cloudStrategy?.strategy.mapData;
-  }
-
+  MapValue? get _mapValue =>
+      widget.strategyData?.mapData ?? widget.cloudStrategy?.strategy.mapData;
   bool get _isAttack {
     final strategy = widget.strategyData;
     if (strategy != null) {
@@ -87,143 +154,303 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     super.dispose();
   }
 
+  void _closeMenus() {
+    _menuButtonController.hide();
+    _rightClickMenuController.hide();
+  }
+
+  void _handleMenuButtonPressed() {
+    if (_menuButtonWasOpenOnPointerDown) {
+      _menuButtonWasOpenOnPointerDown = false;
+      _closeMenus();
+      return;
+    }
+
+    dismissLibraryContextMenus(ref);
+    _menuButtonController.show();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final viewData = _viewData;
+    ref.listen<int>(
+      libraryContextMenuDismissalProvider,
+      (_, __) => _closeMenus(),
+    );
 
-    return Draggable<GridItem>(
-      data: _isCloud
-          ? StrategyItem.cloud(_strategyId)
-          : StrategyItem.local(widget.strategyData!),
-      dragAnchorStrategy: pointerDragAnchorStrategy,
-      maxSimultaneousDrags: widget.canMove ? null : 0,
-      feedback: Opacity(
-        opacity: 0.95,
-        child: Material(
-          color: Colors.transparent,
-          child: StrategyTileDragPreview(data: viewData),
-        ),
-      ),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) =>
-            setState(() => _highlightColor = Settings.tacticalVioletTheme.ring),
-        onExit: (_) => setState(
-            () => _highlightColor = Settings.tacticalVioletTheme.border),
-        child: AbsorbPointer(
-          absorbing: _isLoading,
-          child: ShadContextMenuRegion(
-            controller: _rightClickMenuController,
-            items: _buildMenuItems(),
-            child: GestureDetector(
-              onTap: () => _openStrategy(context),
-              child: Stack(
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 100),
-                    decoration: BoxDecoration(
-                      color: ShadTheme.of(context).colorScheme.card,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: _highlightColor, width: 2),
-                    ),
-                    padding: const EdgeInsets.all(8),
-                    child: Column(
-                      children: [
-                        Expanded(
-                          child: StrategyTileThumbnail(
-                            assetPath: viewData.thumbnailAsset,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Expanded(child: StrategyTileDetails(data: viewData)),
-                      ],
+    final viewData = _viewData;
+    final pinned = ref.watch(pinnedItemsProvider);
+    final id = _strategyId;
+    final isPinned = pinned.containsKey(id);
+
+    return DragTarget<GridItem>(
+      onWillAcceptWithDetails: (details) {
+        final item = details.data;
+        return item is StrategyItem &&
+            item.strategyId != id &&
+            isPinned &&
+            pinned.containsKey(item.strategyId);
+      },
+      onMove: (details) {
+        final item = details.data;
+        final nextSide = item is StrategyItem &&
+                item.strategyId != id &&
+                isPinned &&
+                pinned.containsKey(item.strategyId)
+            ? resolveDropInsertionSide(
+                context: context,
+                globalOffset: details.offset,
+                current: _pinnedDropSide,
+              )
+            : null;
+        if (nextSide != _pinnedDropSide) {
+          setState(() => _pinnedDropSide = nextSide);
+        }
+      },
+      onLeave: (_) {
+        if (_pinnedDropSide != null) {
+          setState(() => _pinnedDropSide = null);
+        }
+      },
+      onAcceptWithDetails: (details) async {
+        final item = details.data;
+        if (item is! StrategyItem) return;
+
+        // Commit whatever the indicator was showing so the drop always
+        // matches what the user saw.
+        final insertionSide = _pinnedDropSide ??
+            resolveDropInsertionSide(
+              context: context,
+              globalOffset: details.offset,
+            );
+        if (mounted) {
+          setState(() => _pinnedDropSide = null);
+        }
+        if (insertionSide == null) return;
+
+        await ref.read(pinnedItemsProvider.notifier).movePin(
+              id: item.strategyId,
+              targetId: id,
+              insertAfterTarget: insertionSide == DropInsertionSide.after,
+            );
+      },
+      builder: (context, candidateData, rejectedData) {
+        final isPinDropTarget = candidateData.any(
+          (item) =>
+              item is StrategyItem &&
+              item.strategyId != id &&
+              isPinned &&
+              pinned.containsKey(item.strategyId),
+        );
+
+        return Padding(
+          padding: const EdgeInsets.all(strategyTileGutterOutset),
+          child: Draggable<GridItem>(
+            data: _isCloud
+                ? StrategyItem.cloud(_strategyId)
+                : StrategyItem.local(widget.strategyData!),
+            maxSimultaneousDrags: widget.canMove ? null : 0,
+            dragAnchorStrategy: pointerDragAnchorStrategy,
+            onDragUpdate: (details) =>
+                _dragTiltController.addDelta(details.delta.dx),
+            feedback: TiltDragFeedback(
+              controller: _dragTiltController,
+              child: StrategyTileDragPreview(data: viewData),
+            ),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              onEnter: (_) => setState(
+                  () => _highlightColor = Settings.tacticalVioletTheme.ring),
+              onExit: (_) => setState(
+                  () => _highlightColor = Settings.tacticalVioletTheme.border),
+              child: AbsorbPointer(
+                absorbing: _isLoading,
+                child: ShadContextMenuRegion(
+                  controller: _rightClickMenuController,
+                  items: _buildMenuItems(),
+                  child: GestureDetector(
+                    onTap: () => _openStrategy(context),
+                    child: Builder(
+                      builder: (context) {
+                        final dropSide = _pinnedDropSide;
+                        final slotKey = dropSide == null
+                            ? null
+                            : dropInsertionSlotKey(
+                                itemId: id,
+                                side: dropSide,
+                                pinnedOrder: pinnedIdsInManualOrder(pinned),
+                              );
+                        return Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 100),
+                              decoration: BoxDecoration(
+                                color: ShadTheme.of(context).colorScheme.card,
+                                borderRadius: BorderRadius.circular(
+                                    strategyTileOuterRadius),
+                                border: Border.all(
+                                  color: isPinDropTarget
+                                      ? Settings.tacticalVioletTheme.border
+                                      : _highlightColor,
+                                  width: 2,
+                                ),
+                              ),
+                              padding: const EdgeInsets.all(8),
+                              child: Column(
+                                children: [
+                                  Expanded(
+                                    child: StrategyTileThumbnail(
+                                      assetPath: viewData.thumbnailAsset,
+                                      borderRadius: strategyTileInnerRadius,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Expanded(
+                                    child: StrategyTileDetails(
+                                      data: viewData,
+                                      borderRadius: strategyTileInnerRadius,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (isPinned)
+                              Align(
+                                alignment: Alignment.topLeft,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: Settings
+                                          .tacticalVioletTheme.background
+                                          .withValues(alpha: 0.78),
+                                      borderRadius: BorderRadius.circular(999),
+                                      border: Border.all(
+                                        color:
+                                            Settings.tacticalVioletTheme.border,
+                                      ),
+                                    ),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(5),
+                                      child: Icon(Icons.push_pin, size: 15),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            Align(
+                              alignment: Alignment.topRight,
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: ShadContextMenuRegion(
+                                  controller: _menuButtonController,
+                                  items: _buildMenuItems(),
+                                  child: Listener(
+                                    onPointerDown: (_) {
+                                      _menuButtonWasOpenOnPointerDown =
+                                          _menuButtonController.isOpen;
+                                    },
+                                    child: ShadIconButton.secondary(
+                                      width: 28,
+                                      height: 28,
+                                      onPressed: _handleMenuButtonPressed,
+                                      icon:
+                                          const Icon(Icons.more_vert_outlined),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (dropSide != null && slotKey != null)
+                              Positioned.fill(
+                                child: DropInsertionIndicator(
+                                  key: ValueKey(slotKey),
+                                  slotKey: slotKey,
+                                  side: dropSide,
+                                  // Matches the grid spacing in FolderContent
+                                  // so the caret sits centered in the gutter.
+                                  gap: strategyTileGridSpacing,
+                                  topInset: 6,
+                                  bottomInset: 6,
+                                ),
+                              ),
+                          ],
+                        );
+                      },
                     ),
                   ),
-                  Align(
-                    alignment: Alignment.topRight,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: ShadContextMenuRegion(
-                        controller: _menuButtonController,
-                        items: _buildMenuItems(),
-                        child: StrategyTileActionsButton(
-                          strategyName: _strategyName,
-                          onPressed: _menuButtonController.toggle,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  List<Widget> _buildMenuItems() {
+  List<ShadContextMenuItem> _buildMenuItems() {
+    final pinned = ref.watch(pinnedItemsProvider);
+    final id = _strategyId;
+    final isPinned = pinned.containsKey(id);
     return [
-      _buildMenuItem(
-        label: 'Rename',
+      ShadContextMenuItem(
+        leading: Icon(isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+        child: Text(isPinned ? 'Unpin' : 'Pin'),
+        onPressed: () {
+          _closeMenus();
+          ref.read(pinnedItemsProvider.notifier).togglePin(id);
+        },
+      ),
+      ShadContextMenuItem(
         leading: const Icon(LucideIcons.pencil),
+        child: const Text('Rename'),
         enabled: widget.canRename,
-        onPressed: _showRenameDialog,
+        onPressed: widget.canRename
+            ? () {
+                _closeMenus();
+                _showRenameDialog();
+              }
+            : null,
       ),
-      _buildMenuItem(
-        label: 'Duplicate',
+      ShadContextMenuItem(
         leading: const Icon(LucideIcons.copy),
+        child: const Text('Duplicate'),
         enabled: widget.canDuplicate,
-        onPressed: _duplicateStrategy,
+        onPressed: widget.canDuplicate
+            ? () {
+                _closeMenus();
+                _duplicateStrategy();
+              }
+            : null,
       ),
-      _buildMenuItem(
-        label: 'Export',
+      ShadContextMenuItem(
         leading: const Icon(LucideIcons.upload),
-        onPressed: _exportStrategy,
+        child: const Text('Export'),
+        onPressed: () {
+          _closeMenus();
+          _exportStrategy();
+        },
       ),
       if (_canShare)
-        _buildMenuItem(
-          label: 'Share',
+        ShadContextMenuItem(
           leading: const Icon(LucideIcons.link2),
-          onPressed: _showShareDialog,
+          child: const Text('Share'),
+          onPressed: () {
+            _closeMenus();
+            _showShareDialog();
+          },
         ),
-      _buildMenuItem(
-        label: 'Delete',
-        leading: Icon(
-          LucideIcons.trash2,
-          color: Settings.tacticalVioletTheme.destructive,
-        ),
+      ShadContextMenuItem(
+        leading: const Icon(LucideIcons.trash2, color: Colors.redAccent),
+        child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
         enabled: widget.canDelete,
-        onPressed: _showDeleteDialog,
-        textStyle: TextStyle(color: Settings.tacticalVioletTheme.destructive),
+        onPressed: widget.canDelete
+            ? () {
+                _closeMenus();
+                _showDeleteDialog();
+              }
+            : null,
       ),
     ];
-  }
-
-  Widget _buildMenuItem({
-    required String label,
-    required Widget leading,
-    required VoidCallback onPressed,
-    bool enabled = true,
-    TextStyle? textStyle,
-  }) {
-    void activate() {
-      _menuButtonController.hide();
-      _rightClickMenuController.hide();
-      onPressed();
-    }
-
-    return StrategyTileMenuActionSemantics(
-      label: '$label $_strategyName',
-      enabled: enabled,
-      onPressed: enabled ? activate : null,
-      child: ShadContextMenuItem(
-        leading: leading,
-        enabled: enabled,
-        onPressed: enabled ? activate : null,
-        child: Text(label, style: textStyle),
-      ),
-    );
   }
 
   Future<void> _openStrategy(BuildContext context) async {
@@ -308,61 +535,6 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
         name: _strategyName,
         source: _isCloud ? StrategySource.cloud : StrategySource.local,
       ),
-    );
-  }
-}
-
-class StrategyTileActionsButton extends StatelessWidget {
-  const StrategyTileActionsButton({
-    super.key,
-    required this.strategyName,
-    required this.onPressed,
-  });
-
-  final String strategyName;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = 'More actions for $strategyName';
-    return Semantics(
-      label: label,
-      button: true,
-      onTap: onPressed,
-      excludeSemantics: true,
-      child: ShadIconButton.secondary(
-        width: 28,
-        height: 28,
-        onPressed: onPressed,
-        icon: const Icon(Icons.more_vert_outlined),
-      ),
-    );
-  }
-}
-
-class StrategyTileMenuActionSemantics extends StatelessWidget {
-  const StrategyTileMenuActionSemantics({
-    super.key,
-    required this.label,
-    required this.enabled,
-    required this.onPressed,
-    required this.child,
-  });
-
-  final String label;
-  final bool enabled;
-  final VoidCallback? onPressed;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      label: label,
-      button: true,
-      enabled: enabled,
-      onTap: onPressed,
-      excludeSemantics: true,
-      child: child,
     );
   }
 }

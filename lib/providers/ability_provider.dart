@@ -6,10 +6,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:uuid/uuid.dart';
 
 final abilityProvider =
@@ -87,10 +88,10 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     final mapState = ref.read(mapProvider);
     final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
 
-    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
-
-    final centerOffset = ability.data.abilityData!
-        .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize);
+    final centerOffset = storedAbilityAnchor(
+      ability: ability.data.abilityData!,
+      mapScale: mapScale,
+    );
 
     final centerPosition =
         Offset(position.dx + centerOffset.dx, position.dy + centerOffset.dy);
@@ -129,9 +130,10 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     final coordinateSystem = CoordinateSystem.instance;
     final mapState = ref.read(mapProvider);
     final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
-    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
-    final centerOffset = sourceAbility.data.abilityData!
-        .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize);
+    final centerOffset = storedAbilityAnchor(
+      ability: sourceAbility.data.abilityData!,
+      mapScale: mapScale,
+    );
     final centerPosition =
         Offset(position.dx + centerOffset.dx, position.dy + centerOffset.dy);
 
@@ -151,14 +153,18 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     final newState = <PlacedAbility>[...state];
     final mapState = ref.read(mapProvider);
     final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
-    final abilitySizeSetting = ref.read(strategySettingsProvider).abilitySize;
-
     for (final ability in state) {
-      ability.switchSides(mapScale: mapScale, abilitySize: abilitySizeSetting);
+      ability.switchSides(
+        mapScale: mapScale,
+        abilitySize: Settings.abilitySize,
+      );
     }
 
     for (final ability in poppedAbility) {
-      ability.switchSides(mapScale: mapScale, abilitySize: abilitySizeSetting);
+      ability.switchSides(
+        mapScale: mapScale,
+        abilitySize: Settings.abilitySize,
+      );
     }
 
     state = newState;

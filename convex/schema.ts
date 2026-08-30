@@ -53,6 +53,7 @@ export default defineSchema({
     publicId: v.string(),
     strategyId: v.id("strategies"),
     name: v.string(),
+    isAutoNamed: v.optional(v.boolean()),
     sortIndex: v.number(),
     isAttack: v.boolean(),
     revision: v.number(),

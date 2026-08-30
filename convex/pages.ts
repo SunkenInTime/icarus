@@ -45,6 +45,7 @@ export const add = mutation({
     expectedRevision: v.number(),
     pagePublicId: v.string(),
     name: v.string(),
+    isAutoNamed: v.optional(v.boolean()),
     sortIndex: v.number(),
     isAttack: v.boolean(),
     settings: v.optional(strategySettingsValidator),
@@ -83,6 +84,7 @@ export const add = mutation({
       );
       const identical =
         existingPage.name === args.name &&
+        existingPage.isAutoNamed === args.isAutoNamed &&
         existingPage.sortIndex === desiredSortIndex &&
         existingPage.isAttack === args.isAttack &&
         valuesEqual(pageContents[0]!.settings, args.settings);
@@ -101,8 +103,16 @@ export const add = mutation({
     for (let index = 0; index < orderedPages.length; index += 1) {
       const page = orderedPages[index]!;
       const normalizedIndex = index >= desiredSortIndex ? index + 1 : index;
-      if (page.sortIndex !== normalizedIndex) {
+      const normalizedName =
+        page.isAutoNamed === true
+          ? `Page ${normalizedIndex + 1}`
+          : page.name;
+      if (
+        page.sortIndex !== normalizedIndex ||
+        page.name !== normalizedName
+      ) {
         await ctx.db.patch(page._id, {
+          name: normalizedName,
           sortIndex: normalizedIndex,
           revision: page.revision + 1,
           updatedAt: now,
@@ -113,6 +123,9 @@ export const add = mutation({
       publicId: args.pagePublicId,
       strategyId: strategy._id,
       name: args.name,
+      ...(args.isAutoNamed === undefined
+        ? {}
+        : { isAutoNamed: args.isAutoNamed }),
       sortIndex: desiredSortIndex,
       isAttack: args.isAttack,
       revision: 1,
@@ -137,6 +150,7 @@ export const rename = mutation({
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
     name: v.string(),
+    isAutoNamed: v.optional(v.boolean()),
     expectedRevision: v.number(),
   },
   returns: revisionResultValidator,
@@ -147,7 +161,11 @@ export const rename = mutation({
     if (page.strategyId !== strategy._id) {
       throw errorWithCode("PAGE_STRATEGY_MISMATCH", "Page strategy mismatch");
     }
-    if (page.name === args.name) {
+    const nextIsAutoNamed = args.isAutoNamed ?? page.isAutoNamed;
+    if (
+      page.name === args.name &&
+      page.isAutoNamed === nextIsAutoNamed
+    ) {
       return { ok: true, reused: true, revision: page.revision } as const;
     }
     if (args.expectedRevision !== page.revision) {
@@ -157,6 +175,7 @@ export const rename = mutation({
     const revision = page.revision + 1;
     await ctx.db.patch(page._id, {
       name: args.name,
+      isAutoNamed: nextIsAutoNamed,
       revision,
       updatedAt: Date.now(),
     });
@@ -210,8 +229,11 @@ const deletePage = mutation({
     const now = Date.now();
     for (let index = 0; index < ordered.length; index += 1) {
       const current = ordered[index]!;
-      if (current.sortIndex !== index) {
+      const normalizedName =
+        current.isAutoNamed === true ? `Page ${index + 1}` : current.name;
+      if (current.sortIndex !== index || current.name !== normalizedName) {
         await ctx.db.patch(current._id, {
+          name: normalizedName,
           sortIndex: index,
           revision: current.revision + 1,
           updatedAt: now,
@@ -261,8 +283,11 @@ export const reorder = mutation({
     const now = Date.now();
     for (let index = 0; index < ordered.length; index += 1) {
       const page = ordered[index]!;
-      if (page.sortIndex !== index) {
+      const normalizedName =
+        page.isAutoNamed === true ? `Page ${index + 1}` : page.name;
+      if (page.sortIndex !== index || page.name !== normalizedName) {
         await ctx.db.patch(page._id, {
+          name: normalizedName,
           sortIndex: index,
           revision: page.revision + 1,
           updatedAt: now,

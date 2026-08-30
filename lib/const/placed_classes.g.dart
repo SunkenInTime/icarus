@@ -53,6 +53,7 @@ PlacedImage _$PlacedImageFromJson(Map<String, dynamic> json) => PlacedImage(
       fileExtension: json['fileExtension'] as String?,
       sizeVersion: (json['sizeVersion'] as num?)?.toInt(),
       tagColorValue: (json['tagColorValue'] as num?)?.toInt(),
+      link: json['link'] as String? ?? '',
     )..isDeleted = json['isDeleted'] as bool? ?? false;
 
 Map<String, dynamic> _$PlacedImageToJson(PlacedImage instance) =>
@@ -65,6 +66,7 @@ Map<String, dynamic> _$PlacedImageToJson(PlacedImage instance) =>
       'scale': instance.scale,
       'sizeVersion': instance.sizeVersion,
       'tagColorValue': instance.tagColorValue,
+      'link': instance.link,
     };
 
 PlacedAgent _$PlacedAgentFromJson(Map<String, dynamic> json) => PlacedAgent(
@@ -100,6 +102,7 @@ PlacedViewConeAgent _$PlacedViewConeAgentFromJson(Map<String, dynamic> json) =>
           const UtilityTypeCompatConverter().fromJson(json['presetType']),
       rotation: (json['rotation'] as num?)?.toDouble() ?? 0,
       length: (json['length'] as num?)?.toDouble() ?? 0,
+      visionElevation: (json['visionElevation'] as num?)?.toDouble(),
       isAlly: json['isAlly'] as bool? ?? true,
       state: json['state'] == null
           ? AgentState.none
@@ -119,6 +122,7 @@ Map<String, dynamic> _$PlacedViewConeAgentToJson(
           const UtilityTypeCompatConverter().toJson(instance.presetType),
       'rotation': instance.rotation,
       'length': instance.length,
+      'visionElevation': instance.visionElevation,
     };
 
 PlacedCircleAgent _$PlacedCircleAgentFromJson(Map<String, dynamic> json) =>
@@ -190,6 +194,7 @@ AbilityVisualState _$AbilityVisualStateFromJson(Map<String, dynamic> json) =>
       showRangeFill: json['showRangeFill'] as bool? ?? true,
       showInnerOutline: json['showInnerOutline'] as bool? ?? true,
       showInnerFill: json['showInnerFill'] as bool? ?? true,
+      showVisionCone: json['showVisionCone'] as bool? ?? true,
     );
 
 Map<String, dynamic> _$AbilityVisualStateToJson(AbilityVisualState instance) =>
@@ -198,6 +203,7 @@ Map<String, dynamic> _$AbilityVisualStateToJson(AbilityVisualState instance) =>
       'showRangeFill': instance.showRangeFill,
       'showInnerOutline': instance.showInnerOutline,
       'showInnerFill': instance.showInnerFill,
+      'showVisionCone': instance.showVisionCone,
     };
 
 PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
@@ -208,6 +214,7 @@ PlacedUtility _$PlacedUtilityFromJson(Map<String, dynamic> json) =>
       id: json['id'] as String,
       isAlly: json['isAlly'] as bool? ?? true,
       angle: (json['angle'] as num?)?.toDouble() ?? 0.0,
+      visionElevation: (json['visionElevation'] as num?)?.toDouble(),
       customDiameter: (json['customDiameter'] as num?)?.toDouble(),
       customWidth: (json['customWidth'] as num?)?.toDouble(),
       customLength: (json['customLength'] as num?)?.toDouble(),
@@ -227,6 +234,7 @@ Map<String, dynamic> _$PlacedUtilityToJson(PlacedUtility instance) =>
       'rotation': instance.rotation,
       'length': instance.length,
       'angle': instance.angle,
+      'visionElevation': instance.visionElevation,
       'customDiameter': instance.customDiameter,
       'customWidth': instance.customWidth,
       'customLength': instance.customLength,

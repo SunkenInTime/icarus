@@ -1949,10 +1949,12 @@ final class OpsApplyBatchArgsOpsItemPageAdd extends OpsApplyBatchArgsOpsItem {
 final class OpsApplyBatchArgsOpsItemPageAddPayload {
   const OpsApplyBatchArgsOpsItemPageAddPayload({
     this.isAttack = const ConvexOptional.absent(),
+    this.isAutoNamed = const ConvexOptional.absent(),
     this.name = const ConvexOptional.absent(),
     this.settings = const ConvexOptional.absent(),
   });
   final ConvexOptional<bool> isAttack;
+  final ConvexOptional<bool> isAutoNamed;
   final ConvexOptional<String> name;
   final ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings> settings;
 
@@ -1961,11 +1963,21 @@ final class OpsApplyBatchArgsOpsItemPageAddPayload {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'isAttack', 'name', 'settings'});
+    _checkObjectFields(object, path, const {
+      'isAttack',
+      'isAutoNamed',
+      'name',
+      'settings',
+    });
     return OpsApplyBatchArgsOpsItemPageAddPayload(
       isAttack: object.value.containsKey('isAttack')
           ? ConvexOptional.present(
               _decodeBoolean(object.value['isAttack']!, '$path.isAttack'),
+            )
+          : const ConvexOptional.absent(),
+      isAutoNamed: object.value.containsKey('isAutoNamed')
+          ? ConvexOptional.present(
+              _decodeBoolean(object.value['isAutoNamed']!, '$path.isAutoNamed'),
             )
           : const ConvexOptional.absent(),
       name: object.value.containsKey('name')
@@ -1987,6 +1999,8 @@ final class OpsApplyBatchArgsOpsItemPageAddPayload {
   ConvexObject encode(String path) {
     return ConvexObject({
       if (isAttack.isPresent) 'isAttack': ConvexBoolean(isAttack.value),
+      if (isAutoNamed.isPresent)
+        'isAutoNamed': ConvexBoolean(isAutoNamed.value),
       if (name.isPresent) 'name': ConvexString(name.value),
       if (settings.isPresent)
         'settings': settings.value.encode('$path.settings'),
@@ -2913,8 +2927,10 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPageValue {
     required this.isAttack,
     required this.name,
     required this.sortIndex,
+    this.isAutoNamed = const ConvexOptional.absent(),
   });
   final bool isAttack;
+  final ConvexOptional<bool> isAutoNamed;
   final String name;
   final double sortIndex;
 
@@ -2923,12 +2939,22 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPageValue {
     String path,
   ) {
     final object = _decodeObject(value, path);
-    _checkObjectFields(object, path, const {'isAttack', 'name', 'sortIndex'});
+    _checkObjectFields(object, path, const {
+      'isAttack',
+      'isAutoNamed',
+      'name',
+      'sortIndex',
+    });
     return OpsApplyBatchResultResultsItemRejectedCurrentPageValue(
       isAttack: _decodeBoolean(
         object.value['isAttack'] ?? _missing(path, 'isAttack'),
         '$path.isAttack',
       ),
+      isAutoNamed: object.value.containsKey('isAutoNamed')
+          ? ConvexOptional.present(
+              _decodeBoolean(object.value['isAutoNamed']!, '$path.isAutoNamed'),
+            )
+          : const ConvexOptional.absent(),
       name: _decodeString(
         object.value['name'] ?? _missing(path, 'name'),
         '$path.name',
@@ -2943,6 +2969,8 @@ final class OpsApplyBatchResultResultsItemRejectedCurrentPageValue {
   ConvexObject encode(String path) {
     return ConvexObject({
       'isAttack': ConvexBoolean(isAttack),
+      if (isAutoNamed.isPresent)
+        'isAutoNamed': ConvexBoolean(isAutoNamed.value),
       'name': ConvexString(name),
       'sortIndex': _encodeNumber(sortIndex, '$path.sortIndex'),
     });
@@ -3221,9 +3249,11 @@ final class PageGetSnapshotResultPage {
     required this.sortIndex,
     required this.strategyPublicId,
     required this.updatedAt,
+    this.isAutoNamed = const ConvexOptional.absent(),
   });
   final double createdAt;
   final bool isAttack;
+  final ConvexOptional<bool> isAutoNamed;
   final String name;
   final String publicId;
   final double revision;
@@ -3236,6 +3266,7 @@ final class PageGetSnapshotResultPage {
     _checkObjectFields(object, path, const {
       'createdAt',
       'isAttack',
+      'isAutoNamed',
       'name',
       'publicId',
       'revision',
@@ -3252,6 +3283,11 @@ final class PageGetSnapshotResultPage {
         object.value['isAttack'] ?? _missing(path, 'isAttack'),
         '$path.isAttack',
       ),
+      isAutoNamed: object.value.containsKey('isAutoNamed')
+          ? ConvexOptional.present(
+              _decodeBoolean(object.value['isAutoNamed']!, '$path.isAutoNamed'),
+            )
+          : const ConvexOptional.absent(),
       name: _decodeString(
         object.value['name'] ?? _missing(path, 'name'),
         '$path.name',
@@ -3283,6 +3319,8 @@ final class PageGetSnapshotResultPage {
     return ConvexObject({
       'createdAt': _encodeNumber(createdAt, '$path.createdAt'),
       'isAttack': ConvexBoolean(isAttack),
+      if (isAutoNamed.isPresent)
+        'isAutoNamed': ConvexBoolean(isAutoNamed.value),
       'name': ConvexString(name),
       'publicId': ConvexString(publicId),
       'revision': _encodeNumber(revision, '$path.revision'),
@@ -3841,12 +3879,14 @@ final class StrategyGetFullSnapshotResultPagesItem {
     required this.sortIndex,
     required this.strategyPublicId,
     required this.updatedAt,
+    this.isAutoNamed = const ConvexOptional.absent(),
   });
   final double contentCreatedAt;
   final double contentRevision;
   final double contentUpdatedAt;
   final double createdAt;
   final bool isAttack;
+  final ConvexOptional<bool> isAutoNamed;
   final String name;
   final String publicId;
   final double revision;
@@ -3866,6 +3906,7 @@ final class StrategyGetFullSnapshotResultPagesItem {
       'contentUpdatedAt',
       'createdAt',
       'isAttack',
+      'isAutoNamed',
       'name',
       'publicId',
       'revision',
@@ -3895,6 +3936,11 @@ final class StrategyGetFullSnapshotResultPagesItem {
         object.value['isAttack'] ?? _missing(path, 'isAttack'),
         '$path.isAttack',
       ),
+      isAutoNamed: object.value.containsKey('isAutoNamed')
+          ? ConvexOptional.present(
+              _decodeBoolean(object.value['isAutoNamed']!, '$path.isAutoNamed'),
+            )
+          : const ConvexOptional.absent(),
       name: _decodeString(
         object.value['name'] ?? _missing(path, 'name'),
         '$path.name',
@@ -3945,6 +3991,8 @@ final class StrategyGetFullSnapshotResultPagesItem {
       ),
       'createdAt': _encodeNumber(createdAt, '$path.createdAt'),
       'isAttack': ConvexBoolean(isAttack),
+      if (isAutoNamed.isPresent)
+        'isAutoNamed': ConvexBoolean(isAutoNamed.value),
       'name': ConvexString(name),
       'publicId': ConvexString(publicId),
       'revision': _encodeNumber(revision, '$path.revision'),
@@ -4869,6 +4917,7 @@ PageGetSnapshotResult decodePageGetSnapshotResult(ConvexValue value) =>
 ConvexObject encodePagesAddArgs({
   required double expectedRevision,
   required bool isAttack,
+  ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
   required String name,
   required String pagePublicId,
   ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings> settings =
@@ -4881,6 +4930,7 @@ ConvexObject encodePagesAddArgs({
     'pages.js:add.args.expectedRevision',
   ),
   'isAttack': ConvexBoolean(isAttack),
+  if (isAutoNamed.isPresent) 'isAutoNamed': ConvexBoolean(isAutoNamed.value),
   'name': ConvexString(name),
   'pagePublicId': ConvexString(pagePublicId),
   if (settings.isPresent)
@@ -4925,6 +4975,7 @@ List<PageGetSnapshotResultPage> decodePagesListForStrategyResult(
 
 ConvexObject encodePagesRenameArgs({
   required double expectedRevision,
+  ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
   required String name,
   required String pagePublicId,
   required String strategyPublicId,
@@ -4933,6 +4984,7 @@ ConvexObject encodePagesRenameArgs({
     expectedRevision,
     'pages.js:rename.args.expectedRevision',
   ),
+  if (isAutoNamed.isPresent) 'isAutoNamed': ConvexBoolean(isAutoNamed.value),
   'name': ConvexString(name),
   'pagePublicId': ConvexString(pagePublicId),
   'strategyPublicId': ConvexString(strategyPublicId),
@@ -5047,6 +5099,7 @@ ConvexValue decodeStrategiesCreateResult(ConvexValue value) => _decodeRaw(
 ConvexObject encodeStrategiesCreateWithInitialPageArgs({
   ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
   required bool initialPageIsAttack,
+  ConvexOptional<bool> initialPageIsAutoNamed = const ConvexOptional.absent(),
   required String initialPageName,
   required String initialPagePublicId,
   ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings>
@@ -5065,6 +5118,8 @@ ConvexObject encodeStrategiesCreateWithInitialPageArgs({
   if (folderPublicId.isPresent)
     'folderPublicId': ConvexString(folderPublicId.value),
   'initialPageIsAttack': ConvexBoolean(initialPageIsAttack),
+  if (initialPageIsAutoNamed.isPresent)
+    'initialPageIsAutoNamed': ConvexBoolean(initialPageIsAutoNamed.value),
   'initialPageName': ConvexString(initialPageName),
   'initialPagePublicId': ConvexString(initialPagePublicId),
   if (initialPageSettings.isPresent)

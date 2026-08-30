@@ -4,6 +4,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/default_placement.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/placement_center_provider.dart';
@@ -133,7 +134,7 @@ class _RoleIconTile extends ConsumerWidget {
       child: ShadTooltip(
         builder: (context) => Text(label),
         child: GestureDetector(
-          onTap: () => _placeAtCenter(ref, toolData),
+          onTap: () => _placeAtCenter(ref),
           child: utility.createWidget(
             id: null,
             isAlly: isAlly,
@@ -144,25 +145,28 @@ class _RoleIconTile extends ConsumerWidget {
     );
   }
 
-  void _placeAtCenter(WidgetRef ref, RoleIconToolData toolData) {
+  void _placeAtCenter(WidgetRef ref) {
     ref
         .read(interactionStateProvider.notifier)
         .update(InteractionState.navigation);
 
     const uuid = Uuid();
     final placementCenter = ref.read(placementCenterProvider);
+    final placedUtility = PlacedUtility(
+      position: Offset.zero,
+      id: uuid.v4(),
+      type: type,
+      isAlly: ref.read(teamProvider),
+    );
     final centeredTopLeft = DefaultPlacement.topLeftFromVirtualAnchor(
       viewportCenter: placementCenter,
-      anchorVirtual: toolData.centerPoint,
+      anchorVirtual: storedUtilityAnchor(
+        utility: placedUtility,
+        mapScale: 1,
+      ),
     );
+    placedUtility.position = centeredTopLeft;
 
-    ref.read(utilityProvider.notifier).addUtility(
-          PlacedUtility(
-            position: centeredTopLeft,
-            id: uuid.v4(),
-            type: type,
-            isAlly: ref.read(teamProvider),
-          ),
-        );
+    ref.read(utilityProvider.notifier).addUtility(placedUtility);
   }
 }

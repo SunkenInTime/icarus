@@ -53,6 +53,8 @@ jobs:
 
       - name: Build Store Package
         shell: pwsh
+        env:
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
         run: powershell -ExecutionPolicy Bypass -File scripts/build_store_release.ps1
 
       - name: Upload Store Artifacts

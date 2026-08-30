@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
@@ -35,25 +36,26 @@ class StrategyView extends ConsumerStatefulWidget {
     super.key,
     this.initialStrategyId,
     this.initialStrategyName,
-    this.initialStrategySource,
+    this.initialStrategySource = StrategySource.local,
     this.initialMapValue,
     this.initialIsAttack = true,
   });
 
   final String? initialStrategyId;
   final String? initialStrategyName;
-  final StrategySource? initialStrategySource;
+  final StrategySource initialStrategySource;
   final MapValue? initialMapValue;
   final bool initialIsAttack;
 
   static PageRoute<void> route({
     String? initialStrategyId,
     String? initialStrategyName,
-    StrategySource? initialStrategySource,
+    StrategySource initialStrategySource = StrategySource.local,
     MapValue? initialMapValue,
     bool initialIsAttack = true,
   }) {
     return PageRouteBuilder<void>(
+      settings: const RouteSettings(name: Routes.strategyView),
       transitionDuration: const Duration(milliseconds: 200),
       reverseTransitionDuration: const Duration(milliseconds: 200),
       pageBuilder: (context, animation, _) => StrategyView(
@@ -67,9 +69,10 @@ class StrategyView extends ConsumerStatefulWidget {
         return FadeTransition(
           opacity: animation,
           child: ScaleTransition(
-            scale: Tween<double>(begin: 0.9, end: 1.0)
-                .chain(CurveTween(curve: Curves.easeOut))
-                .animate(animation),
+            scale: Tween<double>(
+              begin: 0.9,
+              end: 1.0,
+            ).chain(CurveTween(curve: Curves.easeOut)).animate(animation),
             child: child,
           ),
         );
@@ -85,12 +88,12 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     with WindowListener {
   bool _isClosingWindow = false;
   bool _isInitialLoadPending = false;
+  bool _hasInitialLoadCompleted = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.initialStrategyId != null &&
-        widget.initialStrategySource != null) {
+    if (widget.initialStrategyId != null) {
       _isInitialLoadPending = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_loadInitialStrategy());
@@ -118,7 +121,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
   Future<void> _loadInitialStrategy() async {
     final strategyId = widget.initialStrategyId;
     final source = widget.initialStrategySource;
-    if (strategyId == null || source == null) {
+    if (strategyId == null) {
       if (mounted) {
         setState(() => _isInitialLoadPending = false);
       }
@@ -134,6 +137,12 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                 strategyId,
               );
       }
+      final loadedStrategy = ref.read(strategyProvider);
+      if (loadedStrategy.strategyId != strategyId ||
+          loadedStrategy.strategyName == null) {
+        throw StateError('Strategy "$strategyId" was not found.');
+      }
+      _hasInitialLoadCompleted = true;
     } catch (error, stackTrace) {
       developer.log(
         'Error loading strategy: $error',
@@ -189,11 +198,12 @@ class _StrategyViewState extends ConsumerState<StrategyView>
       }
     });
     final strategyState = ref.watch(strategyProvider);
-    final hasInitialTarget = widget.initialStrategyId != null;
+    final initialStrategyId = widget.initialStrategyId;
     final showSkeleton = _isInitialLoadPending ||
-        (hasInitialTarget &&
+        (!_hasInitialLoadCompleted &&
+            initialStrategyId != null &&
             (!strategyState.isOpen ||
-                strategyState.strategyId != widget.initialStrategyId));
+                strategyState.strategyId != initialStrategyId));
 
     if (showSkeleton) {
       return Scaffold(
@@ -238,6 +248,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                       TextButton(
                         style: TextButton.styleFrom(
                           foregroundColor: Colors.white,
+                          enabledMouseCursor: SystemMouseCursors.click,
                         ),
                         onPressed: () async {
                           await launchUrl(Settings.dicordLink);
@@ -276,12 +287,9 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                 Positioned.fill(child: DeleteCapture()),
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: InteractiveMap(),
+                  child: RepaintBoundary(child: InteractiveMap()),
                 ),
-                Align(
-                  alignment: Alignment.topLeft,
-                  child: SaveAndLoadButton(),
-                ),
+                Align(alignment: Alignment.topLeft, child: SaveAndLoadButton()),
                 Align(
                   alignment: Alignment.bottomLeft,
                   child: Padding(
@@ -289,10 +297,7 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                     child: PagesBar(),
                   ),
                 ),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: SideBarUI(),
-                ),
+                Align(alignment: Alignment.centerRight, child: SideBarUI()),
               ],
             ),
           ),

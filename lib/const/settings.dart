@@ -47,11 +47,25 @@ class Settings {
 
   static const Color abilityBGColor = Color(0xFF1B1B1B);
   static const double feedbackOpacity = 0.7;
+
+  // Custom shape edit handles (virtual units). Tune here, not in the widgets:
+  // - thickness/length size the visible resize pills and the circle's arc,
+  // - hitPadding is the extra invisible grab area added around every handle,
+  // - rotationHandleSize sizes the rectangle's rotation glyph,
+  // - rotationHandleOffset places it above the rectangle's top edge.
+  static const double shapeHandleThickness = 6;
+  static const double shapeHandleLength = 24;
+  static const double shapeHandleHitPadding = 8;
+  static const double shapeRotationHandleSize = 24;
+  static const double shapeRotationHandleOffset = 36;
+
+  static const double strokeThicknessThin = 2;
   static const double strokeThicknessSmall = 3;
   static const double strokeThicknessMedium = 5;
   static const double strokeThicknessLarge = 8;
   static const double defaultStrokeThickness = strokeThicknessMedium;
   static const List<double> strokeThicknessOptions = [
+    strokeThicknessThin,
     strokeThicknessSmall,
     strokeThicknessMedium,
     strokeThicknessLarge,
@@ -95,8 +109,8 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 91;
-  static const String versionName = "4.3.7";
+  static const int versionNumber = 96;
+  static const String versionName = "4.6.1";
   static final Uri desktopUpdaterArchiveUrl =
       buildDesktopUpdaterArchiveUrl(kResolvedUpdateChannel);
 
@@ -212,6 +226,16 @@ class Settings {
     destructive: Color(0xffef4444),
     destructiveForeground: Color(0xfffafafa),
   );
+
+  // Semantic accents for settings tile icons. Each hue follows the meaning of
+  // its setting (never the violet action hue, which is reserved for
+  // commands/selection).
+  static const Color settingsAgentAccent = Color(0xff5da37e); // team markers
+  static const Color settingsAbilityAccent = Color(0xff6aa1d8); // utility
+  static const Color settingsNeutralAccent = Color(0xffa1a1aa); // greys toggle
+  static const Color settingsPersistenceAccent = Color(0xff4b8f86); // saving
+  static const Color settingsDiscordAccent = Color(0xff5865f2); // brand blurple
+  static const Color settingsMapAccent = Color(0xffb27c40); // map layers
 
   static const cardForegroundBackdrop = BoxShadow(
     color: Colors.black54, // High opacity because the background is dark

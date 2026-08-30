@@ -137,6 +137,8 @@ class _PlacedDeadlockBarrierMeshWidgetState
     final screenPosition = screenPositionForWidget(
       widget: abilityRef,
       coordinateSystem: coordinateSystem,
+      mapScale: mapScale,
+      abilitySize: abilitySize,
     );
     final feedbackRotationOrigin = center.scale(
       ref.watch(screenZoomProvider),

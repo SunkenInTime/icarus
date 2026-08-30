@@ -330,13 +330,14 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       fileExtension: fields[8] as String?,
       sizeVersion: (fields[10] as num?)?.toInt(),
       tagColorValue: (fields[9] as num?)?.toInt(),
+      link: fields[11] == null ? '' : fields[11] as String,
     )..isDeleted = fields[5] as bool;
   }
 
   @override
   void write(BinaryWriter writer, PlacedImage obj) {
     writer
-      ..writeByte(8)
+      ..writeByte(9)
       ..writeByte(1)
       ..write(obj.aspectRatio)
       ..writeByte(2)
@@ -352,7 +353,9 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       ..writeByte(9)
       ..write(obj.tagColorValue)
       ..writeByte(10)
-      ..write(obj.sizeVersion);
+      ..write(obj.sizeVersion)
+      ..writeByte(11)
+      ..write(obj.link);
   }
 
   @override
@@ -726,6 +729,7 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       id: fields[3] as String,
       isAlly: fields[14] == null ? true : fields[14] as bool,
       angle: fields[6] == null ? 0.0 : (fields[6] as num).toDouble(),
+      visionElevation: (fields[15] as num?)?.toDouble(),
       customDiameter: (fields[8] as num?)?.toDouble(),
       customWidth: (fields[9] as num?)?.toDouble(),
       customLength: (fields[10] as num?)?.toDouble(),
@@ -740,7 +744,7 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
   @override
   void write(BinaryWriter writer, PlacedUtility obj) {
     writer
-      ..writeByte(13)
+      ..writeByte(14)
       ..writeByte(0)
       ..write(obj.type)
       ..writeByte(1)
@@ -766,7 +770,9 @@ class PlacedUtilityAdapter extends TypeAdapter<PlacedUtility> {
       ..writeByte(12)
       ..write(obj.customOpacityPercent)
       ..writeByte(14)
-      ..write(obj.isAlly);
+      ..write(obj.isAlly)
+      ..writeByte(15)
+      ..write(obj.visionElevation);
   }
 
   @override
@@ -965,6 +971,7 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
     return StrategyPage(
       id: fields[0] as String,
       name: fields[2] as String,
+      isAutoNamed: fields[14] as bool?,
       drawingData: (fields[3] as List).cast<DrawingElement>(),
       agentData: (fields[4] as List).cast<PlacedAgentNode>(),
       abilityData: (fields[5] as List).cast<PlacedAbility>(),
@@ -985,7 +992,7 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
   @override
   void write(BinaryWriter writer, StrategyPage obj) {
     writer
-      ..writeByte(13)
+      ..writeByte(14)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -1011,7 +1018,9 @@ class StrategyPageAdapter extends TypeAdapter<StrategyPage> {
       ..writeByte(11)
       ..write(obj.lineUps)
       ..writeByte(12)
-      ..write(obj.lineUpGroups);
+      ..write(obj.lineUpGroups)
+      ..writeByte(14)
+      ..write(obj.isAutoNamed);
   }
 
   @override
@@ -1308,13 +1317,25 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       pagesBarWidth: fields[7] == null ? 224.0 : (fields[7] as num).toDouble(),
       customColorValues: (fields[3] as List?)?.cast<int>(),
       customShortcutBindings: (fields[8] as Map?)?.cast<String, String>(),
+      librarySortByName:
+          fields[12] == null ? 'dateCreated' : fields[12] as String,
+      librarySortOrderName:
+          fields[13] == null ? 'ascending' : fields[13] as String,
+      drawingColorValue:
+          fields[14] == null ? 0xFFFFFFFF : (fields[14] as num).toInt(),
+      drawingThickness: fields[15] == null
+          ? Settings.defaultStrokeThickness
+          : (fields[15] as num).toDouble(),
+      discordPresenceEnabled: fields[17] == null ? true : fields[17] as bool,
+      videoExportStepDurationSeconds:
+          fields[18] == null ? 3.0 : (fields[18] as num).toDouble(),
     );
   }
 
   @override
   void write(BinaryWriter writer, AppPreferences obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(18)
       ..writeByte(0)
       ..write(obj.defaultThemeProfileIdForNewStrategies)
       ..writeByte(1)
@@ -1338,7 +1359,19 @@ class AppPreferencesAdapter extends TypeAdapter<AppPreferences> {
       ..writeByte(10)
       ..write(obj.showUltOrbs)
       ..writeByte(11)
-      ..write(obj.showRegionNames);
+      ..write(obj.showRegionNames)
+      ..writeByte(12)
+      ..write(obj.librarySortByName)
+      ..writeByte(13)
+      ..write(obj.librarySortOrderName)
+      ..writeByte(14)
+      ..write(obj.drawingColorValue)
+      ..writeByte(15)
+      ..write(obj.drawingThickness)
+      ..writeByte(17)
+      ..write(obj.discordPresenceEnabled)
+      ..writeByte(18)
+      ..write(obj.videoExportStepDurationSeconds);
   }
 
   @override
@@ -1369,6 +1402,7 @@ class PlacedViewConeAgentAdapter extends TypeAdapter<PlacedViewConeAgent> {
       presetType: fields[0] as UtilityType,
       rotation: fields[1] == null ? 0 : (fields[1] as num).toDouble(),
       length: fields[2] == null ? 0 : (fields[2] as num).toDouble(),
+      visionElevation: (fields[9] as num?)?.toDouble(),
       isAlly: fields[4] == null ? true : fields[4] as bool,
       state: fields[5] == null ? AgentState.none : fields[5] as AgentState,
     )..isDeleted = fields[7] as bool;
@@ -1377,7 +1411,7 @@ class PlacedViewConeAgentAdapter extends TypeAdapter<PlacedViewConeAgent> {
   @override
   void write(BinaryWriter writer, PlacedViewConeAgent obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(10)
       ..writeByte(0)
       ..write(obj.presetType)
       ..writeByte(1)
@@ -1395,7 +1429,9 @@ class PlacedViewConeAgentAdapter extends TypeAdapter<PlacedViewConeAgent> {
       ..writeByte(7)
       ..write(obj.isDeleted)
       ..writeByte(8)
-      ..write(obj.position);
+      ..write(obj.position)
+      ..writeByte(9)
+      ..write(obj.visionElevation);
   }
 
   @override
@@ -1481,13 +1517,14 @@ class AbilityVisualStateAdapter extends TypeAdapter<AbilityVisualState> {
       showRangeFill: fields[3] == null ? true : fields[3] as bool,
       showInnerOutline: fields[4] == null ? true : fields[4] as bool,
       showInnerFill: fields[5] == null ? true : fields[5] as bool,
+      showVisionCone: fields[6] == null ? true : fields[6] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, AbilityVisualState obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(5)
       ..writeByte(2)
       ..write(obj.showRangeOutline)
       ..writeByte(3)
@@ -1495,7 +1532,9 @@ class AbilityVisualStateAdapter extends TypeAdapter<AbilityVisualState> {
       ..writeByte(4)
       ..write(obj.showInnerOutline)
       ..writeByte(5)
-      ..write(obj.showInnerFill);
+      ..write(obj.showInnerFill)
+      ..writeByte(6)
+      ..write(obj.showVisionCone);
   }
 
   @override

@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/page_transition/agent_path.dart';
 
 enum PageTransitionPhase { idle, preparing, animating }
 
@@ -21,8 +22,10 @@ class PageTransitionState {
     required this.endAgentSize,
     required this.startAbilitySize,
     required this.endAbilitySize,
+    this.agentPaths = const {},
     this.sourcePageId,
     this.targetPageId,
+    this.fadeInDrawings = false,
   });
   final bool hideView;
   final bool active;
@@ -37,8 +40,14 @@ class PageTransitionState {
   final double endAgentSize;
   final double startAbilitySize;
   final double endAbilitySize;
+  final Map<String, AgentTransitionPath> agentPaths;
   final String? sourcePageId;
   final String? targetPageId;
+
+  /// True when the drawing layer differs between source and target page, so
+  /// the live view (and exported video) fades drawings in early instead of
+  /// hard-swapping them.
+  final bool fadeInDrawings;
 
   PageTransitionState copyWith({
     bool? active,
@@ -54,9 +63,11 @@ class PageTransitionState {
     double? endAgentSize,
     double? startAbilitySize,
     double? endAbilitySize,
+    Map<String, AgentTransitionPath>? agentPaths,
     String? sourcePageId,
     String? targetPageId,
     bool clearPageIds = false,
+    bool? fadeInDrawings,
   }) =>
       PageTransitionState(
         hideView: hideView ?? this.hideView,
@@ -72,8 +83,10 @@ class PageTransitionState {
         endAgentSize: endAgentSize ?? this.endAgentSize,
         startAbilitySize: startAbilitySize ?? this.startAbilitySize,
         endAbilitySize: endAbilitySize ?? this.endAbilitySize,
+        agentPaths: agentPaths ?? this.agentPaths,
         sourcePageId: clearPageIds ? null : (sourcePageId ?? this.sourcePageId),
         targetPageId: clearPageIds ? null : (targetPageId ?? this.targetPageId),
+        fadeInDrawings: fadeInDrawings ?? this.fadeInDrawings,
       );
 
   static const idle = PageTransitionState(
@@ -90,8 +103,10 @@ class PageTransitionState {
       endAgentSize: 0,
       startAbilitySize: 0,
       endAbilitySize: 0,
+      agentPaths: {},
       sourcePageId: null,
-      targetPageId: null);
+      targetPageId: null,
+      fadeInDrawings: false);
 }
 
 final transitionProvider =
@@ -116,7 +131,8 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       required double startAgentSize,
       required double startAbilitySize,
       String? sourcePageId,
-      String? targetPageId}) {
+      String? targetPageId,
+      bool fadeInDrawings = false}) {
     state = state.copyWith(
       allWidgets: widgets,
       hideView: true,
@@ -131,6 +147,8 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       endAbilitySize: startAbilitySize,
       sourcePageId: sourcePageId,
       targetPageId: targetPageId,
+      agentPaths: const {},
+      fadeInDrawings: fadeInDrawings,
     );
   }
 
@@ -141,8 +159,10 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       required double endAgentSize,
       required double startAbilitySize,
       required double endAbilitySize,
+      Map<String, AgentTransitionPath> agentPaths = const {},
       String? sourcePageId,
-      String? targetPageId}) {
+      String? targetPageId,
+      bool fadeInDrawings = false}) {
     state = state.copyWith(
       hideView: true,
       active: true,
@@ -158,6 +178,8 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       endAbilitySize: endAbilitySize,
       sourcePageId: sourcePageId,
       targetPageId: targetPageId,
+      agentPaths: agentPaths,
+      fadeInDrawings: fadeInDrawings,
     );
   }
 
@@ -178,6 +200,24 @@ class TransitionProvider extends Notifier<PageTransitionState> {
       allWidgets: const [],
       phase: PageTransitionPhase.idle,
       clearPageIds: true,
+      agentPaths: const {},
+      fadeInDrawings: false,
     );
   }
 }
+
+/// Opacity of the drawing layer while a page transition runs. Drawings fade
+/// in early (front-loaded) when they differ between the two pages, instead of
+/// hard-swapping the moment the target page hydrates.
+final drawingsTransitionOpacityProvider = Provider<double>((ref) {
+  final state = ref.watch(transitionProvider);
+  if (!state.fadeInDrawings) return 1.0;
+  switch (state.phase) {
+    case PageTransitionPhase.preparing:
+      return 0.0;
+    case PageTransitionPhase.animating:
+      return earlyFadeInOpacity(state.progress);
+    case PageTransitionPhase.idle:
+      return 1.0;
+  }
+});

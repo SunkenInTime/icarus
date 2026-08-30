@@ -1,0 +1,46 @@
+{
+  "version": "4.6.0+95",
+  "shortVersion": 95,
+  "title": "4.6.0 Update",
+  "description": "Turn strategies into videos, build cleaner multi-step plans, and customize maps your way.",
+  "date": "2026-08-09",
+  "mandatory": false,
+  "channels": [
+    "desktop",
+    "prerelease",
+    "stable"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "changes": [
+    {
+      "message": "Turn a strategy into a shareable video. Choose which pages to include, set how long each step lasts, and export the animated plan as an MP4.",
+      "type": "feature"
+    },
+    {
+      "message": "Settings have been redesigned to clearly separate the current strategy from your app-wide defaults, while custom map themes can now be saved and reused across strategies.",
+      "type": "feature"
+    },
+    {
+      "message": "Killjoy's Turret, Cypher's Spycam, Raze's Boom Bot, and Gekko's Wingman can now show where they see or detect players. Vision previews also stop more accurately at walls and corners.",
+      "type": "feature"
+    },
+    {
+      "message": "Build multi-step strategies faster by copying placed map items directly to the previous or next page.",
+      "type": "feature"
+    },
+    {
+      "message": "Custom shapes are now much easier to resize, rotate, and recolor after placing them on the map.",
+      "type": "improvement"
+    },
+    {
+      "message": "Viper's Poison Cloud and Toxic Screen can now remain visible as inactive traces, making planned utility states easier to understand at a glance.",
+      "type": "feature"
+    },
+    {
+      "message": "Optional Discord Rich Presence can now show friends which map and side you are working on without revealing your strategy or page names.",
+      "type": "feature"
+    }
+  ]
+}

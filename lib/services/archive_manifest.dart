@@ -47,15 +47,6 @@ class ArchiveIconDescriptor {
     );
   }
 
-  IconData toIconData() {
-    return IconData(
-      codePoint,
-      fontFamily: fontFamily,
-      fontPackage: fontPackage,
-      matchTextDirection: matchTextDirection,
-    );
-  }
-
   Map<String, dynamic> toJson() {
     return {
       'codePoint': codePoint,
@@ -125,9 +116,7 @@ class ArchiveFolderEntry {
       iconId: _readNullableInt(json, 'iconId') ??
           (legacyIcon == null
               ? FolderIconRegistry.defaultId
-              : FolderIconRegistry.idForLegacyIconData(
-                  legacyIcon.toIconData(),
-                )),
+              : _iconIdForLegacyDescriptor(legacyIcon)),
       icon: legacyIcon,
       color: FolderColor.values.firstWhere(
         (candidate) => candidate.name == colorName,
@@ -136,6 +125,20 @@ class ArchiveFolderEntry {
       customColorValue: _readNullableInt(json, 'customColorValue'),
     );
   }
+}
+
+int _iconIdForLegacyDescriptor(ArchiveIconDescriptor icon) {
+  for (final entry in FolderIconRegistry.entries) {
+    final candidate = entry.iconData;
+    if (candidate == null) continue;
+    if (candidate.codePoint == icon.codePoint &&
+        candidate.fontFamily == icon.fontFamily &&
+        candidate.fontPackage == icon.fontPackage &&
+        candidate.matchTextDirection == icon.matchTextDirection) {
+      return entry.id;
+    }
+  }
+  return FolderIconRegistry.defaultId;
 }
 
 class ArchiveStrategyEntry {

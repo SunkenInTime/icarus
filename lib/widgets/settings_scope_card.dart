@@ -6,13 +6,13 @@ class SettingsScopeCard extends StatelessWidget {
   const SettingsScopeCard({
     super.key,
     required this.title,
-    required this.description,
+    this.description,
     required this.child,
     this.trailing,
   });
 
   final String title;
-  final String description;
+  final String? description;
   final Widget child;
   final Widget? trailing;
 
@@ -26,10 +26,12 @@ class SettingsScopeCard extends StatelessWidget {
             Expanded(
               child: Text(
                 title,
-                style: ShadTheme.of(context)
-                    .textTheme
-                    .lead
-                    .copyWith(fontWeight: FontWeight.w700),
+                style: ShadTheme.of(context).textTheme.p.copyWith(
+                      color: Settings.tacticalVioletTheme.foreground,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w500,
+                      height: 1.25,
+                    ),
               ),
             ),
             if (trailing != null) ...[
@@ -38,15 +40,16 @@ class SettingsScopeCard extends StatelessWidget {
             ],
           ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          description,
-          style: ShadTheme.of(context).textTheme.small.copyWith(
-                color: Settings.tacticalVioletTheme.mutedForeground,
-                height: 1.35,
-              ),
-        ),
-        const SizedBox(height: 8),
+        if (description != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            description!,
+            style: ShadTheme.of(context).textTheme.small.copyWith(
+                  color: Settings.tacticalVioletTheme.mutedForeground,
+                  height: 1.35,
+                ),
+          ),
+        ],
         child,
       ],
     );

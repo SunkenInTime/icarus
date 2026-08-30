@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -27,6 +28,7 @@ import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_circle_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_vision_cone_composite.dart';
 import 'package:icarus/widgets/draggable_widgets/image/placed_image_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/placed_text_builder.dart';
@@ -103,9 +105,10 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
     final coordinateSystem = CoordinateSystem.instance;
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1.0;
 
-    final agentSize =
-        coordinateSystem.scale(ref.watch(strategySettingsProvider).agentSize);
-    final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
+    final strategySettings = ref.watch(strategySettingsProvider);
+    final agentSize = strategySettings.agentSize;
+    final scaledAgentSize = coordinateSystem.scale(agentSize);
+    final abilitySize = strategySettings.abilitySize;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -137,14 +140,17 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                       mapScale: mapScale,
                       abilitySize: abilitySize,
                     ),
-                    _AgentList(coordinateSystem: coordinateSystem),
-                    _TextList(
+                    _AgentList(
                       coordinateSystem: coordinateSystem,
                       agentSize: agentSize,
                     ),
+                    _TextList(
+                      coordinateSystem: coordinateSystem,
+                      agentSize: scaledAgentSize,
+                    ),
                     _PlacedImageList(
                       coordinateSystem: coordinateSystem,
-                      agentSize: agentSize,
+                      agentSize: scaledAgentSize,
                     ),
                     _UtilityList(
                       coordinateSystem: coordinateSystem,
@@ -166,10 +172,16 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
             const uuid = Uuid();
 
             if (details.data is AgentData) {
+              final agentPosition =
+                  storedAgentPositionForRenderedScreenPosition(
+                coordinateSystem: coordinateSystem,
+                renderedScreenPosition: localOffset,
+                agentSize: agentSize,
+              );
               PlacedAgent placedAgent = PlacedAgent(
                 id: uuid.v4(),
                 type: (details.data as AgentData).type,
-                position: normalizedPosition,
+                position: agentPosition,
                 isAlly: ref.read(teamProvider),
               );
 
@@ -184,10 +196,18 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
                   .updateData(AgentData.agents[placedAgent.type]!);
             } else if (details.data is DraggedAbilityData) {
               final abilityData = details.data as DraggedAbilityData;
+              final abilityPosition =
+                  storedAbilityPositionForRenderedScreenPosition(
+                ability: abilityData.ability.abilityData!,
+                coordinateSystem: coordinateSystem,
+                renderedScreenPosition: localOffset,
+                mapScale: mapScale,
+                abilitySize: abilitySize,
+              );
               PlacedAbility placedAbility = PlacedAbility(
                 id: uuid.v4(),
                 data: abilityData.ability,
-                position: normalizedPosition,
+                position: abilityPosition,
                 isAlly: abilityData.isAlly,
               );
 
@@ -201,10 +221,19 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
 
               ref.read(abilityProvider.notifier).addAbility(placedAbility);
             } else if (details.data is AbilityInfo) {
+              final abilityInfo = details.data as AbilityInfo;
+              final abilityPosition =
+                  storedAbilityPositionForRenderedScreenPosition(
+                ability: abilityInfo.abilityData!,
+                coordinateSystem: coordinateSystem,
+                renderedScreenPosition: localOffset,
+                mapScale: mapScale,
+                abilitySize: abilitySize,
+              );
               PlacedAbility placedAbility = PlacedAbility(
                 id: uuid.v4(),
-                data: details.data as AbilityInfo,
-                position: normalizedPosition,
+                data: abilityInfo,
+                position: abilityPosition,
                 isAlly: ref.read(teamProvider),
               );
 
@@ -245,13 +274,23 @@ class _PlacedWidgetBuilderState extends ConsumerState<PlacedWidgetBuilder> {
               ref.read(utilityProvider.notifier).addUtility(placedUtility);
             } else if (details.data is RoleIconToolData) {
               final roleIconData = details.data as RoleIconToolData;
+              final placedUtility = PlacedUtility(
+                id: uuid.v4(),
+                type: roleIconData.type,
+                position: Offset.zero,
+                isAlly: ref.read(teamProvider),
+              );
+              placedUtility.position =
+                  storedUtilityPositionForRenderedScreenPosition(
+                utility: placedUtility,
+                coordinateSystem: coordinateSystem,
+                renderedScreenPosition: localOffset,
+                mapScale: mapScale,
+                agentSize: agentSize,
+                abilitySize: abilitySize,
+              );
               ref.read(utilityProvider.notifier).addUtility(
-                    PlacedUtility(
-                      id: uuid.v4(),
-                      type: roleIconData.type,
-                      position: normalizedPosition,
-                      isAlly: ref.read(teamProvider),
-                    ),
+                    placedUtility,
                   );
             } else if (details.data is CustomShapeToolData) {
               final customData = details.data as CustomShapeToolData;
@@ -333,6 +372,7 @@ bool _convertFreeUtilityToComposite({
               presetType: utility.type,
               rotation: utility.rotation,
               length: utility.length,
+              visionElevation: utility.visionElevation,
             );
       },
     );
@@ -389,11 +429,33 @@ class _AbilityList extends ConsumerWidget {
             length: ability.length,
             onDragEnd: (details, draggedId) {
               final renderBox = context.findRenderObject() as RenderBox;
-              final localOffset = renderBox.globalToLocal(details.offset);
+              final visionSpec = AbilityVisionConeSpec.forAbility(ability.data);
+              final coneChildOffset = visionSpec != null &&
+                      ability.visualState.showVisionCone
+                  ? abilityVisionConeChildOffsetScreen(
+                      coordinateSystem: coordinateSystem,
+                      ability: ability.data.abilityData!,
+                      mapScale: mapScale,
+                      abilitySize: abilitySize,
+                    )
+                  : Offset.zero;
+              final screenZoom = ref.read(screenZoomProvider);
+              final localOffset = renderBox.globalToLocal(
+                details.offset +
+                    coneChildOffset.scale(screenZoom, screenZoom),
+              );
               final virtualOffset =
-                  coordinateSystem.screenToCoordinate(localOffset);
-              final safeArea = ability.data.abilityData!
-                  .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize);
+                  storedAbilityPositionForRenderedScreenPosition(
+                ability: ability.data.abilityData!,
+                coordinateSystem: coordinateSystem,
+                renderedScreenPosition: localOffset,
+                mapScale: mapScale,
+                abilitySize: abilitySize,
+              );
+              final safeArea = storedAbilityAnchor(
+                ability: ability.data.abilityData!,
+                mapScale: mapScale,
+              );
 
               if (coordinateSystem.isOutOfBounds(
                   virtualOffset.translate(safeArea.dx, safeArea.dy))) {
@@ -414,9 +476,13 @@ class _AbilityList extends ConsumerWidget {
 }
 
 class _AgentList extends ConsumerStatefulWidget {
-  const _AgentList({required this.coordinateSystem});
+  const _AgentList({
+    required this.coordinateSystem,
+    required this.agentSize,
+  });
 
   final CoordinateSystem coordinateSystem;
+  final double agentSize;
 
   @override
   ConsumerState<_AgentList> createState() => _AgentListState();
@@ -438,12 +504,16 @@ class _AgentListState extends ConsumerState<_AgentList> {
           switch (agent) {
             PlacedAgent() => Positioned(
                 key: ValueKey(agent.id),
-                left: widget.coordinateSystem
-                    .coordinateToScreen(agent.position)
-                    .dx,
-                top: widget.coordinateSystem
-                    .coordinateToScreen(agent.position)
-                    .dy,
+                left: screenPositionForWidget(
+                  widget: agent,
+                  coordinateSystem: widget.coordinateSystem,
+                  agentSize: widget.agentSize,
+                ).dx,
+                top: screenPositionForWidget(
+                  widget: agent,
+                  coordinateSystem: widget.coordinateSystem,
+                  agentSize: widget.agentSize,
+                ).dy,
                 child: Draggable<PlacedWidget>(
                   data: agent,
                   dragAnchorStrategy: zoomDragAnchorStrategy,
@@ -477,7 +547,11 @@ class _AgentListState extends ConsumerState<_AgentList> {
                     final renderBox = context.findRenderObject() as RenderBox;
                     final localOffset = renderBox.globalToLocal(details.offset);
                     final virtualOffset =
-                        widget.coordinateSystem.screenToCoordinate(localOffset);
+                        storedAgentPositionForRenderedScreenPosition(
+                      coordinateSystem: widget.coordinateSystem,
+                      renderedScreenPosition: localOffset,
+                      agentSize: widget.agentSize,
+                    );
 
                     final duplicateId =
                         _pendingDuplicateDragBySource.remove(agent.id);
@@ -518,7 +592,11 @@ class _AgentListState extends ConsumerState<_AgentList> {
                         compositeOffset.scale(screenZoom, screenZoom),
                   );
                   final virtualOffset =
-                      widget.coordinateSystem.screenToCoordinate(localOffset);
+                      storedAgentPositionForRenderedScreenPosition(
+                    coordinateSystem: widget.coordinateSystem,
+                    renderedScreenPosition: localOffset,
+                    agentSize: agentSize,
+                  );
                   ref
                       .read(agentProvider.notifier)
                       .updatePosition(virtualOffset, draggedId);
@@ -544,7 +622,11 @@ class _AgentListState extends ConsumerState<_AgentList> {
                         compositeOffset.scale(screenZoom, screenZoom),
                   );
                   final virtualOffset =
-                      widget.coordinateSystem.screenToCoordinate(localOffset);
+                      storedAgentPositionForRenderedScreenPosition(
+                    coordinateSystem: widget.coordinateSystem,
+                    renderedScreenPosition: localOffset,
+                    agentSize: agentSize,
+                  );
                   ref
                       .read(agentProvider.notifier)
                       .updatePosition(virtualOffset, draggedId);
@@ -737,9 +819,20 @@ class _UtilityList extends ConsumerWidget {
         for (final placedUtility in utilities)
           Positioned(
             key: ValueKey(placedUtility.id),
-            left:
-                coordinateSystem.coordinateToScreen(placedUtility.position).dx,
-            top: coordinateSystem.coordinateToScreen(placedUtility.position).dy,
+            left: screenPositionForWidget(
+              widget: placedUtility,
+              coordinateSystem: coordinateSystem,
+              mapScale: mapScale,
+              agentSize: agentSize,
+              abilitySize: abilitySize,
+            ).dx,
+            top: screenPositionForWidget(
+              widget: placedUtility,
+              coordinateSystem: coordinateSystem,
+              mapScale: mapScale,
+              agentSize: agentSize,
+              abilitySize: abilitySize,
+            ).dy,
             child: UtilityWidgetBuilder(
               rotation: placedUtility.rotation,
               length: placedUtility.length,
@@ -749,15 +842,19 @@ class _UtilityList extends ConsumerWidget {
                 final renderBox = context.findRenderObject() as RenderBox;
                 final localOffset = renderBox.globalToLocal(details.offset);
                 final virtualOffset =
-                    coordinateSystem.screenToCoordinate(localOffset);
+                    storedUtilityPositionForRenderedScreenPosition(
+                  utility: placedUtility,
+                  coordinateSystem: coordinateSystem,
+                  renderedScreenPosition: localOffset,
+                  mapScale: mapScale,
+                  agentSize: agentSize,
+                  abilitySize: abilitySize,
+                );
 
-                final safeArea = UtilityData.utilityWidgets[placedUtility.type]!
-                        .getAnchorPoint(
-                      mapScale: mapScale,
-                      agentSize: agentSize,
-                      abilitySize: abilitySize,
-                    ) /
-                    2;
+                final safeArea = storedUtilityAnchor(
+                  utility: placedUtility,
+                  mapScale: mapScale,
+                );
 
                 if (coordinateSystem.isOutOfBounds(
                     virtualOffset.translate(safeArea.dx, safeArea.dy))) {

@@ -1,0 +1,30 @@
+{
+  "version": "4.6.1+96",
+  "shortVersion": 96,
+  "title": "4.6.1 Update",
+  "description": "Clearer video exports and simpler view-cone controls.",
+  "date": "2026-08-16",
+  "mandatory": false,
+  "channels": [
+    "desktop",
+    "prerelease",
+    "stable"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "changes": [
+    {
+      "message": "Video export now has clearer Potato, Social, and Max quality options.",
+      "type": "improvement"
+    },
+    {
+      "message": "Exports are more reliable and automatically balance quality and file size.",
+      "type": "improvement"
+    },
+    {
+      "message": "Agent view cones have simpler controls and can be removed from the agent menu with Undo.",
+      "type": "improvement"
+    }
+  ]
+}

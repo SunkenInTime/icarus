@@ -1,19 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/abilities.dart';
+import 'package:icarus/const/ability_vision.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/ability_range_fill.dart';
+import 'package:icarus/widgets/draggable_widgets/adjacent_page_copy_menu.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 bool supportsAbilityVisibilityMenu(Ability? ability) {
-  return ability is SquareAbility ||
+  return supportsAbilityInactiveState(ability) ||
+      ability is SquareAbility ||
       ability is CenterSquareAbility ||
       ability is CircleAbility ||
       ability is SectorCircleAbility ||
       ability is DeadlockBarrierMeshAbility;
+}
+
+bool supportsAbilityInactiveState(Ability? ability) {
+  return switch (ability) {
+    ImageAbility() => ability.supportsInactiveState,
+    SquareAbility() => ability.supportsInactiveState,
+    _ => false,
+  };
 }
 
 List<ShadContextMenuItem>? buildAbilityContextMenuItems(
@@ -31,13 +43,17 @@ List<ShadContextMenuItem>? buildAbilityContextMenuItems(
     lineUpGroupId: lineUpGroupId,
     lineUpItemId: lineUpItemId,
   );
+  final adjacentPageItems = lineUpGroupId == null && lineUpItemId == null
+      ? buildAdjacentPageCopyMenuItems(ref, ability.id)
+      : const <ShadContextMenuItem>[];
 
-  if (visibilityItems.isEmpty && !includeDelete) {
+  if (visibilityItems.isEmpty && adjacentPageItems.isEmpty && !includeDelete) {
     return null;
   }
 
   return [
     ...visibilityItems,
+    ...adjacentPageItems,
     if (includeDelete && lineUpGroupId != null && lineUpItemId != null)
       _buildDeleteItem(ref, lineUpGroupId, lineUpItemId),
   ];
@@ -50,7 +66,19 @@ List<ShadContextMenuItem> _buildVisibilityItems(
   String? lineUpGroupId,
   String? lineUpItemId,
 }) {
-  final controls = _buildVisibilityControls(abilityData, ability.visualState);
+  final controls = [
+    ..._buildVisibilityControls(abilityData, ability.visualState),
+    if (lineUpGroupId == null &&
+        lineUpItemId == null &&
+        AbilityVisionConeSpec.forAbility(ability.data) != null)
+      _AbilityVisibilityControl(
+        label: 'Vision Cone',
+        isEnabled: ability.visualState.showVisionCone,
+        toggle: (state) => state.copyWith(
+          showVisionCone: !state.showVisionCone,
+        ),
+      ),
+  ];
   return controls
       .map(
         (control) => _buildToggleItem(
@@ -72,6 +100,18 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
   Ability? abilityData,
   AbilityVisualState visualState,
 ) {
+  if (supportsAbilityInactiveState(abilityData)) {
+    return [
+      _AbilityVisibilityControl(
+        label: 'Active',
+        isEnabled: visualState.showRangeFill,
+        toggle: (state) => state.copyWith(
+          showRangeFill: !state.showRangeFill,
+        ),
+      ),
+    ];
+  }
+
   if (abilityData is CircleAbility || abilityData is SectorCircleAbility) {
     if (_hasInnerRange(abilityData)) {
       return [
@@ -107,13 +147,14 @@ List<_AbilityVisibilityControl> _buildVisibilityControls(
           showRangeOutline: !state.showRangeOutline,
         ),
       ),
-      _AbilityVisibilityControl(
-        label: 'Range Fill',
-        isEnabled: visualState.showRangeFill,
-        toggle: (state) => state.copyWith(
-          showRangeFill: !state.showRangeFill,
+      if (_hasVisibleRangeFill(abilityData))
+        _AbilityVisibilityControl(
+          label: 'Range Fill',
+          isEnabled: visualState.showRangeFill,
+          toggle: (state) => state.copyWith(
+            showRangeFill: !state.showRangeFill,
+          ),
         ),
-      ),
     ];
   }
 
@@ -148,6 +189,22 @@ bool _hasInnerRange(Ability? ability) {
   return switch (ability) {
     CircleAbility() => ability.hasInnerRange,
     SectorCircleAbility() => ability.hasInnerRange,
+    _ => false,
+  };
+}
+
+bool _hasVisibleRangeFill(Ability? ability) {
+  return switch (ability) {
+    CircleAbility() => hasVisibleAbilityRangeFill(
+        rangeOutlineColor: ability.rangeOutlineColor,
+        rangeFillColor: ability.rangeFillColor,
+        opacity: ability.opacity,
+      ),
+    SectorCircleAbility() => hasVisibleAbilityRangeFill(
+        rangeOutlineColor: ability.rangeOutlineColor,
+        rangeFillColor: ability.rangeFillColor,
+        opacity: ability.opacity,
+      ),
     _ => false,
   };
 }

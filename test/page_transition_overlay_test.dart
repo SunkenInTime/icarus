@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,7 +8,12 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/transition_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
+import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -65,6 +72,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ColorFiltered), findsOneWidget);
+    expect(find.byType(MouseWatch), findsNothing);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
@@ -122,8 +130,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final ink = tester.widget<Ink>(find.byType(Ink));
-    final decoration = ink.decoration! as BoxDecoration;
+    final agentContainer = tester
+        .widgetList<Container>(find.byType(Container))
+        .singleWhere((widget) => widget.decoration is BoxDecoration);
+    final decoration = agentContainer.decoration! as BoxDecoration;
     expect(
       decoration.color,
       Color.lerp(Settings.allyBGColor, _expectedMutedAllyBgColor, 0.5),
@@ -141,6 +151,208 @@ void main() {
     );
     await tester.pump();
   });
+
+  testWidgets('free view-cone previews raycast from the animated position',
+      (tester) async {
+    final container = _createContainer();
+    addTearDown(container.dispose);
+    final cone = PlacedUtility(
+      id: 'moving-cone',
+      type: UtilityType.viewCone90,
+      position: const Offset(10, 20),
+      visionElevation: 1.5,
+    )
+      ..rotation = 0.2
+      ..length = 80;
+    const animatedPosition = Offset(320, 410);
+
+    await tester.pumpWidget(
+      _previewHarness(
+        container: container,
+        widget: cone,
+        coordinatePosition: animatedPosition,
+        rotation: 0.75,
+        length: 120,
+      ),
+    );
+
+    final preview = tester.widget<ViewConeWidget>(find.byType(ViewConeWidget));
+    expect(preview.id, isNull);
+    expect(preview.rotation, 0.75);
+    expect(preview.length, 120);
+    expect(preview.visionElevation, 1.5);
+    expect(
+      preview.worldOrigin,
+      animatedPosition +
+          CoordinateSystem.instance.virtualOffsetToWorld(
+            ViewConeWidget.anchorPointVirtual,
+          ),
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const SizedBox.shrink(),
+      ),
+    );
+    await tester.pump();
+  });
+
+  testWidgets('ability vision-cone previews use animated geometry',
+      (tester) async {
+    final container = _createContainer();
+    addTearDown(container.dispose);
+    final turret = PlacedAbility(
+      id: 'moving-turret',
+      data: AgentData.agents[AgentType.killjoy]!.abilities[2],
+      position: const Offset(25, 35),
+      rotation: 0.3,
+      length: 90,
+    );
+    const animatedPosition = Offset(500, 250);
+
+    await tester.pumpWidget(
+      _previewHarness(
+        container: container,
+        widget: turret,
+        coordinatePosition: animatedPosition,
+        rotation: 1.1,
+        length: 120,
+      ),
+    );
+
+    final preview = tester.widget<ViewConeWidget>(find.byType(ViewConeWidget));
+    final storedAnchor = storedAbilityAnchor(
+      ability: turret.data.abilityData!,
+      mapScale: 1,
+    );
+    expect(preview.angle, 100);
+    expect(preview.rotation, 1.1);
+    expect(preview.length, 120);
+    expect(
+      preview.worldOrigin,
+      animatedPosition +
+          CoordinateSystem.instance.virtualOffsetToWorld(storedAnchor),
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const SizedBox.shrink(),
+      ),
+    );
+    await tester.pump();
+  });
+
+  testWidgets('attached view-cone previews raycast from the animated agent',
+      (tester) async {
+    final container = _createContainer();
+    addTearDown(container.dispose);
+    final agent = PlacedViewConeAgent(
+      id: 'moving-view-cone-agent',
+      type: AgentType.jett,
+      presetType: UtilityType.viewCone40,
+      position: const Offset(25, 35),
+      rotation: 0.3,
+      length: 90,
+      visionElevation: 2,
+    );
+    const animatedPosition = Offset(500, 250);
+
+    await tester.pumpWidget(
+      _previewHarness(
+        container: container,
+        widget: agent,
+        coordinatePosition: animatedPosition,
+        rotation: 1.1,
+        length: 140,
+      ),
+    );
+
+    final preview = tester.widget<ViewConeWidget>(find.byType(ViewConeWidget));
+    expect(preview.rotation, 1.1);
+    expect(preview.length, 140);
+    expect(preview.visionElevation, 2);
+    expect(
+      preview.worldOrigin,
+      animatedPosition +
+          CoordinateSystem.instance.virtualOffsetToWorld(
+            const Offset(20, 20),
+          ),
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const SizedBox.shrink(),
+      ),
+    );
+    await tester.pump();
+  });
+
+  testWidgets('temporary rectangle preview applies saved rotation once',
+      (tester) async {
+    final container = _createContainer();
+    addTearDown(container.dispose);
+    const rotation = math.pi / 5;
+    final rectangle = PlacedUtility(
+      id: 'rotated-rectangle',
+      type: UtilityType.customRectangle,
+      position: const Offset(500, 350),
+      customWidth: 8,
+      customLength: 16,
+      customColorValue: 0xff8b5cf6,
+      customOpacityPercent: 40,
+    )..rotation = rotation;
+    container.read(transitionProvider.notifier).prepare(
+      [rectangle],
+      startAgentSize: 40,
+      startAbilitySize: 40,
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home: Scaffold(body: TemporaryWidgetBuilder()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final matchingTransforms =
+        tester.widgetList<Transform>(find.byType(Transform)).where((transform) {
+      final matrix = transform.transform.storage;
+      final renderedRotation = math.atan2(matrix[1], matrix[0]);
+      return (renderedRotation - rotation).abs() < 0.0001;
+    });
+    expect(matchingTransforms, hasLength(1));
+  });
+}
+
+Widget _previewHarness({
+  required ProviderContainer container,
+  required PlacedWidget widget,
+  required Offset coordinatePosition,
+  required double rotation,
+  required double length,
+}) {
+  return UncontrolledProviderScope(
+    container: container,
+    child: ShadApp(
+      home: Scaffold(
+        body: PlacedWidgetPreview.build(
+          widget,
+          1,
+          coordinatePosition: coordinatePosition,
+          rotation: rotation,
+          length: length,
+          agentSize: 40,
+          abilitySize: 40,
+        ),
+      ),
+    ),
+  );
 }
 
 ProviderContainer _createContainer() {

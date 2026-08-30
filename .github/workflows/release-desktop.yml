@@ -75,6 +75,7 @@ jobs:
           CHANGE_MESSAGE: ${{ inputs.change_message }}
           RELEASE_TITLE: ${{ inputs.release_title }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          POSTHOG_PROJECT_TOKEN: ${{ secrets.POSTHOG_PROJECT_TOKEN }}
         run: |
           $args = @(
             "-ExecutionPolicy", "Bypass",

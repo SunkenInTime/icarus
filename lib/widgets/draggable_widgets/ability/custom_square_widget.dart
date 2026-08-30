@@ -5,6 +5,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/custom_border_container.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/ability/inactive_ability_trace.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 class CustomSquareWidget extends ConsumerWidget {
@@ -24,6 +25,7 @@ class CustomSquareWidget extends ConsumerWidget {
     required this.hasSideBorders,
     required this.isWall,
     required this.isTransparent,
+    this.supportsInactiveState = false,
     this.visualState,
     this.watchMouse = true,
     this.contextMenuItems,
@@ -43,6 +45,7 @@ class CustomSquareWidget extends ConsumerWidget {
   final bool hasSideBorders;
   final bool isWall;
   final bool isTransparent;
+  final bool supportsInactiveState;
   final AbilityVisualState? visualState;
   final bool watchMouse;
   final List<ShadContextMenuItem>? contextMenuItems;
@@ -67,6 +70,14 @@ class CustomSquareWidget extends ConsumerWidget {
         (scaledAbilitySize / 2) +
         resizeButtonOffset;
     final showRangeFill = visualState?.showRangeFill ?? true;
+    final inactiveTraceWidth = coordinateSystem.scale(12);
+    final wallBody = IgnorePointer(
+      child: Container(
+        width: width,
+        height: scaledHeight,
+        color: abilityWallDisplayColor(color),
+      ),
+    );
 
     return SizedBox(
       width: scaledWidth,
@@ -111,14 +122,32 @@ class CustomSquareWidget extends ConsumerWidget {
             Positioned(
               top: resizeButtonOffset,
               left: (scaledWidth / 2) - width / 2,
-              child: Opacity(
-                key: const ValueKey('square-range-body'),
-                opacity: showRangeFill ? 1 : 0,
+              child: supportsInactiveState
+                  ? AnimatedOpacity(
+                      key: const ValueKey('square-range-body-transition'),
+                      opacity: showRangeFill ? 1 : 0,
+                      duration: abilityStateTransitionDuration,
+                      child: wallBody,
+                    )
+                  : Opacity(
+                      key: const ValueKey('square-range-body'),
+                      opacity: showRangeFill ? 1 : 0,
+                      child: wallBody,
+                    ),
+            ),
+          if (isWall && supportsInactiveState)
+            Positioned(
+              top: resizeButtonOffset,
+              left: (scaledWidth - inactiveTraceWidth) / 2,
+              child: AnimatedOpacity(
+                key: const ValueKey('inactive-wall-trace-transition'),
+                opacity: showRangeFill ? 0 : 1,
+                duration: abilityStateTransitionDuration,
                 child: IgnorePointer(
-                  child: Container(
-                    width: width,
+                  child: SizedBox(
+                    width: inactiveTraceWidth,
                     height: scaledHeight,
-                    color: color.withAlpha(100),
+                    child: InactiveWallAbilityTrace(color: color),
                   ),
                 ),
               ),

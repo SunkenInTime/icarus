@@ -7,6 +7,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
@@ -51,10 +52,12 @@ class CircleAgentComposite extends ConsumerWidget {
     super.key,
     required this.agent,
     this.forcedAgentSize,
+    this.isInteractive = true,
   });
 
   final PlacedCircleAgent agent;
   final double? forcedAgentSize;
+  final bool isInteractive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -99,6 +102,7 @@ class CircleAgentComposite extends ConsumerWidget {
               id: agent.id,
               agent: AgentData.agents[agent.type]!,
               forcedAgentSize: agentSize,
+              isInteractive: isInteractive,
             ),
           ),
         ],
@@ -186,6 +190,11 @@ class _PlacedCircleAgentWidgetState
       agentSize: agentSize,
       mapScale: mapScale,
     );
+    final agentScreenPosition = screenPositionForWidget(
+      widget: current,
+      coordinateSystem: coordinateSystem,
+      agentSize: agentSize,
+    );
     final arcRegionSize = coordinateSystem.scale(32);
     final handleCenter = _computeHandleCenter(
       coordinateSystem: coordinateSystem,
@@ -204,10 +213,8 @@ class _PlacedCircleAgentWidgetState
     );
 
     return Positioned(
-      left: coordinateSystem.coordinateToScreen(current.position).dx -
-          compositeAgentOffset.dx,
-      top: coordinateSystem.coordinateToScreen(current.position).dy -
-          compositeAgentOffset.dy,
+      left: agentScreenPosition.dx - compositeAgentOffset.dx,
+      top: agentScreenPosition.dy - compositeAgentOffset.dy,
       child: SizedBox(
         width: scaledMaxDiameter + rightOverflow,
         height: scaledMaxDiameter + bottomOverflow,
@@ -224,13 +231,13 @@ class _PlacedCircleAgentWidgetState
                   child: CircleAgentComposite(
                     agent: current.copyWith(diameterMeters: diameterMeters),
                     forcedAgentSize: agentSize,
+                    isInteractive: false,
                   ),
                 ),
               ),
               childWhenDragging: const SizedBox.shrink(),
               onDragStarted: () {
-                final shouldDuplicate =
-                    ref.read(duplicateDragModifierProvider);
+                final shouldDuplicate = ref.read(duplicateDragModifierProvider);
                 final duplicateId = shouldDuplicate
                     ? ref.read(agentProvider.notifier).duplicateAgentAt(
                           sourceId: current.id,

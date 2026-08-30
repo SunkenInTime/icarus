@@ -43,6 +43,7 @@ type StrategyCreateInput = {
 type InitialPageInput = {
   publicId: string;
   name: string;
+  isAutoNamed?: boolean;
   isAttack: boolean;
   settings?: Doc<"pageContents">["settings"];
 };
@@ -300,6 +301,9 @@ async function insertInitialPage(
     publicId: args.initialPage.publicId,
     strategyId: args.strategyId,
     name: args.initialPage.name,
+    ...(args.initialPage.isAutoNamed === undefined
+      ? {}
+      : { isAutoNamed: args.initialPage.isAutoNamed }),
     sortIndex: 0,
     isAttack: args.initialPage.isAttack,
     revision: 1,
@@ -463,6 +467,7 @@ export const create = mutation({
     return await createStrategyWithInitialPageRecord(ctx, args, user._id, {
       publicId: createPublicId(),
       name: "Page 1",
+      isAutoNamed: true,
       isAttack: true,
     });
   },
@@ -475,6 +480,7 @@ export const createWithInitialPage = mutation({
     mapData: v.string(),
     initialPagePublicId: v.string(),
     initialPageName: v.string(),
+    initialPageIsAutoNamed: v.optional(v.boolean()),
     initialPageIsAttack: v.boolean(),
     initialPageSettings: v.optional(strategySettingsValidator),
     folderPublicId: v.optional(v.string()),
@@ -487,6 +493,7 @@ export const createWithInitialPage = mutation({
     return await createStrategyWithInitialPageRecord(ctx, args, user._id, {
       publicId: args.initialPagePublicId,
       name: args.initialPageName,
+      isAutoNamed: args.initialPageIsAutoNamed,
       isAttack: args.initialPageIsAttack,
       settings: args.initialPageSettings,
     });

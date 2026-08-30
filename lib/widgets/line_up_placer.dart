@@ -6,6 +6,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -87,11 +88,20 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                     final abilitySize =
                         ref.read(strategySettingsProvider).abilitySize;
 
-                    Offset virtualOffset =
-                        coordinateSystem.screenToCoordinate(localOffset);
-                    Offset safeArea = lineUp.currentAbility!.data.abilityData!
-                        .getAnchorPoint(
-                            mapScale: mapScale, abilitySize: abilitySize);
+                    final abilityData =
+                        lineUp.currentAbility!.data.abilityData!;
+                    final virtualOffset =
+                        storedAbilityPositionForRenderedScreenPosition(
+                      ability: abilityData,
+                      coordinateSystem: coordinateSystem,
+                      renderedScreenPosition: localOffset,
+                      mapScale: mapScale,
+                      abilitySize: abilitySize,
+                    );
+                    final safeArea = storedAbilityAnchor(
+                      ability: abilityData,
+                      mapScale: mapScale,
+                    );
 
                     if (coordinateSystem.isOutOfBounds(
                         virtualOffset.translate(safeArea.dx, safeArea.dy))) {
@@ -101,8 +111,7 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
 
                     ref
                         .read(lineUpProvider.notifier)
-                        .updateCurrentAbilityPosition(
-                            coordinateSystem.screenToCoordinate(localOffset));
+                        .updateCurrentAbilityPosition(virtualOffset);
                   },
                 ),
               if (previewAgent != null && isLockedAddItemMode)
@@ -121,7 +130,11 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                         renderBox.globalToLocal(details.offset);
 
                     final virtualOffset =
-                        coordinateSystem.screenToCoordinate(localOffset);
+                        storedAgentPositionForRenderedScreenPosition(
+                      coordinateSystem: coordinateSystem,
+                      renderedScreenPosition: localOffset,
+                      agentSize: ref.read(strategySettingsProvider).agentSize,
+                    );
 
                     ref
                         .read(lineUpProvider.notifier)
@@ -134,8 +147,6 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
         onAcceptWithDetails: (details) {
           RenderBox renderBox = context.findRenderObject() as RenderBox;
           Offset localOffset = renderBox.globalToLocal(details.offset);
-          Offset normalizedPosition =
-              coordinateSystem.screenToCoordinate(localOffset);
           const uuid = Uuid();
 
           if (details.data is AgentData) {
@@ -148,10 +159,15 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
               return;
             }
 
+            final agentPosition = storedAgentPositionForRenderedScreenPosition(
+              coordinateSystem: coordinateSystem,
+              renderedScreenPosition: localOffset,
+              agentSize: ref.read(strategySettingsProvider).agentSize,
+            );
             PlacedAgent placedAgent = PlacedAgent(
               id: uuid.v4(),
               type: (details.data as AgentData).type,
-              position: normalizedPosition,
+              position: agentPosition,
               isAlly: ref.read(teamProvider),
             );
 
@@ -160,10 +176,19 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
                 .read(abilityBarProvider.notifier)
                 .updateData(AgentData.agents[placedAgent.type]!);
           } else if (details.data is AbilityInfo) {
+            final abilityInfo = details.data as AbilityInfo;
+            final abilityPosition =
+                storedAbilityPositionForRenderedScreenPosition(
+              ability: abilityInfo.abilityData!,
+              coordinateSystem: coordinateSystem,
+              renderedScreenPosition: localOffset,
+              mapScale: Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0,
+              abilitySize: ref.read(strategySettingsProvider).abilitySize,
+            );
             PlacedAbility placedAbility = PlacedAbility(
               id: uuid.v4(),
-              data: details.data as AbilityInfo,
-              position: normalizedPosition,
+              data: abilityInfo,
+              position: abilityPosition,
               isAlly: ref.read(teamProvider),
             );
 

@@ -126,18 +126,38 @@ class StrategyData extends HiveObject {
 
 class StrategyState {
   const StrategyState({
-    required this.strategyId,
-    required this.strategyName,
-    required this.source,
+    String? strategyId,
+    String? strategyName,
+    StrategySource? source,
     this.storageDirectory,
-    this.isOpen = false,
-  });
+    bool isOpen = false,
+    String? id,
+    String? stratName,
+    this.isSaved = true,
+    this.activePageId,
+  })  : strategyId = strategyId ?? id,
+        strategyName = strategyName ?? stratName,
+        source = source ??
+            ((strategyId ?? id) == null ? null : StrategySource.local),
+        isOpen = isOpen ||
+            (strategyId ?? id) != null ||
+            (strategyName ?? stratName) != null;
 
   final String? strategyId;
   final String? strategyName;
   final StrategySource? source;
   final String? storageDirectory;
   final bool isOpen;
+  @Deprecated('Use strategySaveStateProvider instead.')
+  final bool isSaved;
+  @Deprecated('Use strategyPageSessionProvider instead.')
+  final String? activePageId;
+
+  @Deprecated('Use strategyId instead.')
+  String get id => strategyId ?? '';
+
+  @Deprecated('Use strategyName instead.')
+  String? get stratName => strategyName;
 
   StrategyState copyWith({
     String? strategyId,
@@ -145,17 +165,27 @@ class StrategyState {
     StrategySource? source,
     String? storageDirectory,
     bool? isOpen,
+    String? id,
+    String? stratName,
+    bool? isSaved,
+    String? activePageId,
     bool clearStrategyId = false,
     bool clearStrategyName = false,
     bool clearSource = false,
+    bool clearActivePageId = false,
   }) {
     return StrategyState(
-      strategyId: clearStrategyId ? null : (strategyId ?? this.strategyId),
-      strategyName:
-          clearStrategyName ? null : (strategyName ?? this.strategyName),
+      strategyId:
+          clearStrategyId ? null : (strategyId ?? id ?? this.strategyId),
+      strategyName: clearStrategyName
+          ? null
+          : (strategyName ?? stratName ?? this.strategyName),
       source: clearSource ? null : (source ?? this.source),
       storageDirectory: storageDirectory ?? this.storageDirectory,
       isOpen: isOpen ?? this.isOpen,
+      isSaved: isSaved ?? this.isSaved,
+      activePageId:
+          clearActivePageId ? null : (activePageId ?? this.activePageId),
     );
   }
 }

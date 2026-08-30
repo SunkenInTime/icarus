@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +12,7 @@ import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/services/clipboard_service.dart';
+import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/widgets/dialogs/strategy/line_up_media_page.dart';
 import 'package:path/path.dart' as path;
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -151,6 +154,17 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
           ),
         );
       }
+
+      unawaited(
+        AnalyticsService.instance.capture(
+          'lineup_created',
+          properties: {
+            'has_video': _youtubeLinkController.text.trim().isNotEmpty,
+            'has_notes': _notesController.text.trim().isNotEmpty,
+            'has_images': _imagePaths.isNotEmpty,
+          },
+        ),
+      );
     }
 
     await _enqueueLineupMediaJobs(images: _imagePaths);

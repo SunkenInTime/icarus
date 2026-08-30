@@ -174,6 +174,7 @@ const pageCurrentValidator = v.object({
   revision: v.number(),
   value: v.object({
     name: v.string(),
+    isAutoNamed: v.optional(v.boolean()),
     isAttack: v.boolean(),
     sortIndex: v.number(),
   }),

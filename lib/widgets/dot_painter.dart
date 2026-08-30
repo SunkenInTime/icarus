@@ -48,8 +48,9 @@
 //     return false;
 //   }
 // }
+import 'dart:ui' show PointMode;
+
 import 'package:flutter/material.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 
 class DotGrid extends StatelessWidget {
@@ -68,8 +69,9 @@ class DotPainter extends CustomPainter {
   DotPainter({required this.isScreenshot});
 
   final bool isScreenshot;
+  Size? _cachedSize;
+  List<Offset> _cachedPoints = const [];
 
-  Size playAreaSize = CoordinateSystem.instance.playAreaSize;
   static const double dotSize = 3; // Size of each dot
   static const double dotSpacing = 9.5;
 
@@ -77,7 +79,14 @@ class DotPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = Settings.tacticalVioletTheme.border.withValues(alpha: 0.7)
-      ..style = PaintingStyle.fill;
+      ..strokeWidth = dotSize
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawPoints(PointMode.points, _pointsFor(size), paint);
+  }
+
+  List<Offset> _pointsFor(Size size) {
+    if (_cachedSize == size) return _cachedPoints;
 
     // Calculate how many dots we need in each direction
     int rows = (size.height / dotSpacing).ceil() + 1;
@@ -92,6 +101,7 @@ class DotPainter extends CustomPainter {
         columns > 1 ? size.width / (columns - 1) : 0;
     double adjustedVerticalSpacing = rows > 1 ? size.height / (rows - 1) : 0;
 
+    final points = <Offset>[];
     for (int row = 0; row < rows; row++) {
       for (int column = 0; column < columns; column++) {
         // Calculate position using adjusted spacing to ensure dots at edges
@@ -101,22 +111,17 @@ class DotPainter extends CustomPainter {
         // Skip dots that would be outside the visible area
         if (x > size.width || y > size.height) continue;
 
-        canvas.drawCircle(Offset(x, y), dotSize / 2, paint);
+        points.add(Offset(x, y));
       }
     }
+
+    _cachedSize = size;
+    _cachedPoints = points;
+    return points;
   }
 
   @override
   bool shouldRepaint(DotPainter oldDelegate) {
-    if (oldDelegate.isScreenshot != isScreenshot) {
-      playAreaSize = isScreenshot
-          ? CoordinateSystem.screenShotSize
-          : CoordinateSystem.instance.playAreaSize;
-      return true;
-    }
-    // if (oldDelegate.playAreaSize != playAreaSize) {
-    //   return true;
-    // }
-    return false;
+    return oldDelegate.isScreenshot != isScreenshot;
   }
 }

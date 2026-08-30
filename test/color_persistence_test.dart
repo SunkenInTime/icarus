@@ -346,5 +346,22 @@ void main() {
       expect(utilityFields.values.whereType<Color>(), isEmpty);
       expect(circleAgentFields.values.whereType<Color>(), isEmpty);
     });
+
+    test('legacy placed images default a missing local link', () {
+      final restored = PlacedImageAdapter().read(
+        _legacyFieldReader({
+          1: 1.5,
+          2: 200.0,
+          4: 'legacy-image',
+          5: false,
+          6: const Offset(3, 4),
+          8: '.png',
+          9: 0xFF3B82F6,
+          10: worldSizedMediaVersion,
+        }),
+      );
+
+      expect(restored.link, isEmpty);
+    });
   });
 }

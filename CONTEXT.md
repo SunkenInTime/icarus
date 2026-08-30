@@ -49,7 +49,6 @@ into lineup groups.
 Icarus's zip-based strategy interchange format for import/export of whole
 strategies. Unrelated to video export.
 _Avoid_: archive (ambiguous with library backups)
-
 **Op**:
 One queued change to cloud data. An op lands when the server accepts it.
 Its op ID names that exact change. Changing the intended work creates a new op

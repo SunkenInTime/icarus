@@ -366,6 +366,7 @@ class AgentData implements DraggableData {
           abilityData: ImageAbility(
             imagePath: 'assets/agents/Viper/Smoke.webp',
             size: 4.5 * inGameMetersDiameter,
+            inactiveTraceColor: Colors.greenAccent,
           ),
         );
 
@@ -380,6 +381,7 @@ class AgentData implements DraggableData {
         width: 5,
         height: 60 * inGameMeters,
         isWall: true,
+        supportsInactiveState: true,
         iconPath: agent.abilities[2].iconPath,
         color: Colors.greenAccent,
       );
@@ -1090,7 +1092,7 @@ class AgentData implements DraggableData {
 
       agent.abilities.first.abilityData = CircleAbility(
         iconPath: agent.abilities.first.iconPath,
-        size: 24,
+        size: 30,
         rangeOutlineColor: Colors.lightBlueAccent,
         hasCenterDot: true,
       );

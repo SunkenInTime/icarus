@@ -454,6 +454,7 @@ void main() {
     expect(pending.op.expectedRevision, 8);
     expect(pending.op.payload, {
       'name': 'Execute',
+      'isAutoNamed': false,
       'isAttack': true,
       'settings': container.read(strategySettingsProvider).toJson(),
     });
@@ -489,7 +490,10 @@ void main() {
     expect(pending.op.entityType, StrategyOpEntityType.page);
     expect(pending.op.kind, StrategyOpKind.patch);
     expect(pending.op.entityPublicId, 'page-1');
-    expect(pending.op.payload, {'name': 'Retake'});
+    expect(pending.op.payload, {
+      'name': 'Retake',
+      'isAutoNamed': false,
+    });
     expect(pending.op.expectedRevision, 6);
     expect(intent.key, const EntitySyncKey.pageDescriptor('page-1'));
     expect(queue.flushNowCount, 1);

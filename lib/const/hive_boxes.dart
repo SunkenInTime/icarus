@@ -5,4 +5,5 @@ class HiveBoxNames {
   static const appPreferencesBox = "app_preferences_box";
   static const favoriteAgentsBox = "favorite_agents_box";
   static const strategyOutboxBox = "strategy_outbox_box";
+  static const pinnedItemsBox = "pinned_items_box";
 }

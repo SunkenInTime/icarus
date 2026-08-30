@@ -10,11 +10,13 @@ class MapTile extends ConsumerStatefulWidget {
     required this.onTap,
     this.isPreview = false,
     this.isActive = false,
+    this.borderRadius = 10,
   });
   final String name;
   final VoidCallback onTap;
   final bool isPreview;
   final bool isActive;
+  final double borderRadius;
 
   @override
   ConsumerState<MapTile> createState() => _MapTileState();
@@ -31,7 +33,7 @@ class _MapTileState extends ConsumerState<MapTile> {
       onExit:
           widget.isPreview ? null : (_) => setState(() => _isHovered = false),
       child: ClipRRect(
-        borderRadius: const BorderRadius.all(Radius.circular(10)),
+        borderRadius: BorderRadius.all(Radius.circular(widget.borderRadius)),
         child: InkWell(
           mouseCursor: SystemMouseCursors.click,
           onTap: widget.onTap,

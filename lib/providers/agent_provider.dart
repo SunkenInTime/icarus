@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -89,16 +90,15 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
         ? AgentState.none
         : AgentState.dead;
 
-    final action =
-        UserAction(
-          type: ActionType.edit,
-          id: id,
-          group: ActionGroup.agent,
-          objectDelta: ObjectHistoryDelta(
-            before: before,
-            after: ActionObjectState.agent(newState[index]),
-          ),
-        );
+    final action = UserAction(
+      type: ActionType.edit,
+      id: id,
+      group: ActionGroup.agent,
+      objectDelta: ObjectHistoryDelta(
+        before: before,
+        after: ActionObjectState.agent(newState[index]),
+      ),
+    );
     ref.read(actionProvider.notifier).addAction(action);
 
     state = newState;
@@ -109,10 +109,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
 
     final index = PlacedWidget.getIndexByID(id, newState);
 
-    final agentSize = ref.read(strategySettingsProvider).agentSize;
-
-    final centerPosition =
-        Offset(position.dx + agentSize / 2, position.dy + agentSize / 2);
+    final centerPosition = position + storedAgentAnchor;
     final coordinateSystem = CoordinateSystem.instance;
 
     if (coordinateSystem.isOutOfBounds(centerPosition)) {
@@ -143,9 +140,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     required String sourceId,
     required Offset position,
   }) {
-    final agentSize = ref.read(strategySettingsProvider).agentSize;
-    final centerPosition =
-        Offset(position.dx + agentSize / 2, position.dy + agentSize / 2);
+    final centerPosition = position + storedAgentAnchor;
     final coordinateSystem = CoordinateSystem.instance;
     if (coordinateSystem.isOutOfBounds(centerPosition)) return null;
 
@@ -177,7 +172,8 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     if (index < 0) return;
     final node = newState[index];
     if (node is! PlacedViewConeAgent) return;
-    final before = _pendingEditBefore.remove(id) ?? ActionObjectState.agent(node);
+    final before =
+        _pendingEditBefore.remove(id) ?? ActionObjectState.agent(node);
     node.updateGeometry(newRotation: rotation, newLength: length);
     ref.read(actionProvider.notifier).addAction(
           UserAction(
@@ -187,6 +183,35 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
             objectDelta: ObjectHistoryDelta(
               before: before,
               after: ActionObjectState.agent(node),
+            ),
+          ),
+        );
+    state = newState;
+  }
+
+  void updateViewConeElevation({
+    required String id,
+    required double? elevation,
+  }) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+    final node = newState[index];
+    if (node is! PlacedViewConeAgent || node.visionElevation == elevation) {
+      return;
+    }
+
+    final before = ActionObjectState.agent(node);
+    node.updateGeometryHistory();
+    node.updateVisionElevation(elevation);
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.agent,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.agent(newState[index]),
             ),
           ),
         );
@@ -233,6 +258,7 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     required UtilityType presetType,
     required double rotation,
     required double length,
+    double? visionElevation,
   }) {
     final newState = [...state];
     final index = PlacedWidget.getIndexByID(id, newState);
@@ -250,6 +276,38 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
       presetType: presetType,
       rotation: rotation,
       length: length,
+      visionElevation: visionElevation,
+    )..isDeleted = node.isDeleted;
+
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(
+            type: ActionType.edit,
+            id: id,
+            group: ActionGroup.agent,
+            objectDelta: ObjectHistoryDelta(
+              before: before,
+              after: ActionObjectState.agent(newState[index]),
+            ),
+          ),
+        );
+    state = newState;
+    return true;
+  }
+
+  bool convertViewConeAgentToPlain({required String id}) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return false;
+    final node = newState[index];
+    if (node is! PlacedViewConeAgent) return false;
+    final before = ActionObjectState.agent(node);
+
+    newState[index] = PlacedAgent(
+      id: node.id,
+      position: node.position,
+      type: node.type,
+      isAlly: node.isAlly,
+      state: node.state,
     )..isDeleted = node.isDeleted;
 
     ref.read(actionProvider.notifier).addAction(

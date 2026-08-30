@@ -5,9 +5,11 @@ import 'package:icarus/const/bounding_box.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/migrations/ability_vision_cone_migration.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/migrations/lineup_group_migration.dart';
+import 'package:icarus/migrations/page_name_provenance_migration.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/const/settings.dart';
@@ -19,24 +21,9 @@ class StrategyMigrator {
     final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     for (final strat in box.values) {
       final legacyMigrated = await migrateLegacyData(strat);
-      final worldMigrated = migrateToWorld16x9(legacyMigrated);
-      final abilityScaleMigrated = migrateAbilityScale(worldMigrated);
-      final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
-      final customCircleMigrated =
-          migrateCustomCircleWrapper(squareAoeMigrated);
-      final lineUpGroupMigrated = migrateLineUpGroups(customCircleMigrated);
-      if (lineUpGroupMigrated != customCircleMigrated) {
-        await box.put(lineUpGroupMigrated.id, lineUpGroupMigrated);
-      } else if (customCircleMigrated != squareAoeMigrated) {
-        await box.put(customCircleMigrated.id, customCircleMigrated);
-      } else if (squareAoeMigrated != abilityScaleMigrated) {
-        await box.put(squareAoeMigrated.id, squareAoeMigrated);
-      } else if (abilityScaleMigrated != worldMigrated) {
-        await box.put(abilityScaleMigrated.id, abilityScaleMigrated);
-      } else if (worldMigrated != legacyMigrated) {
-        await box.put(worldMigrated.id, worldMigrated);
-      } else if (legacyMigrated != strat) {
-        await box.put(legacyMigrated.id, legacyMigrated);
+      final migrated = migrateToCurrentVersion(legacyMigrated);
+      if (migrated != strat) {
+        await box.put(migrated.id, migrated);
       }
     }
   }
@@ -152,12 +139,59 @@ class StrategyMigrator {
 
   static StrategyData migrateToCurrentVersion(StrategyData strat,
       {bool forceAbilityScale = false}) {
+    final needsAbilityVisionMigration =
+        strat.versionNumber < AbilityVisionConeMigration.version;
+    final needsPageNameProvenanceMigration =
+        strat.versionNumber < PageNameProvenanceMigration.version;
     final worldMigrated = migrateToWorld16x9(strat);
     final abilityScaleMigrated =
         migrateAbilityScale(worldMigrated, force: forceAbilityScale);
     final squareAoeMigrated = migrateSquareAoeCenter(abilityScaleMigrated);
     final customCircleMigrated = migrateCustomCircleWrapper(squareAoeMigrated);
-    return migrateLineUpGroups(customCircleMigrated);
+    final lineUpGroupMigrated = migrateLineUpGroups(customCircleMigrated);
+    final abilityVisionMigrated = migrateAbilityVisionCones(
+      lineUpGroupMigrated,
+      force: needsAbilityVisionMigration,
+    );
+    final migrated = migratePageNameProvenance(
+      abilityVisionMigrated,
+      force: needsPageNameProvenanceMigration,
+    );
+    if (migrated.versionNumber >= Settings.versionNumber) {
+      return migrated;
+    }
+    return migrated.copyWith(
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migrateAbilityVisionCones(
+    StrategyData strat, {
+    bool force = false,
+  }) {
+    if (!force && strat.versionNumber >= AbilityVisionConeMigration.version) {
+      return strat;
+    }
+    return strat.copyWith(
+      pages: AbilityVisionConeMigration.migratePages(pages: strat.pages),
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migratePageNameProvenance(
+    StrategyData strat, {
+    bool force = false,
+  }) {
+    if (!force && strat.versionNumber >= PageNameProvenanceMigration.version) {
+      return strat;
+    }
+    return strat.copyWith(
+      pages: PageNameProvenanceMigration.migratePages(pages: strat.pages),
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
   }
 
   static Future<StrategyData> migrateLegacyData(StrategyData strat) async {
@@ -181,6 +215,7 @@ class StrategyMigrator {
     final firstPage = StrategyPage(
       id: const Uuid().v4(),
       name: 'Page 1',
+      isAutoNamed: true,
       // ignore: deprecated_member_use, deprecated_member_use_from_same_package
       drawingData: [...strat.drawingData],
       // ignore: deprecated_member_use, deprecated_member_use_from_same_package
@@ -224,9 +259,17 @@ class StrategyMigrator {
       squareAoeMigrated,
       force: originalVersion < CustomCircleWrapperMigration.version,
     );
-    return migrateLineUpGroups(
+    final lineUpGroupMigrated = migrateLineUpGroups(
       customCircleMigrated,
       force: originalVersion < LineUpGroupMigration.version,
+    );
+    final abilityVisionMigrated = migrateAbilityVisionCones(
+      lineUpGroupMigrated,
+      force: originalVersion < AbilityVisionConeMigration.version,
+    );
+    return migratePageNameProvenance(
+      abilityVisionMigrated,
+      force: originalVersion < PageNameProvenanceMigration.version,
     );
   }
 

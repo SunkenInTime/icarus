@@ -12,6 +12,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
@@ -494,5 +495,33 @@ void main() {
         scaledSize: Offset(renderedSize.width, renderedSize.height),
       ),
     );
+  });
+
+  testWidgets('screenshot text stays read-only across page updates',
+      (tester) async {
+    final container = createContainer();
+    container.read(screenshotProvider.notifier).setIsScreenShot(true);
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'text-1', position: const Offset(10, 20))
+        ..text = 'first page',
+    ]);
+
+    await tester.pumpWidget(buildTextHarness(container));
+    await tester.pump();
+
+    var field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.readOnly, isTrue);
+    expect(field.enableInteractiveSelection, isFalse);
+    expect(field.showCursor, isFalse);
+
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'text-1', position: const Offset(10, 20))
+        ..text = 'next page',
+    ]);
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.controller!.text, 'next page');
   });
 }

@@ -10,6 +10,7 @@ import 'package:icarus/domain/folder.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -143,7 +144,7 @@ class FolderProvider extends Notifier<String?> {
         .firstOrNull;
   }
 
-  void deleteFolder(
+  Future<void> deleteFolder(
     String folderID, {
     LibraryWorkspace? workspace,
   }) async {
@@ -164,6 +165,8 @@ class FolderProvider extends Notifier<String?> {
       }
       return;
     }
+
+    await ref.read(pinnedItemsProvider.notifier).removePin(folderID);
 
     final strategyList =
         Hive.box<StrategyData>(HiveBoxNames.strategiesBox).values.toList();

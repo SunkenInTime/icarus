@@ -3,7 +3,6 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  custom_mouse_cursor
   desktop_drop
   desktop_updater
   gtk
@@ -15,6 +14,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
   convex_flutter
+  jni
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

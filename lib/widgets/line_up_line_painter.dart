@@ -5,6 +5,7 @@ import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 
@@ -118,22 +119,17 @@ class LinePainter extends CustomPainter {
 
     // Current lineup highlight moved to CurrentLineUpPainter.
     for (final group in groups) {
-      final startPosition =
-          coordinateSystem.coordinateToScreen(group.agent.position) +
-              Offset((agentSize / 2), (agentSize / 2));
+      final startPosition = screenAnchorForAgent(
+        agent: group.agent,
+        coordinateSystem: coordinateSystem,
+      );
 
       for (final item in group.items) {
-        final endPosition =
-            coordinateSystem.coordinateToScreen(item.ability.position) +
-                item.ability.data.abilityData!
-                    .getAnchorPoint(
-                      mapScale: mapScale,
-                      abilitySize: abilitySize,
-                    )
-                    .scale(
-                      coordinateSystem.scaleFactor,
-                      coordinateSystem.scaleFactor,
-                    );
+        final endPosition = screenAnchorForAbility(
+          ability: item.ability,
+          coordinateSystem: coordinateSystem,
+          mapScale: mapScale,
+        );
 
         canvas.drawLine(
           startPosition,

@@ -15,6 +15,7 @@ import 'package:icarus/services/deep_link_registrar.dart';
 import 'package:icarus/services/desktop_runtime.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:icarus/const/app_cursors.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/app_navigator.dart';
@@ -23,27 +24,35 @@ import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/second_instance_args.dart';
 import 'package:icarus/const/settings.dart' show Settings;
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/ability_provider.dart';
+import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
+import 'package:icarus/widgets/mouse_navigation.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:toastification/toastification.dart';
 
-late CustomMouseCursor staticDrawingCursor;
+CustomMouseCursor? staticDrawingCursor;
 WebViewEnvironment? webViewEnvironment;
 bool isWebViewInitialized = false;
 bool isWebViewWarmupComplete = false;
@@ -132,6 +141,7 @@ Future<void> main(List<String> args) async {
         hotY: 6,
         color: Colors.white,
       );
+      await initializeShapeRotationCursors();
 
       registerIcarusAdapters(Hive);
 
@@ -142,6 +152,8 @@ Future<void> main(List<String> args) async {
       await Hive.openBox<bool>(HiveBoxNames.favoriteAgentsBox);
       await Hive.openBox<dynamic>(HiveBoxNames.strategyOutboxBox);
       await prepareDurableStrategyOutbox();
+      await Hive.openBox<int>(HiveBoxNames.pinnedItemsBox);
+      await Hive.openBox<dynamic>(AnalyticsService.storageBoxName);
 
       await MapThemeProfilesProvider.bootstrap();
 
@@ -161,6 +173,8 @@ Future<void> main(List<String> args) async {
         anonKey: 'sb_publishable_6M0VCSZCvRFrcgNANWPVWw_U06T_rUo',
         authOptions: const FlutterAuthClientOptions(detectSessionInUri: false),
       );
+
+      await AnalyticsService.instance.initialize();
 
       // await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).clear();
 
@@ -303,6 +317,13 @@ class _MyAppState extends ConsumerState<MyApp> {
   StreamSubscription<List<String>>? _secondInstanceSub;
   StreamSubscription<Uri>? _deepLinkSub;
   final Set<String> _processedDeepLinks = <String>{};
+  late final DiscordPresenceService _discordPresence;
+  ProviderSubscription<StrategyState>? _discordStrategySub;
+  ProviderSubscription<MapState>? _discordMapSub;
+  ProviderSubscription<AppPreferences>? _discordPreferencesSub;
+  ProviderSubscription<List<PlacedAgentNode>>? _discordAgentSub;
+  ProviderSubscription<List<PlacedAbility>>? _discordAbilitySub;
+  Timer? _discordSyncDebounce;
 
   Future<void> _loadFromFilePathWithWarning(String filePath) async {
     try {
@@ -369,6 +390,30 @@ class _MyAppState extends ConsumerState<MyApp> {
     ref.read(cloudMediaUploadQueueProvider);
     ref.read(cloudMediaCacheProvider);
 
+    _discordPresence = DiscordPresenceService();
+    _discordStrategySub = ref.listenManual(
+      strategyProvider,
+      (_, __) => _scheduleDiscordSync(),
+    );
+    _discordMapSub = ref.listenManual(
+      mapProvider,
+      (_, __) => _scheduleDiscordSync(),
+    );
+    _discordAgentSub = ref.listenManual(
+      agentProvider,
+      (_, __) => _scheduleDiscordSync(),
+    );
+    _discordAbilitySub = ref.listenManual(
+      abilityProvider,
+      (_, __) => _scheduleDiscordSync(),
+    );
+    _discordPreferencesSub = ref.listenManual(
+      appPreferencesProvider,
+      (_, __) => _syncDiscordPresence(),
+    );
+
+    unawaited(_syncDiscordPresence());
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(warmUpWebViewEnvironment());
 
@@ -413,7 +458,43 @@ class _MyAppState extends ConsumerState<MyApp> {
     _secondInstanceSub?.cancel();
     _deepLinkSub?.cancel();
     _hasDeepLinkListener = false;
+    _discordSyncDebounce?.cancel();
+    _discordStrategySub?.close();
+    _discordMapSub?.close();
+    _discordAgentSub?.close();
+    _discordAbilitySub?.close();
+    _discordPreferencesSub?.close();
+    unawaited(_discordPresence.dispose());
     super.dispose();
+  }
+
+  /// Coalesces rapid state changes (e.g. placing several agents in a row)
+  /// into one presence update, keeping well under Discord's rate limit.
+  void _scheduleDiscordSync() {
+    _discordSyncDebounce?.cancel();
+    _discordSyncDebounce = Timer(
+      const Duration(seconds: 2),
+      () => unawaited(_syncDiscordPresence()),
+    );
+  }
+
+  Future<void> _syncDiscordPresence() async {
+    if (!mounted) return;
+
+    final preferences = ref.read(appPreferencesProvider);
+    if (!preferences.discordPresenceEnabled) {
+      await _discordPresence.clear();
+      return;
+    }
+
+    await _discordPresence.update(
+      DiscordPresenceData.fromAppState(
+        strategy: ref.read(strategyProvider),
+        map: ref.read(mapProvider),
+        agentCount: ref.read(agentProvider).length,
+        abilityCount: ref.read(abilityProvider).length,
+      ),
+    );
   }
 
   @override
@@ -437,6 +518,7 @@ class _MyAppState extends ConsumerState<MyApp> {
       ),
       child: ShadApp(
         navigatorKey: appNavigatorKey,
+        navigatorObservers: [mouseNavigationRouteObserver],
         themeMode: ThemeMode.dark,
         darkTheme: ShadThemeData(
           brightness: Brightness.dark,
@@ -450,7 +532,9 @@ class _MyAppState extends ConsumerState<MyApp> {
           Routes.settings: (context) => const SettingsTab(),
         },
         builder: (context, child) {
-          return GlobalShortcuts(child: child ?? const SizedBox.shrink());
+          return GlobalShortcuts(
+            child: MouseNavigation(child: child ?? const SizedBox.shrink()),
+          );
         },
       ),
     );

@@ -1165,6 +1165,7 @@ class RemotePage {
     required this.publicId,
     required this.strategyPublicId,
     required this.name,
+    this.isAutoNamed,
     required this.sortIndex,
     required this.isAttack,
     required this.revision,
@@ -1175,6 +1176,7 @@ class RemotePage {
   final String publicId;
   final String strategyPublicId;
   final String name;
+  final bool? isAutoNamed;
   final int sortIndex;
   final bool isAttack;
   final int revision;

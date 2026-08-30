@@ -3,7 +3,7 @@ description: "A new Flutter project."
 
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
 
-version: 4.3.7+91 #version number
+version: 4.6.1+96 #version number
 
 environment:
   sdk: ">=3.4.3 <4.0.0"
@@ -24,6 +24,7 @@ dependencies:
   hive_ce: ^2.10.1
   hive_ce_flutter: ^2.2.0
   path: ^1.9.1
+  path_parsing: ^1.1.0
   path_provider: ^2.1.5
   desktop_drop: ^0.6.0
   cross_file: ^0.3.4+2
@@ -46,10 +47,21 @@ dependencies:
   supabase_flutter: ^2.12.0
   win32_registry: ^2.1.0
   app_links: ^6.4.1
+  lucide_icons_flutter: 3.1.14+2
+  xml: ^6.5.0
+  discord_rich_presence: ^1.1.1
 
+
+dependency_overrides:
+  # Vendored with macOS Retina + rasterization-quality patches.
+  # See packages/custom_mouse_cursor/README.md.
+  custom_mouse_cursor:
+    path: packages/custom_mouse_cursor
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
   hive_ce_generator: ^1.8.2
   # riverpod_generator: ^2.6.4
@@ -69,11 +81,14 @@ msix_config:
   identity_name: DaraA.IcarusValorantStrategiesLineups
   publisher: CN=39055448-F6AA-42E9-91F6-9CF8828C444C
   logo_path: windows\runner\resources\app_icon.ico
-  msix_version: 4.3.7.0 #verion number #last 0 needs to be there for msix to work
+  msix_version: 4.6.1.0 #verion number #last 0 needs to be there for msix to work
   file_extension: .ica
   store: true
 
 flutter:
+  shaders:
+    - shaders/dot_grid.frag
+    - shaders/dither_fire.frag
   fonts:
     - family: CustomIcons
       fonts:

@@ -31,6 +31,7 @@ type StrategyPatchPayload = {
 };
 type PagePayload = {
   name?: string;
+  isAutoNamed?: boolean;
   settings?: Doc<"pageContents">["settings"];
   isAttack?: boolean;
 };
@@ -249,7 +250,12 @@ const strategyPatchPayloadKeys = new Set([
   "themeOverridePalette",
   "clearThemeOverridePalette",
 ]);
-const pagePayloadKeys = new Set(["name", "settings", "isAttack"]);
+const pagePayloadKeys = new Set([
+  "name",
+  "isAutoNamed",
+  "settings",
+  "isAttack",
+]);
 
 function assertStrategyPatchPayload(payload: unknown): StrategyPatchPayload {
   if (payload === undefined) return {};
@@ -363,6 +369,9 @@ function strategyPayload(strategy: Doc<"strategies">) {
 function pagePayload(page: Doc<"pages">) {
   return {
     name: page.name,
+    ...(page.isAutoNamed === undefined
+      ? {}
+      : { isAutoNamed: page.isAutoNamed }),
     isAttack: page.isAttack,
     sortIndex: page.sortIndex,
   };
@@ -652,6 +661,7 @@ async function applyPageOp(
       );
       const identical =
         existing.name === (payload.name ?? "Page") &&
+        existing.isAutoNamed === payload.isAutoNamed &&
         existing.sortIndex === desiredSortIndex &&
         existing.isAttack === (payload.isAttack ?? true) &&
         valuesEqual(content.settings, payload.settings);
@@ -691,8 +701,16 @@ async function applyPageOp(
     for (let index = 0; index < orderedPages.length; index += 1) {
       const page = orderedPages[index]!;
       const normalizedIndex = index >= desiredSortIndex ? index + 1 : index;
-      if (page.sortIndex !== normalizedIndex) {
+      const normalizedName =
+        page.isAutoNamed === true
+          ? `Page ${normalizedIndex + 1}`
+          : page.name;
+      if (
+        page.sortIndex !== normalizedIndex ||
+        page.name !== normalizedName
+      ) {
         await ctx.db.patch(page._id, {
+          name: normalizedName,
           sortIndex: normalizedIndex,
           revision: page.revision + 1,
           updatedAt: now,
@@ -703,6 +721,9 @@ async function applyPageOp(
       publicId,
       strategyId: strategy._id,
       name: payload.name ?? "Page",
+      ...(payload.isAutoNamed === undefined
+        ? {}
+        : { isAutoNamed: payload.isAutoNamed }),
       sortIndex: desiredSortIndex,
       isAttack: payload.isAttack ?? true,
       revision: 1,
@@ -762,8 +783,11 @@ async function applyPageOp(
     );
     for (let index = 0; index < remaining.length; index += 1) {
       const page = remaining[index]!;
-      if (page.sortIndex !== index) {
+      const normalizedName =
+        page.isAutoNamed === true ? `Page ${index + 1}` : page.name;
+      if (page.sortIndex !== index || page.name !== normalizedName) {
         await ctx.db.patch(page._id, {
+          name: normalizedName,
           sortIndex: index,
           revision: page.revision + 1,
           updatedAt: now,
@@ -822,8 +846,11 @@ async function applyPageOp(
     const now = Date.now();
     for (let index = 0; index < reorderedPages.length; index += 1) {
       const page = reorderedPages[index]!;
-      if (page.sortIndex !== index) {
+      const normalizedName =
+        page.isAutoNamed === true ? `Page ${index + 1}` : page.name;
+      if (page.sortIndex !== index || page.name !== normalizedName) {
         await ctx.db.patch(page._id, {
+          name: normalizedName,
           sortIndex: index,
           revision: page.revision + 1,
           updatedAt: now,
@@ -854,6 +881,14 @@ async function applyPageOp(
   const patch: Record<string, unknown> = {};
   if (payload.name !== undefined) {
     setIfChanged(patch, "name", existing.name, payload.name);
+  }
+  if (payload.isAutoNamed !== undefined) {
+    setIfChanged(
+      patch,
+      "isAutoNamed",
+      existing.isAutoNamed,
+      payload.isAutoNamed,
+    );
   }
   if (payload.isAttack !== undefined) {
     setIfChanged(patch, "isAttack", existing.isAttack, payload.isAttack);

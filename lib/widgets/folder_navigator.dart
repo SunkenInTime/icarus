@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:desktop_updater/desktop_updater.dart';
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kDebugMode, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
@@ -49,6 +49,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   bool _hasPromptedUpdateDialog = false;
   WindowsDesktopUpdateController? _desktopUpdaterController;
   final GlobalKey _importExportButtonKey = GlobalKey();
+  final ShadContextMenuController _backgroundMenuController =
+      ShadContextMenuController();
   final ShadPopoverController _importExportPopoverController =
       ShadPopoverController();
 
@@ -58,14 +60,37 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   @override
   void dispose() {
     _importExportPopoverController.dispose();
+    _backgroundMenuController.dispose();
     _desktopUpdaterController?.dispose();
     super.dispose();
   }
+
+  static const _desktopUpdateLocalization = DesktopUpdateLocalization(
+    updateAvailableText: 'Update Available',
+    newVersionAvailableText: '{} {} is available',
+    newVersionLongText:
+        'A desktop update is ready. Downloading will fetch {} MB of files.',
+    downloadText: 'Download Update',
+    restartText: 'Restart to update',
+    skipThisVersionText: 'Later',
+    warningTitleText: 'Restart Required',
+    restartWarningText:
+        'Icarus needs to restart to finish installing the update. Unsaved changes will be lost. Restart now?',
+    warningCancelText: 'Not now',
+    warningConfirmText: 'Restart',
+  );
 
   @override
   void initState() {
     super.initState();
 
+    if (kDebugMode && kDebugForceDesktopUpdateDialog) {
+      _desktopUpdaterController = WindowsDesktopUpdateController.debugPreview(
+        localization: _desktopUpdateLocalization,
+      );
+    }
+
+    // Show the demo warning only once after the first frame on web.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_warnedOnce) {
         _warnedOnce = true;
@@ -196,20 +221,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           );
           _desktopUpdaterController = WindowsDesktopUpdateController(
             appArchiveUrl: Settings.desktopUpdaterArchiveUrl,
-            localization: const DesktopUpdateLocalization(
-              updateAvailableText: 'Update Available',
-              newVersionAvailableText: '{} {} is available',
-              newVersionLongText:
-                  'A desktop update is ready. Downloading will fetch {} MB of files.',
-              downloadText: 'Download Update',
-              restartText: 'Restart to update',
-              skipThisVersionText: 'Later',
-              warningTitleText: 'Restart Required',
-              restartWarningText:
-                  'Icarus needs to restart to finish installing the update. Unsaved changes will be lost. Restart now?',
-              warningCancelText: 'Not now',
-              warningConfirmText: 'Restart',
-            ),
+            localization: _desktopUpdateLocalization,
           );
           setState(() {});
         }
@@ -261,6 +273,15 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           initialMapValue: MapValue.ascent,
           initialIsAttack: true,
         ),
+      );
+    }
+
+    Future<void> showCreateFolderDialog() async {
+      await showDialog<String>(
+        context: context,
+        builder: (context) {
+          return const FolderEditDialog();
+        },
       );
     }
 
@@ -427,15 +448,32 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
           ),
           body: Padding(
             padding: const EdgeInsets.only(left: railReservedWidth),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeOutCubic,
-              child: KeyedSubtree(
-                key: ValueKey('$workspace/$cloudSection'),
-                child: FolderContent(
-                  folder: currentFolder,
-                  onCreateStrategy: showCreateDialog,
+            child: ShadContextMenuRegion(
+              controller: _backgroundMenuController,
+              items: isCommunityWorkspace || isSharedWithMe
+                  ? const []
+                  : [
+                      ShadContextMenuItem(
+                        leading: const Icon(Icons.create_new_folder_outlined),
+                        onPressed: showCreateFolderDialog,
+                        child: const Text('Create Folder'),
+                      ),
+                      ShadContextMenuItem(
+                        leading: const Icon(Icons.note_add_outlined),
+                        onPressed: showCreateDialog,
+                        child: const Text('Create Strategy'),
+                      ),
+                    ],
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeOutCubic,
+                child: KeyedSubtree(
+                  key: ValueKey('$workspace/$cloudSection'),
+                  child: FolderContent(
+                    folder: currentFolder,
+                    onCreateStrategy: showCreateDialog,
+                  ),
                 ),
               ),
             ),

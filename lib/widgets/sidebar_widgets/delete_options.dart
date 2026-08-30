@@ -18,6 +18,10 @@ class DeleteOptions extends ConsumerWidget {
   final VoidCallback? onMenuExited;
   final VoidCallback? onCloseRequested;
 
+  static const double _panelRadius = 10;
+  static const double _panelPadding = 6;
+  static const double _controlRadius = _panelRadius - _panelPadding;
+
   static const List<_DeleteOptionData> _options = [
     _DeleteOptionData(
       group: ActionGroup.agent,
@@ -59,7 +63,7 @@ class DeleteOptions extends ConsumerWidget {
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
         color: Settings.tacticalVioletTheme.card,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(_panelRadius),
         border: Border.all(
           color: Settings.tacticalVioletTheme.border.withValues(alpha: 0.9),
         ),
@@ -89,6 +93,11 @@ class DeleteOptions extends ConsumerWidget {
                   },
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: ShadDecoration(
+                    border: ShadBorder.all(
+                      radius: BorderRadius.circular(_controlRadius),
+                    ),
+                  ),
                   child: Text(
                     "Delete all",
                     style: ShadTheme.of(context).textTheme.small.copyWith(
@@ -135,7 +144,7 @@ class DeleteOptions extends ConsumerWidget {
                             hoverForegroundColor: Colors.white,
                             decoration: ShadDecoration(
                               border: ShadBorder.all(
-                                radius: BorderRadius.circular(6),
+                                radius: BorderRadius.circular(_controlRadius),
                                 color: Settings.tacticalVioletTheme.border
                                     .withValues(alpha: 0.75),
                               ),

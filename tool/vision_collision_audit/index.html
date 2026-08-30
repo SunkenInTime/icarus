@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icarus Vision Collision Audit</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #09090b;
+      --panel: #111114;
+      --panel-2: #17171b;
+      --line: #2b2b31;
+      --muted: #8b8b96;
+      --text: #f4f4f5;
+      --accent: #8b5cf6;
+      --cyan: #36d6e7;
+      --orange: #fb923c;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); min-width: 980px; }
+    button, select, input { font: inherit; }
+    button, select, input[type="text"] {
+      min-height: 34px; border: 1px solid var(--line); border-radius: 6px;
+      background: var(--panel-2); color: var(--text); padding: 0 10px;
+    }
+    button { cursor: pointer; font-weight: 650; }
+    button:hover { border-color: #51515c; }
+    button.primary { background: var(--accent); border-color: var(--accent); }
+    button.danger { color: #fda4af; }
+    button[aria-pressed="true"] { border-color: var(--accent); color: #c4b5fd; }
+    header {
+      height: 62px; display: flex; align-items: center; gap: 12px; padding: 0 18px;
+      border-bottom: 1px solid var(--line); background: #0d0d10;
+    }
+    .brand { margin-right: 12px; }
+    .brand strong { display: block; font-size: 15px; letter-spacing: .01em; }
+    .brand span { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
+    .spacer { flex: 1; }
+    #status { color: var(--muted); font-size: 12px; min-width: 92px; text-align: right; }
+    main { display: grid; grid-template-columns: minmax(620px, 1fr) 340px; height: calc(100vh - 62px); }
+    .workspace { position: relative; overflow: hidden; background: #0b0b0e; }
+    .toolbar {
+      position: absolute; z-index: 5; left: 14px; top: 14px; display: flex; gap: 6px;
+      padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: rgba(17,17,20,.96);
+    }
+    #stage { position: absolute; inset: 68px 24px 24px; display: grid; place-items: center; }
+    #map-frame { position: relative; height: 100%; max-height: 760px; aspect-ratio: 16 / 18; }
+    #map-host, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+    #map-host svg { width: 100%; height: 100%; display: block; }
+    #map-host svg.audit-auto [data-audit-detected="true"] {
+      stroke: var(--cyan) !important; stroke-width: 1.4 !important; vector-effect: non-scaling-stroke;
+    }
+    #overlay { overflow: visible; }
+    #overlay .saved { fill: rgba(251,146,60,.11); stroke: var(--orange); stroke-width: 2; vector-effect: non-scaling-stroke; }
+    #overlay .shared { stroke: #a78bfa; fill: rgba(139,92,246,.11); }
+    #overlay .draft { fill: rgba(54,214,231,.08); stroke: var(--cyan); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-dasharray: 5 4; }
+    #overlay .point { fill: #0b0b0e; stroke: var(--cyan); stroke-width: 2; vector-effect: non-scaling-stroke; }
+    .hint { position: absolute; z-index: 4; left: 18px; bottom: 16px; color: var(--muted); font-size: 12px; }
+    aside { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; }
+    .section { padding: 18px; border-bottom: 1px solid var(--line); }
+    .section h2 { margin: 0 0 5px; font-size: 14px; }
+    .section > p { margin: 0 0 14px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    label.field { display: grid; gap: 6px; margin-top: 12px; color: #c9c9d0; font-size: 12px; }
+    label.field input, label.field select { width: 100%; }
+    .scope-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+    .scope-row button { padding: 0 5px; font-size: 12px; }
+    .elevations { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .check { display: flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 5px; color: #c9c9d0; font-size: 11px; }
+    .check input { accent-color: var(--accent); }
+    .actions { display: flex; gap: 7px; margin-top: 14px; }
+    .actions button { flex: 1; }
+    #boundary-list { display: grid; gap: 4px; }
+    .boundary {
+      display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px;
+      padding: 9px 10px; border-left: 2px solid var(--orange); background: #151519;
+    }
+    .boundary.shared-boundary { border-left-color: #a78bfa; }
+    .boundary strong { display: block; font-size: 12px; }
+    .boundary span { color: var(--muted); font-size: 10px; }
+    .boundary button { min-height: 28px; padding: 0 8px; }
+    .empty { color: var(--muted); font-size: 12px; padding: 10px 0; }
+    kbd { border: 1px solid #44444d; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; font-size: 10px; color: #d4d4d8; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><strong>Vision collision audit</strong><span>Map once. Apply across elevations.</span></div>
+    <select id="map-select" aria-label="Map"></select>
+    <select id="side-select" aria-label="Side"><option value="attack">Attack</option><option value="defense">Defense</option></select>
+    <button id="auto-toggle" aria-pressed="false">Detected boundaries</button>
+    <div class="spacer"></div>
+    <span id="status">Loading…</span>
+    <button id="save" class="primary">Save manifest</button>
+  </header>
+  <main>
+    <section class="workspace">
+      <div class="toolbar" aria-label="Audit tools">
+        <button data-mode="trace" aria-pressed="true">Trace visible shape</button>
+        <button data-mode="line" aria-pressed="false">Draw line</button>
+        <button data-mode="closed" aria-pressed="false">Draw closed area</button>
+        <button id="undo-point">Undo point</button>
+        <button id="clear-draft">Clear</button>
+      </div>
+      <div id="stage">
+        <div id="map-frame"><div id="map-host"></div><svg id="overlay"></svg></div>
+      </div>
+      <div class="hint">Trace an existing visible shape, or click to draw. Finish a line with <kbd>Enter</kbd>.</div>
+    </section>
+    <aside>
+      <section class="section">
+        <h2>Boundary mapping</h2>
+        <p>Shared is the default: the attack geometry is mirrored for defense and admitted on every elevation.</p>
+        <label class="field">Label<input id="label" type="text" placeholder="A Main stacked boxes"></label>
+        <label class="field">Stable ID<input id="boundary-id" type="text" placeholder="a-main-stacked-boxes"></label>
+        <label class="field">Scope</label>
+        <div class="scope-row" id="scope-row">
+          <button data-scope="shared" aria-pressed="true">Both sides</button>
+          <button data-scope="attack" aria-pressed="false">Attack only</button>
+          <button data-scope="defense" aria-pressed="false">Defense only</button>
+        </div>
+        <label class="field">Active elevations <span style="color:var(--muted)">All selected by default</span></label>
+        <div id="elevations" class="elevations"></div>
+        <div class="actions"><button id="add-boundary" class="primary">Add boundary</button></div>
+      </section>
+      <section class="section">
+        <h2>Mapped on this view</h2>
+        <p>Deleting or adding stays local until “Save manifest”.</p>
+        <div id="boundary-list"></div>
+      </section>
+    </aside>
+  </main>
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => [...document.querySelectorAll(selector)];
+    let appState;
+    let manifest;
+    let currentMap;
+    let currentSide = 'attack';
+    let mode = 'trace';
+    let scope = 'shared';
+    let draft = [];
+    let draftClosed = false;
+    let dirty = false;
+    let mapSvg;
+    let viewBox;
+
+    async function boot() {
+      const response = await fetch('/api/state');
+      appState = await response.json();
+      manifest = appState.manifest;
+      currentMap = appState.maps[0]?.name;
+      $('#map-select').innerHTML = appState.maps.map(map => `<option value="${map.name}">${title(map.name)}</option>`).join('');
+      bindEvents();
+      await loadMap();
+      setStatus('Ready');
+    }
+
+    function bindEvents() {
+      $('#map-select').addEventListener('change', async event => { currentMap = event.target.value; clearDraft(); await loadMap(); });
+      $('#side-select').addEventListener('change', async event => { currentSide = event.target.value; clearDraft(); await loadMap(); });
+      $$('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+      $$('[data-scope]').forEach(button => button.addEventListener('click', () => setScope(button.dataset.scope)));
+      $('#auto-toggle').addEventListener('click', event => {
+        const next = event.currentTarget.getAttribute('aria-pressed') !== 'true';
+        event.currentTarget.setAttribute('aria-pressed', next);
+        mapSvg?.classList.toggle('audit-auto', next);
+      });
+      $('#undo-point').addEventListener('click', () => { draft.pop(); renderOverlay(); });
+      $('#clear-draft').addEventListener('click', clearDraft);
+      $('#add-boundary').addEventListener('click', addBoundary);
+      $('#save').addEventListener('click', saveManifest);
+      $('#label').addEventListener('input', event => {
+        if (!$('#boundary-id').dataset.edited) $('#boundary-id').value = slug(event.target.value);
+      });
+      $('#boundary-id').addEventListener('input', event => event.target.dataset.edited = 'true');
+      window.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && draft.length >= 2 && document.activeElement.tagName !== 'INPUT') addBoundary();
+        if (event.key === 'Escape') clearDraft();
+      });
+    }
+
+    async function loadMap() {
+      setStatus('Loading map…');
+      const suffix = currentSide === 'defense' ? '_map_defense.svg' : '_map.svg';
+      const source = await (await fetch(`/assets/maps/${currentMap}${suffix}`)).text();
+      $('#map-host').innerHTML = source;
+      mapSvg = $('#map-host svg');
+      const values = mapSvg.getAttribute('viewBox').split(/[ ,]+/).map(Number);
+      viewBox = { x: values[0], y: values[1], width: values[2], height: values[3] };
+      $('#overlay').setAttribute('viewBox', values.join(' '));
+      mapSvg.querySelectorAll('path, line, polyline, polygon, rect, circle, ellipse').forEach(element => {
+        const stroke = (element.getAttribute('stroke') || '').toUpperCase();
+        const fill = (element.getAttribute('fill') || '').toUpperCase();
+        if (stroke === '#B27C40' || fill === '#271406') element.dataset.auditDetected = 'true';
+        element.addEventListener('click', traceElement);
+      });
+      mapSvg.classList.toggle('audit-auto', $('#auto-toggle').getAttribute('aria-pressed') === 'true');
+      renderElevations();
+      renderOverlay();
+      renderList();
+      setStatus(dirty ? 'Unsaved changes' : 'Ready');
+    }
+
+    function traceElement(event) {
+      if (mode !== 'trace') return;
+      event.preventDefault(); event.stopPropagation();
+      const element = event.currentTarget;
+      if (typeof element.getTotalLength !== 'function') return;
+      const length = element.getTotalLength();
+      const samples = Math.max(2, Math.min(180, Math.ceil(length / 4)));
+      draft = [];
+      for (let index = 0; index <= samples; index++) {
+        const point = element.getPointAtLength(length * index / samples);
+        draft.push(normalize(point.x, point.y));
+      }
+      const fill = element.getAttribute('fill');
+      draftClosed = ['polygon', 'rect', 'circle', 'ellipse'].includes(element.tagName) || (fill && fill !== 'none');
+      renderOverlay();
+      $('#label').focus();
+    }
+
+    $('#overlay').addEventListener('click', event => {
+      if (mode === 'trace') return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      const x = viewBox.x + (event.clientX - rect.left) / rect.width * viewBox.width;
+      const y = viewBox.y + (event.clientY - rect.top) / rect.height * viewBox.height;
+      draft.push(normalize(x, y));
+      draftClosed = mode === 'closed';
+      renderOverlay();
+    });
+
+    function normalize(x, y) { return [(x - viewBox.x) / viewBox.width, (y - viewBox.y) / viewBox.height]; }
+    function displayPoints(entry, entryScope) {
+      const points = entry.points;
+      if (entryScope === 'shared' && currentSide === 'defense') return points.map(([x, y]) => [1 - x, 1 - y]);
+      return points;
+    }
+    function denormalize(points) { return points.map(([x, y]) => [viewBox.x + x * viewBox.width, viewBox.y + y * viewBox.height]); }
+    function pathData(points, closed) {
+      const actual = denormalize(points);
+      return actual.length ? `M ${actual.map(point => point.join(' ')).join(' L ')}${closed ? ' Z' : ''}` : '';
+    }
+
+    function renderOverlay() {
+      const entries = entriesForView();
+      const saved = entries.map(item => `<path class="saved ${item.scope === 'shared' ? 'shared' : ''}" d="${pathData(displayPoints(item.entry, item.scope), item.entry.closed)}"><title>${escapeHtml(item.entry.label)}</title></path>`).join('');
+      const draftPath = draft.length ? `<path class="draft" d="${pathData(draft, draftClosed)}"></path>${denormalize(draft).map(([x,y]) => `<circle class="point" cx="${x}" cy="${y}" r="3"></circle>`).join('')}` : '';
+      $('#overlay').innerHTML = saved + draftPath;
+      $('#overlay').style.pointerEvents = mode === 'trace' ? 'none' : 'auto';
+    }
+
+    function renderElevations() {
+      const map = appState.maps.find(candidate => candidate.name === currentMap);
+      $('#elevations').innerHTML = map.elevations.map(value => `<label class="check"><input type="checkbox" value="${value}" checked>${value}</label>`).join('');
+    }
+
+    function entriesForView() {
+      const map = manifest.maps[currentMap] || {};
+      return [
+        ...(map.shared || []).map(entry => ({ entry, scope: 'shared' })),
+        ...(map[currentSide] || []).map(entry => ({ entry, scope: currentSide })),
+      ];
+    }
+
+    function renderList() {
+      const entries = entriesForView();
+      $('#boundary-list').innerHTML = entries.length ? entries.map(item => {
+        const layerText = item.entry.activeElevations?.length ? item.entry.activeElevations.join(', ') : 'all elevations';
+        return `<div class="boundary ${item.scope === 'shared' ? 'shared-boundary' : ''}"><div><strong>${escapeHtml(item.entry.label)}</strong><span>${item.scope} · ${layerText}</span></div><button class="danger" data-delete="${item.scope}:${item.entry.id}">Delete</button></div>`;
+      }).join('') : '<div class="empty">No hand-audited boundaries on this view.</div>';
+      $$('[data-delete]').forEach(button => button.addEventListener('click', () => deleteBoundary(button.dataset.delete)));
+    }
+
+    function addBoundary() {
+      const label = $('#label').value.trim();
+      const id = slug($('#boundary-id').value);
+      if (!label || id.length < 2 || draft.length < (draftClosed ? 3 : 2)) {
+        setStatus('Add a label and boundary points'); return;
+      }
+      let storedPoints = draft;
+      if (scope === 'shared' && currentSide === 'defense') storedPoints = draft.map(([x,y]) => [1-x, 1-y]);
+      const selected = $$('#elevations input:checked').map(input => Number(input.value));
+      const allCount = $$('#elevations input').length;
+      const entry = {
+        id, label, closed: draftClosed,
+        points: storedPoints.map(([x,y]) => [round(x), round(y)]),
+        ...(selected.length === allCount ? {} : { activeElevations: selected }),
+      };
+      const map = manifest.maps[currentMap] ||= {};
+      const list = map[scope] ||= [];
+      if (list.some(candidate => candidate.id === id)) { setStatus('That ID already exists in this scope'); return; }
+      list.push(entry);
+      dirty = true;
+      clearDraft(false);
+      renderOverlay(); renderList(); setStatus('Unsaved changes');
+    }
+
+    function deleteBoundary(value) {
+      const [entryScope, id] = value.split(':');
+      const list = manifest.maps[currentMap]?.[entryScope] || [];
+      manifest.maps[currentMap][entryScope] = list.filter(entry => entry.id !== id);
+      dirty = true; renderOverlay(); renderList(); setStatus('Unsaved changes');
+    }
+
+    async function saveManifest() {
+      setStatus('Saving…');
+      const response = await fetch('/api/state', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(manifest) });
+      const result = await response.json();
+      if (!response.ok) { setStatus(result.error || 'Save failed'); return; }
+      dirty = false; setStatus('Saved to assets');
+    }
+
+    function setMode(next) {
+      mode = next; draftClosed = next === 'closed';
+      $$('[data-mode]').forEach(button => button.setAttribute('aria-pressed', button.dataset.mode === next));
+      $('#overlay').style.pointerEvents = next === 'trace' ? 'none' : 'auto';
+    }
+    function setScope(next) {
+      scope = next;
+      $$('[data-scope]').forEach(button => button.setAttribute('aria-pressed', button.dataset.scope === next));
+    }
+    function clearDraft(clearFields = true) {
+      draft = []; draftClosed = mode === 'closed';
+      if (clearFields) { $('#label').value = ''; $('#boundary-id').value = ''; delete $('#boundary-id').dataset.edited; }
+      renderOverlay();
+    }
+    function slug(value) { return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 64); }
+    function round(value) { return Math.round(value * 1000000) / 1000000; }
+    function title(value) { return value.replace(/(^|-)(\w)/g, (_, __, letter) => letter.toUpperCase()); }
+    function escapeHtml(value) { const node = document.createElement('div'); node.textContent = value; return node.innerHTML; }
+    function setStatus(value) { $('#status').textContent = value; }
+    boot().catch(error => setStatus(error.message));
+  </script>
+</body>
+</html>

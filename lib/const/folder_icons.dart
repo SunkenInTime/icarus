@@ -1,17 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:icarus/const/custom_icons.dart';
 
-const int folderIconRegistryVersion = 91;
+const int folderIconRegistryVersion = 96;
 
 enum FolderIconRenderKind {
   material,
   asset,
 }
 
+enum FolderIconCategory {
+  symbol,
+  role,
+}
+
 class FolderIconDefinition {
   const FolderIconDefinition.material({
     required this.id,
     required IconData icon,
+    this.label = '',
+    this.category = FolderIconCategory.symbol,
     this.hiddenFromPicker = false,
   })  : kind = FolderIconRenderKind.material,
         iconData = icon,
@@ -20,6 +27,8 @@ class FolderIconDefinition {
   const FolderIconDefinition.asset({
     required this.id,
     required this.assetPath,
+    this.label = '',
+    this.category = FolderIconCategory.role,
     this.hiddenFromPicker = false,
   })  : kind = FolderIconRenderKind.asset,
         iconData = null;
@@ -28,6 +37,8 @@ class FolderIconDefinition {
   final FolderIconRenderKind kind;
   final IconData? iconData;
   final String assetPath;
+  final String label;
+  final FolderIconCategory category;
   final bool hiddenFromPicker;
 
   String get stableSignature {
@@ -56,7 +67,7 @@ class FolderIconRegistry {
   static const int initiatorRoleId = 1002;
   static const int sentinelRoleId = 1003;
 
-  static const List<FolderIconDefinition> entries = [
+  static const List<FolderIconDefinition> _baseEntries = [
     FolderIconDefinition.material(
       id: legacyFolderId,
       icon: Icons.folder,
@@ -107,19 +118,27 @@ class FolderIconRegistry {
     FolderIconDefinition.asset(
       id: controllerRoleId,
       assetPath: 'assets/agents/controller.webp',
+      label: 'Controller',
     ),
     FolderIconDefinition.asset(
       id: duelistRoleId,
       assetPath: 'assets/agents/duelist.webp',
+      label: 'Duelist',
     ),
     FolderIconDefinition.asset(
       id: initiatorRoleId,
       assetPath: 'assets/agents/initiator.webp',
+      label: 'Initiator',
     ),
     FolderIconDefinition.asset(
       id: sentinelRoleId,
       assetPath: 'assets/agents/sentinel.webp',
+      label: 'Sentinel',
     ),
+  ];
+
+  static final List<FolderIconDefinition> entries = [
+    ..._baseEntries,
   ];
 
   static final Map<int, FolderIconDefinition> _byId = {
@@ -130,6 +149,15 @@ class FolderIconRegistry {
     for (final entry in entries)
       if (!entry.hiddenFromPicker) entry,
   ];
+
+  static List<FolderIconDefinition> pickerEntriesFor(
+    FolderIconCategory? category,
+  ) {
+    return [
+      for (final entry in pickerEntries)
+        if (category == null || entry.category == category) entry,
+    ];
+  }
 
   static FolderIconDefinition resolve(int id) {
     return _byId[id] ?? _byId[defaultId]!;

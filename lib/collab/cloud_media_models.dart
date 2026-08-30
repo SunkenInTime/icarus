@@ -155,7 +155,7 @@ class CloudImageUploadIntent {
 }
 
 Map<String, dynamic> cloudImagePayloadFromPlacedImage(PlacedImage image) {
-  return Map<String, dynamic>.from(image.toJson());
+  return Map<String, dynamic>.from(image.toJson())..remove('link');
 }
 
 Map<String, dynamic> cloudLineupPayload(LineUpGroup group) {

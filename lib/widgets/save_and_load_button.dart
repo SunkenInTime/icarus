@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_portal/flutter_portal.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -19,7 +18,9 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+import 'package:icarus/screenshot/offscreen_capture.dart';
 import 'package:icarus/screenshot/screenshot_view.dart';
+import 'package:icarus/widgets/dialogs/export_video_dialog.dart';
 import 'package:icarus/widgets/settings_tab.dart';
 import 'package:icarus/widgets/cloud_sync_status_chip.dart';
 import 'package:icarus/widgets/strategy_save_icon_button.dart';
@@ -89,6 +90,27 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
             ),
           ),
           ShadTooltip(
+            builder: (context) => const Text("Export Video"),
+            child: ShadIconButton.ghost(
+              foregroundColor: Colors.white,
+              onPressed: () async {
+                if (kIsWeb) {
+                  Settings.showToast(
+                    message:
+                        'This feature is only supported in the Windows version.',
+                    backgroundColor: Settings.tacticalVioletTheme.destructive,
+                  );
+                  return;
+                }
+                showShadDialog(
+                  context: context,
+                  builder: (context) => const ExportVideoDialog(),
+                );
+              },
+              icon: const Icon(Icons.movie_outlined),
+            ),
+          ),
+          ShadTooltip(
             builder: (context) => const Text("Screenshot"),
             child: ShadIconButton.ghost(
               foregroundColor: Colors.white,
@@ -132,54 +154,34 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                   (p) => p.id == currentPageID,
                   orElse: () => newStrat.pages.first,
                 );
+                final screenshotContainer = ProviderContainer();
 
                 try {
+                  final screenshotView = ScreenshotView(
+                    isAttack: activePage.isAttack,
+                    mapValue: newStrat.mapData,
+                    showSpawnBarrier: mapState.showSpawnBarrier,
+                    showRegionNames: mapState.showRegionNames,
+                    showUltOrbs: mapState.showUltOrbs,
+                    agents: activePage.agentData,
+                    abilities: activePage.abilityData,
+                    text: activePage.textData,
+                    images: activePage.imageData,
+                    drawings: activePage.drawingData,
+                    utilities: activePage.utilityData,
+                    strategySettings: activePage.settings,
+                    strategyState: ref.read(strategyProvider),
+                    pageName: activePage.name,
+                    lineUpGroups: activePage.lineUpGroups,
+                    themeProfileId: newStrat.themeProfileId,
+                    themeOverridePalette: newStrat.themeOverridePalette,
+                  );
+                  screenshotView.hydrateProviders(screenshotContainer);
                   final image = await newController.captureFromWidget(
                     targetSize: CoordinateSystem.screenShotSize,
-                    ProviderScope(
-                      child: MediaQuery(
-                        data: const MediaQueryData(
-                            size: CoordinateSystem.screenShotSize),
-                        child: ShadApp.custom(
-                          themeMode: ThemeMode.dark,
-                          darkTheme: ShadThemeData(
-                            brightness: Brightness.dark,
-                            colorScheme: Settings.tacticalVioletTheme,
-                            breadcrumbTheme:
-                                const ShadBreadcrumbTheme(separatorSize: 18),
-                          ),
-                          appBuilder: (context) {
-                            return MaterialApp(
-                              theme: Theme.of(context),
-                              debugShowCheckedModeBanner: false,
-                              home: ScreenshotView(
-                                isAttack: activePage.isAttack,
-                                mapValue: newStrat.mapData,
-                                showSpawnBarrier: mapState.showSpawnBarrier,
-                                showRegionNames: mapState.showRegionNames,
-                                showUltOrbs: mapState.showUltOrbs,
-                                agents: activePage.agentData,
-                                abilities: activePage.abilityData,
-                                text: activePage.textData,
-                                images: activePage.imageData,
-                                drawings: activePage.drawingData,
-                                utilities: activePage.utilityData,
-                                strategySettings: activePage.settings,
-                                strategyState: ref.read(strategyProvider),
-                                pageName: activePage.name,
-                                lineUpGroups: activePage.lineUpGroups,
-                                themeProfileId: newStrat.themeProfileId,
-                                themeOverridePalette:
-                                    newStrat.themeOverridePalette,
-                              ),
-                              builder: (context, child) {
-                                return Portal(
-                                    child: ShadAppBuilder(child: child!));
-                              },
-                            );
-                          },
-                        ),
-                      ),
+                    wrapForOffscreenCapture(
+                      screenshotView,
+                      container: screenshotContainer,
                     ),
                   );
                   setState(() {
@@ -198,6 +200,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                   }
                 } catch (_) {
                 } finally {
+                  screenshotContainer.dispose();
                   ref.read(screenshotProvider.notifier).setIsScreenShot(false);
                   CoordinateSystem.instance.setIsScreenshot(false);
                   ref

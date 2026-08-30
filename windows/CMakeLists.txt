@@ -61,6 +61,16 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# Visual Studio repeats each target's project label in its intermediate path.
+# The in-app webview dependency target is long enough to exceed Windows' legacy
+# 260-character path limit when Icarus is built from a nested worktree.
+if(TARGET flutter_inappwebview_windows_DEPENDENCIES_DOWNLOAD)
+  set_property(
+    TARGET flutter_inappwebview_windows_DEPENDENCIES_DOWNLOAD
+    PROPERTY PROJECT_LABEL "webview_deps"
+  )
+endif()
+
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can

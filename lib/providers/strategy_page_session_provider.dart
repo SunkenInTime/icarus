@@ -6,12 +6,16 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/page_transition/agent_path.dart';
+import 'package:icarus/page_transition/transition_planner.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/image_provider.dart';
+import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
@@ -19,16 +23,19 @@ import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/providers/view_cone_geometry_provider.dart';
 import 'package:icarus/strategy/strategy_page_apply.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/strategy/strategy_page_source.dart';
+import 'package:icarus/view_cone/vision_geometry.dart';
 
 enum PageTransitionState {
   idle,
@@ -239,11 +246,30 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
     final startSettings = ref.read(strategySettingsProvider);
     final previous = _snapshotAllPlaced();
+    final strategyState = ref.read(strategyProvider);
+    final sourcePageId = state.activePageId;
+    var fadeInDrawings = false;
+    if (strategyState.source == StrategySource.local &&
+        strategyState.strategyId != null) {
+      final strategy = Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+          .get(strategyState.strategyId);
+      final targetPage =
+          strategy?.pages.where((page) => page.id == pageId).firstOrNull;
+      if (targetPage != null) {
+        fadeInDrawings = TransitionPlanner.drawingsChanged(
+          ref.read(drawingProvider).elements,
+          targetPage.drawingData,
+        );
+      }
+    }
     transitionNotifier.prepare(
       previous.values.toList(),
       direction: direction,
       startAgentSize: startSettings.agentSize,
       startAbilitySize: startSettings.abilitySize,
+      sourcePageId: sourcePageId,
+      targetPageId: pageId,
+      fadeInDrawings: fadeInDrawings,
     );
 
     try {
@@ -284,24 +310,70 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       _resumePendingRemoteReapplyIfPossible();
       Error.throwWithStackTrace(error, stackTrace);
     }
-    final endSettings = ref.read(strategySettingsProvider);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final preliminaryNext = _snapshotAllPlaced();
+      final preliminaryEntries = _diffToTransitions(previous, preliminaryNext);
+      if (preliminaryEntries.isEmpty && !fadeInDrawings) {
+        transitionNotifier.complete();
+        state = state.copyWith(transitionState: PageTransitionState.idle);
+        _resumePendingRemoteReapplyIfPossible();
+        return;
+      }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final needsAgentRouting = preliminaryEntries.any(
+        (entry) =>
+            entry.kind == TransitionKind.move &&
+            entry.visualWidget is PlacedAgentNode,
+      );
+      VisionGeometryMap? transitionGeometry;
+      if (needsAgentRouting) {
+        try {
+          transitionGeometry = await ref.read(
+            viewConeGeometryProvider(ref.read(mapProvider).currentMap).future,
+          );
+        } on Object {
+          // Route geometry is an enhancement; direct motion remains valid.
+        }
+      }
+
+      final currentTransition = ref.read(transitionProvider);
+      if (currentTransition.phase != PageTransitionPhase.preparing ||
+          currentTransition.sourcePageId != sourcePageId ||
+          currentTransition.targetPageId != pageId) {
+        return;
+      }
+
       final next = _snapshotAllPlaced();
       final entries = _diffToTransitions(previous, next);
-      if (entries.isNotEmpty) {
-        transitionNotifier.start(
-          entries,
-          duration: duration,
-          direction: direction,
-          startAgentSize: startSettings.agentSize,
-          endAgentSize: endSettings.agentSize,
-          startAbilitySize: startSettings.abilitySize,
-          endAbilitySize: endSettings.abilitySize,
-        );
-      } else {
+      if (entries.isEmpty && !fadeInDrawings) {
         transitionNotifier.complete();
+        state = state.copyWith(transitionState: PageTransitionState.idle);
+        _resumePendingRemoteReapplyIfPossible();
+        return;
       }
+
+      final endSettings = ref.read(strategySettingsProvider);
+      final agentPaths = AgentTransitionPathPlanner.plan(
+        entries: entries,
+        geometry: transitionGeometry,
+        isAttack: ref.read(mapProvider).isAttack,
+        startAgentSize: startSettings.agentSize,
+        endAgentSize: endSettings.agentSize,
+        coordinateSystem: CoordinateSystem.instance,
+      );
+      transitionNotifier.start(
+        entries,
+        duration: duration,
+        direction: direction,
+        startAgentSize: startSettings.agentSize,
+        endAgentSize: endSettings.agentSize,
+        startAbilitySize: startSettings.abilitySize,
+        endAbilitySize: endSettings.abilitySize,
+        sourcePageId: sourcePageId,
+        targetPageId: pageId,
+        agentPaths: agentPaths,
+        fadeInDrawings: fadeInDrawings,
+      );
       state = state.copyWith(transitionState: PageTransitionState.idle);
       _resumePendingRemoteReapplyIfPossible();
     });
@@ -805,52 +877,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   List<PageTransitionEntry> _diffToTransitions(
     Map<String, PlacedWidget> previous,
     Map<String, PlacedWidget> next,
-  ) {
-    final entries = <PageTransitionEntry>[];
-    var order = 0;
-
-    next.forEach((id, to) {
-      final from = previous[id];
-      if (from != null) {
-        if (from.position != to.position ||
-            PageTransitionEntry.rotationOf(from) !=
-                PageTransitionEntry.rotationOf(to) ||
-            PageTransitionEntry.lengthOf(from) !=
-                PageTransitionEntry.lengthOf(to) ||
-            !listEquals(
-              PageTransitionEntry.armLengthsOf(from),
-              PageTransitionEntry.armLengthsOf(to),
-            ) ||
-            PageTransitionEntry.scaleOf(from) !=
-                PageTransitionEntry.scaleOf(to) ||
-            PageTransitionEntry.textSizeOf(from) !=
-                PageTransitionEntry.textSizeOf(to) ||
-            PageTransitionEntry.agentStateOf(from) !=
-                PageTransitionEntry.agentStateOf(to) ||
-            PageTransitionEntry.customDiameterOf(from) !=
-                PageTransitionEntry.customDiameterOf(to) ||
-            PageTransitionEntry.customWidthOf(from) !=
-                PageTransitionEntry.customWidthOf(to) ||
-            PageTransitionEntry.customLengthOf(from) !=
-                PageTransitionEntry.customLengthOf(to)) {
-          entries
-              .add(PageTransitionEntry.move(from: from, to: to, order: order));
-        } else {
-          entries.add(PageTransitionEntry.none(to: to, order: order));
-        }
-      } else {
-        entries.add(PageTransitionEntry.appear(to: to, order: order));
-      }
-      order++;
-    });
-
-    previous.forEach((id, from) {
-      if (!next.containsKey(id)) {
-        entries.add(PageTransitionEntry.disappear(from: from, order: order));
-        order++;
-      }
-    });
-
-    return entries;
-  }
+  ) =>
+      TransitionPlanner.diff(previous, next);
 }

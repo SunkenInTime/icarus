@@ -430,6 +430,106 @@ describe("page-scoped read contract", () => {
     });
     expect(counts).toEqual({ pages: 2, pageContents: 2 });
   });
+
+  test("structural page ops rename only auto-named pages", async () => {
+    vi.useFakeTimers();
+    try {
+      const { t, owner } = await createHarness();
+      await owner.mutation(createStrategyWithInitialPage, {
+        publicId: strategyPublicId,
+        name: "Page names",
+        mapData: "ascent",
+        initialPagePublicId: pageA,
+        initialPageName: "Page 1",
+        initialPageIsAutoNamed: true,
+        initialPageIsAttack: true,
+        initialPageSettings: settingsA,
+      });
+
+      expect(
+        await applyOps(owner, "page-name-provenance", [
+          {
+            opId: "insert-page-before-a",
+            type: "page.add",
+            pagePublicId: pageB,
+            payload: {
+              name: "Page 1",
+              isAutoNamed: true,
+              isAttack: false,
+              settings: settingsB,
+            },
+            sortIndex: 0,
+            expectedStrategyRevision: 0,
+          },
+        ]),
+      ).toMatchObject({ results: [{ status: "applied" }] });
+
+      let shell = (await owner.query(getShell, {
+        strategyPublicId,
+      })) as {
+        pages: Array<{
+          publicId: string;
+          name: string;
+          isAutoNamed?: boolean;
+          revision: number;
+        }>;
+      };
+      expect(shell.pages).toMatchObject([
+        { publicId: pageB, name: "Page 1", isAutoNamed: true },
+        { publicId: pageA, name: "Page 2", isAutoNamed: true },
+      ]);
+
+      expect(
+        await applyOps(owner, "page-name-provenance", [
+          {
+            opId: "rename-page-a",
+            type: "page.patch",
+            pagePublicId: pageA,
+            payload: { name: "Anchor", isAutoNamed: false },
+            expectedPageRevision: shell.pages[1]!.revision,
+          },
+          {
+            opId: "move-page-a-first",
+            type: "page.reorder",
+            pagePublicId: pageA,
+            sortIndex: 0,
+            expectedStrategyRevision: 1,
+          },
+        ]),
+      ).toMatchObject({
+        results: [{ status: "applied" }, { status: "applied" }],
+      });
+
+      shell = (await owner.query(getShell, {
+        strategyPublicId,
+      })) as typeof shell;
+      expect(shell.pages).toMatchObject([
+        { publicId: pageA, name: "Anchor", isAutoNamed: false },
+        { publicId: pageB, name: "Page 2", isAutoNamed: true },
+      ]);
+
+      expect(
+        await applyOps(owner, "page-name-provenance", [
+          {
+            opId: "delete-page-a",
+            type: "page.delete",
+            pagePublicId: pageA,
+            expectedStrategyRevision: 2,
+          },
+        ]),
+      ).toMatchObject({ results: [{ status: "applied" }] });
+
+      shell = (await owner.query(getShell, {
+        strategyPublicId,
+      })) as typeof shell;
+      expect(shell.pages).toMatchObject([
+        { publicId: pageB, name: "Page 1", isAutoNamed: true },
+      ]);
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("record-scoped write contract", () => {

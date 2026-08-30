@@ -27,6 +27,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
@@ -327,6 +328,83 @@ void main() {
   });
 
   group('Strategy round-trip integrity', () {
+    test('legacy Hive ability visual state defaults vision cones on', () {
+      final writer = BinaryWriterImpl(Hive)
+        ..writeByte(4)
+        ..writeByte(2)
+        ..write(true)
+        ..writeByte(3)
+        ..write(false)
+        ..writeByte(4)
+        ..write(true)
+        ..writeByte(5)
+        ..write(false);
+      final reader = BinaryReaderImpl(
+        Uint8List.fromList(writer.toBytes()),
+        Hive,
+      );
+
+      final restored = AbilityVisualStateAdapter().read(reader);
+
+      expect(restored.showRangeOutline, isTrue);
+      expect(restored.showRangeFill, isFalse);
+      expect(restored.showInnerOutline, isTrue);
+      expect(restored.showInnerFill, isFalse);
+      expect(restored.showVisionCone, isTrue);
+    });
+
+    test('vision cone visibility survives current .ica export and import',
+        () async {
+      final source = StrategyData(
+        id: 'vision-cone-source',
+        name: 'Vision cone source',
+        mapData: MapValue.ascent,
+        versionNumber: Settings.versionNumber,
+        lastEdited: DateTime.utc(2026, 1, 1),
+        folderID: null,
+        pages: [
+          StrategyPage(
+            id: 'page-1',
+            sortIndex: 0,
+            name: 'Page 1',
+            drawingData: const [],
+            agentData: const [],
+            abilityData: [
+              PlacedAbility(
+                id: 'hidden-turret',
+                data: AgentData.agents[AgentType.killjoy]!.abilities[2],
+                position: const Offset(100, 200),
+                rotation: 0.75,
+                length: 80,
+                visualState: const AbilityVisualState(
+                  showVisionCone: false,
+                ),
+              ),
+            ],
+            textData: const [],
+            imageData: const [],
+            utilityData: const [],
+            isAttack: true,
+            settings: StrategySettings(),
+          ),
+        ],
+      );
+      final exported = _buildExportPayload(source);
+
+      final imported = await _importStrategyFromDecoded(
+        decoded: exported,
+        strategyName: 'Vision cone imported',
+        strategyId: 'vision-cone-imported',
+        isZip: true,
+      );
+      final ability = imported.pages.single.abilityData.single;
+
+      expect(ability.visualState.showVisionCone, isFalse);
+      expect(ability.rotation, 0.75);
+      expect(ability.length, 80);
+      expect(_buildExportPayload(imported)['pages'], exported['pages']);
+    });
+
     test('legacy Hive field 11 lineUps still deserialize into lineUpGroups',
         () {
       _ensureAdaptersRegistered();
@@ -347,6 +425,7 @@ void main() {
       expect(restored.lineUps, hasLength(1));
       expect(restored.lineUps.single.id, legacyLineUp.id);
       expect(restored.lineUpGroups, hasLength(1));
+      expect(restored.isAutoNamed, isNull);
       expect(restored.lineUpGroups.single.id, legacyLineUp.id);
       expect(restored.lineUpGroups.single.items, hasLength(1));
       expect(
@@ -406,6 +485,103 @@ void main() {
           ]));
     });
 
+    test('custom Page N provenance round-trips through export JSON', () async {
+      final page = StrategyPage(
+        id: 'custom-page-2',
+        sortIndex: 1,
+        name: 'Page 2',
+        isAutoNamed: false,
+        drawingData: const [],
+        agentData: const [],
+        abilityData: const [],
+        textData: const [],
+        imageData: const [],
+        utilityData: const [],
+        isAttack: true,
+        settings: StrategySettings(),
+      );
+
+      final restored = await StrategyPage.fromJson(
+        json: page.toJson('strategy-id'),
+        strategyID: 'strategy-id',
+        isZip: true,
+      );
+
+      expect(restored.name, 'Page 2');
+      expect(restored.isAutoNamed, isFalse);
+    });
+
+    test('legacy custom Page N stays unresolved and is never renumbered',
+        () async {
+      final page = StrategyPage(
+        id: 'legacy-custom-page-2',
+        sortIndex: 1,
+        name: 'Page 2',
+        drawingData: const [],
+        agentData: const [],
+        abilityData: const [],
+        textData: const [],
+        imageData: const [],
+        utilityData: const [],
+        isAttack: true,
+        settings: StrategySettings(),
+      );
+      final legacyJson = page.toJson('strategy-id');
+      expect(legacyJson, isNot(contains('isAutoNamed')));
+      final restored = await StrategyPage.fromJson(
+        json: legacyJson,
+        strategyID: 'strategy-id',
+        isZip: true,
+      );
+      final oldStrategy = StrategyData(
+        id: 'legacy-strategy',
+        name: 'Legacy Strategy',
+        mapData: MapValue.ascent,
+        versionNumber: Settings.versionNumber - 1,
+        lastEdited: DateTime.utc(2026, 1, 1),
+        folderID: null,
+        pages: [restored],
+      );
+
+      final migrated = StrategyProvider.migrateToCurrentVersion(oldStrategy);
+      final reindexed = StrategyProvider.reindexPagesAfterStructuralChange(
+        migrated.pages,
+      );
+
+      expect(migrated.pages.single.isAutoNamed, isNull);
+      expect(reindexed.single.name, 'Page 2');
+    });
+
+    test('page-name provenance rejects non-boolean export values', () async {
+      final page = StrategyPage(
+        id: 'invalid-provenance',
+        sortIndex: 0,
+        name: 'Page 1',
+        drawingData: const [],
+        agentData: const [],
+        abilityData: const [],
+        textData: const [],
+        imageData: const [],
+        utilityData: const [],
+        isAttack: true,
+        settings: StrategySettings(),
+      );
+
+      for (final invalidValue in <Object?>['true', 'yes', 1, null]) {
+        final json = page.toJson('strategy-id')..['isAutoNamed'] = invalidValue;
+
+        await expectLater(
+          StrategyPage.fromJson(
+            json: json,
+            strategyID: 'strategy-id',
+            isZip: true,
+          ),
+          throwsFormatException,
+          reason: 'accepted invalid isAutoNamed value: $invalidValue',
+        );
+      }
+    });
+
     test('current schema export -> import preserves canonical structure',
         () async {
       final currentPayload = <String, dynamic>{
@@ -416,6 +592,7 @@ void main() {
             'id': 'page-1',
             'sortIndex': '0',
             'name': 'Page 1',
+            'isAutoNamed': true,
             'drawingData': [
               {
                 'type': 'lineDrawing',
@@ -931,6 +1108,7 @@ void main() {
             id: 'page-1',
             sortIndex: 0,
             name: 'Page 1',
+            isAutoNamed: true,
             drawingData: const [],
             agentData: const [],
             abilityData: const [],
@@ -951,6 +1129,7 @@ void main() {
       final page = restored.pages.single;
 
       expect(page.lineUpGroups, hasLength(1));
+      expect(page.isAutoNamed, isTrue);
       expect(page.lineUpGroups.single.items, hasLength(1));
       expect(page.lineUps, hasLength(1));
       expect(page.lineUps.single.id, 'item-1');

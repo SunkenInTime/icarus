@@ -67,6 +67,14 @@ class _NoopMapProvider extends MapProvider {
   void fromHive(MapValue map, bool isAttack) {}
 }
 
+class _HydratableMapProvider extends MapProvider {
+  @override
+  MapState build() => MapState(
+        currentMap: MapValue.bind,
+        isAttack: true,
+      );
+}
+
 class _NoopTextProvider extends TextProvider {
   @override
   List<PlacedText> build() => const [];
@@ -245,6 +253,72 @@ void main() {
       (widget) => widget is Semantics && widget.properties.label == label,
     );
   }
+
+  testWidgets('pre-hydrated screenshot providers render without build writes',
+      (tester) async {
+    final strategyState = StrategyState(
+      isSaved: true,
+      stratName: 'test strategy',
+      id: 'strategy-id',
+      storageDirectory: null,
+      activePageId: 'page-1',
+    );
+    final container = ProviderContainer(
+      overrides: [
+        mapProvider.overrideWith(_HydratableMapProvider.new),
+        penProvider.overrideWith(_NoopPenProvider.new),
+        effectiveMapThemePaletteProvider.overrideWith(
+          (ref) => MapThemeProfilesProvider.immutableDefaultPalette,
+        ),
+      ],
+    );
+    addTearDown(() {
+      container.dispose();
+      CoordinateSystem.instance.setIsScreenshot(false);
+    });
+    final view = ScreenshotView(
+      mapValue: MapValue.bind,
+      showSpawnBarrier: false,
+      showRegionNames: false,
+      showUltOrbs: false,
+      agents: const [],
+      abilities: const [],
+      text: const [],
+      images: const [],
+      drawings: const [],
+      utilities: const [],
+      strategySettings: StrategySettings(),
+      isAttack: true,
+      strategyState: strategyState,
+      pageName: 'Page 1',
+      lineUpGroups: const [],
+      themeProfileId: MapThemeProfilesProvider.immutableDefaultProfileId,
+      themeOverridePalette: null,
+      placedWidgetsOverride: const SizedBox.shrink(),
+    );
+
+    view.hydrateProviders(container);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(
+              size: CoordinateSystem.screenShotSize,
+            ),
+            child: view,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(container.read(screenshotProvider), isTrue);
+    expect(container.read(strategyProvider), same(strategyState));
+    expect(container.read(mapProvider).currentMap, MapValue.bind);
+    expect(find.text('Page 1'), findsOneWidget);
+  });
 
   Transform findTransformForLabel(WidgetTester tester, String label) {
     final transformFinder = find.ancestor(

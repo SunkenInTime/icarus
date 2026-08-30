@@ -97,7 +97,7 @@ types:
         index: 9
   PlacedText:
     typeId: 4
-    nextIndex: 8
+    nextIndex: 9
     fields:
       text:
         index: 0
@@ -117,7 +117,7 @@ types:
         index: 7
   PlacedImage:
     typeId: 5
-    nextIndex: 11
+    nextIndex: 12
     fields:
       aspectRatio:
         index: 1
@@ -135,6 +135,8 @@ types:
         index: 9
       sizeVersion:
         index: 10
+      link:
+        index: 11
   MapValue:
     typeId: 6
     nextIndex: 13
@@ -255,7 +257,7 @@ types:
         index: 2
   PlacedUtility:
     typeId: 15
-    nextIndex: 15
+    nextIndex: 16
     fields:
       type:
         index: 0
@@ -283,6 +285,8 @@ types:
         index: 12
       isAlly:
         index: 14
+      visionElevation:
+        index: 15
   UtilityType:
     typeId: 16
     nextIndex: 10
@@ -341,7 +345,7 @@ types:
         index: 6
   StrategyPage:
     typeId: 20
-    nextIndex: 14
+    nextIndex: 15
     fields:
       id:
         index: 0
@@ -369,6 +373,8 @@ types:
         index: 11
       lineUpGroups:
         index: 12
+      isAutoNamed:
+        index: 14
   LineUp:
     typeId: 21
     nextIndex: 6
@@ -439,7 +445,7 @@ types:
         index: 4
   AppPreferences:
     typeId: 28
-    nextIndex: 12
+    nextIndex: 19
     fields:
       defaultThemeProfileIdForNewStrategies:
         index: 0
@@ -465,9 +471,21 @@ types:
         index: 10
       showRegionNames:
         index: 11
+      librarySortByName:
+        index: 12
+      librarySortOrderName:
+        index: 13
+      drawingColorValue:
+        index: 14
+      drawingThickness:
+        index: 15
+      discordPresenceEnabled:
+        index: 17
+      videoExportStepDurationSeconds:
+        index: 18
   PlacedViewConeAgent:
     typeId: 29
-    nextIndex: 9
+    nextIndex: 10
     fields:
       presetType:
         index: 0
@@ -487,6 +505,8 @@ types:
         index: 7
       position:
         index: 8
+      visionElevation:
+        index: 9
   PlacedCircleAgent:
     typeId: 30
     nextIndex: 9
@@ -511,7 +531,7 @@ types:
         index: 8
   AbilityVisualState:
     typeId: 32
-    nextIndex: 6
+    nextIndex: 7
     fields:
       showRangeOutline:
         index: 2
@@ -521,6 +541,8 @@ types:
         index: 4
       showInnerFill:
         index: 5
+      showVisionCone:
+        index: 6
   LineUpGroup:
     typeId: 33
     nextIndex: 3

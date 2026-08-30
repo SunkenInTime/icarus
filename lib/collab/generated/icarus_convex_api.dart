@@ -697,6 +697,7 @@ abstract interface class PagesModule {
   Future<ConvexValue> add({
     required double expectedRevision,
     required bool isAttack,
+    ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
     required String name,
     required String pagePublicId,
     ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings> settings =
@@ -714,6 +715,7 @@ abstract interface class PagesModule {
   });
   Future<ConvexValue> rename({
     required double expectedRevision,
+    ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
     required String name,
     required String pagePublicId,
     required String strategyPublicId,
@@ -732,6 +734,7 @@ final class _PagesModule implements PagesModule {
   Future<ConvexValue> add({
     required double expectedRevision,
     required bool isAttack,
+    ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
     required String name,
     required String pagePublicId,
     ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings> settings =
@@ -742,6 +745,7 @@ final class _PagesModule implements PagesModule {
     final args = encodePagesAddArgs(
       expectedRevision: expectedRevision,
       isAttack: isAttack,
+      isAutoNamed: isAutoNamed,
       name: name,
       pagePublicId: pagePublicId,
       settings: settings,
@@ -789,12 +793,14 @@ final class _PagesModule implements PagesModule {
   @override
   Future<ConvexValue> rename({
     required double expectedRevision,
+    ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
     required String name,
     required String pagePublicId,
     required String strategyPublicId,
   }) {
     final args = encodePagesRenameArgs(
       expectedRevision: expectedRevision,
+      isAutoNamed: isAutoNamed,
       name: name,
       pagePublicId: pagePublicId,
       strategyPublicId: strategyPublicId,
@@ -924,6 +930,7 @@ abstract interface class StrategiesModule {
   Future<ConvexValue> createWithInitialPage({
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required bool initialPageIsAttack,
+    ConvexOptional<bool> initialPageIsAutoNamed = const ConvexOptional.absent(),
     required String initialPageName,
     required String initialPagePublicId,
     ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings>
@@ -1008,6 +1015,7 @@ final class _StrategiesModule implements StrategiesModule {
   Future<ConvexValue> createWithInitialPage({
     ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
     required bool initialPageIsAttack,
+    ConvexOptional<bool> initialPageIsAutoNamed = const ConvexOptional.absent(),
     required String initialPageName,
     required String initialPagePublicId,
     ConvexOptional<OpsApplyBatchArgsOpsItemPageAddPayloadSettings>
@@ -1026,6 +1034,7 @@ final class _StrategiesModule implements StrategiesModule {
     final args = encodeStrategiesCreateWithInitialPageArgs(
       folderPublicId: folderPublicId,
       initialPageIsAttack: initialPageIsAttack,
+      initialPageIsAutoNamed: initialPageIsAutoNamed,
       initialPageName: initialPageName,
       initialPagePublicId: initialPagePublicId,
       initialPageSettings: initialPageSettings,

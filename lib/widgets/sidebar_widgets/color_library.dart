@@ -96,7 +96,7 @@ class ColorLibrary extends ConsumerWidget {
   }
 
   Future<void> _addColor(BuildContext context, WidgetRef ref) async {
-    final picked = await _showColorLibraryDialog(
+    final picked = await showIcarusColorPickerDialog(
       context: context,
       initialColor: Colors.white,
       title: 'Add color',
@@ -111,7 +111,7 @@ class ColorLibrary extends ConsumerWidget {
     WidgetRef ref,
     ColorLibraryEntry entry,
   ) async {
-    final picked = await _showColorLibraryDialog(
+    final picked = await showIcarusColorPickerDialog(
       context: context,
       initialColor: entry.color,
       title: 'Edit color',
@@ -124,7 +124,7 @@ class ColorLibrary extends ConsumerWidget {
   }
 }
 
-Future<Color?> _showColorLibraryDialog({
+Future<Color?> showIcarusColorPickerDialog({
   required BuildContext context,
   required Color initialColor,
   required String title,

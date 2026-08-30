@@ -6,6 +6,7 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
@@ -49,6 +50,8 @@ class ViewConeAgentComposite extends ConsumerWidget {
     required this.length,
     this.forcedAgentSize,
     this.applyRotation = true,
+    this.clipToGeometry = true,
+    this.isInteractive = true,
   });
 
   final PlacedViewConeAgent agent;
@@ -56,6 +59,8 @@ class ViewConeAgentComposite extends ConsumerWidget {
   final double length;
   final double? forcedAgentSize;
   final bool applyRotation;
+  final bool clipToGeometry;
+  final bool isInteractive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -88,7 +93,15 @@ class ViewConeAgentComposite extends ConsumerWidget {
             child: ViewConeWidget(
               id: null,
               angle: UtilityData.getViewConeAngle(agent.presetType),
+              rotation: rotation,
               length: length,
+              worldOrigin: clipToGeometry
+                  ? agent.position +
+                      coordinateSystem.virtualOffsetToWorld(
+                        Offset(agentSize / 2, agentSize / 2),
+                      )
+                  : null,
+              visionElevation: agent.visionElevation,
               showCenterMarker: false,
             ),
           ),
@@ -104,6 +117,7 @@ class ViewConeAgentComposite extends ConsumerWidget {
                 id: agent.id,
                 agent: AgentData.agents[agent.type]!,
                 forcedAgentSize: agentSize,
+                isInteractive: isInteractive,
               ),
             ),
           ),
@@ -188,6 +202,11 @@ class _PlacedViewConeAgentWidgetState
       coordinateSystem: coordinateSystem,
       agentSize: agentSize,
     );
+    final agentScreenPosition = screenPositionForWidget(
+      widget: current,
+      coordinateSystem: coordinateSystem,
+      agentSize: agentSize,
+    );
 
     if (!_isDragging && _rotationOrigin == Offset.zero) {
       if (_localRotation != current.rotation) {
@@ -202,10 +221,8 @@ class _PlacedViewConeAgentWidgetState
     final localLength = _localLength ?? current.length;
 
     return Positioned(
-      left: coordinateSystem.coordinateToScreen(current.position).dx -
-          compositeAgentOffset.dx,
-      top: coordinateSystem.coordinateToScreen(current.position).dy -
-          compositeAgentOffset.dy,
+      left: agentScreenPosition.dx - compositeAgentOffset.dx,
+      top: agentScreenPosition.dy - compositeAgentOffset.dy,
       child: RotatableWidget(
         rotation: localRotation,
         isDragging: _isDragging,
@@ -264,6 +281,8 @@ class _PlacedViewConeAgentWidgetState
                 rotation: localRotation,
                 length: localLength,
                 forcedAgentSize: agentSize,
+                clipToGeometry: false,
+                isInteractive: false,
               ),
             ),
           ),

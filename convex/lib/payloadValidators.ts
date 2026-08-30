@@ -67,6 +67,7 @@ export const strategyPatchPayloadValidator = v.object({
 
 export const pagePayloadValidator = v.object({
   name: v.optional(v.string()),
+  isAutoNamed: v.optional(v.boolean()),
   settings: v.optional(strategySettingsValidator),
   isAttack: v.optional(v.boolean()),
 });

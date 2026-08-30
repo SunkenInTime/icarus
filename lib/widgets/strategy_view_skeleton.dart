@@ -159,70 +159,59 @@ class _SkeletonTopBar extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(left: 15, top: 15, bottom: 10, right: 15),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Row(
             children: [
               const _SkeletonBlock(width: 40, height: 40, radius: 8),
               const SizedBox(width: 5),
-              _MapSelectorSkeleton(
-                mapValue: mapValue,
-                isAttack: isAttack,
-              ),
+              _MapSelectorSkeleton(mapValue: mapValue, isAttack: isAttack),
             ],
           ),
-          const SizedBox(width: 12),
           Expanded(
-            flex: 6,
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 280),
-                child: Container(
-                  width: double.infinity,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: _tone(Settings.tacticalVioletTheme.card, 0.95),
-                    borderRadius: BorderRadius.circular(8),
-                    border:
-                        Border.all(color: _tone(Settings.highlightColor, 0.82)),
-                  ),
-                  child: Center(
-                    child: title == null || title.isEmpty
-                        ? const _SkeletonBlock(
-                            width: 158,
-                            height: 12,
-                            radius: 5,
-                          )
-                        : Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: ShadTheme.of(context)
-                                  .textTheme
-                                  .small
-                                  .copyWith(color: Colors.white70),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 280),
+                  child: Container(
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: _tone(Settings.tacticalVioletTheme.card, 0.95),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _tone(Settings.highlightColor, 0.82),
+                      ),
+                    ),
+                    child: Center(
+                      child: title == null || title.isEmpty
+                          ? const _SkeletonBlock(
+                              width: 158,
+                              height: 12,
+                              radius: 5,
+                            )
+                          : Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              child: Text(
+                                title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: ShadTheme.of(
+                                  context,
+                                )
+                                    .textTheme
+                                    .small
+                                    .copyWith(color: Colors.white70),
+                              ),
                             ),
-                          ),
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            flex: 5,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 238),
-                child: const SizedBox(
-                  width: double.infinity,
-                  child: _SkeletonBlock(height: 40, radius: 8),
-                ),
-              ),
-            ),
-          ),
+          const _SkeletonBlock(width: 238, height: 40, radius: 8),
         ],
       ),
     );
@@ -230,10 +219,11 @@ class _SkeletonTopBar extends StatelessWidget {
 }
 
 class _MapSelectorSkeleton extends StatelessWidget {
-  const _MapSelectorSkeleton({
-    required this.mapValue,
-    required this.isAttack,
-  });
+  const _MapSelectorSkeleton({required this.mapValue, required this.isAttack});
+
+  static const double _outerRadius = 10;
+  static const double _innerGap = 4;
+  static const double _innerRadius = _outerRadius - _innerGap;
 
   final MapValue mapValue;
   final bool isAttack;
@@ -257,7 +247,7 @@ class _MapSelectorSkeleton extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(_innerRadius),
             child: SizedBox(
               width: 180,
               height: 57,
@@ -294,10 +284,7 @@ class _MapSelectorSkeleton extends StatelessWidget {
 }
 
 class _MapCanvasSkeleton extends StatelessWidget {
-  const _MapCanvasSkeleton({
-    required this.mapValue,
-    required this.isAttack,
-  });
+  const _MapCanvasSkeleton({required this.mapValue, required this.isAttack});
 
   final MapValue mapValue;
   final bool isAttack;
@@ -312,14 +299,11 @@ class _MapCanvasSkeleton extends StatelessWidget {
       builder: (context, constraints) {
         final height = constraints.maxHeight;
         final worldWidth = height * (16 / 9);
-        final playAreaSize = Size(worldWidth, height);
-        CoordinateSystem(playAreaSize: playAreaSize);
-        final coordinateSystem = CoordinateSystem.instance;
         final viewportWidth =
             (constraints.maxWidth - Settings.sideBarReservedWidth)
                 .clamp(0.0, constraints.maxWidth)
                 .toDouble();
-        final mapWidth = height * coordinateSystem.mapAspectRatio;
+        final mapWidth = height * CoordinateSystem.defaultMapAspectRatio;
         final mapLeft = (worldWidth - mapWidth) / 2;
         final worldLeft = (viewportWidth - worldWidth) / 2;
 
@@ -383,10 +367,7 @@ class _MapCanvasSkeleton extends StatelessWidget {
                 ),
               ),
             ),
-            SizedBox(
-              width: Settings.sideBarReservedWidth,
-              height: height,
-            ),
+            SizedBox(width: Settings.sideBarReservedWidth, height: height),
           ],
         );
       },
@@ -494,8 +475,12 @@ class _SidebarSkeleton extends StatelessWidget {
                   ),
                 ),
                 const Padding(
-                  padding:
-                      EdgeInsets.only(left: 16, right: 16, top: 8, bottom: 10),
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    top: 8,
+                    bottom: 10,
+                  ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.start,
                     children: [
@@ -552,11 +537,7 @@ class _SidebarSkeleton extends StatelessWidget {
 }
 
 class _SkeletonBlock extends StatelessWidget {
-  const _SkeletonBlock({
-    this.width,
-    this.height,
-    this.radius = 8,
-  });
+  const _SkeletonBlock({this.width, this.height, this.radius = 8});
 
   final double? width;
   final double? height;

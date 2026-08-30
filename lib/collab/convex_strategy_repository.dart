@@ -302,6 +302,7 @@ class ConvexStrategyRepository {
     required String mapData,
     required String initialPagePublicId,
     required String initialPageName,
+    bool? initialPageIsAutoNamed,
     required bool initialPageIsAttack,
     String? folderPublicId,
     String? themeProfileId,
@@ -314,6 +315,7 @@ class ConvexStrategyRepository {
       mapData: mapData,
       initialPagePublicId: initialPagePublicId,
       initialPageName: initialPageName,
+      initialPageIsAutoNamed: _optional(initialPageIsAutoNamed),
       initialPageIsAttack: initialPageIsAttack,
       folderPublicId: _optional(folderPublicId),
       themeProfileId: _optional(themeProfileId),
@@ -360,6 +362,7 @@ class ConvexStrategyRepository {
     required String strategyPublicId,
     required String pagePublicId,
     required String name,
+    bool? isAutoNamed,
     required int sortIndex,
     required bool isAttack,
     required int expectedRevision,
@@ -369,6 +372,7 @@ class ConvexStrategyRepository {
       strategyPublicId: strategyPublicId,
       pagePublicId: pagePublicId,
       name: name,
+      isAutoNamed: _optional(isAutoNamed),
       sortIndex: sortIndex.toDouble(),
       isAttack: isAttack,
       expectedRevision: expectedRevision.toDouble(),
@@ -539,6 +543,7 @@ RemoteFullStrategySnapshot _fullSnapshot(StrategyGetFullSnapshotResult result) {
         publicId: page.publicId,
         strategyPublicId: page.strategyPublicId,
         name: page.name,
+        isAutoNamed: _optionalValue(page.isAutoNamed),
         sortIndex: page.sortIndex.toInt(),
         isAttack: page.isAttack,
         revision: page.revision.toInt(),
@@ -584,6 +589,7 @@ RemotePage _page(PageGetSnapshotResultPage page) {
     publicId: page.publicId,
     strategyPublicId: page.strategyPublicId,
     name: page.name,
+    isAutoNamed: _optionalValue(page.isAutoNamed),
     sortIndex: page.sortIndex.toInt(),
     isAttack: page.isAttack,
     revision: page.revision.toInt(),
@@ -707,6 +713,8 @@ CurrentOpSnapshot _currentSnapshot(
         revision: revision.toInt(),
         value: {
           'name': value.name,
+          if (value.isAutoNamed.isPresent)
+            'isAutoNamed': value.isAutoNamed.value,
           'sortIndex': value.sortIndex,
           'isAttack': value.isAttack,
         },
@@ -754,6 +762,9 @@ DateTime _dateTime(double milliseconds) =>
 ConvexOptional<T> _optional<T>(T? value) => value == null
     ? const ConvexOptional.absent()
     : ConvexOptional.present(value);
+
+T? _optionalValue<T>(ConvexOptional<T> value) =>
+    value.isPresent ? value.value : null;
 
 ConvexOptional<double> _optionalNumber(num? value) => value == null
     ? const ConvexOptional.absent()

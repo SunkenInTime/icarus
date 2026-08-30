@@ -6,8 +6,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/auth_provider.dart';
-import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
-import 'package:icarus/widgets/account_avatar.dart';
+import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/marker_sizes_sync.dart';
@@ -15,6 +14,9 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/widgets/account_avatar.dart';
+import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
@@ -33,16 +35,16 @@ enum _SettingsSection {
   globalDefaults,
   globalSaving,
   globalMapVisibility,
-  globalMapProfiles,
+  globalPrivacy,
   shortcuts,
 }
 
 class SettingsTab extends ConsumerStatefulWidget {
   const SettingsTab({super.key});
 
-  static const double _dialogWidth = 860;
-  static const double _dialogHeight = 640;
-  static const double _navigationWidth = 196;
+  static const double _maxDialogWidth = 1080;
+  static const double _maxDialogHeight = 820;
+  static const double _navigationWidth = 208;
 
   @override
   ConsumerState<SettingsTab> createState() => _SettingsTabState();
@@ -64,25 +66,20 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final activeStrategyName = ref.watch(strategyProvider).strategyName;
     final strategySettings = ref.watch(strategySettingsProvider);
     final mapState = ref.watch(mapProvider);
     final appPreferences = ref.watch(appPreferencesProvider);
-    final scopeLabel = switch (_mode) {
-      _SettingsMode.strategy => 'Current strategy',
-      _SettingsMode.global => 'App-wide',
-      _SettingsMode.shortcuts => 'App-wide',
-    };
-    final scopeValue = switch (_mode) {
-      _SettingsMode.strategy => activeStrategyName,
-      _SettingsMode.global => 'Defaults',
-      _SettingsMode.shortcuts => 'Keybinds',
-    };
+
+    final screenSize = MediaQuery.sizeOf(context);
+    final dialogWidth =
+        (screenSize.width - 96).clamp(560.0, SettingsTab._maxDialogWidth);
+    final dialogHeight =
+        (screenSize.height - 80).clamp(420.0, SettingsTab._maxDialogHeight);
 
     return ShadDialog(
-      constraints: const BoxConstraints(
-        maxWidth: SettingsTab._dialogWidth,
-        maxHeight: SettingsTab._dialogHeight,
+      constraints: BoxConstraints(
+        maxWidth: dialogWidth,
+        maxHeight: dialogHeight,
       ),
       padding: EdgeInsets.zero,
       scrollable: false,
@@ -90,13 +87,12 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       child: Material(
         color: Colors.transparent,
         child: SizedBox(
-          width: SettingsTab._dialogWidth,
-          height: SettingsTab._dialogHeight,
+          width: dialogWidth,
+          height: dialogHeight,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _SettingsNavigationRail(
-                mode: _mode,
                 selectedSection: _selectedSection,
                 onSectionSelected: _selectSection,
               ),
@@ -107,56 +103,29 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 22, 24, 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(right: 36),
-                        child: _SettingsScopeHeader(
-                          label: scopeLabel,
-                          value: scopeValue,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Expanded(
-                        child: ScrollConfiguration(
-                          behavior: ScrollConfiguration.of(context)
-                              .copyWith(scrollbars: false),
-                          child: SingleChildScrollView(
-                            controller: _scrollController,
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 180),
-                              switchInCurve: Curves.easeOutCubic,
-                              switchOutCurve: Curves.easeInCubic,
-                              child: switch (_mode) {
-                                _SettingsMode.strategy =>
-                                  _StrategySettingsSections(
-                                    key: const ValueKey('strategy-settings'),
-                                    sectionKeys: _sectionKeys,
-                                    activeStrategyName: activeStrategyName,
-                                    strategySettings: strategySettings,
-                                    onManageThemeProfiles: () => _selectSection(
-                                      _SettingsSection.globalMapProfiles,
-                                    ),
-                                  ),
-                                _SettingsMode.global => _GlobalSettingsSections(
-                                    key: const ValueKey('global-settings'),
-                                    sectionKeys: _sectionKeys,
-                                    appPreferences: appPreferences,
-                                    mapState: mapState,
-                                  ),
-                                _SettingsMode.shortcuts =>
-                                  _ShortcutSettingsSection(
-                                    key: _sectionKeys[
-                                        _SettingsSection.shortcuts],
-                                  ),
-                              },
-                            ),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+                  child: ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(context)
+                        .copyWith(scrollbars: false),
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      child: switch (_mode) {
+                        _SettingsMode.strategy => _StrategySettingsSections(
+                            key: const ValueKey('strategy-settings'),
+                            sectionKeys: _sectionKeys,
+                            strategySettings: strategySettings,
                           ),
-                        ),
-                      ),
-                    ],
+                        _SettingsMode.global => _GlobalSettingsSections(
+                            key: const ValueKey('global-settings'),
+                            sectionKeys: _sectionKeys,
+                            appPreferences: appPreferences,
+                            mapState: mapState,
+                          ),
+                        _SettingsMode.shortcuts => _ShortcutSettingsSection(
+                            key: _sectionKeys[_SettingsSection.shortcuts],
+                          ),
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -169,6 +138,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
 
   void _selectSection(_SettingsSection section) {
     final nextMode = _modeForSection(section);
+    final modeChanged = nextMode != _mode;
     setState(() {
       _mode = nextMode;
       _selectedSection = section;
@@ -177,12 +147,18 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final context = _sectionKeys[section]?.currentContext;
       if (context == null || !mounted) return;
-      Scrollable.ensureVisible(
-        context,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        alignment: 0,
-      );
+      if (modeChanged) {
+        // New pane: land on the section directly, no scroll animation from a
+        // stale offset.
+        Scrollable.ensureVisible(context, alignment: 0);
+      } else {
+        Scrollable.ensureVisible(
+          context,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: 0,
+        );
+      }
     });
   }
 
@@ -195,7 +171,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
       case _SettingsSection.globalDefaults:
       case _SettingsSection.globalSaving:
       case _SettingsSection.globalMapVisibility:
-      case _SettingsSection.globalMapProfiles:
+      case _SettingsSection.globalPrivacy:
         return _SettingsMode.global;
       case _SettingsSection.shortcuts:
         return _SettingsMode.shortcuts;
@@ -203,72 +179,15 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
   }
 }
 
-class _SettingsScopeHeader extends StatelessWidget {
-  const _SettingsScopeHeader({
-    required this.label,
-    required this.value,
-  });
-
-  final String label;
-  final String? value;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    final displayValue = value ?? 'Open strategy';
-
-    return Row(
-      children: [
-        Text(
-          label.toUpperCase(),
-          style: theme.textTheme.small.copyWith(
-            color: Settings.tacticalVioletTheme.mutedForeground,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.45,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Flexible(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-            decoration: BoxDecoration(
-              color: Settings.tacticalVioletTheme.secondary
-                  .withValues(alpha: 0.72),
-              borderRadius: BorderRadius.circular(999),
-              border: Border.all(
-                color:
-                    Settings.tacticalVioletTheme.border.withValues(alpha: 0.9),
-              ),
-            ),
-            child: Text(
-              displayValue,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.small.copyWith(
-                color: Settings.tacticalVioletTheme.foreground,
-                fontWeight: FontWeight.w700,
-                height: 1.1,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _StrategySettingsSections extends ConsumerWidget {
   const _StrategySettingsSections({
     super.key,
     required this.sectionKeys,
-    required this.activeStrategyName,
     required this.strategySettings,
-    required this.onManageThemeProfiles,
   });
 
   final Map<_SettingsSection, GlobalKey> sectionKeys;
-  final String? activeStrategyName;
   final StrategySettings strategySettings;
-  final VoidCallback onManageThemeProfiles;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -277,14 +196,12 @@ class _StrategySettingsSections extends ConsumerWidget {
       children: [
         SettingsScopeCard(
           key: sectionKeys[_SettingsSection.strategyObjects],
-          title: "Strategy object styling",
-          description: activeStrategyName == null
-              ? "Resize markers and control how placed objects render."
-              : "Changes apply to \"$activeStrategyName\".",
+          title: "Object styling",
           child: Column(
             children: [
               _SettingsSliderTile(
                 icon: Icons.person_pin_circle_outlined,
+                iconColor: Settings.settingsAgentAccent,
                 title: "Agent markers",
                 description:
                     "Resize placed agents and view tools for this strategy.",
@@ -299,10 +216,20 @@ class _StrategySettingsSections extends ConsumerWidget {
                       .updateAgentSize(value);
                   ref.read(strategyProvider.notifier).setUnsaved();
                 },
+                onChangeCommitted: (start, end) {
+                  if (start == end) return;
+
+                  final settings = ref.read(strategySettingsProvider.notifier);
+                  settings.updateAgentSize(start);
+                  ref.read(actionProvider.notifier).performTransaction(
+                    groups: const [ActionGroup.strategySettings],
+                    mutation: () => settings.updateAgentSize(end),
+                  );
+                },
               ),
-              const _SettingsItemDivider(),
               _SettingsSliderTile(
                 icon: Icons.auto_awesome_outlined,
+                iconColor: Settings.settingsAbilityAccent,
                 title: "Ability markers",
                 description:
                     "Resize utility icons and placement helpers for this strategy.",
@@ -317,10 +244,20 @@ class _StrategySettingsSections extends ConsumerWidget {
                       .updateAbilitySize(value);
                   ref.read(strategyProvider.notifier).setUnsaved();
                 },
+                onChangeCommitted: (start, end) {
+                  if (start == end) return;
+
+                  final settings = ref.read(strategySettingsProvider.notifier);
+                  settings.updateAbilitySize(start);
+                  ref.read(actionProvider.notifier).performTransaction(
+                    groups: const [ActionGroup.strategySettings],
+                    mutation: () => settings.updateAbilitySize(end),
+                  );
+                },
               ),
-              const _SettingsItemDivider(),
               _SettingsToggleTile(
                 icon: Icons.contrast_outlined,
+                iconColor: Settings.settingsNeutralAccent,
                 title: "Neutral team marker colors",
                 description:
                     "Render ally and enemy marker accents as matching-brightness greys.",
@@ -341,15 +278,10 @@ class _StrategySettingsSections extends ConsumerWidget {
             ],
           ),
         ),
-        const SizedBox(height: 20),
-        const _SectionDivider(),
-        const SizedBox(height: 20),
+        const SizedBox(height: 28),
         KeyedSubtree(
           key: sectionKeys[_SettingsSection.strategyMapTheme],
-          child: MapThemeSettingsSection(
-            scope: MapThemeSettingsScope.strategy,
-            onManageProfiles: onManageThemeProfiles,
-          ),
+          child: const MapThemeSettingsSection(),
         ),
         const SizedBox(height: 24),
       ],
@@ -378,16 +310,16 @@ class _GlobalSettingsSections extends ConsumerWidget {
           key: sectionKeys[_SettingsSection.globalAccount],
         ),
         const SizedBox(height: 20),
-        const _SectionDivider(),
+        const _SettingsItemDivider(),
         const SizedBox(height: 20),
         SettingsScopeCard(
           key: sectionKeys[_SettingsSection.globalDefaults],
           title: "New strategy defaults",
-          description: "Set the marker styling each new strategy starts with.",
           child: Column(
             children: [
               _SettingsSliderTile(
                 icon: Icons.person_pin_circle_outlined,
+                iconColor: Settings.settingsAgentAccent,
                 title: "Default agent markers",
                 description:
                     "Default size for agent markers in new strategies.",
@@ -402,9 +334,9 @@ class _GlobalSettingsSections extends ConsumerWidget {
                       .setDefaultAgentSizeForNewStrategies(value);
                 },
               ),
-              const _SettingsItemDivider(),
               _SettingsSliderTile(
                 icon: Icons.auto_awesome_outlined,
+                iconColor: Settings.settingsAbilityAccent,
                 title: "Default ability markers",
                 description:
                     "Default size for ability markers in new strategies.",
@@ -419,9 +351,9 @@ class _GlobalSettingsSections extends ConsumerWidget {
                       .setDefaultAbilitySizeForNewStrategies(value);
                 },
               ),
-              const _SettingsItemDivider(),
               _SettingsToggleTile(
                 icon: Icons.contrast_outlined,
+                iconColor: Settings.settingsNeutralAccent,
                 title: "Neutral marker colors by default",
                 description:
                     "Use grey ally and enemy accents for new strategies.",
@@ -438,18 +370,15 @@ class _GlobalSettingsSections extends ConsumerWidget {
             ],
           ),
         ),
-        const SizedBox(height: 20),
-        const _SectionDivider(),
-        const SizedBox(height: 20),
+        const SizedBox(height: 28),
         SettingsScopeCard(
           key: sectionKeys[_SettingsSection.globalSaving],
           title: "Workspace behavior",
-          description:
-              "Control how Icarus persists strategy edits while you work.",
           child: Column(
             children: [
               _SettingsToggleTile(
                 icon: Icons.save_outlined,
+                iconColor: Settings.settingsPersistenceAccent,
                 title: "Autosave",
                 description:
                     "Automatically save the current strategy after 15 seconds of inactivity. When off, Icarus will ask before you leave unsaved work.",
@@ -463,20 +392,31 @@ class _GlobalSettingsSections extends ConsumerWidget {
                       .refreshAutosaveScheduling();
                 },
               ),
+              _SettingsToggleTile(
+                icon: Icons.sports_esports_outlined,
+                iconColor: Settings.settingsDiscordAccent,
+                title: "Discord Rich Presence",
+                description:
+                    "Show the current map and attack or defense side on your Discord profile. Strategy names are never shared.",
+                value: appPreferences.discordPresenceEnabled,
+                onChanged: (value) {
+                  ref
+                      .read(appPreferencesProvider.notifier)
+                      .setDiscordPresenceEnabled(value);
+                },
+              ),
             ],
           ),
         ),
-        const SizedBox(height: 20),
-        const _SectionDivider(),
-        const SizedBox(height: 20),
+        const SizedBox(height: 28),
         SettingsScopeCard(
           key: sectionKeys[_SettingsSection.globalMapVisibility],
           title: "Workspace map visibility",
-          description: "Show or hide map reference layers while you work.",
           child: Column(
             children: [
               _SettingsToggleTile(
                 icon: Icons.grid_on_rounded,
+                iconColor: Settings.settingsMapAccent,
                 title: "Spawn barriers",
                 description:
                     "Keep round-start barrier guides visible on the map.",
@@ -485,9 +425,9 @@ class _GlobalSettingsSections extends ConsumerWidget {
                   ref.read(mapProvider.notifier).updateSpawnBarrier(value);
                 },
               ),
-              const _SettingsItemDivider(),
               _SettingsToggleTile(
                 icon: Icons.location_on_outlined,
+                iconColor: Settings.settingsMapAccent,
                 title: "Region names",
                 description: "Show map callout names directly on the canvas.",
                 value: mapState.showRegionNames,
@@ -495,9 +435,9 @@ class _GlobalSettingsSections extends ConsumerWidget {
                   ref.read(mapProvider.notifier).updateRegionNames(value);
                 },
               ),
-              const _SettingsItemDivider(),
               _SettingsToggleTile(
                 icon: Icons.radio_button_checked_outlined,
+                iconColor: Settings.settingsMapAccent,
                 title: "Ultimate orbs",
                 description: "Display orb pickup markers on supported maps.",
                 value: mapState.showUltOrbs,
@@ -508,13 +448,22 @@ class _GlobalSettingsSections extends ConsumerWidget {
             ],
           ),
         ),
-        const SizedBox(height: 20),
-        const _SectionDivider(),
-        const SizedBox(height: 20),
-        KeyedSubtree(
-          key: sectionKeys[_SettingsSection.globalMapProfiles],
-          child: const MapThemeSettingsSection(
-            scope: MapThemeSettingsScope.global,
+        const SizedBox(height: 28),
+        SettingsScopeCard(
+          key: sectionKeys[_SettingsSection.globalPrivacy],
+          title: "Privacy",
+          child: _SettingsToggleTile(
+            icon: Icons.analytics_outlined,
+            iconColor: Settings.settingsPersistenceAccent,
+            title: "Anonymous analytics",
+            description:
+                "Share app opens and a few feature-use events — never strategy content or personal details.",
+            value: ref.watch(analyticsEnabledProvider),
+            onChanged: (value) async {
+              await ref
+                  .read(analyticsEnabledProvider.notifier)
+                  .setEnabled(value);
+            },
           ),
         ),
         const SizedBox(height: 24),
@@ -561,11 +510,10 @@ class _ShortcutSettingsSectionState
 
     return SettingsScopeCard(
       title: "Keybinds",
-      description:
-          "Edit app-wide keybinds. Search accepts action names or keys.",
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
@@ -740,8 +688,7 @@ class _ShortcutTableHeader extends StatelessWidget {
               "Action",
               style: theme.textTheme.small.copyWith(
                 color: Settings.tacticalVioletTheme.mutedForeground,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.35,
+                fontSize: 12,
               ),
             ),
           ),
@@ -753,8 +700,7 @@ class _ShortcutTableHeader extends StatelessWidget {
                 "Binding",
                 style: theme.textTheme.small.copyWith(
                   color: Settings.tacticalVioletTheme.mutedForeground,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.35,
+                  fontSize: 12,
                 ),
               ),
             ),
@@ -811,7 +757,7 @@ class _ShortcutBindingRow extends StatelessWidget {
                   definition.title,
                   style: theme.textTheme.p.copyWith(
                     color: Settings.tacticalVioletTheme.foreground,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w400,
                   ),
                 ),
               ),
@@ -832,6 +778,7 @@ class _ShortcutBindingRow extends StatelessWidget {
                   alignment: Alignment.centerRight,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(8),
+                    mouseCursor: SystemMouseCursors.click,
                     onTap: onEdit,
                     child: _ShortcutBindingPill(
                       label: binding.displayLabel(),
@@ -894,7 +841,6 @@ class _ShortcutBindingPill extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: ShadTheme.of(context).textTheme.small.copyWith(
               color: Settings.tacticalVioletTheme.foreground,
-              fontWeight: FontWeight.w800,
               height: 1.1,
             ),
       ),
@@ -1020,7 +966,6 @@ class _ShortcutCaptureFieldState extends State<_ShortcutCaptureField>
                       "Press new shortcut...",
                       style: ShadTheme.of(context).textTheme.small.copyWith(
                             color: Settings.tacticalVioletTheme.foreground,
-                            fontWeight: FontWeight.w700,
                           ),
                     ),
                   ),
@@ -1043,7 +988,6 @@ class _ShortcutCaptureFieldState extends State<_ShortcutCaptureField>
                       widget.duplicateMessage!,
                       style: ShadTheme.of(context).textTheme.small.copyWith(
                             color: Settings.tacticalVioletTheme.destructive,
-                            fontWeight: FontWeight.w700,
                           ),
                     ),
                   )
@@ -1075,7 +1019,6 @@ class _ShortcutEmptySearch extends StatelessWidget {
           "No shortcuts match that search.",
           style: ShadTheme.of(context).textTheme.small.copyWith(
                 color: Settings.tacticalVioletTheme.mutedForeground,
-                fontWeight: FontWeight.w600,
               ),
         ),
       ),
@@ -1264,12 +1207,10 @@ class _SignedInAccountRow extends ConsumerWidget {
 
 class _SettingsNavigationRail extends StatelessWidget {
   const _SettingsNavigationRail({
-    required this.mode,
     required this.selectedSection,
     required this.onSectionSelected,
   });
 
-  final _SettingsMode mode;
   final _SettingsSection selectedSection;
   final ValueChanged<_SettingsSection> onSectionSelected;
 
@@ -1286,15 +1227,11 @@ class _SettingsNavigationRail extends StatelessWidget {
             "Settings",
             style: ShadTheme.of(context).textTheme.h4.copyWith(
                   color: Settings.tacticalVioletTheme.foreground,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w500,
                 ),
           ),
-          const SizedBox(height: 18),
-          _SettingsNavHeader(
-            label: "Current strategy",
-            isActive: mode == _SettingsMode.strategy,
-            onTap: () => onSectionSelected(_SettingsSection.strategyObjects),
-          ),
+          const SizedBox(height: 20),
+          const _SettingsNavHeader(label: "Current strategy"),
           const SizedBox(height: 4),
           _SettingsNavItem(
             icon: Icons.tune_outlined,
@@ -1308,12 +1245,8 @@ class _SettingsNavigationRail extends StatelessWidget {
             isSelected: selectedSection == _SettingsSection.strategyMapTheme,
             onTap: () => onSectionSelected(_SettingsSection.strategyMapTheme),
           ),
-          const SizedBox(height: 16),
-          _SettingsNavHeader(
-            label: "App-wide",
-            isActive: mode == _SettingsMode.global,
-            onTap: () => onSectionSelected(_SettingsSection.globalDefaults),
-          ),
+          const SizedBox(height: 20),
+          const _SettingsNavHeader(label: "App-wide"),
           const SizedBox(height: 4),
           _SettingsNavItem(
             icon: Icons.person_outline,
@@ -1341,10 +1274,10 @@ class _SettingsNavigationRail extends StatelessWidget {
                 onSectionSelected(_SettingsSection.globalMapVisibility),
           ),
           _SettingsNavItem(
-            icon: Icons.format_color_fill_outlined,
-            label: "Theme profiles",
-            isSelected: selectedSection == _SettingsSection.globalMapProfiles,
-            onTap: () => onSectionSelected(_SettingsSection.globalMapProfiles),
+            icon: Icons.privacy_tip_outlined,
+            label: "Privacy",
+            isSelected: selectedSection == _SettingsSection.globalPrivacy,
+            onTap: () => onSectionSelected(_SettingsSection.globalPrivacy),
           ),
           _SettingsNavItem(
             icon: Icons.keyboard_alt_outlined,
@@ -1359,53 +1292,21 @@ class _SettingsNavigationRail extends StatelessWidget {
 }
 
 class _SettingsNavHeader extends StatelessWidget {
-  const _SettingsNavHeader({
-    required this.label,
-    required this.isActive,
-    required this.onTap,
-  });
+  const _SettingsNavHeader({required this.label});
 
   final String label;
-  final bool isActive;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final color = isActive
-        ? Settings.tacticalVioletTheme.foreground
-        : Settings.tacticalVioletTheme.mutedForeground;
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-        child: Row(
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOutCubic,
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: isActive
-                    ? Settings.tacticalVioletTheme.primary
-                    : Settings.tacticalVioletTheme.mutedForeground
-                        .withValues(alpha: 0.36),
-                shape: BoxShape.circle,
-              ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Text(
+        label,
+        style: ShadTheme.of(context).textTheme.small.copyWith(
+              color: Settings.tacticalVioletTheme.mutedForeground,
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
             ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: ShadTheme.of(context).textTheme.small.copyWith(
-                    color: color,
-                    fontWeight: isActive ? FontWeight.w800 : FontWeight.w700,
-                    letterSpacing: 0.25,
-                  ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1426,51 +1327,53 @@ class _SettingsNavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const theme = Settings.tacticalVioletTheme;
+    final contentColor = isSelected ? theme.foreground : theme.mutedForeground;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          curve: Curves.easeOutCubic,
-          height: 38,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.14)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          mouseCursor: SystemMouseCursors.click,
+          borderRadius: BorderRadius.circular(8),
+          hoverColor: theme.secondary.withValues(alpha: 0.45),
+          highlightColor: theme.secondary.withValues(alpha: 0.6),
+          splashFactory: NoSplash.splashFactory,
+          child: Ink(
+            decoration: BoxDecoration(
               color: isSelected
-                  ? Settings.tacticalVioletTheme.primary.withValues(alpha: 0.24)
+                  ? theme.secondary.withValues(alpha: 0.9)
                   : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
             ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                size: 16,
-                color: isSelected
-                    ? Settings.tacticalVioletTheme.foreground
-                    : Settings.tacticalVioletTheme.mutedForeground,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: ShadTheme.of(context).textTheme.small.copyWith(
-                        color: isSelected
-                            ? Settings.tacticalVioletTheme.foreground
-                            : Settings.tacticalVioletTheme.mutedForeground,
-                        fontWeight:
-                            isSelected ? FontWeight.w700 : FontWeight.w500,
+            child: SizedBox(
+              height: 34,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      icon,
+                      size: 16,
+                      color: isSelected ? theme.primary : contentColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        label,
+                        overflow: TextOverflow.ellipsis,
+                        style: ShadTheme.of(context).textTheme.small.copyWith(
+                              color: contentColor,
+                              fontWeight: FontWeight.w400,
+                            ),
                       ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1478,9 +1381,10 @@ class _SettingsNavItem extends StatelessWidget {
   }
 }
 
-class _SettingsSliderTile extends StatelessWidget {
+class _SettingsSliderTile extends StatefulWidget {
   const _SettingsSliderTile({
     required this.icon,
+    required this.iconColor,
     required this.title,
     required this.description,
     required this.value,
@@ -1489,9 +1393,11 @@ class _SettingsSliderTile extends StatelessWidget {
     required this.divisions,
     required this.accentColor,
     required this.onChanged,
+    this.onChangeCommitted,
   });
 
   final IconData icon;
+  final Color iconColor;
   final String title;
   final String description;
   final double value;
@@ -1500,63 +1406,90 @@ class _SettingsSliderTile extends StatelessWidget {
   final int divisions;
   final Color accentColor;
   final ValueChanged<double> onChanged;
+  final void Function(double start, double end)? onChangeCommitted;
+
+  @override
+  State<_SettingsSliderTile> createState() => _SettingsSliderTileState();
+}
+
+class _SettingsSliderTileState extends State<_SettingsSliderTile> {
+  double? _dragStartValue;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.only(top: 10, bottom: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              _SettingLeadingIcon(
-                icon: icon,
-                accentColor: accentColor,
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: Icon(
+                  widget.icon,
+                  size: 20,
+                  color: widget.iconColor,
+                ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      title,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                    Text(widget.title),
                     const SizedBox(height: 2),
                     Text(
-                      description,
+                      widget.description,
                       style: ShadTheme.of(context).textTheme.small.copyWith(
                             color: Settings.tacticalVioletTheme.mutedForeground,
-                            height: 1.3,
+                            fontSize: 12,
+                            height: 1.35,
                           ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-              _SettingValuePill(
-                value: value.toStringAsFixed(0),
-                accentColor: accentColor,
+              const SizedBox(width: 12),
+              Text(
+                widget.value.toStringAsFixed(0),
+                style: ShadTheme.of(context).textTheme.small.copyWith(
+                  color: Settings.tacticalVioletTheme.foreground,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              activeTrackColor: accentColor,
-              thumbColor: accentColor,
-              overlayColor: accentColor.withValues(alpha: 0.12),
-              inactiveTrackColor: Settings.tacticalVioletTheme.secondary,
-              trackHeight: 2.8,
-            ),
-            child: Slider(
-              min: min,
-              max: max,
-              divisions: divisions,
-              value: value,
-              onChanged: onChanged,
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 24,
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: widget.accentColor,
+                thumbColor: widget.accentColor,
+                overlayColor: widget.accentColor.withValues(alpha: 0.12),
+                inactiveTrackColor: Settings.tacticalVioletTheme.secondary,
+                trackHeight: 2.8,
+                mouseCursor:
+                    const WidgetStatePropertyAll(SystemMouseCursors.click),
+              ),
+              child: Slider(
+                min: widget.min,
+                max: widget.max,
+                divisions: widget.divisions,
+                value: widget.value,
+                onChangeStart: (value) => _dragStartValue = value,
+                onChangeEnd: (value) {
+                  widget.onChangeCommitted?.call(
+                    _dragStartValue ?? widget.value,
+                    value,
+                  );
+                  _dragStartValue = null;
+                },
+                onChanged: widget.onChanged,
+              ),
             ),
           ),
         ],
@@ -1568,6 +1501,7 @@ class _SettingsSliderTile extends StatelessWidget {
 class _SettingsToggleTile extends StatelessWidget {
   const _SettingsToggleTile({
     required this.icon,
+    required this.iconColor,
     required this.title,
     required this.description,
     required this.value,
@@ -1575,6 +1509,7 @@ class _SettingsToggleTile extends StatelessWidget {
   });
 
   final IconData icon;
+  final Color iconColor;
   final String title;
   final String description;
   final bool value;
@@ -1585,97 +1520,41 @@ class _SettingsToggleTile extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _SettingLeadingIcon(
-            icon: icon,
-            accentColor: const Color(0xff4b8f86),
+          SizedBox(
+            width: 24,
+            height: 24,
+            child: Icon(
+              icon,
+              size: 20,
+              color: iconColor,
+            ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
+                Text(title),
                 const SizedBox(height: 2),
                 Text(
                   description,
                   style: ShadTheme.of(context).textTheme.small.copyWith(
                         color: Settings.tacticalVioletTheme.mutedForeground,
-                        height: 1.3,
+                        fontSize: 12,
+                        height: 1.35,
                       ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: ShadCheckbox(
-              value: value,
-              onChanged: onChanged,
-            ),
+          const SizedBox(width: 12),
+          ShadCheckbox(
+            value: value,
+            onChanged: onChanged,
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SettingLeadingIcon extends StatelessWidget {
-  const _SettingLeadingIcon({
-    required this.icon,
-    required this.accentColor,
-  });
-
-  final IconData icon;
-  final Color accentColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 34,
-      height: 34,
-      decoration: BoxDecoration(
-        color: accentColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: accentColor.withValues(alpha: 0.15),
-        ),
-      ),
-      child: Icon(icon, size: 18, color: accentColor),
-    );
-  }
-}
-
-class _SettingValuePill extends StatelessWidget {
-  const _SettingValuePill({
-    required this.value,
-    required this.accentColor,
-  });
-
-  final String value;
-  final Color accentColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = ShadTheme.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: accentColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: accentColor.withValues(alpha: 0.16)),
-      ),
-      child: Text(
-        value,
-        style: theme.textTheme.small.copyWith(
-          color: theme.colorScheme.foreground,
-          fontWeight: FontWeight.w700,
-        ),
       ),
     );
   }
@@ -1688,19 +1567,7 @@ class _SettingsItemDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 1,
-      color: Settings.tacticalVioletTheme.border.withValues(alpha: 0.8),
-    );
-  }
-}
-
-class _SectionDivider extends StatelessWidget {
-  const _SectionDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 1,
-      color: Settings.tacticalVioletTheme.border.withValues(alpha: 0.9),
+      color: Settings.tacticalVioletTheme.border.withValues(alpha: 0.55),
     );
   }
 }

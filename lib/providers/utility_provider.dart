@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -102,6 +103,24 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     state = newState;
   }
 
+  void updateViewConeElevation(String id, double? elevation) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+    final utility = newState[index];
+    if (!UtilityData.isViewCone(utility.type) ||
+        utility.visionElevation == elevation) {
+      return;
+    }
+
+    utility.updateRotationHistory();
+    utility.updateVisionElevation(elevation);
+    ref.read(actionProvider.notifier).addAction(
+          UserAction(type: ActionType.edit, id: id, group: ActionGroup.utility),
+        );
+    state = newState;
+  }
+
   void updateCustomRectangleSize({
     required String id,
     required double widthMeters,
@@ -162,6 +181,26 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
       ),
     );
     ref.read(actionProvider.notifier).addAction(action);
+    state = newState;
+  }
+
+  void updateCustomShapeColor({required String id, required int colorValue}) {
+    final newState = [...state];
+    final index = PlacedWidget.getIndexByID(id, newState);
+    if (index < 0) return;
+
+    final utility = newState[index];
+    if (!UtilityData.isCustomShape(utility.type) ||
+        utility.customColorValue == colorValue) {
+      return;
+    }
+
+    utility.updateCustomShapeColor(colorValue);
+    ref
+        .read(actionProvider.notifier)
+        .addAction(
+          UserAction(type: ActionType.edit, id: id, group: ActionGroup.utility),
+        );
     state = newState;
   }
 

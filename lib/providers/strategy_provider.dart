@@ -19,6 +19,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -40,9 +41,13 @@ import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
+import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
+
+export 'package:icarus/strategy/strategy_models.dart'
+    show StrategyData, StrategyState;
 
 final strategyProvider =
     NotifierProvider<StrategyProvider, StrategyState>(StrategyProvider.new);
@@ -79,8 +84,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Timer? _saveTimer;
 
-  bool _saveInProgress = false;
-  bool _pendingSave = false;
+  Future<void>? _activeSave;
+  String? _pendingSaveId;
   bool _cloudMutationSyncScheduled = false;
   bool _cloudStrategyMutationSyncScheduled = false;
   int _persistenceTrackingSuspensionCount = 0;
@@ -147,15 +152,40 @@ class StrategyProvider extends Notifier<StrategyState> {
   void setFromState(StrategyState newState) {
     final hasIdentity =
         newState.strategyId != null || newState.strategyName != null;
-    state = newState.copyWith(
-      isOpen: newState.isOpen || hasIdentity,
-    );
+    state = newState.isOpen || !hasIdentity
+        ? newState
+        : newState.copyWith(isOpen: true);
+    final activePageId = newState.activePageId;
+    if (activePageId != null) {
+      final session = ref.read(strategyPageSessionProvider);
+      ref.read(strategyPageSessionProvider.notifier).setStateForTest(
+            session.copyWith(
+              activePageId: activePageId,
+              availablePageIds: session.availablePageIds.contains(activePageId)
+                  ? session.availablePageIds
+                  : [...session.availablePageIds, activePageId],
+            ),
+          );
+    }
+  }
+
+  @Deprecated('Use strategyPageSessionProvider instead.')
+  set activePageID(String pageId) {
+    state = state.copyWith(activePageId: pageId);
+    final session = ref.read(strategyPageSessionProvider);
+    ref.read(strategyPageSessionProvider.notifier).setStateForTest(
+          session.copyWith(
+            activePageId: pageId,
+            availablePageIds: session.availablePageIds.contains(pageId)
+                ? session.availablePageIds
+                : [...session.availablePageIds, pageId],
+          ),
+        );
   }
 
   void cancelPendingSave() {
     _saveTimer?.cancel();
     _saveTimer = null;
-    _pendingSave = false;
   }
 
   void refreshAutosaveScheduling() {
@@ -465,6 +495,8 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
+    state = state.copyWith(isSaved: false);
+
     if (_currentStrategyIsCloud()) {
       ref.read(strategySaveStateProvider.notifier)
         ..markDirty()
@@ -488,36 +520,31 @@ class StrategyProvider extends Notifier<StrategyState> {
     await _performSave(id);
   }
 
-  // Ensures only one save runs at a time; coalesces a pending one
-  Future<void> _performSave(String id) async {
-    if (_saveInProgress) {
-      _pendingSave = true;
-      return;
-    }
+  // Calls made during an active save wait for one coalesced follow-up save.
+  Future<void> _performSave(String id) {
+    _pendingSaveId = id;
+    return _activeSave ??= _drainPendingSaves();
+  }
 
-    _saveInProgress = true;
+  Future<void> _drainPendingSaves() async {
+    ref.read(strategySaveStateProvider.notifier).markSaving(true);
     try {
-      ref.read(autoSaveProvider.notifier).ping(); // UI: Saving...
-      ref.read(strategySaveStateProvider.notifier).markSaving(true);
-      if (_currentStrategyIsCloud()) {
-        await notifyCloudStrategyMutation(flushImmediately: true);
-        await ref
-            .read(strategyPageSessionProvider.notifier)
-            .flushCurrentPage(flushImmediately: true);
-      } else {
-        await saveToHive(id);
+      while (_pendingSaveId != null) {
+        final id = _pendingSaveId!;
+        _pendingSaveId = null;
+        ref.read(autoSaveProvider.notifier).ping();
+        if (_currentStrategyIsCloud()) {
+          await notifyCloudStrategyMutation(flushImmediately: true);
+          await ref
+              .read(strategyPageSessionProvider.notifier)
+              .flushCurrentPage(flushImmediately: true);
+        } else {
+          await saveToHive(id);
+        }
       }
     } finally {
       ref.read(strategySaveStateProvider.notifier).markSaving(false);
-      _saveInProgress = false;
-      if (_pendingSave) {
-        _pendingSave = false;
-        // Small debounce to coalesce rapid edits during the previous save
-        _saveTimer?.cancel();
-        // _saveTimer = Timer(const Duration(milliseconds: 500), () {
-        //   _performSave(id);
-        // });
-      }
+      _activeSave = null;
     }
   }
 
@@ -558,6 +585,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   // Switch active page: flush old page first, then hydrate new
   Future<void> setActivePage(String pageID) async {
     await ref.read(strategyPageSessionProvider.notifier).setActivePage(pageID);
+    state = state.copyWith(activePageId: pageID);
   }
 
   Future<void> backwardPage() async {
@@ -570,6 +598,20 @@ class StrategyProvider extends Notifier<StrategyState> {
     await ref
         .read(strategyPageSessionProvider.notifier)
         .switchRelativePage(PageSwitchDirection.next);
+  }
+
+  static List<StrategyPage> reindexPagesAfterStructuralChange(
+    List<StrategyPage> orderedPages,
+  ) {
+    return [
+      for (var i = 0; i < orderedPages.length; i++)
+        orderedPages[i].copyWith(
+          sortIndex: i,
+          name: orderedPages[i].isAutoNamed == true
+              ? 'Page ${i + 1}'
+              : orderedPages[i].name,
+        ),
+    ];
   }
 
   Future<void> reorderPage(int oldIndex, int newIndex) async {
@@ -587,10 +629,8 @@ class StrategyProvider extends Notifier<StrategyState> {
         return;
       }
 
-      var targetIndex = newIndex;
-      if (targetIndex > oldIndex) targetIndex -= 1;
-
       final moved = ordered.removeAt(oldIndex);
+      final targetIndex = newIndex.clamp(0, ordered.length);
       ordered.insert(targetIndex, moved);
 
       final ack = await _enqueueCloudPageDescriptorOp(PageReorderOp(
@@ -621,16 +661,11 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
 
-    var targetIndex = newIndex;
-    if (targetIndex > oldIndex) targetIndex -= 1;
-
     final moved = ordered.removeAt(oldIndex);
+    final targetIndex = newIndex.clamp(0, ordered.length);
     ordered.insert(targetIndex, moved);
 
-    final reindexed = [
-      for (var i = 0; i < ordered.length; i++)
-        ordered[i].copyWith(sortIndex: i),
-    ];
+    final reindexed = reindexPagesAfterStructuralChange(ordered);
 
     final updated =
         strat.copyWith(pages: reindexed, lastEdited: DateTime.now());
@@ -646,6 +681,187 @@ class StrategyProvider extends Notifier<StrategyState> {
           direction: direction ?? PageTransitionDirection.forward,
           duration: duration,
         );
+    state = state.copyWith(activePageId: pageID);
+  }
+
+  static StrategyData migrateToCurrentVersion(
+    StrategyData strategy, {
+    bool forceAbilityScale = false,
+  }) {
+    return StrategyMigrator.migrateToCurrentVersion(
+      strategy,
+      forceAbilityScale: forceAbilityScale,
+    );
+  }
+
+  static StrategyData migrateAbilityVisionCones(
+    StrategyData strategy, {
+    bool force = false,
+  }) {
+    return StrategyMigrator.migrateAbilityVisionCones(
+      strategy,
+      force: force,
+    );
+  }
+
+  static String sanitizeFileName(String input) {
+    final sanitized = input.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
+    return sanitized.isEmpty ? 'untitled' : sanitized;
+  }
+
+  List<PageTransitionDirection> copyDirectionsForPlacedWidget(
+    String widgetId,
+  ) {
+    if (_currentStrategyIsCloud() ||
+        widgetId.isEmpty ||
+        !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) {
+      return const [];
+    }
+
+    final strategyId = state.strategyId;
+    if (strategyId == null) return const [];
+    final strat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(
+      strategyId,
+    );
+    if (strat == null || strat.pages.length < 2) return const [];
+
+    final orderedPages = [...strat.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    final currentPageId = ref.read(strategyPageSessionProvider).activePageId;
+    final currentIndex = orderedPages.indexWhere(
+      (page) => page.id == currentPageId,
+    );
+    if (currentIndex < 0) return const [];
+
+    final directions = <PageTransitionDirection>[];
+    if (currentIndex > 0 &&
+        !_pageContainsPlacedWidget(orderedPages[currentIndex - 1], widgetId)) {
+      directions.add(PageTransitionDirection.backward);
+    }
+    if (currentIndex < orderedPages.length - 1 &&
+        !_pageContainsPlacedWidget(orderedPages[currentIndex + 1], widgetId)) {
+      directions.add(PageTransitionDirection.forward);
+    }
+    return directions;
+  }
+
+  Future<bool> copyPlacedWidgetToAdjacentPage({
+    required String widgetId,
+    required PageTransitionDirection direction,
+  }) async {
+    if (_currentStrategyIsCloud() ||
+        widgetId.isEmpty ||
+        !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) {
+      return false;
+    }
+
+    await _syncCurrentPageToHive();
+
+    final strategyId = state.strategyId;
+    if (strategyId == null) return false;
+    final box = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    final strat = box.get(strategyId);
+    if (strat == null || strat.pages.length < 2) return false;
+
+    final orderedPages = [...strat.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    final currentPageId = ref.read(strategyPageSessionProvider).activePageId;
+    final currentIndex = orderedPages.indexWhere(
+      (page) => page.id == currentPageId,
+    );
+    if (currentIndex < 0) return false;
+
+    final targetIndex = switch (direction) {
+      PageTransitionDirection.backward => currentIndex - 1,
+      PageTransitionDirection.forward => currentIndex + 1,
+    };
+    if (targetIndex < 0 || targetIndex >= orderedPages.length) return false;
+
+    final sourcePage = orderedPages[currentIndex];
+    final targetPage = orderedPages[targetIndex];
+    if (_pageContainsPlacedWidget(targetPage, widgetId)) return false;
+
+    final updatedTarget = _copyPlacedWidgetBetweenPages(
+      widgetId: widgetId,
+      source: sourcePage,
+      target: targetPage,
+    );
+    if (updatedTarget == null) return false;
+
+    final updatedPages = [
+      for (final page in strat.pages)
+        if (page.id == targetPage.id) updatedTarget else page,
+    ];
+    final updated = strat.copyWith(
+      pages: updatedPages,
+      lastEdited: DateTime.now(),
+    );
+    await box.put(updated.id, updated);
+    return true;
+  }
+
+  static bool _pageContainsPlacedWidget(
+    StrategyPage page,
+    String widgetId,
+  ) {
+    return page.agentData.any((widget) => widget.id == widgetId) ||
+        page.abilityData.any((widget) => widget.id == widgetId) ||
+        page.textData.any((widget) => widget.id == widgetId) ||
+        page.imageData.any((widget) => widget.id == widgetId) ||
+        page.utilityData.any((widget) => widget.id == widgetId);
+  }
+
+  static StrategyPage? _copyPlacedWidgetBetweenPages({
+    required String widgetId,
+    required StrategyPage source,
+    required StrategyPage target,
+  }) {
+    final agentIndex = source.agentData.indexWhere(
+      (widget) => widget.id == widgetId,
+    );
+    if (agentIndex >= 0) {
+      return target.copyWith(
+        agentData: [...target.agentData, source.agentData[agentIndex]],
+      );
+    }
+
+    final abilityIndex = source.abilityData.indexWhere(
+      (widget) => widget.id == widgetId,
+    );
+    if (abilityIndex >= 0) {
+      return target.copyWith(
+        abilityData: [...target.abilityData, source.abilityData[abilityIndex]],
+      );
+    }
+
+    final textIndex = source.textData.indexWhere(
+      (widget) => widget.id == widgetId,
+    );
+    if (textIndex >= 0) {
+      return target.copyWith(
+        textData: [...target.textData, source.textData[textIndex]],
+      );
+    }
+
+    final imageIndex = source.imageData.indexWhere(
+      (widget) => widget.id == widgetId,
+    );
+    if (imageIndex >= 0) {
+      return target.copyWith(
+        imageData: [...target.imageData, source.imageData[imageIndex]],
+      );
+    }
+
+    final utilityIndex = source.utilityData.indexWhere(
+      (widget) => widget.id == widgetId,
+    );
+    if (utilityIndex >= 0) {
+      return target.copyWith(
+        utilityData: [...target.utilityData, source.utilityData[utilityIndex]],
+      );
+    }
+
+    return null;
   }
 
   Future<void> addPage([String? name]) async {
@@ -655,13 +871,20 @@ class StrategyProvider extends Notifier<StrategyState> {
       final pages = [...snapshot.pages]
         ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
       final pageID = const Uuid().v4();
-      final nextIndex = pages.length;
+      final activePageId = ref.read(strategyPageSessionProvider).activePageId;
+      final activeIndex = pages.indexWhere(
+        (page) => page.publicId == activePageId,
+      );
+      final sourceIndex = activeIndex >= 0 ? activeIndex : pages.length - 1;
+      final nextIndex = sourceIndex + 1;
+      final isAutoNamed = name == null;
       final ack = await _enqueueCloudPageDescriptorOp(PageAddOp(
         opId: const Uuid().v4(),
         pagePublicId: pageID,
         payload: {
-          'name': name ?? 'Page ${pages.length + 1}',
-          'isAttack': pages.isNotEmpty ? pages.last.isAttack : true,
+          'name': name ?? 'Page ${nextIndex + 1}',
+          'isAutoNamed': isAutoNamed,
+          'isAttack': pages.isNotEmpty ? pages[sourceIndex].isAttack : true,
           'settings': ref.read(strategySettingsProvider).toJson(),
         },
         sortIndex: nextIndex,
@@ -687,30 +910,31 @@ class StrategyProvider extends Notifier<StrategyState> {
     final strategyId = state.strategyId;
     if (strategyId == null) return;
     final strat = box.get(strategyId);
-    if (strat == null) return;
+    if (strat == null || strat.pages.isEmpty) return;
 
-    name ??= "Page ${strat.pages.length + 1}";
-    //TODO Make this function of the index
-    final newPage = strat.pages.last.copyWith(
+    final orderedPages = [...strat.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
+    final currentPageId = ref.read(strategyPageSessionProvider).activePageId;
+    final currentIndex = orderedPages.indexWhere(
+      (page) => page.id == currentPageId,
+    );
+    final sourceIndex =
+        currentIndex >= 0 ? currentIndex : orderedPages.length - 1;
+    final insertionIndex = sourceIndex + 1;
+    final isAutoNamed = name == null;
+    name ??= 'Page ${insertionIndex + 1}';
+    final newPage = orderedPages[sourceIndex].copyWith(
       id: const Uuid().v4(),
       name: name,
-      sortIndex: strat.pages.length,
+      isAutoNamed: isAutoNamed,
+      sortIndex: insertionIndex,
     );
 
-    // final newPage = StrategyPage(
-    //   id: const Uuid().v4(),
-    //   name: name,
-    //   drawingData: ,
-    //   agentData: const [],
-    //   abilityData: const [],
-    //   textData: const [],
-    //   imageData: const [],
-    //   utilityData: const [],
-    //   sortIndex: strat.pages.length, // corrected
-    // );
+    orderedPages.insert(insertionIndex, newPage);
+    final reindexed = reindexPagesAfterStructuralChange(orderedPages);
 
     final updated = strat.copyWith(
-      pages: [...strat.pages, newPage],
+      pages: reindexed,
       lastEdited: DateTime.now(),
     );
     await box.put(updated.id, updated);
@@ -733,7 +957,7 @@ class StrategyProvider extends Notifier<StrategyState> {
       final ack = await _enqueueCloudPageDescriptorOp(PagePatchOp(
         opId: const Uuid().v4(),
         pagePublicId: pageId,
-        payload: {'name': trimmed},
+        payload: {'name': trimmed, 'isAutoNamed': false},
         expectedPageRevision: page.revision,
       ));
       if (ack != null) {
@@ -750,7 +974,10 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     final updatedPages = [
       for (final page in strat.pages)
-        if (page.id == pageId) page.copyWith(name: trimmed) else page,
+        if (page.id == pageId)
+          page.copyWith(name: trimmed, isAutoNamed: false)
+        else
+          page,
     ];
     await box.put(
       strat.id,
@@ -807,11 +1034,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (strat == null || strat.pages.length <= 1) return;
 
     final remaining = [...strat.pages]
+      ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex))
       ..removeWhere((page) => page.id == pageId);
-    final reindexed = [
-      for (var i = 0; i < remaining.length; i++)
-        remaining[i].copyWith(sortIndex: i),
-    ];
+    final reindexed = reindexPagesAfterStructuralChange(remaining);
     final activePageId = ref.read(strategyPageSessionProvider).activePageId;
     final nextActivePageId =
         activePageId == pageId ? reindexed.first.id : activePageId;
@@ -910,6 +1135,7 @@ class StrategyProvider extends Notifier<StrategyState> {
               mapData: Maps.mapNames[MapValue.ascent] ?? "ascent",
               initialPagePublicId: pageID,
               initialPageName: "Page 1",
+              initialPageIsAutoNamed: true,
               initialPageIsAttack: true,
               initialPageSettings: defaultSettings.toJson(),
               folderPublicId: ref.read(folderProvider),
@@ -947,6 +1173,7 @@ class StrategyProvider extends Notifier<StrategyState> {
           backgroundColor: Settings.tacticalVioletTheme.destructive,
         );
       }
+      unawaited(AnalyticsService.instance.capture('strategy_created'));
       return newID;
     }
 
@@ -959,6 +1186,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         StrategyPage(
           id: pageID,
           name: "Page 1",
+          isAutoNamed: true,
           drawingData: [],
           agentData: [],
           abilityData: [],
@@ -981,6 +1209,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
         .put(newStrategy.id, newStrategy);
+
+    unawaited(AnalyticsService.instance.capture('strategy_created'));
 
     return newStrategy.id;
   }
@@ -1072,6 +1302,8 @@ class StrategyProvider extends Notifier<StrategyState> {
               mapData: snapshot.header.mapData,
               initialPagePublicId: firstPageId,
               initialPageName: firstPage?.page.name ?? "Page 1",
+              initialPageIsAutoNamed:
+                  firstPage == null ? true : firstPage.page.isAutoNamed,
               initialPageIsAttack: firstPage?.page.isAttack ?? true,
               initialPageSettings: firstPage?.content.settings,
               folderPublicId: ref.read(folderProvider),
@@ -1093,6 +1325,7 @@ class StrategyProvider extends Notifier<StrategyState> {
                 strategyPublicId: newStrategyID,
                 pagePublicId: newPageId,
                 name: page.name,
+                isAutoNamed: page.isAutoNamed,
                 sortIndex: page.sortIndex,
                 isAttack: page.isAttack,
                 settings: fullPage.content.settings,
@@ -1194,6 +1427,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     String strategyID, {
     StrategySource? source,
   }) async {
+    await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
     final resolvedSource = source ?? _resolveLibraryMutationSource();
     if (resolvedSource == StrategySource.cloud) {
       try {
@@ -1259,6 +1493,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         .put(currentStrategy.id, currentStrategy);
 
     ref.read(strategySaveStateProvider.notifier).markPersisted();
+    state = state.copyWith(isSaved: true);
     log("Save to hive was called");
   }
 

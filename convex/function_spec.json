@@ -47890,6 +47890,12 @@
                               },
                               "optional": true
                             },
+                            "isAutoNamed": {
+                              "fieldType": {
+                                "type": "boolean"
+                              },
+                              "optional": true
+                            },
                             "name": {
                               "fieldType": {
                                 "type": "string"
@@ -47967,6 +47973,12 @@
                           "type": "object",
                           "value": {
                             "isAttack": {
+                              "fieldType": {
+                                "type": "boolean"
+                              },
+                              "optional": true
+                            },
+                            "isAutoNamed": {
                               "fieldType": {
                                 "type": "boolean"
                               },
@@ -94316,6 +94328,12 @@
                                         },
                                         "optional": false
                                       },
+                                      "isAutoNamed": {
+                                        "fieldType": {
+                                          "type": "boolean"
+                                        },
+                                        "optional": true
+                                      },
                                       "name": {
                                         "fieldType": {
                                           "type": "string"
@@ -140610,6 +140628,12 @@
                   },
                   "optional": false
                 },
+                "isAutoNamed": {
+                  "fieldType": {
+                    "type": "boolean"
+                  },
+                  "optional": true
+                },
                 "name": {
                   "fieldType": {
                     "type": "string"
@@ -140671,6 +140695,12 @@
               "type": "boolean"
             },
             "optional": false
+          },
+          "isAutoNamed": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
           },
           "name": {
             "fieldType": {
@@ -140887,6 +140917,12 @@
               },
               "optional": false
             },
+            "isAutoNamed": {
+              "fieldType": {
+                "type": "boolean"
+              },
+              "optional": true
+            },
             "name": {
               "fieldType": {
                 "type": "string"
@@ -140939,6 +140975,12 @@
               "type": "number"
             },
             "optional": false
+          },
+          "isAutoNamed": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
           },
           "name": {
             "fieldType": {
@@ -141545,6 +141587,12 @@
               "type": "boolean"
             },
             "optional": false
+          },
+          "initialPageIsAutoNamed": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": true
           },
           "initialPageName": {
             "fieldType": {
@@ -165703,6 +165751,12 @@
                     },
                     "optional": false
                   },
+                  "isAutoNamed": {
+                    "fieldType": {
+                      "type": "boolean"
+                    },
+                    "optional": true
+                  },
                   "name": {
                     "fieldType": {
                       "type": "string"
@@ -165930,6 +165984,12 @@
                       "type": "boolean"
                     },
                     "optional": false
+                  },
+                  "isAutoNamed": {
+                    "fieldType": {
+                      "type": "boolean"
+                    },
+                    "optional": true
                   },
                   "name": {
                     "fieldType": {

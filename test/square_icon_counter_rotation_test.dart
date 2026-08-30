@@ -23,7 +23,7 @@ void main() {
 
       await _pumpWidget(
         tester,
-        CustomSquareWidget(
+        const CustomSquareWidget(
           color: Colors.green,
           width: 120,
           height: 60,
@@ -51,7 +51,7 @@ void main() {
 
       await _pumpWidget(
         tester,
-        CenterSquareWidget(
+        const CenterSquareWidget(
           width: 80,
           height: 80,
           iconPath: 'assets/agents/Cypher/1.webp',
@@ -74,7 +74,7 @@ void main() {
 
       await _pumpWidget(
         tester,
-        ResizableSquareWidget(
+        const ResizableSquareWidget(
           color: Colors.red,
           width: 100,
           maxLength: 180,
@@ -102,7 +102,7 @@ void main() {
         (tester) async {
       await _pumpWidget(
         tester,
-        CustomSquareWidget(
+        const CustomSquareWidget(
           color: Colors.orange,
           width: 100,
           height: 50,
