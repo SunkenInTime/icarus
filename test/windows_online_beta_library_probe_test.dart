@@ -23,15 +23,15 @@ void main() {
   test(
     'reads the public-build library and writes a current semantic fingerprint',
     () async {
-      Hive.init(supportDirectory!);
-      registerIcarusAdapters(Hive);
-      expect(
-        Hive.isAdapterRegistered(200),
-        isTrue,
-        reason: 'The production Color adapter must be registered before '
-            'opening a historical strategy box.',
-      );
       try {
+        Hive.init(supportDirectory!);
+        registerIcarusAdapters(Hive);
+        expect(
+          Hive.isAdapterRegistered(200),
+          isTrue,
+          reason: 'The production Color adapter must be registered before '
+              'opening a historical strategy box.',
+        );
         final box =
             await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
         final strategies = box.values.toList(growable: false)
