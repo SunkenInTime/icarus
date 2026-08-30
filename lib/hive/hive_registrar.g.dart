@@ -24,7 +24,6 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(MapThemeProfileAdapter());
     registerAdapter(MapValueAdapter());
     registerAdapter(OffsetAdapter());
-    registerAdapter(PlacedAbilityAdapter());
     registerAdapter(PlacedAgentAdapter());
     registerAdapter(PlacedCircleAgentAdapter());
     registerAdapter(PlacedImageAdapter());
@@ -34,7 +33,6 @@ extension HiveRegistrar on HiveInterface {
     registerAdapter(PlacedWidgetAdapter());
     registerAdapter(SimpleImageDataAdapter());
     registerAdapter(StrategyDataAdapter());
-    registerAdapter(StrategyPageAdapter());
     registerAdapter(StrategySettingsAdapter());
     registerAdapter(TraversalSpeedProfileAdapter());
     registerAdapter(UtilityTypeAdapter());
@@ -59,7 +57,6 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(MapThemeProfileAdapter());
     registerAdapter(MapValueAdapter());
     registerAdapter(OffsetAdapter());
-    registerAdapter(PlacedAbilityAdapter());
     registerAdapter(PlacedAgentAdapter());
     registerAdapter(PlacedCircleAgentAdapter());
     registerAdapter(PlacedImageAdapter());
@@ -69,7 +66,6 @@ extension IsolatedHiveRegistrar on IsolatedHiveInterface {
     registerAdapter(PlacedWidgetAdapter());
     registerAdapter(SimpleImageDataAdapter());
     registerAdapter(StrategyDataAdapter());
-    registerAdapter(StrategyPageAdapter());
     registerAdapter(StrategySettingsAdapter());
     registerAdapter(TraversalSpeedProfileAdapter());
     registerAdapter(UtilityTypeAdapter());

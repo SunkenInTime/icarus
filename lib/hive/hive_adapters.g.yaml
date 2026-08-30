@@ -71,30 +71,6 @@ types:
         index: 5
       state:
         index: 6
-  PlacedAbility:
-    typeId: 3
-    nextIndex: 10
-    fields:
-      data:
-        index: 0
-      isAlly:
-        index: 1
-      rotation:
-        index: 2
-      id:
-        index: 3
-      isDeleted:
-        index: 4
-      position:
-        index: 5
-      length:
-        index: 6
-      lineUpID:
-        index: 7
-      armLengthsMeters:
-        index: 8
-      visualState:
-        index: 9
   PlacedText:
     typeId: 4
     nextIndex: 9
@@ -343,38 +319,6 @@ types:
         index: 5
       custom:
         index: 6
-  StrategyPage:
-    typeId: 20
-    nextIndex: 15
-    fields:
-      id:
-        index: 0
-      sortIndex:
-        index: 1
-      name:
-        index: 2
-      drawingData:
-        index: 3
-      agentData:
-        index: 4
-      abilityData:
-        index: 5
-      textData:
-        index: 6
-      imageData:
-        index: 7
-      utilityData:
-        index: 8
-      isAttack:
-        index: 9
-      settings:
-        index: 10
-      lineUps:
-        index: 11
-      lineUpGroups:
-        index: 12
-      isAutoNamed:
-        index: 14
   LineUp:
     typeId: 21
     nextIndex: 6

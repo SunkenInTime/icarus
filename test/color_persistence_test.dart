@@ -183,7 +183,7 @@ void main() {
   });
 
   group('Hive color persistence', () {
-    test('drawing adapters write integer color fields', () {
+    test('drawing adapters retain legacy Color and add integer fields', () {
       final freeDrawingFields = _readAdapterFields(
         (writer) => FreeDrawingAdapter().write(
           writer,
@@ -248,15 +248,15 @@ void main() {
         ),
       );
 
-      expect(freeDrawingFields[2], 0xFF22C55E);
-      expect(lineFields[2], 0xFF3B82F6);
-      expect(rectangleFields[2], 0xFFF59E0B);
-      expect(ellipseFields[2], 0xFFA855F7);
+      expect(freeDrawingFields[2], const Color(0xFF22C55E));
+      expect(lineFields[2], const Color(0xFF3B82F6));
+      expect(rectangleFields[2], const Color(0xFFF59E0B));
+      expect(ellipseFields[2], const Color(0xFFA855F7));
 
-      expect(freeDrawingFields.values.whereType<Color>(), isEmpty);
-      expect(lineFields.values.whereType<Color>(), isEmpty);
-      expect(rectangleFields.values.whereType<Color>(), isEmpty);
-      expect(ellipseFields.values.whereType<Color>(), isEmpty);
+      expect(freeDrawingFields[12], 0xFF22C55E);
+      expect(lineFields[10], 0xFF3B82F6);
+      expect(rectangleFields[8], 0xFFF59E0B);
+      expect(ellipseFields[8], 0xFFA855F7);
     });
 
     test('drawing adapters still read legacy Hive Color payloads', () {

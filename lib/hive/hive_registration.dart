@@ -18,6 +18,9 @@ void registerIcarusAdapters(HiveInterface hive) {
     );
   }
   hive.registerAdapters();
+  if (!hive.isAdapterRegistered(placedAbilityAdapterTypeId)) {
+    hive.registerAdapter(PlacedAbilityAdapter());
+  }
   if (!hive.isAdapterRegistered(freeDrawingAdapterTypeId)) {
     hive.registerAdapter(FreeDrawingAdapter());
   }
@@ -32,6 +35,9 @@ void registerIcarusAdapters(HiveInterface hive) {
   }
   if (!hive.isAdapterRegistered(_folderAdapterTypeId)) {
     hive.registerAdapter(FolderAdapter());
+  }
+  if (!hive.isAdapterRegistered(strategyPageAdapterTypeId)) {
+    hive.registerAdapter(StrategyPageAdapter());
   }
 }
 
@@ -45,6 +51,9 @@ void registerIcarusIsolatedAdapters(IsolatedHiveInterface hive) {
     );
   }
   hive.registerAdapters();
+  if (!hive.isAdapterRegistered(placedAbilityAdapterTypeId)) {
+    hive.registerAdapter(PlacedAbilityAdapter());
+  }
   if (!hive.isAdapterRegistered(freeDrawingAdapterTypeId)) {
     hive.registerAdapter(FreeDrawingAdapter());
   }
@@ -59,5 +68,8 @@ void registerIcarusIsolatedAdapters(IsolatedHiveInterface hive) {
   }
   if (!hive.isAdapterRegistered(_folderAdapterTypeId)) {
     hive.registerAdapter(FolderAdapter());
+  }
+  if (!hive.isAdapterRegistered(strategyPageAdapterTypeId)) {
+    hive.registerAdapter(StrategyPageAdapter());
   }
 }
