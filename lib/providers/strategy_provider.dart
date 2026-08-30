@@ -23,6 +23,7 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:hive_ce/hive.dart';
@@ -184,8 +185,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       return true;
     }
 
+    final hasTextDrafts = ref.read(textDraftProvider).isNotEmpty;
     final saveState = ref.read(strategySaveStateProvider);
-    if (!saveState.isDirty) {
+    if (!saveState.isDirty && !hasTextDrafts) {
       return true;
     }
 

@@ -79,12 +79,14 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
   late final FocusNode _focusNode;
   late final TextDraftProvider _draftNotifier;
   late final ProviderSubscription<Map<String, String>> _draftSubscription;
+  bool _syncingController = false;
 
   @override
   void initState() {
     super.initState();
     _draftNotifier = ref.read(textDraftProvider.notifier);
     _controller = TextEditingController(text: _effectiveText());
+    _controller.addListener(_onControllerChanged);
     _focusNode = FocusNode()..addListener(_onFocusChange);
     _draftSubscription = ref.listenManual<Map<String, String>>(
       textDraftProvider,
@@ -115,7 +117,9 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
     _focusNode
       ..removeListener(_onFocusChange)
       ..dispose();
-    _controller.dispose();
+    _controller
+      ..removeListener(_onControllerChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -126,6 +130,17 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
   void _onFocusChange() {
     if (_focusNode.hasFocus) return;
     _draftNotifier.commitDraft(widget.id);
+  }
+
+  void _onControllerChanged() {
+    if (_syncingController) return;
+
+    final nextText = _controller.text;
+    final currentText = _draftNotifier.draftFor(widget.id) ?? widget.text;
+    if (nextText == currentText) return;
+
+    _draftNotifier.setDraft(widget.id, nextText);
+    if (mounted) setState(() {});
   }
 
   void _syncControllerWithExternalState() {
@@ -141,12 +156,17 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
     final extentOffset =
         selection.extentOffset.clamp(0, nextText.length).toInt();
 
-    _controller.value = TextEditingValue(
-      text: nextText,
-      selection: selection.isValid
-          ? TextSelection(baseOffset: baseOffset, extentOffset: extentOffset)
-          : TextSelection.collapsed(offset: nextText.length),
-    );
+    _syncingController = true;
+    try {
+      _controller.value = TextEditingValue(
+        text: nextText,
+        selection: selection.isValid
+            ? TextSelection(baseOffset: baseOffset, extentOffset: extentOffset)
+            : TextSelection.collapsed(offset: nextText.length),
+      );
+    } finally {
+      _syncingController = false;
+    }
   }
 
   void _updateMeasuredSize() {
@@ -183,10 +203,6 @@ class _EditableTextWidgetState extends ConsumerState<_EditableTextWidget> {
               controller: _controller,
               focusNode: _focusNode,
               fontSize: widget.fontSize,
-              onChanged: (value) {
-                _draftNotifier.setDraft(widget.id, value);
-                setState(() {});
-              },
               onTapOutside: (_) {
                 _focusNode.unfocus();
               },
@@ -272,7 +288,6 @@ class _SharedTextField extends StatelessWidget {
     this.readOnly = false,
     this.enableInteractiveSelection = true,
     this.showCursor = true,
-    this.onChanged,
     this.onTapOutside,
   });
 
@@ -282,13 +297,12 @@ class _SharedTextField extends StatelessWidget {
   final bool readOnly;
   final bool enableInteractiveSelection;
   final bool showCursor;
-  final ValueChanged<String>? onChanged;
   final TapRegionCallback? onTapOutside;
 
   @override
   Widget build(BuildContext context) {
     final coordinateSystem = CoordinateSystem.instance;
-    return MediaQuery(
+    final textField = MediaQuery(
       data: MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling),
       child: TextField(
         focusNode: focusNode,
@@ -308,8 +322,14 @@ class _SharedTextField extends StatelessWidget {
         scrollPadding: EdgeInsets.zero,
         textAlignVertical: TextAlignVertical.top,
         keyboardType: TextInputType.multiline,
-        onChanged: onChanged,
         onTapOutside: onTapOutside,
+      ),
+    );
+
+    return MergeSemantics(
+      child: Semantics(
+        label: 'Placed text',
+        child: textField,
       ),
     );
   }
