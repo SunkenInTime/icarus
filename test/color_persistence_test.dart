@@ -306,6 +306,7 @@ void main() {
             scale: 200,
             fileExtension: '.png',
             tagColorValue: 0xFF3B82F6,
+            link: 'local-image.png',
           ),
         ),
       );
@@ -338,6 +339,8 @@ void main() {
       );
 
       expect(textFields[5], 0xFF22C55E);
+      expect(imageFields[3], 'local-image.png');
+      expect(imageFields[11], isNull);
       expect(imageFields[9], 0xFF3B82F6);
       expect(utilityFields[11], 0xFFF59E0B);
       expect(circleAgentFields[1], 0xFFA855F7);

@@ -117,12 +117,14 @@ types:
         index: 7
   PlacedImage:
     typeId: 5
-    nextIndex: 12
+    nextIndex: 11
     fields:
       aspectRatio:
         index: 1
       scale:
         index: 2
+      link:
+        index: 3
       id:
         index: 4
       isDeleted:
@@ -135,8 +137,6 @@ types:
         index: 9
       sizeVersion:
         index: 10
-      link:
-        index: 11
   MapValue:
     typeId: 6
     nextIndex: 13

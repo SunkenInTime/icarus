@@ -330,7 +330,7 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       fileExtension: fields[8] as String?,
       sizeVersion: (fields[10] as num?)?.toInt(),
       tagColorValue: (fields[9] as num?)?.toInt(),
-      link: fields[11] == null ? '' : fields[11] as String,
+      link: fields[3] == null ? '' : fields[3] as String,
     )..isDeleted = fields[5] as bool;
   }
 
@@ -342,6 +342,8 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       ..write(obj.aspectRatio)
       ..writeByte(2)
       ..write(obj.scale)
+      ..writeByte(3)
+      ..write(obj.link)
       ..writeByte(4)
       ..write(obj.id)
       ..writeByte(5)
@@ -353,9 +355,7 @@ class PlacedImageAdapter extends TypeAdapter<PlacedImage> {
       ..writeByte(9)
       ..write(obj.tagColorValue)
       ..writeByte(10)
-      ..write(obj.sizeVersion)
-      ..writeByte(11)
-      ..write(obj.link);
+      ..write(obj.sizeVersion);
   }
 
   @override
