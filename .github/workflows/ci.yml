@@ -54,6 +54,27 @@ jobs:
       - name: Analyze
         shell: pwsh
         run: fvm flutter analyze --no-fatal-infos
+
+      - name: Validate PowerShell Scripts
+        shell: pwsh
+        run: |
+          $parseErrors = @(
+            Get-ChildItem -Path scripts, installer -Filter "*.ps1" -File | ForEach-Object {
+              $tokens = $null
+              $parseFileErrors = $null
+              [void][System.Management.Automation.Language.Parser]::ParseFile(
+                $_.FullName,
+                [ref]$tokens,
+                [ref]$parseFileErrors
+              )
+              $parseFileErrors
+            }
+          )
+
+          if ($parseErrors.Count -gt 0) {
+            throw "PowerShell parse errors: $($parseErrors.Message -join ', ')"
+          }
+
       - name: Run Tests
         shell: pwsh
         run: fvm flutter test
