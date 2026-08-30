@@ -11,12 +11,12 @@ being released.
 The current release candidate is ready for internal testing, but do not invite
 outside testers yet.
 
-The transport, authorization, durable outbox, native restart, and R2 server
-boundaries now have evidence. The remaining blocker is narrower: finish the
-Windows public-upgrade job on the pull-request SHA, then complete one visible
-two-client run containing a real UI write, offline restart, rejection, media
-round trip, sign-out, and sign-in. Automated tests prove those state machines,
-but they do not prove that every on-screen state is legible in the built app.
+The transport, authorization, durable outbox, native restart, R2 server, and
+Windows local-library lifecycle boundaries now have evidence. The remaining
+blocker is one visible two-client run containing a real UI write, offline
+restart, rejection, media round trip, sign-out, and sign-in. Automated tests
+prove those state machines, but they do not prove that every on-screen state is
+legible in the built app.
 
 ## 2026-08-30 Release-Candidate Receipt
 
@@ -34,10 +34,10 @@ Completed against the current candidate:
   tests and durable delete cleanup for collaborators and share links.
 - The scrubbed Convex contract snapshot is current. The strict audit passes 42
   public functions and 34 error codes.
-- `fvm flutter test` passes all 387 tests. The suite covers persistence before
-  send, in-flight restart replay, retry exhaustion, manual retry identity,
-  rejected-op reconciliation, auth setup incidents, and local fallback when
-  cloud becomes unavailable.
+- `fvm flutter test` passes 388 tests with one expected Windows probe skip. The
+  suite covers persistence before send, in-flight restart replay, retry
+  exhaustion, manual retry identity, rejected-op reconciliation, auth setup
+  incidents, and local fallback when cloud becomes unavailable.
 - `fvm flutter analyze --no-fatal-infos` has no errors and six existing info
   notices.
 - The web release build and the macOS release build complete. macOS requires
@@ -66,6 +66,14 @@ Completed against the current candidate:
   path and compares its complete semantic fingerprint after the candidate
   upgrade and after rollback. The rollback must also leave the candidate Hive
   bytes untouched. The installer and JSON receipt are uploaded together.
+- Run `33296220156` passed that gate for source
+  `57f4acb26f13ef4c47773f750949b11b68e7a272`. Its private artifact,
+  `icarus-windows-rc-57f4acb26f13ef4c47773f750949b11b68e7a272`, recorded
+  public 3.2.3+42, candidate 4.3.7+91, then rollback 3.2.3+42. All three
+  libraries were 3,449 bytes with SHA-256
+  `7e27b9594478c9aa85a550944d58d95c415875a13ac010f7bf5d3777c003e133`;
+  the semantic, rollback, and untouched-candidate-byte invariants all passed.
+  This artifact is private CI evidence, not a published Windows release.
 
 Known verification limitations:
 
@@ -97,12 +105,12 @@ support channel. P2 items can follow the invite-only beta.
     authenticated strategy create, second-page edit to **Synced**, reload,
     fresh sign-in, server readback of both pages, and test-data cleanup. No new
     protocol error or reconnect loop appeared in the post-fix console.
-- [ ] A local-mode library created on the current public build opens unchanged
+- [x] A local-mode library created on the current public build opens unchanged
       after installing the beta.
-  - Evidence: the Windows pull-request job now automates public 3.2.3,
-    the pinned v35 `base-test.ica`, the exact pull-request SHA, current-version
-    semantic comparison, and read-only Hive probes. Check this item only after
-    that job is green on the frozen SHA.
+  - Evidence: Windows run `33296220156` installed public 3.2.3, imported the
+    pinned v35 `base-test.ica`, and upgraded to source `57f4acb2`. The public
+    and candidate Strategy identities, normalized semantics, 3,449-byte Hive
+    file, and full-library SHA-256 were identical.
 - [ ] Signing in does not move, delete, or rewrite local strategies unless the
       user explicitly starts a migration.
   - Evidence: pending; compare library counts and exported fixtures before and
@@ -152,14 +160,20 @@ plus the release commit and Convex deployment name.
 
 - [ ] macOS release build completes the full local and cloud smoke path.
 - [ ] Windows release build completes the full local and cloud smoke path.
+  - Evidence: the public-install, candidate-upgrade, and rollback local-library
+    path is green in run `33296220156`; the visible cloud path is still pending.
 - [ ] Web release build completes the authenticated second-client smoke path.
 - [ ] Expired auth, revoked auth, unavailable Convex, and unavailable media
       storage each produce an honest on-screen state and recover without an app
       restart.
 - [ ] Cloud media upload, retry, restart recovery, download, export, and cleanup
       are verified against the configured R2 bucket and public domain.
-- [ ] A rollback build can still open the untouched local library. If cloud data
+- [x] A rollback build can still open the untouched local library. If cloud data
       cannot be read by the rollback build, the release notes say so plainly.
+  - Evidence: run `33296220156` reinstalled public 3.2.3 after the candidate,
+    opened the same Strategy, matched its semantic fingerprint, and left the
+    candidate-written Hive bytes unchanged. Cloud rollback remains unsupported
+    and must be stated before any public beta release.
 
 ## P1: Make the Beta Legible
 
