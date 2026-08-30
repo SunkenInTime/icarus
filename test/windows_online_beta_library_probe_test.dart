@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hive_ce/hive.dart';
+import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
@@ -23,7 +23,13 @@ void main() {
   test(
     'reads the public-build library and writes a current semantic fingerprint',
     () async {
-      Hive.init(supportDirectory!);
+      await Hive.initFlutter(supportDirectory!);
+      expect(
+        Hive.isAdapterRegistered(200),
+        isTrue,
+        reason: 'The production Color adapter must be registered before '
+            'opening a historical strategy box.',
+      );
       registerIcarusAdapters(Hive);
 
       try {
