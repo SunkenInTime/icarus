@@ -18,29 +18,11 @@ import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 
-const int _testColorAdapterTypeId = 220;
-
-class _TestColorAdapter extends TypeAdapter<Color> {
-  @override
-  final typeId = _testColorAdapterTypeId;
-
-  @override
-  Color read(BinaryReader reader) {
-    return Color((reader.read() as num).toInt());
-  }
-
-  @override
-  void write(BinaryWriter writer, Color obj) {
-    writer.write(obj.toARGB32());
-  }
-}
+const int _legacyHiveColorWireTypeId = 232;
 
 void _ensureAdaptersRegistered() {
   if (!Hive.isAdapterRegistered(20)) {
     registerIcarusAdapters(Hive);
-  }
-  if (!Hive.isAdapterRegistered(_testColorAdapterTypeId)) {
-    Hive.registerAdapter(_TestColorAdapter());
   }
 }
 
@@ -57,13 +39,21 @@ Map<int, dynamic> _readAdapterFields(
   };
 }
 
-BinaryReaderImpl _legacyFieldReader(Map<int, dynamic> fields) {
+BinaryReaderImpl _legacyFieldReader(
+  Map<int, dynamic> fields, {
+  Set<int> legacyColorFieldIndices = const {},
+}) {
   _ensureAdaptersRegistered();
   final writer = BinaryWriterImpl(Hive)..writeByte(fields.length);
   for (final entry in fields.entries) {
-    writer
-      ..writeByte(entry.key)
-      ..write(entry.value);
+    writer.writeByte(entry.key);
+    if (legacyColorFieldIndices.contains(entry.key)) {
+      writer
+        ..writeTypeId(_legacyHiveColorWireTypeId)
+        ..writeInt((entry.value as Color).toARGB32());
+    } else {
+      writer.write(entry.value);
+    }
   }
   return BinaryReaderImpl(Uint8List.fromList(writer.toBytes()), Hive);
 }
@@ -72,6 +62,13 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('JSON color persistence', () {
+    test('Icarus bootstrap owns its Flutter value adapters', () {
+      _ensureAdaptersRegistered();
+
+      expect(Hive.isAdapterRegistered(200), isTrue);
+      expect(Hive.isAdapterRegistered(201), isTrue);
+    });
+
     test('strategy page exports user-editable colors as ints', () {
       final page = StrategyPage(
         id: 'page-1',
@@ -264,21 +261,24 @@ void main() {
 
     test('drawing adapters still read legacy Hive Color payloads', () {
       final restoredLine = LineAdapter().read(
-        _legacyFieldReader({
-          0: const Offset(1, 2),
-          1: const Offset(3, 4),
-          2: const Color(0xFFEF4444),
-          3: true,
-          4: false,
-          5: 'legacy-line',
-          6: BoundingBox(
-            min: const Offset(1, 2),
-            max: const Offset(3, 4),
-          ),
-          7: false,
-          8: TraversalSpeedProfile.walking,
-          9: 5.0,
-        }),
+        _legacyFieldReader(
+          {
+            0: const Offset(1, 2),
+            1: const Offset(3, 4),
+            2: const Color(0xFFEF4444),
+            3: true,
+            4: false,
+            5: 'legacy-line',
+            6: BoundingBox(
+              min: const Offset(1, 2),
+              max: const Offset(3, 4),
+            ),
+            7: false,
+            8: TraversalSpeedProfile.walking,
+            9: 5.0,
+          },
+          legacyColorFieldIndices: const {2},
+        ),
       );
 
       expect(restoredLine.colorValue, 0xFFEF4444);
