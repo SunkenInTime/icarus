@@ -8,6 +8,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  RELEASE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
 jobs:
   convex-contract:
     runs-on: ubuntu-latest
@@ -52,8 +58,10 @@ jobs:
       PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
         with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
           # The contract gate records the merge base with origin/icarus-cloud.
           # Fetch all branch history so that ref exists on PR and push runs.
           fetch-depth: 0
@@ -180,7 +188,7 @@ jobs:
       - name: Upload Windows Release Candidate
         uses: actions/upload-artifact@v4
         with:
-          name: icarus-windows-rc-${{ github.sha }}
+          name: icarus-windows-rc-${{ env.RELEASE_SOURCE_SHA }}
           path: |
             build/installer/icarus-setup-*.exe
             ${{ runner.temp }}/icarus-online-beta-windows-smoke/evidence.json

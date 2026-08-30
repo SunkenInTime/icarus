@@ -679,7 +679,7 @@ git status --short</code></pre>
               </tbody>
             </table>
           </div>
-          <p>The candidate branch started from <code>icarus-cloud</code> commit <code>ce9beec189e35f48cced623e161aa55f2642e782</code>. The final release identity is the pull-request head SHA after all required checks are green. The Windows artifact is named <code>icarus-windows-rc-&lt;sha&gt;</code>, so its installer and receipt cannot be confused with another candidate.</p>
+          <p>The candidate branch started from <code>icarus-cloud</code> commit <code>ce9beec189e35f48cced623e161aa55f2642e782</code>. The final release identity is the pull-request head SHA after all required checks are green. On pull requests the Windows job explicitly checks out that source SHA rather than GitHub's temporary merge commit. The artifact is named <code>icarus-windows-rc-&lt;source-sha&gt;</code>, so its installer and receipt cannot be confused with another candidate.</p>
           <pre><code># Exact local receipt
 npx tsc --noEmit
 npm run test:convex

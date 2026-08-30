@@ -66,14 +66,24 @@ function Assert-InstalledVersion {
     param([Parameter(Mandatory = $true)][string]$ExpectedVersion)
 
     $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($installedExe)
-    $observed = $versionInfo.ProductVersion
+    $observed = [string]$versionInfo.ProductVersion
     if ([string]::IsNullOrWhiteSpace($observed)) {
-        $observed = $versionInfo.FileVersion
+        $observed = [string]$versionInfo.FileVersion
     }
-    if ([string]::IsNullOrWhiteSpace($observed) -or -not $observed.StartsWith($ExpectedVersion)) {
+    $expectedMatch = [System.Text.RegularExpressions.Regex]::Match(
+        $ExpectedVersion,
+        '^\d+\.\d+\.\d+$'
+    )
+    $observedMatch = [System.Text.RegularExpressions.Regex]::Match(
+        $observed.Trim(),
+        '^(?<core>\d+\.\d+\.\d+)(?:\.0)?(?:\+\d+)?$'
+    )
+    if (-not $expectedMatch.Success -or
+        -not $observedMatch.Success -or
+        $observedMatch.Groups['core'].Value -ne $ExpectedVersion) {
         throw "Expected installed Icarus $ExpectedVersion, observed '$observed'."
     }
-    return $observed
+    return $observed.Trim()
 }
 
 function Start-And-ProveAlive {
