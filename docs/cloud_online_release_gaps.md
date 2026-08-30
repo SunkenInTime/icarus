@@ -1,6 +1,6 @@
 # Icarus Online Beta Readiness
 
-Last refreshed: 2026-08-29
+Last refreshed: 2026-08-30
 
 This is the release gate for the first invite-only Icarus Online beta. It is a
 checklist, not a backlog. A checked item needs current evidence from the build
@@ -18,7 +18,7 @@ two-client run containing a real UI write, offline restart, rejection, media
 round trip, sign-out, and sign-in. Automated tests prove those state machines,
 but they do not prove that every on-screen state is legible in the built app.
 
-## 2026-08-29 Release-Candidate Receipt
+## 2026-08-30 Release-Candidate Receipt
 
 This receipt belongs to the release-candidate branch cut from
 `icarus-cloud` at `ce9beec189e35f48cced623e161aa55f2642e782`.
@@ -55,10 +55,13 @@ Completed against the current candidate:
   Strategy appeared through the live subscription, a server rename arrived
   without reload, and the Strategy opened in the editor with **Synced** visible.
   The isolated app did not touch the normal Icarus application-support path.
-- The Windows CI gate now installs public 3.2.3, imports the real legacy
-  `base-test.ica` fixture, upgrades to the release-candidate installer, checks
-  exact `strategy_box.hive` bytes, rolls back to 3.2.3, launches again, and
-  checks the same bytes. Its installer and JSON receipt are uploaded together.
+- The Windows CI gate now installs public 3.2.3 and imports the real v35
+  `base-test.ica` fixture pinned to repository commit `fddec2b0`. It verifies
+  the fixture SHA, a responsive app window, and a non-empty Strategy library.
+  A read-only probe normalizes the public library through the current migration
+  path and compares its complete semantic fingerprint after the candidate
+  upgrade and after rollback. The rollback must also leave the candidate Hive
+  bytes untouched. The installer and JSON receipt are uploaded together.
 
 Known verification limitations:
 
@@ -93,8 +96,9 @@ support channel. P2 items can follow the invite-only beta.
 - [ ] A local-mode library created on the current public build opens unchanged
       after installing the beta.
   - Evidence: the Windows pull-request job now automates public 3.2.3,
-    `base-test.ica`, the exact pull-request SHA, and byte-for-byte Hive
-    comparison. Check this item only after that job is green on the frozen SHA.
+    the pinned v35 `base-test.ica`, the exact pull-request SHA, current-version
+    semantic comparison, and read-only Hive probes. Check this item only after
+    that job is green on the frozen SHA.
 - [ ] Signing in does not move, delete, or rewrite local strategies unless the
       user explicitly starts a migration.
   - Evidence: pending; compare library counts and exported fixtures before and
