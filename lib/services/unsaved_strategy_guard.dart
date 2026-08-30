@@ -298,7 +298,9 @@ Future<bool> guardUnsavedStrategyExit({
     );
   }
 
-  if (strategyState.strategyName == null || !saveState.isDirty) {
+  final hasTextDrafts = ref.read(textDraftProvider).isNotEmpty;
+  if (strategyState.strategyName == null ||
+      (!saveState.isDirty && !hasTextDrafts)) {
     await onContinue();
     return true;
   }

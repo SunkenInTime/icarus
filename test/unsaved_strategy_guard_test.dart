@@ -337,6 +337,46 @@ void main() {
       expect(find.text('Save changes?'), findsNothing);
     });
 
+    testWidgets('clean local state still flushes an active text draft',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'strategy-draft',
+          strategyName: 'Draft Strategy',
+          source: StrategySource.local,
+          storageDirectory: null,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+        ],
+      );
+      addTearDown(container.dispose);
+      container
+          .read(textDraftProvider.notifier)
+          .setDraft('text-1', 'active local draft');
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final result = await guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-local-draft',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(result, isTrue);
+      expect(continueCalls, 1);
+      expect(notifier.flushCalls, 1);
+      expect(find.text('Save changes?'), findsNothing);
+    });
+
     testWidgets(
         'dirty autosave-disabled exit shows dialog and save still works',
         (tester) async {
