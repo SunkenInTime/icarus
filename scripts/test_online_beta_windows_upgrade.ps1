@@ -23,8 +23,7 @@ $releaseCandidateInstallerPath = if ([System.IO.Path]::IsPathRooted($ReleaseCand
 } else {
     [System.IO.Path]::GetFullPath((Join-Path $repoRoot $ReleaseCandidateInstaller))
 }
-$installDir = Join-Path $env:LOCALAPPDATA "Programs\Icarus"
-$installedExe = Join-Path $installDir "icarus.exe"
+$installedExe = $null
 $supportDir = Join-Path $env:APPDATA "xyz.icarus-strats\icarus"
 $strategyBox = Join-Path $supportDir "strategy_box.hive"
 $testRoot = Join-Path $env:RUNNER_TEMP "icarus-online-beta-windows-smoke"
@@ -45,7 +44,10 @@ if ([string]::IsNullOrWhiteSpace($ReleaseCandidateVersion)) {
 }
 
 function Install-Icarus {
-    param([Parameter(Mandatory = $true)][string]$InstallerPath)
+    param(
+        [Parameter(Mandatory = $true)][string]$InstallerPath,
+        [Parameter(Mandatory = $true)][string]$ExpectedVersion
+    )
 
     $process = Start-Process -FilePath $InstallerPath -ArgumentList @(
         "/VERYSILENT",
@@ -57,33 +59,107 @@ function Install-Icarus {
     if ($process.ExitCode -ne 0) {
         throw "Installer failed with exit code $($process.ExitCode): $InstallerPath"
     }
-    if (-not (Test-Path $installedExe -PathType Leaf)) {
-        throw "Installer completed without producing $installedExe"
-    }
+    $script:installedExe = Resolve-IcarusExecutable -ExpectedVersion $ExpectedVersion
+    Write-Host "Resolved installed Icarus executable: $script:installedExe"
 }
 
-function Assert-InstalledVersion {
+function Resolve-IcarusExecutable {
     param([Parameter(Mandatory = $true)][string]$ExpectedVersion)
 
-    $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($installedExe)
+    $uninstallRoots = @(
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+    )
+    $registryCandidates = foreach ($root in $uninstallRoots) {
+        if (-not (Test-Path $root)) {
+            continue
+        }
+        Get-ChildItem $root -ErrorAction SilentlyContinue |
+            ForEach-Object { Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue } |
+            Where-Object {
+                $displayNameProperty = $_.PSObject.Properties['DisplayName']
+                $null -ne $displayNameProperty -and
+                    ([string]$displayNameProperty.Value) -like "Icarus*"
+            } |
+            ForEach-Object {
+                $displayIconProperty = $_.PSObject.Properties['DisplayIcon']
+                if ($null -ne $displayIconProperty -and
+                    -not [string]::IsNullOrWhiteSpace($displayIconProperty.Value)) {
+                    $displayIcon = ([string]$displayIconProperty.Value).Trim()
+                    ($displayIcon -replace ',\d+$', '').Trim('"')
+                }
+                $installLocationProperty = $_.PSObject.Properties['InstallLocation']
+                if ($null -ne $installLocationProperty -and
+                    -not [string]::IsNullOrWhiteSpace($installLocationProperty.Value)) {
+                    Join-Path ([string]$installLocationProperty.Value) "icarus.exe"
+                }
+            }
+    }
+    $resolved = $registryCandidates |
+        Where-Object { Test-Path $_ -PathType Leaf } |
+        ForEach-Object { Get-Item $_ } |
+        Where-Object {
+            Test-ObservedVersion -ObservedVersion (Get-ObservedVersion -ExecutablePath $_.FullName) `
+                -ExpectedVersion $ExpectedVersion
+        } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if ($null -eq $resolved) {
+        $resolved = Get-ChildItem -Path $env:LOCALAPPDATA -Filter "icarus.exe" `
+            -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object {
+                Test-ObservedVersion -ObservedVersion (Get-ObservedVersion -ExecutablePath $_.FullName) `
+                    -ExpectedVersion $ExpectedVersion
+            } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+    }
+    if ($null -eq $resolved) {
+        throw "Installer completed, but no Icarus $ExpectedVersion executable was found in the per-user registry or LocalAppData."
+    }
+    return $resolved.FullName
+}
+
+function Get-ObservedVersion {
+    param([Parameter(Mandatory = $true)][string]$ExecutablePath)
+
+    $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($ExecutablePath)
     $observed = [string]$versionInfo.ProductVersion
     if ([string]::IsNullOrWhiteSpace($observed)) {
         $observed = [string]$versionInfo.FileVersion
     }
+    return $observed.Trim()
+}
+
+function Test-ObservedVersion {
+    param(
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ObservedVersion,
+        [Parameter(Mandatory = $true)][string]$ExpectedVersion
+    )
+
     $expectedMatch = [System.Text.RegularExpressions.Regex]::Match(
         $ExpectedVersion,
         '^\d+\.\d+\.\d+$'
     )
     $observedMatch = [System.Text.RegularExpressions.Regex]::Match(
-        $observed.Trim(),
+        $ObservedVersion,
         '^(?<core>\d+\.\d+\.\d+)(?:\.0)?(?:\+\d+)?$'
     )
-    if (-not $expectedMatch.Success -or
-        -not $observedMatch.Success -or
-        $observedMatch.Groups['core'].Value -ne $ExpectedVersion) {
+    return $expectedMatch.Success -and
+        $observedMatch.Success -and
+        $observedMatch.Groups['core'].Value -eq $ExpectedVersion
+}
+
+function Assert-InstalledVersion {
+    param([Parameter(Mandatory = $true)][string]$ExpectedVersion)
+
+    $observed = Get-ObservedVersion -ExecutablePath $installedExe
+    if (-not (Test-ObservedVersion -ObservedVersion $observed -ExpectedVersion $ExpectedVersion)) {
         throw "Expected installed Icarus $ExpectedVersion, observed '$observed'."
     }
-    return $observed.Trim()
+    return $observed
 }
 
 function Start-And-ProveAlive {
@@ -236,7 +312,8 @@ try {
         throw "Historical .ica fixture checksum mismatch. Expected $PublicFixtureSha256, observed $observedFixtureSha256."
     }
 
-    Install-Icarus -InstallerPath $publicInstaller
+    Install-Icarus -InstallerPath $publicInstaller -ExpectedVersion $PublicVersion
+    $observedPublicInstallPath = $installedExe
     $observedPublicVersion = Assert-InstalledVersion -ExpectedVersion $PublicVersion
     $runningProcess = Start-And-ProveAlive -Arguments @($fixtureFullPath)
     Wait-ForStrategyLibrary
@@ -245,7 +322,9 @@ try {
     $beforeUpgrade = Get-StrategyLibraryEvidence
     $publicProbe = Invoke-LibraryProbe -Stage "public"
 
-    Install-Icarus -InstallerPath $releaseCandidateInstallerPath
+    Install-Icarus -InstallerPath $releaseCandidateInstallerPath `
+        -ExpectedVersion $ReleaseCandidateVersion
+    $observedCandidateInstallPath = $installedExe
     $observedCandidateVersion = Assert-InstalledVersion -ExpectedVersion $ReleaseCandidateVersion
     $runningProcess = Start-And-ProveAlive
     Stop-Icarus -Process $runningProcess
@@ -259,7 +338,8 @@ try {
         throw "The release-candidate upgrade changed the normalized Strategy library semantics."
     }
 
-    Install-Icarus -InstallerPath $publicInstaller
+    Install-Icarus -InstallerPath $publicInstaller -ExpectedVersion $PublicVersion
+    $observedRollbackInstallPath = $installedExe
     $observedRollbackVersion = Assert-InstalledVersion -ExpectedVersion $PublicVersion
     $runningProcess = Start-And-ProveAlive
     Stop-Icarus -Process $runningProcess
@@ -281,8 +361,11 @@ try {
         publicInstallerUrl = $PublicInstallerUrl
         publicInstallerSha256 = $observedPublicInstallerSha256
         publicVersion = $observedPublicVersion
+        publicInstallPath = $observedPublicInstallPath
         releaseCandidateVersion = $observedCandidateVersion
+        releaseCandidateInstallPath = $observedCandidateInstallPath
         rollbackVersion = $observedRollbackVersion
+        rollbackInstallPath = $observedRollbackInstallPath
         fixture = (Split-Path -Leaf $fixtureFullPath)
         fixtureSourceCommit = "fddec2b0b6163cf3962863db18ab0f06ea467773"
         fixtureSha256 = $observedFixtureSha256
