@@ -47,12 +47,5 @@ Measure twice, cut once: understand the problem fully before building, because c
 These steer us in the right direction. They are not hard-set, but default to following them; if you think one should be ignored, be very loud about it and get approval from us first.
 
 - Never edit generated files (`*.g.dart`, `convex/_generated/`). Edit the source models or schema, then regenerate (`dart run build_runner build --delete-conflicting-outputs`; Convex regenerates via `npx convex dev`).
-- Before touching `convex/`, read `convex/_generated/ai/guidelines.md` first, it overrides anything you learned about Convex in training.
-
-<!-- convex-ai-start -->
-This project uses [Convex](https://convex.dev) as its backend.
-
-When working on Convex code, **always read `convex/_generated/ai/guidelines.md` first** for important guidelines on how to correctly use Convex APIs and patterns. The file contains rules that override what you may have learned about Convex from training data.
-
-Convex agent skills for common tasks can be installed by running `npx convex ai-files install`.
-<!-- convex-ai-end -->
+- Convex behavior is defined by the current schema, source, generated types, and tests in this repository. If an API detail is uncertain, check the current official Convex documentation before editing, then prove the change with `npx tsc --noEmit` and `npm run test:convex`.
+- Keep agent instructions in this `AGENTS.md`. Do not add generated agent guidance, bundled skills, or compatibility copies for specific coding agents back to the repository.
