@@ -99,8 +99,11 @@ function Stop-Icarus {
     if ($null -ne $Process) {
         $Process.Refresh()
         if (-not $Process.HasExited) {
-            Stop-Process -Id $Process.Id -Force
-            $Process.WaitForExit(10000) | Out-Null
+            $closeRequested = $Process.CloseMainWindow()
+            if (-not $closeRequested -or -not $Process.WaitForExit(10000)) {
+                Stop-Process -Id $Process.Id -Force
+                $Process.WaitForExit(10000) | Out-Null
+            }
         }
     }
     Get-Process -Name "icarus" -ErrorAction SilentlyContinue | Stop-Process -Force
