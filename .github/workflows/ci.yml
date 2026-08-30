@@ -4,17 +4,30 @@ on:
   push:
     branches:
       - main
+      - icarus-cloud
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
   convex-contract:
     runs-on: ubuntu-latest
     env:
       CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PREVIEW_DEPLOY_KEY }}
-      CONVEX_PREVIEW_NAME: typed-wrapper-contract-${{ github.run_id }}-${{ github.run_attempt }}
+      # Recreate one preview per PR or branch instead of leaking a new
+      # deployment on every retry. The recreated deployment is still empty.
+      CONVEX_PREVIEW_NAME: typed-wrapper-contract-${{ github.event.pull_request.number || github.ref_name }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
 
       - uses: actions/setup-node@v4
         with:
@@ -48,8 +61,10 @@ jobs:
       PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
         with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
           # The contract gate records the merge base with origin/icarus-cloud.
           # Fetch all branch history so that ref exists on PR and push runs.
           fetch-depth: 0
@@ -157,6 +172,31 @@ jobs:
         shell: pwsh
         run: fvm flutter build windows --no-tree-shake-icons
 
+      - name: Build Windows Installer
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1 -Configuration Release
+
+      - name: Test Public Upgrade And Rollback
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path build/installer -Filter 'icarus-setup-*.exe' |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if ($null -eq $installer) {
+            throw "Release-candidate installer was not built."
+          }
+          powershell -ExecutionPolicy Bypass -File scripts/test_online_beta_windows_upgrade.ps1 `
+            -ReleaseCandidateInstaller $installer.FullName
+
+      - name: Upload Windows Release Candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: icarus-windows-rc-${{ env.RELEASE_SOURCE_SHA }}
+          path: |
+            build/installer/icarus-setup-*.exe
+            ${{ runner.temp }}/icarus-online-beta-windows-smoke/evidence.json
+          if-no-files-found: error
+
   linux:
     runs-on: ubuntu-latest
     env:
@@ -164,7 +204,10 @@ jobs:
       PUB_CACHE: ${{ github.workspace }}/.pub-cache
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Release Source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_SOURCE_SHA }}
 
       - uses: dart-lang/setup-dart@v1
 

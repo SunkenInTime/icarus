@@ -1,6 +1,6 @@
 # Icarus Online Beta Readiness
 
-Last refreshed: 2026-08-25
+Last refreshed: 2026-08-30
 
 This is the release gate for the first invite-only Icarus Online beta. It is a
 checklist, not a backlog. A checked item needs current evidence from the build
@@ -8,20 +8,85 @@ being released.
 
 ## Decision Today
 
-Do not invite outside testers yet.
+The current release candidate is ready for internal testing, but do not invite
+outside testers yet.
 
-The local automated baseline is healthy: the Flutter suite passes, Convex
-TypeScript passes, and the web release build completes. The web client's
-authentication protocol mismatch is fixed: a production web build completed a
-real email/password sign-in, authenticated Convex read and write, a second-page
-edit that reached **Synced**, and a reload/readback cycle without a fatal
-protocol error or reconnect loop. The temporary strategy was deleted after the
-proof.
+The transport, authorization, durable outbox, native restart, R2 server, and
+Windows local-library lifecycle boundaries now have evidence. The remaining
+blocker is one visible two-client run containing a real UI write, offline
+restart, rejection, media round trip, sign-out, and sign-in. Automated tests
+prove those state machines, but they do not prove that every on-screen state is
+legible in the built app.
 
-The remaining blocker is the complete two-client and failure-recovery path
-below. One healthy authenticated client proves the transport boundary, but it
-does not yet prove sharing, access control, conflicts, offline recovery, media,
-or round-trip fidelity.
+## 2026-08-30 Release-Candidate Receipt
+
+This receipt belongs to the release-candidate branch cut from
+`icarus-cloud` at `ce9beec189e35f48cced623e161aa55f2642e782`.
+Freeze the shippable SHA to the pull-request head after every required check is
+green. On pull requests every CI job explicitly checks out that source SHA,
+instead of GitHub's temporary merge commit, and the Windows job includes it in
+the artifact name.
+
+Completed against the current candidate:
+
+- `npx tsc --noEmit` passes.
+- `npm run test:convex` passes 30 tests, including three A/B/C access-boundary
+  tests and durable delete cleanup for collaborators and share links.
+- The scrubbed Convex contract snapshot is current. The strict audit passes 42
+  public functions and 34 error codes.
+- `fvm flutter test` passes 388 tests with one expected Windows probe skip. The
+  suite covers persistence before send, in-flight restart replay, retry
+  exhaustion, manual retry identity, rejected-op reconciliation, auth setup
+  incidents, and local fallback when cloud becomes unavailable.
+- `fvm flutter analyze --no-fatal-infos` has no errors and six existing info
+  notices.
+- The web release build and the macOS release build complete. macOS requires
+  `--no-tree-shake-icons`, matching the existing CI builds.
+- Two fresh Supabase users completed real password authentication and
+  `users.ensureCurrentUser` against the deployed Convex development backend.
+- A deployed A/B/C contract run proved private isolation, viewer read-only,
+  editor mutation and readback, revoked-link denial for a new user, durable
+  redeemed access for an existing collaborator, and inherited folder roles.
+  The third identity was synthetic because Supabase rate-limited creation of a
+  third disposable email account.
+- A live R2 run proved presigned upload, public byte readback, rejection of a
+  tampered object key, rejection of completion for a missing object, and test
+  cleanup. This does not yet prove the full built-app media queue.
+- Computer Use verified an isolated macOS 4.3.7 release app with a unique bundle
+  identifier. Persisted auth reconnected after a full process restart, a cloud
+  Strategy appeared through the live subscription, a server rename arrived
+  without reload, and the Strategy opened in the editor with **Synced** visible.
+  The isolated app did not touch the normal Icarus application-support path.
+- The Windows CI gate now installs public 3.2.3 and imports the real v35
+  `base-test.ica` fixture pinned to repository commit `fddec2b0`. It verifies
+  the GitHub release asset digest and fixture SHA before executing either
+  input, then requires a responsive app window and a non-empty Strategy library.
+  A read-only probe compares stable Strategy, page, and entity identities and
+  ordering, then normalizes the public library through the current migration
+  path and compares its complete semantic fingerprint after the candidate
+  upgrade and after rollback. The rollback must also leave the candidate Hive
+  bytes untouched. The installer and JSON receipt are uploaded together.
+- Run `33296220156` passed that gate for source
+  `57f4acb26f13ef4c47773f750949b11b68e7a272`. Its private artifact,
+  `icarus-windows-rc-57f4acb26f13ef4c47773f750949b11b68e7a272`, recorded
+  public 3.2.3+42, candidate 4.3.7+91, then rollback 3.2.3+42. All three
+  libraries were 3,449 bytes with SHA-256
+  `7e27b9594478c9aa85a550944d58d95c415875a13ac010f7bf5d3777c003e133`;
+  the semantic, rollback, and untouched-candidate-byte invariants all passed.
+  This artifact is private CI evidence, not a published Windows release.
+
+Known verification limitations:
+
+- Computer Use could focus the macOS Flutter name field, but native keyboard
+  and clipboard injection did not reach Flutter's text controller. The live
+  Strategy was therefore created through the authenticated backend before its
+  subscription, restart, update, and editor readback were verified visually.
+- The collaborative browser could serve and navigate the release web build,
+  but Flutter's semantics snapshot timed out. The earlier 2026-08-25 real web
+  sign-in and write/readback receipt remains the current visible web proof.
+- R2 upload jobs are reconstructed from local page media after restart rather
+  than persisted as an independent durable job table. The built-app
+  upload/restart/download/export path remains unchecked below.
 
 ## Release Rule
 
@@ -40,9 +105,12 @@ support channel. P2 items can follow the invite-only beta.
     authenticated strategy create, second-page edit to **Synced**, reload,
     fresh sign-in, server readback of both pages, and test-data cleanup. No new
     protocol error or reconnect loop appeared in the post-fix console.
-- [ ] A local-mode library created on the current public build opens unchanged
+- [x] A local-mode library created on the current public build opens unchanged
       after installing the beta.
-  - Evidence: pending; record the public version, beta commit, and fixture.
+  - Evidence: Windows run `33296220156` installed public 3.2.3, imported the
+    pinned v35 `base-test.ica`, and upgraded to source `57f4acb2`. The public
+    and candidate Strategy identities, normalized semantics, 3,449-byte Hive
+    file, and full-library SHA-256 were identical.
 - [ ] Signing in does not move, delete, or rewrite local strategies unless the
       user explicitly starts a migration.
   - Evidence: pending; compare library counts and exported fixtures before and
@@ -57,11 +125,14 @@ support channel. P2 items can follow the invite-only beta.
     identity fields to differ.
 - [ ] An offline edit remains visibly pending, lands after reconnect, and still
       lands after the app is restarted while offline.
-  - Evidence: pending; capture the status chip before restart, after restart,
-    and after the op lands.
+  - Evidence: durable outbox tests pass the restart-before-send and
+    restart-in-flight boundaries. The three visible status receipts are still
+    required.
 - [ ] A rejected or exhausted op never produces a **Synced** state. The user
       sees an actionable error before leaving the strategy.
-  - Evidence: pending; force a rejection and an exhausted retry path.
+  - Evidence: retry-exhaustion and rejected-op provider tests pass and preserve
+    immutable operation identity. A built-app rejection receipt is still
+    required.
 
 ## P0: Prove the Online Loop
 
@@ -80,21 +151,29 @@ support channel. P2 items can follow the invite-only beta.
 - [ ] Shared folders apply the correct effective role to their strategies,
       including inherited editor access.
 
-Evidence for this section: one screen recording with two clean browser profiles
-or two installed clients, plus the release commit and Convex deployment name.
+Contract evidence for this section is green in `convex/accessControl.test.ts`
+and in the deployed development backend. Product evidence still requires one
+screen recording with two clean browser profiles or two installed clients,
+plus the release commit and Convex deployment name.
 
 ## P0: Platform and Failure Checks
 
 - [ ] macOS release build completes the full local and cloud smoke path.
 - [ ] Windows release build completes the full local and cloud smoke path.
+  - Evidence: the public-install, candidate-upgrade, and rollback local-library
+    path is green in run `33296220156`; the visible cloud path is still pending.
 - [ ] Web release build completes the authenticated second-client smoke path.
 - [ ] Expired auth, revoked auth, unavailable Convex, and unavailable media
       storage each produce an honest on-screen state and recover without an app
       restart.
 - [ ] Cloud media upload, retry, restart recovery, download, export, and cleanup
       are verified against the configured R2 bucket and public domain.
-- [ ] A rollback build can still open the untouched local library. If cloud data
+- [x] A rollback build can still open the untouched local library. If cloud data
       cannot be read by the rollback build, the release notes say so plainly.
+  - Evidence: run `33296220156` reinstalled public 3.2.3 after the candidate,
+    opened the same Strategy, matched its semantic fingerprint, and left the
+    candidate-written Hive bytes unchanged. Cloud rollback remains unsupported
+    and must be stated before any public beta release.
 
 ## P1: Make the Beta Legible
 
@@ -125,15 +204,25 @@ or two installed clients, plus the release commit and Convex deployment name.
 Run from the repository root on the exact release commit:
 
 ```sh
-fvm flutter analyze
-fvm flutter test
 npx tsc --noEmit
+npm run test:convex
+npm run snapshot:convex-contract:check
+npm run audit:convex-contract
+fvm flutter analyze --no-fatal-infos
+fvm flutter test
 fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons
+fvm flutter build macos --no-tree-shake-icons
 ```
 
-Expected on 2026-08-25: no analyzer errors, six existing info notices, all
-Flutter tests green, TypeScript green, and the web release build green. These
-checks are necessary, but they do not replace the online-loop proof.
+On the pull request, CI also builds the Windows installer, runs
+`scripts/test_online_beta_windows_upgrade.ps1`, and uploads the installer plus
+its evidence JSON under an artifact name containing the exact source-branch
+commit SHA. Every CI job explicitly checks out that same SHA.
+
+Expected on 2026-08-29: no analyzer errors, six existing info notices, 387
+Flutter tests green, 30 Convex tests green, TypeScript green, the contract audit
+green, and release builds green. These checks are necessary, but they do not
+replace the visible online-loop proof.
 
 ## Computer-Use Verification Path
 

@@ -637,6 +637,14 @@ const deleteStrategy = mutation({
       await ctx.db.delete(invite._id);
     }
 
+    const shareLinks = await ctx.db
+      .query("shareLinks")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
+      .collect();
+    for (const shareLink of shareLinks) {
+      await ctx.db.delete(shareLink._id);
+    }
+
     await ctx.db.delete(strategy._id);
     return { ok: true } as const;
   },
