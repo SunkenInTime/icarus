@@ -150,6 +150,46 @@ void main() {
       ['owned-root'],
     );
   });
+
+  test('sign-out ignores an unauthenticated error from the stale stream',
+      () async {
+    final repository = _StrategyStreamRepository();
+    final auth = _MutableAuthProvider();
+    final providerErrors = <Object>[];
+    final container = ProviderContainer(
+      overrides: [
+        authProvider.overrideWith(() => auth),
+        convexStrategyRepositoryProvider.overrideWithValue(repository),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    final subscription = container.listen(
+      cloudStrategiesProvider,
+      (_, next) {
+        if (next case AsyncError(:final error)) {
+          providerErrors.add(error);
+        }
+      },
+      fireImmediately: true,
+    );
+    addTearDown(subscription.close);
+    await Future<void>.delayed(Duration.zero);
+
+    auth.signOutForTest();
+    repository.strategies.addError(
+      const ConvexFunctionException(
+        code: ConvexErrorCode.unauthenticated,
+        rawCode: 'UNAUTHENTICATED',
+        message: 'Unauthenticated',
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(providerErrors.whereType<AssertionError>(), isEmpty);
+    expect(auth.unauthenticatedReports, 1);
+    expect(container.read(cloudStrategiesProvider).valueOrNull, isEmpty);
+  });
 }
 
 class _ReadyAuthProvider extends AuthProvider {
@@ -173,6 +213,54 @@ class _CountingRepository extends ConvexStrategyRepository {
   Stream<List<CloudFolderEntry>> watchAllFolders() {
     folderWatchCount += 1;
     return folders.stream;
+  }
+}
+
+class _StrategyStreamRepository extends ConvexStrategyRepository {
+  _StrategyStreamRepository()
+      : strategies =
+            StreamController<List<CloudStrategyEntry>>.broadcast(sync: true),
+        super(IcarusConvexApi(_RecordingTransport()));
+
+  final StreamController<List<CloudStrategyEntry>> strategies;
+
+  @override
+  Stream<List<CloudStrategyEntry>> watchStrategiesForFolder(
+    String? folderPublicId, {
+    String scope = 'owned',
+  }) {
+    return strategies.stream;
+  }
+}
+
+class _MutableAuthProvider extends AuthProvider {
+  int unauthenticatedReports = 0;
+
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: null,
+      );
+
+  void signOutForTest() {
+    state = AppAuthState.fromSession(
+      null,
+      isLoading: false,
+      isConvexUserReady: false,
+      convexAuthStatus: ConvexAuthStatus.signedOut,
+    );
+  }
+
+  @override
+  Future<void> reportConvexUnauthenticated({
+    required String source,
+    Object? error,
+    StackTrace? stackTrace,
+  }) async {
+    unauthenticatedReports++;
   }
 }
 

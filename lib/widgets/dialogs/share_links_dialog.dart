@@ -10,6 +10,7 @@ import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/share/share_link_copy.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 /// Headline like: Share "My Strategy Name" (`"` in [name] become `'`).
@@ -814,25 +815,27 @@ class _AddSharedItemDialogState extends ConsumerState<AddSharedItemDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ShadInput(
-            controller: _controller,
-            autofocus: true,
-            placeholder: const Text(
-              'https://$icarusShareHost/share/… or ICR-XXXX-XXXX-XXXX-XXXX',
+          TextEditingShortcutScope(
+            child: ShadInput(
+              controller: _controller,
+              autofocus: true,
+              placeholder: const Text(
+                'https://$icarusShareHost/share/… or ICR-XXXX-XXXX-XXXX-XXXX',
+              ),
+              onSubmitted: (_) => _submit(),
+              onChanged: (_) {
+                if (_errorText != null) {
+                  setState(() => _errorText = null);
+                }
+              },
+              decoration: hasError
+                  ? ShadDecoration(
+                      border: ShadBorder.all(
+                        color: theme.colorScheme.destructive,
+                      ),
+                    )
+                  : null,
             ),
-            onSubmitted: (_) => _submit(),
-            onChanged: (_) {
-              if (_errorText != null) {
-                setState(() => _errorText = null);
-              }
-            },
-            decoration: hasError
-                ? ShadDecoration(
-                    border: ShadBorder.all(
-                      color: theme.colorScheme.destructive,
-                    ),
-                  )
-                : null,
           ),
           AnimatedSize(
             duration: _stateSwitchDuration,

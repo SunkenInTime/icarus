@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -229,8 +230,9 @@ Future<bool> _guardCloudStrategyExit({
 
     final decision = await _showCloudSyncBlockedDialog(
       context,
-      message: cloudError ??
-          (saveState.mediaSyncErrorCount > 0
+      message: cloudError != null
+          ? friendlyCloudSyncError(cloudError)
+          : (saveState.mediaSyncErrorCount > 0
               ? 'Some media uploads failed. Retry sync or stay here until the queue clears.'
               : 'Icarus is still syncing cloud edits and media. Stay on this screen until sync completes.'),
       showCancelUpload: hasPendingMediaJobs,

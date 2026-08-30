@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
@@ -384,7 +385,7 @@ class _SyncStatusPopover extends StatelessWidget {
         error?.toLowerCase().contains('cannot be retried automatically') ??
             false;
     if (error != null && (!hasRejectedWork || retryUnavailable)) {
-      parts.add(_friendlyError(error));
+      parts.add(friendlyCloudSyncError(error));
     }
     if (mediaErrors > 0) {
       parts.add(
@@ -402,38 +403,6 @@ class _SyncStatusPopover extends StatelessWidget {
           : 'Retry to send them now.',
     );
     return parts.join(' ');
-  }
-
-  static String _friendlyError(String raw) {
-    final lower = raw.toLowerCase();
-    if (lower.contains('unreadable saved work')) {
-      return 'A saved cloud change could not be read. It remains on this '
-          'device; keep this strategy open and recover the outbox before '
-          'continuing.';
-    }
-    if (lower.contains('retry paused')) {
-      return 'A saved cloud change is paused after repeated failures. Retry '
-          'when the connection and account are healthy.';
-    }
-    if (lower.contains('needs attention')) {
-      return 'Another edit reached the cloud first. Your version remains '
-          'saved on this device.';
-    }
-    if (lower.contains('cannot be retried automatically')) {
-      return 'The server cannot match this retained edit to a current cloud '
-          'revision. It remains saved on this device.';
-    }
-    if (lower.contains('auth')) {
-      return 'Your cloud session needs to be refreshed — retry, or sign in '
-          'again from the library.';
-    }
-    if (lower.contains('offline') || lower.contains('connection')) {
-      return 'The cloud could not be reached.';
-    }
-    if (lower.contains('setup is not ready')) {
-      return 'Cloud sync is still starting up.';
-    }
-    return "Some changes haven't reached the cloud yet.";
   }
 
   static String _formatTime(DateTime time) {

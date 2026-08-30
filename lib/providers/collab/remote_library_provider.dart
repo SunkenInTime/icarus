@@ -17,6 +17,7 @@ final cloudFolderTreeProvider =
     return;
   }
 
+  final authNotifier = ref.read(authProvider.notifier);
   final repo = ref.watch(convexStrategyRepositoryProvider);
   try {
     await for (final folders in repo.watchAllFolders()) {
@@ -25,11 +26,11 @@ final cloudFolderTreeProvider =
   } catch (error, stackTrace) {
     if (isConvexUnauthenticatedError(error)) {
       unawaited(
-        ref.read(authProvider.notifier).reportConvexUnauthenticated(
-              source: 'remote_library:folder_tree',
-              error: error,
-              stackTrace: stackTrace,
-            ),
+        authNotifier.reportConvexUnauthenticated(
+          source: 'remote_library:folder_tree',
+          error: error,
+          stackTrace: stackTrace,
+        ),
       );
       yield const <CloudFolderEntry>[];
       return;
@@ -84,6 +85,8 @@ final cloudStrategiesProvider =
 
   final section = ref.watch(cloudLibrarySectionProvider);
   final folderId = ref.watch(folderProvider);
+  final folderNotifier = ref.read(folderProvider.notifier);
+  final authNotifier = ref.read(authProvider.notifier);
   final repo = ref.watch(convexStrategyRepositoryProvider);
   try {
     final stream = section == CloudLibrarySection.sharedWithMe
@@ -97,19 +100,17 @@ final cloudStrategiesProvider =
   } catch (error, stackTrace) {
     if (section != CloudLibrarySection.sharedWithMe &&
         _isInvalidFolderError(error)) {
-      ref
-          .read(folderProvider.notifier)
-          .updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
+      folderNotifier.updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
       yield const <CloudStrategyEntry>[];
       return;
     }
     if (isConvexUnauthenticatedError(error)) {
       unawaited(
-        ref.read(authProvider.notifier).reportConvexUnauthenticated(
-              source: 'remote_library:strategies',
-              error: error,
-              stackTrace: stackTrace,
-            ),
+        authNotifier.reportConvexUnauthenticated(
+          source: 'remote_library:strategies',
+          error: error,
+          stackTrace: stackTrace,
+        ),
       );
       yield const <CloudStrategyEntry>[];
       return;

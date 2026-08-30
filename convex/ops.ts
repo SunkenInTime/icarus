@@ -1316,12 +1316,13 @@ export const applyBatch = mutation({
     let strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
     const results: PublicOperationResult[] = [];
+    let acceptedStrategyBatchBaseRevision: number | undefined;
 
     // Outcomes are per operation: accepted changes and visible rejections are
     // committed together by this single Convex transaction. One stale op must
     // not erase an independent op that the server already accepted.
     for (const rawOp of args.ops) {
-      const op = normalizeOp(rawOp);
+      let op = normalizeOp(rawOp);
       const existingEvent = await ctx.db
         .query("operationEvents")
         .withIndex("by_strategyId_clientId_opId", (q) =>
@@ -1351,6 +1352,22 @@ export const applyBatch = mutation({
               : noop(latest?.revision);
         results.push(toPublicResult(op, replayResult));
         continue;
+      }
+
+      const originalExpectedRevision = op.expectedRevision;
+      const targetsStrategyRevision = currentTargetForOp(op) === "strategy";
+      const strategyRevisionBefore = strategy.revision;
+      if (
+        targetsStrategyRevision &&
+        acceptedStrategyBatchBaseRevision !== undefined &&
+        originalExpectedRevision === acceptedStrategyBatchBaseRevision
+      ) {
+        // Offline clients can queue several independent page structure edits
+        // from one strategy snapshot. Once the first matching op advances the
+        // strategy in this transaction, chain its same-base siblings onto the
+        // revision produced by the preceding op. A stale first op never opens
+        // this path, so another client's revision still rejects the full batch.
+        op = { ...op, expectedRevision: strategy.revision };
       }
 
       let result: OperationResult;
@@ -1388,6 +1405,16 @@ export const applyBatch = mutation({
         };
       }
 
+      if (
+        targetsStrategyRevision &&
+        acceptedStrategyBatchBaseRevision === undefined &&
+        originalExpectedRevision !== undefined &&
+        originalExpectedRevision === strategyRevisionBefore &&
+        result.status === "ack"
+      ) {
+        acceptedStrategyBatchBaseRevision = originalExpectedRevision;
+      }
+
       const publicResult = toPublicResult(op, result);
 
       await ctx.db.insert("operationEvents", {
@@ -1404,7 +1431,7 @@ export const applyBatch = mutation({
           publicResult.status === "failed" ? publicResult.rawCode : undefined,
         message:
           publicResult.status === "failed" ? publicResult.message : undefined,
-        expectedRevision: op.expectedRevision,
+        expectedRevision: originalExpectedRevision,
         appliedRevision:
           publicResult.status === "applied"
             ? publicResult.appliedRevision

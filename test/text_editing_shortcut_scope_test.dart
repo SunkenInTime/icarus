@@ -126,6 +126,52 @@ void main() {
     expect(controller.text, isEmpty);
   });
 
+  testWidgets('plain editor shortcuts stop at a focused text field',
+      (tester) async {
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+    var addPageInvocations = 0;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Shortcuts(
+            shortcuts: const <ShortcutActivator, Intent>{
+              SingleActivator(LogicalKeyboardKey.keyC): AddPageIntent(),
+            },
+            child: Actions(
+              actions: <Type, Action<Intent>>{
+                AddPageIntent: CallbackAction<AddPageIntent>(
+                  onInvoke: (_) {
+                    addPageInvocations++;
+                    return null;
+                  },
+                ),
+              },
+              child: Scaffold(
+                body: TextEditingShortcutScope(
+                  child: TextField(
+                    controller: controller,
+                    autofocus: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC, character: 'c');
+    await tester.pump();
+    tester.testTextInput.enterText('ICR-CARS-GO');
+    await tester.pump();
+
+    expect(addPageInvocations, 0);
+    expect(controller.text, 'ICR-CARS-GO');
+  });
+
   testWidgets('field-specific shortcuts take priority over text defaults',
       (tester) async {
     var submitInvocations = 0;

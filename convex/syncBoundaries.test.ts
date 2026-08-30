@@ -797,6 +797,77 @@ describe("record-scoped write contract", () => {
     });
   });
 
+  test("same-base page structure ops advance together in one batch", async () => {
+    const { owner } = await createHarness();
+    await createBaseStrategy(owner);
+
+    const result = await applyOps(owner, "offline-page-batch", [
+      {
+        opId: "add-page-b-offline",
+        kind: "add",
+        entityType: "page",
+        entityPublicId: pageB,
+        payload: { name: "B", isAttack: false, settings: settingsB },
+        sortIndex: 1,
+        expectedRevision: 0,
+      },
+      {
+        opId: "add-page-c-offline",
+        kind: "add",
+        entityType: "page",
+        entityPublicId: "page-c",
+        payload: { name: "C", isAttack: true, settings: settingsA },
+        sortIndex: 2,
+        expectedRevision: 0,
+      },
+    ]);
+
+    expect(result.results).toMatchObject([
+      { status: "applied", appliedRevision: 1 },
+      { status: "applied", appliedRevision: 2 },
+    ]);
+    const shell = (await owner.query(getShell, {
+      strategyPublicId,
+    })) as { pages: Array<{ publicId: string; sortIndex: number }> };
+    expect(shell.pages).toMatchObject([
+      { publicId: pageA, sortIndex: 0 },
+      { publicId: pageB, sortIndex: 1 },
+      { publicId: "page-c", sortIndex: 2 },
+    ]);
+  });
+
+  test("a stale first page op does not open same-batch revision chaining", async () => {
+    const { owner } = await createHarness();
+    await createBaseStrategy(owner);
+    await addPageB(owner, 0);
+
+    const result = await applyOps(owner, "stale-offline-page-batch", [
+      {
+        opId: "stale-add-page-c",
+        kind: "add",
+        entityType: "page",
+        entityPublicId: "page-c",
+        payload: { name: "C", isAttack: true, settings: settingsA },
+        sortIndex: 2,
+        expectedRevision: 0,
+      },
+      {
+        opId: "stale-add-page-d",
+        kind: "add",
+        entityType: "page",
+        entityPublicId: "page-d",
+        payload: { name: "D", isAttack: false, settings: settingsB },
+        sortIndex: 3,
+        expectedRevision: 0,
+      },
+    ]);
+
+    expect(result.results).toMatchObject([
+      { status: "rejected", reason: "revision_mismatch" },
+      { status: "rejected", reason: "revision_mismatch" },
+    ]);
+  });
+
   test("page descriptor operations all apply through the durable batch protocol", async () => {
     vi.useFakeTimers();
     try {

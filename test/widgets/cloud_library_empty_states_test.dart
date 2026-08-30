@@ -8,6 +8,7 @@ import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/folder_content.dart';
+import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
@@ -57,6 +58,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AddSharedItemDialog), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(AddSharedItemDialog),
+        matching: find.byType(TextEditingShortcutScope),
+      ),
+      findsOneWidget,
+    );
   });
 }
 
