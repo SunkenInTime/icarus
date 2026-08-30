@@ -373,13 +373,13 @@ fvm flutter analyze --no-fatal-infos
 fvm flutter test</code></pre>
           <p class="caption">The repository pins Flutter through <code>.fvmrc</code>. Use FVM for Dart and Flutter commands.</p>
           <h3 id="test-auth">Use the dedicated test account</h3>
-          <p>This account exists only for Icarus verification. Its values are intentionally committed in this handoff so the remote agent can run the complete test without another setup step.</p>
+          <p>Use a disposable account provisioned at test time. Never commit or publish its credentials.</p>
           <pre><code># Icarus test auth
-ICARUS_E2E_EMAIL=shawnadedeji@gmail.com
-ICARUS_E2E_PASSWORD=testpassword123</code></pre>
+ICARUS_E2E_EMAIL=[provision at test time]
+ICARUS_E2E_PASSWORD=[provision at test time]</code></pre>
           <ul>
-            <li>These are disposable test credentials. Their presence in Git and the public HTML is intentional.</li>
-            <li>Computer Use may read the values from this block or from matching environment variables and enter them directly into the Icarus email and password fields. No further confirmation is needed.</li>
+            <li>Keep disposable test credentials outside Git and public artifacts.</li>
+            <li>Computer Use may read the values from private environment variables or a mode-600 temporary account file and enter them directly into the Icarus email and password fields.</li>
             <li>Use this account only against the Icarus test Supabase project and its Convex deployment.</li>
             <li>Take the first screenshot after the auth dialog closes so the receipt proves the signed-in product state.</li>
           </ul>
@@ -662,6 +662,39 @@ git status --short</code></pre>
           <p>The supplied credential proves same-account sync across independent clients. It does not prove cross-account sharing or revocation. The automated authorization matrix remains mandatory unless Dara supplies separate live accounts B and C. Do not create accounts to make the live script look complete.</p>
           <p><span class="chip bad">red loop</span> Pause the run on data loss, an access-control leak, a reconnect loop, a stale subscription, an unreadable record, or any moment where <strong>Synced</strong> is shown while work is still local, rejected, failed, or uncertain. Preserve the run data and logs, fix the root cause, add a regression test, rebuild, and restart at the earliest affected step. Then finish the script.</p>
           <p class="source">Source: <a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/docs/cloud_online_release_gaps.md">cloud release gate</a>, <a data-artifact href="https://github.com/SunkenInTime/icarus/blob/t3code/convex-client-gauntlet/test/widgets/cloud_beta_automation_semantics_test.dart">auth automation semantics</a>, current sync-status keys, and the Computer Use workflow.</p>
+          <h3 id="release-candidate-receipt">Release-candidate receipt: 2026-08-29</h3>
+          <p><span class="chip accent">internal RC</span> The contract and restart boundaries are green. Outside invitations remain paused until the exact pull-request SHA passes the Windows upgrade job and one visible two-client run covers UI write, offline restart, rejection, media round trip, sign-out, and sign-in.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Boundary</th><th>Current evidence</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td>Convex source</td><td><code>npx tsc --noEmit</code>; 30 Convex tests; 42 public functions and 34 error codes audited; scrubbed contract snapshot current.</td><td><span class="chip ok">green</span></td></tr>
+                <tr><td>A/B/C access</td><td>Private isolation, viewer denial, editor round trip, revoked-link denial, durable redeemed access, inherited folder roles, and Strategy access-record cleanup. The deployed run used synthetic identities; two fresh Supabase accounts separately proved real password JWT to Convex identity mapping.</td><td><span class="chip ok">green contract</span></td></tr>
+                <tr><td>Durable recovery</td><td>387 Flutter tests cover enqueue-before-send restart, in-flight replay, retry exhaustion, manual retry identity, rejected reconciliation, auth setup incidents, and local fallback when Convex is unavailable.</td><td><span class="chip ok">green model</span></td></tr>
+                <tr><td>R2</td><td>Live presign, upload, public byte readback, tampered-key rejection, missing-object rejection, and cleanup all passed. Built-app upload queue restart and export remain a visible product gate.</td><td><span class="chip warn">partial product</span></td></tr>
+                <tr><td>macOS product</td><td>An isolated 4.3.7 release app reconnected persisted auth, received a cloud Strategy through its subscription, retained it across a full process restart, received a live server rename without reload, and opened the editor with <strong>Synced</strong> visible.</td><td><span class="chip ok">green read path</span></td></tr>
+                <tr><td>Computer Use input</td><td>The Flutter macOS name field accepted focus but rejected native keyboard and clipboard injection. The Strategy was created through the authenticated backend. Do not count this receipt as a native UI-create proof.</td><td><span class="chip warn">tooling limit</span></td></tr>
+                <tr><td>Web product</td><td>The 2026-08-25 production web receipt proves real sign-in, Convex write, second-page edit to <strong>Synced</strong>, reload, and readback. The current collaborative-browser semantics snapshot timed out.</td><td><span class="chip warn">older receipt</span></td></tr>
+                <tr><td>Windows installer</td><td>CI installs public 3.2.3, imports <code>base-test.ica</code>, upgrades to the candidate, launches, compares exact <code>strategy_box.hive</code> bytes, reinstalls 3.2.3, launches, compares again, and uploads JSON evidence with the installer.</td><td><span class="chip warn">green CI required</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>The candidate branch started from <code>icarus-cloud</code> commit <code>ce9beec189e35f48cced623e161aa55f2642e782</code>. The final release identity is the pull-request head SHA after all required checks are green. The Windows artifact is named <code>icarus-windows-rc-&lt;sha&gt;</code>, so its installer and receipt cannot be confused with another candidate.</p>
+          <pre><code># Exact local receipt
+npx tsc --noEmit
+npm run test:convex
+npm run snapshot:convex-contract:check
+npm run audit:convex-contract
+fvm flutter analyze --no-fatal-infos
+fvm flutter test
+fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons
+fvm flutter build macos --no-tree-shake-icons
+
+# Exact Windows CI receipt
+powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1 -Configuration Release
+powershell -ExecutionPolicy Bypass -File scripts/test_online_beta_windows_upgrade.ps1 `
+  -ReleaseCandidateInstaller build\installer\icarus-setup-&lt;version&gt;.exe</code></pre>
+          <p>Resume path for the next agent: read <code>AGENTS.md</code>, this receipt, and <code>docs/cloud_online_release_gaps.md</code>; fetch the pull request; verify local HEAD equals the remote head; inspect the Windows JSON artifact; replay only the unchecked visible product steps; update the checklist with evidence; then babysit checks, bot reviews, and unresolved threads on the current SHA before merge.</p>
         </section>
         <section>
           <h2 id="commit-plan">Commit boundaries and stop conditions</h2>

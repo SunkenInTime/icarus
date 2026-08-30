@@ -4,7 +4,9 @@ on:
   push:
     branches:
       - main
+      - icarus-cloud
   pull_request:
+  workflow_dispatch:
 
 jobs:
   convex-contract:
@@ -156,6 +158,31 @@ jobs:
       - name: Build Windows Client
         shell: pwsh
         run: fvm flutter build windows --no-tree-shake-icons
+
+      - name: Build Windows Installer
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File installer/build_installer.ps1 -Configuration Release
+
+      - name: Test Public Upgrade And Rollback
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path build/installer -Filter 'icarus-setup-*.exe' |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if ($null -eq $installer) {
+            throw "Release-candidate installer was not built."
+          }
+          powershell -ExecutionPolicy Bypass -File scripts/test_online_beta_windows_upgrade.ps1 `
+            -ReleaseCandidateInstaller $installer.FullName
+
+      - name: Upload Windows Release Candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: icarus-windows-rc-${{ github.sha }}
+          path: |
+            build/installer/icarus-setup-*.exe
+            ${{ runner.temp }}/icarus-online-beta-windows-smoke/evidence.json
+          if-no-files-found: error
 
   linux:
     runs-on: ubuntu-latest
