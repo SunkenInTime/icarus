@@ -954,19 +954,22 @@ void main() {
       selectFirstPageIfNeeded: true,
     );
     container.read(textProvider.notifier).fromHive([
-      PlacedText(id: 'local-edit', position: const Offset(5, 5))
-        ..text = 'unsent',
+      PlacedText(id: 'text-page-1', position: const Offset(5, 5))..text = 'one',
     ]);
+    container
+        .read(textDraftProvider.notifier)
+        .setDraft('text-page-1', 'unsent draft');
 
     await session.setActivePage('page-2').timeout(const Duration(seconds: 2));
     expect(session.activePageId, 'page-2');
     expect(remote.selectedPageIds, contains('page-2'));
     expect(container.read(textProvider).single.text, 'two');
+    expect(container.read(textDraftProvider), isEmpty);
     expect(queue.flushNowCount, 1);
     expect(
       container.read(strategyOpQueueProvider).pending.any((pending) =>
-          pending.op.pagePublicId == 'page-1' ||
-          pending.op.entityPublicId == 'page-1'),
+          pending.op.entityPublicId == 'text-page-1' &&
+          pending.op.payload.toString().contains('unsent draft')),
       isTrue,
     );
   });

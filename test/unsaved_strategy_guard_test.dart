@@ -194,7 +194,8 @@ void main() {
       expect(saved!.pages.single.textData.single.text, 'before');
     });
 
-    test('already saved returns true without another save', () async {
+    test('an active draft is saved even when committed state was clean',
+        () async {
       await _setAutosaveEnabled(true);
       final strategy = await _storeStrategyWithText(
         id: 'strategy-3',
@@ -207,7 +208,7 @@ void main() {
           .fromHive(strategy.pages.single.textData);
       container
           .read(textDraftProvider.notifier)
-          .setDraft('text-1', 'draft should not save');
+          .setDraft('text-1', 'active draft');
 
       final notifier = container.read(strategyProvider.notifier);
       notifier.setFromState(
@@ -226,7 +227,7 @@ void main() {
       final saved =
           Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(strategy.id);
       expect(saved, isNotNull);
-      expect(saved!.pages.single.textData.single.text, 'before');
+      expect(saved!.pages.single.textData.single.text, 'active draft');
     });
 
     test('no loaded strategy returns true', () async {
@@ -324,6 +325,46 @@ void main() {
         context: context,
         ref: ref,
         source: 'guard-test-autosave',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(result, isTrue);
+      expect(continueCalls, 1);
+      expect(notifier.flushCalls, 1);
+      expect(find.text('Save changes?'), findsNothing);
+    });
+
+    testWidgets('clean local state still flushes an active text draft',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'strategy-draft',
+          strategyName: 'Draft Strategy',
+          source: StrategySource.local,
+          storageDirectory: null,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+        ],
+      );
+      addTearDown(container.dispose);
+      container
+          .read(textDraftProvider.notifier)
+          .setDraft('text-1', 'active local draft');
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final result = await guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-local-draft',
         onContinue: () async {
           continueCalls++;
         },

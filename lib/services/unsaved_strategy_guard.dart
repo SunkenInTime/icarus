@@ -6,6 +6,7 @@ import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -141,6 +142,24 @@ Future<bool> _guardCloudStrategyExit({
   required WidgetRef ref,
   required Future<void> Function() onContinue,
 }) async {
+  final openingStrategy = ref.read(strategyProvider);
+  if (ref.read(textDraftProvider).isNotEmpty &&
+      openingStrategy.strategyId != null) {
+    try {
+      await ref
+          .read(strategyProvider.notifier)
+          .forceSaveNow(openingStrategy.strategyId!);
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to sync the active text edit before leaving.',
+        error: error,
+        stackTrace: stackTrace,
+        source: 'cloud_media.exit_guard',
+      );
+      return false;
+    }
+  }
+
   while (true) {
     final strategyState = ref.read(strategyProvider);
     final saveState = ref.read(strategySaveStateProvider);
@@ -279,7 +298,9 @@ Future<bool> guardUnsavedStrategyExit({
     );
   }
 
-  if (strategyState.strategyName == null || !saveState.isDirty) {
+  final hasTextDrafts = ref.read(textDraftProvider).isNotEmpty;
+  if (strategyState.strategyName == null ||
+      (!saveState.isDirty && !hasTextDrafts)) {
     await onContinue();
     return true;
   }

@@ -9,13 +9,14 @@ import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
+import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const _chipSwitchDuration = Duration(milliseconds: 150);
 const _conflictToastGap = Duration(seconds: 5);
 
-enum _SyncStatus { synced, syncing, offline, attention }
+enum _SyncStatus { synced, editing, syncing, offline, attention }
 
 /// Persistent cloud sync indicator for the strategy editor top strip.
 ///
@@ -103,6 +104,9 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
 
     final saveState = ref.watch(strategySaveStateProvider);
     final opQueueState = ref.watch(strategyOpQueueProvider);
+    final hasTextDrafts = ref.watch(
+      textDraftProvider.select((drafts) => drafts.isNotEmpty),
+    );
     final isConnected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
 
     final _SyncStatus status;
@@ -112,6 +116,8 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
       status = _SyncStatus.attention;
     } else if (!isConnected) {
       status = _SyncStatus.offline;
+    } else if (hasTextDrafts) {
+      status = _SyncStatus.editing;
     } else if (saveState.isSaving ||
         saveState.hasPendingCloudSync ||
         saveState.hasPendingMediaSync ||
@@ -190,6 +196,7 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
       case _SyncStatus.attention:
         return Settings.tacticalVioletTheme.destructive.withValues(alpha: 0.14);
       case _SyncStatus.offline:
+      case _SyncStatus.editing:
       case _SyncStatus.syncing:
       case _SyncStatus.synced:
         return Settings.tacticalVioletTheme.muted.withValues(alpha: 0.4);
@@ -201,6 +208,7 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
       case _SyncStatus.attention:
         return Settings.tacticalVioletTheme.destructive;
       case _SyncStatus.offline:
+      case _SyncStatus.editing:
       case _SyncStatus.syncing:
       case _SyncStatus.synced:
         return Settings.tacticalVioletTheme.mutedForeground;
@@ -214,6 +222,13 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
         return Icon(
           Icons.cloud_done_outlined,
           key: const ValueKey('synced'),
+          size: 13,
+          color: color,
+        );
+      case _SyncStatus.editing:
+        return Icon(
+          Icons.edit_outlined,
+          key: const ValueKey('editing'),
           size: 13,
           color: color,
         );
@@ -248,6 +263,8 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
     switch (status) {
       case _SyncStatus.synced:
         return 'Synced';
+      case _SyncStatus.editing:
+        return 'Editing…';
       case _SyncStatus.syncing:
         return 'Syncing…';
       case _SyncStatus.offline:
@@ -324,6 +341,8 @@ class _SyncStatusPopover extends StatelessWidget {
     switch (status) {
       case _SyncStatus.synced:
         return 'All changes synced';
+      case _SyncStatus.editing:
+        return 'Edit not synced yet';
       case _SyncStatus.syncing:
         return 'Syncing changes';
       case _SyncStatus.offline:
@@ -337,6 +356,9 @@ class _SyncStatusPopover extends StatelessWidget {
     switch (status) {
       case _SyncStatus.synced:
         return 'Your strategy is safely stored in the cloud.';
+      case _SyncStatus.editing:
+        return 'Finish editing or switch pages to send this change to the '
+            'cloud.';
       case _SyncStatus.syncing:
         return 'Your edits are being sent to the cloud. You can keep '
             'working — this happens in the background.';

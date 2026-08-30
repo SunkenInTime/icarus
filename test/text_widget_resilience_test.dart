@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
@@ -172,6 +173,68 @@ void main() {
     await tester.pump();
 
     expect(container.read(textProvider).single.text, 'edited');
+  });
+
+  testWidgets('semantics text changes enter the draft and commit pipeline',
+      (tester) async {
+    final semanticsHandle = tester.ensureSemantics();
+    final container = createContainer();
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'text-1', position: const Offset(10, 20))..text = 'before',
+    ]);
+
+    await tester.pumpWidget(buildTextHarness(container));
+
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    final placedText = find.semantics.byLabel('Placed text');
+    expect(placedText, findsOneWidget);
+    tester.semantics.performAction(
+      placedText,
+      SemanticsAction.setText,
+      args: 'edited through semantics',
+    );
+    await tester.pump();
+
+    expect(
+      container.read(textDraftProvider),
+      {'text-1': 'edited through semantics'},
+    );
+    expect(container.read(textProvider).single.text, 'before');
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.focusNode!.unfocus();
+    await tester.pump();
+
+    expect(container.read(textDraftProvider), isEmpty);
+    expect(
+      container.read(textProvider).single.text,
+      'edited through semantics',
+    );
+    semanticsHandle.dispose();
+  });
+
+  testWidgets('controller text changes enter the draft pipeline',
+      (tester) async {
+    final container = createContainer();
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: 'text-1', position: const Offset(10, 20))..text = 'before',
+    ]);
+
+    await tester.pumpWidget(buildTextHarness(container));
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    field.controller!.value = const TextEditingValue(
+      text: 'edited through controller',
+      selection: TextSelection.collapsed(offset: 25),
+    );
+    await tester.pump();
+
+    expect(
+      container.read(textDraftProvider),
+      {'text-1': 'edited through controller'},
+    );
+    expect(container.read(textProvider).single.text, 'before');
   });
 
   testWidgets(

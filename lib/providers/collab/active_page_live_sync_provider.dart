@@ -588,7 +588,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    for (final text in ref.read(textProvider)) {
+    for (final text
+        in ref.read(textProvider.notifier).snapshotForPersistence()) {
       final payload = Map<String, dynamic>.from(text.toJson())
         ..putIfAbsent('elementType', () => _CollabElementKind.text.name);
       envelopes.add(
