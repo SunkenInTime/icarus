@@ -39,6 +39,7 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   final controller = TransformationController();
   Size? _lastViewportSize;
   Size? _lastPlayAreaSize;
+  bool? _lastIsAttack;
   bool _placementCenterUpdateScheduled = false;
   bool _zoomSyncScheduled = false;
   double? _pendingZoom;
@@ -154,8 +155,10 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
             (constraints.maxWidth - Settings.sideBarReservedWidth)
                 .clamp(0.0, constraints.maxWidth);
         final viewportSize = Size(viewportWidth, height);
-        if (_lastViewportSize != viewportSize ||
-            _lastPlayAreaSize != playAreaSize) {
+        final dimensionsChanged = _lastViewportSize != viewportSize ||
+            _lastPlayAreaSize != playAreaSize;
+        final sideChanged = _lastIsAttack != isAttack;
+        if (dimensionsChanged) {
           final double currentScale = controller.value.getMaxScaleOnAxis();
           final double safeScale = currentScale == 0 ? 1.0 : currentScale;
           final double centeredOffsetX =
@@ -166,11 +169,6 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
           matrix.translateByDouble(
               centeredOffsetX / safeScale, centeredOffsetY / safeScale, 0, 1);
           controller.value = matrix;
-          _schedulePlacementCenterUpdate(
-            viewportWidth: viewportWidth,
-            viewportHeight: height,
-            coordinateSystem: coordinateSystem,
-          );
           _lastViewportSize = viewportSize;
           _lastPlayAreaSize = playAreaSize;
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -178,6 +176,14 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
             ref.read(canvasResizeProvider.notifier).increment();
           });
         }
+        if (dimensionsChanged || sideChanged) {
+          _schedulePlacementCenterUpdate(
+            viewportWidth: viewportWidth,
+            viewportHeight: height,
+            coordinateSystem: coordinateSystem,
+          );
+        }
+        _lastIsAttack = isAttack;
         final double mapWidth = height * coordinateSystem.mapAspectRatio;
         final double mapLeft = (worldWidth - mapWidth) / 2;
 

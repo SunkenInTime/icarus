@@ -27,6 +27,14 @@ class _FixedMapProvider extends MapProvider {
   void fromHive(MapValue map, bool isAttack) {}
 }
 
+class _DefenseMapProvider extends MapProvider {
+  @override
+  MapState build() => MapState(currentMap: MapValue.ascent, isAttack: false);
+
+  @override
+  void fromHive(MapValue map, bool isAttack) {}
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -290,6 +298,70 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets(
+      'defense appear and disappear offsets keep view-cone geometry aligned',
+      (tester) async {
+    final container = _createDefenseContainer();
+    addTearDown(container.dispose);
+    final coordinateSystem = CoordinateSystem.instance;
+    final cone = PlacedUtility(
+      id: 'defense-transition-cone',
+      type: UtilityType.viewCone90,
+      position: const Offset(500, 400),
+    )
+      ..rotation = 0.6
+      ..length = 90;
+    const progress = 0.25;
+    final directionalOffset = coordinateSystem.scale(28);
+    final coneAnchor = coordinateSystem.virtualOffsetToWorld(
+      ViewConeWidget.anchorPointVirtual,
+    );
+
+    Future<Offset> pumpEntry(PageTransitionEntry entry) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: ShadApp(
+            home: Scaffold(
+              body: TransitionEntriesLayer(
+                entries: [entry],
+                agentPaths: const {},
+                t: progress,
+                direction: PageTransitionDirection.forward,
+                agentSize: 40,
+                abilitySize: 40,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      return tester
+          .widget<ViewConeWidget>(find.byType(ViewConeWidget))
+          .worldOrigin!;
+    }
+
+    final appearOrigin = await pumpEntry(PageTransitionEntry.appear(to: cone));
+    final appearTranslation = coordinateSystem.screenWidthToWorld(
+      directionalOffset * (1 - progress),
+    );
+    expect(
+      appearOrigin,
+      cone.position + Offset(-appearTranslation, 0) + coneAnchor,
+    );
+
+    final disappearOrigin = await pumpEntry(
+      PageTransitionEntry.disappear(from: cone),
+    );
+    final disappearTranslation = coordinateSystem.screenWidthToWorld(
+      -directionalOffset * progress,
+    );
+    expect(
+      disappearOrigin,
+      cone.position + Offset(-disappearTranslation, 0) + coneAnchor,
+    );
+  });
+
   testWidgets('temporary rectangle preview applies saved rotation once',
       (tester) async {
     final container = _createContainer();
@@ -359,6 +431,14 @@ ProviderContainer _createContainer() {
   return ProviderContainer(
     overrides: [
       mapProvider.overrideWith(_FixedMapProvider.new),
+    ],
+  );
+}
+
+ProviderContainer _createDefenseContainer() {
+  return ProviderContainer(
+    overrides: [
+      mapProvider.overrideWith(_DefenseMapProvider.new),
     ],
   );
 }

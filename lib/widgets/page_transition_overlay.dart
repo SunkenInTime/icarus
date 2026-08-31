@@ -167,6 +167,13 @@ class _EntryRenderer {
     );
   }
 
+  double _canonicalHorizontalTranslation(double screenTranslationX) {
+    final worldTranslation = coordinateSystem.screenWidthToWorld(
+      screenTranslationX,
+    );
+    return isAttack ? worldTranslation : -worldTranslation;
+  }
+
   Widget buildEntry(PageTransitionEntry entry) {
     final directionalOffset = coordinateSystem.scale(28);
     final directionSign =
@@ -196,7 +203,7 @@ class _EntryRenderer {
         );
         final coordinatePosition = entry.startPos +
             Offset(
-              coordinateSystem.screenWidthToWorld(screenTranslation.dx),
+              _canonicalHorizontalTranslation(screenTranslation.dx),
               0,
             );
         final start = _startScreenPosition(
@@ -281,7 +288,7 @@ class _EntryRenderer {
         );
         final coordinatePosition = entry.endPos +
             Offset(
-              coordinateSystem.screenWidthToWorld(screenTranslation.dx),
+              _canonicalHorizontalTranslation(screenTranslation.dx),
               0,
             );
         final end = _endScreenPosition(
