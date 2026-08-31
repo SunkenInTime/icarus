@@ -86,8 +86,9 @@ class PageLayering {
   }
 
   static int compareEntries(PageTransitionEntry a, PageTransitionEntry b) {
-    final zCompare = zIndexForWidget(a.visualWidget)
-        .compareTo(zIndexForWidget(b.visualWidget));
+    final zCompare = zIndexForWidget(
+      a.visualWidget,
+    ).compareTo(zIndexForWidget(b.visualWidget));
     if (zCompare != 0) {
       return zCompare;
     }
@@ -106,14 +107,20 @@ Offset screenPositionForWidget({
   double? mapScale,
   double? agentSize,
   double? abilitySize,
+  bool isAttack = true,
 }) {
   final position = coordinatePosition ?? widget.position;
   var screen = coordinateSystem.coordinateToScreen(position);
+  Offset? renderedAnchor;
   if (widget is PlacedAgentNode && agentSize != null) {
     screen += agentScreenPositionAdjustment(
       coordinateSystem: coordinateSystem,
       agentSize: agentSize,
     );
+    renderedAnchor = Offset(
+      agentSize / 2,
+      agentSize / 2,
+    ).scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
   }
   if (widget is PlacedAbility && mapScale != null && abilitySize != null) {
     screen += abilityScreenPositionAdjustment(
@@ -122,6 +129,9 @@ Offset screenPositionForWidget({
       mapScale: mapScale,
       abilitySize: abilitySize,
     );
+    renderedAnchor = widget.data.abilityData!
+        .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
+        .scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
   }
   if (widget is PlacedUtility &&
       mapScale != null &&
@@ -133,6 +143,19 @@ Offset screenPositionForWidget({
       mapScale: mapScale,
       agentSize: agentSize,
       abilitySize: abilitySize,
+    );
+    renderedAnchor = utilityAnchorForScale(
+      utility: widget,
+      mapScale: mapScale,
+      agentSize: agentSize,
+      abilitySize: abilitySize,
+    ).scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
+  }
+  if (renderedAnchor != null) {
+    screen = coordinateSystem.screenPositionForSide(
+      attackScreenPosition: screen,
+      reflectionOffset: renderedAnchor * 2,
+      isAttack: isAttack,
     );
   }
   if (widget is PlacedAbility && widget.data.abilityData is CircleAbility) {
@@ -164,26 +187,36 @@ Offset storedAgentPositionForRenderedScreenPosition({
   required CoordinateSystem coordinateSystem,
   required Offset renderedScreenPosition,
   required double agentSize,
+  bool isAttack = true,
 }) {
+  final renderedAnchor = Offset(
+    agentSize / 2,
+    agentSize / 2,
+  ).scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
+  final attackScreenPosition = coordinateSystem.screenPositionFromSide(
+    sideScreenPosition: renderedScreenPosition,
+    reflectionOffset: renderedAnchor * 2,
+    isAttack: isAttack,
+  );
   final adjustment = agentScreenPositionAdjustment(
     coordinateSystem: coordinateSystem,
     agentSize: agentSize,
   );
-  return coordinateSystem.screenToCoordinate(
-    renderedScreenPosition - adjustment,
-  );
+  return coordinateSystem.screenToCoordinate(attackScreenPosition - adjustment);
 }
 
 Offset screenAnchorForAgent({
   required PlacedAgentNode agent,
   required CoordinateSystem coordinateSystem,
   Offset? coordinatePosition,
+  bool isAttack = true,
 }) {
   return screenPositionForWidget(
         widget: agent,
         coordinateSystem: coordinateSystem,
         coordinatePosition: coordinatePosition,
         agentSize: Settings.agentSize,
+        isAttack: isAttack,
       ) +
       storedAgentAnchor.scale(
         coordinateSystem.scaleFactor,
@@ -234,16 +267,23 @@ Offset storedAbilityPositionForRenderedScreenPosition({
   required Offset renderedScreenPosition,
   required double mapScale,
   required double abilitySize,
+  bool isAttack = true,
 }) {
+  final renderedAnchor = ability
+      .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
+      .scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
+  final attackScreenPosition = coordinateSystem.screenPositionFromSide(
+    sideScreenPosition: renderedScreenPosition,
+    reflectionOffset: renderedAnchor * 2,
+    isAttack: isAttack,
+  );
   final adjustment = abilityScreenPositionAdjustment(
     ability: ability,
     coordinateSystem: coordinateSystem,
     mapScale: mapScale,
     abilitySize: abilitySize,
   );
-  return coordinateSystem.screenToCoordinate(
-    renderedScreenPosition - adjustment,
-  );
+  return coordinateSystem.screenToCoordinate(attackScreenPosition - adjustment);
 }
 
 /// Screen-space position of the semantic widget anchor. It intentionally does
@@ -253,6 +293,7 @@ Offset screenAnchorForAbility({
   required CoordinateSystem coordinateSystem,
   required double mapScale,
   Offset? coordinatePosition,
+  bool isAttack = true,
 }) {
   return screenPositionForWidget(
         widget: ability,
@@ -260,14 +301,12 @@ Offset screenAnchorForAbility({
         coordinatePosition: coordinatePosition,
         mapScale: mapScale,
         abilitySize: Settings.abilitySize,
+        isAttack: isAttack,
       ) +
       storedAbilityAnchor(
         ability: ability.data.abilityData!,
         mapScale: mapScale,
-      ).scale(
-        coordinateSystem.scaleFactor,
-        coordinateSystem.scaleFactor,
-      );
+      ).scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
 }
 
 Offset utilityAnchorForScale({
@@ -331,7 +370,19 @@ Offset storedUtilityPositionForRenderedScreenPosition({
   required double mapScale,
   required double agentSize,
   required double abilitySize,
+  bool isAttack = true,
 }) {
+  final renderedAnchor = utilityAnchorForScale(
+    utility: utility,
+    mapScale: mapScale,
+    agentSize: agentSize,
+    abilitySize: abilitySize,
+  ).scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor);
+  final attackScreenPosition = coordinateSystem.screenPositionFromSide(
+    sideScreenPosition: renderedScreenPosition,
+    reflectionOffset: renderedAnchor * 2,
+    isAttack: isAttack,
+  );
   final adjustment = utilityScreenPositionAdjustment(
     utility: utility,
     coordinateSystem: coordinateSystem,
@@ -339,31 +390,31 @@ Offset storedUtilityPositionForRenderedScreenPosition({
     agentSize: agentSize,
     abilitySize: abilitySize,
   );
-  return coordinateSystem.screenToCoordinate(
-    renderedScreenPosition - adjustment,
-  );
+  return coordinateSystem.screenToCoordinate(attackScreenPosition - adjustment);
 }
 
 /// One entry describing how a single PlacedWidget should animate.
 class PageTransitionEntry {
-  PageTransitionEntry.move(
-      {required this.from, required this.to, this.order = 0})
-      : kind = TransitionKind.move,
-        id = to!.id;
+  PageTransitionEntry.move({
+    required this.from,
+    required this.to,
+    this.order = 0,
+  }) : kind = TransitionKind.move,
+       id = to!.id;
   PageTransitionEntry.appear({required this.to, this.order = 0})
-      : kind = TransitionKind.appear,
-        id = to!.id,
-        from = null;
+    : kind = TransitionKind.appear,
+      id = to!.id,
+      from = null;
   PageTransitionEntry.disappear({required this.from, this.order = 0})
-      : kind = TransitionKind.disappear,
-        id = from!.id,
-        to = null;
+    : kind = TransitionKind.disappear,
+      id = from!.id,
+      to = null;
   // For unchanged items we still want to render during the transition
   // so they remain visible while the base view is hidden.
   PageTransitionEntry.none({required this.to, this.order = 0})
-      : kind = TransitionKind.none,
-        id = to!.id,
-        from = null;
+    : kind = TransitionKind.none,
+      id = to!.id,
+      from = null;
 
   final String id;
   final TransitionKind kind;
@@ -432,16 +483,16 @@ class PageTransitionEntry {
   /// list. Kept next to the `*Of` helpers so adding a tweened property means
   /// updating both in the same place.
   static List<Object?> _tweenedPropsOf(PlacedWidget w) => [
-        w.position,
-        rotationOf(w),
-        lengthOf(w),
-        scaleOf(w),
-        textSizeOf(w),
-        agentStateOf(w),
-        customDiameterOf(w),
-        customWidthOf(w),
-        customLengthOf(w),
-      ];
+    w.position,
+    rotationOf(w),
+    lengthOf(w),
+    scaleOf(w),
+    textSizeOf(w),
+    agentStateOf(w),
+    customDiameterOf(w),
+    customWidthOf(w),
+    customLengthOf(w),
+  ];
 
   /// True when [from] and [to] differ in any tweened property, i.e. the
   /// widget needs a move transition rather than a plain hold.

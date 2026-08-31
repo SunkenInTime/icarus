@@ -31,172 +31,193 @@ class _LineupPositionWidgetState extends ConsumerState<LineupPositionWidget> {
     final coordinateSystem = CoordinateSystem.instance;
 
     // log(ref.watch(mapProvider).isAttack.toString());
-    return LayoutBuilder(builder: (context, constraints) {
-      final lineUp = ref.watch(lineUpProvider);
-      final previewAgent =
-          ref.read(lineUpProvider.notifier).getCurrentPreviewAgent();
-      final isLockedAddItemMode =
-          ref.read(lineUpProvider.notifier).isLockedAddItemMode;
-      return DragTarget(
-        builder: (context, candidateData, rejectedData) {
-          return Stack(
-            children: [
-              const Positioned.fill(
-                child: CurrentLineUpPainter(),
-              ),
-              if (lineUp.currentAgent == null && lineUp.currentGroupId == null)
-                Align(
-                  alignment: Alignment.center,
-                  child: Container(
-                    margin: const EdgeInsets.all(16),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Settings.tacticalVioletTheme.primary,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Settings.tacticalVioletTheme.border,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final lineUp = ref.watch(lineUpProvider);
+        final previewAgent = ref
+            .read(lineUpProvider.notifier)
+            .getCurrentPreviewAgent();
+        final isLockedAddItemMode = ref
+            .read(lineUpProvider.notifier)
+            .isLockedAddItemMode;
+        return DragTarget(
+          builder: (context, candidateData, rejectedData) {
+            return Stack(
+              children: [
+                const Positioned.fill(child: CurrentLineUpPainter()),
+                if (lineUp.currentAgent == null &&
+                    lineUp.currentGroupId == null)
+                  Align(
+                    alignment: Alignment.center,
+                    child: Container(
+                      margin: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
-                      boxShadow: const [Settings.cardForegroundBackdrop],
-                    ),
-                    child: Text(
-                      "Drag an agent to the map to start placing",
-                      style: ShadTheme.of(context)
-                          .textTheme
-                          .small
-                          .copyWith(color: Colors.white),
+                      decoration: BoxDecoration(
+                        color: Settings.tacticalVioletTheme.primary,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Settings.tacticalVioletTheme.border,
+                        ),
+                        boxShadow: const [Settings.cardForegroundBackdrop],
+                      ),
+                      child: Text(
+                        "Drag an agent to the map to start placing",
+                        style: ShadTheme.of(
+                          context,
+                        ).textTheme.small.copyWith(color: Colors.white),
+                      ),
                     ),
                   ),
-                ),
-              if (lineUp.currentAbility != null)
-                PlacedAbilityWidget(
-                  rotation: lineUp.currentAbility!.rotation,
-                  data: lineUp.currentAbility!,
-                  ability: lineUp.currentAbility!,
-                  id: lineUp.currentAbility!.id,
-                  length: lineUp.currentAbility!.length,
-                  isLineUp: true,
-                  onDragEnd: (details, _) {
-                    RenderBox renderBox =
-                        context.findRenderObject() as RenderBox;
-                    Offset localOffset =
-                        renderBox.globalToLocal(details.offset);
-                    // Updating info
+                if (lineUp.currentAbility != null)
+                  PlacedAbilityWidget(
+                    rotation: lineUp.currentAbility!.rotation,
+                    data: lineUp.currentAbility!,
+                    ability: lineUp.currentAbility!,
+                    id: lineUp.currentAbility!.id,
+                    length: lineUp.currentAbility!.length,
+                    isLineUp: true,
+                    onDragEnd: (details, _) {
+                      RenderBox renderBox =
+                          context.findRenderObject() as RenderBox;
+                      Offset localOffset = renderBox.globalToLocal(
+                        details.offset,
+                      );
+                      // Updating info
 
-                    final mapState = ref.read(mapProvider);
-                    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
-                    final abilitySize =
-                        ref.read(strategySettingsProvider).abilitySize;
+                      final mapState = ref.read(mapProvider);
+                      final mapScale =
+                          Maps.mapScale[mapState.currentMap] ?? 1.0;
+                      final abilitySize = ref
+                          .read(strategySettingsProvider)
+                          .abilitySize;
 
-                    final abilityData =
-                        lineUp.currentAbility!.data.abilityData!;
-                    final virtualOffset =
-                        storedAbilityPositionForRenderedScreenPosition(
-                      ability: abilityData,
-                      coordinateSystem: coordinateSystem,
-                      renderedScreenPosition: localOffset,
-                      mapScale: mapScale,
-                      abilitySize: abilitySize,
-                    );
-                    final safeArea = storedAbilityAnchor(
-                      ability: abilityData,
-                      mapScale: mapScale,
-                    );
+                      final abilityData =
+                          lineUp.currentAbility!.data.abilityData!;
+                      final virtualOffset =
+                          storedAbilityPositionForRenderedScreenPosition(
+                            ability: abilityData,
+                            coordinateSystem: coordinateSystem,
+                            renderedScreenPosition: localOffset,
+                            mapScale: mapScale,
+                            abilitySize: abilitySize,
+                            isAttack: mapState.isAttack,
+                          );
+                      final safeArea = storedAbilityAnchor(
+                        ability: abilityData,
+                        mapScale: mapScale,
+                      );
 
-                    if (coordinateSystem.isOutOfBounds(
-                        virtualOffset.translate(safeArea.dx, safeArea.dy))) {
-                      ref.read(lineUpProvider.notifier).removeCurrentAbility();
-                      return;
-                    }
+                      if (coordinateSystem.isOutOfBounds(
+                        virtualOffset.translate(safeArea.dx, safeArea.dy),
+                      )) {
+                        ref
+                            .read(lineUpProvider.notifier)
+                            .removeCurrentAbility();
+                        return;
+                      }
 
-                    ref
-                        .read(lineUpProvider.notifier)
-                        .updateCurrentAbilityPosition(virtualOffset);
-                  },
-                ),
-              if (previewAgent != null && isLockedAddItemMode)
-                PlacedLineupAgentWidget(
-                  agent: previewAgent,
-                  draggable: false,
-                ),
-              if (lineUp.currentAgent != null && !isLockedAddItemMode)
-                PlacedLineupAgentWidget(
-                  agent: lineUp.currentAgent!,
-                  draggable: true,
-                  onDragEnd: (details) {
-                    RenderBox renderBox =
-                        context.findRenderObject() as RenderBox;
-                    Offset localOffset =
-                        renderBox.globalToLocal(details.offset);
+                      ref
+                          .read(lineUpProvider.notifier)
+                          .updateCurrentAbilityPosition(virtualOffset);
+                    },
+                  ),
+                if (previewAgent != null && isLockedAddItemMode)
+                  PlacedLineupAgentWidget(
+                    agent: previewAgent,
+                    draggable: false,
+                  ),
+                if (lineUp.currentAgent != null && !isLockedAddItemMode)
+                  PlacedLineupAgentWidget(
+                    agent: lineUp.currentAgent!,
+                    draggable: true,
+                    onDragEnd: (details) {
+                      RenderBox renderBox =
+                          context.findRenderObject() as RenderBox;
+                      Offset localOffset = renderBox.globalToLocal(
+                        details.offset,
+                      );
 
-                    final virtualOffset =
-                        storedAgentPositionForRenderedScreenPosition(
-                      coordinateSystem: coordinateSystem,
-                      renderedScreenPosition: localOffset,
-                      agentSize: ref.read(strategySettingsProvider).agentSize,
-                    );
+                      final virtualOffset =
+                          storedAgentPositionForRenderedScreenPosition(
+                            coordinateSystem: coordinateSystem,
+                            renderedScreenPosition: localOffset,
+                            agentSize: ref
+                                .read(strategySettingsProvider)
+                                .agentSize,
+                            isAttack: ref.read(mapProvider).isAttack,
+                          );
 
-                    ref
-                        .read(lineUpProvider.notifier)
-                        .updateCurrentAgentPosition(virtualOffset);
-                  },
-                ),
-            ],
-          );
-        },
-        onAcceptWithDetails: (details) {
-          RenderBox renderBox = context.findRenderObject() as RenderBox;
-          Offset localOffset = renderBox.globalToLocal(details.offset);
-          const uuid = Uuid();
+                      ref
+                          .read(lineUpProvider.notifier)
+                          .updateCurrentAgentPosition(virtualOffset);
+                    },
+                  ),
+              ],
+            );
+          },
+          onAcceptWithDetails: (details) {
+            RenderBox renderBox = context.findRenderObject() as RenderBox;
+            Offset localOffset = renderBox.globalToLocal(details.offset);
+            const uuid = Uuid();
 
-          if (details.data is AgentData) {
-            if (isLockedAddItemMode) {
-              Settings.showToast(
-                message:
-                    "You can only add abilities for the selected lineup agent right now.",
-                backgroundColor: Settings.tacticalVioletTheme.destructive,
+            if (details.data is AgentData) {
+              if (isLockedAddItemMode) {
+                Settings.showToast(
+                  message:
+                      "You can only add abilities for the selected lineup agent right now.",
+                  backgroundColor: Settings.tacticalVioletTheme.destructive,
+                );
+                return;
+              }
+
+              final agentPosition =
+                  storedAgentPositionForRenderedScreenPosition(
+                    coordinateSystem: coordinateSystem,
+                    renderedScreenPosition: localOffset,
+                    agentSize: ref.read(strategySettingsProvider).agentSize,
+                    isAttack: ref.read(mapProvider).isAttack,
+                  );
+              PlacedAgent placedAgent = PlacedAgent(
+                id: uuid.v4(),
+                type: (details.data as AgentData).type,
+                position: agentPosition,
+                isAlly: ref.read(teamProvider),
               );
-              return;
+
+              ref.read(lineUpProvider.notifier).startNewGroup(placedAgent);
+              ref
+                  .read(abilityBarProvider.notifier)
+                  .updateData(AgentData.agents[placedAgent.type]!);
+            } else if (details.data is AbilityInfo) {
+              final abilityInfo = details.data as AbilityInfo;
+              final abilityPosition =
+                  storedAbilityPositionForRenderedScreenPosition(
+                    ability: abilityInfo.abilityData!,
+                    coordinateSystem: coordinateSystem,
+                    renderedScreenPosition: localOffset,
+                    mapScale:
+                        Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0,
+                    abilitySize: ref.read(strategySettingsProvider).abilitySize,
+                    isAttack: ref.read(mapProvider).isAttack,
+                  );
+              PlacedAbility placedAbility = PlacedAbility(
+                id: uuid.v4(),
+                data: abilityInfo,
+                position: abilityPosition,
+                isAlly: ref.read(teamProvider),
+              );
+
+              ref
+                  .read(lineUpProvider.notifier)
+                  .setCurrentAbility(placedAbility);
             }
-
-            final agentPosition = storedAgentPositionForRenderedScreenPosition(
-              coordinateSystem: coordinateSystem,
-              renderedScreenPosition: localOffset,
-              agentSize: ref.read(strategySettingsProvider).agentSize,
-            );
-            PlacedAgent placedAgent = PlacedAgent(
-              id: uuid.v4(),
-              type: (details.data as AgentData).type,
-              position: agentPosition,
-              isAlly: ref.read(teamProvider),
-            );
-
-            ref.read(lineUpProvider.notifier).startNewGroup(placedAgent);
-            ref
-                .read(abilityBarProvider.notifier)
-                .updateData(AgentData.agents[placedAgent.type]!);
-          } else if (details.data is AbilityInfo) {
-            final abilityInfo = details.data as AbilityInfo;
-            final abilityPosition =
-                storedAbilityPositionForRenderedScreenPosition(
-              ability: abilityInfo.abilityData!,
-              coordinateSystem: coordinateSystem,
-              renderedScreenPosition: localOffset,
-              mapScale: Maps.mapScale[ref.read(mapProvider).currentMap] ?? 1.0,
-              abilitySize: ref.read(strategySettingsProvider).abilitySize,
-            );
-            PlacedAbility placedAbility = PlacedAbility(
-              id: uuid.v4(),
-              data: abilityInfo,
-              position: abilityPosition,
-              isAlly: ref.read(teamProvider),
-            );
-
-            ref.read(lineUpProvider.notifier).setCurrentAbility(placedAbility);
-          }
-        },
-        onLeave: (data) {},
-      );
-    });
+          },
+          onLeave: (data) {},
+        );
+      },
+    );
   }
 }

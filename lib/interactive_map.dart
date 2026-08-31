@@ -77,7 +77,12 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   }) {
     final sceneCenter =
         controller.toScene(Offset(viewportWidth / 2, viewportHeight / 2));
-    final normalizedCenter = coordinateSystem.screenToCoordinate(sceneCenter);
+    final sideCenter = coordinateSystem.screenToCoordinate(sceneCenter);
+    final normalizedCenter = coordinateSystem.positionFromSide(
+      sidePosition: sideCenter,
+      reflectionOffset: Offset.zero,
+      isAttack: ref.read(mapProvider).isAttack,
+    );
     ref
         .read(placementCenterProvider.notifier)
         .updateCenter(_clampToWorld(normalizedCenter, coordinateSystem));

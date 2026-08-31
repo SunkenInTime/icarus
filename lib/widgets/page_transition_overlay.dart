@@ -15,6 +15,7 @@ import 'package:icarus/providers/transition_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_circle_agent_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/placed_view_cone_agent_widget.dart';
+import 'package:icarus/widgets/draggable_widgets/canonical_positioned.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/ability_vision_cone_composite.dart';
 import 'package:icarus/widgets/draggable_widgets/image/image_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/text/text_widget.dart';
@@ -26,6 +27,7 @@ Offset _overlayScreenPosition({
   required double agentSize,
   required double mapScale,
   required double abilitySize,
+  required bool isAttack,
   Offset? coordinatePosition,
 }) {
   final screen = screenPositionForWidget(
@@ -35,6 +37,7 @@ Offset _overlayScreenPosition({
     mapScale: mapScale,
     agentSize: agentSize,
     abilitySize: abilitySize,
+    isAttack: isAttack,
   );
   if (widget is PlacedViewConeAgent) {
     return screen -
@@ -94,6 +97,7 @@ class TransitionEntriesLayer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1.0;
+    final isAttack = ref.watch(mapProvider).isAttack;
     final orderedEntries = [...entries]..sort(PageLayering.compareEntries);
     final renderer = _EntryRenderer(
       coordinateSystem: CoordinateSystem.instance,
@@ -103,6 +107,7 @@ class TransitionEntriesLayer extends ConsumerWidget {
       abilitySize: abilitySize,
       agentPaths: agentPaths,
       t: t,
+      isAttack: isAttack,
     );
 
     return IgnorePointer(
@@ -126,6 +131,7 @@ class _EntryRenderer {
     required this.abilitySize,
     required this.agentPaths,
     required this.t,
+    required this.isAttack,
   });
 
   final CoordinateSystem coordinateSystem;
@@ -135,6 +141,7 @@ class _EntryRenderer {
   final double abilitySize;
   final Map<String, AgentTransitionPath> agentPaths;
   final double t;
+  final bool isAttack;
 
   Offset _startScreenPosition(PageTransitionEntry entry) {
     return _overlayScreenPosition(
@@ -144,6 +151,7 @@ class _EntryRenderer {
       agentSize: agentSize,
       mapScale: mapScale,
       abilitySize: abilitySize,
+      isAttack: isAttack,
     );
   }
 
@@ -155,6 +163,7 @@ class _EntryRenderer {
       agentSize: agentSize,
       mapScale: mapScale,
       abilitySize: abilitySize,
+      isAttack: isAttack,
     );
   }
 
@@ -190,8 +199,9 @@ class _EntryRenderer {
               coordinateSystem.screenWidthToWorld(screenTranslation.dx),
               0,
             );
-        final start = _startScreenPosition(entry)
-            .translate(screenTranslation.dx, screenTranslation.dy);
+        final start = _startScreenPosition(
+          entry,
+        ).translate(screenTranslation.dx, screenTranslation.dy);
         return _overlayItem(
           key: ValueKey('disappear_${entry.id}'),
           widget: entry.from!,
@@ -230,6 +240,7 @@ class _EntryRenderer {
                 agentSize: agentSize,
                 mapScale: mapScale,
                 abilitySize: abilitySize,
+                isAttack: isAttack,
               );
         return _overlayItem(
           key: ValueKey('move_${entry.id}'),
@@ -273,8 +284,9 @@ class _EntryRenderer {
               coordinateSystem.screenWidthToWorld(screenTranslation.dx),
               0,
             );
-        final end = _endScreenPosition(entry)
-            .translate(screenTranslation.dx, screenTranslation.dy);
+        final end = _endScreenPosition(
+          entry,
+        ).translate(screenTranslation.dx, screenTranslation.dy);
         // Images fade in early (front-loaded), like the drawing layer.
         final appearOpacity =
             entry.to is PlacedImage ? earlyFadeInOpacity(t) : t;
@@ -363,13 +375,16 @@ class _EntryRenderer {
     double? customLength,
     double? deadStateProgress,
   }) {
+    final displayRotation = rotation == null
+        ? null
+        : coordinateSystem.rotationForSide(rotation, isAttack: isAttack);
     Widget child = PlacedWidgetPreview.build(
       widget,
       mapScale,
       coordinatePosition: coordinatePosition,
       length: length,
       armLengthsMeters: armLengthsMeters,
-      rotation: rotation,
+      rotation: displayRotation,
       scale: scale,
       textSize: textSize,
       customDiameter: customDiameter,
@@ -379,8 +394,8 @@ class _EntryRenderer {
       agentSize: agentSize,
       abilitySize: abilitySize,
     ); // central factory (below)
-    if (_shouldRotate(widget, rotation)) {
-      final angle = rotation ?? 0;
+    if (_shouldRotate(widget, displayRotation)) {
+      final angle = displayRotation ?? 0;
       if (widget is PlacedAbility) {
         child = Transform.rotate(
           angle: angle,
@@ -404,20 +419,21 @@ class _EntryRenderer {
             mapScale: mapScale,
             agentSize: agentSize,
             abilitySize: abilitySize,
-          ).scale(
-            coordinateSystem.scaleFactor,
-            coordinateSystem.scaleFactor,
-          ),
+          ).scale(coordinateSystem.scaleFactor, coordinateSystem.scaleFactor),
           child: child,
         );
       }
     }
-    return Positioned(
-      key: key,
-      left: pos.dx,
-      top: pos.dy,
-      child: Opacity(opacity: opacity, child: child),
-    );
+    final fadedChild = Opacity(opacity: opacity, child: child);
+    if (widget is PlacedText || widget is PlacedImage) {
+      return CanonicalPositionedBox(
+        key: key,
+        attackScreenPosition: pos,
+        isAttack: isAttack,
+        child: fadedChild,
+      );
+    }
+    return Positioned(key: key, left: pos.dx, top: pos.dy, child: fadedChild);
   }
 
   bool _shouldRotate(PlacedWidget widget, double? rotation) {
@@ -754,6 +770,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(transitionProvider);
     final mapScale = Maps.mapScale[ref.read(mapProvider).currentMap]!;
+    final isAttack = ref.watch(mapProvider).isAttack;
     final abilitySize = state.startAbilitySize;
     final agentSize = state.startAgentSize;
     final orderedWidgets = [...state.allWidgets]
@@ -769,6 +786,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
               mapScale: mapScale,
               abilitySize: abilitySize,
               agentSize: agentSize,
+              isAttack: isAttack,
             ),
         ],
       ),
@@ -780,6 +798,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
     required double mapScale,
     required double abilitySize,
     required double agentSize,
+    required bool isAttack,
   }) {
     final coord = CoordinateSystem.instance;
     final scaledPosition = _overlayScreenPosition(
@@ -788,14 +807,19 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
       agentSize: agentSize,
       mapScale: mapScale,
       abilitySize: abilitySize,
+      isAttack: isAttack,
+    );
+    final displayRotation = coord.rotationForSide(
+      PageTransitionEntry.rotationOf(widget) ?? 0,
+      isAttack: isAttack,
     );
 
-    if (widget is PlacedUtility && widget.rotation != 0) {
+    if (widget is PlacedUtility && displayRotation != 0) {
       return Positioned(
         left: scaledPosition.dx,
         top: scaledPosition.dy,
         child: Transform.rotate(
-          angle: widget.rotation,
+          angle: displayRotation,
           alignment: Alignment.topLeft,
           origin: utilityAnchorForScale(
             utility: widget,
@@ -810,13 +834,14 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
             widget,
             mapScale,
             length: widget.length,
+            rotation: displayRotation,
             agentSize: agentSize,
             abilitySize: abilitySize,
           ),
         ),
       );
     } else if (widget is PlacedAbility &&
-        widget.rotation != 0 &&
+        displayRotation != 0 &&
         widget.data.abilityData != null &&
         !(widget.visualState.showVisionCone &&
             AbilityVisionConeSpec.forAbility(widget.data) != null) &&
@@ -825,7 +850,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
         left: scaledPosition.dx,
         top: scaledPosition.dy,
         child: Transform.rotate(
-          angle: widget.rotation,
+          angle: displayRotation,
           alignment: Alignment.topLeft,
           origin: (widget)
               .data
@@ -836,10 +861,26 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
             widget,
             mapScale,
             length: widget.length,
+            rotation: displayRotation,
             armLengthsMeters: widget.armLengthsMeters,
             agentSize: agentSize,
             abilitySize: abilitySize,
           ),
+        ),
+      );
+    } else if (widget is PlacedText || widget is PlacedImage) {
+      return CanonicalPositionedBox(
+        attackScreenPosition: scaledPosition,
+        isAttack: isAttack,
+        child: PlacedWidgetPreview.build(
+          widget,
+          mapScale,
+          length: widget is PlacedAbility ? widget.length : null,
+          rotation: displayRotation,
+          armLengthsMeters:
+              widget is PlacedAbility ? widget.armLengthsMeters : null,
+          agentSize: agentSize,
+          abilitySize: abilitySize,
         ),
       );
     } else {
@@ -850,6 +891,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
           widget,
           mapScale,
           length: widget is PlacedAbility ? widget.length : null,
+          rotation: displayRotation,
           armLengthsMeters:
               widget is PlacedAbility ? widget.armLengthsMeters : null,
           agentSize: agentSize,
