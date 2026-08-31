@@ -15,6 +15,7 @@ import 'package:icarus/providers/color_library_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_circle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/custom_rectangle_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/placed_custom_circle_widget.dart';
@@ -26,6 +27,14 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 class _FixedMapProvider extends MapProvider {
   @override
   MapState build() => MapState(currentMap: MapValue.ascent, isAttack: true);
+
+  @override
+  void fromHive(MapValue map, bool isAttack) {}
+}
+
+class _DefenseMapProvider extends MapProvider {
+  @override
+  MapState build() => MapState(currentMap: MapValue.ascent, isAttack: false);
 
   @override
   void fromHive(MapValue map, bool isAttack) {}
@@ -296,6 +305,61 @@ void main() {
     );
   });
 
+  testWidgets('defense rectangle resize does not jump when committed',
+      (tester) async {
+    final utility = _rectangle();
+    final container = _containerWith(utility, isAttack: false);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: const SizedBox(
+          width: 800,
+          height: 600,
+          child: PlacedWidgetBuilder(),
+        ),
+      ),
+    );
+
+    final shape = find.byType(CustomRectangleUtilityWidget);
+    final initialRect = tester.getRect(shape);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: initialRect.center);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final handle = find.byKey(
+      const ValueKey('custom-rectangle-resize-right'),
+    );
+    final handleCenter = tester.getCenter(handle);
+    final outwardVector = handleCenter - initialRect.center;
+    final outwardDrag = outwardVector * (40 / outwardVector.distance);
+    await mouse.moveTo(handleCenter);
+    await mouse.down(handleCenter);
+    await mouse.moveTo(handleCenter + outwardDrag);
+    await tester.pump();
+
+    final duringResizeRect = tester.getRect(shape);
+    expect(duringResizeRect.size, isNot(initialRect.size));
+
+    await mouse.up();
+    await tester.pump();
+
+    final committedRect = tester.getRect(shape);
+    expect(
+      (committedRect.topLeft - duringResizeRect.topLeft).distance,
+      lessThan(0.1),
+      reason: 'Initial: $initialRect, active: $duringResizeRect, '
+          'committed: $committedRect.',
+    );
+    expect(
+      (committedRect.bottomRight - duringResizeRect.bottomRight).distance,
+      lessThan(0.1),
+      reason: 'The committed defense rectangle must retain its resized bounds.',
+    );
+  });
+
   testWidgets('shape center menu changes the placed shape color',
       (tester) async {
     final utility = _circle();
@@ -368,10 +432,15 @@ Future<void> _openShapeColorSubmenu(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-ProviderContainer _containerWith(PlacedUtility utility) {
+ProviderContainer _containerWith(
+  PlacedUtility utility, {
+  bool isAttack = true,
+}) {
   final container = ProviderContainer(
     overrides: [
-      mapProvider.overrideWith(_FixedMapProvider.new),
+      mapProvider.overrideWith(
+        isAttack ? _FixedMapProvider.new : _DefenseMapProvider.new,
+      ),
       colorLibraryProvider.overrideWith(
         (ref) => const [
           ColorLibraryEntry(color: Colors.white, isCustom: false),

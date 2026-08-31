@@ -67,6 +67,7 @@ class _PlacedCustomRectangleWidgetState
   Offset _resizeFixedEdgeCenterGlobal = Offset.zero;
   Offset _resizeStartStoredPosition = Offset.zero;
   Offset _resizePositionDeltaScreen = Offset.zero;
+  Offset _resizeSizeDeltaScreen = Offset.zero;
   Size _resizeStartSizeGlobal = Size.zero;
   double _resizeGlobalScale = 1;
   bool _isDragging = false;
@@ -677,6 +678,11 @@ class _PlacedCustomRectangleWidgetState
           meterScale;
       _resizePositionDeltaScreen =
           (result.topLeft - _resizeStartTopLeftGlobal) / _resizeGlobalScale;
+      _resizeSizeDeltaScreen = Offset(
+        (result.size.width - _resizeStartSizeGlobal.width) / _resizeGlobalScale,
+        (result.size.height - _resizeStartSizeGlobal.height) /
+            _resizeGlobalScale,
+      );
     });
   }
 
@@ -694,11 +700,14 @@ class _PlacedCustomRectangleWidgetState
     final lengthMeters = _localLengthMeters;
     if (widthMeters != null && lengthMeters != null) {
       final coordinateSystem = CoordinateSystem.instance;
-      final nextPosition = _resizeStartStoredPosition +
-          Offset(
-            coordinateSystem.screenWidthToWorld(_resizePositionDeltaScreen.dx),
-            coordinateSystem.screenHeightToWorld(_resizePositionDeltaScreen.dy),
-          );
+      final canonicalPositionDeltaScreen = widget.isAttack
+          ? _resizePositionDeltaScreen
+          : -_resizePositionDeltaScreen - _resizeSizeDeltaScreen;
+      final canonicalPositionDelta = Offset(
+        coordinateSystem.screenWidthToWorld(canonicalPositionDeltaScreen.dx),
+        coordinateSystem.screenHeightToWorld(canonicalPositionDeltaScreen.dy),
+      );
+      final nextPosition = _resizeStartStoredPosition + canonicalPositionDelta;
       ref.read(utilityProvider.notifier).updateCustomShapeGeometry(
             id: widget.id,
             position: nextPosition,
@@ -715,6 +724,7 @@ class _PlacedCustomRectangleWidgetState
       _activeHandle = _RectangleResizeHandle.none;
       _hoveredResizeHandle = _RectangleResizeHandle.none;
       _resizePositionDeltaScreen = Offset.zero;
+      _resizeSizeDeltaScreen = Offset.zero;
     });
   }
 
