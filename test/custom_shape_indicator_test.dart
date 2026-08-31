@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -135,6 +137,7 @@ void main() {
         child: PlacedCustomRectangleWidget(
           utility: utility,
           id: utility.id,
+          isAttack: true,
           onDragEnd: (_) {},
         ),
       ),
@@ -173,6 +176,7 @@ void main() {
         child: PlacedCustomRectangleWidget(
           utility: utility,
           id: utility.id,
+          isAttack: true,
           onDragEnd: (_) {},
         ),
       ),
@@ -230,6 +234,66 @@ void main() {
     await tester.pump();
 
     expect(container.read(utilityProvider).single.rotation, greaterThan(0));
+  });
+
+  testWidgets(
+      'defense rectangle projects rotation and stores rotation edits canonically',
+      (tester) async {
+    const canonicalRotation = 0.3;
+    final utility = _rectangle()..rotation = canonicalRotation;
+    final container = _containerWith(utility);
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      _harness(
+        container: container,
+        child: PlacedCustomRectangleWidget(
+          utility: utility,
+          id: utility.id,
+          isAttack: false,
+          onDragEnd: (_) {},
+        ),
+      ),
+    );
+
+    final rotationTransform = tester.widget<Transform>(
+      find.byKey(const ValueKey('custom-rectangle-rotation')),
+    );
+    const displayedRotation = canonicalRotation + math.pi;
+    expect(
+      rotationTransform.transform.storage[0],
+      closeTo(math.cos(displayedRotation), 0.0001),
+    );
+    expect(
+      rotationTransform.transform.storage[1],
+      closeTo(math.sin(displayedRotation), 0.0001),
+    );
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(
+      location: tester.getCenter(find.byType(CustomRectangleUtilityWidget)),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+
+    final handle = find.byKey(
+      const ValueKey('custom-rectangle-rotate-top-center'),
+    );
+    final handleCenter = tester.getCenter(handle);
+    await mouse.moveTo(handleCenter);
+    await mouse.down(handleCenter);
+    await mouse.moveBy(const Offset(30, 8));
+    await tester.pump();
+    await mouse.up();
+    await tester.pump();
+
+    final storedRotation = container.read(utilityProvider).single.rotation;
+    expect(storedRotation, isNot(closeTo(canonicalRotation, 0.0001)));
+    expect(
+      (storedRotation - canonicalRotation).abs(),
+      lessThan(math.pi / 2),
+      reason: 'The defense display half-turn must not be saved as canonical.',
+    );
   });
 
   testWidgets('shape center menu changes the placed shape color',

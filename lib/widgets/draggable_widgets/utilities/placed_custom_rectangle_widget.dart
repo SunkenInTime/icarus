@@ -25,11 +25,13 @@ class PlacedCustomRectangleWidget extends ConsumerStatefulWidget {
     super.key,
     required this.utility,
     required this.id,
+    required this.isAttack,
     required this.onDragEnd,
   });
 
   final PlacedUtility utility;
   final String id;
+  final bool isAttack;
   final void Function(DraggableDetails details) onDragEnd;
 
   @override
@@ -82,7 +84,10 @@ class _PlacedCustomRectangleWidgetState
     super.initState();
     _localWidthMeters = widget.utility.customWidth;
     _localLengthMeters = widget.utility.customLength;
-    _localRotation = widget.utility.rotation;
+    _localRotation = CoordinateSystem.instance.rotationForSide(
+      widget.utility.rotation,
+      isAttack: widget.isAttack,
+    );
   }
 
   @override
@@ -114,13 +119,17 @@ class _PlacedCustomRectangleWidgetState
         _localLengthMeters = providerLengthMeters;
       }
     }
-    if (!_isRotating && _localRotation != utilityRef.rotation) {
-      _localRotation = utilityRef.rotation;
+    final providerRotation = coordinateSystem.rotationForSide(
+      utilityRef.rotation,
+      isAttack: widget.isAttack,
+    );
+    if (!_isRotating && _localRotation != providerRotation) {
+      _localRotation = providerRotation;
     }
 
     final widthMeters = _localWidthMeters ?? providerWidthMeters;
     final lengthMeters = _localLengthMeters ?? providerLengthMeters;
-    final rotation = _localRotation ?? utilityRef.rotation;
+    final rotation = _localRotation ?? providerRotation;
     final meterScale = AgentData.inGameMetersDiameter * mapScale;
     final scaledWidth = coordinateSystem.scale(widthMeters * meterScale);
     final scaledLength = coordinateSystem.scale(lengthMeters * meterScale);
@@ -157,6 +166,7 @@ class _PlacedCustomRectangleWidgetState
           children: [
             Positioned.fill(
               child: Transform.rotate(
+                key: const ValueKey('custom-rectangle-rotation'),
                 angle: rotation,
                 child: Stack(
                   clipBehavior: Clip.none,
@@ -514,7 +524,11 @@ class _PlacedCustomRectangleWidgetState
         globalPosition.dy - centerGlobal.dy,
         globalPosition.dx - centerGlobal.dx,
       );
-      _rotationStartValue = _localRotation ?? widget.utility.rotation;
+      _rotationStartValue = _localRotation ??
+          CoordinateSystem.instance.rotationForSide(
+            widget.utility.rotation,
+            isAttack: widget.isAttack,
+          );
     });
   }
 
@@ -539,15 +553,21 @@ class _PlacedCustomRectangleWidgetState
   }
 
   void _commitRotation() {
-    final rotation = _localRotation;
+    final displayedRotation = _localRotation;
     final utilities = ref.read(utilityProvider);
     final index = PlacedWidget.getIndexByID(widget.id, utilities);
-    if (rotation != null &&
-        index >= 0 &&
-        utilities[index].rotation != rotation) {
-      ref
-          .read(utilityProvider.notifier)
-          .updateRotation(index, rotation, utilities[index].length);
+    if (displayedRotation != null && index >= 0) {
+      final canonicalRotation = CoordinateSystem.instance.rotationFromSide(
+        displayedRotation,
+        isAttack: widget.isAttack,
+      );
+      if (utilities[index].rotation != canonicalRotation) {
+        ref.read(utilityProvider.notifier).updateRotation(
+              index,
+              canonicalRotation,
+              utilities[index].length,
+            );
+      }
     }
 
     setState(() {

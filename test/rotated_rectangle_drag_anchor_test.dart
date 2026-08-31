@@ -31,7 +31,8 @@ void main() {
     CoordinateSystem.instance.setIsScreenshot(false);
   });
 
-  testWidgets('drag feedback keeps the grabbed point under the cursor '
+  testWidgets(
+      'drag feedback keeps the grabbed point under the cursor '
       'on a 90-degree rotated rectangle', (tester) async {
     final utility = PlacedUtility(
       id: 'rectangle',
@@ -62,6 +63,7 @@ void main() {
               child: PlacedCustomRectangleWidget(
                 utility: utility,
                 id: utility.id,
+                isAttack: true,
                 onDragEnd: (_) {},
               ),
             ),

@@ -1067,6 +1067,7 @@ class _CustomShapeUtilityList extends ConsumerWidget {
                 : PlacedCustomRectangleWidget(
                     utility: placedUtility,
                     id: placedUtility.id,
+                    isAttack: isAttack,
                     onDragEnd: (details) {
                       final renderBox = context.findRenderObject() as RenderBox;
                       final localOffset = renderBox.globalToLocal(
