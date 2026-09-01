@@ -162,43 +162,6 @@ void main() {
         }
       }
     });
-
-    test('side switching is independent of the selected runtime size', () {
-      const mapScale = 1.2;
-      final sizeDependentInfos = _representativeAbilityInfos().where((info) {
-        final ability = info.abilityData!;
-        final minAnchor = ability.getAnchorPoint(
-          mapScale: mapScale,
-          abilitySize: Settings.abilitySizeMin,
-        );
-        final maxAnchor = ability.getAnchorPoint(
-          mapScale: mapScale,
-          abilitySize: Settings.abilitySizeMax,
-        );
-        return minAnchor != maxAnchor;
-      });
-
-      expect(sizeDependentInfos, isNotEmpty);
-      for (final info in sizeDependentInfos) {
-        final atMinimum = _placedAbility(info, id: 'minimum');
-        final atMaximum = _placedAbility(info, id: 'maximum');
-
-        atMinimum.switchSides(
-          mapScale: mapScale,
-          abilitySize: Settings.abilitySizeMin,
-        );
-        atMaximum.switchSides(
-          mapScale: mapScale,
-          abilitySize: Settings.abilitySizeMax,
-        );
-
-        expect(
-          atMaximum.position,
-          atMinimum.position,
-          reason: '${info.abilityData.runtimeType}',
-        );
-      }
-    });
   });
 
   group('agent-scaled widgetAnchor scaling', () {
@@ -364,32 +327,6 @@ void main() {
         expect(restored.dx, closeTo(expectedStoredPosition.dx, 0.0001));
         expect(restored.dy, closeTo(expectedStoredPosition.dy, 0.0001));
       }
-    });
-
-    test('side switching is independent of runtime agent scale', () {
-      final atMinimum = representativeAgents.first.deepCopy<PlacedAgentNode>();
-      final atMaximum = representativeAgents.first.deepCopy<PlacedAgentNode>();
-      atMinimum.switchSides(Settings.agentSizeMin);
-      atMaximum.switchSides(Settings.agentSizeMax);
-      expect(atMaximum.position, atMinimum.position);
-
-      final roleAtMinimum = PlacedUtility(
-        id: 'role-min',
-        type: UtilityType.initiator,
-        position: const Offset(205, 305),
-      );
-      final roleAtMaximum = roleAtMinimum.copyWith(id: 'role-max');
-      roleAtMinimum.switchSides(
-        mapScale: 1,
-        agentSize: Settings.agentSizeMin,
-        abilitySize: Settings.abilitySizeMin,
-      );
-      roleAtMaximum.switchSides(
-        mapScale: 1,
-        agentSize: Settings.agentSizeMax,
-        abilitySize: Settings.abilitySizeMax,
-      );
-      expect(roleAtMaximum.position, roleAtMinimum.position);
     });
   });
 

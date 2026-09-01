@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
-import 'package:icarus/providers/image_widget_size_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:image/image.dart' as img;
 import 'dart:ui' as ui;
@@ -215,19 +214,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
     state = state.copyWith(images: newImages);
   }
 
-  void switchSides() {
-    final newImages = [...state.images];
-    for (final image in newImages) {
-      image.switchSides(
-          ref.read(imageWidgetSizeProvider.notifier).getSize(image.id));
-    }
-    for (final image in poppedImages) {
-      image.switchSides(
-          ref.read(imageWidgetSizeProvider.notifier).getSize(image.id));
-    }
-    state = state.copyWith(images: newImages);
-  }
-
   void undoAction(UserAction action) {
     switch (action.type) {
       case ActionType.addition:
@@ -351,9 +337,7 @@ class PlacedImageProvider extends Notifier<ImageState> {
           json as Map<String, dynamic>, strategyID)),
     );
 
-    return images
-        .map(_migrateLoadedImage)
-        .toList();
+    return images.map(_migrateLoadedImage).toList();
   }
 
   void updateScale(int index, double scale) {

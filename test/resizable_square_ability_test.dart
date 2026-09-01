@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,7 +6,6 @@ import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
@@ -302,77 +299,6 @@ void main() {
             );
 
     expect(renderedSize.width, closeTo(modeledSize.dx, 0.0001));
-  });
-
-  group('PlacedAbility.switchSides wall sizing', () {
-    const mapScale = 1.2;
-    const abilitySize = 42.0;
-
-    test('square walls flip using the full rendered width', () {
-      CoordinateSystem(playAreaSize: const Size(1920, 1080));
-
-      final abilityInfo = AgentData.agents[AgentType.viper]!.abilities[2];
-      const initialPosition = Offset(123.4, 234.5);
-      const initialRotation = 0.5;
-
-      final placedAbility = PlacedAbility(
-        id: 'viper-wall-switch',
-        data: abilityInfo,
-        position: initialPosition,
-        rotation: initialRotation,
-      );
-
-      final fullSize = abilityInfo.abilityData!
-          .getSize(mapScale: mapScale, abilitySize: Settings.abilitySize)
-          .scale(
-            CoordinateSystem.instance.scaleFactor,
-            CoordinateSystem.instance.scaleFactor,
-          );
-      final expectedPosition = getFlippedPosition(
-        position: initialPosition,
-        scaledSize: fullSize,
-        isRotatable: true,
-      );
-
-      placedAbility.switchSides(mapScale: mapScale, abilitySize: abilitySize);
-
-      expect(placedAbility.position.dx, closeTo(expectedPosition.dx, 0.0001));
-      expect(placedAbility.position.dy, closeTo(expectedPosition.dy, 0.0001));
-      expect(placedAbility.rotation, closeTo(initialRotation + pi, 0.0001));
-    });
-
-    test('resizable wall abilities flip using the full rendered width', () {
-      CoordinateSystem(playAreaSize: const Size(1920, 1080));
-
-      final abilityInfo = AgentData.agents[AgentType.neon]!.abilities.first;
-      const initialPosition = Offset(210.0, 310.0);
-      const initialRotation = 0.75;
-
-      final placedAbility = PlacedAbility(
-        id: 'neon-wall-switch',
-        data: abilityInfo,
-        position: initialPosition,
-        rotation: initialRotation,
-      );
-
-      final fullSize = abilityInfo.abilityData!
-          .getSize(mapScale: mapScale, abilitySize: Settings.abilitySize)
-          .scale(
-            CoordinateSystem.instance.scaleFactor,
-            CoordinateSystem.instance.scaleFactor,
-          );
-      final expectedPosition = getFlippedPosition(
-        position: initialPosition,
-        scaledSize: fullSize,
-        isRotatable: true,
-      );
-
-      placedAbility.switchSides(mapScale: mapScale, abilitySize: abilitySize);
-
-      expect(placedAbility.position.dx, closeTo(expectedPosition.dx, 0.0001));
-      expect(placedAbility.position.dy, closeTo(expectedPosition.dy, 0.0001));
-      expect(placedAbility.rotation, closeTo(initialRotation + pi, 0.0001));
-    });
   });
 }
 
