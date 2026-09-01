@@ -1144,6 +1144,9 @@ class _LineUpAgents extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(canvasResizeProvider);
     final groups = ref.watch(lineUpProvider).groups;
+    final coordinateSystem = CoordinateSystem.instance;
+    final agentSize = ref.watch(strategySettingsProvider).agentSize;
+    final isAttack = ref.watch(mapProvider).isAttack;
 
     return Stack(
       clipBehavior: Clip.none,
@@ -1154,8 +1157,12 @@ class _LineUpAgents extends ConsumerWidget {
             onDragEnd: (details) {
               final renderBox = context.findRenderObject() as RenderBox;
               final localOffset = renderBox.globalToLocal(details.offset);
-              final position =
-                  CoordinateSystem.instance.screenToCoordinate(localOffset);
+              final position = storedAgentPositionForRenderedScreenPosition(
+                coordinateSystem: coordinateSystem,
+                renderedScreenPosition: localOffset,
+                agentSize: agentSize,
+                isAttack: isAttack,
+              );
               ref.read(lineUpProvider.notifier).updateGroupAgentPosition(
                     groupId: group.id,
                     position: position,
@@ -1174,6 +1181,10 @@ class _LineUpAbilities extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(canvasResizeProvider);
     final groups = ref.watch(lineUpProvider).groups;
+    final coordinateSystem = CoordinateSystem.instance;
+    final mapState = ref.watch(mapProvider);
+    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
+    final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
 
     return Stack(
       clipBehavior: Clip.none,
@@ -1186,8 +1197,14 @@ class _LineUpAbilities extends ConsumerWidget {
               onDragEnd: (details) {
                 final renderBox = context.findRenderObject() as RenderBox;
                 final localOffset = renderBox.globalToLocal(details.offset);
-                final position =
-                    CoordinateSystem.instance.screenToCoordinate(localOffset);
+                final position = storedAbilityPositionForRenderedScreenPosition(
+                  ability: item.ability.data.abilityData!,
+                  coordinateSystem: coordinateSystem,
+                  renderedScreenPosition: localOffset,
+                  mapScale: mapScale,
+                  abilitySize: abilitySize,
+                  isAttack: mapState.isAttack,
+                );
                 ref.read(lineUpProvider.notifier).updateItemAbilityPosition(
                       groupId: group.id,
                       itemId: item.id,
