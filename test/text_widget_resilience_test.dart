@@ -12,6 +12,7 @@ import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
@@ -440,7 +441,7 @@ void main() {
     );
   });
 
-  testWidgets('side switch mirrors text with deterministic widget bounds',
+  testWidgets('side switch leaves multiline text stored canonically',
       (tester) async {
     final container = createContainer();
     final placedText = PlacedText(
@@ -456,20 +457,13 @@ void main() {
     await tester.pump();
 
     final renderedSize = tester.getSize(find.byType(TextWidget));
-
-    container.read(textProvider.notifier).switchSides();
-
-    expect(
-      container.read(textProvider).single.position,
-      getFlippedPosition(
-        position: placedText.position,
-        scaledSize: Offset(renderedSize.width, renderedSize.height),
-      ),
-    );
+    container.read(mapProvider.notifier).switchSide();
+    expect(renderedSize, isNot(Size.zero));
+    expect(container.read(textProvider).single.position, placedText.position);
   });
 
   testWidgets(
-      'side switch uses deterministic rendered text height for vertical placement',
+      'single-line text remains canonical after deterministic measurement',
       (tester) async {
     final container = createContainer();
     final placedText = PlacedText(
@@ -485,16 +479,9 @@ void main() {
     await tester.pump();
 
     final renderedSize = tester.getSize(find.byType(TextWidget));
-
-    container.read(textProvider.notifier).switchSides();
-
-    expect(
-      container.read(textProvider).single.position,
-      getFlippedPosition(
-        position: placedText.position,
-        scaledSize: Offset(renderedSize.width, renderedSize.height),
-      ),
-    );
+    container.read(mapProvider.notifier).switchSide();
+    expect(renderedSize, isNot(Size.zero));
+    expect(container.read(textProvider).single.position, placedText.position);
   });
 
   testWidgets('screenshot text stays read-only across page updates',

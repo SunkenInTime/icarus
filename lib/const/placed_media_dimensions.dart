@@ -12,9 +12,29 @@ abstract final class PlacedImageDimensions {
     required double scale,
     required double aspectRatio,
   }) {
+    return _sizeForPixelWidth(
+      totalWidth:
+          coordinateSystem.worldWidthToScreen(ImageScalePolicy.clamp(scale)),
+      aspectRatio: aspectRatio,
+    );
+  }
+
+  static Size sizeForPixelsPerWorldUnit({
+    required double pixelsPerWorldUnit,
+    required double scale,
+    required double aspectRatio,
+  }) {
+    return _sizeForPixelWidth(
+      totalWidth: ImageScalePolicy.clamp(scale) * pixelsPerWorldUnit,
+      aspectRatio: aspectRatio,
+    );
+  }
+
+  static Size _sizeForPixelWidth({
+    required double totalWidth,
+    required double aspectRatio,
+  }) {
     final safeAspectRatio = aspectRatio <= 0 ? 1.0 : aspectRatio;
-    final totalWidth =
-        coordinateSystem.worldWidthToScreen(ImageScalePolicy.clamp(scale));
     final cardWidth =
         (totalWidth - tagWidth - tagGap).clamp(1.0, double.infinity);
     final contentWidth =
@@ -38,16 +58,39 @@ abstract final class PlacedTextDimensions {
     required double fontSizeWorld,
     required String text,
   }) {
-    final totalWidth = coordinateSystem.worldWidthToScreen(widthWorld);
-    final maxContentWidth = contentWidth(
-      coordinateSystem: coordinateSystem,
-      widthWorld: widthWorld,
+    return _sizeForPixels(
+      totalWidth: coordinateSystem.worldWidthToScreen(widthWorld),
+      fontSizePixels: coordinateSystem.worldHeightToScreen(fontSizeWorld),
+      text: text,
     );
+  }
+
+  static Size sizeForPixelsPerWorldUnit({
+    required double pixelsPerWorldUnit,
+    required double widthWorld,
+    required double fontSizeWorld,
+    required String text,
+  }) {
+    return _sizeForPixels(
+      totalWidth: widthWorld * pixelsPerWorldUnit,
+      fontSizePixels: fontSizeWorld * pixelsPerWorldUnit,
+      text: text,
+    );
+  }
+
+  static Size _sizeForPixels({
+    required double totalWidth,
+    required double fontSizePixels,
+    required String text,
+  }) {
+    final maxContentWidth =
+        (totalWidth - tagWidth - tagGap - (cardHorizontalPadding * 2))
+            .clamp(1.0, double.infinity);
 
     final displayText = text.isEmpty ? ' ' : _withBreakOpportunities(text);
-    final style = textStyle(
-      coordinateSystem: coordinateSystem,
-      fontSizeWorld: fontSizeWorld,
+    final style = TextStyle(
+      fontSize: fontSizePixels,
+      height: 1.0,
     );
 
     final painter = TextPainter(

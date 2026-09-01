@@ -96,6 +96,11 @@ class ViewConeWidget extends ConsumerWidget {
     VisionGeometryMap? geometry;
     if (resolvedWorldOrigin != null) {
       final mapState = ref.watch(mapProvider);
+      final sideWorldOrigin = coord.positionForSide(
+        canonicalPosition: resolvedWorldOrigin,
+        reflectionOffset: Offset.zero,
+        isAttack: mapState.isAttack,
+      );
       geometry = ref
           .watch(viewConeGeometryProvider(mapState.currentMap))
           .asData
@@ -103,11 +108,11 @@ class ViewConeWidget extends ConsumerWidget {
       if (geometry != null) {
         final inferredHeight = geometry.inferredHeightAt(
           isAttack: mapState.isAttack,
-          position: resolvedWorldOrigin,
+          position: sideWorldOrigin,
         );
         final layer = geometry.layerForPosition(
           isAttack: mapState.isAttack,
-          position: resolvedWorldOrigin,
+          position: sideWorldOrigin,
           elevationOverride: resolvedElevation,
         );
         // Placed free cones normally pass their drag-preview rotation directly,
@@ -115,12 +120,9 @@ class ViewConeWidget extends ConsumerWidget {
         // that only supplies the persisted utility id.
         final effectiveRotation = rotation ?? placedUtility?.rotation ?? 0;
         final screenZoom = ref.watch(screenZoomProvider).clamp(1.0, 8.0);
-        // MapProvider.switchSide mirrors every placed item before toggling the
-        // side. The resolved origin is therefore already in the current map's
-        // display frame and pairs with the correspondingly mirrored layer.
         final worldPolygon = VisionPolygon.compute(
           layer: layer,
-          origin: resolvedWorldOrigin,
+          origin: sideWorldOrigin,
           facingAngle: effectiveRotation - pi / 2,
           coneAngle: angle * pi / 180,
           range: coord.virtualLengthToWorld(currentLength),
@@ -134,7 +136,7 @@ class ViewConeWidget extends ConsumerWidget {
         final sine = sin(inverseRotation);
         final apex = Offset(containerWidth / 2, containerHeight);
         Offset toLocal(Offset point) {
-          final delta = point - resolvedWorldOrigin;
+          final delta = point - sideWorldOrigin;
           final local = Offset(
             delta.dx * cosine - delta.dy * sine,
             delta.dx * sine + delta.dy * cosine,
@@ -142,9 +144,7 @@ class ViewConeWidget extends ConsumerWidget {
           return apex + coord.worldOffsetToScreen(local);
         }
 
-        visibilityPolygon = [
-          for (final point in worldPolygon) toLocal(point),
-        ];
+        visibilityPolygon = [for (final point in worldPolygon) toLocal(point)];
         if (debugEnabled) {
           debugMatchedSegments = [
             for (final segment in layer.matchedBoundarySegments)
@@ -182,7 +182,7 @@ class ViewConeWidget extends ConsumerWidget {
             if (group.isOuterBoundary) continue;
             for (final segment in group.segments) {
               final distanceSquared = visionDistanceSquaredToSegment(
-                resolvedWorldOrigin,
+                sideWorldOrigin,
                 segment,
               );
               if (distanceSquared < nearestDistanceSquared) {
@@ -216,9 +216,7 @@ class ViewConeWidget extends ConsumerWidget {
 
     final contextMenuItems = placedUtility == null
         ? null
-        : [
-            ...buildAdjacentPageCopyMenuItems(ref, placedUtility.id),
-          ];
+        : [...buildAdjacentPageCopyMenuItems(ref, placedUtility.id)];
 
     return SizedBox(
       width: totalWidth,
@@ -434,14 +432,8 @@ class ViewConePainter extends CustomPainter {
         !listEquals(oldDelegate.visibilityPolygon, visibilityPolygon) ||
         !listEquals(oldDelegate.debugMatchedSegments, debugMatchedSegments) ||
         !listEquals(oldDelegate.debugRiotSegments, debugRiotSegments) ||
-        !listEquals(
-          oldDelegate.debugRejectedSegments,
-          debugRejectedSegments,
-        ) ||
-        !listEquals(
-          oldDelegate.debugBoundarySegments,
-          debugBoundarySegments,
-        ) ||
+        !listEquals(oldDelegate.debugRejectedSegments, debugRejectedSegments) ||
+        !listEquals(oldDelegate.debugBoundarySegments, debugBoundarySegments) ||
         oldDelegate.debugLabel != debugLabel;
   }
 }

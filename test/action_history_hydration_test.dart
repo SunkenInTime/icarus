@@ -40,14 +40,6 @@ ProviderContainer _createContainer() {
   return container;
 }
 
-Offset _flipPoint(Offset point) {
-  final coordinateSystem = CoordinateSystem.instance;
-  return Offset(
-    coordinateSystem.worldNormalizedWidth - point.dx,
-    coordinateSystem.normalizedHeight - point.dy,
-  );
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -105,7 +97,7 @@ void main() {
     expect(container.read(actionProvider), isEmpty);
   });
 
-  test('switchSide mirrors live and deleted drawings', () {
+  test('switchSide leaves live and deleted drawings canonical', () {
     final container = _createContainer();
     final notifier = container.read(drawingProvider.notifier);
 
@@ -131,16 +123,17 @@ void main() {
 
     container.read(mapProvider.notifier).switchSide();
 
-    final flippedLive = container.read(drawingProvider).elements.single as Line;
-    final flippedDeleted = notifier.poppedElements.single as Line;
+    final canonicalLive =
+        container.read(drawingProvider).elements.single as Line;
+    final canonicalDeleted = notifier.poppedElements.single as Line;
 
-    expect(flippedLive.lineStart, _flipPoint(const Offset(100, 110)));
-    expect(flippedLive.lineEnd, _flipPoint(const Offset(130, 160)));
-    expect(flippedDeleted.lineStart, _flipPoint(const Offset(10, 20)));
-    expect(flippedDeleted.lineEnd, _flipPoint(const Offset(40, 50)));
+    expect(canonicalLive.lineStart, const Offset(100, 110));
+    expect(canonicalLive.lineEnd, const Offset(130, 160));
+    expect(canonicalDeleted.lineStart, const Offset(10, 20));
+    expect(canonicalDeleted.lineEnd, const Offset(40, 50));
   });
 
-  test('switchSide mirrors text width when measurement is missing', () {
+  test('switchSide leaves text canonical when measurement is missing', () {
     final container = _createContainer();
     final text = PlacedText(
       id: 'text-1',
@@ -153,8 +146,38 @@ void main() {
     container.read(textProvider.notifier).fromHive([text]);
     container.read(mapProvider.notifier).switchSide();
 
-    final flipped = container.read(textProvider).single.position;
+    expect(container.read(textProvider).single.position, text.position);
+  });
 
-    expect(flipped.dx, lessThan(_flipPoint(text.position).dx));
+  test('side spam leaves undo and redo snapshots canonical', () {
+    final container = _createContainer();
+    final text = PlacedText(
+      id: 'history-text',
+      position: const Offset(310, 420),
+      sizeVersion: worldSizedMediaVersion,
+    )..text = 'before';
+    container.read(textProvider.notifier).fromHive([text]);
+    container.read(textProvider.notifier).commitText(text.id, 'after');
+
+    container.read(actionProvider.notifier).undoAction();
+    final redoSnapshot =
+        container.read(actionProvider.notifier).poppedItems.single.objectDelta!;
+    expect(redoSnapshot.before!.text!.position, const Offset(310, 420));
+    expect(redoSnapshot.after!.text!.position, const Offset(310, 420));
+
+    for (var index = 0; index < 101; index++) {
+      container.read(mapProvider.notifier).switchSide();
+    }
+
+    final afterSpam =
+        container.read(actionProvider.notifier).poppedItems.single.objectDelta!;
+    expect(afterSpam.before!.text!.position, const Offset(310, 420));
+    expect(afterSpam.after!.text!.position, const Offset(310, 420));
+    container.read(actionProvider.notifier).redoAction();
+    expect(container.read(textProvider).single.text, 'after');
+    expect(
+      container.read(textProvider).single.position,
+      const Offset(310, 420),
+    );
   });
 }

@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/image_scale_policy.dart';
-import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:image/image.dart' as img;
@@ -266,27 +265,6 @@ class PlacedImageProvider extends Notifier<ImageState> {
 
     newImages[index].updateTagColor(colorValue);
     state = state.copyWith(images: newImages);
-  }
-
-  void switchSides() {
-    final newImages = [...state.images];
-    for (final image in newImages) {
-      image.switchSides(_switchSizeForImage(image));
-    }
-    for (final image in poppedImages) {
-      image.switchSides(_switchSizeForImage(image));
-    }
-    state = state.copyWith(images: newImages);
-  }
-
-  Offset _switchSizeForImage(PlacedImage image) {
-    final size = PlacedImageDimensions.screenSize(
-      coordinateSystem: CoordinateSystem.instance,
-      scale: image.scale,
-      aspectRatio: image.aspectRatio,
-    );
-
-    return Offset(size.width, size.height);
   }
 
   void undoAction(UserAction action) {

@@ -631,6 +631,145 @@ void main() {
       _expectBatchRestored(container, store);
     });
   });
+
+  group('page descriptor final intent', () {
+    test('rebases and sends the final side after an in-flight side patch',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.pageDescriptor('page-1');
+
+      await notifier.enqueue(_pageSideOp(
+        opId: 'defense',
+        isAttack: false,
+        expectedRevision: 1,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: _pageSideOp(
+            opId: 'attack',
+            isAttack: true,
+            expectedRevision: 1,
+          ),
+        },
+      );
+
+      final duringFirst = container.read(strategyOpQueueProvider);
+      expect(duringFirst.inFlightByEntityKey[key]!.pending.op.opId, 'defense');
+      expect(
+        duringFirst.successorByEntityKey[key]!.pending.op.payload,
+        {'isAttack': true},
+      );
+      final durableDuringFirst = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durableDuringFirst.pending.op.opId, 'defense');
+      expect(durableDuringFirst.successorPending!.op.payload, {
+        'isAttack': true,
+      });
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'defense',
+        revision: 2,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final promoted = repository.calls[1].single as PagePatchOp;
+      expect(promoted.payload, {'isAttack': true});
+      expect(promoted.expectedPageRevision, 2);
+      expect(promoted.opId, isNot('attack'));
+
+      repository.completeSecond(AppliedOpAck(
+        opId: promoted.opId,
+        revision: 3,
+      ));
+      await repository.secondCompleted.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+      expect(store.values, isEmpty);
+    });
+
+    test('restart replays the predecessor before its durable final side',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final firstRepository = _SequencedAckRepository();
+      var container = _cloudQueueContainer(
+        store: store,
+        repository: firstRepository,
+      );
+      var notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.pageDescriptor('page-1');
+
+      await notifier.enqueue(_pageSideOp(
+        opId: 'defense-before-restart',
+        isAttack: false,
+        expectedRevision: 4,
+      ));
+      unawaited(notifier.flushNow());
+      await firstRepository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: _pageSideOp(
+            opId: 'attack-after-restart',
+            isAttack: true,
+            expectedRevision: 4,
+          ),
+        },
+      );
+      container.dispose();
+
+      final replayRepository = _SequencedAckRepository();
+      container = _cloudQueueContainer(
+        store: store,
+        repository: replayRepository,
+      );
+      addTearDown(container.dispose);
+      notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await replayRepository.firstStarted.future;
+
+      final replayed = replayRepository.calls.first.single as PagePatchOp;
+      expect(replayed.opId, 'defense-before-restart');
+      expect(replayed.payload, {'isAttack': false});
+      expect(
+        container
+            .read(strategyOpQueueProvider)
+            .successorByEntityKey[key]!
+            .pending
+            .op
+            .payload,
+        {'isAttack': true},
+      );
+
+      replayRepository.completeFirst(const AppliedOpAck(
+        opId: 'defense-before-restart',
+        revision: 5,
+      ));
+      await replayRepository.secondStarted.future;
+      final finalSide = replayRepository.calls[1].single as PagePatchOp;
+      expect(finalSide.payload, {'isAttack': true});
+      expect(finalSide.expectedPageRevision, 5);
+      replayRepository.completeSecond(AppliedOpAck(
+        opId: finalSide.opId,
+        revision: 6,
+      ));
+      await replayRepository.secondCompleted.future;
+    });
+  });
 }
 
 ProviderContainer _cloudQueueContainer({
@@ -652,6 +791,19 @@ ElementPatchOp _cloudElementOp() {
     pagePublicId: 'page-1',
     payload: {'value': 'safe'},
     expectedElementRevision: 1,
+  );
+}
+
+PagePatchOp _pageSideOp({
+  required String opId,
+  required bool isAttack,
+  required int expectedRevision,
+}) {
+  return PagePatchOp(
+    opId: opId,
+    pagePublicId: 'page-1',
+    payload: {'isAttack': isAttack},
+    expectedPageRevision: expectedRevision,
   );
 }
 
@@ -710,6 +862,38 @@ class _AckRepository extends ConvexStrategyRepository {
         else
           AppliedOpAck(opId: op.opId, revision: 2),
     ];
+  }
+}
+
+class _SequencedAckRepository extends ConvexStrategyRepository {
+  _SequencedAckRepository() : super(IcarusConvexApi(_UnusedTransport()));
+
+  final firstStarted = Completer<void>();
+  final secondStarted = Completer<void>();
+  final secondCompleted = Completer<void>();
+  final _firstResponse = Completer<List<OpAck>>();
+  final _secondResponse = Completer<List<OpAck>>();
+  final List<List<StrategyOp>> calls = [];
+
+  void completeFirst(OpAck ack) => _firstResponse.complete([ack]);
+
+  void completeSecond(OpAck ack) => _secondResponse.complete([ack]);
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+  }) async {
+    calls.add(List<StrategyOp>.from(ops));
+    if (calls.length == 1) {
+      firstStarted.complete();
+      return _firstResponse.future;
+    }
+    secondStarted.complete();
+    final result = await _secondResponse.future;
+    secondCompleted.complete();
+    return result;
   }
 }
 

@@ -3,10 +3,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
+import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/zoom_transform.dart';
@@ -17,6 +21,7 @@ class PlacedViewConeWidget extends ConsumerStatefulWidget {
   final String id;
   final double rotation;
   final double length;
+  final bool isAttack;
 
   const PlacedViewConeWidget({
     super.key,
@@ -25,6 +30,7 @@ class PlacedViewConeWidget extends ConsumerStatefulWidget {
     required this.id,
     required this.rotation,
     required this.length,
+    required this.isAttack,
   });
 
   @override
@@ -53,10 +59,7 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
     final rotatedX = dx * math.cos(angle) - dy * math.sin(angle);
     final rotatedY = dx * math.sin(angle) + dy * math.cos(angle);
 
-    return Offset(
-      rotatedX + origin.dx,
-      rotatedY + origin.dy,
-    );
+    return Offset(rotatedX + origin.dx, rotatedY + origin.dy);
   }
 
   @override
@@ -67,8 +70,10 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
       return const SizedBox.shrink();
     }
 
-    final index =
-        PlacedWidget.getIndexByID(widget.id, ref.watch(utilityProvider));
+    final index = PlacedWidget.getIndexByID(
+      widget.id,
+      ref.watch(utilityProvider),
+    );
 
     if (index < 0) {
       return const SizedBox.shrink();
@@ -89,6 +94,12 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
     // Get the view cone utility to access its methods
     final viewConeUtility =
         UtilityData.utilityWidgets[widget.utility.type] as ViewConeUtility;
+    final mapScale = Maps.mapScale[ref.watch(mapProvider).currentMap] ?? 1.0;
+    final settings = ref.watch(strategySettingsProvider);
+    final displayRotation = coordinateSystem.rotationForSide(
+      localRotation!,
+      isAttack: widget.isAttack,
+    );
 
     // Calculate anchor point - bottom center of the cone, based on current length
     // This is exactly like how abilities calculate their anchor points
@@ -97,15 +108,29 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
     final utilityChild =
         UtilityData.utilityWidgets[widget.utility.type]!.createWidget(
       id: widget.id,
-      rotation: localRotation,
+      rotation: displayRotation,
       length: localLength,
     );
 
     return Positioned(
-      left: coordinateSystem.coordinateToScreen(widget.utility.position).dx,
-      top: coordinateSystem.coordinateToScreen(widget.utility.position).dy,
+      left: screenPositionForWidget(
+        widget: widget.utility,
+        coordinateSystem: coordinateSystem,
+        mapScale: mapScale,
+        agentSize: settings.agentSize,
+        abilitySize: settings.abilitySize,
+        isAttack: widget.isAttack,
+      ).dx,
+      top: screenPositionForWidget(
+        widget: widget.utility,
+        coordinateSystem: coordinateSystem,
+        mapScale: mapScale,
+        agentSize: settings.agentSize,
+        abilitySize: settings.abilitySize,
+        isAttack: widget.isAttack,
+      ).dy,
       child: RotatableWidget(
-        rotation: localRotation!,
+        rotation: displayRotation,
         isDragging: isDragging,
         origin: anchorPoint,
         // Position the rotation handle at the top (where the cone extends to)
@@ -134,13 +159,16 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
             currentPositionNormalized.dy,
             currentPositionNormalized.dx,
           );
-          final newRotation = currentAngle + (math.pi / 2);
+          final sideRotation = currentAngle + (math.pi / 2);
+          final newRotation = coordinateSystem.rotationFromSide(
+            sideRotation,
+            isAttack: widget.isAttack,
+          );
 
           // Calculate new length from distance
-          double newLength = coordinateSystem.normalize(
-                currentPositionNormalized.distance,
-              ) /
-              ref.watch(screenZoomProvider);
+          double newLength =
+              coordinateSystem.normalize(currentPositionNormalized.distance) /
+                  ref.watch(screenZoomProvider);
 
           // Clamp length to valid range
           newLength = newLength.clamp(
@@ -154,11 +182,9 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
           });
         },
         onPanEnd: (details) {
-          ref.read(utilityProvider.notifier).updateRotation(
-                index,
-                localRotation!,
-                localLength ?? 50,
-              );
+          ref
+              .read(utilityProvider.notifier)
+              .updateRotation(index, localRotation!, localLength ?? 50);
 
           setState(() {
             rotationOrigin = Offset.zero;
@@ -177,17 +203,15 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
             final rotatedPos = rotateOffset(
               renderObject.globalToLocal(position),
               scaledAnchor,
-              localRotation!,
+              displayRotation,
             );
 
-            return ref
-                .read(screenZoomProvider.notifier)
-                .zoomOffset(rotatedPos);
+            return ref.read(screenZoomProvider.notifier).zoomOffset(rotatedPos);
           },
           feedback: Opacity(
             opacity: Settings.feedbackOpacity,
             child: Transform.rotate(
-              angle: localRotation!,
+              angle: displayRotation,
               alignment: Alignment.topLeft,
               origin: anchorPoint.scale(
                 coordinateSystem.scaleFactor * ref.watch(screenZoomProvider),
@@ -197,7 +221,7 @@ class _PlacedViewConeWidgetState extends ConsumerState<PlacedViewConeWidget> {
                 child: UtilityData.utilityWidgets[widget.utility.type]!
                     .createWidget(
                   id: null,
-                  rotation: localRotation,
+                  rotation: displayRotation,
                   length: localLength,
                 ),
               ),

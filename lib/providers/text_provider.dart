@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/placed_media_dimensions.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
@@ -101,34 +100,6 @@ class TextProvider extends Notifier<List<PlacedText>> {
     ref.read(actionProvider.notifier).addAction(action);
 
     state = [...newState, temp];
-  }
-
-  void switchSides() {
-    final newState = [...state];
-    for (final text in newState) {
-      text.switchSides(_switchSizeForText(text));
-    }
-
-    for (final text in poppedText) {
-      text.switchSides(_switchSizeForText(text));
-    }
-
-    state = newState;
-  }
-
-  Offset _switchSizeForText(PlacedText text) {
-    final size = PlacedTextDimensions.screenSize(
-      coordinateSystem: CoordinateSystem.instance,
-      widthWorld: text.size,
-      fontSizeWorld: text.fontSize,
-      text: text.text,
-    );
-
-    return Offset(size.width, size.height);
-  }
-
-  Offset switchSizeForText(PlacedText text) {
-    return _switchSizeForText(text);
   }
 
   void commitText(String id, String nextText) {

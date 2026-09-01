@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/agents.dart';
+import 'package:icarus/const/abilities.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
@@ -28,10 +29,12 @@ class LineUpGroupAgentWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
+    final isAttack = ref.watch(mapProvider).isAttack;
     final agentScreen = screenPositionForWidget(
       widget: group.agent,
       coordinateSystem: coordinateSystem,
       agentSize: agentSize,
+      isAttack: isAttack,
     );
 
     final child = AgentWidget(
@@ -86,17 +89,24 @@ class LineUpItemAbilityWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
-    final currentMap =
-        ref.watch(mapProvider.select((state) => state.currentMap));
+    final currentMap = ref.watch(
+      mapProvider.select((state) => state.currentMap),
+    );
+    final isAttack = ref.watch(mapProvider).isAttack;
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
-    final isRotatable = item.ability.rotation != 0;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
     final abilityScreen = screenPositionForWidget(
       widget: item.ability,
       coordinateSystem: coordinateSystem,
       mapScale: mapScale,
       abilitySize: abilitySize,
+      isAttack: isAttack,
     );
+    final displayRotation = coordinateSystem.rotationForSide(
+      item.ability.rotation,
+      isAttack: isAttack,
+    );
+    final shouldRotate = isRotatable(item.ability.data.abilityData!);
     final contextMenuItems = buildAbilityContextMenuItems(
       ref,
       item.ability,
@@ -111,16 +121,16 @@ class LineUpItemAbilityWidget extends ConsumerWidget {
         mapScale: mapScale,
         lineUpId: groupId,
         lineUpItemId: item.id,
-        rotation: item.ability.rotation,
+        rotation: displayRotation,
         length: item.ability.length,
         armLengthsMeters: item.ability.armLengthsMeters,
         visualState: item.ability.visualState,
         watchMouse: watchMouse,
         contextMenuItems: contextMenuItems,
       );
-      if (!isRotatable) return child;
+      if (!shouldRotate) return child;
       return Transform.rotate(
-        angle: item.ability.rotation,
+        angle: displayRotation,
         alignment: Alignment.topLeft,
         origin: item.ability.data.abilityData!
             .getAnchorPoint(mapScale: mapScale, abilitySize: abilitySize)
@@ -169,9 +179,7 @@ class LineUpAgentWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LineUpGroupAgentWidget(
-      group: LineUpGroup.fromLegacyLineUp(lineUp),
-    );
+    return LineUpGroupAgentWidget(group: LineUpGroup.fromLegacyLineUp(lineUp));
   }
 }
 
