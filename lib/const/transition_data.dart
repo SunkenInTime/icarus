@@ -429,7 +429,9 @@ class PageTransitionEntry {
   // Rotation is only relevant for some subtypes. Null when not applicable.
   static double? rotationOf(PlacedWidget w) {
     if (w is PlacedAbility) return w.rotation;
-    if (w is PlacedUtility) return w.rotation;
+    if (w is PlacedUtility && UtilityData.usesRotation(w.type)) {
+      return w.rotation;
+    }
     if (w is PlacedViewConeAgent) return w.rotation;
     return null;
   }

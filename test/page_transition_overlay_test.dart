@@ -12,6 +12,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/role_icon_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
@@ -399,6 +400,93 @@ void main() {
       return (renderedRotation - rotation).abs() < 0.0001;
     });
     expect(matchingTransforms, hasLength(1));
+  });
+
+  testWidgets('role icons stay upright during page transitions',
+      (tester) async {
+    final container = _createContainer();
+    addTearDown(container.dispose);
+    const roleTypes = [
+      UtilityType.controller,
+      UtilityType.duelist,
+      UtilityType.initiator,
+      UtilityType.sentinel,
+    ];
+    final roleIcons = [
+      for (var index = 0; index < roleTypes.length; index++)
+        PlacedUtility(
+          id: 'rotated-${roleTypes[index].name}',
+          type: roleTypes[index],
+          position: Offset(350 + (index * 80), 350),
+        )..rotation = math.pi / 7 + (index * 0.1),
+    ];
+
+    for (final roleIcon in roleIcons) {
+      expect(PageTransitionEntry.rotationOf(roleIcon), isNull);
+    }
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          home: Scaffold(
+            body: TransitionEntriesLayer(
+              entries: [
+                for (final roleIcon in roleIcons)
+                  PageTransitionEntry.appear(to: roleIcon),
+              ],
+              agentPaths: const {},
+              t: 0.5,
+              direction: PageTransitionDirection.forward,
+              agentSize: 40,
+              abilitySize: 40,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(RoleIconUtilityWidget), findsNWidgets(roleTypes.length));
+    for (final roleIcon in roleIcons) {
+      expect(_hasTransformAtAngle(tester, roleIcon.rotation), isFalse);
+    }
+  });
+
+  testWidgets('defense temporary role icons stay upright', (tester) async {
+    final container = _createDefenseContainer();
+    addTearDown(container.dispose);
+    final roleIcon = PlacedUtility(
+      id: 'defense-role-icon',
+      type: UtilityType.sentinel,
+      position: const Offset(500, 350),
+    );
+    container.read(transitionProvider.notifier).prepare(
+      [roleIcon],
+      startAgentSize: 40,
+      startAbilitySize: 40,
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home: Scaffold(body: TemporaryWidgetBuilder()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(RoleIconUtilityWidget), findsOneWidget);
+    expect(_hasTransformAtAngle(tester, math.pi), isFalse);
+  });
+}
+
+bool _hasTransformAtAngle(WidgetTester tester, double angle) {
+  return tester.widgetList<Transform>(find.byType(Transform)).any((transform) {
+    final matrix = transform.transform.storage;
+    final renderedRotation = math.atan2(matrix[1], matrix[0]);
+    return (renderedRotation - angle).abs() < 0.0001;
   });
 }
 

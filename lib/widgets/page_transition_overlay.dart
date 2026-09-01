@@ -458,7 +458,7 @@ class _EntryRenderer {
       }
       return isRotatable(ability);
     }
-    return widget is PlacedUtility;
+    return widget is PlacedUtility && UtilityData.usesRotation(widget.type);
   }
 }
 
@@ -816,12 +816,15 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
       abilitySize: abilitySize,
       isAttack: isAttack,
     );
-    final displayRotation = coord.rotationForSide(
-      PageTransitionEntry.rotationOf(widget) ?? 0,
-      isAttack: isAttack,
-    );
+    final canonicalRotation = PageTransitionEntry.rotationOf(widget);
+    final displayRotation = canonicalRotation == null
+        ? null
+        : coord.rotationForSide(canonicalRotation, isAttack: isAttack);
 
-    if (widget is PlacedUtility && displayRotation != 0) {
+    if (widget is PlacedUtility &&
+        UtilityData.usesRotation(widget.type) &&
+        displayRotation != null &&
+        displayRotation != 0) {
       return Positioned(
         left: scaledPosition.dx,
         top: scaledPosition.dy,
@@ -848,6 +851,7 @@ class TemporaryWidgetBuilder extends ConsumerWidget {
         ),
       );
     } else if (widget is PlacedAbility &&
+        displayRotation != null &&
         displayRotation != 0 &&
         widget.data.abilityData != null &&
         !(widget.visualState.showVisionCone &&
