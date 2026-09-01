@@ -1,23 +1,7 @@
-import 'dart:ui';
-
 import 'package:icarus/const/bounding_box.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/placed_media_dimensions.dart';
-
-class ActionHistoryTransformContext {
-  final double agentSize;
-  final double abilitySize;
-  final double mapScale;
-
-  const ActionHistoryTransformContext({
-    required this.agentSize,
-    required this.abilitySize,
-    required this.mapScale,
-  });
-}
 
 class ActionObjectState {
   final String id;
@@ -96,69 +80,6 @@ class ActionObjectState {
       ActionObjectKind.lineUp => ActionObjectState.lineUp(lineUp!),
     };
   }
-
-  ActionObjectState switchSides(ActionHistoryTransformContext context) {
-    return switch (kind) {
-      ActionObjectKind.agent => ActionObjectState.agent(
-          clonePlacedAgentNode(agent!)..switchSides(context.agentSize),
-        ),
-      ActionObjectKind.ability => ActionObjectState.ability(
-          clonePlacedAbility(ability!)
-            ..switchSides(
-              mapScale: context.mapScale,
-              abilitySize: context.abilitySize,
-            ),
-        ),
-      ActionObjectKind.drawing => ActionObjectState.drawing(
-          switchDrawingElementSides(cloneDrawingElement(drawing!)),
-        ),
-      ActionObjectKind.text => _switchTextSides(),
-      ActionObjectKind.image => _switchImageSides(),
-      ActionObjectKind.utility => ActionObjectState.utility(
-          clonePlacedUtility(utility!)
-            ..switchSides(
-              mapScale: context.mapScale,
-              agentSize: context.agentSize,
-              abilitySize: context.abilitySize,
-            ),
-        ),
-      ActionObjectKind.lineUp => ActionObjectState.lineUp(
-          cloneLineUp(lineUp!)
-            ..switchSides(
-              agentSize: context.agentSize,
-              abilitySize: context.abilitySize,
-              mapScale: context.mapScale,
-            ),
-        ),
-    };
-  }
-
-  ActionObjectState _switchTextSides() {
-    final value = clonePlacedText(text!);
-    final size = PlacedTextDimensions.screenSize(
-      coordinateSystem: CoordinateSystem.instance,
-      widthWorld: value.size,
-      fontSizeWorld: value.fontSize,
-      text: value.text,
-    );
-
-    return ActionObjectState.text(
-      value..switchSides(Offset(size.width, size.height)),
-    );
-  }
-
-  ActionObjectState _switchImageSides() {
-    final value = clonePlacedImage(image!);
-    final size = PlacedImageDimensions.screenSize(
-      coordinateSystem: CoordinateSystem.instance,
-      scale: value.scale,
-      aspectRatio: value.aspectRatio,
-    );
-
-    return ActionObjectState.image(
-      value..switchSides(Offset(size.width, size.height)),
-    );
-  }
 }
 
 enum ActionObjectKind {
@@ -186,13 +107,6 @@ class ObjectHistoryDelta {
     return ObjectHistoryDelta(
       before: before?.clone(),
       after: after?.clone(),
-    );
-  }
-
-  ObjectHistoryDelta switchSides(ActionHistoryTransformContext context) {
-    return ObjectHistoryDelta(
-      before: before?.switchSides(context),
-      after: after?.switchSides(context),
     );
   }
 }
@@ -275,92 +189,4 @@ BoundingBox? cloneBoundingBox(BoundingBox? value) {
     return null;
   }
   return BoundingBox(min: value.min, max: value.max);
-}
-
-DrawingElement switchDrawingElementSides(DrawingElement value) {
-  final flipped = cloneDrawingElement(value);
-  if (flipped is FreeDrawing) {
-    flipped.replacePoints(
-      flipped.listOfPoints.map(_flipCoordinatePoint).toList(),
-    );
-    flipped.boundingBox = _boundingBoxForPoints(flipped.listOfPoints);
-    flipped.rebuildPath(CoordinateSystem.instance);
-    return flipped;
-  }
-  if (flipped is Line) {
-    final start = _flipCoordinatePoint(flipped.lineStart);
-    final end = _flipCoordinatePoint(flipped.lineEnd);
-    return flipped.copyWith(
-      lineStart: start,
-      lineEnd: end,
-      boundingBox: _lineBoundingBox(start, end),
-    );
-  }
-  if (flipped is RectangleDrawing) {
-    final start = _flipCoordinatePoint(flipped.start);
-    final end = _flipCoordinatePoint(flipped.end);
-    return RectangleDrawing(
-      start: start,
-      end: end,
-      color: flipped.color,
-      thickness: flipped.thickness,
-      boundingBox: _lineBoundingBox(start, end),
-      isDotted: flipped.isDotted,
-      hasArrow: flipped.hasArrow,
-      id: flipped.id,
-    );
-  }
-  if (flipped is EllipseDrawing) {
-    final start = _flipCoordinatePoint(flipped.start);
-    final end = _flipCoordinatePoint(flipped.end);
-    return EllipseDrawing(
-      start: start,
-      end: end,
-      color: flipped.color,
-      thickness: flipped.thickness,
-      boundingBox: _lineBoundingBox(start, end),
-      isDotted: flipped.isDotted,
-      hasArrow: flipped.hasArrow,
-      id: flipped.id,
-    );
-  }
-  return flipped;
-}
-
-Offset _flipCoordinatePoint(Offset point) {
-  final coordinateSystem = CoordinateSystem.instance;
-  return Offset(
-    coordinateSystem.worldNormalizedWidth - point.dx,
-    coordinateSystem.normalizedHeight - point.dy,
-  );
-}
-
-BoundingBox _lineBoundingBox(Offset start, Offset end) {
-  return BoundingBox(
-    min: Offset(
-      start.dx < end.dx ? start.dx : end.dx,
-      start.dy < end.dy ? start.dy : end.dy,
-    ),
-    max: Offset(
-      start.dx > end.dx ? start.dx : end.dx,
-      start.dy > end.dy ? start.dy : end.dy,
-    ),
-  );
-}
-
-BoundingBox? _boundingBoxForPoints(List<Offset> points) {
-  if (points.isEmpty) {
-    return null;
-  }
-  double minX = points.first.dx;
-  double minY = points.first.dy;
-  double maxX = points.first.dx;
-  double maxY = points.first.dy;
-  for (final point in points.skip(1)) {
-    if (point.dx < minX) minX = point.dx;
-    if (point.dy < minY) minY = point.dy;
-    if (point.dx > maxX) maxX = point.dx;
-    if (point.dy > maxY) maxY = point.dy;
-  }
-  return BoundingBox(min: Offset(minX, minY), max: Offset(maxX, maxY));
 }

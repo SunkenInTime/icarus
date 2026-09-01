@@ -2,13 +2,10 @@ import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
-import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
 
 final utilityProvider =
     NotifierProvider<UtilityProvider, List<PlacedUtility>>(UtilityProvider.new);
@@ -196,9 +193,7 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
     }
 
     utility.updateCustomShapeColor(colorValue);
-    ref
-        .read(actionProvider.notifier)
-        .addAction(
+    ref.read(actionProvider.notifier).addAction(
           UserAction(type: ActionType.edit, id: id, group: ActionGroup.utility),
         );
     state = newState;
@@ -206,31 +201,8 @@ class UtilityProvider extends Notifier<List<PlacedUtility>> {
 
   void updateRotationHistory(int index) {
     if (index < 0 || index >= state.length) return;
-    _pendingEditBefore[state[index].id] = ActionObjectState.utility(state[index]);
-  }
-
-  void switchSides() {
-    final newState = [...state];
-    final mapState = ref.read(mapProvider);
-    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
-    final agentSize = ref.read(strategySettingsProvider).agentSize;
-    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
-    for (final utility in newState) {
-      utility.switchSides(
-        mapScale: mapScale,
-        agentSize: agentSize,
-        abilitySize: abilitySize,
-      );
-    }
-    for (final utility in poppedUtilities) {
-      utility.switchSides(
-        mapScale: mapScale,
-        agentSize: agentSize,
-        abilitySize: abilitySize,
-      );
-    }
-
-    state = newState;
+    _pendingEditBefore[state[index].id] =
+        ActionObjectState.utility(state[index]);
   }
 
   void undoAction(UserAction action) {

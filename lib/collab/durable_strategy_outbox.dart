@@ -27,6 +27,7 @@ class DurableOutboxRecord {
     required this.status,
     required this.createdAt,
     required this.updatedAt,
+    this.successorPending,
     this.lastError,
     this.latestServerRevision,
   });
@@ -38,6 +39,7 @@ class DurableOutboxRecord {
   final DurableOutboxStatus status;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final PendingOp? successorPending;
   final String? lastError;
   final int? latestServerRevision;
 
@@ -60,6 +62,8 @@ class DurableOutboxRecord {
     PendingOp? pending,
     DurableOutboxStatus? status,
     DateTime? updatedAt,
+    PendingOp? successorPending,
+    bool clearSuccessorPending = false,
     String? lastError,
     bool clearError = false,
     int? latestServerRevision,
@@ -73,6 +77,9 @@ class DurableOutboxRecord {
       status: status ?? this.status,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      successorPending: clearSuccessorPending
+          ? null
+          : (successorPending ?? this.successorPending),
       lastError: clearError ? null : (lastError ?? this.lastError),
       latestServerRevision: clearLatestServerRevision
           ? null
@@ -91,6 +98,8 @@ class DurableOutboxRecord {
         'attempts': pending.attempts,
         if (pending.lastAttemptAt != null)
           'lastAttemptAt': pending.lastAttemptAt!.toUtc().toIso8601String(),
+        if (successorPending != null)
+          'successorPending': _pendingToJson(successorPending!),
         'status': status.name,
         'createdAt': createdAt.toUtc().toIso8601String(),
         'updatedAt': updatedAt.toUtc().toIso8601String(),
@@ -113,6 +122,17 @@ class DurableOutboxRecord {
     if (entityKey == null || entityKey.toString() != json['entityKey']) {
       throw const FormatException('Outbox entity key does not match op');
     }
+    final successor = json['successorPending'] == null
+        ? null
+        : _pendingFromJson(
+            _object(json['successorPending'], field: 'successorPending'),
+          );
+    if (successor != null &&
+        EntitySyncKey.forStrategyOp(successor.op) != entityKey) {
+      throw const FormatException(
+        'Outbox successor entity key does not match op',
+      );
+    }
     return DurableOutboxRecord(
       accountId: _nonEmptyString(json['accountId'], field: 'accountId'),
       strategyPublicId:
@@ -124,6 +144,7 @@ class DurableOutboxRecord {
         attempts: (json['attempts'] as num?)?.toInt() ?? 0,
         lastAttemptAt: _optionalDate(json['lastAttemptAt']),
       ),
+      successorPending: successor,
       status: DurableOutboxStatus.values.byName(
         _nonEmptyString(json['status'], field: 'status'),
       ),
@@ -131,6 +152,31 @@ class DurableOutboxRecord {
       updatedAt: _requiredDate(json['updatedAt'], field: 'updatedAt'),
       lastError: json['lastError'] as String?,
       latestServerRevision: (json['latestServerRevision'] as num?)?.toInt(),
+    );
+  }
+
+  static Map<String, dynamic> _pendingToJson(PendingOp value) =>
+      <String, dynamic>{
+        'clientId': value.clientId,
+        'opId': value.op.opId,
+        'op': value.op.toConvexJson(),
+        'attempts': value.attempts,
+        if (value.lastAttemptAt != null)
+          'lastAttemptAt': value.lastAttemptAt!.toUtc().toIso8601String(),
+      };
+
+  static PendingOp _pendingFromJson(Map<String, dynamic> json) {
+    final op = StrategyOp.fromJson(_object(json['op'], field: 'successor op'));
+    if (json['opId'] != op.opId) {
+      throw const FormatException(
+        'Outbox successor opId does not match serialized op',
+      );
+    }
+    return PendingOp(
+      op: op,
+      clientId: _nonEmptyString(json['clientId'], field: 'successor clientId'),
+      attempts: (json['attempts'] as num?)?.toInt() ?? 0,
+      lastAttemptAt: _optionalDate(json['lastAttemptAt']),
     );
   }
 

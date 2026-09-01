@@ -99,8 +99,7 @@ class Settings {
   /// team identity) — a muted steel blue in the family of the old
   /// lightBlueAccent, toned down for the tactical palette.
   static const Color defenderColor = Color(0xFF6BA6C9);
-  static Color get mixedStrategyColor =>
-      tacticalVioletTheme.mutedForeground;
+  static Color get mixedStrategyColor => tacticalVioletTheme.mutedForeground;
 
   static Color neutralTeamShade(Color color) {
     return HSLColor.fromColor(color).withSaturation(0).toColor();
@@ -109,7 +108,7 @@ class Settings {
   static final Uri dicordLink = Uri.parse("https://discord.gg/PN2uKwCqYB");
 
   static const Duration autoSaveOffset = Duration(seconds: 15);
-  static const int versionNumber = 96;
+  static const int versionNumber = 97;
   static const String versionName = "4.6.1";
   static final Uri desktopUpdaterArchiveUrl =
       buildDesktopUpdaterArchiveUrl(kResolvedUpdateChannel);

@@ -174,6 +174,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       ...queueState.queuedByEntityKey.keys.where((key) => key.pageId == pageId),
       ...queueState.inFlightByEntityKey.keys
           .where((key) => key.pageId == pageId),
+      ...queueState.successorByEntityKey.keys
+          .where((key) => key.pageId == pageId),
     };
 
     final nextOverlay = Map<EntitySyncKey, ActivePageOverlayEntry>.from(
@@ -266,7 +268,12 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       }
       final remote = remoteEntities[key];
       final overlay = entry.value;
-      if (_overlayMatchesRemote(overlay, remote)) {
+      if (_overlayMatchesRemote(overlay, remote) &&
+          !_needsPageDescriptorSuccessor(
+            key: key,
+            overlay: overlay,
+            queueState: queueState,
+          )) {
         continue;
       }
       final op = _strategyOpFromOverlay(
@@ -746,6 +753,26 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     }
     return _payloadsEquivalent(overlay.desiredPayload, remote.payload) &&
         overlay.desiredSortIndex == remote.sortIndex;
+  }
+
+  bool _needsPageDescriptorSuccessor({
+    required EntitySyncKey key,
+    required ActivePageOverlayEntry overlay,
+    required StrategyOpQueueState queueState,
+  }) {
+    if (key.kind != EntitySyncKeyKind.pageDescriptor ||
+        queueState.successorByEntityKey.containsKey(key)) {
+      return false;
+    }
+    final desiredPayload = overlay.desiredPayload;
+    if (desiredPayload is! Map) return false;
+    final desiredSide = desiredPayload['isAttack'];
+    if (desiredSide is! bool) return false;
+
+    final predecessor = queueState.inFlightByEntityKey[key]?.pending.op ??
+        queueState.queuedByEntityKey[key]?.pending.op;
+    if (predecessor is! PagePatchOp) return false;
+    return predecessor.payload['isAttack'] != desiredSide;
   }
 
   bool _entitiesEquivalent(

@@ -7,6 +7,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/migrations/ability_vision_cone_migration.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
+import 'package:icarus/migrations/canonical_coordinates_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/migrations/lineup_group_migration.dart';
 import 'package:icarus/migrations/page_name_provenance_migration.dart';
@@ -139,6 +140,8 @@ class StrategyMigrator {
 
   static StrategyData migrateToCurrentVersion(StrategyData strat,
       {bool forceAbilityScale = false}) {
+    final needsCanonicalCoordinatesMigration =
+        strat.versionNumber < CanonicalCoordinatesMigration.version;
     final needsAbilityVisionMigration =
         strat.versionNumber < AbilityVisionConeMigration.version;
     final needsPageNameProvenanceMigration =
@@ -153,14 +156,36 @@ class StrategyMigrator {
       lineUpGroupMigrated,
       force: needsAbilityVisionMigration,
     );
-    final migrated = migratePageNameProvenance(
+    final pageNameMigrated = migratePageNameProvenance(
       abilityVisionMigrated,
       force: needsPageNameProvenanceMigration,
+    );
+    final migrated = migrateCanonicalCoordinates(
+      pageNameMigrated,
+      force: needsCanonicalCoordinatesMigration,
     );
     if (migrated.versionNumber >= Settings.versionNumber) {
       return migrated;
     }
     return migrated.copyWith(
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
+    );
+  }
+
+  static StrategyData migrateCanonicalCoordinates(
+    StrategyData strat, {
+    bool force = false,
+  }) {
+    if (!force &&
+        strat.versionNumber >= CanonicalCoordinatesMigration.version) {
+      return strat;
+    }
+    return strat.copyWith(
+      pages: CanonicalCoordinatesMigration.migratePages(
+        pages: strat.pages,
+        map: strat.mapData,
+      ),
       versionNumber: Settings.versionNumber,
       lastEdited: DateTime.now(),
     );
@@ -267,9 +292,13 @@ class StrategyMigrator {
       lineUpGroupMigrated,
       force: originalVersion < AbilityVisionConeMigration.version,
     );
-    return migratePageNameProvenance(
+    final pageNameMigrated = migratePageNameProvenance(
       abilityVisionMigrated,
       force: originalVersion < PageNameProvenanceMigration.version,
+    );
+    return migrateCanonicalCoordinates(
+      pageNameMigrated,
+      force: originalVersion < CanonicalCoordinatesMigration.version,
     );
   }
 

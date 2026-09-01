@@ -49,8 +49,9 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
         });
 
         final resizeCounter = ref.watch(lineUpCanvasResizeProvider);
-        final currentMap =
-            ref.watch(mapProvider.select((state) => state.currentMap));
+        final currentMap = ref.watch(
+          mapProvider.select((state) => state.currentMap),
+        );
         final mapScale = Maps.mapScale[currentMap] ?? 1.0;
 
         return IgnorePointer(
@@ -67,6 +68,7 @@ class _LineUpLinePainterState extends ConsumerState<ConsumerStatefulWidget> {
                   ref.watch(strategySettingsProvider).agentSize,
                 ),
                 mapScale: mapScale,
+                isAttack: ref.watch(mapProvider).isAttack,
                 currentAgent: ref.watch(lineUpProvider).currentAgent,
                 currentAbility: ref.watch(lineUpProvider).currentAbility,
               ),
@@ -87,6 +89,7 @@ class LinePainter extends CustomPainter {
   final double abilitySize;
   final double agentSize;
   final double mapScale;
+  final bool isAttack;
   final PlacedAgent? currentAgent;
   final PlacedAbility? currentAbility;
   final int resizeCounter;
@@ -100,6 +103,7 @@ class LinePainter extends CustomPainter {
     required this.abilitySize,
     required this.agentSize,
     required this.mapScale,
+    required this.isAttack,
     this.currentAgent,
     this.currentAbility,
   });
@@ -122,6 +126,7 @@ class LinePainter extends CustomPainter {
       final startPosition = screenAnchorForAgent(
         agent: group.agent,
         coordinateSystem: coordinateSystem,
+        isAttack: isAttack,
       );
 
       for (final item in group.items) {
@@ -129,6 +134,7 @@ class LinePainter extends CustomPainter {
           ability: item.ability,
           coordinateSystem: coordinateSystem,
           mapScale: mapScale,
+          isAttack: isAttack,
         );
 
         canvas.drawLine(
@@ -152,6 +158,7 @@ class LinePainter extends CustomPainter {
           oldDelegate.abilitySize != abilitySize ||
           oldDelegate.agentSize != agentSize ||
           oldDelegate.mapScale != mapScale ||
+          oldDelegate.isAttack != isAttack ||
           oldDelegate.resizeCounter != resizeCounter;
     }
     return false;

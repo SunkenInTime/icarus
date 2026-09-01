@@ -12,41 +12,30 @@ void main() {
     CoordinateSystem(playAreaSize: const Size(1920, 1080));
   });
 
-  group('PlacedText side switch', () {
-    test('double switch returns empty text to original position', () {
+  group('PlacedText side projection', () {
+    test('empty text projection is reversible without mutating storage', () {
       final text = _placedText(text: '');
 
-      _switchText(text);
-      _switchText(text);
-
-      _expectClose(text.position, const Offset(100, 120));
+      _expectTextProjectionRoundTrip(text);
     });
 
-    test('double switch returns single-line text to original position', () {
+    test('single-line projection is reversible without mutating storage', () {
       final text = _placedText(text: 'one line');
 
-      _switchText(text);
-      _switchText(text);
-
-      _expectClose(text.position, const Offset(100, 120));
+      _expectTextProjectionRoundTrip(text);
     });
 
-    test('double switch returns wrapped text to original position', () {
+    test('wrapped projection is reversible without mutating storage', () {
       final text = _placedText(
         text: 'this text is long enough to wrap across multiple lines',
         size: 90,
       );
 
-      _switchText(text);
-      _switchText(text);
-
-      _expectClose(text.position, const Offset(100, 120));
+      _expectTextProjectionRoundTrip(text);
     });
   });
 
-  test(
-      'PlacedImage double switch returns non-square image to original position',
-      () {
+  test('PlacedImage projection is reversible without mutating storage', () {
     final image = PlacedImage(
       id: 'image-1',
       position: const Offset(200, 220),
@@ -56,9 +45,25 @@ void main() {
       sizeVersion: worldSizedMediaVersion,
     );
 
-    _switchImage(image);
-    _switchImage(image);
+    final coordinateSystem = CoordinateSystem.instance;
+    final canonicalScreen = coordinateSystem.coordinateToScreen(image.position);
+    final size = PlacedImageDimensions.screenSize(
+      coordinateSystem: coordinateSystem,
+      scale: image.scale,
+      aspectRatio: image.aspectRatio,
+    );
+    final defense = coordinateSystem.screenPositionForSide(
+      attackScreenPosition: canonicalScreen,
+      reflectionOffset: Offset(size.width, size.height),
+      isAttack: false,
+    );
+    final recovered = coordinateSystem.screenPositionFromSide(
+      sideScreenPosition: defense,
+      reflectionOffset: Offset(size.width, size.height),
+      isAttack: false,
+    );
 
+    _expectClose(recovered, canonicalScreen);
     _expectClose(image.position, const Offset(200, 220));
   });
 }
@@ -76,25 +81,28 @@ PlacedText _placedText({
   )..text = text;
 }
 
-void _switchText(PlacedText text) {
+void _expectTextProjectionRoundTrip(PlacedText text) {
+  final coordinateSystem = CoordinateSystem.instance;
+  final canonicalScreen = coordinateSystem.coordinateToScreen(text.position);
   final size = PlacedTextDimensions.screenSize(
-    coordinateSystem: CoordinateSystem.instance,
+    coordinateSystem: coordinateSystem,
     widthWorld: text.size,
     fontSizeWorld: text.fontSize,
     text: text.text,
   );
-
-  text.switchSides(Offset(size.width, size.height));
-}
-
-void _switchImage(PlacedImage image) {
-  final size = PlacedImageDimensions.screenSize(
-    coordinateSystem: CoordinateSystem.instance,
-    scale: image.scale,
-    aspectRatio: image.aspectRatio,
+  final defense = coordinateSystem.screenPositionForSide(
+    attackScreenPosition: canonicalScreen,
+    reflectionOffset: Offset(size.width, size.height),
+    isAttack: false,
+  );
+  final recovered = coordinateSystem.screenPositionFromSide(
+    sideScreenPosition: defense,
+    reflectionOffset: Offset(size.width, size.height),
+    isAttack: false,
   );
 
-  image.switchSides(Offset(size.width, size.height));
+  _expectClose(recovered, canonicalScreen);
+  _expectClose(text.position, const Offset(100, 120));
 }
 
 void _expectClose(Offset actual, Offset expected) {

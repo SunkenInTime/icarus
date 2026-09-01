@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
-import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
@@ -147,29 +146,6 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
     return duplicatedAbility.id;
   }
 
-  void switchSides() {
-    if (state.isEmpty && poppedAbility.isEmpty) return;
-
-    final newState = <PlacedAbility>[...state];
-    final mapState = ref.read(mapProvider);
-    final mapScale = Maps.mapScale[mapState.currentMap] ?? 1.0;
-    for (final ability in state) {
-      ability.switchSides(
-        mapScale: mapScale,
-        abilitySize: Settings.abilitySize,
-      );
-    }
-
-    for (final ability in poppedAbility) {
-      ability.switchSides(
-        mapScale: mapScale,
-        abilitySize: Settings.abilitySize,
-      );
-    }
-
-    state = newState;
-  }
-
   void updateRotation(int index, double rotation, double length) {
     updateGeometry(index, rotation: rotation, length: length);
   }
@@ -246,7 +222,8 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
 
   void updateGeometryHistory(int index) {
     if (index < 0 || index >= state.length) return;
-    _pendingEditBefore[state[index].id] = ActionObjectState.ability(state[index]);
+    _pendingEditBefore[state[index].id] =
+        ActionObjectState.ability(state[index]);
   }
 
   // void updateLengthHistory(int index) {
@@ -383,10 +360,13 @@ class AbilityProvider extends Notifier<List<PlacedAbility>> {
   }
 
   void restoreSnapshot(AbilityProviderSnapshot snapshot) {
-    poppedAbility =
-        snapshot.poppedAbilities.map((ability) => clonePlacedAbility(ability)).toList();
+    poppedAbility = snapshot.poppedAbilities
+        .map((ability) => clonePlacedAbility(ability))
+        .toList();
     _pendingEditBefore.clear();
-    state = snapshot.abilities.map((ability) => clonePlacedAbility(ability)).toList();
+    state = snapshot.abilities
+        .map((ability) => clonePlacedAbility(ability))
+        .toList();
   }
 
   void _upsertAbility(PlacedAbility ability) {

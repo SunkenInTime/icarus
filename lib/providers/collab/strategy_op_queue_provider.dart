@@ -20,6 +20,7 @@ class StrategyOpQueueState {
     this.clientId,
     this.queuedByEntityKey = const <EntitySyncKey, QueuedEntityIntent>{},
     this.inFlightByEntityKey = const <EntitySyncKey, InFlightEntityIntent>{},
+    this.successorByEntityKey = const <EntitySyncKey, QueuedEntityIntent>{},
     this.pausedByEntityKey = const <EntitySyncKey, QueuedEntityIntent>{},
     this.attentionByEntityKey = const <EntitySyncKey, QueuedEntityIntent>{},
     this.loadIssues = const <DurableOutboxLoadIssue>[],
@@ -36,6 +37,7 @@ class StrategyOpQueueState {
   final String? clientId;
   final Map<EntitySyncKey, QueuedEntityIntent> queuedByEntityKey;
   final Map<EntitySyncKey, InFlightEntityIntent> inFlightByEntityKey;
+  final Map<EntitySyncKey, QueuedEntityIntent> successorByEntityKey;
   final Map<EntitySyncKey, QueuedEntityIntent> pausedByEntityKey;
   final Map<EntitySyncKey, QueuedEntityIntent> attentionByEntityKey;
   final List<DurableOutboxLoadIssue> loadIssues;
@@ -54,6 +56,7 @@ class StrategyOpQueueState {
   List<PendingOp> get pending => <PendingOp>[
         ...queuedByEntityKey.values.map((intent) => intent.pending),
         ...inFlightByEntityKey.values.map((intent) => intent.pending),
+        ...successorByEntityKey.values.map((intent) => intent.pending),
         ...pausedByEntityKey.values.map((intent) => intent.pending),
         ...attentionByEntityKey.values.map((intent) => intent.pending),
       ];
@@ -61,6 +64,7 @@ class StrategyOpQueueState {
   StrategyOpQueueState copyWith({
     Map<EntitySyncKey, QueuedEntityIntent>? queuedByEntityKey,
     Map<EntitySyncKey, InFlightEntityIntent>? inFlightByEntityKey,
+    Map<EntitySyncKey, QueuedEntityIntent>? successorByEntityKey,
     Map<EntitySyncKey, QueuedEntityIntent>? pausedByEntityKey,
     Map<EntitySyncKey, QueuedEntityIntent>? attentionByEntityKey,
     bool? isFlushing,
@@ -76,6 +80,7 @@ class StrategyOpQueueState {
       clientId: clientId,
       queuedByEntityKey: queuedByEntityKey ?? this.queuedByEntityKey,
       inFlightByEntityKey: inFlightByEntityKey ?? this.inFlightByEntityKey,
+      successorByEntityKey: successorByEntityKey ?? this.successorByEntityKey,
       pausedByEntityKey: pausedByEntityKey ?? this.pausedByEntityKey,
       attentionByEntityKey: attentionByEntityKey ?? this.attentionByEntityKey,
       loadIssues: loadIssues,
@@ -151,6 +156,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 record.strategyPublicId == strategyPublicId)
             .toList(growable: false);
     final queued = <EntitySyncKey, QueuedEntityIntent>{};
+    final successors = <EntitySyncKey, QueuedEntityIntent>{};
     final paused = <EntitySyncKey, QueuedEntityIntent>{};
     final attention = <EntitySyncKey, QueuedEntityIntent>{};
     for (final record in matching) {
@@ -158,6 +164,13 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         entityKey: record.entityKey,
         pending: record.pending,
       );
+      final successor = record.successorPending;
+      if (successor != null) {
+        successors[record.entityKey] = QueuedEntityIntent(
+          entityKey: record.entityKey,
+          pending: successor,
+        );
+      }
       switch (record.status) {
         case DurableOutboxStatus.queued:
         case DurableOutboxStatus.inFlight:
@@ -176,6 +189,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       strategyPublicId: strategyPublicId,
       clientId: clientId,
       queuedByEntityKey: queued,
+      successorByEntityKey: successors,
       pausedByEntityKey: paused,
       attentionByEntityKey: attention,
       loadIssues: state.loadIssues,
@@ -260,6 +274,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                   .where((key) => key.pageId == pageId),
               ...state.pausedByEntityKey.keys
                   .where((key) => key.pageId == pageId),
+              ...state.inFlightByEntityKey.keys
+                  .where((key) => key.pageId == pageId),
+              ...state.successorByEntityKey.keys
+                  .where((key) => key.pageId == pageId),
               ...desiredOpsByEntityKey.keys,
             }
           : desiredOpsByEntityKey.keys.toSet();
@@ -299,16 +317,24 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
       state.attentionByEntityKey,
     );
+    final successors = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.successorByEntityKey,
+    );
     var changed = false;
     try {
       for (final key in keys) {
         final desired = desiredOps[key];
         final existing = queued[key];
-        final inFlight = state.inFlightByEntityKey[key]?.pending.op;
+        final inFlightIntent = state.inFlightByEntityKey[key];
+        final inFlight = inFlightIntent?.pending.op;
+        final successorIntent = successors[key];
         final pausedIntent = paused[key];
         final attentionIntent = attention[key];
 
         if (desired == null) {
+          if (inFlight != null || successorIntent != null) {
+            continue;
+          }
           final current = existing ?? pausedIntent ?? attentionIntent;
           if (current != null) {
             await _removeRecordIfCurrent(key, current.pending.op.opId);
@@ -321,11 +347,78 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         }
 
         if (inFlight != null && _sameIntent(desired, inFlight)) {
-          if (existing != null) {
-            await _removeRecordIfCurrent(key, existing.pending.op.opId);
-            queued.remove(key);
+          if (successorIntent != null) {
+            await _putRecord(_recordFor(
+              key: key,
+              pending: inFlightIntent!.pending,
+              status: DurableOutboxStatus.inFlight,
+              clearSuccessorPending: true,
+            ));
+            successors.remove(key);
             changed = true;
           }
+          continue;
+        }
+
+        if (inFlightIntent != null &&
+            key.kind == EntitySyncKeyKind.pageDescriptor) {
+          if (successorIntent != null &&
+              _sameIntent(successorIntent.pending.op, desired)) {
+            continue;
+          }
+          final pending = PendingOp(
+            op: successorIntent == null
+                ? desired
+                : _mergeQueuedIntent(successorIntent.pending.op, desired)!,
+            clientId: successorIntent?.pending.clientId ?? state.clientId!,
+          );
+          await _putRecord(_recordFor(
+            key: key,
+            pending: inFlightIntent.pending,
+            status: DurableOutboxStatus.inFlight,
+            successorPending: pending,
+          ));
+          successors[key] = QueuedEntityIntent(
+            entityKey: key,
+            pending: pending,
+          );
+          queued.remove(key);
+          changed = true;
+          continue;
+        }
+
+        if (existing != null &&
+            successorIntent != null &&
+            key.kind == EntitySyncKeyKind.pageDescriptor) {
+          if (_sameIntent(existing.pending.op, desired)) {
+            await _putRecord(_recordFor(
+              key: key,
+              pending: existing.pending,
+              status: DurableOutboxStatus.queued,
+              clearSuccessorPending: true,
+            ));
+            successors.remove(key);
+            changed = true;
+            continue;
+          }
+          if (_sameIntent(successorIntent.pending.op, desired)) {
+            continue;
+          }
+          final pending = PendingOp(
+            op: _mergeQueuedIntent(successorIntent.pending.op, desired)!,
+            clientId: successorIntent.pending.clientId,
+          );
+          await _putRecord(_recordFor(
+            key: key,
+            pending: existing.pending,
+            status: DurableOutboxStatus.queued,
+            successorPending: pending,
+          ));
+          successors[key] = QueuedEntityIntent(
+            entityKey: key,
+            pending: pending,
+          );
+          changed = true;
           continue;
         }
 
@@ -384,6 +477,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       queuedByEntityKey: queued,
       pausedByEntityKey: paused,
       attentionByEntityKey: attention,
+      successorByEntityKey: successors,
       lastError: attentionMessage,
       clearError: attentionMessage == null,
     );
@@ -446,38 +540,45 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
         state.attentionByEntityKey,
       );
+      final successors = Map<EntitySyncKey, QueuedEntityIntent>.from(
+        state.successorByEntityKey,
+      );
       var changed = false;
       try {
         for (final entry in state.attentionByEntityKey.entries) {
           final record = _recordForActiveKey(entry.key);
           final rejected = entry.value.pending;
           final rejectedOp = rejected.op;
+          final successor = record?.successorPending;
+          final retryOp = successor?.op ?? rejectedOp;
           final retryRevision =
               record?.latestServerRevision ?? rejectedOp.expectedRevision;
           if (retryRevision == null) continue;
           final isTombstoneRestore =
-              (rejectedOp is ElementAddOp || rejectedOp is LineupAddOp) &&
+              (retryOp is ElementAddOp || retryOp is LineupAddOp) &&
                   (record?.lastError == 'missing_expected_revision' ||
                       record?.lastError == 'revision_mismatch');
           final rebasedOp = _rebaseRejectedOp(
-            rejectedOp,
+            retryOp,
             retryRevision,
             preserveAdd: isTombstoneRestore,
           );
           final pending = PendingOp(
             op: rebasedOp,
-            clientId: rejected.clientId,
+            clientId: successor?.clientId ?? rejected.clientId,
           );
           await _putRecord(_recordFor(
             key: entry.key,
             pending: pending,
             status: DurableOutboxStatus.queued,
+            clearSuccessorPending: true,
           ));
           queued[entry.key] = QueuedEntityIntent(
             entityKey: entry.key,
             pending: pending,
           );
           attention.remove(entry.key);
+          successors.remove(entry.key);
           changed = true;
         }
       } catch (error, stackTrace) {
@@ -499,6 +600,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       state = state.copyWith(
         queuedByEntityKey: queued,
         attentionByEntityKey: attention,
+        successorByEntityKey: successors,
         lastError: attentionMessage,
         clearError: attentionMessage == null,
       );
@@ -622,6 +724,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     final inFlight = Map<EntitySyncKey, InFlightEntityIntent>.from(
       state.inFlightByEntityKey,
     );
+    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.queuedByEntityKey,
+    );
+    final successors = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.successorByEntityKey,
+    );
     final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
       state.attentionByEntityKey,
     );
@@ -637,10 +745,49 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       ));
       final current = _recordForActiveKey(sent.entityKey);
       if (current?.pending.op.opId != ack.opId) continue;
-      if (ack.isAck) {
+      final successor = current!.successorPending;
+      final successorRevision = ack.appliedRevision ?? ack.latestRevision;
+      if (successor != null && successorRevision != null) {
+        final promoted = PendingOp(
+          op: _rebaseRejectedOp(
+            successor.op,
+            successorRevision,
+            preserveAdd: true,
+          ),
+          clientId: successor.clientId,
+        );
+        await _putRecord(current.copyWith(
+          pending: promoted,
+          status: DurableOutboxStatus.queued,
+          updatedAt: DateTime.now(),
+          clearSuccessorPending: true,
+          clearError: true,
+          clearLatestServerRevision: true,
+        ));
+        queued[sent.entityKey] = QueuedEntityIntent(
+          entityKey: sent.entityKey,
+          pending: promoted,
+        );
+        successors.remove(sent.entityKey);
+        attention.remove(sent.entityKey);
+      } else if (successor != null) {
+        final retained = current.copyWith(
+          status: DurableOutboxStatus.attention,
+          updatedAt: DateTime.now(),
+          lastError: ack.reason ??
+              'The final Page change is waiting for a server revision.',
+          latestServerRevision: ack.latestRevision,
+        );
+        await _putRecord(retained);
+        attention[sent.entityKey] = QueuedEntityIntent(
+          entityKey: sent.entityKey,
+          pending: sent.pending,
+        );
+      } else if (ack.isAck) {
         await _removeRecordIfCurrent(sent.entityKey, ack.opId);
+        successors.remove(sent.entityKey);
       } else {
-        final rejected = current!.copyWith(
+        final rejected = current.copyWith(
           status: DurableOutboxStatus.attention,
           updatedAt: DateTime.now(),
           lastError: ack.reason ?? 'The server rejected this change.',
@@ -659,7 +806,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       attention: attention,
     );
     state = state.copyWith(
+      queuedByEntityKey: queued,
       inFlightByEntityKey: inFlight,
+      successorByEntityKey: successors,
       attentionByEntityKey: attention,
       isFlushing: false,
       lastFlushAt: DateTime.now(),
@@ -729,6 +878,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     required EntitySyncKey key,
     required PendingOp pending,
     required DurableOutboxStatus status,
+    PendingOp? successorPending,
+    bool clearSuccessorPending = false,
     String? lastError,
   }) {
     final current = _recordForActiveKey(key);
@@ -741,6 +892,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       status: status,
       createdAt: current?.createdAt ?? now,
       updatedAt: now,
+      successorPending: clearSuccessorPending
+          ? null
+          : (successorPending ?? current?.successorPending),
       lastError: lastError,
     );
   }

@@ -938,20 +938,24 @@ class DrawingProvider extends Notifier<DrawingState> {
   DrawingProviderSnapshot takeSnapshot() {
     return DrawingProviderSnapshot(
       state: DrawingState(
-        elements: state.elements.map((element) => cloneDrawingElement(element)).toList(),
+        elements: state.elements
+            .map((element) => cloneDrawingElement(element))
+            .toList(),
         updateCounter: state.updateCounter,
         currentElement: state.currentElement == null
             ? null
             : cloneDrawingElement(state.currentElement!),
       ),
-      poppedElements:
-          poppedElements.map((element) => cloneDrawingElement(element)).toList(),
+      poppedElements: poppedElements
+          .map((element) => cloneDrawingElement(element))
+          .toList(),
     );
   }
 
   void restoreSnapshot(DrawingProviderSnapshot snapshot) {
-    poppedElements =
-        snapshot.poppedElements.map((element) => cloneDrawingElement(element)).toList();
+    poppedElements = snapshot.poppedElements
+        .map((element) => cloneDrawingElement(element))
+        .toList();
     state = DrawingState(
       elements: snapshot.state.elements
           .map((element) => cloneDrawingElement(element))
@@ -960,20 +964,6 @@ class DrawingProvider extends Notifier<DrawingState> {
       currentElement: snapshot.state.currentElement == null
           ? null
           : cloneDrawingElement(snapshot.state.currentElement!),
-    );
-    _triggerRepaint();
-  }
-
-  void switchSides() {
-    final switched = state.elements.map(switchDrawingElementSides).toList();
-    final current = state.currentElement == null
-        ? null
-        : switchDrawingElementSides(state.currentElement!);
-    poppedElements = poppedElements.map(switchDrawingElementSides).toList();
-    state = DrawingState(
-      elements: switched,
-      updateCounter: state.updateCounter,
-      currentElement: current,
     );
     _triggerRepaint();
   }

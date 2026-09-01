@@ -204,7 +204,6 @@ class VideoExporter {
         final agentPaths = AgentTransitionPathPlanner.plan(
           entries: entries,
           geometry: geometry,
-          isAttack: nextPage.isAttack,
           startAgentSize: page.settings.agentSize,
           endAgentSize: nextPage.settings.agentSize,
           coordinateSystem: CoordinateSystem.instance,

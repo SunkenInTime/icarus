@@ -4,11 +4,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/const/agents.dart';
 import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/const/maps.dart';
+import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/settings.dart';
+import 'package:icarus/migrations/canonical_coordinates_migration.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/cloud_migration_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/strategy_page.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 
 bool _adaptersRegistered = false;
@@ -73,11 +80,74 @@ void main() {
     await notifier.maybeMigrate();
     expect(api.createFolderCalls, 2);
   });
+
+  test('migrates legacy defense coordinates before the first cloud upload',
+      () async {
+    const legacyPosition = Offset(1400, 700);
+    const virtualToWorld = 1000 / 831;
+    final agentAnchorWorld = const Offset(
+          Settings.agentSize / 2,
+          Settings.agentSize / 2,
+        ) *
+        virtualToWorld;
+    final expectedCanonicalPosition = Offset(
+      1000 * (16 / 9) - legacyPosition.dx - (agentAnchorWorld.dx * 2),
+      1000 - legacyPosition.dy - (agentAnchorWorld.dy * 2),
+    );
+    final legacyStrategy = StrategyData(
+      id: 'legacy-defense-strategy',
+      name: 'Legacy defense strategy',
+      mapData: MapValue.ascent,
+      versionNumber: CanonicalCoordinatesMigration.version - 1,
+      lastEdited: DateTime.utc(2026),
+      folderID: null,
+      pages: [
+        StrategyPage(
+          id: 'defense-page',
+          name: 'Defense',
+          drawingData: const [],
+          agentData: [
+            PlacedAgent(
+              id: 'agent-1',
+              type: AgentType.jett,
+              position: legacyPosition,
+            ),
+          ],
+          abilityData: const [],
+          textData: const [],
+          imageData: const [],
+          utilityData: const [],
+          sortIndex: 0,
+          isAttack: false,
+          settings: StrategySettings(),
+        ),
+      ],
+    );
+    final strategiesBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
+    await strategiesBox.put(legacyStrategy.id, legacyStrategy);
+
+    await container.read(cloudMigrationProvider.notifier).maybeMigrate();
+
+    expect(container.read(cloudMigrationProvider), isTrue);
+    final storedStrategy = strategiesBox.get(legacyStrategy.id)!;
+    expect(storedStrategy.versionNumber, Settings.versionNumber);
+    expect(
+      storedStrategy.pages.single.agentData.single.position,
+      expectedCanonicalPosition,
+    );
+
+    final uploadedOp = api.appliedBatches.single.single as ElementAddOp;
+    final uploadedAgent = PlacedAgent.fromJson(
+      cloudPayloadData(uploadedOp.payload),
+    );
+    expect(uploadedAgent.position, expectedCanonicalPosition);
+  });
 }
 
 class FakeCloudMigrationApi implements CloudMigrationApi {
   int folderFailuresRemaining = 0;
   int createFolderCalls = 0;
+  final List<List<StrategyOp>> appliedBatches = [];
 
   @override
   Future<void> createFolder({
@@ -126,6 +196,7 @@ class FakeCloudMigrationApi implements CloudMigrationApi {
     required String clientId,
     required List<StrategyOp> ops,
   }) async {
+    appliedBatches.add(List<StrategyOp>.from(ops));
     return [
       for (final op in ops) NoopOpAck(opId: op.opId),
     ];

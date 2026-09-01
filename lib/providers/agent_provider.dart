@@ -7,7 +7,6 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/action_history_models.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:uuid/uuid.dart';
 
@@ -488,24 +487,6 @@ class AgentProvider extends Notifier<List<PlacedAgentNode>> {
     output += "]";
 
     return output;
-  }
-
-  void switchSides() {
-    if (state.isEmpty) return;
-
-    final newState = [...state];
-    for (final agent in newState) {
-      // Flip over both axes, accounting for top-left positioning:
-      // x' = normalizedWidth  - x - wNorm
-      // y' = normalizedHeight - y - hNorm
-      agent.switchSides(ref.read(strategySettingsProvider).agentSize);
-    }
-
-    for (final agent in poppedAgents) {
-      agent.switchSides(ref.read(strategySettingsProvider).agentSize);
-    }
-
-    state = newState;
   }
 
   void clearAll() {

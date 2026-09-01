@@ -13,6 +13,7 @@ import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_cloud_migration.dart';
+import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:uuid/uuid.dart';
 
 final cloudMigrationProvider =
@@ -200,7 +201,22 @@ class CloudMigrationNotifier extends Notifier<bool> {
       }
     }
 
-    for (final strategy in strategies) {
+    for (final storedStrategy in strategies) {
+      late final StrategyData strategy;
+      try {
+        strategy = StrategyMigrator.migrateToCurrentVersion(storedStrategy);
+        if (strategy != storedStrategy) {
+          await Hive.box<StrategyData>(HiveBoxNames.strategiesBox)
+              .put(strategy.id, strategy);
+        }
+      } catch (error, stackTrace) {
+        await recordFailure(
+          source: 'cloud_migration:migrate_local_strategy',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        continue;
+      }
       final pages = [...strategy.pages]
         ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
       final firstPage = pages.isNotEmpty ? pages.first : null;

@@ -11,13 +11,11 @@ import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/image_widget_size_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/text_widget_height_provider.dart';
 import 'package:icarus/providers/utility_provider.dart';
-import 'package:icarus/const/maps.dart';
 import 'package:uuid/uuid.dart';
 
 enum ActionGroup {
@@ -56,14 +54,6 @@ class TransactionSnapshot {
       targetGroups: [...targetGroups],
       before: before.copy(),
       after: after.copy(),
-    );
-  }
-
-  TransactionSnapshot switchSides(ActionHistoryTransformContext context) {
-    return TransactionSnapshot(
-      targetGroups: [...targetGroups],
-      before: before.switchSides(context),
-      after: after.switchSides(context),
     );
   }
 }
@@ -187,158 +177,6 @@ class BulkActionSnapshot {
       textHeightSnapshot: Map<String, Offset>.from(textHeightSnapshot),
     );
   }
-
-  BulkActionSnapshot switchSides(ActionHistoryTransformContext context) {
-    return BulkActionSnapshot(
-      targetGroups: [...targetGroups],
-      actionStateBefore: actionStateBefore
-          .map((action) => action.switchSides(context))
-          .toList(),
-      redoStateBefore:
-          redoStateBefore.map((action) => action.switchSides(context)).toList(),
-      agentSnapshot: agentSnapshot == null
-          ? null
-          : AgentProviderSnapshot(
-              agents: agentSnapshot!.agents
-                  .map(
-                    (agent) => clonePlacedAgentNode(agent)
-                      ..switchSides(context.agentSize),
-                  )
-                  .toList(),
-              poppedAgents: agentSnapshot!.poppedAgents
-                  .map(
-                    (agent) => clonePlacedAgentNode(agent)
-                      ..switchSides(context.agentSize),
-                  )
-                  .toList(),
-            ),
-      abilitySnapshot: abilitySnapshot == null
-          ? null
-          : AbilityProviderSnapshot(
-              abilities: abilitySnapshot!.abilities
-                  .map(
-                    (ability) => clonePlacedAbility(ability)
-                      ..switchSides(
-                        mapScale: context.mapScale,
-                        abilitySize: context.abilitySize,
-                      ),
-                  )
-                  .toList(),
-              poppedAbilities: abilitySnapshot!.poppedAbilities
-                  .map(
-                    (ability) => clonePlacedAbility(ability)
-                      ..switchSides(
-                        mapScale: context.mapScale,
-                        abilitySize: context.abilitySize,
-                      ),
-                  )
-                  .toList(),
-            ),
-      drawingSnapshot: drawingSnapshot == null
-          ? null
-          : DrawingProviderSnapshot(
-              state: DrawingState(
-                elements: drawingSnapshot!.state.elements
-                    .map((element) => switchDrawingElementSides(element))
-                    .toList(),
-                updateCounter: drawingSnapshot!.state.updateCounter,
-                currentElement: drawingSnapshot!.state.currentElement == null
-                    ? null
-                    : switchDrawingElementSides(
-                        drawingSnapshot!.state.currentElement!,
-                      ),
-              ),
-              poppedElements: drawingSnapshot!.poppedElements
-                  .map((element) => switchDrawingElementSides(element))
-                  .toList(),
-            ),
-      textSnapshot: textSnapshot == null
-          ? null
-          : TextProviderSnapshot(
-              texts: textSnapshot!.texts
-                  .map(
-                    (text) =>
-                        ActionObjectState.text(text).switchSides(context).text!,
-                  )
-                  .toList(),
-              poppedText: textSnapshot!.poppedText
-                  .map(
-                    (text) =>
-                        ActionObjectState.text(text).switchSides(context).text!,
-                  )
-                  .toList(),
-            ),
-      imageSnapshot: imageSnapshot == null
-          ? null
-          : PlacedImageProviderSnapshot(
-              images: imageSnapshot!.images
-                  .map(
-                    (image) => ActionObjectState.image(image)
-                        .switchSides(context)
-                        .image!,
-                  )
-                  .toList(),
-              poppedImages: imageSnapshot!.poppedImages
-                  .map(
-                    (image) => ActionObjectState.image(image)
-                        .switchSides(context)
-                        .image!,
-                  )
-                  .toList(),
-            ),
-      utilitySnapshot: utilitySnapshot == null
-          ? null
-          : UtilityProviderSnapshot(
-              utilities: utilitySnapshot!.utilities
-                  .map(
-                    (utility) => clonePlacedUtility(utility)
-                      ..switchSides(
-                        mapScale: context.mapScale,
-                        agentSize: context.agentSize,
-                        abilitySize: context.abilitySize,
-                      ),
-                  )
-                  .toList(),
-              poppedUtilities: utilitySnapshot!.poppedUtilities
-                  .map(
-                    (utility) => clonePlacedUtility(utility)
-                      ..switchSides(
-                        mapScale: context.mapScale,
-                        agentSize: context.agentSize,
-                        abilitySize: context.abilitySize,
-                      ),
-                  )
-                  .toList(),
-            ),
-      lineUpSnapshot: lineUpSnapshot == null
-          ? null
-          : LineUpProviderSnapshot(
-              groups: lineUpSnapshot!.groups
-                  .map(
-                    (group) => group.deepCopy()
-                      ..switchSides(
-                        agentSize: context.agentSize,
-                        abilitySize: context.abilitySize,
-                        mapScale: context.mapScale,
-                      ),
-                  )
-                  .toList(),
-              poppedGroups: lineUpSnapshot!.poppedGroups
-                  .map(
-                    (group) => group.deepCopy()
-                      ..switchSides(
-                        agentSize: context.agentSize,
-                        abilitySize: context.abilitySize,
-                        mapScale: context.mapScale,
-                      ),
-                  )
-                  .toList(),
-            ),
-      strategySettingsSnapshot: strategySettingsSnapshot?.copyWith(),
-      imageSizeSnapshot: Map<String, Offset>.from(imageSizeSnapshot),
-      textHeightSnapshot: Map<String, Offset>.from(textHeightSnapshot),
-    );
-  }
 }
 
 class UserAction {
@@ -366,17 +204,6 @@ class UserAction {
       objectDelta: objectDelta?.clone(),
       bulkSnapshot: bulkSnapshot?.copy(),
       transactionSnapshot: transactionSnapshot?.copy(),
-    );
-  }
-
-  UserAction switchSides(ActionHistoryTransformContext context) {
-    return UserAction(
-      type: type,
-      id: id,
-      group: group,
-      objectDelta: objectDelta?.switchSides(context),
-      bulkSnapshot: bulkSnapshot?.switchSides(context),
-      transactionSnapshot: transactionSnapshot?.switchSides(context),
     );
   }
 
@@ -540,18 +367,6 @@ class ActionProvider extends Notifier<List<UserAction>> {
   void reconcileHistory() {
     state = _reconcileActions(state);
     poppedItems = _reconcileActions(poppedItems);
-  }
-
-  void switchSides() {
-    final mapState = ref.read(mapProvider);
-    final context = ActionHistoryTransformContext(
-      agentSize: ref.read(strategySettingsProvider).agentSize,
-      abilitySize: ref.read(strategySettingsProvider).abilitySize,
-      mapScale: Maps.mapScale[mapState.currentMap] ?? 1.0,
-    );
-    state = state.map((action) => action.switchSides(context)).toList();
-    poppedItems =
-        poppedItems.map((action) => action.switchSides(context)).toList();
   }
 
   void clearAllAsAction() {

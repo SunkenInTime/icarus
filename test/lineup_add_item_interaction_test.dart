@@ -7,11 +7,13 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
+import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/canvas_resize_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
+import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/placed_ability_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/placed_widget_builder.dart';
 import 'package:icarus/widgets/draggable_widgets/agents/agent_widget.dart';
@@ -479,6 +481,104 @@ void main() {
         .screenToCoordinate(initialAgentTopLeft + agentDelta);
     expect(updated.agent.position.dx, closeTo(expectedAgentPosition.dx, 0.001));
     expect(updated.agent.position.dy, closeTo(expectedAgentPosition.dy, 0.001));
+  });
+
+  testWidgets('defense lineup drags persist canonical marker positions',
+      (tester) async {
+    final container = _createContainer();
+    final group = _breachGroup();
+    container.read(lineUpProvider.notifier).addGroup(group);
+    container.read(mapProvider.notifier).switchSide();
+
+    CoordinateSystem(playAreaSize: const Size(900, 600));
+    await _pumpHarness(
+      tester,
+      container: container,
+      child: const SizedBox(
+        width: 900,
+        height: 600,
+        child: LineUpOverlay(),
+      ),
+    );
+
+    final coordinateSystem = CoordinateSystem.instance;
+    final settings = container.read(strategySettingsProvider);
+    final mapScale = Maps.mapScale[MapValue.bind]!;
+    final abilityFinder =
+        find.byKey(const ValueKey('lineup-ability-drag-breach-item'));
+    final initialAbilityTopLeft = tester.getTopLeft(abilityFinder);
+    const abilityDelta = Offset(-55, 65);
+    await tester.drag(abilityFinder, abilityDelta);
+    await tester.pump();
+
+    var updated = container.read(lineUpProvider).groups.single;
+    final expectedAbilityPosition =
+        storedAbilityPositionForRenderedScreenPosition(
+      ability: group.items.single.ability.data.abilityData!,
+      coordinateSystem: coordinateSystem,
+      renderedScreenPosition: initialAbilityTopLeft + abilityDelta,
+      mapScale: mapScale,
+      abilitySize: settings.abilitySize,
+      isAttack: false,
+    );
+    expect(
+      updated.items.single.ability.position.dx,
+      closeTo(expectedAbilityPosition.dx, 0.001),
+    );
+    expect(
+      updated.items.single.ability.position.dy,
+      closeTo(expectedAbilityPosition.dy, 0.001),
+    );
+
+    final agentFinder =
+        find.byKey(const ValueKey('lineup-agent-drag-breach-group'));
+    final initialAgentTopLeft = tester.getTopLeft(agentFinder);
+    const agentDelta = Offset(70, 45);
+    await tester.drag(agentFinder, agentDelta);
+    await tester.pump();
+
+    updated = container.read(lineUpProvider).groups.single;
+    final expectedAgentPosition = storedAgentPositionForRenderedScreenPosition(
+      coordinateSystem: coordinateSystem,
+      renderedScreenPosition: initialAgentTopLeft + agentDelta,
+      agentSize: settings.agentSize,
+      isAttack: false,
+    );
+    expect(updated.agent.position.dx, closeTo(expectedAgentPosition.dx, 0.001));
+    expect(updated.agent.position.dy, closeTo(expectedAgentPosition.dy, 0.001));
+
+    container.read(mapProvider.notifier).switchSide();
+    await tester.pump();
+
+    final attackAgentTopLeft = screenPositionForWidget(
+      widget: updated.agent,
+      coordinateSystem: coordinateSystem,
+      agentSize: settings.agentSize,
+      isAttack: true,
+    );
+    final attackAbilityTopLeft = screenPositionForWidget(
+      widget: updated.items.single.ability,
+      coordinateSystem: coordinateSystem,
+      mapScale: mapScale,
+      abilitySize: settings.abilitySize,
+      isAttack: true,
+    );
+    expect(
+      tester.getTopLeft(agentFinder).dx,
+      closeTo(attackAgentTopLeft.dx, 0.001),
+    );
+    expect(
+      tester.getTopLeft(agentFinder).dy,
+      closeTo(attackAgentTopLeft.dy, 0.001),
+    );
+    expect(
+      tester.getTopLeft(abilityFinder).dx,
+      closeTo(attackAbilityTopLeft.dx, 0.001),
+    );
+    expect(
+      tester.getTopLeft(abilityFinder).dy,
+      closeTo(attackAbilityTopLeft.dy, 0.001),
+    );
   });
 
   testWidgets('locked add-item mode rejects dragging a different agent',

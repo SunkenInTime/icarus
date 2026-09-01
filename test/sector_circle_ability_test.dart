@@ -72,54 +72,6 @@ void main() {
 
       expect(isRotatable(sector), isTrue);
     });
-
-    test('switchSides mirrors position, rotates, and leaves length intact', () {
-      const mapScale = 1.1;
-      const abilitySize = 42.0;
-      final abilityInfo = AbilityInfo(
-        name: 'Sector',
-        iconPath: 'assets/agents/Cypher/1.webp',
-        type: AgentType.cypher,
-        index: 99,
-        abilityData: SectorCircleAbility(
-          iconPath: 'assets/agents/Cypher/1.webp',
-          size: 6.5,
-          rangeOutlineColor: Colors.cyan,
-          sweepAngleDegrees: 75,
-        ),
-      );
-      const initialPosition = Offset(120, 245);
-      const initialRotation = 0.8;
-      const initialLength = 17.0;
-
-      final placedAbility = PlacedAbility(
-        id: 'sector-switch',
-        data: abilityInfo,
-        position: initialPosition,
-        rotation: initialRotation,
-        length: initialLength,
-      );
-
-      final fullSize = abilityInfo.abilityData!
-          .getSize(mapScale: mapScale, abilitySize: abilitySize)
-          .scale(
-            CoordinateSystem.instance.scaleFactor,
-            CoordinateSystem.instance.scaleFactor,
-          );
-      final expectedPosition = getFlippedPosition(
-        position: initialPosition,
-        scaledSize: fullSize,
-        isRotatable: true,
-      );
-
-      placedAbility.switchSides(mapScale: mapScale, abilitySize: abilitySize);
-
-      expect(placedAbility.position.dx, closeTo(expectedPosition.dx, 0.0001));
-      expect(placedAbility.position.dy, closeTo(expectedPosition.dy, 0.0001));
-      expect(
-          placedAbility.rotation, closeTo(initialRotation + math.pi, 0.0001));
-      expect(placedAbility.length, initialLength);
-    });
   });
 
   group('SectorCircleWidget styling', () {

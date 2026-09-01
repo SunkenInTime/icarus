@@ -18,6 +18,7 @@ import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/strategy_page.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
@@ -171,6 +172,18 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
       ],
     );
   }
+
+  void holdInFlight(EntitySyncKey key, StrategyOp op) {
+    state = state.copyWith(
+      inFlightByEntityKey: {
+        key: InFlightEntityIntent(
+          entityKey: key,
+          pending: PendingOp(op: op, clientId: 'test-client'),
+          sentAt: DateTime.utc(2026),
+        ),
+      },
+    );
+  }
 }
 
 Future<void> _settle() async {
@@ -218,6 +231,7 @@ RemotePageSnapshot _pageSnapshot(
   RemotePage page, {
   String? text,
   int contentRevision = 1,
+  CloudPayload settings = const {},
   List<RemoteElement>? elements,
   List<RemoteLineup> lineups = const [],
 }) {
@@ -225,7 +239,7 @@ RemotePageSnapshot _pageSnapshot(
   return RemotePageSnapshot(
     page: page,
     content: RemotePageContent(
-      settings: const {},
+      settings: settings,
       revision: contentRevision,
       createdAt: now,
       updatedAt: now,
@@ -833,6 +847,85 @@ void main() {
             );
 
     expect(desired, isNull);
+  });
+
+  test('final side is emitted while the opposite side is in flight', () async {
+    final page = _page('page-1', 0, revision: 7);
+    final queue = _FakeStrategyOpQueueNotifier();
+    const key = EntitySyncKey.pageDescriptor('page-1');
+    final container = await _syncContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page),
+      )),
+      queue: queue,
+    );
+    container.read(strategyOpQueueProvider);
+    queue.holdInFlight(
+      key,
+      const PagePatchOp(
+        opId: 'defense-in-flight',
+        pagePublicId: 'page-1',
+        payload: {'isAttack': false},
+        expectedPageRevision: 7,
+      ),
+    );
+    container.read(activePageLiveSyncProvider.notifier).markPageHydrated(
+          strategyPublicId: 'cloud-strategy',
+          pageId: page.publicId,
+        );
+
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            );
+
+    final sideOp = desired![key] as PagePatchOp;
+    expect(sideOp.payload, {'isAttack': true});
+    expect(sideOp.expectedPageRevision, 7);
+    expect(
+      desired.keys.where((candidate) =>
+          candidate.kind == EntitySyncKeyKind.element ||
+          candidate.kind == EntitySyncKeyKind.lineup),
+      isEmpty,
+    );
+  });
+
+  test('side switch authors exactly one Page descriptor operation', () async {
+    final page = _page('page-1', 0, revision: 11);
+    final container = await _syncContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(
+          page,
+          settings: const {
+            'agentSize': 35.0,
+            'abilitySize': 25.0,
+            'useNeutralTeamColors': false,
+          },
+        ),
+      )),
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    container.read(activePageLiveSyncProvider.notifier).markPageHydrated(
+          strategyPublicId: 'cloud-strategy',
+          pageId: page.publicId,
+        );
+
+    container.read(mapProvider.notifier).switchSide();
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            );
+
+    expect(desired, hasLength(1));
+    final entry = desired!.entries.single;
+    expect(entry.key, const EntitySyncKey.pageDescriptor('page-1'));
+    final op = entry.value as PagePatchOp;
+    expect(op.payload, {'isAttack': false});
+    expect(op.expectedPageRevision, 11);
   });
 
   test('remote lineup survives hydration and an unrelated outbound diff',

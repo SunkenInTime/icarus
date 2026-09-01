@@ -356,7 +356,6 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       final agentPaths = AgentTransitionPathPlanner.plan(
         entries: entries,
         geometry: transitionGeometry,
-        isAttack: ref.read(mapProvider).isAttack,
         startAgentSize: startSettings.agentSize,
         endAgentSize: endSettings.agentSize,
         coordinateSystem: CoordinateSystem.instance,
