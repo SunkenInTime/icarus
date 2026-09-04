@@ -31,6 +31,7 @@ import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/analytics_service.dart';
 import 'package:icarus/services/discord_presence_service.dart';
 import 'package:icarus/startup/hive_store_launch.dart';
+import 'package:icarus/startup/windows_process_termination.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
@@ -72,6 +73,7 @@ Future<void> main(List<String> args) async {
           onSecondWindow: (args) {
             publishSecondInstanceArgs(args);
           },
+          exitFunction: terminateDuplicateWindowsProcess,
         );
       }
 
