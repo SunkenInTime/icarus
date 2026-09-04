@@ -250,11 +250,14 @@ void main() {
       );
     });
 
-    test('reconciliation replaces rejected immutable opId before removal',
+    test('reconciliation retains rejected work and updates its successor',
         () async {
-      final saved = record(status: DurableOutboxStatus.attention);
+      final saved = record(status: DurableOutboxStatus.attention).copyWith(
+        latestServerRevision: 7,
+        lastError: 'revision_mismatch',
+      );
       await store.put(saved);
-      final notifier = start();
+      var notifier = start();
       await notifier.syncDesiredOpsForPage(
         pageId: 'page-1',
         desiredOpsByEntityKey: {
@@ -263,14 +266,58 @@ void main() {
         },
         flushImmediately: false,
       );
-      final current = container!.read(strategyOpQueueProvider);
-      expect(current.attentionByEntityKey, isEmpty);
-      expect(current.queuedByEntityKey.values.single.pending.op.opId,
-          'replacement');
+      var current = container!.read(strategyOpQueueProvider);
       expect(
-        (store.values.values.single as Map)['opId'],
-        'replacement',
+          current.attentionByEntityKey.values.single.pending.op.opId, 'op-1');
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(
+        current.successorByEntityKey.values.single.pending.op.payload,
+        {'value': 'new'},
       );
+
+      notifier = start();
+      current = container!.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, hasLength(1));
+      expect(current.successorByEntityKey, hasLength(1));
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          const EntitySyncKey.element('page-1', 'element-1'):
+              elementOp(opId: 'newer-replacement', value: 'newest'),
+        },
+        flushImmediately: false,
+      );
+
+      current = container!.read(strategyOpQueueProvider);
+      expect(
+          current.attentionByEntityKey.values.single.pending.op.opId, 'op-1');
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(
+        current.successorByEntityKey.values.single.pending.op.payload,
+        {'value': 'newest'},
+      );
+      var durable = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durable.status, DurableOutboxStatus.attention);
+      expect(durable.pending.op.opId, 'op-1');
+      expect(durable.successorPending!.op.payload, {'value': 'newest'});
+      expect(durable.latestServerRevision, 7);
+      expect(durable.lastError, 'revision_mismatch');
+
+      await notifier.retryRejected(flushImmediately: false);
+      current = container!.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, isEmpty);
+      expect(current.successorByEntityKey, isEmpty);
+      final retry = current.queuedByEntityKey.values.single.pending.op;
+      expect(retry.opId, isNot(anyOf('op-1', 'newer-replacement')));
+      expect(retry.payload, {'value': 'newest'});
+      expect(retry.expectedRevision, 7);
+      durable = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durable.status, DurableOutboxStatus.queued);
+      expect(durable.successorPending, isNull);
     });
 
     test('ordinary reconciliation does not discard attention work', () async {
@@ -966,6 +1013,50 @@ void main() {
       expect(durable.pending.op.opId, 'conflicting-first');
       expect(durable.successorPending!.op.payload, {'value': 'second'});
       expect(durable.latestServerRevision, 2);
+
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: _elementPatch(
+            opId: 'retained-second-again',
+            value: 'second',
+            expectedRevision: 1,
+          ),
+        },
+        flushImmediately: true,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      final reconciled = container.read(strategyOpQueueProvider);
+      expect(repository.calls, hasLength(1));
+      expect(reconciled.attentionByEntityKey, contains(key));
+      expect(reconciled.queuedByEntityKey, isEmpty);
+      expect(
+        reconciled.successorByEntityKey[key]!.pending.op.payload,
+        {'value': 'second'},
+      );
+      final durableAfterReconcile = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durableAfterReconcile.status, DurableOutboxStatus.attention);
+      expect(durableAfterReconcile.pending.op.opId, 'conflicting-first');
+      expect(
+        durableAfterReconcile.successorPending!.op.payload,
+        {'value': 'second'},
+      );
+      expect(durableAfterReconcile.latestServerRevision, 2);
+
+      await notifier.retryRejected(flushImmediately: true);
+      await repository.secondStarted.future;
+      final retried = repository.calls[1].single as ElementPatchOp;
+      expect(retried.opId, isNot('retained-second'));
+      expect(retried.payload, {'value': 'second'});
+      expect(retried.expectedElementRevision, 2);
+      repository.completeSecond(AppliedOpAck(
+        opId: retried.opId,
+        revision: 3,
+      ));
+      await repository.secondCompleted.future;
     });
 
     test('promotes an edit after an element add as a patch', () async {

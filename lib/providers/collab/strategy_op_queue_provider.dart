@@ -331,11 +331,56 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final pausedIntent = paused[key];
         final attentionIntent = attention[key];
 
+        // A rejected op remains the durable authority until the user
+        // explicitly retries it. Reconciliation may update its successor, but
+        // it must never make rejected work eligible for an automatic flush.
+        if (attentionIntent != null) {
+          if (desired == null) continue;
+          final current = _recordForActiveKey(key);
+          if (current == null) {
+            throw StateError('Durable attention record is missing for $key.');
+          }
+          if (_sameIntent(attentionIntent.pending.op, desired)) {
+            if (successorIntent != null) {
+              await _putRecord(current.copyWith(
+                clearSuccessorPending: true,
+                updatedAt: DateTime.now(),
+              ));
+              successors.remove(key);
+              changed = true;
+            }
+            continue;
+          }
+          if (successorIntent != null &&
+              _sameIntent(successorIntent.pending.op, desired)) {
+            continue;
+          }
+          final pending = PendingOp(
+            op: successorIntent == null
+                ? desired
+                : _mergeQueuedIntent(successorIntent.pending.op, desired) ??
+                    desired,
+            clientId: successorIntent?.pending.clientId ??
+                attentionIntent.pending.clientId,
+          );
+          await _putRecord(current.copyWith(
+            status: DurableOutboxStatus.attention,
+            successorPending: pending,
+            updatedAt: DateTime.now(),
+          ));
+          successors[key] = QueuedEntityIntent(
+            entityKey: key,
+            pending: pending,
+          );
+          changed = true;
+          continue;
+        }
+
         if (desired == null) {
           if (inFlight != null || successorIntent != null) {
             continue;
           }
-          final current = existing ?? pausedIntent ?? attentionIntent;
+          final current = existing ?? pausedIntent;
           if (current != null) {
             await _removeRecordIfCurrent(key, current.pending.op.opId);
             queued.remove(key);
@@ -425,14 +470,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           continue;
         }
 
-        // A rejected opId is an immutable server event. Reconciliation must
-        // replace it with the newly based op instead of replaying the reject.
-        final base = attentionIntent ?? pausedIntent ?? existing;
-        final merged = attentionIntent != null
+        final base = pausedIntent ?? existing;
+        final merged = base == null
             ? desired
-            : (base == null
-                ? desired
-                : _mergeQueuedIntent(base.pending.op, desired));
+            : _mergeQueuedIntent(base.pending.op, desired);
         if (merged == null) {
           if (base != null) {
             await _removeRecordIfCurrent(key, base.pending.op.opId);
@@ -447,9 +488,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final pending = PendingOp(
           op: merged,
           clientId: base?.pending.clientId ?? state.clientId!,
-          attempts: attentionIntent != null ? 0 : (base?.pending.attempts ?? 0),
-          lastAttemptAt:
-              attentionIntent != null ? null : base?.pending.lastAttemptAt,
+          attempts: base?.pending.attempts ?? 0,
+          lastAttemptAt: base?.pending.lastAttemptAt,
         );
         final record = _recordFor(
           key: key,
