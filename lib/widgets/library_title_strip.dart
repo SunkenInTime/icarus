@@ -123,7 +123,6 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
                 hintText: 'Search',
               ),
             ),
-            const SizedBox(width: 4),
             _buildSortMenu(),
             const SizedBox(width: 8),
             if (tab == LibraryTab.shared)
