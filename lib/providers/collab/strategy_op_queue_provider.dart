@@ -360,8 +360,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           continue;
         }
 
-        if (inFlightIntent != null &&
-            key.kind == EntitySyncKeyKind.pageDescriptor) {
+        if (inFlightIntent != null) {
           if (successorIntent != null &&
               _sameIntent(successorIntent.pending.op, desired)) {
             continue;
@@ -387,9 +386,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           continue;
         }
 
-        if (existing != null &&
-            successorIntent != null &&
-            key.kind == EntitySyncKeyKind.pageDescriptor) {
+        if (existing != null && successorIntent != null) {
           if (_sameIntent(existing.pending.op, desired)) {
             await _putRecord(_recordFor(
               key: key,
@@ -746,8 +743,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       final current = _recordForActiveKey(sent.entityKey);
       if (current?.pending.op.opId != ack.opId) continue;
       final successor = current!.successorPending;
-      final successorRevision = ack.appliedRevision ?? ack.latestRevision;
-      if (successor != null && successorRevision != null) {
+      // Only an accepted predecessor establishes a revision for automatic
+      // promotion. A rejected predecessor leaves both intents in attention.
+      final successorRevision = ack.appliedRevision;
+      if (successor != null && ack.isAck && successorRevision != null) {
         final promoted = PendingOp(
           op: _rebaseRejectedOp(
             successor.op,
@@ -775,7 +774,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           status: DurableOutboxStatus.attention,
           updatedAt: DateTime.now(),
           lastError: ack.reason ??
-              'The final Page change is waiting for a server revision.',
+              'The final change is waiting for conflict resolution.',
           latestServerRevision: ack.latestRevision,
         );
         await _putRecord(retained);

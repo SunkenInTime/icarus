@@ -770,6 +770,204 @@ void main() {
       await replayRepository.secondCompleted.future;
     });
   });
+
+  group('same-entity final intent', () {
+    test('keeps an element successor behind its in-flight predecessor',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(_elementPatch(
+        opId: 'first-edit',
+        value: 'first',
+        expectedRevision: 1,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: _elementPatch(
+            opId: 'second-edit',
+            value: 'second',
+            expectedRevision: 1,
+          ),
+        },
+      );
+
+      final duringFirst = container.read(strategyOpQueueProvider);
+      expect(
+        duringFirst.inFlightByEntityKey[key]!.pending.op.opId,
+        'first-edit',
+      );
+      expect(
+        duringFirst.successorByEntityKey[key]!.pending.op.payload,
+        {'value': 'second'},
+      );
+      final durableDuringFirst = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durableDuringFirst.pending.op.opId, 'first-edit');
+      expect(
+        durableDuringFirst.successorPending!.op.payload,
+        {'value': 'second'},
+      );
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'first-edit',
+        revision: 2,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final promoted = repository.calls[1].single as ElementPatchOp;
+      expect(promoted.payload, {'value': 'second'});
+      expect(promoted.expectedElementRevision, 2);
+      expect(promoted.opId, isNot('second-edit'));
+
+      repository.completeSecond(AppliedOpAck(
+        opId: promoted.opId,
+        revision: 3,
+      ));
+      await repository.secondCompleted.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+      expect(store.values, isEmpty);
+    });
+
+    test('restart replays an element predecessor before its successor',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final firstRepository = _SequencedAckRepository();
+      var container = _cloudQueueContainer(
+        store: store,
+        repository: firstRepository,
+      );
+      var notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(_elementPatch(
+        opId: 'first-before-restart',
+        value: 'first',
+        expectedRevision: 4,
+      ));
+      unawaited(notifier.flushNow());
+      await firstRepository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: _elementPatch(
+            opId: 'second-after-restart',
+            value: 'second',
+            expectedRevision: 4,
+          ),
+        },
+      );
+      container.dispose();
+
+      final replayRepository = _SequencedAckRepository();
+      container = _cloudQueueContainer(
+        store: store,
+        repository: replayRepository,
+      );
+      addTearDown(container.dispose);
+      notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await replayRepository.firstStarted.future;
+
+      final replayed = replayRepository.calls.first.single as ElementPatchOp;
+      expect(replayed.opId, 'first-before-restart');
+      expect(replayed.payload, {'value': 'first'});
+      expect(
+        container
+            .read(strategyOpQueueProvider)
+            .successorByEntityKey[key]!
+            .pending
+            .op
+            .payload,
+        {'value': 'second'},
+      );
+
+      replayRepository.completeFirst(const AppliedOpAck(
+        opId: 'first-before-restart',
+        revision: 5,
+      ));
+      await replayRepository.secondStarted.future;
+      final finalEdit = replayRepository.calls[1].single as ElementPatchOp;
+      expect(finalEdit.payload, {'value': 'second'});
+      expect(finalEdit.expectedElementRevision, 5);
+      replayRepository.completeSecond(AppliedOpAck(
+        opId: finalEdit.opId,
+        revision: 6,
+      ));
+      await replayRepository.secondCompleted.future;
+    });
+
+    test('rejected predecessor leaves its element successor in attention',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(_elementPatch(
+        opId: 'conflicting-first',
+        value: 'first',
+        expectedRevision: 1,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: _elementPatch(
+            opId: 'retained-second',
+            value: 'second',
+            expectedRevision: 1,
+          ),
+        },
+      );
+
+      repository.completeFirst(const RejectedOpAck(
+        opId: 'conflicting-first',
+        rejectionReason: OpRejectionReason.revisionMismatch,
+        current: ElementCurrentSnapshot(revision: 2, value: {'value': 'peer'}),
+      ));
+      await firstFlush;
+      await Future<void>.delayed(Duration.zero);
+
+      final conflicted = container.read(strategyOpQueueProvider);
+      expect(repository.calls, hasLength(1));
+      expect(conflicted.attentionByEntityKey, contains(key));
+      expect(
+        conflicted.successorByEntityKey[key]!.pending.op.payload,
+        {'value': 'second'},
+      );
+      final durable = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durable.status, DurableOutboxStatus.attention);
+      expect(durable.pending.op.opId, 'conflicting-first');
+      expect(durable.successorPending!.op.payload, {'value': 'second'});
+      expect(durable.latestServerRevision, 2);
+    });
+  });
 }
 
 ProviderContainer _cloudQueueContainer({
@@ -804,6 +1002,20 @@ PagePatchOp _pageSideOp({
     pagePublicId: 'page-1',
     payload: {'isAttack': isAttack},
     expectedPageRevision: expectedRevision,
+  );
+}
+
+ElementPatchOp _elementPatch({
+  required String opId,
+  required String value,
+  required int expectedRevision,
+}) {
+  return ElementPatchOp(
+    opId: opId,
+    elementPublicId: 'element-1',
+    pagePublicId: 'page-1',
+    payload: {'value': value},
+    expectedElementRevision: expectedRevision,
   );
 }
 

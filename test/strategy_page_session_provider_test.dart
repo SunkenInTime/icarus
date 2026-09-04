@@ -210,9 +210,12 @@ RemoteElement _textElement(
   String id,
   String value, {
   int revision = 1,
+  int sortIndex = 0,
+  bool worldSized = false,
   bool deleted = false,
 }) {
   final text = PlacedText(id: id, position: const Offset(10, 20))..text = value;
+  if (worldSized) text.markSizeAsWorld();
   final payload = Map<String, dynamic>.from(text.toJson())
     ..['elementType'] = 'text';
   return RemoteElement(
@@ -221,7 +224,7 @@ RemoteElement _textElement(
     pagePublicId: pageId,
     elementType: 'text',
     payload: cloudElementPayload(kind: 'text', data: payload),
-    sortIndex: 0,
+    sortIndex: sortIndex,
     revision: revision,
     deleted: deleted,
   );
@@ -892,6 +895,59 @@ void main() {
     );
   });
 
+  test('final text is emitted while an earlier edit is in flight', () async {
+    final page = _page('page-1', 0);
+    const textId = 'text-page-1';
+    final remoteText = _textElement(
+      page.publicId,
+      textId,
+      'before',
+      worldSized: true,
+    );
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, elements: [remoteText]),
+      )),
+      queue: queue,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    const key = EntitySyncKey.element('page-1', textId);
+    queue.holdInFlight(
+      key,
+      ElementPatchOp(
+        opId: 'first-edit-in-flight',
+        elementPublicId: textId,
+        pagePublicId: page.publicId,
+        payload: _textElement(
+          page.publicId,
+          textId,
+          'first-edit',
+          worldSized: true,
+        ).payload,
+        sortIndex: 0,
+        expectedElementRevision: 1,
+      ),
+    );
+
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            );
+
+    final finalEdit = desired![key] as ElementPatchOp;
+    expect(finalEdit.payload.toString(), contains('before'));
+    expect(finalEdit.expectedElementRevision, 1);
+  });
+
   test('side switch authors exactly one Page descriptor operation', () async {
     final page = _page('page-1', 0, revision: 11);
     final container = await _syncContainer(
@@ -1098,6 +1154,98 @@ void main() {
     await _settle();
     expect(container.read(textProvider).single.text, 'local-intent');
     expect(container.read(strategyOpQueueProvider).pending, isNotEmpty);
+  });
+
+  test(
+      'collaborator edits stay based on the page this client actually hydrated',
+      () async {
+    final page = _page('page-1', 0);
+    const localTextId = 'local-text';
+    const collaboratorTextId = 'collaborator-text';
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(
+        page,
+        elements: [
+          _textElement(
+            page.publicId,
+            localTextId,
+            'shared-before',
+            worldSized: true,
+          ),
+          _textElement(
+            page.publicId,
+            collaboratorTextId,
+            'collaborator-before',
+            sortIndex: 1,
+            worldSized: true,
+          ),
+        ],
+      ),
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+
+    container.read(textProvider.notifier).commitText(
+          localTextId,
+          'this-client-edit',
+        );
+    await _settle();
+
+    remote.setSnapshot(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(
+        page,
+        elements: [
+          _textElement(
+            page.publicId,
+            localTextId,
+            'collaborator-winner',
+            revision: 2,
+            worldSized: true,
+          ),
+          _textElement(
+            page.publicId,
+            collaboratorTextId,
+            'collaborator-after',
+            revision: 2,
+            sortIndex: 1,
+            worldSized: true,
+          ),
+        ],
+      ),
+    ));
+    await _settle();
+
+    expect(
+      container
+          .read(textProvider)
+          .firstWhere((text) => text.id == collaboratorTextId)
+          .text,
+      'collaborator-before',
+    );
+
+    await session.flushCurrentPage();
+
+    final elementOps = container
+        .read(strategyOpQueueProvider)
+        .queuedByEntityKey
+        .entries
+        .where((entry) => entry.key.kind == EntitySyncKeyKind.element)
+        .toList(growable: false);
+    expect(elementOps, hasLength(1));
+    expect(elementOps.single.key.entityId, localTextId);
+    expect(elementOps.single.value.pending.op.expectedRevision, 1);
+    expect(
+      elementOps.single.value.pending.op.payload.toString(),
+      contains('this-client-edit'),
+    );
   });
 
   test('local mode page switching keeps its shipped Hive shape', () async {
