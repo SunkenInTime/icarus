@@ -898,7 +898,7 @@ void main() {
       await notifier.enqueue(op, flushImmediately: false);
 
       var current = container.read(strategyOpQueueProvider);
-      expect(current.pending, isEmpty);
+      expect(current.attentionByEntityKey[key]!.pending.op, op);
       expect(current.hasDurabilityFailure, isTrue);
       expect(current.needsAttention, isTrue);
       expect(current.outboxIsReliable, isFalse);
@@ -1136,52 +1136,100 @@ void main() {
       expect(store.attentionWrites, 1);
     });
 
-    for (final dropBeforeThrow in <bool>[false, true]) {
-      test(
-          'Use cloud clears uncertain oversized work when the parking '
-          '${dropBeforeThrow ? 'record is missing' : 'write failed'}',
-          () async {
-        final store = _OversizedParkingFailureStore(
-          dropBeforeThrow: dropBeforeThrow,
-        );
-        final container = _cloudQueueContainer(
-          store: store,
-          repository: _RecordingAckRepository(),
-        );
-        addTearDown(container.dispose);
-        final notifier = container.read(strategyOpQueueProvider.notifier)
-          ..setActiveStrategy('strategy-1', accountId: 'account-a');
-        const key = EntitySyncKey.element('page-1', 'element-large');
-        await notifier.enqueue(
-          _largeElementPatch(
-            opId: 'oversized-explicit-discard',
-            elementId: 'element-large',
-          ),
-          flushImmediately: false,
-        );
-        await notifier.flushNow();
+    test(
+        'a legacy queued oversized record parks without overwrite and survives '
+        'restart', () async {
+      final store = _OversizedParkingFailureStore(dropBeforeThrow: true);
+      final oversized = _largeElementPatch(
+        opId: 'legacy-oversized',
+        elementId: 'element-large',
+      );
+      const key = EntitySyncKey.element('page-1', 'element-large');
+      await store.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: key,
+        pending: PendingOp(op: oversized, clientId: 'stable-client'),
+        status: DurableOutboxStatus.queued,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      ));
+      final repository = _RecordingAckRepository();
+      var container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      var notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
 
-        var current = container.read(strategyOpQueueProvider);
-        expect(current.attentionByEntityKey, contains(key));
-        expect(current.hasDurabilityFailure, isTrue);
-        expect(current.outboxIsReliable, isFalse);
-        expect(
-          store.load().records.isEmpty,
-          dropBeforeThrow,
-        );
+      await notifier.flushNow();
 
-        final discarded = await notifier.discardRejected({key});
+      var current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(key));
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(repository.calls, isEmpty);
+      expect(store.attentionWrites, 0);
+      expect(store.load().records.single.status, DurableOutboxStatus.queued);
 
-        expect(discarded, {key});
-        current = container.read(strategyOpQueueProvider);
-        expect(current.attentionByEntityKey, isEmpty);
-        expect(current.hasDurabilityFailure, isFalse);
-        expect(current.outboxIsReliable, isTrue);
-        expect(current.lastError, isNull);
-        expect(store.load().records, isEmpty);
-        expect(store.removalAttempts, 1);
-      });
-    }
+      container.dispose();
+      container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.flushNow();
+
+      current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(key));
+      expect(current.lastError, cloudOperationTooLargeMessage);
+      expect(repository.calls, isEmpty);
+      expect(store.attentionWrites, 0);
+      expect(store.load().records.single.pending.op.opId, oversized.opId);
+
+      final discarded = await notifier.discardRejected({key});
+      expect(discarded, {key});
+      expect(store.load().records, isEmpty);
+    });
+
+    test('Use cloud clears an uncertain oversized first-write failure',
+        () async {
+      final store = _OversizedParkingFailureStore(dropBeforeThrow: true);
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _RecordingAckRepository(),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-large');
+      await notifier.enqueue(
+        _largeElementPatch(
+          opId: 'oversized-explicit-discard',
+          elementId: 'element-large',
+        ),
+        flushImmediately: false,
+      );
+      await notifier.flushNow();
+
+      var current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(key));
+      expect(current.hasDurabilityFailure, isTrue);
+      expect(current.outboxIsReliable, isFalse);
+      expect(store.load().records, isEmpty);
+
+      final discarded = await notifier.discardRejected({key});
+
+      expect(discarded, {key});
+      current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, isEmpty);
+      expect(current.hasDurabilityFailure, isFalse);
+      expect(current.outboxIsReliable, isTrue);
+      expect(current.lastError, isNull);
+      expect(store.load().records, isEmpty);
+      expect(store.removalAttempts, 1);
+    });
 
     test('Use cloud remains fail-closed when uncertain removal fails',
         () async {
@@ -1211,7 +1259,7 @@ void main() {
       expect(current.hasDurabilityFailure, isTrue);
       expect(current.outboxIsReliable, isFalse);
       expect(current.lastError, contains('could not be removed'));
-      expect(store.load().records.single.status, DurableOutboxStatus.queued);
+      expect(store.load().records, isEmpty);
       expect(store.removalAttempts, 1);
     });
 
