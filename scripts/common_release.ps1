@@ -131,6 +131,32 @@ function Resolve-CloudBuildConfiguration {
     }
 }
 
+function Test-PublishesStablePages {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourceDirectory,
+        [Parameter()]
+        [string[]]$SyncPaths = @()
+    )
+
+    $explicitStablePath = @($SyncPaths | Where-Object {
+        (($_ -replace '\\', '/').Trim('/')) -match '^(updates|downloads)/windows/stable($|/)'
+    }).Count -gt 0
+    if ($explicitStablePath) {
+        return $true
+    }
+
+    if ($SyncPaths.Count -gt 0) {
+        return $false
+    }
+
+    $stableRoots = @(
+        (Join-Path $SourceDirectory "updates\windows\stable"),
+        (Join-Path $SourceDirectory "downloads\windows\stable")
+    )
+    return @($stableRoots | Where-Object { Test-Path -LiteralPath $_ }).Count -gt 0
+}
+
 function Get-FlutterRoot {
     param(
         [Parameter(Mandatory = $true)]

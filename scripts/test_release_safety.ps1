@@ -54,6 +54,26 @@ Assert-ThrowsContaining -ExpectedMessage "only run from branch 'main'" -Action {
     Assert-ReleaseBranch -RepoRoot $repoRoot -ReleaseTarget "store" -BranchName "feature/cloud"
 }
 
+if (-not (Test-PublishesStablePages -SourceDirectory $repoRoot -SyncPaths "updates/windows/stable")) {
+    throw "An explicit stable updater path must require the stable branch guard."
+}
+if (Test-PublishesStablePages -SourceDirectory $repoRoot -SyncPaths "updates/windows/prerelease") {
+    throw "An explicit prerelease updater path must remain available on feature branches."
+}
+
+$pagesFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-release-safety-" + [guid]::NewGuid().ToString("N"))
+try {
+    New-Item -ItemType Directory -Force -Path (Join-Path $pagesFixtureRoot "downloads\windows\stable") | Out-Null
+    if (-not (Test-PublishesStablePages -SourceDirectory $pagesFixtureRoot)) {
+        throw "A full-directory publish containing stable downloads must require the stable branch guard."
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $pagesFixtureRoot) {
+        Remove-Item -LiteralPath $pagesFixtureRoot -Recurse -Force
+    }
+}
+
 $prereleaseConfig = Resolve-CloudBuildConfiguration -ReleaseTarget "prerelease"
 if ($prereleaseConfig.Environment -ne "development") {
     throw "Prerelease builds must select the development cloud environment."
