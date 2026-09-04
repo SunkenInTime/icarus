@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -879,6 +880,624 @@ void main() {
     await flush;
   });
 
+  group('cloud payload policy', () {
+    test('serialized operation size counts Unicode UTF-8 bytes', () {
+      final op = _largeElementPatch(
+        opId: 'unicode-size',
+        elementId: 'element-unicode',
+        value: _repeat('界', 3),
+      );
+      final serialized = jsonEncode(op.toConvexJson());
+
+      expect(
+        serializedCloudOperationUtf8Bytes(op),
+        utf8.encode(serialized).length,
+      );
+      expect(utf8.encode(serialized).length, greaterThan(serialized.length));
+    });
+
+    test(
+        'an initial durable enqueue failure stays unreliable until the exact '
+        'record is rewritten', () async {
+      final store = _FirstPutFailureStore();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _RecordingAckRepository(),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const op = ElementPatchOp(
+        opId: 'initial-write-failure',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'unsaved'},
+        expectedElementRevision: 1,
+      );
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(op, flushImmediately: false);
+
+      var current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey[key]!.pending.op, op);
+      expect(current.hasDurabilityFailure, isTrue);
+      expect(current.needsAttention, isTrue);
+      expect(current.outboxIsReliable, isFalse);
+      expect(current.lastError, contains('could not be saved'));
+      expect(store.values, isEmpty);
+
+      await notifier.enqueue(op, flushImmediately: false);
+
+      current = container.read(strategyOpQueueProvider);
+      expect(current.queuedByEntityKey, contains(key));
+      expect(current.hasDurabilityFailure, isFalse);
+      expect(current.outboxIsReliable, isTrue);
+      expect(current.lastError, isNull);
+      expect(store.load().records.single.pending.op.opId, op.opId);
+    });
+
+    test('an oversized op is durably parked while independent work lands',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _RecordingAckRepository();
+      var container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      var notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      container
+          .read(cloudCollabModeProvider.notifier)
+          .setForceLocalFallback(true);
+      final oversized = _largeElementPatch(
+        opId: 'oversized',
+        elementId: 'element-large',
+      );
+      const valid = ElementPatchOp(
+        opId: 'independent',
+        elementPublicId: 'element-small',
+        pagePublicId: 'page-1',
+        payload: {'value': 'safe'},
+        expectedElementRevision: 1,
+      );
+      expect(
+        serializedCloudOperationUtf8Bytes(oversized),
+        greaterThan(maxCloudOperationBytes),
+      );
+      await notifier.enqueue(oversized, flushImmediately: false);
+      await notifier.enqueue(valid, flushImmediately: false);
+      container
+          .read(cloudCollabModeProvider.notifier)
+          .setForceLocalFallback(false);
+
+      await notifier.flushNow();
+
+      expect(repository.calls, hasLength(1));
+      expect(repository.calls.single.map((op) => op.opId), ['independent']);
+      var current = container.read(strategyOpQueueProvider);
+      const oversizedKey =
+          EntitySyncKey.element('page-1', 'element-large');
+      expect(current.attentionByEntityKey, contains(oversizedKey));
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(current.lastError, cloudOperationTooLargeMessage);
+      var durable = store.load().records.single;
+      expect(durable.status, DurableOutboxStatus.attention);
+      expect(durable.pending.op.opId, 'oversized');
+      expect(durable.lastError, cloudOperationTooLargeMessage);
+
+      container.dispose();
+      repository.calls.clear();
+      container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.flushNow();
+
+      current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(oversizedKey));
+      expect(current.lastError, cloudOperationTooLargeMessage);
+      expect(repository.calls, isEmpty);
+      durable = store.load().records.single;
+      expect(durable.status, DurableOutboxStatus.attention);
+      expect(durable.pending.op.opId, 'oversized');
+    });
+
+    test('an over-wide array is parked before independent transport',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _RecordingAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      final wide = ElementPatchOp(
+        opId: 'wide-array',
+        elementPublicId: 'element-wide',
+        pagePublicId: 'page-1',
+        payload: {
+          'kind': 'drawing',
+          'payloadVersion': 1,
+          'data': {'points': List<int>.filled(maxCloudArrayEntries + 1, 0)},
+        },
+        expectedElementRevision: 1,
+      );
+      expect(
+        serializedCloudOperationUtf8Bytes(wide),
+        lessThan(maxCloudOperationBytes),
+      );
+      expect(cloudOperationExceedsPolicy(wide), isTrue);
+      await notifier.enqueue(wide, flushImmediately: false);
+      await notifier.enqueue(
+        const ElementPatchOp(
+          opId: 'wide-array-sibling',
+          elementPublicId: 'element-small',
+          pagePublicId: 'page-1',
+          payload: {'value': 'safe'},
+          expectedElementRevision: 1,
+        ),
+        flushImmediately: false,
+      );
+
+      await notifier.flushNow();
+
+      expect(repository.calls, hasLength(1));
+      expect(repository.calls.single.map((op) => op.opId), [
+        'wide-array-sibling',
+      ]);
+      expect(
+        container.read(strategyOpQueueProvider).attentionByEntityKey,
+        contains(const EntitySyncKey.element('page-1', 'element-wide')),
+      );
+      expect(store.load().records.single.lastError,
+          cloudOperationTooLargeMessage);
+    });
+
+    test('a failed oversized parking write blocks all transport and retries',
+        () async {
+      final store = _OversizedParkingFailureStore();
+      final repository = _RecordingAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.enqueue(
+        _largeElementPatch(
+          opId: 'oversized-write-failure',
+          elementId: 'element-large',
+        ),
+        flushImmediately: false,
+      );
+      await notifier.enqueue(
+        const ElementPatchOp(
+          opId: 'independent-after-write-failure',
+          elementPublicId: 'element-small',
+          pagePublicId: 'page-1',
+          payload: {'value': 'safe'},
+          expectedElementRevision: 1,
+        ),
+        flushImmediately: false,
+      );
+
+      await notifier.flushNow();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(repository.calls, isEmpty);
+      expect(current.outboxIsReliable, isFalse);
+      expect(current.hasDurabilityFailure, isTrue);
+      expect(
+        current.attentionByEntityKey,
+        contains(const EntitySyncKey.element('page-1', 'element-large')),
+      );
+      expect(
+        current.queuedByEntityKey,
+        contains(const EntitySyncKey.element('page-1', 'element-small')),
+      );
+      expect(current.lastError, contains('Nothing was sent'));
+      expect(store.attentionWrites, 1);
+    });
+
+    test('a missing durable oversized record blocks all transport', () async {
+      final store = _OversizedParkingFailureStore(dropBeforeThrow: true);
+      final repository = _RecordingAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.enqueue(
+        _largeElementPatch(
+          opId: 'oversized-missing-record',
+          elementId: 'element-large',
+        ),
+        flushImmediately: false,
+      );
+      await notifier.enqueue(
+        const ElementPatchOp(
+          opId: 'independent-after-missing-record',
+          elementPublicId: 'element-small',
+          pagePublicId: 'page-1',
+          payload: {'value': 'safe'},
+          expectedElementRevision: 1,
+        ),
+        flushImmediately: false,
+      );
+
+      await notifier.flushNow();
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+
+      final current = container.read(strategyOpQueueProvider);
+      expect(repository.calls, isEmpty);
+      expect(current.outboxIsReliable, isFalse);
+      expect(current.hasDurabilityFailure, isTrue);
+      expect(
+        current.attentionByEntityKey,
+        contains(const EntitySyncKey.element('page-1', 'element-large')),
+      );
+      expect(
+        current.queuedByEntityKey,
+        contains(const EntitySyncKey.element('page-1', 'element-small')),
+      );
+      expect(current.lastError, contains('Nothing was sent'));
+      expect(
+        store.load().records.map((record) => record.pending.op.opId),
+        isNot(contains('oversized-missing-record')),
+      );
+      expect(store.attentionWrites, 1);
+    });
+
+    test(
+        'a legacy queued oversized record parks without overwrite and survives '
+        'restart', () async {
+      final store = _OversizedParkingFailureStore(dropBeforeThrow: true);
+      final oversized = _largeElementPatch(
+        opId: 'legacy-oversized',
+        elementId: 'element-large',
+      );
+      const key = EntitySyncKey.element('page-1', 'element-large');
+      await store.put(DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: key,
+        pending: PendingOp(op: oversized, clientId: 'stable-client'),
+        status: DurableOutboxStatus.queued,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      ));
+      final repository = _RecordingAckRepository();
+      var container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      var notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+
+      await notifier.flushNow();
+
+      var current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(key));
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(repository.calls, isEmpty);
+      expect(store.attentionWrites, 0);
+      expect(store.load().records.single.status, DurableOutboxStatus.queued);
+
+      container.dispose();
+      container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.flushNow();
+
+      current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(key));
+      expect(current.lastError, cloudOperationTooLargeMessage);
+      expect(repository.calls, isEmpty);
+      expect(store.attentionWrites, 0);
+      expect(store.load().records.single.pending.op.opId, oversized.opId);
+
+      final discarded = await notifier.discardRejected({key});
+      expect(discarded, {key});
+      expect(store.load().records, isEmpty);
+    });
+
+    test('Use cloud clears an uncertain oversized first-write failure',
+        () async {
+      final store = _OversizedParkingFailureStore(dropBeforeThrow: true);
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _RecordingAckRepository(),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-large');
+      await notifier.enqueue(
+        _largeElementPatch(
+          opId: 'oversized-explicit-discard',
+          elementId: 'element-large',
+        ),
+        flushImmediately: false,
+      );
+      await notifier.flushNow();
+
+      var current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(key));
+      expect(current.hasDurabilityFailure, isTrue);
+      expect(current.outboxIsReliable, isFalse);
+      expect(store.load().records, isEmpty);
+
+      final discarded = await notifier.discardRejected({key});
+
+      expect(discarded, {key});
+      current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, isEmpty);
+      expect(current.hasDurabilityFailure, isFalse);
+      expect(current.outboxIsReliable, isTrue);
+      expect(current.lastError, isNull);
+      expect(store.load().records, isEmpty);
+      expect(store.removalAttempts, 1);
+    });
+
+    test('Use cloud remains fail-closed when uncertain removal fails',
+        () async {
+      final store = _OversizedParkingFailureStore(failRemove: true);
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _RecordingAckRepository(),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-large');
+      await notifier.enqueue(
+        _largeElementPatch(
+          opId: 'oversized-failed-discard',
+          elementId: 'element-large',
+        ),
+        flushImmediately: false,
+      );
+      await notifier.flushNow();
+
+      final discarded = await notifier.discardRejected({key});
+
+      expect(discarded, isEmpty);
+      final current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(key));
+      expect(current.hasDurabilityFailure, isTrue);
+      expect(current.outboxIsReliable, isFalse);
+      expect(current.lastError, contains('could not be removed'));
+      expect(store.load().records, isEmpty);
+      expect(store.removalAttempts, 1);
+    });
+
+    test('batches split below the conservative argument byte cap', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _RecordingAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      container
+          .read(cloudCollabModeProvider.notifier)
+          .setForceLocalFallback(true);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      for (var index = 0; index < 20; index += 1) {
+        await notifier.enqueue(
+          _largeElementPatch(
+            opId: 'batch-$index',
+            elementId: 'element-$index',
+            value: _repeat('x', 820 * 1024),
+          ),
+          flushImmediately: false,
+        );
+      }
+      final allOps = container
+          .read(strategyOpQueueProvider)
+          .queuedByEntityKey
+          .values
+          .map((intent) => intent.pending.op)
+          .toList(growable: false);
+      expect(
+        serializedCloudBatchUtf8Bytes(
+          strategyPublicId: 'strategy-1',
+          clientId: container.read(strategyOpQueueProvider).clientId!,
+          ops: allOps,
+        ),
+        greaterThan(maxCloudBatchBytes),
+      );
+      container
+          .read(cloudCollabModeProvider.notifier)
+          .setForceLocalFallback(false);
+
+      await notifier.flushNow();
+      await repository.secondCall.future;
+      for (var index = 0;
+          index < 10 &&
+              container.read(strategyOpQueueProvider).pending.isNotEmpty;
+          index += 1) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(repository.calls, hasLength(2));
+      expect(repository.calls.expand((batch) => batch), hasLength(20));
+      for (final batch in repository.calls) {
+        expect(
+          serializedCloudBatchUtf8Bytes(
+            strategyPublicId: 'strategy-1',
+            clientId: container.read(strategyOpQueueProvider).clientId!,
+            ops: batch,
+          ),
+          lessThanOrEqualTo(maxCloudBatchBytes),
+        );
+      }
+      expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+      expect(store.values, isEmpty);
+    });
+
+    test('an oversized same-entity successor is retained in attention',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      var container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      var notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+      await notifier.enqueue(_elementPatch(
+        opId: 'safe-predecessor',
+        value: 'safe',
+        expectedRevision: 1,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+      final oversizedSuccessor = _largeElementPatch(
+        opId: 'oversized-successor',
+        elementId: 'element-1',
+      );
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {key: oversizedSuccessor},
+      );
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'safe-predecessor',
+        revision: 2,
+      ));
+      await firstFlush;
+      for (var index = 0;
+          index < 10 &&
+              container
+                  .read(strategyOpQueueProvider)
+                  .attentionByEntityKey
+                  .isEmpty;
+          index += 1) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      var current = container.read(strategyOpQueueProvider);
+      expect(repository.calls, hasLength(1));
+      expect(current.attentionByEntityKey, contains(key));
+      expect(current.successorByEntityKey, isEmpty);
+      expect(current.lastError, cloudOperationTooLargeMessage);
+      var durable = store.load().records.single;
+      expect(durable.status, DurableOutboxStatus.attention);
+      expect(durable.pending.op.payload, oversizedSuccessor.payload);
+      expect(durable.lastError, cloudOperationTooLargeMessage);
+
+      container.dispose();
+      container = _cloudQueueContainer(
+        store: store,
+        repository: _RecordingAckRepository(),
+      );
+      addTearDown(container.dispose);
+      notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await notifier.flushNow();
+
+      current = container.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(key));
+      durable = store.load().records.single;
+      expect(durable.pending.op.payload, oversizedSuccessor.payload);
+    });
+
+    test('a valid successor behind an oversized predecessor can land',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _RecordingAckRepository();
+      var container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      container
+          .read(cloudCollabModeProvider.notifier)
+          .setForceLocalFallback(true);
+      var notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+      await notifier.enqueue(
+        ElementAddOp(
+          opId: 'oversized-predecessor',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {
+            'kind': 'drawing',
+            'payloadVersion': 1,
+            'data': {'encodedPoints': _repeat('界', 310000)},
+          },
+          sortIndex: 0,
+        ),
+        flushImmediately: false,
+      );
+      await notifier.flushNow();
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const ElementAddOp(
+            opId: 'valid-successor',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: {
+              'kind': 'drawing',
+              'payloadVersion': 1,
+              'data': {'encodedPoints': 'reduced drawing'},
+            },
+            sortIndex: 0,
+          ),
+        },
+      );
+
+      var durable = store.load().records.single;
+      expect(durable.status, DurableOutboxStatus.attention);
+      expect(durable.pending.op.opId, 'oversized-predecessor');
+      expect(durable.successorPending?.op.opId, 'valid-successor');
+
+      container.dispose();
+      container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+
+      await notifier.retryRejected(flushImmediately: false);
+      await notifier.flushNow();
+
+      expect(repository.calls, hasLength(1));
+      expect(repository.calls.single, hasLength(1));
+      expect(repository.calls.single.single, isA<ElementAddOp>());
+      expect(repository.calls.single.single.payload, {
+        'kind': 'drawing',
+        'payloadVersion': 1,
+        'data': {'encodedPoints': 'reduced drawing'},
+      });
+      expect(
+        serializedCloudOperationUtf8Bytes(repository.calls.single.single),
+        lessThanOrEqualTo(maxCloudOperationBytes),
+      );
+      expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+      expect(store.values, isEmpty);
+    });
+  });
+
   group('acknowledgement persistence recovery', () {
     test('accepted ack remove failure restores the batch for retry', () async {
       final store = _OneShotAckFailureStore(failRemove: true);
@@ -1633,6 +2252,22 @@ ElementPatchOp _elementPatch({
   );
 }
 
+ElementPatchOp _largeElementPatch({
+  required String opId,
+  required String elementId,
+  String? value,
+}) {
+  return ElementPatchOp(
+    opId: opId,
+    elementPublicId: elementId,
+    pagePublicId: 'page-1',
+    payload: {'value': value ?? _repeat('界', 310000)},
+    expectedElementRevision: 1,
+  );
+}
+
+String _repeat(String value, int count) => List.filled(count, value).join();
+
 void _expectBatchRestored(
   ProviderContainer container,
   MemoryDurableStrategyOutboxStore store,
@@ -1687,6 +2322,26 @@ class _AckRepository extends ConvexStrategyRepository {
           )
         else
           AppliedOpAck(opId: op.opId, revision: 2),
+    ];
+  }
+}
+
+class _RecordingAckRepository extends ConvexStrategyRepository {
+  _RecordingAckRepository() : super(IcarusConvexApi(_UnusedTransport()));
+
+  final List<List<StrategyOp>> calls = [];
+  final secondCall = Completer<void>();
+
+  @override
+  Future<List<OpAck>> applyBatch({
+    required String strategyPublicId,
+    required String clientId,
+    required List<StrategyOp> ops,
+  }) async {
+    calls.add(List<StrategyOp>.from(ops));
+    if (calls.length == 2 && !secondCall.isCompleted) secondCall.complete();
+    return [
+      for (final op in ops) AppliedOpAck(opId: op.opId, revision: 2),
     ];
   }
 }
@@ -1747,6 +2402,50 @@ class _OneShotAckFailureStore extends MemoryDurableStrategyOutboxStore {
       failRemove = false;
       throw StateError('accepted ack removal failed');
     }
+    await super.remove(storageKey);
+  }
+}
+
+class _FirstPutFailureStore extends MemoryDurableStrategyOutboxStore {
+  var failNextPut = true;
+
+  @override
+  Future<void> put(DurableOutboxRecord record) async {
+    if (failNextPut) {
+      failNextPut = false;
+      throw StateError('initial write failed');
+    }
+    await super.put(record);
+  }
+}
+
+class _OversizedParkingFailureStore
+    extends MemoryDurableStrategyOutboxStore {
+  _OversizedParkingFailureStore({
+    this.dropBeforeThrow = false,
+    this.failRemove = false,
+  });
+
+  final bool dropBeforeThrow;
+  final bool failRemove;
+  var attentionWrites = 0;
+  var removalAttempts = 0;
+
+  @override
+  Future<void> put(DurableOutboxRecord record) async {
+    if (record.status == DurableOutboxStatus.attention &&
+        cloudOperationExceedsPolicy(record.pending.op)) {
+      attentionWrites += 1;
+      if (dropBeforeThrow) values.remove(record.storageKey);
+      throw StateError('oversized attention write failed');
+    }
+    await super.put(record);
+  }
+
+  @override
+  Future<void> remove(String storageKey) async {
+    removalAttempts += 1;
+    if (failRemove) throw StateError('uncertain removal failed');
     await super.remove(storageKey);
   }
 }

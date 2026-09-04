@@ -12,7 +12,6 @@ import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
-import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/cloud_sync_status_chip.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -35,6 +34,19 @@ class _SettledOpQueue extends StrategyOpQueueNotifier {
         strategyPublicId: 'cloud-strategy',
         clientId: 'client-a',
         durableLoaded: true,
+      );
+}
+
+class _UnreliableOpQueue extends StrategyOpQueueNotifier {
+  @override
+  StrategyOpQueueState build() => const StrategyOpQueueState(
+        accountId: 'account-a',
+        strategyPublicId: 'cloud-strategy',
+        clientId: 'client-a',
+        durableLoaded: true,
+        hasDurabilityFailure: true,
+        lastError: 'Cloud work could not be verified in the durable outbox. '
+            'Nothing was sent.',
       );
 }
 
@@ -94,8 +106,7 @@ class _AttentionOpQueue extends StrategyOpQueueNotifier {
           for (var index = 0; index < rejectedCount; index++)
             EntitySyncKey.element('page-1', 'element-$index'):
                 QueuedEntityIntent(
-              entityKey:
-                  EntitySyncKey.element('page-1', 'element-$index'),
+              entityKey: EntitySyncKey.element('page-1', 'element-$index'),
               pending: PendingOp(
                 op: ElementPatchOp(
                   opId: 'rejected-$index',
@@ -501,6 +512,39 @@ void main() {
     expect(find.text('Needs attention'), findsNothing);
   });
 
+  testWidgets('durability uncertainty never appears synced or reliable',
+      (tester) async {
+    final container = ProviderContainer(
+      overrides: [
+        strategyProvider.overrideWith(_CloudStrategyProvider.new),
+        strategyOpQueueProvider.overrideWith(_UnreliableOpQueue.new),
+        cloudMediaUploadQueueProvider.overrideWith(_EmptyMediaQueue.new),
+        convexConnectionProvider.overrideWith((ref) => Stream.value(true)),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home: Scaffold(body: CloudSyncStatusChip()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final queue = container.read(strategyOpQueueProvider);
+    expect(queue.outboxIsReliable, isFalse);
+    expect(find.text('Needs attention'), findsOneWidget);
+    expect(find.text('Synced'), findsNothing);
+
+    await tester.tap(find.text('Needs attention'));
+    await tester.pumpAndSettle();
+    expect(find.text('Retry sync'), findsOneWidget);
+    expect(find.textContaining('safely stored'), findsNothing);
+  });
+
   testWidgets('conflict popover offers an explicit cloud choice',
       (tester) async {
     final queue = _AttentionOpQueue(2);
@@ -604,6 +648,40 @@ void main() {
     expect(queue.retryRejectedCount, 1);
     expect(queue.flushNowCount, 1);
     expect(session.useCloudCount, 0);
+  });
+
+  testWidgets('oversized saved work shows its durable attention reason',
+      (tester) async {
+    final queue = _AttentionOpQueue(1);
+    final session = _ConflictSession();
+    final container = _createConflictContainer(
+      queue: queue,
+      session: session,
+    );
+    addTearDown(container.dispose);
+    container
+        .read(strategySaveStateProvider.notifier)
+        .setCloudSyncError(cloudOperationTooLargeMessage);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home: Scaffold(body: CloudSyncStatusChip()),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Needs attention'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('too large for cloud sync'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Another edit reached'), findsNothing);
+    expect(find.text('Use cloud'), findsOneWidget);
+    expect(find.text('Keep mine'), findsOneWidget);
   });
 
   testWidgets('failed cloud load keeps attention and explains the failure',

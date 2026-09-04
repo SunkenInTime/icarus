@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -210,6 +211,126 @@ void main() {
         summary.strategies['rejected-strategy']!.reason, 'Revision conflict');
   });
 
+  test('inactive failed writes remain account-visible and unreliable',
+      () async {
+    final store = _FailingPutStore();
+    final repository = _RecordingRepository();
+    final container = _container(store: store, repository: repository);
+    addTearDown(container.dispose);
+    final notifier = container.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('failed-strategy', accountId: 'account-a');
+
+    await notifier.enqueue(
+      _op(opId: 'failed-write', elementId: 'failed-element'),
+      flushImmediately: false,
+    );
+    notifier.setActiveStrategy('other-strategy', accountId: 'account-a');
+
+    final queue = container.read(strategyOpQueueProvider);
+    final failedSummary = queue.accountOutbox.strategies['failed-strategy'];
+    expect(queue.strategyPublicId, 'other-strategy');
+    expect(queue.outboxIsReliable, isFalse);
+    expect(queue.hasDurabilityFailure, isTrue);
+    expect(failedSummary, isNotNull);
+    expect(failedSummary!.attentionCount, 1);
+    expect(failedSummary.queuedCount, 0);
+    expect(failedSummary.reason, contains('could not be verified'));
+    expect(repository.calls, isEmpty);
+  });
+
+  test(
+      'inactive legacy oversized work stays byte-for-byte queued until '
+      'explicit cloud adoption', () async {
+    final store = MemoryDurableStrategyOutboxStore();
+    final oversized = _oversizedOp(
+      opId: 'legacy-oversized',
+      elementId: 'large-element',
+    );
+    const key = EntitySyncKey.element('page-one', 'large-element');
+    final durable = DurableOutboxRecord(
+      accountId: 'account-a',
+      strategyPublicId: 'legacy-strategy',
+      entityKey: key,
+      pending: PendingOp(op: oversized, clientId: 'legacy-client'),
+      status: DurableOutboxStatus.queued,
+      createdAt: DateTime.utc(2026),
+      updatedAt: DateTime.utc(2026),
+    );
+    await store.put(durable);
+    await store.put(_record(
+      strategyId: 'unrelated-strategy',
+      opId: 'unrelated-paused',
+      status: DurableOutboxStatus.paused,
+      lastError: 'Retry limit reached',
+    ));
+    expect(cloudOperationExceedsPolicy(oversized), isTrue);
+    final originalBytes = jsonEncode(store.values[durable.storageKey]);
+    final repository = _RecordingRepository();
+    var container = _container(store: store, repository: repository);
+    container
+        .read(strategyOpQueueProvider.notifier)
+        .setCurrentAccount('account-a');
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    var summary = container
+        .read(strategyOpQueueProvider)
+        .accountOutbox
+        .strategies['legacy-strategy'];
+    expect(summary, isNotNull);
+    expect(summary!.queuedCount, 0);
+    expect(summary.attentionCount, 1);
+    expect(summary.reason, cloudOperationTooLargeMessage);
+    expect(repository.calls, isEmpty);
+    expect(jsonEncode(store.values[durable.storageKey]), originalBytes);
+    expect(
+      store
+          .load()
+          .records
+          .singleWhere(
+            (record) => record.strategyPublicId == 'legacy-strategy',
+          )
+          .status,
+      DurableOutboxStatus.queued,
+    );
+
+    container.dispose();
+    container = _container(store: store, repository: repository);
+    addTearDown(container.dispose);
+    final notifier = container.read(strategyOpQueueProvider.notifier)
+      ..setCurrentAccount('account-a');
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+
+    summary = container
+        .read(strategyOpQueueProvider)
+        .accountOutbox
+        .strategies['legacy-strategy'];
+    expect(summary!.attentionCount, 1);
+    expect(repository.calls, isEmpty);
+    expect(jsonEncode(store.values[durable.storageKey]), originalBytes);
+    expect(
+      store
+          .load()
+          .records
+          .singleWhere(
+            (record) => record.strategyPublicId == 'legacy-strategy',
+          )
+          .status,
+      DurableOutboxStatus.queued,
+    );
+
+    notifier.setActiveStrategy('legacy-strategy', accountId: 'account-a');
+    final active = container.read(strategyOpQueueProvider);
+    expect(active.attentionByEntityKey, contains(key));
+    expect(active.queuedByEntityKey, isEmpty);
+
+    expect(await notifier.discardRejected({key}), {key});
+    expect(
+      store.load().records.map((record) => record.pending.op.opId),
+      ['unrelated-paused'],
+    );
+    expect(repository.calls, isEmpty);
+  });
+
   test('reconnection resumes eligible closed-strategy work', () async {
     final connectionChanges = StreamController<bool>();
     addTearDown(connectionChanges.close);
@@ -323,6 +444,23 @@ ElementPatchOp _op({
   );
 }
 
+ElementPatchOp _oversizedOp({
+  required String opId,
+  required String elementId,
+}) {
+  return ElementPatchOp(
+    opId: opId,
+    elementPublicId: elementId,
+    pagePublicId: 'page-one',
+    payload: {
+      'kind': 'drawing',
+      'payloadVersion': 1,
+      'data': {'encodedPoints': List<String>.filled(310000, '界').join()},
+    },
+    expectedElementRevision: 1,
+  );
+}
+
 Future<void> _waitUntil(bool Function() condition) async {
   for (var i = 0; i < 100; i += 1) {
     if (condition()) return;
@@ -382,6 +520,13 @@ User _user(String accountId) => User(
     );
 
 typedef _Call = ({String strategyId, List<StrategyOp> ops});
+
+class _FailingPutStore extends MemoryDurableStrategyOutboxStore {
+  @override
+  Future<void> put(DurableOutboxRecord record) async {
+    throw StateError('disk write failed');
+  }
+}
 
 class _RecordingRepository extends ConvexStrategyRepository {
   _RecordingRepository() : super(IcarusConvexApi(_UnusedTransport()));

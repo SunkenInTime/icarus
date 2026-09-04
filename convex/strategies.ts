@@ -13,6 +13,10 @@ import {
 import type { StrategyRole } from "./lib/auth";
 import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
 import {
+  assertSupportedCloudProtocol,
+  cloudProtocolArgs,
+} from "./lib/cloudProtocol";
+import {
   mapThemePaletteValidator,
   strategySettingsValidator,
 } from "./lib/payloadValidators";
@@ -454,6 +458,7 @@ export const getHeader = query({
 
 export const create = mutation({
   args: {
+    ...cloudProtocolArgs,
     publicId: v.string(),
     name: v.string(),
     mapData: v.string(),
@@ -463,6 +468,7 @@ export const create = mutation({
   },
   returns: createResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const user = await requireCurrentUser(ctx);
     return await createStrategyWithInitialPageRecord(ctx, args, user._id, {
       publicId: createPublicId(),
@@ -475,6 +481,7 @@ export const create = mutation({
 
 export const createWithInitialPage = mutation({
   args: {
+    ...cloudProtocolArgs,
     publicId: v.string(),
     name: v.string(),
     mapData: v.string(),
@@ -489,6 +496,7 @@ export const createWithInitialPage = mutation({
   },
   returns: createResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const user = await requireCurrentUser(ctx);
     return await createStrategyWithInitialPageRecord(ctx, args, user._id, {
       publicId: args.initialPagePublicId,
@@ -502,6 +510,7 @@ export const createWithInitialPage = mutation({
 
 export const update = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     expectedRevision: v.number(),
     name: v.optional(v.string()),
@@ -513,6 +522,7 @@ export const update = mutation({
   },
   returns: revisionResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
 
@@ -563,12 +573,14 @@ export const update = mutation({
 
 export const move = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     expectedRevision: v.number(),
     folderPublicId: v.optional(v.string()),
   },
   returns: revisionResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
 
@@ -598,11 +610,13 @@ export const move = mutation({
 
 const deleteStrategy = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     expectedRevision: v.number(),
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "owner");
     if (args.expectedRevision !== strategy.revision) {

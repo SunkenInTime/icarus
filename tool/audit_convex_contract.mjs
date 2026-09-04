@@ -125,6 +125,18 @@ if (
       fail(`${functionSpecEntry.identifier} is missing an args validator`);
     } else {
       auditValidator(functionSpecEntry.args, ["args"], functionSpecEntry.identifier);
+      if (functionSpecEntry.functionType === "Mutation") {
+        const protocolField = functionSpecEntry.args.value?.clientProtocolVersion;
+        if (
+          functionSpecEntry.args.type !== "object" ||
+          protocolField?.optional !== false ||
+          protocolField?.fieldType?.type !== "number"
+        ) {
+          fail(
+            `${functionSpecEntry.identifier} must require numeric clientProtocolVersion`,
+          );
+        }
+      }
     }
     if (functionSpecEntry.returns === null) {
       fail(`${functionSpecEntry.identifier} is missing a return validator`);

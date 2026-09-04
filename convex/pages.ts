@@ -1,6 +1,10 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { assertStrategyRole } from "./lib/auth";
+import {
+  assertSupportedCloudProtocol,
+  cloudProtocolArgs,
+} from "./lib/cloudProtocol";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
 import {
   clampPageIndex,
@@ -41,6 +45,7 @@ export const listForStrategy = query({
 
 export const add = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     expectedRevision: v.number(),
     pagePublicId: v.string(),
@@ -52,6 +57,7 @@ export const add = mutation({
   },
   returns: revisionResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
     const existingPage = await ctx.db
@@ -147,6 +153,7 @@ export const add = mutation({
 
 export const rename = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
     name: v.string(),
@@ -155,6 +162,7 @@ export const rename = mutation({
   },
   returns: revisionResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
     const page = await getPageByPublicId(ctx, args.pagePublicId);
@@ -185,12 +193,14 @@ export const rename = mutation({
 
 const deletePage = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     pagePublicId: v.string(),
     expectedRevision: v.number(),
   },
   returns: revisionResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
     const pages = await ctx.db
@@ -249,12 +259,14 @@ const deletePage = mutation({
 
 export const reorder = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     orderedPagePublicIds: v.array(v.string()),
     expectedRevision: v.number(),
   },
   returns: revisionResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
     const pages = await ctx.db

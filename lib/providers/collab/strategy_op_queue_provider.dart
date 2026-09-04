@@ -125,6 +125,7 @@ class StrategyOpQueueState {
 
   bool get needsAttention =>
       loadIssues.isNotEmpty ||
+      hasDurabilityFailure ||
       pausedByEntityKey.isNotEmpty ||
       attentionByEntityKey.isNotEmpty;
 
@@ -165,8 +166,7 @@ class StrategyOpQueueState {
       attentionByEntityKey: attentionByEntityKey ?? this.attentionByEntityKey,
       loadIssues: loadIssues,
       durableLoaded: durableLoaded,
-      hasDurabilityFailure:
-          hasDurabilityFailure ?? this.hasDurabilityFailure,
+      hasDurabilityFailure: hasDurabilityFailure ?? this.hasDurabilityFailure,
       isFlushing: isFlushing ?? this.isFlushing,
       lastError: clearError ? null : (lastError ?? this.lastError),
       lastFlushAt: lastFlushAt ?? this.lastFlushAt,
@@ -196,9 +196,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   int _offlineRetryCount = 0;
   bool _networkBusy = false;
   ({String accountId, String strategyPublicId})? _drainingStrategy;
+  bool _isDisposed = false;
   late DurableStrategyOutboxStore _store;
   late Map<String, DurableOutboxRecord> _recordsByStorageKey;
   final Set<EntitySyncKey> _awaitingRemoteAdoption = {};
+  final Set<String> _uncertainOversizedParking = {};
+  final Set<String> _uncertainDurableRecords = {};
+  final Map<String, DurableOutboxRecord> _uncertainDurableIntents = {};
+  String? _uncertainOversizedParkingMessage;
   Future<void> _writeTail = Future<void>.value();
 
   ConvexStrategyRepository get _repo =>
@@ -206,12 +211,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
 
   @override
   StrategyOpQueueState build() {
+    _isDisposed = false;
     _store = ref.read(durableStrategyOutboxStoreProvider);
     final loaded = _store.load();
     _recordsByStorageKey = {
       for (final record in loaded.records) record.storageKey: record,
     };
     ref.onDispose(() {
+      _isDisposed = true;
       _retryTimer?.cancel();
       _debounceTimer?.cancel();
       _backgroundRetryTimer?.cancel();
@@ -222,8 +229,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         setCurrentAccount(next.accountId);
       }
       final becameReady = !(previous?.isReady ?? false) && next.isReady;
-      final recovered = (previous?.hasAuthIncident ?? false) &&
-          !next.hasAuthIncident;
+      final recovered =
+          (previous?.hasAuthIncident ?? false) && !next.hasAuthIncident;
       if (becameReady || recovered) {
         retryCurrentAccount();
       }
@@ -235,8 +242,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     });
     final session = ref.read(strategyOutboxSessionProvider);
     if (session.accountId != null &&
-        loaded.records
-            .any((record) => record.accountId == session.accountId)) {
+        loaded.records.any((record) => record.accountId == session.accountId)) {
       _backgroundRetryTimer = Timer(
         Duration.zero,
         () => retryCurrentAccount(),
@@ -305,9 +311,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
       switch (record.status) {
         case DurableOutboxStatus.queued:
-          queued[record.entityKey] = intent;
+          if (cloudOperationExceedsPolicy(record.pending.op)) {
+            attention[record.entityKey] = intent;
+          } else {
+            queued[record.entityKey] = intent;
+          }
         case DurableOutboxStatus.inFlight:
-          if (_drainingStrategy ==
+          if (cloudOperationExceedsPolicy(record.pending.op)) {
+            attention[record.entityKey] = intent;
+          } else if (_drainingStrategy ==
               (accountId: accountId, strategyPublicId: strategyPublicId)) {
             inFlight[record.entityKey] = InFlightEntityIntent(
               entityKey: record.entityKey,
@@ -320,13 +332,37 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             queued[record.entityKey] = intent;
           }
         case DurableOutboxStatus.paused:
-          paused[record.entityKey] = intent;
+          if (cloudOperationExceedsPolicy(record.pending.op)) {
+            attention[record.entityKey] = intent;
+          } else {
+            paused[record.entityKey] = intent;
+          }
         case DurableOutboxStatus.attention:
           attention[record.entityKey] = intent;
       }
     }
+    for (final record in _uncertainDurableIntents.values.where((record) =>
+        record.accountId == accountId &&
+        record.strategyPublicId == strategyPublicId)) {
+      attention[record.entityKey] = QueuedEntityIntent(
+        entityKey: record.entityKey,
+        pending: record.pending,
+      );
+      queued.remove(record.entityKey);
+      inFlight.remove(record.entityKey);
+      paused.remove(record.entityKey);
+      final successor = record.successorPending;
+      if (successor != null) {
+        successors[record.entityKey] = QueuedEntityIntent(
+          entityKey: record.entityKey,
+          pending: successor,
+        );
+      }
+    }
     final clientId =
         matching.firstOrNull?.pending.clientId ?? const Uuid().v4();
+    final hasDurabilityFailure = state.loadIssues.isNotEmpty ||
+        _hasDurabilityFailureForAccount(accountId);
     state = StrategyOpQueueState(
       accountId: accountId,
       strategyPublicId: strategyPublicId,
@@ -338,13 +374,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       attentionByEntityKey: attention,
       loadIssues: state.loadIssues,
       durableLoaded: true,
-      hasDurabilityFailure:
-          state.hasDurabilityFailure || state.loadIssues.isNotEmpty,
-      lastError: _loadedAttentionMessage(
-        loadIssues: state.loadIssues,
-        paused: paused,
-        attention: attention,
-      ),
+      hasDurabilityFailure: hasDurabilityFailure,
+      lastError: hasDurabilityFailure
+          ? (_uncertainOversizedParkingMessage ??
+              'Cloud work could not be verified in the durable outbox.')
+          : _loadedAttentionMessage(
+              loadIssues: state.loadIssues,
+              paused: paused,
+              attention: attention,
+            ),
       accountOutbox: _accountSummary(accountId),
     );
     if (queued.isNotEmpty && inFlight.isEmpty) {
@@ -488,17 +526,46 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         // it must never make rejected work eligible for an automatic flush.
         if (attentionIntent != null) {
           if (desired == null) continue;
-          final current = _recordForActiveKey(key);
+          final storageKey = DurableOutboxRecord.createStorageKey(
+            accountId: accountId,
+            strategyPublicId: strategyPublicId,
+            entityKey: key,
+          );
+          final current =
+              _recordForActiveKey(key) ?? _uncertainDurableIntents[storageKey];
           if (current == null) {
             throw StateError('Durable attention record is missing for $key.');
           }
           if (_sameIntent(attentionIntent.pending.op, desired)) {
-            if (successorIntent != null) {
+            final hasUncertainDurableRecord =
+                _uncertainDurableRecords.contains(storageKey);
+            if (successorIntent != null || hasUncertainDurableRecord) {
+              final recoveredOversizedParking =
+                  _uncertainOversizedParking.contains(storageKey);
+              final isOversized =
+                  cloudOperationExceedsPolicy(current.pending.op);
               await _putRecord(current.copyWith(
+                status: isOversized
+                    ? DurableOutboxStatus.attention
+                    : (hasUncertainDurableRecord
+                        ? DurableOutboxStatus.queued
+                        : current.status),
                 clearSuccessorPending: true,
                 updatedAt: DateTime.now(),
+                lastError: isOversized ? cloudOperationTooLargeMessage : null,
+                clearError: !isOversized,
               ));
+              if (recoveredOversizedParking) {
+                _uncertainOversizedParking.remove(storageKey);
+                if (_uncertainOversizedParking.isEmpty) {
+                  _uncertainOversizedParkingMessage = null;
+                }
+              }
               successors.remove(key);
+              if (hasUncertainDurableRecord && !isOversized) {
+                attention.remove(key);
+                queued[key] = attentionIntent;
+              }
               changed = true;
             }
             continue;
@@ -515,11 +582,22 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             clientId: successorIntent?.pending.clientId ??
                 attentionIntent.pending.clientId,
           );
+          final recoveredOversizedParking =
+              _uncertainOversizedParking.contains(current.storageKey);
           await _putRecord(current.copyWith(
             status: DurableOutboxStatus.attention,
             successorPending: pending,
             updatedAt: DateTime.now(),
+            lastError: recoveredOversizedParking
+                ? cloudOperationTooLargeMessage
+                : null,
           ));
+          if (recoveredOversizedParking) {
+            _uncertainOversizedParking.remove(current.storageKey);
+            if (_uncertainOversizedParking.isEmpty) {
+              _uncertainOversizedParkingMessage = null;
+            }
+          }
           successors[key] = QueuedEntityIntent(
             entityKey: key,
             pending: pending,
@@ -646,12 +724,23 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final record = _recordFor(
           key: key,
           pending: pending,
-          status: DurableOutboxStatus.queued,
+          status: cloudOperationExceedsPolicy(pending.op)
+              ? DurableOutboxStatus.attention
+              : DurableOutboxStatus.queued,
+          lastError: cloudOperationExceedsPolicy(pending.op)
+              ? cloudOperationTooLargeMessage
+              : null,
         );
         await _putRecord(record);
-        queued[key] = QueuedEntityIntent(entityKey: key, pending: pending);
+        final intent = QueuedEntityIntent(entityKey: key, pending: pending);
+        if (record.status == DurableOutboxStatus.attention) {
+          attention[key] = intent;
+          queued.remove(key);
+        } else {
+          queued[key] = intent;
+          attention.remove(key);
+        }
         paused.remove(key);
-        attention.remove(key);
         changed = true;
       }
     } catch (error, stackTrace) {
@@ -669,6 +758,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       pausedByEntityKey: paused,
       attentionByEntityKey: attention,
       successorByEntityKey: successors,
+      hasDurabilityFailure: _hasDurabilityFailureForCurrentAccount,
       lastError: attentionMessage,
       clearError: attentionMessage == null,
     );
@@ -689,19 +779,32 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
         state.queuedByEntityKey,
       );
+      final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
+        state.attentionByEntityKey,
+      );
       try {
         for (final entry in state.pausedByEntityKey.entries) {
           final pending = PendingOp(
             op: entry.value.pending.op,
             clientId: entry.value.pending.clientId,
           );
+          final isOversized = cloudOperationExceedsPolicy(pending.op);
           await _putRecord(_recordFor(
             key: entry.key,
             pending: pending,
-            status: DurableOutboxStatus.queued,
+            status: isOversized
+                ? DurableOutboxStatus.attention
+                : DurableOutboxStatus.queued,
+            lastError: isOversized ? cloudOperationTooLargeMessage : null,
           ));
-          queued[entry.key] =
+          final intent =
               QueuedEntityIntent(entityKey: entry.key, pending: pending);
+          if (isOversized) {
+            attention[entry.key] = intent;
+            queued.remove(entry.key);
+          } else {
+            queued[entry.key] = intent;
+          }
         }
       } catch (error, stackTrace) {
         _recordPersistenceFailure(error, stackTrace);
@@ -710,8 +813,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       state = state.copyWith(
         queuedByEntityKey: queued,
         pausedByEntityKey: const <EntitySyncKey, QueuedEntityIntent>{},
-        clearError:
-            state.attentionByEntityKey.isEmpty && state.loadIssues.isEmpty,
+        attentionByEntityKey: attention,
+        hasDurabilityFailure: _hasDurabilityFailureForCurrentAccount,
+        clearError: attention.isEmpty && state.loadIssues.isEmpty,
       );
       _scheduleFlush(flushImmediately: flushImmediately);
     });
@@ -742,33 +846,55 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           final rejectedOp = rejected.op;
           final successor = record?.successorPending;
           final retryOp = successor?.op ?? rejectedOp;
+          final isPayloadPolicyAttention =
+              record?.lastError == cloudOperationTooLargeMessage ||
+                  cloudOperationExceedsPolicy(rejectedOp);
           final retryRevision =
               record?.latestServerRevision ?? rejectedOp.expectedRevision;
-          if (retryRevision == null) continue;
+          if (!isPayloadPolicyAttention && retryRevision == null) continue;
           final isTombstoneRestore =
               (retryOp is ElementAddOp || retryOp is LineupAddOp) &&
                   (record?.lastError == 'missing_expected_revision' ||
                       record?.lastError == 'revision_mismatch');
-          final rebasedOp = _rebaseRejectedOp(
-            retryOp,
-            retryRevision,
-            preserveAdd: isTombstoneRestore,
-          );
+          final rebasedOp = isPayloadPolicyAttention
+              ? retryOp.withOpId(const Uuid().v4())
+              : _rebaseRejectedOp(
+                  retryOp,
+                  retryRevision!,
+                  preserveAdd: isTombstoneRestore,
+                );
           final pending = PendingOp(
             op: rebasedOp,
             clientId: successor?.clientId ?? rejected.clientId,
           );
+          final isRetryOversized = cloudOperationExceedsPolicy(pending.op);
           await _putRecord(_recordFor(
             key: entry.key,
             pending: pending,
-            status: DurableOutboxStatus.queued,
+            status: isRetryOversized
+                ? DurableOutboxStatus.attention
+                : DurableOutboxStatus.queued,
             clearSuccessorPending: true,
+            lastError: isRetryOversized ? cloudOperationTooLargeMessage : null,
           ));
-          queued[entry.key] = QueuedEntityIntent(
+          _uncertainOversizedParking.remove(
+            DurableOutboxRecord.createStorageKey(
+              accountId: state.accountId!,
+              strategyPublicId: state.strategyPublicId!,
+              entityKey: entry.key,
+            ),
+          );
+          final intent = QueuedEntityIntent(
             entityKey: entry.key,
             pending: pending,
           );
-          attention.remove(entry.key);
+          if (isRetryOversized) {
+            attention[entry.key] = intent;
+            queued.remove(entry.key);
+          } else {
+            queued[entry.key] = intent;
+            attention.remove(entry.key);
+          }
           successors.remove(entry.key);
           changed = true;
         }
@@ -783,6 +909,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         );
         return;
       }
+      if (_uncertainOversizedParking.isEmpty) {
+        _uncertainOversizedParkingMessage = null;
+      }
       final attentionMessage = _loadedAttentionMessage(
         loadIssues: state.loadIssues,
         paused: state.pausedByEntityKey,
@@ -792,6 +921,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         queuedByEntityKey: queued,
         attentionByEntityKey: attention,
         successorByEntityKey: successors,
+        hasDurabilityFailure: _hasDurabilityFailureForCurrentAccount,
         lastError: attentionMessage,
         clearError: attentionMessage == null,
       );
@@ -820,16 +950,33 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
 
       for (final key in entityKeys) {
         final rejected = attention[key];
+        final accountId = state.accountId;
+        final strategyPublicId = state.strategyPublicId;
+        if (rejected == null || accountId == null || strategyPublicId == null) {
+          continue;
+        }
+        final storageKey = DurableOutboxRecord.createStorageKey(
+          accountId: accountId,
+          strategyPublicId: strategyPublicId,
+          entityKey: key,
+        );
+        final hasUncertainParking =
+            _uncertainOversizedParking.contains(storageKey);
+        final hasUncertainDurableRecord =
+            _uncertainDurableRecords.contains(storageKey);
         final record = _recordForActiveKey(key);
-        if (rejected == null ||
-            record == null ||
-            record.status != DurableOutboxStatus.attention ||
-            record.pending.op.opId != rejected.pending.op.opId) {
+        final hasMatchingAttentionRecord = record != null &&
+            (record.status == DurableOutboxStatus.attention ||
+                cloudOperationExceedsPolicy(record.pending.op)) &&
+            record.pending.op.opId == rejected.pending.op.opId;
+        if (!hasUncertainParking &&
+            !hasUncertainDurableRecord &&
+            !hasMatchingAttentionRecord) {
           continue;
         }
         try {
-          await _store.remove(record.storageKey);
-          _recordsByStorageKey.remove(record.storageKey);
+          await _removeRecordByStorageKey(storageKey);
+          _uncertainOversizedParking.remove(storageKey);
           attention.remove(key);
           successors.remove(key);
           _awaitingRemoteAdoption.add(key);
@@ -849,6 +996,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           stackTrace: persistenceStackTrace,
         );
       }
+      if (_uncertainOversizedParking.isEmpty) {
+        _uncertainOversizedParkingMessage = null;
+      }
       final attentionMessage = _loadedAttentionMessage(
         loadIssues: state.loadIssues,
         paused: state.pausedByEntityKey,
@@ -861,6 +1011,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       state = state.copyWith(
         attentionByEntityKey: attention,
         successorByEntityKey: successors,
+        hasDurabilityFailure: _hasDurabilityFailureForCurrentAccount,
         lastError: errorMessage,
         clearError: errorMessage == null,
       );
@@ -872,9 +1023,80 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _awaitingRemoteAdoption.removeAll(entityKeys);
   }
 
+  Future<bool> _parkOversizedQueuedOps() async {
+    if (_hasUncertainParkingForActiveStrategy) return false;
+    final oversized = state.queuedByEntityKey.entries
+        .where((entry) => cloudOperationExceedsPolicy(entry.value.pending.op))
+        .toList(growable: false);
+    if (oversized.isEmpty) return true;
+
+    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.queuedByEntityKey,
+    );
+    final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.attentionByEntityKey,
+    );
+    Object? persistenceError;
+    StackTrace? persistenceStackTrace;
+    for (final entry in oversized) {
+      final record = _recordForActiveKey(entry.key);
+      if (record == null ||
+          record.pending.op.opId != entry.value.pending.op.opId) {
+        persistenceError ??=
+            StateError('Durable queued record is missing for ${entry.key}.');
+        queued.remove(entry.key);
+        attention[entry.key] = entry.value;
+        _uncertainOversizedParking.add(
+          DurableOutboxRecord.createStorageKey(
+            accountId: state.accountId!,
+            strategyPublicId: state.strategyPublicId!,
+            entityKey: entry.key,
+          ),
+        );
+        continue;
+      }
+      // Keep an already-durable queued record untouched. The in-memory view
+      // and restart loader both classify it as attention, so parking never
+      // risks destroying the only recoverable copy with an overwrite.
+      queued.remove(entry.key);
+      attention[entry.key] = entry.value;
+    }
+    if (persistenceError != null) {
+      log(
+        'Durable outbox persistence failed: $persistenceError',
+        name: 'strategy_outbox',
+        error: persistenceError,
+        stackTrace: persistenceStackTrace,
+      );
+      _debounceTimer?.cancel();
+      _debounceTimer = null;
+      _retryTimer?.cancel();
+      _retryTimer = null;
+      _uncertainOversizedParkingMessage =
+          'Cloud work could not be verified in the durable outbox. '
+          'Nothing was sent. The change still needs attention: '
+          '$persistenceError';
+    }
+    final attentionMessage = _loadedAttentionMessage(
+      loadIssues: state.loadIssues,
+      paused: state.pausedByEntityKey,
+      attention: attention,
+    );
+    state = state.copyWith(
+      queuedByEntityKey: queued,
+      attentionByEntityKey: attention,
+      hasDurabilityFailure: _hasDurabilityFailureForCurrentAccount,
+      lastError: persistenceError == null
+          ? attentionMessage
+          : _uncertainOversizedParkingMessage,
+      clearError: persistenceError == null && attentionMessage == null,
+    );
+    return persistenceError == null;
+  }
+
   Future<void> flushNow() async {
     await _writeTail;
-    if (_networkBusy) return;
+    if (_isDisposed || _networkBusy) return;
     final accountId = state.accountId;
     final strategyPublicId = state.strategyPublicId;
     if (accountId == null ||
@@ -882,6 +1104,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         state.queuedByEntityKey.isEmpty) {
       return;
     }
+
+    if (!await _parkOversizedQueuedOps() || _isDisposed) return;
+    if (state.queuedByEntityKey.isEmpty) return;
 
     await _flushStrategy(
       accountId: accountId,
@@ -896,7 +1121,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     required bool isBackground,
     bool ignoreBackoff = false,
   }) async {
-    if (_networkBusy) return;
+    if (_isDisposed || _networkBusy) return;
 
     final mode = ref.read(cloudCollabModeProvider);
     if (!mode.featureFlagEnabled || mode.forceLocalFallback) return;
@@ -958,6 +1183,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       _scheduleBackgroundDrain();
       return;
     }
+    if (_isDisposed) {
+      _finishNetworkLane();
+      return;
+    }
     final batchClientId = batch.first.pending.clientId;
     _refreshActiveQueueView(
       isFlushing: _isActive(accountId, strategyPublicId),
@@ -991,10 +1220,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       _finishNetworkLane();
     }
 
-    if (state.queuedByEntityKey.isNotEmpty &&
+    if (!_isDisposed &&
+        state.queuedByEntityKey.isNotEmpty &&
         (isBackground || batchSucceeded)) {
       unawaited(flushNow());
-    } else {
+    } else if (!_isDisposed) {
       _scheduleBackgroundDrain();
     }
   }
@@ -1012,14 +1242,25 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               record.strategyPublicId == strategyPublicId &&
               (record.status == DurableOutboxStatus.queued ||
                   record.status == DurableOutboxStatus.inFlight) &&
+              !_uncertainDurableRecords.contains(record.storageKey) &&
+              !cloudOperationExceedsPolicy(record.pending.op) &&
               (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
           .toList(growable: false);
       if (candidates.isEmpty) return const <DurableOutboxRecord>[];
       final batchClientId = candidates.first.pending.clientId;
-      final selected = candidates
-          .where((record) => record.pending.clientId == batchClientId)
-          .take(_maxBatchSize)
-          .toList(growable: false);
+      final selected = <DurableOutboxRecord>[];
+      for (final candidate in candidates) {
+        if (candidate.pending.clientId != batchClientId) continue;
+        if (selected.length >= _maxBatchSize) break;
+        final nextSelection = <DurableOutboxRecord>[...selected, candidate];
+        final byteSize = serializedCloudBatchUtf8Bytes(
+          strategyPublicId: strategyPublicId,
+          clientId: batchClientId,
+          ops: nextSelection.map((record) => record.pending.op),
+        );
+        if (byteSize > maxCloudBatchBytes) break;
+        selected.add(candidate);
+      }
       final claimed = <DurableOutboxRecord>[];
       for (final record in selected) {
         final current = _recordsByStorageKey[record.storageKey];
@@ -1076,8 +1317,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       // promotion. A rejected predecessor leaves both intents in attention.
       final successorRevision = ack.appliedRevision;
       if (successor != null && ack.isAck && successorRevision != null) {
-        final predecessorCreatedEntity = sent.pending.op is ElementAddOp ||
-            sent.pending.op is LineupAddOp;
+        final predecessorCreatedEntity =
+            sent.pending.op is ElementAddOp || sent.pending.op is LineupAddOp;
         final promoted = PendingOp(
           op: _rebaseRejectedOp(
             successor.op,
@@ -1086,12 +1327,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           ),
           clientId: successor.clientId,
         );
+        final isPromotedOversized = cloudOperationExceedsPolicy(promoted.op);
         await _putRecord(current.copyWith(
           pending: promoted,
-          status: DurableOutboxStatus.queued,
+          status: isPromotedOversized
+              ? DurableOutboxStatus.attention
+              : DurableOutboxStatus.queued,
           updatedAt: DateTime.now(),
           clearSuccessorPending: true,
-          clearError: true,
+          lastError: isPromotedOversized ? cloudOperationTooLargeMessage : null,
+          clearError: !isPromotedOversized,
           clearLatestServerRevision: true,
         ));
       } else if (successor != null) {
@@ -1115,6 +1360,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         await _putRecord(rejected);
       }
     }
+    if (_isDisposed) return;
     final first = batch.first;
     if (_isActive(first.accountId, first.strategyPublicId)) {
       _refreshActiveQueueView(
@@ -1165,6 +1411,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       _recordPersistenceFailure(error, stackTrace);
       return;
     }
+    if (_isDisposed) return;
     final draining = _drainingStrategy;
     if (draining != null &&
         _isActive(draining.accountId, draining.strategyPublicId)) {
@@ -1216,8 +1463,37 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   Future<void> _putRecord(DurableOutboxRecord record) async {
-    await _store.put(record);
-    _recordsByStorageKey[record.storageKey] = record;
+    try {
+      await _store.put(record);
+      _recordsByStorageKey[record.storageKey] = record;
+      _uncertainDurableRecords.remove(record.storageKey);
+      _uncertainDurableIntents.remove(record.storageKey);
+    } catch (_) {
+      _uncertainDurableRecords.add(record.storageKey);
+      _uncertainDurableIntents[record.storageKey] = record;
+      if (cloudOperationExceedsPolicy(record.pending.op)) {
+        _uncertainOversizedParking.add(record.storageKey);
+        _uncertainOversizedParkingMessage =
+            'Cloud work could not be verified in the durable outbox. '
+            'Nothing was sent.';
+      }
+      _publishAccountSummary();
+      rethrow;
+    }
+    _publishAccountSummary();
+  }
+
+  Future<void> _removeRecordByStorageKey(String storageKey) async {
+    try {
+      await _store.remove(storageKey);
+      _recordsByStorageKey.remove(storageKey);
+      _uncertainDurableRecords.remove(storageKey);
+      _uncertainDurableIntents.remove(storageKey);
+    } catch (_) {
+      _uncertainDurableRecords.add(storageKey);
+      _publishAccountSummary();
+      rethrow;
+    }
     _publishAccountSummary();
   }
 
@@ -1227,9 +1503,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   ) async {
     final record = _recordForActiveKey(key);
     if (record == null || record.pending.op.opId != opId) return;
-    await _store.remove(record.storageKey);
-    _recordsByStorageKey.remove(record.storageKey);
-    _publishAccountSummary();
+    await _removeRecordByStorageKey(record.storageKey);
   }
 
   Future<void> _removeRecordByStorageKeyIfCurrent(
@@ -1238,9 +1512,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   ) async {
     final record = _recordsByStorageKey[storageKey];
     if (record == null || record.pending.op.opId != opId) return;
-    await _store.remove(storageKey);
-    _recordsByStorageKey.remove(storageKey);
-    _publishAccountSummary();
+    await _removeRecordByStorageKey(storageKey);
   }
 
   bool _isActive(String accountId, String strategyPublicId) {
@@ -1257,6 +1529,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     List<AckedEntityIntent>? lastAckBatch,
     bool clearError = false,
   }) {
+    if (_isDisposed) return;
     final accountId = state.accountId;
     final strategyPublicId = state.strategyPublicId;
     final queued = <EntitySyncKey, QueuedEntityIntent>{};
@@ -1285,9 +1558,15 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         }
         switch (record.status) {
           case DurableOutboxStatus.queued:
-            queued[record.entityKey] = intent;
+            if (cloudOperationExceedsPolicy(record.pending.op)) {
+              attention[record.entityKey] = intent;
+            } else {
+              queued[record.entityKey] = intent;
+            }
           case DurableOutboxStatus.inFlight:
-            if (isActivelyDraining) {
+            if (cloudOperationExceedsPolicy(record.pending.op)) {
+              attention[record.entityKey] = intent;
+            } else if (isActivelyDraining) {
               inFlight[record.entityKey] = InFlightEntityIntent(
                 entityKey: record.entityKey,
                 pending: record.pending,
@@ -1297,9 +1576,31 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
               queued[record.entityKey] = intent;
             }
           case DurableOutboxStatus.paused:
-            paused[record.entityKey] = intent;
+            if (cloudOperationExceedsPolicy(record.pending.op)) {
+              attention[record.entityKey] = intent;
+            } else {
+              paused[record.entityKey] = intent;
+            }
           case DurableOutboxStatus.attention:
             attention[record.entityKey] = intent;
+        }
+      }
+      for (final record in _uncertainDurableIntents.values.where((record) =>
+          record.accountId == accountId &&
+          record.strategyPublicId == strategyPublicId)) {
+        attention[record.entityKey] = QueuedEntityIntent(
+          entityKey: record.entityKey,
+          pending: record.pending,
+        );
+        queued.remove(record.entityKey);
+        inFlight.remove(record.entityKey);
+        paused.remove(record.entityKey);
+        final successor = record.successorPending;
+        if (successor != null) {
+          successors[record.entityKey] = QueuedEntityIntent(
+            entityKey: record.entityKey,
+            pending: successor,
+          );
         }
       }
     }
@@ -1317,6 +1618,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       pausedByEntityKey: paused,
       attentionByEntityKey: attention,
       accountOutbox: _accountSummary(accountId),
+      hasDurabilityFailure: state.loadIssues.isNotEmpty ||
+          _hasDurabilityFailureForAccount(accountId),
       isFlushing: isFlushing,
       lastError: effectiveError,
       clearError: effectiveError == null,
@@ -1329,55 +1632,119 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   void _finishNetworkLane() {
     _networkBusy = false;
     _drainingStrategy = null;
-    if (state.isFlushing) {
+    if (!_isDisposed && state.isFlushing) {
       _refreshActiveQueueView(isFlushing: false);
     }
   }
 
   AccountStrategyOutboxSummary _accountSummary(String? accountId) {
     if (accountId == null) return const AccountStrategyOutboxSummary();
-    final recordsByStrategy = <String, List<DurableOutboxRecord>>{};
+    final recordsByStorageKey = <String, DurableOutboxRecord>{};
     for (final record in _recordsByStorageKey.values) {
       if (record.accountId != accountId) continue;
-      (recordsByStrategy[record.strategyPublicId] ??= <DurableOutboxRecord>[])
-          .add(record);
+      recordsByStorageKey[record.storageKey] = record;
+    }
+    for (final record in _uncertainDurableIntents.values) {
+      if (record.accountId != accountId) continue;
+      recordsByStorageKey[record.storageKey] = record;
+    }
+
+    final storageKeysByStrategy = <String, Set<String>>{};
+    for (final entry in recordsByStorageKey.entries) {
+      (storageKeysByStrategy[entry.value.strategyPublicId] ??= <String>{})
+          .add(entry.key);
+    }
+    for (final storageKey in <String>{
+      ..._uncertainDurableRecords,
+      ..._uncertainOversizedParking,
+    }) {
+      final strategyPublicId = _strategyIdForStorageKey(
+        storageKey,
+        accountId: accountId,
+      );
+      if (strategyPublicId != null) {
+        (storageKeysByStrategy[strategyPublicId] ??= <String>{})
+            .add(storageKey);
+      }
+    }
+
+    final summaries = <String, StrategyOutboxSummary>{};
+    for (final entry in storageKeysByStrategy.entries) {
+      var queuedCount = 0;
+      var inFlightCount = 0;
+      var pausedCount = 0;
+      var attentionCount = 0;
+      var successorCount = 0;
+      String? reason;
+      for (final storageKey in entry.value) {
+        final record = recordsByStorageKey[storageKey];
+        final uncertain = _uncertainDurableRecords.contains(storageKey) ||
+            _uncertainOversizedParking.contains(storageKey);
+        if (record == null) {
+          attentionCount += 1;
+          reason ??= 'Cloud work could not be verified in the durable outbox.';
+          continue;
+        }
+        final oversized = cloudOperationExceedsPolicy(record.pending.op);
+        if (uncertain || oversized) {
+          attentionCount += 1;
+          reason ??= uncertain
+              ? 'Cloud work could not be verified in the durable outbox.'
+              : cloudOperationTooLargeMessage;
+        } else {
+          switch (record.status) {
+            case DurableOutboxStatus.queued:
+              queuedCount += 1;
+            case DurableOutboxStatus.inFlight:
+              inFlightCount += 1;
+            case DurableOutboxStatus.paused:
+              pausedCount += 1;
+            case DurableOutboxStatus.attention:
+              attentionCount += 1;
+          }
+          reason ??= record.lastError;
+        }
+        if (record.successorPending != null) successorCount += 1;
+      }
+      summaries[entry.key] = StrategyOutboxSummary(
+        strategyPublicId: entry.key,
+        queuedCount: queuedCount,
+        inFlightCount: inFlightCount,
+        pausedCount: pausedCount,
+        attentionCount: attentionCount,
+        successorCount: successorCount,
+        reason: reason,
+      );
     }
     return AccountStrategyOutboxSummary(
       accountId: accountId,
-      strategies: <String, StrategyOutboxSummary>{
-        for (final entry in recordsByStrategy.entries)
-          entry.key: StrategyOutboxSummary(
-            strategyPublicId: entry.key,
-            queuedCount: entry.value
-                .where((record) => record.status == DurableOutboxStatus.queued)
-                .length,
-            inFlightCount: entry.value
-                .where(
-                    (record) => record.status == DurableOutboxStatus.inFlight)
-                .length,
-            pausedCount: entry.value
-                .where((record) => record.status == DurableOutboxStatus.paused)
-                .length,
-            attentionCount: entry.value
-                .where(
-                    (record) => record.status == DurableOutboxStatus.attention)
-                .length,
-            successorCount: entry.value
-                .where((record) => record.successorPending != null)
-                .length,
-            reason: entry.value
-                .where((record) => record.lastError?.isNotEmpty ?? false)
-                .map((record) => record.lastError)
-                .firstOrNull,
-          ),
-      },
+      strategies: summaries,
     );
   }
 
+  String? _strategyIdForStorageKey(
+    String storageKey, {
+    required String accountId,
+  }) {
+    final parts = storageKey.split('|');
+    if (parts.length < 3 || Uri.decodeComponent(parts.first) != accountId) {
+      return null;
+    }
+    return Uri.decodeComponent(parts[1]);
+  }
+
   void _publishAccountSummary() {
+    if (_isDisposed) return;
     final summary = _accountSummary(state.accountId);
-    if (_sameAccountSummary(state.accountOutbox, summary)) return;
-    state = state.copyWith(accountOutbox: summary);
+    final hasDurabilityFailure = _hasDurabilityFailureForCurrentAccount;
+    if (_sameAccountSummary(state.accountOutbox, summary) &&
+        state.hasDurabilityFailure == hasDurabilityFailure) {
+      return;
+    }
+    state = state.copyWith(
+      accountOutbox: summary,
+      hasDurabilityFailure: hasDurabilityFailure,
+    );
   }
 
   bool _sameAccountSummary(
@@ -1414,10 +1781,80 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     return next;
   }
 
+  bool _hasUncertainParkingFor({
+    required String? accountId,
+    required String? strategyPublicId,
+  }) {
+    if (accountId == null || strategyPublicId == null) return false;
+    final prefix = '${Uri.encodeComponent(accountId)}|'
+        '${Uri.encodeComponent(strategyPublicId)}|';
+    return _uncertainOversizedParking.any((key) => key.startsWith(prefix));
+  }
+
+  bool get _hasUncertainParkingForActiveStrategy => _hasUncertainParkingFor(
+        accountId: state.accountId,
+        strategyPublicId: state.strategyPublicId,
+      );
+
+  bool _hasUncertainDurableRecordFor({
+    required String? accountId,
+    required String? strategyPublicId,
+  }) {
+    if (accountId == null || strategyPublicId == null) return false;
+    final prefix = '${Uri.encodeComponent(accountId)}|'
+        '${Uri.encodeComponent(strategyPublicId)}|';
+    return _uncertainDurableRecords.any((key) => key.startsWith(prefix));
+  }
+
+  bool get _hasUncertainDurableRecordForActiveStrategy =>
+      _hasUncertainDurableRecordFor(
+        accountId: state.accountId,
+        strategyPublicId: state.strategyPublicId,
+      );
+
+  bool _hasDurabilityFailureForAccount(String? accountId) {
+    if (accountId == null) return false;
+    final prefix = '${Uri.encodeComponent(accountId)}|';
+    return _uncertainOversizedParking.any((key) => key.startsWith(prefix)) ||
+        _uncertainDurableRecords.any((key) => key.startsWith(prefix));
+  }
+
+  bool get _hasDurabilityFailureForCurrentAccount =>
+      state.loadIssues.isNotEmpty ||
+      _hasDurabilityFailureForAccount(state.accountId);
+
   void _recordPersistenceFailure(Object error, StackTrace stackTrace) {
     log('Durable outbox persistence failed: $error',
         name: 'strategy_outbox', error: error, stackTrace: stackTrace);
+    if (_isDisposed) return;
+    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.queuedByEntityKey,
+    );
+    final inFlight = Map<EntitySyncKey, InFlightEntityIntent>.from(
+      state.inFlightByEntityKey,
+    );
+    final paused = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.pausedByEntityKey,
+    );
+    final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.attentionByEntityKey,
+    );
+    for (final record in _uncertainDurableIntents.values.where((record) =>
+        record.accountId == state.accountId &&
+        record.strategyPublicId == state.strategyPublicId)) {
+      attention[record.entityKey] = QueuedEntityIntent(
+        entityKey: record.entityKey,
+        pending: record.pending,
+      );
+      queued.remove(record.entityKey);
+      inFlight.remove(record.entityKey);
+      paused.remove(record.entityKey);
+    }
     state = state.copyWith(
+      queuedByEntityKey: queued,
+      inFlightByEntityKey: inFlight,
+      pausedByEntityKey: paused,
+      attentionByEntityKey: attention,
       isFlushing: false,
       lastError: 'Cloud work could not be saved to the durable outbox: $error',
       hasDurabilityFailure: true,
@@ -1425,6 +1862,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   void _scheduleFlush({required bool flushImmediately}) {
+    if (_isDisposed) return;
     if (flushImmediately) {
       unawaited(flushNow());
       return;
@@ -1434,6 +1872,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   void retryCurrentAccount() {
+    if (_isDisposed) return;
     _scheduleBackgroundDrain(ignoreBackoff: true);
     if (state.queuedByEntityKey.isNotEmpty) {
       unawaited(flushNow());
@@ -1441,6 +1880,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   void _scheduleBackgroundDrain({bool ignoreBackoff = false}) {
+    if (_isDisposed) return;
     _backgroundRetryTimer?.cancel();
     final accountId = state.accountId;
     if (accountId == null) return;
@@ -1451,7 +1891,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             record.accountId == accountId &&
             record.strategyPublicId != activeStrategyId &&
             (record.status == DurableOutboxStatus.queued ||
-                record.status == DurableOutboxStatus.inFlight))
+                record.status == DurableOutboxStatus.inFlight) &&
+            !_uncertainDurableRecords.contains(record.storageKey) &&
+            !cloudOperationExceedsPolicy(record.pending.op))
         .toList(growable: false);
     if (candidates.isEmpty) return;
     final nextAttempt = candidates
@@ -1471,8 +1913,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   Future<void> _drainNextBackgroundStrategy({
     required bool ignoreBackoff,
   }) async {
-    if (_networkBusy) return;
+    if (_isDisposed || _networkBusy) return;
     await _writeTail;
+    if (_isDisposed) return;
     final accountId = state.accountId;
     if (accountId == null) return;
     final activeStrategyId = state.strategyPublicId;
@@ -1483,6 +1926,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             record.strategyPublicId != activeStrategyId &&
             (record.status == DurableOutboxStatus.queued ||
                 record.status == DurableOutboxStatus.inFlight) &&
+            !_uncertainDurableRecords.contains(record.storageKey) &&
+            !cloudOperationExceedsPolicy(record.pending.op) &&
             (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
         .toList(growable: false)
       ..sort((left, right) => left.updatedAt.compareTo(right.updatedAt));
@@ -1500,7 +1945,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
 
   DateTime _nextAttemptAt(DurableOutboxRecord record) {
     final lastAttemptAt = record.pending.lastAttemptAt;
-    if (lastAttemptAt == null || record.status == DurableOutboxStatus.inFlight) {
+    if (lastAttemptAt == null ||
+        record.status == DurableOutboxStatus.inFlight) {
       return DateTime.fromMillisecondsSinceEpoch(0);
     }
     final exponent = record.pending.attempts.clamp(0, 6);
@@ -1510,7 +1956,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   void _scheduleRetry(List<PendingOp> pending, {Duration? delay}) {
-    if (pending.isEmpty) return;
+    if (_isDisposed || pending.isEmpty) return;
     final maxAttempt = pending.fold<int>(
       0,
       (value, item) => math.max(value, item.attempts),
@@ -1792,7 +2238,24 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     if (loadIssues.isNotEmpty) {
       return 'The cloud outbox contains unreadable saved work.';
     }
-    if (attention.isNotEmpty) return 'Some saved work needs attention.';
+    if (_hasUncertainParkingForActiveStrategy) {
+      return _uncertainOversizedParkingMessage ??
+          'Cloud work could not be verified in the durable outbox. '
+              'Nothing was sent.';
+    }
+    if (_hasUncertainDurableRecordForActiveStrategy) {
+      return 'Cloud work could not be verified in the durable outbox.';
+    }
+    if (attention.isNotEmpty) {
+      final hasOversizedWork = attention.entries.any((entry) {
+        if (cloudOperationExceedsPolicy(entry.value.pending.op)) return true;
+        final record = _recordForActiveKey(entry.key);
+        return record?.pending.op.opId == entry.value.pending.op.opId &&
+            record?.lastError == cloudOperationTooLargeMessage;
+      });
+      if (hasOversizedWork) return cloudOperationTooLargeMessage;
+      return 'Some saved work needs attention.';
+    }
     if (paused.isNotEmpty) return 'Some saved work is paused after retries.';
     return null;
   }

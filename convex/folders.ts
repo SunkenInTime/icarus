@@ -9,6 +9,10 @@ import {
 } from "./lib/auth";
 import { getFolderByPublicId } from "./lib/entities";
 import {
+  assertSupportedCloudProtocol,
+  cloudProtocolArgs,
+} from "./lib/cloudProtocol";
+import {
   conflictError,
   forbiddenError,
   invalidOpError,
@@ -136,6 +140,7 @@ const folderScopeValidator = v.optional(
 
 export const create = mutation({
   args: {
+    ...cloudProtocolArgs,
     publicId: v.string(),
     name: v.string(),
     parentFolderPublicId: v.optional(v.string()),
@@ -148,6 +153,7 @@ export const create = mutation({
   },
   returns: createResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const user = await requireCurrentUser(ctx);
     const now = Date.now();
 
@@ -194,6 +200,7 @@ export const create = mutation({
 
 export const update = mutation({
   args: {
+    ...cloudProtocolArgs,
     folderPublicId: v.string(),
     name: v.optional(v.string()),
     iconId: v.optional(v.number()),
@@ -208,6 +215,7 @@ export const update = mutation({
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const folder = await getFolderByPublicId(ctx, args.folderPublicId);
     const { role } = await assertFolderRole(ctx, folder, "owner");
 
@@ -302,11 +310,13 @@ export const listTree = query({
 
 export const move = mutation({
   args: {
+    ...cloudProtocolArgs,
     folderPublicId: v.string(),
     parentFolderPublicId: v.optional(v.string()),
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const folder = await getFolderByPublicId(ctx, args.folderPublicId);
     const { role } = await assertFolderRole(ctx, folder, "owner");
 
@@ -336,10 +346,12 @@ export const move = mutation({
 
 const deleteFolder = mutation({
   args: {
+    ...cloudProtocolArgs,
     folderPublicId: v.string(),
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const folder = await getFolderByPublicId(ctx, args.folderPublicId);
     const { role } = await assertFolderRole(ctx, folder, "owner");
 

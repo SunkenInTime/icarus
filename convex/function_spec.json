@@ -39358,6 +39358,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "color": {
             "fieldType": {
               "type": "string"
@@ -39460,6 +39466,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "folderPublicId": {
             "fieldType": {
               "type": "string"
@@ -39672,6 +39684,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "folderPublicId": {
             "fieldType": {
               "type": "string"
@@ -39725,6 +39743,12 @@
               "type": "boolean"
             },
             "optional": true
+          },
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
           },
           "color": {
             "fieldType": {
@@ -40712,6 +40736,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "expiresAt": {
             "fieldType": {
               "type": "number"
@@ -40937,6 +40967,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "token": {
             "fieldType": {
               "type": "string"
@@ -40993,6 +41029,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"
@@ -140684,6 +140726,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "expectedRevision": {
             "fieldType": {
               "type": "number"
@@ -140812,6 +140860,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "expectedRevision": {
             "fieldType": {
               "type": "number"
@@ -140970,6 +141024,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "expectedRevision": {
             "fieldType": {
               "type": "number"
@@ -141060,6 +141120,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "expectedRevision": {
             "fieldType": {
               "type": "number"
@@ -141141,6 +141207,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "role": {
             "fieldType": {
               "type": "union",
@@ -141293,6 +141365,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "token": {
             "fieldType": {
               "type": "string"
@@ -141420,6 +141498,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "targetPublicId": {
             "fieldType": {
               "type": "string"
@@ -141472,6 +141556,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "folderPublicId": {
             "fieldType": {
               "type": "string"
@@ -141576,6 +141666,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "folderPublicId": {
             "fieldType": {
               "type": "string"
@@ -141730,6 +141826,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "expectedRevision": {
             "fieldType": {
               "type": "number"
@@ -142242,6 +142344,12 @@
       "args": {
         "type": "object",
         "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "expectedRevision": {
             "fieldType": {
               "type": "number"
@@ -142331,6 +142439,12 @@
               "type": "boolean"
             },
             "optional": true
+          },
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
           },
           "expectedRevision": {
             "fieldType": {
@@ -166041,7 +166155,14 @@
     {
       "args": {
         "type": "object",
-        "value": {}
+        "value": {
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          }
+        }
       },
       "functionType": "Mutation",
       "identifier": "users.js:ensureCurrentUser",

@@ -25,8 +25,11 @@ function sortObjectKeys(value) {
 }
 
 function readFunctionSpec() {
-  const executable = process.platform === "win32" ? "npx.cmd" : "npx";
-  const args = ["convex", "function-spec"];
+  const executable = process.execPath;
+  const args = [
+    resolve(repositoryRoot, "node_modules", "convex", "bin", "main.js"),
+    "function-spec",
+  ];
   const previewName = process.env.CONVEX_PREVIEW_NAME;
   if (previewName) {
     args.push("--preview-name", previewName);
@@ -72,7 +75,7 @@ function writeOrCheck(path, contents) {
     return;
   }
   const committed = readFileSync(path, "utf8");
-  if (committed !== contents) {
+  if (committed.replaceAll("\r\n", "\n") !== contents) {
     throw new Error(`${path} is stale; run npm run snapshot:convex-contract`);
   }
 }
