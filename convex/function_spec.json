@@ -39924,6 +39924,12 @@
             },
             "optional": true
           },
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "etag": {
             "fieldType": {
               "type": "string"
@@ -40129,6 +40135,12 @@
             },
             "optional": false
           },
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
+          },
           "strategyPublicId": {
             "fieldType": {
               "type": "string"
@@ -40196,6 +40208,12 @@
               "type": "number"
             },
             "optional": true
+          },
+          "clientProtocolVersion": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": false
           },
           "fileExtension": {
             "fieldType": {

@@ -536,6 +536,7 @@ describe("image asset lifecycle", () => {
       /^https:\/\/some-deployment\.convex\.cloud\//,
     );
     await owner.action(completeUpload, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       strategyPublicId,
       assetPublicId: "legacy-readable",
       provider: "convex",

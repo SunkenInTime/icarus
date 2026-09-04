@@ -4701,6 +4701,7 @@ HealthPingResult decodeHealthPingResult(ConvexValue value) =>
 ConvexObject encodeImagesCompleteUploadArgs({
   required String assetPublicId,
   ConvexOptional<double> byteSize = const ConvexOptional.absent(),
+  required double clientProtocolVersion,
   ConvexOptional<String> etag = const ConvexOptional.absent(),
   ConvexOptional<String> fileExtension = const ConvexOptional.absent(),
   ConvexOptional<double> height = const ConvexOptional.absent(),
@@ -4719,6 +4720,10 @@ ConvexObject encodeImagesCompleteUploadArgs({
       byteSize.value,
       'images.js:completeUpload.args.byteSize',
     ),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'images.js:completeUpload.args.clientProtocolVersion',
+  ),
   if (etag.isPresent) 'etag': ConvexString(etag.value),
   if (fileExtension.isPresent)
     'fileExtension': ConvexString(fileExtension.value),
@@ -4746,9 +4751,14 @@ ImagesCompleteUploadResult decodeImagesCompleteUploadResult(
 
 ConvexObject encodeImagesDeleteAssetRefArgs({
   required String assetPublicId,
+  required double clientProtocolVersion,
   required String strategyPublicId,
 }) => ConvexObject({
   'assetPublicId': ConvexString(assetPublicId),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'images.js:deleteAssetRef.args.clientProtocolVersion',
+  ),
   'strategyPublicId': ConvexString(strategyPublicId),
 });
 
@@ -4758,6 +4768,7 @@ FoldersDeleteResult decodeImagesDeleteAssetRefResult(ConvexValue value) =>
 ConvexObject encodeImagesGenerateUploadUrlArgs({
   required String assetPublicId,
   ConvexOptional<double> byteSize = const ConvexOptional.absent(),
+  required double clientProtocolVersion,
   required String fileExtension,
   ConvexOptional<double> height = const ConvexOptional.absent(),
   required String mimeType,
@@ -4770,6 +4781,10 @@ ConvexObject encodeImagesGenerateUploadUrlArgs({
       byteSize.value,
       'images.js:generateUploadUrl.args.byteSize',
     ),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'images.js:generateUploadUrl.args.clientProtocolVersion',
+  ),
   'fileExtension': ConvexString(fileExtension),
   if (height.isPresent)
     'height': _encodeNumber(

@@ -126,6 +126,7 @@ class ConvexStrategyRepository {
     int? height,
   }) async {
     final result = await _api.images.generateUploadUrl(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       strategyPublicId: strategyPublicId,
       assetPublicId: assetPublicId,
       mimeType: mimeType,
@@ -160,6 +161,7 @@ class ConvexStrategyRepository {
     int? height,
   }) async {
     await _api.images.completeUpload(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       strategyPublicId: strategyPublicId,
       assetPublicId: assetPublicId,
       provider: provider == null

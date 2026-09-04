@@ -377,6 +377,7 @@ abstract interface class ImagesModule {
   Future<ImagesCompleteUploadResult> completeUpload({
     required String assetPublicId,
     ConvexOptional<double> byteSize = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     ConvexOptional<String> etag = const ConvexOptional.absent(),
     ConvexOptional<String> fileExtension = const ConvexOptional.absent(),
     ConvexOptional<double> height = const ConvexOptional.absent(),
@@ -391,11 +392,13 @@ abstract interface class ImagesModule {
   });
   Future<FoldersDeleteResult> deleteAssetRef({
     required String assetPublicId,
+    required double clientProtocolVersion,
     required String strategyPublicId,
   });
   Future<ImagesGenerateUploadUrlResult> generateUploadUrl({
     required String assetPublicId,
     ConvexOptional<double> byteSize = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     required String fileExtension,
     ConvexOptional<double> height = const ConvexOptional.absent(),
     required String mimeType,
@@ -418,6 +421,7 @@ final class _ImagesModule implements ImagesModule {
   Future<ImagesCompleteUploadResult> completeUpload({
     required String assetPublicId,
     ConvexOptional<double> byteSize = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     ConvexOptional<String> etag = const ConvexOptional.absent(),
     ConvexOptional<String> fileExtension = const ConvexOptional.absent(),
     ConvexOptional<double> height = const ConvexOptional.absent(),
@@ -433,6 +437,7 @@ final class _ImagesModule implements ImagesModule {
     final args = encodeImagesCompleteUploadArgs(
       assetPublicId: assetPublicId,
       byteSize: byteSize,
+      clientProtocolVersion: clientProtocolVersion,
       etag: etag,
       fileExtension: fileExtension,
       height: height,
@@ -453,10 +458,12 @@ final class _ImagesModule implements ImagesModule {
   @override
   Future<FoldersDeleteResult> deleteAssetRef({
     required String assetPublicId,
+    required double clientProtocolVersion,
     required String strategyPublicId,
   }) {
     final args = encodeImagesDeleteAssetRefArgs(
       assetPublicId: assetPublicId,
+      clientProtocolVersion: clientProtocolVersion,
       strategyPublicId: strategyPublicId,
     );
     return _invoke(
@@ -469,6 +476,7 @@ final class _ImagesModule implements ImagesModule {
   Future<ImagesGenerateUploadUrlResult> generateUploadUrl({
     required String assetPublicId,
     ConvexOptional<double> byteSize = const ConvexOptional.absent(),
+    required double clientProtocolVersion,
     required String fileExtension,
     ConvexOptional<double> height = const ConvexOptional.absent(),
     required String mimeType,
@@ -478,6 +486,7 @@ final class _ImagesModule implements ImagesModule {
     final args = encodeImagesGenerateUploadUrlArgs(
       assetPublicId: assetPublicId,
       byteSize: byteSize,
+      clientProtocolVersion: clientProtocolVersion,
       fileExtension: fileExtension,
       height: height,
       mimeType: mimeType,

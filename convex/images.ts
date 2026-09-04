@@ -47,6 +47,10 @@ import {
   imageProviderValidator,
   okResultValidator,
 } from "./lib/publicValidators";
+import {
+  assertSupportedCloudProtocol,
+  cloudProtocolArgs,
+} from "./lib/cloudProtocol";
 import { makeFunctionReference } from "convex/server";
 
 type AnyCtx = MutationCtx | QueryCtx;
@@ -212,6 +216,7 @@ export async function captureDeletedPageImageAssets(
 
 export const generateUploadUrl = action({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     assetPublicId: v.string(),
     mimeType: v.string(),
@@ -230,6 +235,7 @@ export const generateUploadUrl = action({
     maxBytes: v.number(),
   }),
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const config = getR2Config();
     const validated = validateImageUploadMetadata({
       fileExtension: args.fileExtension,
@@ -330,6 +336,7 @@ export const createR2UploadIntent = internalMutation({
 
 export const completeUpload = action({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     assetPublicId: v.string(),
     provider: v.optional(imageProviderValidator),
@@ -355,6 +362,7 @@ export const completeUpload = action({
     ctx,
     args,
   ) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     if (args.storageId !== undefined || args.provider === "convex") {
       await ctx.runMutation(internal.images.completeLegacyUpload, {
         strategyPublicId: args.strategyPublicId,
@@ -721,11 +729,13 @@ export const getAssetUrl = query({
 
 export const deleteAssetRef = action({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     assetPublicId: v.string(),
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const target: { assetId: Id<"imageAssets"> } = await ctx.runQuery(
       internal.images.getAssetDeletionTarget,
       args,

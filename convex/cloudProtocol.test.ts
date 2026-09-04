@@ -100,6 +100,42 @@ const publicMutations = [
   ["users:ensureCurrentUser", {}],
 ] as const;
 
+const publicWriteActions = [
+  [
+    "images:generateUploadUrl",
+    {
+      strategyPublicId: "strategy",
+      assetPublicId: "asset",
+      mimeType: "image/png",
+      fileExtension: ".png",
+    },
+  ],
+  [
+    "images:completeUpload",
+    { strategyPublicId: "strategy", assetPublicId: "asset" },
+  ],
+  [
+    "images:deleteAssetRef",
+    { strategyPublicId: "strategy", assetPublicId: "asset" },
+  ],
+] as const;
+
+async function captureError(promise: Promise<unknown>) {
+  return promise.then(
+    () => null,
+    (caught: unknown) => caught as { data?: unknown },
+  );
+}
+
+function expectUpgradeRequired(error: { data?: unknown } | null): void {
+  expect(error).not.toBeNull();
+  expect(typeof error?.data).toBe("string");
+  expect(JSON.parse(error?.data as string)).toEqual({
+    code: "CLIENT_UPGRADE_REQUIRED",
+    message: "Client upgrade required",
+  });
+}
+
 describe("public cloud mutation protocol gate", () => {
   test.each(publicMutations)("%s rejects an old protocol canonically", async (
     identifier,
@@ -144,4 +180,52 @@ describe("public cloud mutation protocol gate", () => {
       message: "Client upgrade required",
     });
   });
+});
+
+describe("public cloud write action protocol gate", () => {
+  test.each(publicWriteActions)("%s rejects a missing protocol", async (
+    identifier,
+    args,
+  ) => {
+    const t = convexTest(schema, modules);
+    const action = makeFunctionReference<"action">(identifier);
+
+    const error = await captureError(t.action(action, args));
+
+    expect(error).not.toBeNull();
+  });
+
+  test.each(publicWriteActions)("%s rejects an old protocol canonically", async (
+    identifier,
+    args,
+  ) => {
+    const t = convexTest(schema, modules);
+    const action = makeFunctionReference<"action">(identifier);
+
+    const error = await captureError(
+      t.action(action, {
+        ...args,
+        clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION - 1,
+      }),
+    );
+
+    expectUpgradeRequired(error);
+  });
+
+  test.each(publicWriteActions)(
+    "%s rejects an unknown future protocol canonically",
+    async (identifier, args) => {
+      const t = convexTest(schema, modules);
+      const action = makeFunctionReference<"action">(identifier);
+
+      const error = await captureError(
+        t.action(action, {
+          ...args,
+          clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION + 1,
+        }),
+      );
+
+      expectUpgradeRequired(error);
+    },
+  );
 });
