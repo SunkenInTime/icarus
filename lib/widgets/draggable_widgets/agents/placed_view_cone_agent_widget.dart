@@ -10,6 +10,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
+import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screen_zoom_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/widgets/draggable_widgets/ability/rotatable_widget.dart';
@@ -193,6 +194,7 @@ class _PlacedViewConeAgentWidgetState
     }
 
     final agentSize = ref.watch(strategySettingsProvider).agentSize;
+    final isAttack = ref.watch(mapProvider).isAttack;
     const anchorVirtual = ViewConeWidget.anchorPointVirtual;
     final anchorScaled = anchorVirtual.scale(
       coordinateSystem.scaleFactor,
@@ -206,6 +208,7 @@ class _PlacedViewConeAgentWidgetState
       widget: current,
       coordinateSystem: coordinateSystem,
       agentSize: agentSize,
+      isAttack: isAttack,
     );
 
     if (!_isDragging && _rotationOrigin == Offset.zero) {
@@ -219,12 +222,16 @@ class _PlacedViewConeAgentWidgetState
 
     final localRotation = _localRotation ?? current.rotation;
     final localLength = _localLength ?? current.length;
+    final displayRotation = coordinateSystem.rotationForSide(
+      localRotation,
+      isAttack: isAttack,
+    );
 
     return Positioned(
       left: agentScreenPosition.dx - compositeAgentOffset.dx,
       top: agentScreenPosition.dy - compositeAgentOffset.dy,
       child: RotatableWidget(
-        rotation: localRotation,
+        rotation: displayRotation,
         isDragging: _isDragging,
         origin: anchorVirtual,
         buttonTop: anchorVirtual.dy - localLength - 7.5,
@@ -239,7 +246,11 @@ class _PlacedViewConeAgentWidgetState
 
           final delta = details.globalPosition - _rotationOrigin;
           final currentAngle = math.atan2(delta.dy, delta.dx);
-          final nextRotation = currentAngle + (math.pi / 2);
+          final sideRotation = currentAngle + (math.pi / 2);
+          final nextRotation = coordinateSystem.rotationFromSide(
+            sideRotation,
+            isAttack: isAttack,
+          );
           final nextLength = (coordinateSystem.normalize(delta.distance) /
                   ref.watch(screenZoomProvider))
               .clamp(ViewConeUtility.minLength, ViewConeUtility.maxLength);
@@ -266,7 +277,7 @@ class _PlacedViewConeAgentWidgetState
             final rotatedPosition = _rotateOffset(
               renderObject.globalToLocal(position),
               anchorScaled,
-              localRotation,
+              displayRotation,
             );
 
             return ref
@@ -278,7 +289,7 @@ class _PlacedViewConeAgentWidgetState
             child: ZoomTransform(
               child: ViewConeAgentComposite(
                 agent: current,
-                rotation: localRotation,
+                rotation: displayRotation,
                 length: localLength,
                 forcedAgentSize: agentSize,
                 clipToGeometry: false,
@@ -310,7 +321,7 @@ class _PlacedViewConeAgentWidgetState
           },
           child: ViewConeAgentComposite(
             agent: current,
-            rotation: localRotation,
+            rotation: displayRotation,
             length: localLength,
             forcedAgentSize: agentSize,
             applyRotation: false,

@@ -1,10 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 class CoordinateSystem {
   // System parameters
 
   CoordinateSystem._({required Size playAreaSize})
-      : _playAreaSize = playAreaSize;
+    : _playAreaSize = playAreaSize;
 
   final Size _playAreaSize;
   Size get playAreaSize => _playAreaSize;
@@ -28,6 +30,67 @@ class CoordinateSystem {
   final double mapAspectRatio = defaultMapAspectRatio;
   final double worldAspectRatio = 16 / 9;
 
+  /// Placed object data is always authored in the attack-side world.
+  ///
+  /// Defense is the same world rotated 180 degrees. Keeping that projection
+  /// here makes the conversion reversible and keeps side changes out of saved
+  /// positions.
+  Offset positionForSide({
+    required Offset canonicalPosition,
+    required Offset reflectionOffset,
+    required bool isAttack,
+  }) {
+    if (isAttack) return canonicalPosition;
+    return Offset(
+      worldNormalizedWidth - canonicalPosition.dx - reflectionOffset.dx,
+      normalizedHeight - canonicalPosition.dy - reflectionOffset.dy,
+    );
+  }
+
+  Offset positionFromSide({
+    required Offset sidePosition,
+    required Offset reflectionOffset,
+    required bool isAttack,
+  }) {
+    return positionForSide(
+      canonicalPosition: sidePosition,
+      reflectionOffset: reflectionOffset,
+      isAttack: isAttack,
+    );
+  }
+
+  Offset screenPositionForSide({
+    required Offset attackScreenPosition,
+    required Offset reflectionOffset,
+    required bool isAttack,
+  }) {
+    if (isAttack) return attackScreenPosition;
+    return Offset(
+      _effectiveSize.width - attackScreenPosition.dx - reflectionOffset.dx,
+      _effectiveSize.height - attackScreenPosition.dy - reflectionOffset.dy,
+    );
+  }
+
+  Offset screenPositionFromSide({
+    required Offset sideScreenPosition,
+    required Offset reflectionOffset,
+    required bool isAttack,
+  }) {
+    return screenPositionForSide(
+      attackScreenPosition: sideScreenPosition,
+      reflectionOffset: reflectionOffset,
+      isAttack: isAttack,
+    );
+  }
+
+  double rotationForSide(double canonicalRotation, {required bool isAttack}) {
+    return isAttack ? canonicalRotation : canonicalRotation + math.pi;
+  }
+
+  double rotationFromSide(double sideRotation, {required bool isAttack}) {
+    return isAttack ? sideRotation : sideRotation - math.pi;
+  }
+
   double get mapNormalizedWidth => normalizedHeight * mapAspectRatio;
   double get worldNormalizedWidth => normalizedHeight * worldAspectRatio;
   double get mapPaddingNormalizedX =>
@@ -41,7 +104,8 @@ class CoordinateSystem {
   static CoordinateSystem get instance {
     if (_instance == null) {
       throw StateError(
-          "CoordinateSystem must be initialized with playAreaSize first");
+        "CoordinateSystem must be initialized with playAreaSize first",
+      );
     }
     return _instance!;
   }
@@ -127,20 +191,15 @@ class CoordinateSystem {
 
   double normalize(double value) => (value / _scaleFactor);
   // Scale a size maintaining aspect ratio
-  Size scaleSize(Size size) => Size(
-        size.width * _scaleFactor,
-        size.height * _scaleFactor,
-      );
+  Size scaleSize(Size size) =>
+      Size(size.width * _scaleFactor, size.height * _scaleFactor);
 
   Offset convertOldCoordinateToNew(Offset oldCoordinate) {
     return oldCoordinate;
   }
 
   // Convenience method to wrap a widget with scaled dimensions
-  Widget scaleWidget({
-    required Widget child,
-    required Size originalSize,
-  }) {
+  Widget scaleWidget({required Widget child, required Size originalSize}) {
     Size scaledSize = scaleSize(originalSize);
     return SizedBox(
       width: scaledSize.width,

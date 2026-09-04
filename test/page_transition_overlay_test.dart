@@ -12,6 +12,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/const/utilities.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/transition_provider.dart';
+import 'package:icarus/widgets/draggable_widgets/utilities/role_icon_utility_widget.dart';
 import 'package:icarus/widgets/draggable_widgets/utilities/view_cone_widget.dart';
 import 'package:icarus/widgets/mouse_watch.dart';
 import 'package:icarus/widgets/page_transition_overlay.dart';
@@ -22,6 +23,14 @@ const Color _expectedMutedAllyBgColor = Color.fromARGB(255, 60, 60, 60);
 class _FixedMapProvider extends MapProvider {
   @override
   MapState build() => MapState(currentMap: MapValue.ascent, isAttack: true);
+
+  @override
+  void fromHive(MapValue map, bool isAttack) {}
+}
+
+class _DefenseMapProvider extends MapProvider {
+  @override
+  MapState build() => MapState(currentMap: MapValue.ascent, isAttack: false);
 
   @override
   void fromHive(MapValue map, bool isAttack) {}
@@ -290,6 +299,70 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets(
+      'defense appear and disappear offsets keep view-cone geometry aligned',
+      (tester) async {
+    final container = _createDefenseContainer();
+    addTearDown(container.dispose);
+    final coordinateSystem = CoordinateSystem.instance;
+    final cone = PlacedUtility(
+      id: 'defense-transition-cone',
+      type: UtilityType.viewCone90,
+      position: const Offset(500, 400),
+    )
+      ..rotation = 0.6
+      ..length = 90;
+    const progress = 0.25;
+    final directionalOffset = coordinateSystem.scale(28);
+    final coneAnchor = coordinateSystem.virtualOffsetToWorld(
+      ViewConeWidget.anchorPointVirtual,
+    );
+
+    Future<Offset> pumpEntry(PageTransitionEntry entry) async {
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: ShadApp(
+            home: Scaffold(
+              body: TransitionEntriesLayer(
+                entries: [entry],
+                agentPaths: const {},
+                t: progress,
+                direction: PageTransitionDirection.forward,
+                agentSize: 40,
+                abilitySize: 40,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      return tester
+          .widget<ViewConeWidget>(find.byType(ViewConeWidget))
+          .worldOrigin!;
+    }
+
+    final appearOrigin = await pumpEntry(PageTransitionEntry.appear(to: cone));
+    final appearTranslation = coordinateSystem.screenWidthToWorld(
+      directionalOffset * (1 - progress),
+    );
+    expect(
+      appearOrigin,
+      cone.position + Offset(-appearTranslation, 0) + coneAnchor,
+    );
+
+    final disappearOrigin = await pumpEntry(
+      PageTransitionEntry.disappear(from: cone),
+    );
+    final disappearTranslation = coordinateSystem.screenWidthToWorld(
+      -directionalOffset * progress,
+    );
+    expect(
+      disappearOrigin,
+      cone.position + Offset(-disappearTranslation, 0) + coneAnchor,
+    );
+  });
+
   testWidgets('temporary rectangle preview applies saved rotation once',
       (tester) async {
     final container = _createContainer();
@@ -328,6 +401,93 @@ void main() {
     });
     expect(matchingTransforms, hasLength(1));
   });
+
+  testWidgets('role icons stay upright during page transitions',
+      (tester) async {
+    final container = _createContainer();
+    addTearDown(container.dispose);
+    const roleTypes = [
+      UtilityType.controller,
+      UtilityType.duelist,
+      UtilityType.initiator,
+      UtilityType.sentinel,
+    ];
+    final roleIcons = [
+      for (var index = 0; index < roleTypes.length; index++)
+        PlacedUtility(
+          id: 'rotated-${roleTypes[index].name}',
+          type: roleTypes[index],
+          position: Offset(350 + (index * 80), 350),
+        )..rotation = math.pi / 7 + (index * 0.1),
+    ];
+
+    for (final roleIcon in roleIcons) {
+      expect(PageTransitionEntry.rotationOf(roleIcon), isNull);
+    }
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: ShadApp(
+          home: Scaffold(
+            body: TransitionEntriesLayer(
+              entries: [
+                for (final roleIcon in roleIcons)
+                  PageTransitionEntry.appear(to: roleIcon),
+              ],
+              agentPaths: const {},
+              t: 0.5,
+              direction: PageTransitionDirection.forward,
+              agentSize: 40,
+              abilitySize: 40,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(RoleIconUtilityWidget), findsNWidgets(roleTypes.length));
+    for (final roleIcon in roleIcons) {
+      expect(_hasTransformAtAngle(tester, roleIcon.rotation), isFalse);
+    }
+  });
+
+  testWidgets('defense temporary role icons stay upright', (tester) async {
+    final container = _createDefenseContainer();
+    addTearDown(container.dispose);
+    final roleIcon = PlacedUtility(
+      id: 'defense-role-icon',
+      type: UtilityType.sentinel,
+      position: const Offset(500, 350),
+    );
+    container.read(transitionProvider.notifier).prepare(
+      [roleIcon],
+      startAgentSize: 40,
+      startAbilitySize: 40,
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home: Scaffold(body: TemporaryWidgetBuilder()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(RoleIconUtilityWidget), findsOneWidget);
+    expect(_hasTransformAtAngle(tester, math.pi), isFalse);
+  });
+}
+
+bool _hasTransformAtAngle(WidgetTester tester, double angle) {
+  return tester.widgetList<Transform>(find.byType(Transform)).any((transform) {
+    final matrix = transform.transform.storage;
+    final renderedRotation = math.atan2(matrix[1], matrix[0]);
+    return (renderedRotation - angle).abs() < 0.0001;
+  });
 }
 
 Widget _previewHarness({
@@ -359,6 +519,14 @@ ProviderContainer _createContainer() {
   return ProviderContainer(
     overrides: [
       mapProvider.overrideWith(_FixedMapProvider.new),
+    ],
+  );
+}
+
+ProviderContainer _createDefenseContainer() {
+  return ProviderContainer(
+    overrides: [
+      mapProvider.overrideWith(_DefenseMapProvider.new),
     ],
   );
 }

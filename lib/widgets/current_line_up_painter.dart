@@ -19,13 +19,16 @@ class CurrentLineUpPainter extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final coordinateSystem = CoordinateSystem.instance;
     final double abilitySize = ref.watch(strategySettingsProvider).abilitySize;
-    final double agentSize =
-        coordinateSystem.scale(ref.watch(strategySettingsProvider).agentSize);
-    final currentMap =
-        ref.watch(mapProvider.select((state) => state.currentMap));
+    final double agentSize = coordinateSystem.scale(
+      ref.watch(strategySettingsProvider).agentSize,
+    );
+    final currentMap = ref.watch(
+      mapProvider.select((state) => state.currentMap),
+    );
     final double mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final lineUpState = ref.watch(lineUpProvider);
-    final PlacedAgent? currentAgent = lineUpState.currentAgent ??
+    final PlacedAgent? currentAgent =
+        lineUpState.currentAgent ??
         ref
             .read(lineUpProvider.notifier)
             .getGroupById(lineUpState.currentGroupId ?? '')
@@ -40,6 +43,7 @@ class CurrentLineUpPainter extends ConsumerWidget {
           abilitySize: abilitySize,
           agentSize: agentSize,
           mapScale: mapScale,
+          isAttack: ref.watch(mapProvider).isAttack,
           currentAgent: currentAgent,
           currentAbility: currentAbility,
           resizeCounter: ref.watch(lineUpCanvasResizeProvider),
@@ -54,6 +58,7 @@ class _CurrentLinePainter extends CustomPainter {
   final double abilitySize;
   final double agentSize;
   final double mapScale;
+  final bool isAttack;
   final PlacedAgent? currentAgent;
   final PlacedAbility? currentAbility;
   final int resizeCounter;
@@ -63,6 +68,7 @@ class _CurrentLinePainter extends CustomPainter {
     required this.abilitySize,
     required this.agentSize,
     required this.mapScale,
+    required this.isAttack,
     this.currentAgent,
     this.currentAbility,
     required this.resizeCounter,
@@ -81,12 +87,14 @@ class _CurrentLinePainter extends CustomPainter {
     final startPosition = screenAnchorForAgent(
       agent: currentAgent!,
       coordinateSystem: coordinateSystem,
+      isAttack: isAttack,
     );
 
     final endPosition = screenAnchorForAbility(
       ability: currentAbility!,
       coordinateSystem: coordinateSystem,
       mapScale: mapScale,
+      isAttack: isAttack,
     );
 
     canvas.drawLine(startPosition, endPosition, highlightPaint);
@@ -100,6 +108,7 @@ class _CurrentLinePainter extends CustomPainter {
           oldDelegate.abilitySize != abilitySize ||
           oldDelegate.agentSize != agentSize ||
           oldDelegate.mapScale != mapScale ||
+          oldDelegate.isAttack != isAttack ||
           oldDelegate.resizeCounter != resizeCounter;
     }
     return true;

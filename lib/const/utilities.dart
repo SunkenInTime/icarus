@@ -81,6 +81,14 @@ class UtilityData {
         type == UtilityType.sentinel;
   }
 
+  /// Whether [type] has a visible orientation on the canvas.
+  ///
+  /// Other utility types may retain a legacy rotation value in saved data,
+  /// but their normal canvas widgets are deliberately rendered upright.
+  static bool usesRotation(UtilityType type) {
+    return isViewCone(type) || type == UtilityType.customRectangle;
+  }
+
   static bool isAgentAttachable(UtilityType type) {
     return isViewCone(type) || type == UtilityType.customCircle;
   }

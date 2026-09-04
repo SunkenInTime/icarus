@@ -54,7 +54,6 @@ class AgentTransitionPathPlanner {
   static Map<String, AgentTransitionPath> plan({
     required List<PageTransitionEntry> entries,
     required VisionGeometryMap? geometry,
-    required bool isAttack,
     required double startAgentSize,
     required double endAgentSize,
     required CoordinateSystem coordinateSystem,
@@ -71,11 +70,13 @@ class AgentTransitionPathPlanner {
         position +
         coordinateSystem.virtualOffsetToWorld(Offset(size / 2, size / 2));
 
+    // Transition positions are canonical, so pathfinding always uses the
+    // attack geometry. The completed frame is projected to its display side.
     double? elevationFor(PlacedWidget widget, Offset center) {
       final override =
           widget is PlacedViewConeAgent ? widget.visionElevation : null;
       return override ??
-          geometry.inferredHeightAt(isAttack: isAttack, position: center);
+          geometry.inferredHeightAt(isAttack: true, position: center);
     }
 
     return {
@@ -96,7 +97,7 @@ class AgentTransitionPathPlanner {
               start: startCenter,
               end: endCenter,
               layer: geometry.layerFor(
-                isAttack: isAttack,
+                isAttack: true,
                 elevation: routeElevation,
               ),
             );
@@ -256,12 +257,7 @@ class AgentTransitionPathfinder {
   }
 
   double _segmentDistanceSquared(VisionSegment first, VisionSegment second) {
-    if (_segmentsIntersect(
-      first.start,
-      first.end,
-      second.start,
-      second.end,
-    )) {
+    if (_segmentsIntersect(first.start, first.end, second.start, second.end)) {
       return 0;
     }
     return [

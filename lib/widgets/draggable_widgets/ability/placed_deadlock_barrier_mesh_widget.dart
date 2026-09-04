@@ -65,21 +65,16 @@ class _PlacedDeadlockBarrierMeshWidgetState
   @override
   void initState() {
     super.initState();
-    _localArmLengthsMeters =
-        normalizeDeadlockBarrierMeshArmLengths(widget.ability.armLengthsMeters);
+    _localArmLengthsMeters = normalizeDeadlockBarrierMeshArmLengths(
+      widget.ability.armLengthsMeters,
+    );
     _localRotation = widget.ability.rotation;
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 160),
       vsync: this,
     );
-    _scaleAnimation = Tween<double>(
-      begin: 0.9,
-      end: 1.0,
-    ).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeOutCubic,
-      ),
+    _scaleAnimation = Tween<double>(begin: 0.9, end: 1.0).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
     );
   }
 
@@ -92,8 +87,9 @@ class _PlacedDeadlockBarrierMeshWidgetState
   @override
   Widget build(BuildContext context) {
     final coordinateSystem = CoordinateSystem.instance;
-    final currentMap =
-        ref.watch(mapProvider.select((state) => state.currentMap));
+    final currentMap = ref.watch(
+      mapProvider.select((state) => state.currentMap),
+    );
     final mapScale = Maps.mapScale[currentMap] ?? 1.0;
     final abilitySize = ref.watch(strategySettingsProvider).abilitySize;
     final isScreenshot = ref.watch(screenshotProvider);
@@ -105,8 +101,9 @@ class _PlacedDeadlockBarrierMeshWidgetState
 
     final barrierAbility =
         abilityRef.data.abilityData! as DeadlockBarrierMeshAbility;
-    final providerArmLengths =
-        normalizeDeadlockBarrierMeshArmLengths(abilityRef.armLengthsMeters);
+    final providerArmLengths = normalizeDeadlockBarrierMeshArmLengths(
+      abilityRef.armLengthsMeters,
+    );
     final providerRotation = abilityRef.rotation;
 
     if (!_isDragging &&
@@ -122,9 +119,15 @@ class _PlacedDeadlockBarrierMeshWidgetState
       _localRotation = providerRotation;
     }
 
-    final armLengths =
-        normalizeDeadlockBarrierMeshArmLengths(_localArmLengthsMeters);
+    final armLengths = normalizeDeadlockBarrierMeshArmLengths(
+      _localArmLengthsMeters,
+    );
     final localRotation = _localRotation ?? providerRotation;
+    final isAttack = ref.watch(mapProvider).isAttack;
+    final displayRotation = coordinateSystem.rotationForSide(
+      localRotation,
+      isAttack: isAttack,
+    );
     final maxExtent = coordinateSystem.scale(
       deadlockBarrierMeshMaxExtent(
         mapScale: mapScale,
@@ -139,6 +142,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
       coordinateSystem: coordinateSystem,
       mapScale: mapScale,
       abilitySize: abilitySize,
+      isAttack: isAttack,
     );
     final feedbackRotationOrigin = center.scale(
       ref.watch(screenZoomProvider),
@@ -147,7 +151,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
     final showMesh = abilityRef.visualState.showRangeFill;
 
     final content = Transform.rotate(
-      angle: localRotation,
+      angle: displayRotation,
       alignment: Alignment.topLeft,
       origin: center,
       child: Stack(
@@ -181,7 +185,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
                 final rotatedAnchor = _rotateOffset(
                   anchorWithinSquare,
                   center,
-                  localRotation,
+                  displayRotation,
                 );
                 return ref
                     .read(screenZoomProvider.notifier)
@@ -190,7 +194,7 @@ class _PlacedDeadlockBarrierMeshWidgetState
               feedback: Opacity(
                 opacity: Settings.feedbackOpacity,
                 child: Transform.rotate(
-                  angle: localRotation,
+                  angle: displayRotation,
                   alignment: Alignment.topLeft,
                   origin: feedbackRotationOrigin,
                   child: ZoomTransform(
@@ -213,10 +217,12 @@ class _PlacedDeadlockBarrierMeshWidgetState
                 final shouldDuplicate =
                     !widget.isLineUp && ref.read(duplicateDragModifierProvider);
                 final duplicateId = shouldDuplicate
-                    ? ref.read(abilityProvider.notifier).duplicateAbilityAt(
-                          sourceId: abilityRef.id,
-                          position: abilityRef.position,
-                        )
+                    ? ref
+                          .read(abilityProvider.notifier)
+                          .duplicateAbilityAt(
+                            sourceId: abilityRef.id,
+                            position: abilityRef.position,
+                          )
                     : null;
                 setState(() {
                   _isDragging = true;
@@ -298,8 +304,9 @@ class _PlacedDeadlockBarrierMeshWidgetState
     required double mapScale,
     required double abilitySize,
   }) {
-    final handleSize =
-        coordinateSystem.scale(deadlockBarrierMeshHandleDiameterVirtual);
+    final handleSize = coordinateSystem.scale(
+      deadlockBarrierMeshHandleDiameterVirtual,
+    );
     final handleCenter = deadlockBarrierMeshRotationHandleCenter(
       mapScale: mapScale,
       abilitySize: abilitySize,
@@ -332,11 +339,8 @@ class _PlacedDeadlockBarrierMeshWidgetState
         },
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onPanStart: (details) => _startRotation(
-            details.globalPosition,
-            mapScale,
-            abilitySize,
-          ),
+          onPanStart: (details) =>
+              _startRotation(details.globalPosition, mapScale, abilitySize),
           onPanUpdate: (details) => _updateRotation(details.globalPosition),
           onPanEnd: (_) => _finishRotation(),
           onPanCancel: _cancelRotation,
@@ -353,8 +357,9 @@ class _PlacedDeadlockBarrierMeshWidgetState
     required double mapScale,
     required double abilitySize,
   }) {
-    final handleSize =
-        coordinateSystem.scale(deadlockBarrierMeshHandleDiameterVirtual);
+    final handleSize = coordinateSystem.scale(
+      deadlockBarrierMeshHandleDiameterVirtual,
+    );
     final handleCenter = deadlockBarrierMeshHandleCenter(
       arm: arm,
       armLengthMeters: armLengthMeters,
@@ -466,8 +471,9 @@ class _PlacedDeadlockBarrierMeshWidgetState
     );
 
     setState(() {
-      _rotationOriginGlobal =
-          renderBox.localToGlobal(Offset(maxExtent / 2, maxExtent / 2));
+      _rotationOriginGlobal = renderBox.localToGlobal(
+        Offset(maxExtent / 2, maxExtent / 2),
+      );
       _isRotating = true;
       _isRotationHandleHovered = true;
     });
@@ -484,8 +490,14 @@ class _PlacedDeadlockBarrierMeshWidgetState
     final delta = globalPosition - _rotationOriginGlobal;
     final currentAngle = math.atan2(delta.dy, delta.dx);
 
+    final sideRotation = currentAngle + (math.pi / 2);
+    final canonicalRotation = CoordinateSystem.instance.rotationFromSide(
+      sideRotation,
+      isAttack: ref.read(mapProvider).isAttack,
+    );
+
     setState(() {
-      _localRotation = currentAngle + (math.pi / 2);
+      _localRotation = canonicalRotation;
     });
   }
 
@@ -496,17 +508,16 @@ class _PlacedDeadlockBarrierMeshWidgetState
     }
 
     if (widget.isLineUp) {
-      ref.read(lineUpProvider.notifier).updateGeometry(
-            rotation: _localRotation,
-          );
+      ref
+          .read(lineUpProvider.notifier)
+          .updateGeometry(rotation: _localRotation);
     } else {
       final abilities = ref.read(abilityProvider);
       final index = PlacedWidget.getIndexByID(widget.id, abilities);
       if (index >= 0) {
-        ref.read(abilityProvider.notifier).updateGeometry(
-              index,
-              rotation: _localRotation,
-            );
+        ref
+            .read(abilityProvider.notifier)
+            .updateGeometry(index, rotation: _localRotation);
       }
     }
 
@@ -537,19 +548,16 @@ class _PlacedDeadlockBarrierMeshWidgetState
     double mapScale,
     double abilitySize,
   ) {
-    final currentArmLengths =
-        normalizeDeadlockBarrierMeshArmLengths(_localArmLengthsMeters);
+    final currentArmLengths = normalizeDeadlockBarrierMeshArmLengths(
+      _localArmLengthsMeters,
+    );
     setState(() {
       _activeArm = arm;
       _hoveredArm = arm;
       _resizeStartArmLengthsMeters = List<double>.from(currentArmLengths);
-      _armDragOffsetMeters = currentArmLengths[arm.index] -
-          _estimateArmLengthMeters(
-            globalPosition,
-            arm,
-            mapScale,
-            abilitySize,
-          );
+      _armDragOffsetMeters =
+          currentArmLengths[arm.index] -
+          _estimateArmLengthMeters(globalPosition, arm, mapScale, abilitySize);
     });
     _animationController.forward();
   }
@@ -560,18 +568,14 @@ class _PlacedDeadlockBarrierMeshWidgetState
     double mapScale,
     double abilitySize,
   ) {
-    final nextLength = (_estimateArmLengthMeters(
-              globalPosition,
-              arm,
-              mapScale,
-              abilitySize,
-            ) +
-            _armDragOffsetMeters)
-        .clamp(
-          deadlockBarrierMeshMinArmLengthMeters,
-          deadlockBarrierMeshMaxArmLengthMeters,
-        )
-        .toDouble();
+    final nextLength =
+        (_estimateArmLengthMeters(globalPosition, arm, mapScale, abilitySize) +
+                _armDragOffsetMeters)
+            .clamp(
+              deadlockBarrierMeshMinArmLengthMeters,
+              deadlockBarrierMeshMaxArmLengthMeters,
+            )
+            .toDouble();
 
     final nextArmLengths = List<double>.from(
       normalizeDeadlockBarrierMeshArmLengths(_localArmLengthsMeters),
@@ -591,8 +595,9 @@ class _PlacedDeadlockBarrierMeshWidgetState
   ) {
     final renderBox = context.findRenderObject() as RenderBox?;
     if (renderBox == null) {
-      final armLengths =
-          normalizeDeadlockBarrierMeshArmLengths(_localArmLengthsMeters);
+      final armLengths = normalizeDeadlockBarrierMeshArmLengths(
+        _localArmLengthsMeters,
+      );
       return armLengths[arm.index];
     }
 
@@ -608,7 +613,10 @@ class _PlacedDeadlockBarrierMeshWidgetState
     final unrotatedLocal = _rotateOffset(
       localPosition,
       center,
-      -(_localRotation ?? 0),
+      -CoordinateSystem.instance.rotationForSide(
+        _localRotation ?? 0,
+        isAttack: ref.read(mapProvider).isAttack,
+      ),
     );
     final delta = unrotatedLocal - center;
     final deltaVirtual = Offset(
@@ -624,8 +632,9 @@ class _PlacedDeadlockBarrierMeshWidgetState
   }
 
   void _finishArmResize() {
-    final armLengths =
-        normalizeDeadlockBarrierMeshArmLengths(_localArmLengthsMeters);
+    final armLengths = normalizeDeadlockBarrierMeshArmLengths(
+      _localArmLengthsMeters,
+    );
 
     if (widget.isLineUp) {
       ref.read(lineUpProvider.notifier).updateArmLengths(armLengths);

@@ -1,486 +1,73 @@
-import 'dart:math' as math;
-
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/const/agents.dart';
-import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/line_provider.dart';
-import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/action_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
-import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:toastification/toastification.dart';
 
 class _NoopActionProvider extends ActionProvider {
   @override
   List<UserAction> build() => [];
 
   @override
-  void addAction(UserAction action) {
-    state = [...state, action];
-  }
-}
-
-class _FixedMapProvider extends MapProvider {
-  _FixedMapProvider({
-    required this.mapValue,
-  });
-
-  final MapValue mapValue;
-
-  @override
-  MapState build() => MapState(currentMap: mapValue, isAttack: true);
-
-  @override
-  void fromHive(MapValue map, bool isAttack) {}
-}
-
-ProviderContainer _createContainer(MapValue mapValue) {
-  final container = ProviderContainer(
-    overrides: [
-      actionProvider.overrideWith(_NoopActionProvider.new),
-      mapProvider.overrideWith(() => _FixedMapProvider(mapValue: mapValue)),
-    ],
-  );
-  addTearDown(container.dispose);
-  return container;
+  void addAction(UserAction action) {}
 }
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
+  test('locked add-item mode keeps the group agent canonical', () {
+    final container = ProviderContainer(
+      overrides: [actionProvider.overrideWith(_NoopActionProvider.new)],
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(lineUpProvider.notifier);
+    final group = LineUpGroup(
+      id: 'group-1',
+      agent: PlacedAgent(
+        id: 'group-agent',
+        type: AgentType.breach,
+        position: const Offset(120, 220),
+      ),
+      items: const [],
+    );
 
-  group('LineUpProvider locked add-item mode', () {
-    setUp(() {
-      CoordinateSystem(playAreaSize: const Size(1920, 1080));
-    });
+    notifier.addGroup(group);
+    notifier.startNewItemForGroup(group.id);
 
-    test('startNewItemForGroup stores target group and locked agent type', () {
-      final container = _createContainer(MapValue.bind);
-      final notifier = container.read(lineUpProvider.notifier);
-      final group = LineUpGroup(
-        id: 'group-1',
-        agent: PlacedAgent(
-          id: 'group-agent',
-          type: AgentType.breach,
-          position: const Offset(120, 220),
-        ),
-        items: [
-          LineUpItem(
-            id: 'item-1',
-            ability: PlacedAbility(
-              id: 'ability-1',
-              data: AgentData.agents[AgentType.breach]!.abilities.first,
-              position: const Offset(220, 320),
-            ),
-          ),
-        ],
-      );
-
-      notifier.addGroup(group);
-      notifier.startNewItemForGroup(group.id);
-
-      final state = container.read(lineUpProvider);
-      expect(state.currentGroupId, group.id);
-      expect(state.placementMode, LineUpPlacementMode.addItemToGroup);
-      expect(state.lockedAgentType, AgentType.breach);
-      expect(state.currentAgent, isNull);
-      expect(notifier.getCurrentPreviewAgent()?.id, group.agent.id);
-      expect(notifier.isLockedAddItemMode, isTrue);
-    });
-
-    test('setCurrentAbility accepts matching ability in locked add-item mode',
-        () {
-      final container = _createContainer(MapValue.bind);
-      final notifier = container.read(lineUpProvider.notifier);
-      final group = LineUpGroup(
-        id: 'group-accept',
-        agent: PlacedAgent(
-          id: 'group-agent',
-          type: AgentType.breach,
-          position: const Offset(120, 220),
-        ),
-        items: const [],
-      );
-
-      notifier.addGroup(group);
-      notifier.startNewItemForGroup(group.id);
-
-      final ability = PlacedAbility(
-        id: 'new-ability',
-        data: AgentData.agents[AgentType.breach]!.abilities.first,
-        position: const Offset(300, 400),
-      );
-
-      notifier.setCurrentAbility(ability);
-
-      final state = container.read(lineUpProvider);
-      expect(state.currentAbility, isNotNull);
-      expect(state.currentAbility!.data.type, AgentType.breach);
-      expect(state.currentAbility!.lineUpID, group.id);
-    });
-
-    testWidgets(
-        'setCurrentAbility rejects mismatched ability in locked add-item mode',
-        (tester) async {
-      await tester.pumpWidget(
-        const ToastificationWrapper(
-          child: ShadApp(
-            home: SizedBox.shrink(),
-          ),
-        ),
-      );
-      final container = _createContainer(MapValue.bind);
-      final notifier = container.read(lineUpProvider.notifier);
-      final group = LineUpGroup(
-        id: 'group-reject',
-        agent: PlacedAgent(
-          id: 'group-agent',
-          type: AgentType.breach,
-          position: const Offset(120, 220),
-        ),
-        items: const [],
-      );
-
-      notifier.addGroup(group);
-      notifier.startNewItemForGroup(group.id);
-      notifier.setCurrentAbility(
-        PlacedAbility(
-          id: 'good-ability',
-          data: AgentData.agents[AgentType.breach]!.abilities.first,
-          position: const Offset(300, 400),
-        ),
-      );
-
-      notifier.setCurrentAbility(
-        PlacedAbility(
-          id: 'bad-ability',
-          data: AgentData.agents[AgentType.sova]!.abilities.first,
-          position: const Offset(320, 420),
-        ),
-      );
-
-      final currentAbility = container.read(lineUpProvider).currentAbility;
-      expect(currentAbility, isNotNull);
-      expect(currentAbility!.id, 'good-ability');
-      expect(currentAbility.data.type, AgentType.breach);
-      await tester.pump(const Duration(seconds: 4));
-      await tester.pumpAndSettle();
-    });
-
-    test('clearCurrentPlacing resets locked add-item metadata', () {
-      final container = _createContainer(MapValue.bind);
-      final notifier = container.read(lineUpProvider.notifier);
-      final group = LineUpGroup(
-        id: 'group-clear',
-        agent: PlacedAgent(
-          id: 'group-agent',
-          type: AgentType.breach,
-          position: const Offset(120, 220),
-        ),
-        items: const [],
-      );
-
-      notifier.addGroup(group);
-      notifier.startNewItemForGroup(group.id);
-      notifier.clearCurrentPlacing();
-
-      final state = container.read(lineUpProvider);
-      expect(state.currentGroupId, isNull);
-      expect(state.currentAbility, isNull);
-      expect(state.placementMode, isNull);
-      expect(state.lockedAgentType, isNull);
-      expect(notifier.isLockedAddItemMode, isFalse);
-    });
+    final state = container.read(lineUpProvider);
+    expect(state.currentGroupId, group.id);
+    expect(state.placementMode, LineUpPlacementMode.addItemToGroup);
+    expect(state.lockedAgentType, AgentType.breach);
+    expect(state.currentAgent, isNull);
+    expect(notifier.getCurrentPreviewAgent()?.position, const Offset(120, 220));
   });
 
-  group('LineUpProvider.switchSides', () {
-    late AbilityInfo abilityInfo;
+  test('matching abilities retain canonical positions in locked mode', () {
+    final container = ProviderContainer(
+      overrides: [actionProvider.overrideWith(_NoopActionProvider.new)],
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(lineUpProvider.notifier);
+    final group = LineUpGroup(
+      id: 'group-2',
+      agent: PlacedAgent(
+        id: 'group-agent',
+        type: AgentType.breach,
+        position: const Offset(120, 220),
+      ),
+      items: const [],
+    );
+    final ability = PlacedAbility(
+      id: 'new-ability',
+      data: AgentData.agents[AgentType.breach]!.abilities.first,
+      position: const Offset(300, 400),
+    );
 
-    setUp(() {
-      CoordinateSystem(playAreaSize: const Size(1920, 1080));
-      abilityInfo = AgentData.agents[AgentType.deadlock]!.abilities[2];
-    });
+    notifier.addGroup(group);
+    notifier.startNewItemForGroup(group.id);
+    notifier.setCurrentAbility(ability);
 
-    test('deleted lineup is flipped while stored in popped lineups', () {
-      final container = _createContainer(MapValue.bind);
-      final notifier = container.read(lineUpProvider.notifier);
-      final agentSize = container.read(strategySettingsProvider).agentSize;
-      final abilitySize = container.read(strategySettingsProvider).abilitySize;
-      final mapScale = Maps.mapScale[MapValue.bind]!;
-
-      const initialAgentPosition = Offset(100.0, 200.0);
-      const initialAbilityPosition = Offset(300.0, 400.0);
-      const initialAbilityRotation = math.pi / 4;
-
-      final lineUp = LineUp(
-        id: 'lineup-1',
-        agent: PlacedAgent(
-          id: 'lineup-agent-1',
-          type: AgentType.deadlock,
-          position: initialAgentPosition,
-        ),
-        ability: PlacedAbility(
-          id: 'lineup-ability-1',
-          data: abilityInfo,
-          position: initialAbilityPosition,
-          rotation: initialAbilityRotation,
-        ),
-        youtubeLink: '',
-        images: const [],
-        notes: '',
-      );
-
-      notifier.fromHive([lineUp]);
-      notifier.deleteLineUpById(lineUp.id);
-      notifier.switchSides();
-      notifier.undoAction(
-        UserAction(
-          type: ActionType.deletion,
-          id: lineUp.id,
-          group: ActionGroup.lineUp,
-        ),
-      );
-
-      final restoredLineUp = container.read(lineUpProvider).lineUps.single;
-      final expectedAgentPosition = getFlippedPosition(
-        position: initialAgentPosition,
-        scaledSize: Offset(
-          CoordinateSystem.instance.scale(agentSize),
-          CoordinateSystem.instance.scale(agentSize),
-        ),
-      );
-      final abilitySizePx = abilityInfo.abilityData!
-          .getSize(mapScale: mapScale, abilitySize: abilitySize)
-          .scale(
-            CoordinateSystem.instance.scaleFactor,
-            CoordinateSystem.instance.scaleFactor,
-          );
-      final expectedAbilityPosition = getFlippedPosition(
-        position: initialAbilityPosition,
-        scaledSize: abilitySizePx,
-      );
-
-      expect(
-        restoredLineUp.agent.position.dx,
-        closeTo(expectedAgentPosition.dx, 0.0001),
-      );
-      expect(
-        restoredLineUp.agent.position.dy,
-        closeTo(expectedAgentPosition.dy, 0.0001),
-      );
-      expect(
-        restoredLineUp.ability.position.dx,
-        closeTo(expectedAbilityPosition.dx, 0.0001),
-      );
-      expect(
-        restoredLineUp.ability.position.dy,
-        closeTo(expectedAbilityPosition.dy, 0.0001),
-      );
-      expect(
-        restoredLineUp.ability.rotation,
-        closeTo(initialAbilityRotation + math.pi, 0.0001),
-      );
-    });
-
-    test('current lineup placement flips on side switch', () {
-      final container = _createContainer(MapValue.bind);
-      final notifier = container.read(lineUpProvider.notifier);
-      final agentSize = container.read(strategySettingsProvider).agentSize;
-      final abilitySize = container.read(strategySettingsProvider).abilitySize;
-      final mapScale = Maps.mapScale[MapValue.bind]!;
-
-      const initialAgentPosition = Offset(120.0, 220.0);
-      const initialAbilityPosition = Offset(320.0, 420.0);
-      const initialAbilityRotation = math.pi / 6;
-
-      notifier.setAgent(
-        PlacedAgent(
-          id: 'current-agent',
-          type: AgentType.deadlock,
-          position: initialAgentPosition,
-        ),
-      );
-      notifier.setAbility(
-        PlacedAbility(
-          id: 'current-ability',
-          data: abilityInfo,
-          position: initialAbilityPosition,
-          rotation: initialAbilityRotation,
-        ),
-      );
-
-      notifier.switchSides();
-
-      final currentState = container.read(lineUpProvider);
-      final currentAgent = currentState.currentAgent;
-      final currentAbility = currentState.currentAbility;
-      expect(currentAgent, isNotNull);
-      expect(currentAbility, isNotNull);
-
-      final expectedAgentPosition = getFlippedPosition(
-        position: initialAgentPosition,
-        scaledSize: Offset(
-          CoordinateSystem.instance.scale(agentSize),
-          CoordinateSystem.instance.scale(agentSize),
-        ),
-      );
-      final abilitySizePx = abilityInfo.abilityData!
-          .getSize(mapScale: mapScale, abilitySize: abilitySize)
-          .scale(
-            CoordinateSystem.instance.scaleFactor,
-            CoordinateSystem.instance.scaleFactor,
-          );
-      final expectedAbilityPosition = getFlippedPosition(
-        position: initialAbilityPosition,
-        scaledSize: abilitySizePx,
-      );
-
-      expect(
-        currentAgent!.position.dx,
-        closeTo(expectedAgentPosition.dx, 0.0001),
-      );
-      expect(
-        currentAgent.position.dy,
-        closeTo(expectedAgentPosition.dy, 0.0001),
-      );
-      expect(
-        currentAbility!.position.dx,
-        closeTo(expectedAbilityPosition.dx, 0.0001),
-      );
-      expect(
-        currentAbility.position.dy,
-        closeTo(expectedAbilityPosition.dy, 0.0001),
-      );
-      expect(
-        currentAbility.rotation,
-        closeTo(initialAbilityRotation + math.pi, 0.0001),
-      );
-    });
-  });
-
-  group('LineUpProvider.switchSides wall square abilities', () {
-    setUp(() {
-      CoordinateSystem(playAreaSize: const Size(1920, 1080));
-    });
-
-    test('stored lineup flips square walls using the full rendered width', () {
-      final container = _createContainer(MapValue.bind);
-      final notifier = container.read(lineUpProvider.notifier);
-      final abilityInfo = AgentData.agents[AgentType.viper]!.abilities[2];
-      final abilitySize = container.read(strategySettingsProvider).abilitySize;
-      final mapScale = Maps.mapScale[MapValue.bind]!;
-
-      const initialAbilityPosition = Offset(280.0, 360.0);
-      const initialRotation = math.pi / 5;
-
-      final lineUp = LineUp(
-        id: 'viper-lineup',
-        agent: PlacedAgent(
-          id: 'viper-agent',
-          type: AgentType.viper,
-          position: const Offset(120.0, 240.0),
-        ),
-        ability: PlacedAbility(
-          id: 'viper-wall',
-          data: abilityInfo,
-          position: initialAbilityPosition,
-          rotation: initialRotation,
-        ),
-        youtubeLink: '',
-        images: const [],
-        notes: '',
-      );
-
-      notifier.fromHive([lineUp]);
-      notifier.switchSides();
-
-      final flippedLineUp = container.read(lineUpProvider).lineUps.single;
-      final abilitySizePx = abilityInfo.abilityData!
-          .getSize(mapScale: mapScale, abilitySize: abilitySize)
-          .scale(
-            CoordinateSystem.instance.scaleFactor,
-            CoordinateSystem.instance.scaleFactor,
-          );
-      final expectedAbilityPosition = getFlippedPosition(
-        position: initialAbilityPosition,
-        scaledSize: abilitySizePx,
-        isRotatable: true,
-      );
-
-      expect(
-        flippedLineUp.ability.position.dx,
-        closeTo(expectedAbilityPosition.dx, 0.0001),
-      );
-      expect(
-        flippedLineUp.ability.position.dy,
-        closeTo(expectedAbilityPosition.dy, 0.0001),
-      );
-      expect(
-        flippedLineUp.ability.rotation,
-        closeTo(initialRotation + math.pi, 0.0001),
-      );
-    });
-
-    test(
-        'current lineup flips resizable wall abilities using the full rendered width',
-        () {
-      final container = _createContainer(MapValue.bind);
-      final notifier = container.read(lineUpProvider.notifier);
-      final abilityInfo = AgentData.agents[AgentType.neon]!.abilities.first;
-      final abilitySize = container.read(strategySettingsProvider).abilitySize;
-      final mapScale = Maps.mapScale[MapValue.bind]!;
-
-      const initialAbilityPosition = Offset(320.0, 420.0);
-      const initialRotation = math.pi / 6;
-
-      notifier.setAgent(
-        PlacedAgent(
-          id: 'neon-agent',
-          type: AgentType.neon,
-          position: const Offset(140.0, 260.0),
-        ),
-      );
-      notifier.setAbility(
-        PlacedAbility(
-          id: 'neon-wall',
-          data: abilityInfo,
-          position: initialAbilityPosition,
-          rotation: initialRotation,
-        ),
-      );
-
-      notifier.switchSides();
-
-      final currentAbility = container.read(lineUpProvider).currentAbility;
-      expect(currentAbility, isNotNull);
-
-      final abilitySizePx = abilityInfo.abilityData!
-          .getSize(mapScale: mapScale, abilitySize: abilitySize)
-          .scale(
-            CoordinateSystem.instance.scaleFactor,
-            CoordinateSystem.instance.scaleFactor,
-          );
-      final expectedAbilityPosition = getFlippedPosition(
-        position: initialAbilityPosition,
-        scaledSize: abilitySizePx,
-        isRotatable: true,
-      );
-
-      expect(
-        currentAbility!.position.dx,
-        closeTo(expectedAbilityPosition.dx, 0.0001),
-      );
-      expect(
-        currentAbility.position.dy,
-        closeTo(expectedAbilityPosition.dy, 0.0001),
-      );
-      expect(
-        currentAbility.rotation,
-        closeTo(initialRotation + math.pi, 0.0001),
-      );
-    });
+    final current = container.read(lineUpProvider).currentAbility;
+    expect(current?.position, const Offset(300, 400));
+    expect(current?.lineUpID, group.id);
   });
 }

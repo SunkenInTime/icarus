@@ -4,8 +4,7 @@ import 'dart:developer';
 import 'dart:io';
 import 'package:archive/archive_io.dart';
 import 'package:cross_file/cross_file.dart';
-import 'package:flutter/foundation.dart'
-    show kIsWeb, visibleForTesting;
+import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/providers/transition_provider.dart';
@@ -21,6 +20,7 @@ import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/migrations/ability_vision_cone_migration.dart';
 import 'package:icarus/migrations/ability_scale_migration.dart';
+import 'package:icarus/migrations/canonical_coordinates_migration.dart';
 import 'package:icarus/migrations/custom_circle_wrapper_migration.dart';
 import 'package:icarus/migrations/lineup_group_migration.dart';
 import 'package:icarus/migrations/page_name_provenance_migration.dart';
@@ -599,6 +599,8 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   static StrategyData migrateToCurrentVersion(StrategyData strat,
       {bool forceAbilityScale = false}) {
+    final needsCanonicalCoordinatesMigration =
+        strat.versionNumber < CanonicalCoordinatesMigration.version;
     final needsAbilityVisionMigration =
         strat.versionNumber < AbilityVisionConeMigration.version;
     final needsPageNameProvenanceMigration =
@@ -613,9 +615,30 @@ class StrategyProvider extends Notifier<StrategyState> {
       lineUpGroupMigrated,
       force: needsAbilityVisionMigration,
     );
-    return migratePageNameProvenance(
+    final pageNameMigrated = migratePageNameProvenance(
       abilityVisionMigrated,
       force: needsPageNameProvenanceMigration,
+    );
+    return migrateCanonicalCoordinates(
+      pageNameMigrated,
+      force: needsCanonicalCoordinatesMigration,
+    );
+  }
+
+  static StrategyData migrateCanonicalCoordinates(StrategyData strat,
+      {bool force = false}) {
+    if (!force &&
+        strat.versionNumber >= CanonicalCoordinatesMigration.version) {
+      return strat;
+    }
+
+    return strat.copyWith(
+      pages: CanonicalCoordinatesMigration.migratePages(
+        pages: strat.pages,
+        map: strat.mapData,
+      ),
+      versionNumber: Settings.versionNumber,
+      lastEdited: DateTime.now(),
     );
   }
 
@@ -637,8 +660,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   static StrategyData migratePageNameProvenance(StrategyData strat,
       {bool force = false}) {
-    if (!force &&
-        strat.versionNumber >= PageNameProvenanceMigration.version) {
+    if (!force && strat.versionNumber >= PageNameProvenanceMigration.version) {
       return strat;
     }
 
@@ -746,9 +768,17 @@ class StrategyProvider extends Notifier<StrategyState> {
       customCircleMigrated,
       force: originalVersion < LineUpGroupMigration.version,
     );
-    return migrateAbilityVisionCones(
+    final abilityVisionMigrated = migrateAbilityVisionCones(
       lineUpGroupMigrated,
       force: originalVersion < AbilityVisionConeMigration.version,
+    );
+    final pageNameMigrated = migratePageNameProvenance(
+      abilityVisionMigrated,
+      force: originalVersion < PageNameProvenanceMigration.version,
+    );
+    return migrateCanonicalCoordinates(
+      pageNameMigrated,
+      force: originalVersion < CanonicalCoordinatesMigration.version,
     );
   }
 
@@ -1194,7 +1224,6 @@ class StrategyProvider extends Notifier<StrategyState> {
       final agentPaths = AgentTransitionPathPlanner.plan(
         entries: entries,
         geometry: transitionGeometry,
-        isAttack: ref.read(mapProvider).isAttack,
         startAgentSize: startSettings.agentSize,
         endAgentSize: endSettings.agentSize,
         coordinateSystem: CoordinateSystem.instance,
@@ -1234,8 +1263,8 @@ class StrategyProvider extends Notifier<StrategyState> {
   List<PageTransitionDirection> copyDirectionsForPlacedWidget(
     String widgetId,
   ) {
-    if (widgetId.isEmpty ||
-        !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) return const [];
+    if (widgetId.isEmpty || !Hive.isBoxOpen(HiveBoxNames.strategiesBox))
+      return const [];
 
     final strat = Hive.box<StrategyData>(HiveBoxNames.strategiesBox).get(
       state.id,
@@ -1266,8 +1295,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     required String widgetId,
     required PageTransitionDirection direction,
   }) async {
-    if (widgetId.isEmpty ||
-        !Hive.isBoxOpen(HiveBoxNames.strategiesBox)) return false;
+    if (widgetId.isEmpty || !Hive.isBoxOpen(HiveBoxNames.strategiesBox))
+      return false;
 
     await _syncCurrentPageToHive();
 

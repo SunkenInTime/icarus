@@ -4,12 +4,9 @@ import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_ce_flutter/adapters.dart';
 import 'package:icarus/const/agents.dart';
-import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/action_provider.dart';
-import 'package:icarus/providers/map_provider.dart';
-import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:json_annotation/json_annotation.dart';
 
 part "line_provider.g.dart";
@@ -66,15 +63,6 @@ class LineUp extends HiveObject {
       images: images.map((image) => image.copyWith()).toList(),
       notes: notes,
     );
-  }
-
-  void switchSides({
-    required double agentSize,
-    required double abilitySize,
-    required double mapScale,
-  }) {
-    agent.switchSides(agentSize);
-    ability.switchSides(mapScale: mapScale, abilitySize: abilitySize);
   }
 
   factory LineUp.fromJson(Map<String, dynamic> json) => _$LineUpFromJson(json);
@@ -160,17 +148,6 @@ class LineUpGroup extends HiveObject {
       agent: agent.deepCopy<PlacedAgent>(),
       items: items.map((item) => item.deepCopy()).toList(),
     );
-  }
-
-  void switchSides({
-    required double agentSize,
-    required double abilitySize,
-    required double mapScale,
-  }) {
-    agent.switchSides(agentSize);
-    for (final item in items) {
-      item.ability.switchSides(mapScale: mapScale, abilitySize: abilitySize);
-    }
   }
 
   factory LineUpGroup.fromJson(Map<String, dynamic> json) =>
@@ -494,41 +471,6 @@ class LineUpProvider extends Notifier<LineUpState> {
   @Deprecated('Use setCurrentAbility instead.')
   void setAbility(PlacedAbility ability) {
     setCurrentAbility(ability);
-  }
-
-  void switchSides() {
-    final agentSize = ref.read(strategySettingsProvider).agentSize;
-    final abilitySize = ref.read(strategySettingsProvider).abilitySize;
-    final currentMap = ref.read(mapProvider).currentMap;
-    final mapScale = Maps.mapScale[currentMap] ?? 1.0;
-    final groups = [...state.groups];
-
-    for (final group in groups) {
-      group.switchSides(
-        agentSize: agentSize,
-        abilitySize: abilitySize,
-        mapScale: mapScale,
-      );
-    }
-
-    for (final group in _poppedGroups) {
-      group.switchSides(
-        agentSize: agentSize,
-        abilitySize: abilitySize,
-        mapScale: mapScale,
-      );
-    }
-
-    final currentAgent = state.currentAgent;
-    final currentAbility = state.currentAbility;
-    currentAgent?.switchSides(agentSize);
-    currentAbility?.switchSides(mapScale: mapScale, abilitySize: abilitySize);
-
-    state = state.copyWith(
-      groups: groups,
-      currentAgent: currentAgent,
-      currentAbility: currentAbility,
-    );
   }
 
   void setSelectingPosition(bool isSelecting, {PlacingType? type}) {
