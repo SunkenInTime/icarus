@@ -12,7 +12,6 @@ import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
-import 'package:icarus/providers/library_rail_hover_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
@@ -29,6 +28,7 @@ import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
+import 'package:icarus/widgets/window_chrome.dart';
 import 'package:window_manager/window_manager.dart';
 
 class StrategyView extends ConsumerStatefulWidget {
@@ -178,7 +178,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             .updateFilterState(FilterState.all);
         ref.read(deleteMenuProvider.notifier).requestClose();
         if (mounted) {
-          ref.read(suppressLibraryRailHoverProvider.notifier).state = true;
           Navigator.pop(context);
         }
         await ref.read(strategyProvider.notifier).clearCurrentStrategy();
@@ -218,7 +217,15 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     return Scaffold(
       body: Column(
         children: [
-          Padding(
+          // The native title bar is hidden (see window_chrome.dart), so the
+          // editor's top row doubles as the window's drag handle.
+          WindowDragArea(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const MacTrafficLightInset(),
+                Expanded(
+                  child: Padding(
             padding:
                 const EdgeInsets.only(left: 15, top: 15, bottom: 10, right: 15),
             child: LayoutBuilder(
@@ -278,6 +285,11 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   ],
                 );
               },
+            ),
+                  ),
+                ),
+                const WindowCaptionButtons(),
+              ],
             ),
           ),
           const Expanded(

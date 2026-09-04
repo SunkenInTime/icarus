@@ -3,6 +3,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/widgets/window_chrome.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -156,6 +157,19 @@ class _SkeletonTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = strategyName?.trim();
+    return WindowDragArea(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const MacTrafficLightInset(),
+          Expanded(child: _buildBar(context, title)),
+          const WindowCaptionButtons(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBar(BuildContext context, String? title) {
     return Padding(
       padding: const EdgeInsets.only(left: 15, top: 15, bottom: 10, right: 15),
       child: Row(

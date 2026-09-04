@@ -1,4 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:hive_ce_flutter/adapters.dart';
+import 'package:icarus/const/hive_boxes.dart';
+import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/strategy/strategy_models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/cloud_library_models.dart';
@@ -12,11 +18,25 @@ import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
-  setUp(() {
+  late Directory tempDir;
+
+  setUp(() async {
     CoordinateSystem(playAreaSize: const Size(1280, 720));
+    tempDir = await Directory.systemTemp.createTemp('icarus-library-');
+    Hive.init(tempDir.path);
+    // My Library lists the local store next to the cloud one, so the widget
+    // reads these boxes even in cloud mode.
+    await Hive.openBox<StrategyData>(HiveBoxNames.strategiesBox);
+    await Hive.openBox<Folder>(HiveBoxNames.foldersBox);
+    await Hive.openBox<int>(HiveBoxNames.pinnedItemsBox);
   });
 
-  testWidgets('empty Cloud leads to creating a cloud strategy', (tester) async {
+  tearDown(() async {
+    await Hive.close();
+    await tempDir.delete(recursive: true);
+  });
+
+  testWidgets('empty library leads to creating a strategy', (tester) async {
     var createCount = 0;
     await tester.pumpWidget(
       _cloudApp(
@@ -25,15 +45,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('cloud-empty-state')), findsOneWidget);
-    expect(find.text('Your cloud library is empty'), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-empty-state')), findsOneWidget);
+    expect(find.text('Your library is empty'), findsOneWidget);
     expect(
-      find.byKey(const ValueKey('cloud-empty-create-strategy')),
+      find.byKey(const ValueKey('library-empty-create-strategy')),
       findsOneWidget,
     );
 
     await tester.tap(
-      find.byKey(const ValueKey('cloud-empty-create-strategy')),
+      find.byKey(const ValueKey('library-empty-create-strategy')),
     );
     expect(createCount, 1);
   });
@@ -79,7 +99,7 @@ Widget _cloudApp(
       cloudLibrarySectionProvider.overrideWith(
         () => _CloudSectionNotifier(section),
       ),
-      cloudFoldersProvider.overrideWith(
+      cloudFolderTreeProvider.overrideWith(
         (_) => Stream.value(const <CloudFolderEntry>[]),
       ),
       cloudStrategiesProvider.overrideWith(

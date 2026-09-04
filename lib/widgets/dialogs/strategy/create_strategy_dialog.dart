@@ -28,7 +28,7 @@ class _NameStrategyDialogState extends ConsumerState<CreateStrategyDialog> {
     final isCloud =
         ref.watch(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
     return ShadDialog(
-      title: Text(isCloud ? "Create Cloud Strategy" : "Create Strategy"),
+      title: const Text("Create Strategy"),
       actions: [
         ShadButton(
           child: const Text("Create"),

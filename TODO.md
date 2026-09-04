@@ -24,11 +24,12 @@ expansion (`custom_search_field.dart`), shimmer skeleton (`strategy_view_skeleto
 
 ## 2. Folder navigator side rail — `lib/widgets/folder_navigator_sidebar.dart`
 
-> Note: verification revealed `FolderNavigatorSidebar` is not mounted anywhere —
-> the visible rail is `_LibraryNavigationRail` in `folder_navigator.dart`. Both
-> were slimmed (sidebar 288→240px / rail 226→184px, smaller icons, single-line
-> labels with tooltips). Mounting or deleting the unused sidebar widget is a
-> separate product decision.
+> Superseded (2026-09): the hover rail and the never-mounted sidebar are gone.
+> The library's only chrome is now the title strip
+> (`lib/widgets/library_title_strip.dart`) with three tabs: My Library, Shared,
+> Community. "This Computer" is no longer a place; local strategies sit in
+> My Library next to cloud ones with an "On this device" badge. The items below
+> are kept for history.
 
 - [x] Narrow the panel (~288px → ~240px); reduce top-stack chrome
 - [x] Collapse the two stacked sort selects into one compact row (or move sorting into
@@ -124,6 +125,6 @@ Outstanding follow-ups:
   against the current deployment. Likely deployment skew — this branch's
   typed-payload Convex functions haven't been deployed. Deploy `convex/`
   together with merging this branch, then re-verify opening cloud strategies.
-- `FolderNavigatorSidebar` remains unmounted (see §2 note).
+- `FolderNavigatorSidebar` was deleted with the rail (see §2 note).
 - Cloud "Create Cloud Strategy" goes straight to an Ascent editor with no map
   picker (matches local create behavior — decide if a picker is wanted).

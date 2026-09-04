@@ -10,10 +10,9 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/update_checker.dart';
 import 'package:icarus/main.dart';
-import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
-import 'package:icarus/providers/library_rail_hover_provider.dart';
+import 'package:icarus/providers/library_navigation_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -22,16 +21,11 @@ import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
 import 'package:icarus/strategy_view.dart';
-import 'package:icarus/widgets/current_path_bar.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
-import 'package:icarus/widgets/demo_tag.dart';
-import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
-import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
-import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
-import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/folder_content.dart';
+import 'package:icarus/widgets/library_title_strip.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -48,18 +42,14 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   bool _warnedOnce = false;
   bool _hasPromptedUpdateDialog = false;
   WindowsDesktopUpdateController? _desktopUpdaterController;
-  final GlobalKey _importExportButtonKey = GlobalKey();
   final ShadContextMenuController _backgroundMenuController =
       ShadContextMenuController();
-  final ShadPopoverController _importExportPopoverController =
-      ShadPopoverController();
 
   bool get _isWindowsDesktop =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
   @override
   void dispose() {
-    _importExportPopoverController.dispose();
     _backgroundMenuController.dispose();
     _desktopUpdaterController?.dispose();
     super.dispose();
@@ -92,6 +82,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
     // Show the demo warning only once after the first frame on web.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _followCloudAvailability(ref.read(isCloudWorkspaceAvailableProvider));
       if (!_warnedOnce) {
         _warnedOnce = true;
 
@@ -119,10 +111,6 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       message: 'This feature is only supported in the Windows version.',
       backgroundColor: Settings.tacticalVioletTheme.destructive,
     );
-  }
-
-  void _toggleImportExportPopover() {
-    _importExportPopoverController.toggle();
   }
 
   Future<void> handleImportIca() async {
@@ -204,8 +192,22 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     }
   }
 
+  /// Signed in, My Library writes to the cloud. Auth restores after the
+  /// first frame, so re-land on the tab's root once the cloud is reachable.
+  void _followCloudAvailability(bool available) {
+    if (!available) return;
+    if (ref.read(libraryTabProvider) != LibraryTab.library) return;
+    if (ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud) return;
+    if (ref.read(folderProvider) != null) return;
+    ref.read(libraryNavigationProvider).showLibrary();
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen<bool>(
+      isCloudWorkspaceAvailableProvider,
+      (_, available) => _followCloudAvailability(available),
+    );
     ref.listen<AsyncValue<UpdateCheckResult>>(appUpdateStatusProvider,
         (_, next) {
       next.whenData((result) {
@@ -241,12 +243,9 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
     final double height = MediaQuery.sizeOf(context).height - 90;
     final Size playAreaSize = Size(height * (16 / 9), height);
     CoordinateSystem(playAreaSize: playAreaSize);
+    final tab = ref.watch(libraryTabProvider);
     final workspace = ref.watch(libraryWorkspaceProvider);
     final isCloudWorkspace = workspace == LibraryWorkspace.cloud;
-    final isCommunityWorkspace = workspace == LibraryWorkspace.community;
-    final cloudSection = ref.watch(cloudLibrarySectionProvider);
-    final isSharedWithMe =
-        isCloudWorkspace && cloudSection == CloudLibrarySection.sharedWithMe;
     final currentFolderId = ref.watch(folderProvider);
     final currentFolder = currentFolderId != null
         ? isCloudWorkspace
@@ -258,6 +257,8 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                 .read(folderProvider.notifier)
                 .findLocalFolderByID(currentFolderId)
         : null;
+    final canCreate = tab == LibraryTab.library;
+
     Future<void> navigateToLocalStrategy(
       BuildContext context,
       String strategyId, {
@@ -295,7 +296,7 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
 
       if (strategyId != null) {
         if (!context.mounted) return;
-        if (isCloudWorkspace) {
+        if (ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud) {
           await Navigator.push(
             context,
             StrategyView.route(),
@@ -306,184 +307,52 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
       }
     }
 
-    const double railReservedWidth = 64;
-
     return Stack(
       children: [
         Scaffold(
-          appBar: AppBar(
-            title: const Padding(
-              padding: EdgeInsets.only(left: railReservedWidth),
-              child: CurrentPathBar(),
-            ),
-            toolbarHeight: 70,
-            actionsPadding: const EdgeInsets.only(right: 24),
-
-            actions: [
-              if (kIsWeb)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8.0),
-                  child: DemoTag(),
-                ),
-              Row(
-                spacing: 15,
-                children: [
-                  if (isSharedWithMe)
-                    ShadButton(
-                      key: const ValueKey('cloud-add-shared-item'),
-                      onPressed: () => showAddSharedItemDialog(context),
-                      leading: const Icon(LucideIcons.link),
-                      child: const Text('Add by Link or Code'),
-                    )
-                  else ...[
-                    ShadPopover(
-                      controller: _importExportPopoverController,
-                      padding: const EdgeInsets.all(8),
-                      anchor: const ShadAnchor(
-                        offset: Offset(0, 8),
-                        childAlignment: Alignment.topLeft,
-                        overlayAlignment: Alignment.bottomLeft,
-                      ),
-                      popover: (context) {
-                        return SizedBox(
-                          width: 178,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              ShadButton.ghost(
-                                onPressed: handleImportIca,
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                leading: const Icon(
-                                  Icons.file_download,
-                                ),
-                                child: Text(
-                                  'Import .ica',
-                                  style: TextStyle(
-                                    color:
-                                        Settings.tacticalVioletTheme.foreground,
-                                  ),
-                                ),
-                              ),
-                              ShadButton.ghost(
-                                onPressed: handleImportBackup,
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                leading: const Icon(
-                                  Icons.archive_outlined,
-                                ),
-                                child: Text(
-                                  'Import Backup',
-                                  style: TextStyle(
-                                    color:
-                                        Settings.tacticalVioletTheme.foreground,
-                                  ),
-                                ),
-                              ),
-                              ShadButton.ghost(
-                                onPressed: handleExportLibrary,
-                                mainAxisAlignment: MainAxisAlignment.start,
-                                leading: const Icon(
-                                  Icons.backup_outlined,
-                                ),
-                                child: Text(
-                                  'Export Library',
-                                  style: TextStyle(
-                                    color:
-                                        Settings.tacticalVioletTheme.foreground,
-                                  ),
-                                ),
-                              ),
-                            ],
+          body: Column(
+            children: [
+              LibraryTitleStrip(
+                onCreateStrategy: showCreateDialog,
+                onCreateFolder: showCreateFolderDialog,
+                onImportIca: handleImportIca,
+                onImportBackup: handleImportBackup,
+                onExportLibrary: handleExportLibrary,
+              ),
+              Expanded(
+                child: ShadContextMenuRegion(
+                  controller: _backgroundMenuController,
+                  items: !canCreate
+                      ? const []
+                      : [
+                          ShadContextMenuItem(
+                            leading:
+                                const Icon(Icons.create_new_folder_outlined),
+                            onPressed: showCreateFolderDialog,
+                            child: const Text('Create Folder'),
                           ),
-                        );
-                      },
-                      child: ShadButton.secondary(
-                        key: _importExportButtonKey,
-                        onPressed: isCloudWorkspace || isCommunityWorkspace
-                            ? null
-                            : _toggleImportExportPopover,
-                        leading: const Icon(Icons.import_export),
-                        trailing: const Icon(Icons.keyboard_arrow_down),
-                        child: const Text('Import / Export'),
+                          ShadContextMenuItem(
+                            leading: const Icon(Icons.note_add_outlined),
+                            onPressed: showCreateDialog,
+                            child: const Text('Create Strategy'),
+                          ),
+                        ],
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeOutCubic,
+                    child: KeyedSubtree(
+                      key: ValueKey(tab),
+                      child: FolderContent(
+                        folder: currentFolder,
+                        onCreateStrategy: showCreateDialog,
                       ),
                     ),
-                    ShadButton.secondary(
-                      key: ValueKey(
-                        isCloudWorkspace
-                            ? 'cloud-add-folder'
-                            : 'local-add-folder',
-                      ),
-                      leading: const Icon(LucideIcons.folderPlus),
-                      onPressed: isCommunityWorkspace
-                          ? null
-                          : () async {
-                              await showDialog<String>(
-                                context: context,
-                                builder: (context) {
-                                  return const FolderEditDialog();
-                                },
-                              );
-                            },
-                      child: const Text('Add Folder'),
-                    ),
-                    ShadButton(
-                      key: ValueKey(
-                        isCloudWorkspace
-                            ? 'cloud-create-strategy'
-                            : 'local-create-strategy',
-                      ),
-                      onPressed: isCommunityWorkspace ? null : showCreateDialog,
-                      leading: const Icon(Icons.add),
-                      child: Text(
-                        isCloudWorkspace
-                            ? 'Create Cloud Strategy'
-                            : 'Create Strategy',
-                      ),
-                    ),
-                  ],
-                ],
-              )
-            ],
-            // ... your existing actions
-          ),
-          body: Padding(
-            padding: const EdgeInsets.only(left: railReservedWidth),
-            child: ShadContextMenuRegion(
-              controller: _backgroundMenuController,
-              items: isCommunityWorkspace || isSharedWithMe
-                  ? const []
-                  : [
-                      ShadContextMenuItem(
-                        leading: const Icon(Icons.create_new_folder_outlined),
-                        onPressed: showCreateFolderDialog,
-                        child: const Text('Create Folder'),
-                      ),
-                      ShadContextMenuItem(
-                        leading: const Icon(Icons.note_add_outlined),
-                        onPressed: showCreateDialog,
-                        child: const Text('Create Strategy'),
-                      ),
-                    ],
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeOutCubic,
-                child: KeyedSubtree(
-                  key: ValueKey('$workspace/$cloudSection'),
-                  child: FolderContent(
-                    folder: currentFolder,
-                    onCreateStrategy: showCreateDialog,
                   ),
                 ),
               ),
-            ),
+            ],
           ),
-        ),
-        const Positioned(
-          left: 0,
-          top: 0,
-          bottom: 0,
-          child: LibraryNavigationRail(),
         ),
         if (_desktopUpdaterController != null)
           DesktopUpdateDialogListener(
@@ -494,12 +363,18 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
   }
 }
 
-sealed class GridItem {}
+/// Something the user can drag around the library grid.
+sealed class GridItem {
+  /// The store the item lives in. Drops across stores are refused.
+  LibraryWorkspace get store;
+}
 
 class FolderItem extends GridItem {
   final Folder folder;
+  @override
+  final LibraryWorkspace store;
 
-  FolderItem(this.folder);
+  FolderItem(this.folder, {required this.store});
 }
 
 class StrategyItem extends GridItem {
@@ -509,569 +384,8 @@ class StrategyItem extends GridItem {
   StrategyItem.local(this.strategy) : strategyId = strategy!.id;
 
   StrategyItem.cloud(this.strategyId) : strategy = null;
-}
-
-class LibraryNavigationRail extends ConsumerStatefulWidget {
-  const LibraryNavigationRail({super.key});
 
   @override
-  ConsumerState<LibraryNavigationRail> createState() =>
-      _LibraryNavigationRailState();
-}
-
-class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
-  static const _closeDelay = Duration(milliseconds: 120);
-  static const _detailsDelay = Duration(milliseconds: 190);
-  static const _routeArrivalHoverDelay = Duration(seconds: 2);
-
-  bool _expanded = false;
-  bool _showExpandedContent = false;
-  Timer? _closeTimer;
-  Timer? _routeArrivalHoverTimer;
-
-  @override
-  void dispose() {
-    _closeTimer?.cancel();
-    _routeArrivalHoverTimer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final workspace = ref.watch(libraryWorkspaceProvider);
-    final cloudSection = ref.watch(cloudLibrarySectionProvider);
-    final cloudAvailable = ref.watch(isCloudWorkspaceAvailableProvider);
-    final authState = ref.watch(authProvider);
-
-    final items = [
-      _LibraryRailItemData(
-        key: const ValueKey('library-local'),
-        icon: LucideIcons.monitor,
-        label: 'This Computer',
-        semanticsLabel: 'This Computer library',
-        description: 'Local strategies and imports',
-        selected: workspace == LibraryWorkspace.local,
-        onTap: () => _selectLocal(),
-      ),
-      _LibraryRailItemData(
-        key: const ValueKey('library-cloud'),
-        icon: LucideIcons.cloud,
-        label: 'Cloud',
-        semanticsLabel: 'Cloud library',
-        description: cloudAvailable
-            ? 'Your online strategies'
-            : 'Log in to sync strategies',
-        selected: workspace == LibraryWorkspace.cloud &&
-            cloudSection == CloudLibrarySection.home,
-        onTap: cloudAvailable ? () => _selectCloudHome() : _showAuthDialog,
-      ),
-      _LibraryRailItemData(
-        key: const ValueKey('library-shared'),
-        icon: LucideIcons.users,
-        label: 'Shared',
-        semanticsLabel: 'Shared library',
-        description: cloudAvailable
-            ? 'Strategies shared with you'
-            : 'Log in to view shared strategies',
-        selected: workspace == LibraryWorkspace.cloud &&
-            cloudSection == CloudLibrarySection.sharedWithMe,
-        onTap: cloudAvailable ? () => _selectShared() : _showAuthDialog,
-      ),
-      _LibraryRailItemData(
-        key: const ValueKey('library-community'),
-        icon: Icons.public,
-        label: 'Community',
-        semanticsLabel: 'Community library',
-        description: 'Public strategy library',
-        selected: workspace == LibraryWorkspace.community,
-        onTap: () => _selectCommunity(),
-      ),
-    ];
-
-    return MouseRegion(
-      onEnter: (_) {
-        if (ref.read(suppressLibraryRailHoverProvider)) {
-          _routeArrivalHoverTimer?.cancel();
-          _routeArrivalHoverTimer = Timer(_routeArrivalHoverDelay, () {
-            if (!mounted) {
-              return;
-            }
-            ref.read(suppressLibraryRailHoverProvider.notifier).state = false;
-          });
-          return;
-        }
-        _closeTimer?.cancel();
-        setState(() => _expanded = true);
-        Future.delayed(_detailsDelay, () {
-          if (!mounted || !_expanded) {
-            return;
-          }
-          setState(() => _showExpandedContent = true);
-        });
-      },
-      onExit: (_) {
-        _routeArrivalHoverTimer?.cancel();
-        if (ref.read(suppressLibraryRailHoverProvider)) {
-          ref.read(suppressLibraryRailHoverProvider.notifier).state = false;
-        }
-        _closeTimer?.cancel();
-        _closeTimer = Timer(_closeDelay, () {
-          if (!mounted) {
-            return;
-          }
-          setState(() {
-            _showExpandedContent = false;
-            _expanded = false;
-          });
-        });
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-        width: _expanded ? 184 : 64,
-        margin: EdgeInsets.zero,
-        decoration: BoxDecoration(
-          color: Settings.tacticalVioletTheme.card.withValues(alpha: 0.96),
-          borderRadius: const BorderRadius.only(
-              // topRight: Radius.circular(14),
-              // bottomRight: Radius.circular(14),
-              ),
-          border: Border.all(color: Settings.tacticalVioletTheme.border),
-          boxShadow: const [Settings.cardForegroundBackdrop],
-        ),
-        child: ClipRRect(
-          borderRadius: const BorderRadius.only(
-              // topRight: Radius.circular(14),
-              // bottomRight: Radius.circular(14),
-              ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(8, 12, 8, 8),
-                child: _RailHeader(
-                  expanded: _expanded,
-                  showDetails: _showExpandedContent,
-                ),
-              ),
-              Divider(height: 1, color: Settings.tacticalVioletTheme.border),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
-                  child: Column(
-                    children: [
-                      for (final item in items) ...[
-                        _LibraryRailItem(
-                          key: item.key,
-                          data: item,
-                          expanded: _expanded,
-                          showDetails: _showExpandedContent,
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                      const Spacer(),
-                      _AccountRailItem(
-                        key: const ValueKey('library-account-action'),
-                        expanded: _expanded,
-                        showDetails: _showExpandedContent,
-                        isLoading: authState.isLoading,
-                        isAuthenticated: authState.isAuthenticated,
-                        avatarUrl: authState.avatarUrl,
-                        label: authState.isAuthenticated
-                            ? authState.displayName
-                            : 'Log In',
-                        semanticsLabel: authState.isAuthenticated
-                            ? 'Account for ${authState.displayName}'
-                            : 'Log in to Icarus',
-                        onAuthAction: authState.isLoading
-                            ? null
-                            : () async {
-                                if (authState.isAuthenticated) {
-                                  // One accidental click on the avatar used
-                                  // to sign out instantly.
-                                  final confirmed =
-                                      await ConfirmAlertDialog.show(
-                                    context: context,
-                                    title: 'Sign out?',
-                                    content:
-                                        'Cloud strategies stay online; your '
-                                        'local strategies stay on this '
-                                        'device.',
-                                    confirmText: 'Sign Out',
-                                  );
-                                  if (!confirmed || !context.mounted) {
-                                    return;
-                                  }
-                                  unawaited(
-                                    ref.read(authProvider.notifier).signOut(),
-                                  );
-                                } else {
-                                  showDialog<void>(
-                                    context: context,
-                                    builder: (_) => const AuthDialog(),
-                                  );
-                                }
-                              },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _selectLocal() {
-    ref.read(libraryWorkspaceProvider.notifier).select(LibraryWorkspace.local);
-    ref.read(folderProvider.notifier).updateID(null);
-  }
-
-  void _showAuthDialog() {
-    showDialog<void>(
-      context: context,
-      builder: (_) => const AuthDialog(),
-    );
-  }
-
-  void _selectCloudHome() {
-    ref.read(libraryWorkspaceProvider.notifier).select(LibraryWorkspace.cloud);
-    ref
-        .read(cloudLibrarySectionProvider.notifier)
-        .select(CloudLibrarySection.home);
-    ref.read(folderProvider.notifier).updateID(null);
-  }
-
-  void _selectShared() {
-    ref.read(libraryWorkspaceProvider.notifier).select(LibraryWorkspace.cloud);
-    ref
-        .read(cloudLibrarySectionProvider.notifier)
-        .select(CloudLibrarySection.sharedWithMe);
-    ref.read(folderProvider.notifier).updateID(null);
-  }
-
-  void _selectCommunity() {
-    ref
-        .read(libraryWorkspaceProvider.notifier)
-        .select(LibraryWorkspace.community);
-    ref.read(folderProvider.notifier).updateID(null);
-  }
-}
-
-class _RailHeader extends StatelessWidget {
-  const _RailHeader({
-    required this.expanded,
-    required this.showDetails,
-  });
-
-  final bool expanded;
-  final bool showDetails;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 42,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final showLabel = showDetails && constraints.maxWidth >= 96;
-          return Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned(
-                left: 0,
-                top: 0,
-                bottom: 0,
-                width: 48,
-                child: Center(
-                  child: SizedBox(
-                    width: 32,
-                    height: 32,
-                    child: Image.asset(
-                      'assets/icarus-icon.webp',
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ),
-              ),
-              Positioned.fill(
-                left: 50,
-                child: IgnorePointer(
-                  ignoring: !showLabel,
-                  child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 120),
-                    opacity: expanded && showLabel ? 1 : 0,
-                    child: const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Icarus',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _LibraryRailItemData {
-  const _LibraryRailItemData({
-    required this.key,
-    required this.icon,
-    required this.label,
-    required this.semanticsLabel,
-    required this.description,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final Key key;
-  final IconData icon;
-  final String label;
-  final String semanticsLabel;
-  final String description;
-  final bool selected;
-  final VoidCallback? onTap;
-}
-
-class _LibraryRailItem extends StatelessWidget {
-  const _LibraryRailItem({
-    super.key,
-    required this.data,
-    required this.expanded,
-    required this.showDetails,
-  });
-
-  final _LibraryRailItemData data;
-  final bool expanded;
-  final bool showDetails;
-
-  @override
-  Widget build(BuildContext context) {
-    final selectedColor =
-        Settings.tacticalVioletTheme.primary.withValues(alpha: 0.18);
-    return Semantics(
-      label: data.semanticsLabel,
-      button: true,
-      enabled: data.onTap != null,
-      selected: data.selected,
-      onTap: data.onTap,
-      excludeSemantics: true,
-      child: Tooltip(
-        message: data.description,
-        waitDuration: const Duration(milliseconds: 500),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(10),
-            mouseCursor: data.onTap == null
-                ? SystemMouseCursors.basic
-                : SystemMouseCursors.click,
-            onTap: data.onTap,
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 140),
-              opacity: data.onTap == null ? 0.55 : 1,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 140),
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 9),
-                decoration: BoxDecoration(
-                  color: data.selected ? selectedColor : Colors.transparent,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: data.selected
-                        ? Settings.tacticalVioletTheme.primary
-                        : Colors.transparent,
-                  ),
-                ),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final showLabel = showDetails && constraints.maxWidth >= 96;
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        Positioned(
-                          left: 0,
-                          top: 0,
-                          bottom: 0,
-                          width: 26,
-                          child: Align(
-                            alignment: Alignment.center,
-                            child: Icon(
-                              data.icon,
-                              size: 18,
-                              color: data.onTap == null
-                                  ? Settings.tacticalVioletTheme.mutedForeground
-                                  : null,
-                            ),
-                          ),
-                        ),
-                        Positioned.fill(
-                          left: 33,
-                          child: IgnorePointer(
-                            ignoring: !showLabel,
-                            child: AnimatedOpacity(
-                              duration: const Duration(milliseconds: 120),
-                              opacity: expanded && showLabel ? 1 : 0,
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  data.label,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AccountRailItem extends StatelessWidget {
-  const _AccountRailItem({
-    super.key,
-    required this.expanded,
-    required this.showDetails,
-    required this.isLoading,
-    required this.isAuthenticated,
-    required this.avatarUrl,
-    required this.label,
-    required this.semanticsLabel,
-    required this.onAuthAction,
-  });
-
-  final bool expanded;
-  final bool showDetails;
-  final bool isLoading;
-  final bool isAuthenticated;
-  final String? avatarUrl;
-  final String label;
-  final String semanticsLabel;
-  final VoidCallback? onAuthAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      label: semanticsLabel,
-      button: true,
-      enabled: onAuthAction != null,
-      onTap: onAuthAction,
-      excludeSemantics: true,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          mouseCursor: onAuthAction == null
-              ? SystemMouseCursors.basic
-              : SystemMouseCursors.click,
-          onTap: onAuthAction,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
-            curve: Curves.easeOutCubic,
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 9),
-            decoration: BoxDecoration(
-              color: Settings.tacticalVioletTheme.secondary.withValues(
-                alpha: 0.5,
-              ),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Settings.tacticalVioletTheme.border),
-            ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final showLabel = showDetails && constraints.maxWidth >= 96;
-                return Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: 28,
-                      child: Align(
-                        alignment: Alignment.center,
-                        child: _AccountAvatar(
-                          avatarUrl: avatarUrl,
-                          isAuthenticated: isAuthenticated,
-                        ),
-                      ),
-                    ),
-                    Positioned.fill(
-                      left: 38,
-                      child: IgnorePointer(
-                        ignoring: !showLabel,
-                        child: AnimatedOpacity(
-                          duration: const Duration(milliseconds: 120),
-                          curve: Curves.easeOutCubic,
-                          opacity: expanded && showLabel ? 1 : 0,
-                          child: showLabel
-                              ? Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        isLoading ? 'Please wait...' : label,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AccountAvatar extends StatelessWidget {
-  const _AccountAvatar({
-    required this.avatarUrl,
-    required this.isAuthenticated,
-  });
-
-  final String? avatarUrl;
-  final bool isAuthenticated;
-
-  @override
-  Widget build(BuildContext context) {
-    return AccountAvatar(
-      radius: 14,
-      backgroundColor: Settings.tacticalVioletTheme.card,
-      avatarUrl: isAuthenticated ? avatarUrl : null,
-      fallback: Icon(
-        isAuthenticated ? Icons.person : LucideIcons.userRound,
-        size: 15,
-      ),
-    );
-  }
+  LibraryWorkspace get store =>
+      strategy == null ? LibraryWorkspace.cloud : LibraryWorkspace.local;
 }

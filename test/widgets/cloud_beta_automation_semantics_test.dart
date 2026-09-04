@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
-import 'package:icarus/widgets/folder_navigator.dart';
+import 'package:icarus/widgets/library_title_strip.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 void main() {
@@ -103,61 +103,72 @@ void main() {
     semanticsHandle.dispose();
   });
 
-  testWidgets('library rail exposes stable destinations while signed out',
+  testWidgets('library strip exposes stable destinations while signed out',
       (tester) async {
-    await tester.pumpWidget(
-      _testApp(
-        const SizedBox(
-          width: 220,
-          height: 800,
-          child: LibraryNavigationRail(),
-        ),
-      ),
-    );
+    await tester.pumpWidget(_testApp(_strip()));
 
-    expect(find.byKey(const ValueKey('library-local')), findsOneWidget);
-    expect(find.byKey(const ValueKey('library-cloud')), findsOneWidget);
-    expect(find.byKey(const ValueKey('library-shared')), findsOneWidget);
-    expect(find.byKey(const ValueKey('library-community')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-tab-library')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-tab-shared')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('library-tab-community')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('library-account-action')),
       findsOneWidget,
     );
-    expect(_semanticsLabel('This Computer library'), findsOneWidget);
-    expect(_semanticsLabel('Cloud library'), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-new-menu')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-sort-menu')), findsOneWidget);
+    expect(_semanticsLabel('My Library'), findsOneWidget);
     expect(_semanticsLabel('Shared library'), findsOneWidget);
     expect(_semanticsLabel('Community library'), findsOneWidget);
     expect(_semanticsLabel('Log in to Icarus'), findsOneWidget);
-    expect(_semantics('This Computer library').properties.onTap, isNotNull);
+    expect(_semantics('My Library').properties.onTap, isNotNull);
     expect(_semantics('Community library').properties.onTap, isNotNull);
     expect(_semantics('Log in to Icarus').properties.onTap, isNotNull);
   });
 
-  testWidgets('signed-out cloud destinations open login', (tester) async {
-    await tester.pumpWidget(
-      _testApp(
-        const SizedBox(
-          width: 220,
-          height: 800,
-          child: LibraryNavigationRail(),
-        ),
-      ),
-    );
+  testWidgets('signed-out Shared tab opens login', (tester) async {
+    await tester.pumpWidget(_testApp(_strip()));
 
-    await tester.tap(find.byKey(const ValueKey('library-cloud')));
+    await tester.tap(find.byKey(const ValueKey('library-tab-shared')));
     await tester.pumpAndSettle();
 
     expect(find.byType(AuthDialog), findsOneWidget);
     expect(find.text('Sign in'), findsAtLeastNWidgets(1));
-
-    Navigator.of(tester.element(find.byType(AuthDialog))).pop();
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.byKey(const ValueKey('library-shared')));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(AuthDialog), findsOneWidget);
   });
+
+  testWidgets('New menu offers a strategy and a folder', (tester) async {
+    var created = 0;
+    await tester.pumpWidget(
+      _testApp(_strip(onCreateStrategy: () => created++)),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('library-new-menu')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('library-new-strategy')), findsOneWidget);
+    expect(find.byKey(const ValueKey('library-new-folder')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('library-new-strategy')));
+    await tester.pumpAndSettle();
+
+    expect(created, 1);
+  });
+}
+
+Widget _strip({VoidCallback? onCreateStrategy}) {
+  return SizedBox(
+    width: 1200,
+    height: 40,
+    child: LibraryTitleStrip(
+      onCreateStrategy: onCreateStrategy ?? () {},
+      onCreateFolder: () {},
+      onImportIca: () {},
+      onImportBackup: () {},
+      onExportLibrary: () {},
+    ),
+  );
 }
 
 Semantics _semantics(String label) {
