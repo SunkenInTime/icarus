@@ -120,6 +120,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   int _offlineRetryCount = 0;
   late DurableStrategyOutboxStore _store;
   late Map<String, DurableOutboxRecord> _recordsByStorageKey;
+  final Set<EntitySyncKey> _awaitingRemoteAdoption = {};
   Future<void> _writeTail = Future<void>.value();
 
   ConvexStrategyRepository get _repo =>
@@ -156,6 +157,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
 
     _debounceTimer?.cancel();
     _retryTimer?.cancel();
+    _awaitingRemoteAdoption.clear();
     _offlineRetryCount = 0;
     final matching = accountId == null || strategyPublicId == null
         ? const <DurableOutboxRecord>[]
@@ -335,6 +337,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     var changed = false;
     try {
       for (final key in keys) {
+        if (_awaitingRemoteAdoption.contains(key)) continue;
         final desired = desiredOps[key];
         final existing = queued[key];
         final inFlightIntent = state.inFlightByEntityKey[key];
@@ -343,11 +346,56 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final pausedIntent = paused[key];
         final attentionIntent = attention[key];
 
+        // A rejected op remains the durable authority until the user
+        // explicitly retries it. Reconciliation may update its successor, but
+        // it must never make rejected work eligible for an automatic flush.
+        if (attentionIntent != null) {
+          if (desired == null) continue;
+          final current = _recordForActiveKey(key);
+          if (current == null) {
+            throw StateError('Durable attention record is missing for $key.');
+          }
+          if (_sameIntent(attentionIntent.pending.op, desired)) {
+            if (successorIntent != null) {
+              await _putRecord(current.copyWith(
+                clearSuccessorPending: true,
+                updatedAt: DateTime.now(),
+              ));
+              successors.remove(key);
+              changed = true;
+            }
+            continue;
+          }
+          if (successorIntent != null &&
+              _sameIntent(successorIntent.pending.op, desired)) {
+            continue;
+          }
+          final pending = PendingOp(
+            op: successorIntent == null
+                ? desired
+                : _mergeQueuedIntent(successorIntent.pending.op, desired) ??
+                    desired,
+            clientId: successorIntent?.pending.clientId ??
+                attentionIntent.pending.clientId,
+          );
+          await _putRecord(current.copyWith(
+            status: DurableOutboxStatus.attention,
+            successorPending: pending,
+            updatedAt: DateTime.now(),
+          ));
+          successors[key] = QueuedEntityIntent(
+            entityKey: key,
+            pending: pending,
+          );
+          changed = true;
+          continue;
+        }
+
         if (desired == null) {
           if (inFlight != null || successorIntent != null) {
             continue;
           }
-          final current = existing ?? pausedIntent ?? attentionIntent;
+          final current = existing ?? pausedIntent;
           if (current != null) {
             await _removeRecordIfCurrent(key, current.pending.op.opId);
             queued.remove(key);
@@ -372,8 +420,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           continue;
         }
 
-        if (inFlightIntent != null &&
-            key.kind == EntitySyncKeyKind.pageDescriptor) {
+        if (inFlightIntent != null) {
           if (successorIntent != null &&
               _sameIntent(successorIntent.pending.op, desired)) {
             continue;
@@ -381,7 +428,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           final pending = PendingOp(
             op: successorIntent == null
                 ? desired
-                : _mergeQueuedIntent(successorIntent.pending.op, desired)!,
+                : _mergeQueuedIntent(successorIntent.pending.op, desired) ??
+                    desired,
             clientId: successorIntent?.pending.clientId ?? state.clientId!,
           );
           await _putRecord(_recordFor(
@@ -399,9 +447,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           continue;
         }
 
-        if (existing != null &&
-            successorIntent != null &&
-            key.kind == EntitySyncKeyKind.pageDescriptor) {
+        if (existing != null && successorIntent != null) {
           if (_sameIntent(existing.pending.op, desired)) {
             await _putRecord(_recordFor(
               key: key,
@@ -417,7 +463,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             continue;
           }
           final pending = PendingOp(
-            op: _mergeQueuedIntent(successorIntent.pending.op, desired)!,
+            op: _mergeQueuedIntent(successorIntent.pending.op, desired) ??
+                desired,
             clientId: successorIntent.pending.clientId,
           );
           await _putRecord(_recordFor(
@@ -438,14 +485,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           continue;
         }
 
-        // A rejected opId is an immutable server event. Reconciliation must
-        // replace it with the newly based op instead of replaying the reject.
-        final base = attentionIntent ?? pausedIntent ?? existing;
-        final merged = attentionIntent != null
+        final base = pausedIntent ?? existing;
+        final merged = base == null
             ? desired
-            : (base == null
-                ? desired
-                : _mergeQueuedIntent(base.pending.op, desired));
+            : _mergeQueuedIntent(base.pending.op, desired);
         if (merged == null) {
           if (base != null) {
             await _removeRecordIfCurrent(key, base.pending.op.opId);
@@ -460,9 +503,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         final pending = PendingOp(
           op: merged,
           clientId: base?.pending.clientId ?? state.clientId!,
-          attempts: attentionIntent != null ? 0 : (base?.pending.attempts ?? 0),
-          lastAttemptAt:
-              attentionIntent != null ? null : base?.pending.lastAttemptAt,
+          attempts: base?.pending.attempts ?? 0,
+          lastAttemptAt: base?.pending.lastAttemptAt,
         );
         final record = _recordFor(
           key: key,
@@ -620,6 +662,79 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     });
   }
 
+  /// Discards selected server-rejected intents after an explicit user choice.
+  ///
+  /// Each durable record contains both the rejected predecessor and any newer
+  /// successor for that entity. Removing the record discards both, without
+  /// changing unrelated queued, in-flight, paused, or rejected work.
+  Future<Set<EntitySyncKey>> discardRejected(
+    Set<EntitySyncKey> entityKeys,
+  ) {
+    return _serializeWrite(() async {
+      final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
+        state.attentionByEntityKey,
+      );
+      final successors = Map<EntitySyncKey, QueuedEntityIntent>.from(
+        state.successorByEntityKey,
+      );
+      final discarded = <EntitySyncKey>{};
+      Object? persistenceError;
+      StackTrace? persistenceStackTrace;
+
+      for (final key in entityKeys) {
+        final rejected = attention[key];
+        final record = _recordForActiveKey(key);
+        if (rejected == null ||
+            record == null ||
+            record.status != DurableOutboxStatus.attention ||
+            record.pending.op.opId != rejected.pending.op.opId) {
+          continue;
+        }
+        try {
+          await _store.remove(record.storageKey);
+          _recordsByStorageKey.remove(record.storageKey);
+          attention.remove(key);
+          successors.remove(key);
+          _awaitingRemoteAdoption.add(key);
+          discarded.add(key);
+        } catch (error, stackTrace) {
+          persistenceError = error;
+          persistenceStackTrace = stackTrace;
+          break;
+        }
+      }
+
+      if (persistenceError != null) {
+        log(
+          'Durable outbox persistence failed: $persistenceError',
+          name: 'strategy_outbox',
+          error: persistenceError,
+          stackTrace: persistenceStackTrace,
+        );
+      }
+      final attentionMessage = _loadedAttentionMessage(
+        loadIssues: state.loadIssues,
+        paused: state.pausedByEntityKey,
+        attention: attention,
+      );
+      final errorMessage = persistenceError == null
+          ? attentionMessage
+          : 'Cloud work could not be removed from the durable outbox: '
+              '$persistenceError';
+      state = state.copyWith(
+        attentionByEntityKey: attention,
+        successorByEntityKey: successors,
+        lastError: errorMessage,
+        clearError: errorMessage == null,
+      );
+      return Set<EntitySyncKey>.unmodifiable(discarded);
+    });
+  }
+
+  void completeRemoteAdoption(Set<EntitySyncKey> entityKeys) {
+    _awaitingRemoteAdoption.removeAll(entityKeys);
+  }
+
   Future<void> flushNow() async {
     await _writeTail;
     if (state.isFlushing) return;
@@ -758,13 +873,17 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       final current = _recordForActiveKey(sent.entityKey);
       if (current?.pending.op.opId != ack.opId) continue;
       final successor = current!.successorPending;
-      final successorRevision = ack.appliedRevision ?? ack.latestRevision;
-      if (successor != null && successorRevision != null) {
+      // Only an accepted predecessor establishes a revision for automatic
+      // promotion. A rejected predecessor leaves both intents in attention.
+      final successorRevision = ack.appliedRevision;
+      if (successor != null && ack.isAck && successorRevision != null) {
+        final predecessorCreatedEntity = sent.pending.op is ElementAddOp ||
+            sent.pending.op is LineupAddOp;
         final promoted = PendingOp(
           op: _rebaseRejectedOp(
             successor.op,
             successorRevision,
-            preserveAdd: true,
+            preserveAdd: !predecessorCreatedEntity,
           ),
           clientId: successor.clientId,
         );
@@ -787,7 +906,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           status: DurableOutboxStatus.attention,
           updatedAt: DateTime.now(),
           lastError: ack.reason ??
-              'The final Page change is waiting for a server revision.',
+              'The final change is waiting for conflict resolution.',
           latestServerRevision: ack.latestRevision,
         );
         await _putRecord(retained);
@@ -937,12 +1056,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _recordsByStorageKey.remove(record.storageKey);
   }
 
-  Future<void> _serializeWrite(Future<void> Function() action) {
+  Future<T> _serializeWrite<T>(Future<T> Function() action) {
     final next = _writeTail.then((_) => action());
-    _writeTail = next.catchError((Object error, StackTrace stackTrace) {
-      log('Outbox write failed: $error',
-          name: 'strategy_outbox', error: error, stackTrace: stackTrace);
-    });
+    _writeTail = next.then<void>((_) {}).catchError(
+      (Object error, StackTrace stackTrace) {
+        log('Outbox write failed: $error',
+            name: 'strategy_outbox', error: error, stackTrace: stackTrace);
+      },
+    );
     return next;
   }
 

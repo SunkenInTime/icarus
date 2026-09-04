@@ -250,11 +250,14 @@ void main() {
       );
     });
 
-    test('reconciliation replaces rejected immutable opId before removal',
+    test('reconciliation retains rejected work and updates its successor',
         () async {
-      final saved = record(status: DurableOutboxStatus.attention);
+      final saved = record(status: DurableOutboxStatus.attention).copyWith(
+        latestServerRevision: 7,
+        lastError: 'revision_mismatch',
+      );
       await store.put(saved);
-      final notifier = start();
+      var notifier = start();
       await notifier.syncDesiredOpsForPage(
         pageId: 'page-1',
         desiredOpsByEntityKey: {
@@ -263,14 +266,58 @@ void main() {
         },
         flushImmediately: false,
       );
-      final current = container!.read(strategyOpQueueProvider);
-      expect(current.attentionByEntityKey, isEmpty);
-      expect(current.queuedByEntityKey.values.single.pending.op.opId,
-          'replacement');
+      var current = container!.read(strategyOpQueueProvider);
       expect(
-        (store.values.values.single as Map)['opId'],
-        'replacement',
+          current.attentionByEntityKey.values.single.pending.op.opId, 'op-1');
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(
+        current.successorByEntityKey.values.single.pending.op.payload,
+        {'value': 'new'},
       );
+
+      notifier = start();
+      current = container!.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, hasLength(1));
+      expect(current.successorByEntityKey, hasLength(1));
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          const EntitySyncKey.element('page-1', 'element-1'):
+              elementOp(opId: 'newer-replacement', value: 'newest'),
+        },
+        flushImmediately: false,
+      );
+
+      current = container!.read(strategyOpQueueProvider);
+      expect(
+          current.attentionByEntityKey.values.single.pending.op.opId, 'op-1');
+      expect(current.queuedByEntityKey, isEmpty);
+      expect(
+        current.successorByEntityKey.values.single.pending.op.payload,
+        {'value': 'newest'},
+      );
+      var durable = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durable.status, DurableOutboxStatus.attention);
+      expect(durable.pending.op.opId, 'op-1');
+      expect(durable.successorPending!.op.payload, {'value': 'newest'});
+      expect(durable.latestServerRevision, 7);
+      expect(durable.lastError, 'revision_mismatch');
+
+      await notifier.retryRejected(flushImmediately: false);
+      current = container!.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, isEmpty);
+      expect(current.successorByEntityKey, isEmpty);
+      final retry = current.queuedByEntityKey.values.single.pending.op;
+      expect(retry.opId, isNot(anyOf('op-1', 'newer-replacement')));
+      expect(retry.payload, {'value': 'newest'});
+      expect(retry.expectedRevision, 7);
+      durable = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durable.status, DurableOutboxStatus.queued);
+      expect(durable.successorPending, isNull);
     });
 
     test('ordinary reconciliation does not discard attention work', () async {
@@ -285,6 +332,165 @@ void main() {
       final current = container!.read(strategyOpQueueProvider);
       expect(current.attentionByEntityKey, hasLength(1));
       expect(store.values, hasLength(1));
+    });
+
+    test(
+        'cloud adoption discards only selected rejected work and survives restart',
+        () async {
+      const selectedKey = EntitySyncKey.element('page-1', 'element-1');
+      const otherAttentionKey =
+          EntitySyncKey.element('page-1', 'element-2');
+      const queuedKey = EntitySyncKey.element('page-1', 'element-3');
+      final selected = record(status: DurableOutboxStatus.attention).copyWith(
+        successorPending: PendingOp(
+          op: elementOp(
+            opId: 'selected-successor',
+            value: 'newer local intent',
+          ),
+          clientId: 'stable-client',
+        ),
+        latestServerRevision: 7,
+      );
+      final otherAttention = DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: otherAttentionKey,
+        pending: PendingOp(
+          op: elementOp(opId: 'other-rejected', elementId: 'element-2'),
+          clientId: 'stable-client',
+        ),
+        status: DurableOutboxStatus.attention,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        latestServerRevision: 4,
+      );
+      final queued = DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: queuedKey,
+        pending: PendingOp(
+          op: elementOp(opId: 'unrelated-queued', elementId: 'element-3'),
+          clientId: 'stable-client',
+        ),
+        status: DurableOutboxStatus.queued,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final otherStrategy = DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-2',
+        entityKey: selectedKey,
+        pending: PendingOp(
+          op: elementOp(opId: 'other-strategy'),
+          clientId: 'stable-client',
+        ),
+        status: DurableOutboxStatus.attention,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      await store.put(selected);
+      await store.put(otherAttention);
+      await store.put(queued);
+      await store.put(otherStrategy);
+      var notifier = start();
+
+      final discarded = await notifier.discardRejected({selectedKey});
+
+      expect(discarded, {selectedKey});
+      var current = container!.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(otherAttentionKey));
+      expect(current.attentionByEntityKey, isNot(contains(selectedKey)));
+      expect(current.successorByEntityKey, isEmpty);
+      expect(current.queuedByEntityKey, contains(queuedKey));
+      expect(
+        store.load().records.map((record) => record.pending.op.opId),
+        containsAll(<String>[
+          'other-rejected',
+          'unrelated-queued',
+          'other-strategy',
+        ]),
+      );
+      expect(
+        store.load().records.map((record) => record.pending.op.opId),
+        isNot(contains('op-1')),
+      );
+      expect(
+        store.load().records
+            .expand((record) => <String>[
+                  record.pending.op.opId,
+                  if (record.successorPending != null)
+                    record.successorPending!.op.opId,
+                ]),
+        isNot(contains('selected-successor')),
+      );
+
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          selectedKey: elementOp(opId: 'stale-reconciliation'),
+        },
+        clearMissing: false,
+        flushImmediately: false,
+      );
+      expect(
+        container!.read(strategyOpQueueProvider).queuedByEntityKey,
+        isNot(contains(selectedKey)),
+      );
+
+      notifier = start();
+      current = container!.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(otherAttentionKey));
+      expect(current.attentionByEntityKey, isNot(contains(selectedKey)));
+      expect(current.queuedByEntityKey, contains(queuedKey));
+      expect(current.pending.map((pending) => pending.op.opId),
+          isNot(contains('selected-successor')));
+
+      notifier.setActiveStrategy('strategy-2', accountId: 'account-a');
+      expect(
+        container!
+            .read(strategyOpQueueProvider)
+            .attentionByEntityKey[selectedKey]!
+            .pending
+            .op
+            .opId,
+        'other-strategy',
+      );
+    });
+
+    test('partial cloud adoption leaves a failed durable delete in attention',
+        () async {
+      const firstKey = EntitySyncKey.element('page-1', 'element-1');
+      const secondKey = EntitySyncKey.element('page-1', 'element-2');
+      final failingStore = _FailingSelectedRemovalStore();
+      store = failingStore;
+      await store.put(record(status: DurableOutboxStatus.attention));
+      final second = DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: secondKey,
+        pending: PendingOp(
+          op: elementOp(opId: 'second', elementId: 'element-2'),
+          clientId: 'stable-client',
+        ),
+        status: DurableOutboxStatus.attention,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      await store.put(second);
+      failingStore.failStorageKey = second.storageKey;
+      final notifier = start();
+
+      final discarded = await notifier.discardRejected({firstKey, secondKey});
+
+      expect(discarded, {firstKey});
+      final current = container!.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(secondKey));
+      expect(current.attentionByEntityKey, isNot(contains(firstKey)));
+      expect(current.lastError, contains('could not be removed'));
+      expect(
+        store.load().records.map((record) => record.entityKey),
+        unorderedEquals([secondKey]),
+      );
     });
 
     test('explicit rejected retry uses durable latest server revision',
@@ -598,6 +804,60 @@ void main() {
     expect(afterWrite.op.payload, {'value': 'b'});
   });
 
+  test('cloud adoption leaves unrelated in-flight work untouched', () async {
+    const rejectedKey = EntitySyncKey.element('page-1', 'element-1');
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(DurableOutboxRecord(
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-1',
+      entityKey: rejectedKey,
+      pending: const PendingOp(
+        op: ElementPatchOp(
+          opId: 'rejected',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {'value': 'mine'},
+          expectedElementRevision: 1,
+        ),
+        clientId: 'stable-client',
+      ),
+      status: DurableOutboxStatus.attention,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    ));
+    final repository = _SequencedAckRepository();
+    final container = _cloudQueueContainer(
+      store: store,
+      repository: repository,
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('strategy-1', accountId: 'account-a');
+    const inFlightKey = EntitySyncKey.element('page-1', 'element-2');
+    await notifier.enqueue(const ElementPatchOp(
+      opId: 'unrelated-in-flight',
+      elementPublicId: 'element-2',
+      pagePublicId: 'page-1',
+      payload: {'value': 'other'},
+      expectedElementRevision: 1,
+    ));
+    final flush = notifier.flushNow();
+    await repository.firstStarted.future;
+
+    final discarded = await notifier.discardRejected({rejectedKey});
+
+    expect(discarded, {rejectedKey});
+    expect(
+      container.read(strategyOpQueueProvider).inFlightByEntityKey,
+      contains(inFlightKey),
+    );
+    repository.completeFirst(const AppliedOpAck(
+      opId: 'unrelated-in-flight',
+      revision: 2,
+    ));
+    await flush;
+  });
+
   group('acknowledgement persistence recovery', () {
     test('accepted ack remove failure restores the batch for retry', () async {
       final store = _OneShotAckFailureStore(failRemove: true);
@@ -770,6 +1030,537 @@ void main() {
       await replayRepository.secondCompleted.future;
     });
   });
+
+  group('same-entity final intent', () {
+    test('keeps an element successor behind its in-flight predecessor',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(_elementPatch(
+        opId: 'first-edit',
+        value: 'first',
+        expectedRevision: 1,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: _elementPatch(
+            opId: 'second-edit',
+            value: 'second',
+            expectedRevision: 1,
+          ),
+        },
+      );
+
+      final duringFirst = container.read(strategyOpQueueProvider);
+      expect(
+        duringFirst.inFlightByEntityKey[key]!.pending.op.opId,
+        'first-edit',
+      );
+      expect(
+        duringFirst.successorByEntityKey[key]!.pending.op.payload,
+        {'value': 'second'},
+      );
+      final durableDuringFirst = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durableDuringFirst.pending.op.opId, 'first-edit');
+      expect(
+        durableDuringFirst.successorPending!.op.payload,
+        {'value': 'second'},
+      );
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'first-edit',
+        revision: 2,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final promoted = repository.calls[1].single as ElementPatchOp;
+      expect(promoted.payload, {'value': 'second'});
+      expect(promoted.expectedElementRevision, 2);
+      expect(promoted.opId, isNot('second-edit'));
+
+      repository.completeSecond(AppliedOpAck(
+        opId: promoted.opId,
+        revision: 3,
+      ));
+      await repository.secondCompleted.future;
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(strategyOpQueueProvider).pending, isEmpty);
+      expect(store.values, isEmpty);
+    });
+
+    test('restart replays an element predecessor before its successor',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final firstRepository = _SequencedAckRepository();
+      var container = _cloudQueueContainer(
+        store: store,
+        repository: firstRepository,
+      );
+      var notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(_elementPatch(
+        opId: 'first-before-restart',
+        value: 'first',
+        expectedRevision: 4,
+      ));
+      unawaited(notifier.flushNow());
+      await firstRepository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: _elementPatch(
+            opId: 'second-after-restart',
+            value: 'second',
+            expectedRevision: 4,
+          ),
+        },
+      );
+      container.dispose();
+
+      final replayRepository = _SequencedAckRepository();
+      container = _cloudQueueContainer(
+        store: store,
+        repository: replayRepository,
+      );
+      addTearDown(container.dispose);
+      notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      await replayRepository.firstStarted.future;
+
+      final replayed = replayRepository.calls.first.single as ElementPatchOp;
+      expect(replayed.opId, 'first-before-restart');
+      expect(replayed.payload, {'value': 'first'});
+      expect(
+        container
+            .read(strategyOpQueueProvider)
+            .successorByEntityKey[key]!
+            .pending
+            .op
+            .payload,
+        {'value': 'second'},
+      );
+
+      replayRepository.completeFirst(const AppliedOpAck(
+        opId: 'first-before-restart',
+        revision: 5,
+      ));
+      await replayRepository.secondStarted.future;
+      final finalEdit = replayRepository.calls[1].single as ElementPatchOp;
+      expect(finalEdit.payload, {'value': 'second'});
+      expect(finalEdit.expectedElementRevision, 5);
+      replayRepository.completeSecond(AppliedOpAck(
+        opId: finalEdit.opId,
+        revision: 6,
+      ));
+      await replayRepository.secondCompleted.future;
+    });
+
+    test('rejected predecessor leaves its element successor in attention',
+        () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(_elementPatch(
+        opId: 'conflicting-first',
+        value: 'first',
+        expectedRevision: 1,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: _elementPatch(
+            opId: 'retained-second',
+            value: 'second',
+            expectedRevision: 1,
+          ),
+        },
+      );
+
+      repository.completeFirst(const RejectedOpAck(
+        opId: 'conflicting-first',
+        rejectionReason: OpRejectionReason.revisionMismatch,
+        current: ElementCurrentSnapshot(revision: 2, value: {'value': 'peer'}),
+      ));
+      await firstFlush;
+      await Future<void>.delayed(Duration.zero);
+
+      final conflicted = container.read(strategyOpQueueProvider);
+      expect(repository.calls, hasLength(1));
+      expect(conflicted.attentionByEntityKey, contains(key));
+      expect(
+        conflicted.successorByEntityKey[key]!.pending.op.payload,
+        {'value': 'second'},
+      );
+      final durable = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durable.status, DurableOutboxStatus.attention);
+      expect(durable.pending.op.opId, 'conflicting-first');
+      expect(durable.successorPending!.op.payload, {'value': 'second'});
+      expect(durable.latestServerRevision, 2);
+
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: _elementPatch(
+            opId: 'retained-second-again',
+            value: 'second',
+            expectedRevision: 1,
+          ),
+        },
+        flushImmediately: true,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      final reconciled = container.read(strategyOpQueueProvider);
+      expect(repository.calls, hasLength(1));
+      expect(reconciled.attentionByEntityKey, contains(key));
+      expect(reconciled.queuedByEntityKey, isEmpty);
+      expect(
+        reconciled.successorByEntityKey[key]!.pending.op.payload,
+        {'value': 'second'},
+      );
+      final durableAfterReconcile = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durableAfterReconcile.status, DurableOutboxStatus.attention);
+      expect(durableAfterReconcile.pending.op.opId, 'conflicting-first');
+      expect(
+        durableAfterReconcile.successorPending!.op.payload,
+        {'value': 'second'},
+      );
+      expect(durableAfterReconcile.latestServerRevision, 2);
+
+      await notifier.retryRejected(flushImmediately: true);
+      await repository.secondStarted.future;
+      final retried = repository.calls[1].single as ElementPatchOp;
+      expect(retried.opId, isNot('retained-second'));
+      expect(retried.payload, {'value': 'second'});
+      expect(retried.expectedElementRevision, 2);
+      repository.completeSecond(AppliedOpAck(
+        opId: retried.opId,
+        revision: 3,
+      ));
+      await repository.secondCompleted.future;
+    });
+
+    test('promotes an edit after an element add as a patch', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(const ElementAddOp(
+        opId: 'element-add-in-flight',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'first'},
+        sortIndex: 0,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const ElementAddOp(
+            opId: 'element-add-successor',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'second'},
+            sortIndex: 0,
+          ),
+        },
+      );
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'element-add-in-flight',
+        revision: 1,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final finalEdit = repository.calls[1].single as ElementPatchOp;
+      expect(finalEdit.payload, {'value': 'second'});
+      expect(finalEdit.expectedElementRevision, 1);
+      repository.completeSecond(AppliedOpAck(
+        opId: finalEdit.opId,
+        revision: 2,
+      ));
+      await repository.secondCompleted.future;
+    });
+
+    test('promotes an edit after a lineup add as a patch', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.lineup('page-1', 'lineup-1');
+
+      await notifier.enqueue(const LineupAddOp(
+        opId: 'lineup-add-in-flight',
+        lineupPublicId: 'lineup-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'first'},
+        sortIndex: 0,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const LineupAddOp(
+            opId: 'lineup-add-successor',
+            lineupPublicId: 'lineup-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'second'},
+            sortIndex: 0,
+          ),
+        },
+      );
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'lineup-add-in-flight',
+        revision: 1,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final finalEdit = repository.calls[1].single as LineupPatchOp;
+      expect(finalEdit.payload, {'value': 'second'});
+      expect(finalEdit.expectedLineupRevision, 1);
+      repository.completeSecond(AppliedOpAck(
+        opId: finalEdit.opId,
+        revision: 2,
+      ));
+      await repository.secondCompleted.future;
+    });
+
+    test('keeps a restore add after an accepted element delete', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(const ElementDeleteOp(
+        opId: 'element-delete-in-flight',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        expectedElementRevision: 1,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const ElementAddOp(
+            opId: 'element-restore-successor',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'restored'},
+            sortIndex: 0,
+            expectedElementRevision: 1,
+          ),
+        },
+      );
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'element-delete-in-flight',
+        revision: 2,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final restore = repository.calls[1].single as ElementAddOp;
+      expect(restore.payload, {'value': 'restored'});
+      expect(restore.expectedElementRevision, 2);
+      repository.completeSecond(AppliedOpAck(
+        opId: restore.opId,
+        revision: 3,
+      ));
+      await repository.secondCompleted.future;
+    });
+
+    test('keeps a final element delete behind an in-flight add', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(const ElementAddOp(
+        opId: 'element-add-in-flight',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'first'},
+        sortIndex: 0,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const ElementAddOp(
+            opId: 'element-add-successor',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'second'},
+            sortIndex: 0,
+          ),
+        },
+      );
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const ElementDeleteOp(
+            opId: 'element-delete-successor',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            expectedElementRevision: 0,
+          ),
+        },
+      );
+
+      final durableBeforeAck = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durableBeforeAck.pending.op.opId, 'element-add-in-flight');
+      expect(durableBeforeAck.successorPending!.op, isA<ElementDeleteOp>());
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'element-add-in-flight',
+        revision: 1,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final finalDelete = repository.calls[1].single as ElementDeleteOp;
+      expect(finalDelete.expectedElementRevision, 1);
+      repository.completeSecond(AppliedOpAck(
+        opId: finalDelete.opId,
+        revision: 2,
+      ));
+      await repository.secondCompleted.future;
+    });
+
+    test('keeps a final lineup delete behind an in-flight add', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.lineup('page-1', 'lineup-1');
+
+      await notifier.enqueue(const LineupAddOp(
+        opId: 'lineup-add-in-flight',
+        lineupPublicId: 'lineup-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'first'},
+        sortIndex: 0,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const LineupAddOp(
+            opId: 'lineup-add-successor',
+            lineupPublicId: 'lineup-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'second'},
+            sortIndex: 0,
+          ),
+        },
+      );
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const LineupDeleteOp(
+            opId: 'lineup-delete-successor',
+            lineupPublicId: 'lineup-1',
+            pagePublicId: 'page-1',
+            expectedLineupRevision: 0,
+          ),
+        },
+      );
+
+      final durableBeforeAck = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durableBeforeAck.pending.op.opId, 'lineup-add-in-flight');
+      expect(durableBeforeAck.successorPending!.op, isA<LineupDeleteOp>());
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'lineup-add-in-flight',
+        revision: 1,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final finalDelete = repository.calls[1].single as LineupDeleteOp;
+      expect(finalDelete.expectedLineupRevision, 1);
+      repository.completeSecond(AppliedOpAck(
+        opId: finalDelete.opId,
+        revision: 2,
+      ));
+      await repository.secondCompleted.future;
+    });
+  });
 }
 
 ProviderContainer _cloudQueueContainer({
@@ -804,6 +1595,20 @@ PagePatchOp _pageSideOp({
     pagePublicId: 'page-1',
     payload: {'isAttack': isAttack},
     expectedPageRevision: expectedRevision,
+  );
+}
+
+ElementPatchOp _elementPatch({
+  required String opId,
+  required String value,
+  required int expectedRevision,
+}) {
+  return ElementPatchOp(
+    opId: opId,
+    elementPublicId: 'element-1',
+    pagePublicId: 'page-1',
+    payload: {'value': value},
+    expectedElementRevision: expectedRevision,
   );
 }
 
@@ -920,6 +1725,18 @@ class _OneShotAckFailureStore extends MemoryDurableStrategyOutboxStore {
     if (failRemove) {
       failRemove = false;
       throw StateError('accepted ack removal failed');
+    }
+    await super.remove(storageKey);
+  }
+}
+
+class _FailingSelectedRemovalStore extends MemoryDurableStrategyOutboxStore {
+  String? failStorageKey;
+
+  @override
+  Future<void> remove(String storageKey) async {
+    if (storageKey == failStorageKey) {
+      throw StateError('selected removal failed');
     }
     await super.remove(storageKey);
   }

@@ -70,12 +70,19 @@ final activePageLiveSyncProvider =
 );
 
 class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
+  // Live reads can advance while local work blocks rehydration. Outbound diffs
+  // must stay based on the server state that was actually loaded into canvas.
+  final Map<EntitySyncKey, _NormalizedEntity> _hydratedBaseByEntityKey = {};
+  final Set<EntitySyncKey> _remoteAdoptionPending = {};
+
   @override
   ActivePageLiveSyncState build() {
     return const ActivePageLiveSyncState();
   }
 
   void reset() {
+    _hydratedBaseByEntityKey.clear();
+    _remoteAdoptionPending.clear();
     state = const ActivePageLiveSyncState();
   }
 
@@ -87,8 +94,13 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     required String? strategyPublicId,
     required String? activePageId,
   }) {
+    final strategyChanged = strategyPublicId != state.strategyPublicId;
     final contextChanged = strategyPublicId != state.strategyPublicId ||
         activePageId != state.activePageId;
+    if (strategyChanged) {
+      _hydratedBaseByEntityKey.clear();
+      _remoteAdoptionPending.clear();
+    }
     state = state.copyWith(
       strategyPublicId: strategyPublicId,
       activePageId: activePageId,
@@ -121,9 +133,25 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     required String pageId,
   }) {
     setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    final remoteEntities = snapshot == null ||
+            snapshot.header.publicId != strategyPublicId ||
+            snapshot.activePage?.page.publicId != pageId
+        ? const <EntitySyncKey, _NormalizedEntity>{}
+        : _normalizedRemoteEntities(snapshot, pageId);
+    _hydratedBaseByEntityKey.removeWhere((key, _) => key.pageId == pageId);
+    _hydratedBaseByEntityKey.addAll(remoteEntities);
+    _remoteAdoptionPending.removeWhere((key) => key.pageId == pageId);
+    final remoteRevisions = Map<EntitySyncKey, int>.from(
+      state.remoteBaseRevisionByEntity,
+    )..removeWhere((key, _) => key.pageId == pageId);
+    for (final entry in remoteEntities.entries) {
+      remoteRevisions[entry.key] = entry.value.revision;
+    }
     state = state.copyWith(
       hydratedPageId: pageId,
       hydratedEntityKeys: _normalizedLocalEntities(pageId).keys.toSet(),
+      remoteBaseRevisionByEntity: remoteRevisions,
     );
   }
 
@@ -133,6 +161,22 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
 
   void recordAckBatch(List<AckedEntityIntent> intents) {
     state = state.copyWith(lastAckBatch: intents);
+  }
+
+  /// Stops local projection and reconciliation for explicitly discarded work
+  /// until the affected page has loaded the authoritative remote snapshot.
+  void adoptRemoteForEntities(Set<EntitySyncKey> entityKeys) {
+    if (entityKeys.isEmpty) return;
+    final overlays = Map<EntitySyncKey, ActivePageOverlayEntry>.from(
+      state.overlayByEntityKey,
+    );
+    for (final key in entityKeys) {
+      overlays.remove(key);
+      if (key.pageId != null) {
+        _remoteAdoptionPending.add(key);
+      }
+    }
+    state = state.copyWith(overlayByEntityKey: overlays);
   }
 
   Map<EntitySyncKey, StrategyOp>? syncLocalPage({
@@ -159,40 +203,69 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final queueState = ref.read(strategyOpQueueProvider);
     final remoteEntities = _normalizedRemoteEntities(snapshot, pageId);
     final localEntities = _normalizedLocalEntities(pageId);
-    final remoteRevisions = Map<EntitySyncKey, int>.from(
-      state.remoteBaseRevisionByEntity,
-    );
-
-    for (final entry in remoteEntities.entries) {
-      remoteRevisions[entry.key] = entry.value.revision;
-    }
 
     final pageKeys = <EntitySyncKey>{
       ...remoteEntities.keys,
       ...localEntities.keys,
+      ..._hydratedBaseByEntityKey.keys.where((key) => key.pageId == pageId),
       ...state.overlayByEntityKey.keys.where((key) => key.pageId == pageId),
       ...queueState.queuedByEntityKey.keys.where((key) => key.pageId == pageId),
       ...queueState.inFlightByEntityKey.keys
           .where((key) => key.pageId == pageId),
       ...queueState.successorByEntityKey.keys
           .where((key) => key.pageId == pageId),
+      ..._remoteAdoptionPending.where((key) => key.pageId == pageId),
     };
 
     final nextOverlay = Map<EntitySyncKey, ActivePageOverlayEntry>.from(
       state.overlayByEntityKey,
     );
+    final retainedDesiredOps = <EntitySyncKey, StrategyOp>{};
 
     for (final key in pageKeys) {
+      if (_remoteAdoptionPending.contains(key)) {
+        nextOverlay.remove(key);
+        _debugLog('overlay.remove $key reason=adopting_remote');
+        continue;
+      }
       final remote = remoteEntities[key];
       final local = localEntities[key];
+      final hydratedBase = _hydratedBaseByEntityKey[key];
       final hasQueued = queueState.queuedByEntityKey.containsKey(key);
       final hasInFlight = queueState.inFlightByEntityKey.containsKey(key);
+      final hasSuccessor = queueState.successorByEntityKey.containsKey(key);
       final existingOverlay = state.overlayByEntityKey[key];
+      final retainedOp = queueState.successorByEntityKey[key]?.pending.op ??
+          queueState.inFlightByEntityKey[key]?.pending.op ??
+          queueState.queuedByEntityKey[key]?.pending.op;
 
-      final shouldPreserveTouched = hasQueued || hasInFlight;
+      final shouldPreserveTouched = hasQueued || hasInFlight || hasSuccessor;
       final matchesRemote = _entitiesEquivalent(local, remote);
+      final matchesHydratedBase = _entitiesEquivalent(local, hydratedBase);
+      final shouldUseRetainedIntent = hasQueued ||
+          (!hasInFlight && hasSuccessor) ||
+          (local == null && hydratedBase == null);
 
-      if (matchesRemote && !hasQueued && !hasInFlight) {
+      // A restored queue entry has no in-memory overlay. If the canvas still
+      // matches its hydrated base, the durable op is the only local intent and
+      // must remain desired until it lands or the user changes that entity.
+      if (existingOverlay == null &&
+          retainedOp != null &&
+          shouldUseRetainedIntent &&
+          matchesHydratedBase) {
+        retainedDesiredOps[key] = retainedOp;
+        _debugLog('overlay.keep $key reason=durable_queue_only');
+        continue;
+      }
+
+      if (matchesHydratedBase && !shouldPreserveTouched) {
+        if (nextOverlay.remove(key) != null) {
+          _debugLog('overlay.remove $key reason=unchanged_since_hydration');
+        }
+        continue;
+      }
+
+      if (matchesRemote && !shouldPreserveTouched) {
         if (nextOverlay.remove(key) != null) {
           _debugLog('overlay.remove $key reason=matched_remote');
         }
@@ -210,7 +283,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         final overlay = _overlayFromDesiredEntity(
           key: key,
           desired: local,
-          baseRevision: remote?.revision ?? existingOverlay?.baseRevision ?? 0,
+          hydratedBase: hydratedBase,
+          existingOverlay: existingOverlay,
         );
         nextOverlay[key] = overlay;
         _debugLog('overlay.keep $key reason=pending_reconciliation');
@@ -223,23 +297,33 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         continue;
       }
 
-      if (local == null && remote != null) {
-        final wasHydratedLocally = state.hydratedEntityKeys.contains(key);
-        if (!wasHydratedLocally &&
+      if (local == null) {
+        if (hydratedBase == null &&
             existingOverlay == null &&
             !shouldPreserveTouched) {
           _debugLog(
-            'overlay.skip $key reason=remote_not_yet_hydrated_locally',
+            'overlay.skip $key reason=not_in_hydrated_base',
           );
+          continue;
+        }
+        final entityType = existingOverlay?.entityType ??
+            hydratedBase?.overlayEntityType ??
+            remote?.overlayEntityType ??
+            key.overlayType;
+        if (entityType == null) {
+          _debugLog('overlay.skip $key reason=unsupported_entity_key');
           continue;
         }
         final overlay = ActivePageOverlayEntry(
           entityKey: key,
-          entityType: remote.overlayEntityType,
+          entityType: entityType,
           desiredPayload: null,
           desiredSortIndex: null,
           deletion: true,
-          baseRevision: remote.revision,
+          baseRevision:
+              existingOverlay?.baseRevision ?? hydratedBase?.revision,
+          baseDeleted:
+              existingOverlay?.baseDeleted ?? hydratedBase?.deleted ?? false,
           dirtyAt: DateTime.now(),
         );
         nextOverlay[key] = overlay;
@@ -247,20 +331,21 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         continue;
       }
 
-      if (local != null) {
-        final overlay = _overlayFromDesiredEntity(
-          key: key,
-          desired: local,
-          baseRevision: remote?.revision ?? existingOverlay?.baseRevision ?? 0,
-        );
-        nextOverlay[key] = overlay;
-        _debugLog(
-          'overlay.upsert $key deletion=false baseRevision=${overlay.baseRevision}',
-        );
-      }
+      final overlay = _overlayFromDesiredEntity(
+        key: key,
+        desired: local,
+        hydratedBase: hydratedBase,
+        existingOverlay: existingOverlay,
+      );
+      nextOverlay[key] = overlay;
+      _debugLog(
+        'overlay.upsert $key deletion=false baseRevision=${overlay.baseRevision}',
+      );
     }
 
-    final desiredOpsByEntityKey = <EntitySyncKey, StrategyOp>{};
+    final desiredOpsByEntityKey = <EntitySyncKey, StrategyOp>{
+      ...retainedDesiredOps,
+    };
     for (final entry in nextOverlay.entries) {
       final key = entry.key;
       if (key.pageId != pageId) {
@@ -269,15 +354,15 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       final remote = remoteEntities[key];
       final overlay = entry.value;
       if (_overlayMatchesRemote(overlay, remote) &&
-          !_needsPageDescriptorSuccessor(
+          !_needsSuccessor(
+            pageId: pageId,
             key: key,
             overlay: overlay,
             queueState: queueState,
           )) {
         continue;
       }
-      final op = _strategyOpFromOverlay(
-          pageId: pageId, overlay: overlay, remote: remote);
+      final op = _strategyOpFromOverlay(pageId: pageId, overlay: overlay);
       if (op != null) {
         desiredOpsByEntityKey[key] = op;
       }
@@ -286,7 +371,6 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     state = state.copyWith(
       strategyPublicId: strategyPublicId,
       activePageId: pageId,
-      remoteBaseRevisionByEntity: remoteRevisions,
       overlayByEntityKey: nextOverlay,
     );
 
@@ -639,7 +723,8 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   ActivePageOverlayEntry _overlayFromDesiredEntity({
     required EntitySyncKey key,
     required _NormalizedEntity desired,
-    required int baseRevision,
+    required _NormalizedEntity? hydratedBase,
+    required ActivePageOverlayEntry? existingOverlay,
   }) {
     return ActivePageOverlayEntry(
       entityKey: key,
@@ -647,7 +732,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       desiredPayload: desired.payload,
       desiredSortIndex: desired.sortIndex,
       deletion: desired.deleted,
-      baseRevision: baseRevision,
+      baseRevision: existingOverlay?.baseRevision ?? hydratedBase?.revision,
+      baseDeleted:
+          existingOverlay?.baseDeleted ?? hydratedBase?.deleted ?? false,
       dirtyAt: DateTime.now(),
     );
   }
@@ -655,18 +742,21 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   StrategyOp? _strategyOpFromOverlay({
     required String pageId,
     required ActivePageOverlayEntry overlay,
-    required _NormalizedEntity? remote,
   }) {
     final entityId = overlay.entityKey.entityId;
     switch (overlay.entityType) {
       case ActivePageOverlayEntityType.pageDescriptor:
+        final baseRevision = overlay.baseRevision;
+        if (baseRevision == null) return null;
         return PagePatchOp(
           opId: const Uuid().v4(),
           pagePublicId: pageId,
           payload: Map<String, dynamic>.from(overlay.desiredPayload as Map),
-          expectedPageRevision: remote?.revision ?? overlay.baseRevision,
+          expectedPageRevision: baseRevision,
         );
       case ActivePageOverlayEntityType.pageContent:
+        final baseRevision = overlay.baseRevision;
+        if (baseRevision == null) return null;
         final payload = Map<String, dynamic>.from(
           overlay.desiredPayload as Map,
         );
@@ -674,30 +764,34 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           opId: const Uuid().v4(),
           pagePublicId: pageId,
           settings: Map<String, dynamic>.from(payload['settings'] as Map),
-          expectedPageContentRevision: remote?.revision ?? overlay.baseRevision,
+          expectedPageContentRevision: baseRevision,
         );
       case ActivePageOverlayEntityType.element:
         if (entityId == null) {
           return null;
         }
         if (overlay.deletion) {
+          // A delete after a local add has no revision until that add lands.
+          // Zero cannot land early; the outbox rebases the successor from the
+          // accepted add acknowledgment.
+          final baseRevision = overlay.baseRevision ?? 0;
           return ElementDeleteOp(
             opId: const Uuid().v4(),
             elementPublicId: entityId,
             pagePublicId: pageId,
-            expectedElementRevision: remote?.revision ?? overlay.baseRevision,
+            expectedElementRevision: baseRevision,
           );
         }
         final payload =
             Map<String, dynamic>.from(overlay.desiredPayload as Map);
-        return remote == null || remote.deleted
+        return overlay.baseRevision == null || overlay.baseDeleted
             ? ElementAddOp(
                 opId: const Uuid().v4(),
                 elementPublicId: entityId,
                 pagePublicId: pageId,
                 payload: payload,
                 sortIndex: overlay.desiredSortIndex ?? 0,
-                expectedElementRevision: remote?.revision,
+                expectedElementRevision: overlay.baseRevision,
               )
             : ElementPatchOp(
                 opId: const Uuid().v4(),
@@ -705,30 +799,31 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
                 pagePublicId: pageId,
                 payload: payload,
                 sortIndex: overlay.desiredSortIndex,
-                expectedElementRevision: remote.revision,
+                expectedElementRevision: overlay.baseRevision!,
               );
       case ActivePageOverlayEntityType.lineup:
         if (entityId == null) {
           return null;
         }
         if (overlay.deletion) {
+          final baseRevision = overlay.baseRevision ?? 0;
           return LineupDeleteOp(
             opId: const Uuid().v4(),
             lineupPublicId: entityId,
             pagePublicId: pageId,
-            expectedLineupRevision: remote?.revision ?? overlay.baseRevision,
+            expectedLineupRevision: baseRevision,
           );
         }
         final payload =
             Map<String, dynamic>.from(overlay.desiredPayload as Map);
-        return remote == null || remote.deleted
+        return overlay.baseRevision == null || overlay.baseDeleted
             ? LineupAddOp(
                 opId: const Uuid().v4(),
                 lineupPublicId: entityId,
                 pagePublicId: pageId,
                 payload: payload,
                 sortIndex: overlay.desiredSortIndex ?? 0,
-                expectedLineupRevision: remote?.revision,
+                expectedLineupRevision: overlay.baseRevision,
               )
             : LineupPatchOp(
                 opId: const Uuid().v4(),
@@ -736,7 +831,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
                 pagePublicId: pageId,
                 payload: payload,
                 sortIndex: overlay.desiredSortIndex,
-                expectedLineupRevision: remote.revision,
+                expectedLineupRevision: overlay.baseRevision!,
               );
     }
   }
@@ -755,24 +850,31 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         overlay.desiredSortIndex == remote.sortIndex;
   }
 
-  bool _needsPageDescriptorSuccessor({
+  bool _needsSuccessor({
+    required String pageId,
     required EntitySyncKey key,
     required ActivePageOverlayEntry overlay,
     required StrategyOpQueueState queueState,
   }) {
-    if (key.kind != EntitySyncKeyKind.pageDescriptor ||
-        queueState.successorByEntityKey.containsKey(key)) {
+    if (queueState.successorByEntityKey.containsKey(key)) {
       return false;
     }
-    final desiredPayload = overlay.desiredPayload;
-    if (desiredPayload is! Map) return false;
-    final desiredSide = desiredPayload['isAttack'];
-    if (desiredSide is! bool) return false;
 
     final predecessor = queueState.inFlightByEntityKey[key]?.pending.op ??
         queueState.queuedByEntityKey[key]?.pending.op;
-    if (predecessor is! PagePatchOp) return false;
-    return predecessor.payload['isAttack'] != desiredSide;
+    if (predecessor == null) return false;
+    final desired = _strategyOpFromOverlay(pageId: pageId, overlay: overlay);
+    return desired != null && !_opsEquivalent(predecessor, desired);
+  }
+
+  bool _opsEquivalent(StrategyOp left, StrategyOp right) {
+    return left.kind == right.kind &&
+        left.entityType == right.entityType &&
+        left.entityPublicId == right.entityPublicId &&
+        left.pagePublicId == right.pagePublicId &&
+        cloudJsonEquivalent(left.payload, right.payload) &&
+        left.sortIndex == right.sortIndex &&
+        left.expectedRevision == right.expectedRevision;
   }
 
   bool _entitiesEquivalent(
