@@ -53,6 +53,8 @@ void main() {
 
     expect(caps.canRenameStrategy, isFalse);
     expect(caps.canDeleteStrategy, isFalse);
+    expect(caps.canMoveStrategy, isFalse);
+    expect(caps.canEditPages, isFalse);
     expect(caps.canAddPage, isFalse);
     expect(caps.canReorderPages, isFalse);
   });
@@ -62,7 +64,17 @@ void main() {
 
     expect(caps.canRenameStrategy, isTrue);
     expect(caps.canDeleteStrategy, isTrue);
+    expect(caps.canMoveStrategy, isTrue);
+    expect(caps.canEditPages, isTrue);
     expect(caps.canAddPage, isTrue);
     expect(caps.canReorderPages, isTrue);
+  });
+
+  test('editor cloud capabilities allow page edits but not moves', () {
+    final caps = StrategyCapabilities.fromCloudRole('editor');
+
+    expect(caps.canRenameStrategy, isTrue);
+    expect(caps.canMoveStrategy, isFalse);
+    expect(caps.canEditPages, isTrue);
   });
 }

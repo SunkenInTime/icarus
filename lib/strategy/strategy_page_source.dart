@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/strategy_capabilities.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -309,6 +310,13 @@ class CloudStrategyPageSource implements StrategyPageSource {
 
   @override
   Future<void> flushCurrentPage() async {
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (snapshot == null ||
+        snapshot.header.publicId != strategyId ||
+        !StrategyCapabilities.fromCloudRole(snapshot.header.role)
+            .canEditPages) {
+      return;
+    }
     final pageId = activePageId();
     if (pageId == null) {
       return;

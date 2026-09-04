@@ -582,7 +582,7 @@ export const move = mutation({
   handler: async (ctx, args) => {
     assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    await assertStrategyRole(ctx, strategy, "editor");
+    await assertStrategyRole(ctx, strategy, "owner");
 
     if (args.expectedRevision !== strategy.revision) {
       throw conflictError("Strategy revision mismatch");

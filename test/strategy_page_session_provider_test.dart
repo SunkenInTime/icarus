@@ -366,6 +366,7 @@ RemoteEditorSnapshot _editorSnapshot({
   int shellRevision = 1,
   String? mapData,
   String? themeProfileId,
+  String role = 'owner',
 }) {
   final now = DateTime.utc(2026);
   return RemoteEditorSnapshot(
@@ -378,6 +379,7 @@ RemoteEditorSnapshot _editorSnapshot({
         createdAt: now,
         updatedAt: now,
         themeProfileId: themeProfileId,
+        role: role,
       ),
       pages: pages,
     ),
