@@ -1153,7 +1153,7 @@ class StrategyProvider extends Notifier<StrategyState> {
         rethrow;
       }
       ref.invalidate(cloudStrategiesProvider);
-      ref.invalidate(cloudFoldersProvider);
+      ref.invalidate(cloudFolderTreeProvider);
       try {
         await openCloudStrategy(newID);
       } catch (error, stackTrace) {

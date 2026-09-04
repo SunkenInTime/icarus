@@ -12,7 +12,6 @@ import 'package:icarus/interactive_map.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
-import 'package:icarus/providers/library_rail_hover_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/unsaved_strategy_guard.dart';
 import 'package:icarus/sidebar.dart';
@@ -29,6 +28,7 @@ import 'package:icarus/widgets/dialogs/create_lineup_dialog.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import 'package:url_launcher/url_launcher.dart';
+import 'package:icarus/widgets/window_chrome.dart';
 import 'package:window_manager/window_manager.dart';
 
 class StrategyView extends ConsumerStatefulWidget {
@@ -178,7 +178,6 @@ class _StrategyViewState extends ConsumerState<StrategyView>
             .updateFilterState(FilterState.all);
         ref.read(deleteMenuProvider.notifier).requestClose();
         if (mounted) {
-          ref.read(suppressLibraryRailHoverProvider.notifier).state = true;
           Navigator.pop(context);
         }
         await ref.read(strategyProvider.notifier).clearCurrentStrategy();
@@ -218,66 +217,69 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     return Scaffold(
       body: Column(
         children: [
-          Padding(
-            padding:
-                const EdgeInsets.only(left: 15, top: 15, bottom: 10, right: 15),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final showDiscordLabel = constraints.maxWidth >= 1000;
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        ShadIconButton.ghost(
-                          foregroundColor: Colors.white,
-                          onPressed: _leaveToLibrary,
-                          icon: const Icon(Icons.home),
-                        ),
-                        const SizedBox(width: 5),
-                        const MapSelector(),
-                        if (kIsWeb)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8.0),
-                            child: DemoTag(),
+          EditorWindowHeader(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 15),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final showDiscordLabel = constraints.maxWidth >= 1000;
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          ShadIconButton.ghost(
+                            foregroundColor: Colors.white,
+                            onPressed: _leaveToLibrary,
+                            icon: const Icon(Icons.home),
                           ),
-                      ],
-                    ),
-                    const StrategyQuickSwitcher(),
-                    if (showDiscordLabel)
-                      TextButton(
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          enabledMouseCursor: SystemMouseCursors.click,
-                        ),
-                        onPressed: () async {
-                          await launchUrl(Settings.dicordLink);
-                        },
-                        child: const Row(
-                          children: [
-                            Text("Have any bugs? Join the Discord"),
-                            SizedBox(width: 10),
-                            Icon(
-                              CustomIcons.discord,
-                              color: Colors.white,
+                          const SizedBox(width: 5),
+                          const MapSelector(),
+                          if (kIsWeb)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8.0),
+                              child: DemoTag(),
                             ),
-                          ],
-                        ),
-                      )
-                    else
-                      Tooltip(
-                        message: 'Have any bugs? Join the Discord',
-                        child: ShadIconButton.ghost(
-                          foregroundColor: Colors.white,
+                        ],
+                      ),
+                      const StrategyQuickSwitcher(),
+                      if (showDiscordLabel)
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            enabledMouseCursor: SystemMouseCursors.click,
+                          ),
                           onPressed: () async {
                             await launchUrl(Settings.dicordLink);
                           },
-                          icon: const Icon(CustomIcons.discord),
+                          child: const Row(
+                            children: [
+                              Text("Have any bugs? Join the Discord"),
+                              SizedBox(width: 10),
+                              Icon(
+                                CustomIcons.discord,
+                                color: Colors.white,
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Tooltip(
+                          message: 'Have any bugs? Join the Discord',
+                          child: ShadIconButton.ghost(
+                            foregroundColor: Colors.white,
+                            onPressed: () async {
+                              await launchUrl(Settings.dicordLink);
+                            },
+                            icon: const Icon(CustomIcons.discord),
+                          ),
                         ),
-                      ),
-                  ],
-                );
-              },
+                    ],
+                  );
+                },
+              ),
             ),
           ),
           const Expanded(

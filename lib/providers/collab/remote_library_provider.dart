@@ -43,35 +43,35 @@ final cloudFolderTreeProvider =
 // the complete tree rather than the current folder's children.
 final cloudAllFoldersProvider = cloudFolderTreeProvider;
 
+/// The folders at the open level of the cloud library, derived from the
+/// tree. A plain derivation (not a second stream) so the tree never loses its
+/// listener between rebuilds; an auto-disposed tree that re-subscribes on
+/// every emission looks like a library that never finishes loading.
 final cloudFoldersProvider =
-    StreamProvider.autoDispose<List<CloudFolderEntry>>((ref) async* {
+    Provider.autoDispose<AsyncValue<List<CloudFolderEntry>>>((ref) {
   final section = ref.watch(cloudLibrarySectionProvider);
   final parentFolderId = ref.watch(folderProvider);
-  final tree = ref.watch(cloudFolderTreeProvider);
-  final allFolders = switch (tree) {
-    AsyncData(:final value) => value,
-    AsyncError(:final error, :final stackTrace) =>
-      Error.throwWithStackTrace(error, stackTrace),
-    _ => null,
-  };
-  if (allFolders == null) return;
-
-  final wantsShared = section == CloudLibrarySection.sharedWithMe;
-  final scopedFolders = allFolders
-      .where((entry) =>
-          wantsShared ? entry.role != 'owner' : entry.role == 'owner')
-      .toList(growable: false);
-  if (parentFolderId != null &&
-      !scopedFolders.any((entry) => entry.folder.id == parentFolderId)) {
-    ref
-        .read(folderProvider.notifier)
-        .updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
-    yield const <CloudFolderEntry>[];
-    return;
-  }
-  yield scopedFolders
-      .where((entry) => entry.folder.parentID == parentFolderId)
-      .toList(growable: false);
+  final folderNotifier = ref.read(folderProvider.notifier);
+  return ref.watch(cloudFolderTreeProvider).whenData((allFolders) {
+    final wantsShared = section == CloudLibrarySection.sharedWithMe;
+    final scopedFolders = allFolders
+        .where((entry) =>
+            wantsShared ? entry.role != 'owner' : entry.role == 'owner')
+        .toList(growable: false);
+    if (parentFolderId != null &&
+        !scopedFolders.any((entry) => entry.folder.id == parentFolderId)) {
+      // The open folder is not in this scope (deleted elsewhere, or it is a
+      // local folder while My Library shows both stores). Clear the cloud
+      // slot once this build settles.
+      Future.microtask(() {
+        folderNotifier.updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
+      });
+      return const <CloudFolderEntry>[];
+    }
+    return scopedFolders
+        .where((entry) => entry.folder.parentID == parentFolderId)
+        .toList(growable: false);
+  });
 });
 
 final cloudStrategiesProvider =

@@ -34,6 +34,7 @@ class StrategyTile extends ConsumerStatefulWidget {
   const StrategyTile.local({
     super.key,
     required this.strategyData,
+    this.showDeviceBadge = false,
   })  : cloudStrategy = null,
         canRename = true,
         canDuplicate = true,
@@ -47,9 +48,14 @@ class StrategyTile extends ConsumerStatefulWidget {
     required this.canDuplicate,
     required this.canDelete,
     required this.canMove,
-  }) : strategyData = null;
+  })  : strategyData = null,
+        showDeviceBadge = false;
 
   final StrategyData? strategyData;
+
+  /// Marks a local strategy as not being in the cloud. Only meaningful while
+  /// the cloud is reachable; signed out, every strategy is on this device.
+  final bool showDeviceBadge;
   final CloudStrategyEntry? cloudStrategy;
   final bool canRename;
   final bool canDuplicate;
@@ -302,6 +308,9 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
                                     child: StrategyTileThumbnail(
                                       assetPath: viewData.thumbnailAsset,
                                       borderRadius: strategyTileInnerRadius,
+                                      overlay: widget.showDeviceBadge
+                                          ? const DeviceOnlyBadge()
+                                          : null,
                                     ),
                                   ),
                                   const SizedBox(height: 10),

@@ -25,12 +25,17 @@ class FolderPill extends ConsumerStatefulWidget {
   const FolderPill({
     super.key,
     required this.folder,
+    required this.store,
     this.isDemo = false,
     this.strategyCount,
     this.folderCount,
   });
 
   final Folder folder;
+
+  /// Which library the folder belongs to. My Library lists both stores, so
+  /// the pill cannot infer this from the active workspace.
+  final LibraryWorkspace store;
   final bool isDemo;
   final int? strategyCount;
   final int? folderCount;
@@ -98,8 +103,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
       Folder.folderColorMap[widget.folder.color] ??
       Colors.grey;
 
-  bool get _isCloudWorkspace =>
-      ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
+  bool get _isCloudWorkspace => widget.store == LibraryWorkspace.cloud;
 
   String? get _cloudRole {
     if (!_isCloudWorkspace) {
@@ -146,12 +150,13 @@ class _FolderPillState extends ConsumerState<FolderPill>
       ),
       dragAnchorStrategy: pointerDragAnchorStrategy,
       onDragUpdate: (details) => _dragTiltController.addDelta(details.delta.dx),
-      data: FolderItem(widget.folder),
+      data: FolderItem(widget.folder, store: widget.store),
       child: DragTarget<GridItem>(
         onWillAcceptWithDetails: (details) {
           final item = details.data;
           if (widget.isDemo) return false;
           if (!_canManageCloudFolder) return false;
+          if (item.store != widget.store) return false;
           if (item is FolderItem) {
             return item.folder.id != id && !_isParentFolder(item.folder.id);
           }
@@ -213,7 +218,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
             ref.read(folderProvider.notifier).moveToFolder(
                   folderID: item.folder.id,
                   parentID: widget.folder.id,
-                  workspace: ref.read(libraryWorkspaceProvider),
+                  workspace: widget.store,
                 );
           }
         },
@@ -244,7 +249,10 @@ class _FolderPillState extends ConsumerState<FolderPill>
               child: GestureDetector(
                 onTap: () {
                   if (widget.isDemo) return;
-                  ref.read(folderProvider.notifier).updateID(widget.folder.id);
+                  ref.read(folderProvider.notifier).openFolder(
+                        folderId: widget.folder.id,
+                        store: widget.store,
+                      );
                 },
                 child: AnimatedBuilder(
                   animation: _scaleAnimation,
@@ -407,7 +415,10 @@ class _FolderPillState extends ConsumerState<FolderPill>
                 await showDialog<String>(
                   context: context,
                   builder: (context) {
-                    return FolderEditDialog(folder: widget.folder);
+                    return FolderEditDialog(
+                      folder: widget.folder,
+                      store: widget.store,
+                    );
                   },
                 );
               },
@@ -455,7 +466,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
                     if (widget.isDemo) return;
                     ref.read(folderProvider.notifier).deleteFolder(
                           widget.folder.id,
-                          workspace: ref.read(libraryWorkspaceProvider),
+                          workspace: widget.store,
                         );
                   }
                 });
@@ -496,11 +507,10 @@ class _FolderPillState extends ConsumerState<FolderPill>
   }
 
   bool _isParentFolder(String folderId) {
-    final workspace = ref.read(libraryWorkspaceProvider);
     String? currentParentId = widget.folder.parentID;
     while (currentParentId != null) {
       if (currentParentId == folderId) return true;
-      final parentFolder = workspace == LibraryWorkspace.local
+      final parentFolder = widget.store == LibraryWorkspace.local
           ? ref
               .read(folderProvider.notifier)
               .findLocalFolderByID(currentParentId)

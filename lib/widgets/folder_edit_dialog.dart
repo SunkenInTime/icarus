@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/folder_icons.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/widgets/better_color_picker.dart';
 import 'package:icarus/widgets/color_picker_button.dart';
 import 'package:icarus/widgets/custom_segmented_tabs.dart';
@@ -23,8 +24,12 @@ class FolderEditDialog extends ConsumerStatefulWidget {
   const FolderEditDialog({
     super.key,
     this.folder,
+    this.store,
   });
   final Folder? folder;
+
+  /// The store to write to. Defaults to the active workspace.
+  final LibraryWorkspace? store;
   @override
   ConsumerState<ConsumerStatefulWidget> createState() =>
       _FolderEditDialogState();
@@ -85,6 +90,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                       newIconId: _selectedIconId,
                       newColor: _selectedColor,
                       newCustomColor: _customColor,
+                      workspace: widget.store,
                     );
                 if (context.mounted) Navigator.of(context).pop();
                 return;
@@ -97,6 +103,7 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
                       iconId: _selectedIconId,
                       color: _selectedColor,
                       customColor: _customColor,
+                      workspace: widget.store,
                     );
               } catch (_) {
                 // Cloud folder creation failed (already toasted by the

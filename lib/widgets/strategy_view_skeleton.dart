@@ -3,6 +3,7 @@ import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/custom_icons.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/widgets/window_chrome.dart';
 import 'package:icarus/widgets/dot_painter.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -156,12 +157,18 @@ class _SkeletonTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = strategyName?.trim();
+    return EditorWindowHeader(child: _buildBar(context, title));
+  }
+
+  Widget _buildBar(BuildContext context, String? title) {
     return Padding(
-      padding: const EdgeInsets.only(left: 15, top: 15, bottom: 10, right: 15),
+      padding: const EdgeInsets.symmetric(horizontal: 15),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const _SkeletonBlock(width: 40, height: 40, radius: 8),
               const SizedBox(width: 5),
@@ -170,7 +177,7 @@ class _SkeletonTopBar extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 280),

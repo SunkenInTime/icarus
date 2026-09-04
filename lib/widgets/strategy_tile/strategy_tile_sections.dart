@@ -151,12 +151,16 @@ class StrategyTileThumbnail extends StatelessWidget {
     this.height,
     this.width,
     this.borderRadius = 16,
+    this.overlay,
   });
 
   final String assetPath;
   final double? height;
   final double? width;
   final double borderRadius;
+
+  /// Drawn over the bottom-left corner of the map, e.g. a sync badge.
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
@@ -166,10 +170,58 @@ class StrategyTileThumbnail extends StatelessWidget {
     } else {
       image = SizedBox.expand(child: image);
     }
+    if (overlay != null) {
+      image = Stack(
+        fit: StackFit.passthrough,
+        children: [
+          image,
+          Positioned(left: 8, bottom: 8, child: overlay!),
+        ],
+      );
+    }
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: image,
+    );
+  }
+}
+
+/// "On this device": the strategy exists only in the local library.
+class DeviceOnlyBadge extends StatelessWidget {
+  const DeviceOnlyBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Saved only on this computer',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Settings.tacticalVioletTheme.background.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Settings.tacticalVioletTheme.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              LucideIcons.monitor,
+              size: 12,
+              color: Settings.tacticalVioletTheme.foreground,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              'On this device',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Settings.tacticalVioletTheme.foreground,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

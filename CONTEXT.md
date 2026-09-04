@@ -41,6 +41,14 @@ each page held for the step duration with full-fidelity page transitions
 between them.
 _Avoid_: video sequencing, movie export
 
+**Library tab**:
+One of the three destinations in the library's title strip. *My Library* is
+the user's own strategies and folders from every store, shown together;
+*Shared* is what teammates shared with them; *Community* is the public space.
+Whether a strategy is on this device, in the cloud, or both is a badge on the
+strategy, not a place the user goes.
+_Avoid_: This Computer, workspace (in user-facing copy)
+
 **Lineup**:
 A saved ability setup (position/aim reference) attached to a page, grouped
 into lineup groups.

@@ -58,7 +58,7 @@ class FolderProvider extends Notifier<String?> {
               color: color.name,
               customColorValue: customColor?.toARGB32(),
             );
-        ref.invalidate(cloudFoldersProvider);
+        ref.invalidate(cloudFolderTreeProvider);
         return newFolder;
       } catch (error, stackTrace) {
         await _maybeReportCloudUnauthenticated(
@@ -84,6 +84,13 @@ class FolderProvider extends Notifier<String?> {
 
   void updateID(String? id) {
     updateWorkspaceFolderId(_currentWorkspace, id);
+  }
+
+  /// Enters [folderId], which lives in [store]. My Library shows folders from
+  /// both stores side by side, so opening one also makes its store active.
+  void openFolder({required String folderId, required LibraryWorkspace store}) {
+    ref.read(libraryWorkspaceProvider.notifier).select(store);
+    updateWorkspaceFolderId(store, folderId);
   }
 
   void clearID() {
@@ -215,8 +222,7 @@ class FolderProvider extends Notifier<String?> {
               customColorValue: newCustomColor?.toARGB32(),
               clearCustomColorValue: newCustomColor == null,
             );
-        ref.invalidate(cloudFoldersProvider);
-        ref.invalidate(cloudAllFoldersProvider);
+        ref.invalidate(cloudFolderTreeProvider);
       } catch (error, stackTrace) {
         await _maybeReportCloudUnauthenticated(
           source: 'folder:update',
