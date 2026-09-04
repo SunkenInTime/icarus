@@ -6,7 +6,7 @@ import 'package:app_links/app_links.dart';
 import 'package:icarus/collab/convex_client.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:custom_mouse_cursor/custom_mouse_cursor.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -23,6 +23,7 @@ import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/routes.dart';
 import 'package:icarus/const/second_instance_args.dart';
 import 'package:icarus/const/settings.dart' show Settings;
+import 'package:icarus/config/cloud_build_config.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/providers/auth_provider.dart';
@@ -115,6 +116,9 @@ Future<void> main(List<String> args) async {
       appProviderContainer = ProviderContainer();
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
+      final cloudBuildConfig = CloudBuildConfig.fromEnvironment(
+        isReleaseMode: kReleaseMode,
+      );
 
       await registerDeepLinkProtocol('icarus');
       await _initializeDeepLinkHandling();
@@ -160,10 +164,10 @@ Future<void> main(List<String> args) async {
       await StrategyMigrator.migrateAllStrategies();
 
       await ConvexClient.initialize(
-        const ConvexConfig(
-          deploymentUrl: 'https://majestic-eel-413.convex.cloud',
-          clientId: 'dev:majestic-eel-413',
-          operationTimeout: Duration(seconds: 30),
+        ConvexConfig(
+          deploymentUrl: cloudBuildConfig.deploymentUrl,
+          clientId: cloudBuildConfig.clientId,
+          operationTimeout: const Duration(seconds: 30),
           healthCheckQuery: defaultConvexHealthCheckQuery,
         ),
       );

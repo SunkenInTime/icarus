@@ -48,6 +48,89 @@ function Get-VersionInfo {
     }
 }
 
+function Get-ReleaseBranchName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [string]$BranchName = ""
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($BranchName)) {
+        return $BranchName.Trim()
+    }
+
+    if ($env:GITHUB_REF_TYPE -eq "branch" -and -not [string]::IsNullOrWhiteSpace($env:GITHUB_REF_NAME)) {
+        return $env:GITHUB_REF_NAME.Trim()
+    }
+
+    $resolvedBranch = (& git -C $RepoRoot branch --show-current).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($resolvedBranch)) {
+        throw "Could not determine the current branch for release safety checks."
+    }
+
+    return $resolvedBranch
+}
+
+function Assert-ReleaseBranch {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("stable-desktop", "prerelease-desktop", "store", "production-backend")]
+        [string]$ReleaseTarget,
+        [string]$BranchName = ""
+    )
+
+    $resolvedBranch = Get-ReleaseBranchName -RepoRoot $RepoRoot -BranchName $BranchName
+    if ($ReleaseTarget -ne "prerelease-desktop" -and $resolvedBranch -ne "main") {
+        throw "Release target '$ReleaseTarget' is public and can only run from branch 'main'. Current branch: '$resolvedBranch'."
+    }
+
+    Write-Host "Release branch check passed for '$ReleaseTarget' on '$resolvedBranch'." -ForegroundColor Green
+    return $resolvedBranch
+}
+
+function Resolve-CloudBuildConfiguration {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("stable", "prerelease", "store")]
+        [string]$ReleaseTarget,
+        [string]$ProductionConvexDeploymentUrl = "",
+        [string]$ProductionConvexClientId = ""
+    )
+
+    if ($ReleaseTarget -eq "prerelease") {
+        return [ordered]@{
+            Environment = "development"
+            DeploymentUrl = ""
+            ClientId = ""
+        }
+    }
+
+    $deploymentUrl = $ProductionConvexDeploymentUrl.Trim()
+    $clientId = $ProductionConvexClientId.Trim()
+    if ([string]::IsNullOrWhiteSpace($deploymentUrl) -or [string]::IsNullOrWhiteSpace($clientId)) {
+        throw "Production cloud configuration is missing. Set ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL and ICARUS_PRODUCTION_CONVEX_CLIENT_ID before building '$ReleaseTarget'."
+    }
+
+    $parsedUrl = $null
+    if (-not [System.Uri]::TryCreate($deploymentUrl, [System.UriKind]::Absolute, [ref]$parsedUrl) -or
+        $parsedUrl.Scheme -ne "https" -or
+        [string]::IsNullOrWhiteSpace($parsedUrl.Host)) {
+        throw "ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL must be an absolute HTTPS URL."
+    }
+
+    if ($parsedUrl.Host -ieq "majestic-eel-413.convex.cloud" -or $clientId -eq "dev:majestic-eel-413") {
+        throw "Production cloud configuration cannot use the Icarus development Convex deployment."
+    }
+
+    return [ordered]@{
+        Environment = "production"
+        DeploymentUrl = $deploymentUrl
+        ClientId = $clientId
+    }
+}
+
 function Get-FlutterRoot {
     param(
         [Parameter(Mandatory = $true)]

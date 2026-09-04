@@ -11,6 +11,12 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot "common_release.ps1")
 
 $repoRoot = Get-RepoRoot -ScriptDirectory $PSScriptRoot
+$publishesStable = @($SyncPaths | Where-Object {
+    (($_ -replace '\\', '/').Trim('/')) -match '^(updates|downloads)/windows/stable($|/)'
+}).Count -gt 0
+if ($publishesStable) {
+    Assert-ReleaseBranch -RepoRoot $repoRoot -ReleaseTarget "stable-desktop" | Out-Null
+}
 $resolvedSourceDir = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath $SourceDir
 
 if (-not (Test-Path $resolvedSourceDir)) {

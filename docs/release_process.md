@@ -19,13 +19,77 @@ Keep them separate. Run the workflow for the channel you actually want to publis
 
 ## Before Any Release
 
-1. Make sure the branch contains the changes you want to ship.
+1. Check the branch. Stable desktop and every Store build must run from
+   `main`. The release scripts stop before a version bump or build on any other
+   branch. Desktop prerelease builds may run from a feature branch.
 2. Run the focused validation locally:
    - `fvm flutter test test/update_checker_test.dart`
+   - `fvm flutter test test/cloud_build_config_test.dart`
+   - `powershell -ExecutionPolicy Bypass -File scripts/test_release_safety.ps1`
    - `fvm flutter analyze`
 3. Check `pubspec.yaml` and confirm the version you want to release.
 4. Create or update the matching release metadata file in `release/metadata/`.
 5. Write player-facing release notes in that metadata file.
+
+## Cloud build configuration
+
+Icarus has one named development Convex configuration in source. Local
+development, CI, and desktop prerelease builds select it with
+`ICARUS_CLOUD_ENVIRONMENT=development`.
+
+An ordinary debug run defaults to development. A release-mode app with no
+`ICARUS_CLOUD_ENVIRONMENT` stops during startup, so any new release entry point
+must choose `development` or `production` deliberately.
+
+Stable desktop and Store builds select `production` and require both of these
+GitHub repository variables:
+
+- `ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL`
+- `ICARUS_PRODUCTION_CONVEX_CLIENT_ID`
+
+The production URL and client ID are public build inputs, not deploy keys. The
+release scripts pass them to Flutter through a temporary Dart-defines file and
+delete that file after the build. A missing value, invalid URL, or the known
+development deployment stops the release before Flutter runs.
+
+Stable desktop, Store, and production backend workflows all enter the protected
+GitHub `Production` environment before they can build or publish. Desktop
+prerelease skips that environment and remains available on feature branches.
+
+For a local stable build, set the same two environment variables in the shell
+before running `scripts/release_desktop.ps1`. Never put a Convex deploy key in a
+Dart define or repository variable.
+
+## One-time production Convex setup
+
+No production deployment or key is checked into this repository. Before the
+first production release:
+
+1. Create or select the Icarus production deployment in Convex. Record its
+   `.convex.cloud` client URL in the repository variable above.
+2. Create a deployment-scoped production deploy key with only the permissions
+   needed to deploy. Convex supports this in the deployment settings or with
+   `npx convex deployment token create github-production --deployment prod`.
+   See the [Convex deploy-key documentation](https://docs.convex.dev/cli/deploy-key-types).
+3. Create a GitHub environment named `Production`. Restrict its deployment
+   branches to `main`, add any required reviewers, and add the secret
+   `CONVEX_PRODUCTION_DEPLOY_KEY`.
+4. Add the public production URL and a stable client identifier, such as the
+   identifier chosen for the shipped Icarus client, to the two GitHub repository
+   variables in the previous section.
+5. Configure the production deployment's required R2 environment values before
+   testing cloud media. The backend reports the exact missing names if they are
+   absent.
+
+Run the manual `Deploy Convex Production` workflow from `main` and type
+`deploy-production`. The workflow enters the GitHub `Production` environment,
+requires a `prod:` deploy key, installs locked dependencies, runs TypeScript and
+Convex tests, then runs `npx convex deploy --typecheck enable`. Convex documents
+that `CONVEX_DEPLOY_KEY` selects the deployment associated with that key. See
+the [`convex deploy` reference](https://docs.convex.dev/cli/reference/deploy).
+
+The production workflow never reads `CONVEX_PREVIEW_DEPLOY_KEY`. That secret is
+only for the isolated contract deployment in CI.
 
 ## Desktop Release Checklist
 
@@ -33,7 +97,7 @@ Use this when you want to publish the direct installer channel.
 
 1. Go to `Actions` in GitHub.
 2. Open `Release Desktop`.
-3. Click `Run workflow`.
+3. Confirm the selected branch is `main`, then click `Run workflow`.
 4. Choose:
    - `version_bump`: `none` if the version is already correct, otherwise `patch`, `minor`, or `major`
    - `channel`: `stable`
@@ -81,7 +145,7 @@ Use this when you want to publish the Microsoft Store channel.
 
 1. Go to `Actions` in GitHub.
 2. Open `Release Store`.
-3. Click `Run workflow`.
+3. Confirm the selected branch is `main`, then click `Run workflow`.
 4. Choose:
    - `version_bump`: `none` if the version is already correct, otherwise `patch`, `minor`, or `major`
    - `publish_to_store`: `false` for a dry run, `true` when you are ready to submit
@@ -110,6 +174,9 @@ Use this when you want to publish the Microsoft Store channel.
   - `scripts/publish_prerelease_local.ps1` pushes the staged site content to `gh-pages`.
   - GitHub Pages should be configured to serve `gh-pages` from `/ (root)`.
   - No extra Pages deploy workflow is needed for prerelease testing.
+- `release/metadata/4.6.1+97.json` is prerelease-only while the online beta
+  checks remain open. Do not add `stable` to its channels to make a stable
+  manifest build pass.
 - Direct desktop installs now use a per-user install path and per-user registry registration.
 - Store installs should continue to use the Microsoft Store update path only.
 - The metadata file should not be a generic `template.json` in the live metadata folder, because the manifest generator treats every JSON file there as a real release entry.

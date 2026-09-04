@@ -1,0 +1,66 @@
+name: Deploy Convex Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type deploy-production to confirm this production backend deploy.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: Production
+
+    steps:
+      - name: Guard Production Deploy
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "The production Convex backend can only deploy from branch main. Current ref: $GITHUB_REF"
+            exit 1
+          fi
+          if [[ "${{ inputs.confirmation }}" != "deploy-production" ]]; then
+            echo "Confirmation must be exactly: deploy-production"
+            exit 1
+          fi
+
+      - name: Checkout Production Source
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Require Production Convex Deploy Key
+        shell: bash
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PRODUCTION_DEPLOY_KEY }}
+        run: |
+          if [[ -z "$CONVEX_DEPLOY_KEY" ]]; then
+            echo "Add CONVEX_PRODUCTION_DEPLOY_KEY to the GitHub Production environment."
+            exit 1
+          fi
+          if [[ "$CONVEX_DEPLOY_KEY" != prod:* ]]; then
+            echo "CONVEX_PRODUCTION_DEPLOY_KEY must be a production deploy key with the prod: prefix."
+            exit 1
+          fi
+
+      - name: Install Convex Dependencies
+        run: npm ci
+
+      - name: Check Convex Types
+        run: npx tsc --noEmit
+
+      - name: Run Convex Tests
+        run: npm run test:convex
+
+      - name: Deploy Convex Production Backend
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_PRODUCTION_DEPLOY_KEY }}
+        run: npx convex deploy --typecheck enable --message "GitHub Actions $GITHUB_SHA"
