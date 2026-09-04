@@ -199,6 +199,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final nextOverlay = Map<EntitySyncKey, ActivePageOverlayEntry>.from(
       state.overlayByEntityKey,
     );
+    final retainedDesiredOps = <EntitySyncKey, StrategyOp>{};
 
     for (final key in pageKeys) {
       final remote = remoteEntities[key];
@@ -208,10 +209,28 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       final hasInFlight = queueState.inFlightByEntityKey.containsKey(key);
       final hasSuccessor = queueState.successorByEntityKey.containsKey(key);
       final existingOverlay = state.overlayByEntityKey[key];
+      final retainedOp = queueState.successorByEntityKey[key]?.pending.op ??
+          queueState.inFlightByEntityKey[key]?.pending.op ??
+          queueState.queuedByEntityKey[key]?.pending.op;
 
       final shouldPreserveTouched = hasQueued || hasInFlight || hasSuccessor;
       final matchesRemote = _entitiesEquivalent(local, remote);
       final matchesHydratedBase = _entitiesEquivalent(local, hydratedBase);
+      final shouldUseRetainedIntent = hasQueued ||
+          (!hasInFlight && hasSuccessor) ||
+          (local == null && hydratedBase == null);
+
+      // A restored queue entry has no in-memory overlay. If the canvas still
+      // matches its hydrated base, the durable op is the only local intent and
+      // must remain desired until it lands or the user changes that entity.
+      if (existingOverlay == null &&
+          retainedOp != null &&
+          shouldUseRetainedIntent &&
+          matchesHydratedBase) {
+        retainedDesiredOps[key] = retainedOp;
+        _debugLog('overlay.keep $key reason=durable_queue_only');
+        continue;
+      }
 
       if (matchesHydratedBase && !shouldPreserveTouched) {
         if (nextOverlay.remove(key) != null) {
@@ -261,11 +280,17 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           );
           continue;
         }
+        final entityType = existingOverlay?.entityType ??
+            hydratedBase?.overlayEntityType ??
+            remote?.overlayEntityType ??
+            key.overlayType;
+        if (entityType == null) {
+          _debugLog('overlay.skip $key reason=unsupported_entity_key');
+          continue;
+        }
         final overlay = ActivePageOverlayEntry(
           entityKey: key,
-          entityType: existingOverlay?.entityType ??
-              hydratedBase?.overlayEntityType ??
-              remote!.overlayEntityType,
+          entityType: entityType,
           desiredPayload: null,
           desiredSortIndex: null,
           deletion: true,
@@ -292,7 +317,9 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
       );
     }
 
-    final desiredOpsByEntityKey = <EntitySyncKey, StrategyOp>{};
+    final desiredOpsByEntityKey = <EntitySyncKey, StrategyOp>{
+      ...retainedDesiredOps,
+    };
     for (final entry in nextOverlay.entries) {
       final key = entry.key;
       if (key.pageId != pageId) {

@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -15,6 +16,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -986,6 +988,78 @@ void main() {
 
     final delete = finalDesired![key] as ElementDeleteOp;
     expect(delete.expectedElementRevision, 0);
+  });
+
+  test('restart retains a queued add missing from canvas and remote', () async {
+    final page = _page('page-1', 0);
+    const textId = 'queued-before-restart';
+    const key = EntitySyncKey.element('page-1', textId);
+    final add = ElementAddOp(
+      opId: 'add-before-restart',
+      elementPublicId: textId,
+      pagePublicId: page.publicId,
+      payload: _textElement(page.publicId, textId, 'unsent').payload,
+      sortIndex: 0,
+    );
+    final store = MemoryDurableStrategyOutboxStore();
+    final firstContainer = ProviderContainer(overrides: [
+      durableStrategyOutboxStoreProvider.overrideWithValue(store),
+    ]);
+    firstContainer
+        .read(cloudCollabModeProvider.notifier)
+        .setForceLocalFallback(true);
+    final firstQueue = firstContainer.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('cloud-strategy', accountId: 'account-a');
+    await firstQueue.enqueue(add, flushImmediately: false);
+    expect(store.load().records.single.pending.op.opId, 'add-before-restart');
+    firstContainer.dispose();
+
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page),
+    ));
+    final restarted = ProviderContainer(overrides: [
+      durableStrategyOutboxStoreProvider.overrideWithValue(store),
+      remoteEditorSnapshotProvider.overrideWith(() => remote),
+    ]);
+    addTearDown(restarted.dispose);
+    restarted
+        .read(cloudCollabModeProvider.notifier)
+        .setForceLocalFallback(true);
+    final restartedQueue = restarted.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('cloud-strategy', accountId: 'account-a');
+    await restarted.read(remoteEditorSnapshotProvider.future);
+    final sync = restarted.read(activePageLiveSyncProvider.notifier);
+    sync.markPageHydrated(
+      strategyPublicId: 'cloud-strategy',
+      pageId: page.publicId,
+    );
+
+    final desired = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: page.publicId,
+    );
+
+    final retained = desired![key] as ElementAddOp;
+    expect(retained.opId, 'add-before-restart');
+    expect(retained.payload, add.payload);
+    await restartedQueue.syncDesiredOpsForPage(
+      pageId: page.publicId,
+      desiredOpsByEntityKey: desired,
+      flushImmediately: false,
+    );
+    expect(
+      restarted
+          .read(strategyOpQueueProvider)
+          .queuedByEntityKey[key]!
+          .pending
+          .op,
+      isA<ElementAddOp>(),
+    );
+    final durable = store.load().records.singleWhere(
+          (record) => record.entityKey == key,
+        );
+    expect(durable.pending.op.opId, 'add-before-restart');
   });
 
   test('side switch authors exactly one Page descriptor operation', () async {
