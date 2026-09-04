@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart' show Size;
 import 'package:icarus/const/second_instance_args.dart';
+import 'package:icarus/startup/windows_process_termination.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:windows_single_instance/windows_single_instance.dart';
 
@@ -19,6 +20,7 @@ Future<void> ensureIcarusSingleInstance(
     args,
     instanceId,
     onSecondWindow: publishSecondInstanceArgs,
+    exitFunction: terminateDuplicateWindowsProcess,
   );
 }
 
