@@ -19,6 +19,7 @@ const createStrategy = makeFunctionReference<"mutation">(
   "strategies:createWithInitialPage",
 );
 const updateStrategy = makeFunctionReference<"mutation">("strategies:update");
+const moveStrategy = makeFunctionReference<"mutation">("strategies:move");
 const deleteStrategy = makeFunctionReference<"mutation">("strategies:delete");
 const listStrategies = makeFunctionReference<"query">(
   "strategies:listForFolder",
@@ -304,6 +305,106 @@ describe("A/B/C access boundary", () => {
         name: "Redeemed editor remains durable",
       }),
     ).resolves.toMatchObject({ ok: true, revision: 2 });
+  });
+
+  test("only the owner can move a directly shared Strategy", async () => {
+    const { a, b } = await createHarness();
+    const sourceFolderPublicId = "direct-move-source";
+    const targetFolderPublicId = "direct-move-target";
+    const strategyPublicId = "directly-shared-strategy";
+
+    await a.mutation(createFolder, {
+      publicId: sourceFolderPublicId,
+      name: "Source",
+    });
+    await a.mutation(createFolder, {
+      publicId: targetFolderPublicId,
+      name: "Target",
+    });
+    await seedStrategy(
+      a,
+      strategyPublicId,
+      "directly-shared-page",
+      sourceFolderPublicId,
+    );
+    await a.mutation(createShare, {
+      targetType: "strategy",
+      targetPublicId: strategyPublicId,
+      token: "direct-move-editor-token",
+      role: "editor",
+    });
+    await b.mutation(redeemShare, { token: "direct-move-editor-token" });
+
+    await expect(
+      b.mutation(moveStrategy, {
+        strategyPublicId,
+        expectedRevision: 0,
+        folderPublicId: targetFolderPublicId,
+      }),
+    ).rejects.toThrow("Forbidden");
+    await expect(
+      a.query(listStrategies, {
+        folderPublicId: sourceFolderPublicId,
+        scope: "owned",
+      }),
+    ).resolves.toMatchObject([
+      { publicId: strategyPublicId, revision: 0 },
+    ]);
+
+    await expect(
+      a.mutation(moveStrategy, {
+        strategyPublicId,
+        expectedRevision: 0,
+        folderPublicId: targetFolderPublicId,
+      }),
+    ).resolves.toMatchObject({ ok: true, revision: 1 });
+    await expect(
+      a.query(listStrategies, {
+        folderPublicId: targetFolderPublicId,
+        scope: "owned",
+      }),
+    ).resolves.toMatchObject([
+      { publicId: strategyPublicId, revision: 1 },
+    ]);
+  });
+
+  test("an inherited folder editor cannot move a Strategy out of the share", async () => {
+    const { a, b } = await createHarness();
+    const sharedFolderPublicId = "inherited-move-source";
+    const strategyPublicId = "inherited-editor-strategy";
+
+    await a.mutation(createFolder, {
+      publicId: sharedFolderPublicId,
+      name: "Shared source",
+    });
+    await seedStrategy(
+      a,
+      strategyPublicId,
+      "inherited-editor-page",
+      sharedFolderPublicId,
+    );
+    await a.mutation(createShare, {
+      targetType: "folder",
+      targetPublicId: sharedFolderPublicId,
+      token: "inherited-move-editor-token",
+      role: "editor",
+    });
+    await b.mutation(redeemShare, { token: "inherited-move-editor-token" });
+
+    await expect(
+      b.mutation(moveStrategy, {
+        strategyPublicId,
+        expectedRevision: 0,
+      }),
+    ).rejects.toThrow("Forbidden");
+    await expect(
+      b.query(listStrategies, {
+        folderPublicId: sharedFolderPublicId,
+        scope: "shared",
+      }),
+    ).resolves.toMatchObject([
+      { publicId: strategyPublicId, role: "editor", revision: 0 },
+    ]);
   });
 
   test("deleting a Strategy removes its access records", async () => {

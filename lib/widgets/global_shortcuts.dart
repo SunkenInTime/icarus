@@ -6,6 +6,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/const/shortcut_info.dart';
 import 'package:icarus/providers/action_provider.dart';
 import 'package:icarus/providers/agent_filter_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/delete_menu_provider.dart';
 import 'package:icarus/providers/duplicate_drag_modifier_provider.dart';
 import 'package:icarus/providers/hovered_delete_target_provider.dart';
@@ -61,6 +62,8 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
 
   @override
   Widget build(BuildContext context) {
+    final capabilities = ref.watch(currentStrategyCapabilitiesProvider);
+
     return Focus(
       autofocus: true,
       // canRequestFocus: true,
@@ -102,6 +105,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             ),
             AddPageIntent: CallbackAction<AddPageIntent>(
               onInvoke: (intent) async {
+                if (!capabilities.canAddPage) return null;
                 _dismissDeleteMenu();
                 await ref.read(strategyProvider.notifier).addPage();
                 return null;
@@ -109,6 +113,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             ),
             ToggleLineupIntent: CallbackAction<ToggleLineupIntent>(
               onInvoke: (intent) {
+                if (!capabilities.canEditPages) return null;
                 _dismissDeleteMenu();
                 if (ref.read(interactionStateProvider) ==
                     InteractionState.lineUpPlacing) {
@@ -132,6 +137,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             ),
             ContextualDeleteIntent: CallbackAction<ContextualDeleteIntent>(
               onInvoke: (intent) {
+                if (!capabilities.canEditPages) return null;
                 final hoveredTarget = ref.read(hoveredDeleteTargetProvider);
                 if (hoveredTarget != null) {
                   _dismissDeleteMenu();
@@ -154,6 +160,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             ),
             UndoActionIntent: CallbackAction<UndoActionIntent>(
               onInvoke: (intent) {
+                if (!capabilities.canEditPages) return null;
                 _dismissDeleteMenu();
                 ref.read(actionProvider.notifier).undoAction();
                 return null;
@@ -161,6 +168,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             ),
             AddedTextIntent: CallbackAction<AddedTextIntent>(
               onInvoke: (intent) {
+                if (!capabilities.canEditPages) return null;
                 _dismissDeleteMenu();
                 const uuid = Uuid();
                 final placementCenter = ref.read(placementCenterProvider);
@@ -183,6 +191,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             ),
             ToggleDrawingIntent: CallbackAction<ToggleDrawingIntent>(
               onInvoke: (intent) {
+                if (!capabilities.canEditPages) return null;
                 _dismissDeleteMenu();
                 if (ref.read(interactionStateProvider) ==
                     InteractionState.drawing) {
@@ -199,6 +208,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             ),
             ToggleErasingIntent: CallbackAction<ToggleErasingIntent>(
               onInvoke: (intent) async {
+                if (!capabilities.canEditPages) return null;
                 _dismissDeleteMenu();
                 if (ref.read(interactionStateProvider) ==
                     InteractionState.erasing) {
@@ -216,6 +226,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             ),
             RedoActionIntent: CallbackAction<RedoActionIntent>(
               onInvoke: (intent) {
+                if (!capabilities.canEditPages) return null;
                 _dismissDeleteMenu();
                 ref.read(actionProvider.notifier).redoAction();
                 return null;
@@ -223,6 +234,7 @@ class _GlobalShortcutsState extends ConsumerState<GlobalShortcuts>
             ),
             SaveStrategyIntent: CallbackAction<SaveStrategyIntent>(
               onInvoke: (intent) async {
+                if (!capabilities.canEditPages) return null;
                 _dismissDeleteMenu();
                 final strategyId = ref.read(strategyProvider).strategyId;
                 if (strategyId == null) return null;

@@ -19,6 +19,7 @@ import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
 import 'package:icarus/widgets/settings_scope_card.dart';
+import 'package:icarus/widgets/strategy_edit_boundary.dart';
 import 'package:icarus/widgets/text_editing_shortcut_scope.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -110,10 +111,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab> {
                     child: SingleChildScrollView(
                       controller: _scrollController,
                       child: switch (_mode) {
-                        _SettingsMode.strategy => _StrategySettingsSections(
-                            key: const ValueKey('strategy-settings'),
-                            sectionKeys: _sectionKeys,
-                            strategySettings: strategySettings,
+                        _SettingsMode.strategy => StrategyEditBoundary(
+                            disabledOpacity: 0.55,
+                            child: _StrategySettingsSections(
+                              key: const ValueKey('strategy-settings'),
+                              sectionKeys: _sectionKeys,
+                              strategySettings: strategySettings,
+                            ),
                           ),
                         _SettingsMode.global => _GlobalSettingsSections(
                             key: const ValueKey('global-settings'),

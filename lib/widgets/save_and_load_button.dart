@@ -8,7 +8,6 @@ import 'package:hive_ce/hive.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/settings.dart';
-import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/drawing_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -231,8 +230,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
 
   bool _isViewOnly() {
     final source = ref.watch(strategyProvider.select((value) => value.source));
-    if (source != StrategySource.cloud ||
-        !ref.watch(isCloudCollabEnabledProvider)) {
+    if (source != StrategySource.cloud) {
       return false;
     }
     // Read the cached role rather than the raw snapshot so the chip does not

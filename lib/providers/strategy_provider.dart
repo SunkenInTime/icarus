@@ -33,6 +33,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/strategy_capabilities.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -136,7 +137,8 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (!state.isOpen || state.strategyId == null || state.source == null) {
       return false;
     }
-    return !ref.read(strategyPageSessionProvider).isApplyingPage;
+    return !ref.read(strategyPageSessionProvider).isApplyingPage &&
+        _currentStrategyCanEditPages();
   }
 
   T _withoutPersistenceTracking<T>(T Function() callback) {
@@ -234,6 +236,17 @@ class StrategyProvider extends Notifier<StrategyState> {
     return state.source == StrategySource.cloud;
   }
 
+  bool _currentStrategyCanEditPages() {
+    if (!_currentStrategyIsCloud()) {
+      return true;
+    }
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    final role = snapshot?.header.publicId == state.strategyId
+        ? snapshot?.header.role
+        : null;
+    return StrategyCapabilities.fromCloudRole(role).canEditPages;
+  }
+
   bool _selectedWorkspaceIsCloud() {
     return ref.read(libraryWorkspaceProvider) == LibraryWorkspace.cloud;
   }
@@ -329,7 +342,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     List<StrategyOp> ops, {
     bool flushImmediately = false,
   }) async {
-    if (!_currentStrategyIsCloud() || ops.isEmpty) {
+    if (!_currentStrategyIsCloud() ||
+        !_currentStrategyCanEditPages() ||
+        ops.isEmpty) {
       return;
     }
 
@@ -359,7 +374,7 @@ class StrategyProvider extends Notifier<StrategyState> {
 
   Future<void> notifyCloudMutation({bool flushImmediately = false}) async {
     _cloudMutationSyncScheduled = false;
-    if (!_currentStrategyIsCloud()) {
+    if (!_currentStrategyIsCloud() || !_currentStrategyCanEditPages()) {
       return;
     }
 
@@ -376,7 +391,7 @@ class StrategyProvider extends Notifier<StrategyState> {
     bool flushImmediately = false,
   }) async {
     _cloudStrategyMutationSyncScheduled = false;
-    if (!_currentStrategyIsCloud()) {
+    if (!_currentStrategyIsCloud() || !_currentStrategyCanEditPages()) {
       return;
     }
 
@@ -431,6 +446,9 @@ class StrategyProvider extends Notifier<StrategyState> {
       return;
     }
     if (ref.read(strategyPageSessionProvider).isApplyingPage) {
+      return;
+    }
+    if (!_currentStrategyCanEditPages()) {
       return;
     }
 
@@ -494,6 +512,9 @@ class StrategyProvider extends Notifier<StrategyState> {
     if (ref.read(strategyPageSessionProvider).isApplyingPage) {
       return;
     }
+    if (!_currentStrategyCanEditPages()) {
+      return;
+    }
 
     state = state.copyWith(isSaved: false);
 
@@ -511,6 +532,9 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> forceSaveNow(String id) async {
+    if (!_currentStrategyCanEditPages()) {
+      return;
+    }
     cancelPendingSave();
     if (_currentStrategyIsCloud()) {
       ref.read(strategySaveStateProvider.notifier)
@@ -615,6 +639,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> reorderPage(int oldIndex, int newIndex) async {
+    if (!_currentStrategyCanEditPages()) return;
     if (oldIndex == newIndex) return;
 
     if (_currentStrategyIsCloud()) {
@@ -865,6 +890,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> addPage([String? name]) async {
+    if (!_currentStrategyCanEditPages()) return;
     if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
       if (snapshot == null) return;
@@ -943,6 +969,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> renamePage(String pageId, String newName) async {
+    if (!_currentStrategyCanEditPages()) return;
     final trimmed = newName.trim();
     if (trimmed.isEmpty) {
       return;
@@ -986,6 +1013,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   }
 
   Future<void> deletePage(String pageId) async {
+    if (!_currentStrategyCanEditPages()) return;
     if (_currentStrategyIsCloud()) {
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
       if (snapshot == null || snapshot.pages.length <= 1) {
@@ -1577,6 +1605,7 @@ class StrategyProvider extends Notifier<StrategyState> {
   Future<void> _applySettingsToAllPages(
     StrategySettings Function(StrategySettings settings) transform,
   ) async {
+    if (!_currentStrategyCanEditPages()) return;
     if (_currentStrategyIsCloud()) {
       final strategyId = state.strategyId;
       if (strategyId == null) {

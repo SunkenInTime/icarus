@@ -570,7 +570,7 @@ export const move = mutation({
   returns: revisionResultValidator,
   handler: async (ctx, args) => {
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    await assertStrategyRole(ctx, strategy, "editor");
+    await assertStrategyRole(ctx, strategy, "owner");
 
     if (args.expectedRevision !== strategy.revision) {
       throw conflictError("Strategy revision mismatch");
