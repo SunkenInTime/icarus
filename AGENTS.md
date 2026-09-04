@@ -15,7 +15,7 @@ obvious - the next reader never asks "why is this here?". measured by the reader
 the library - a user's saved strategies, folders, and lineups. stored only on their machine, no copy exists anywhere else.
 round-trip - export then import with nothing lost.
 
-The domain vocabulary (strategy, page, lineup, .ica file, and friends) lives in CONTEXT.md, use those words exactly. DESIGN.md defines how the app must look and how we build UI, read it before touching UI.
+The domain vocabulary (strategy, page, lineup, .ica file, and friends) lives in CONTEXT.md, use those words exactly. DESIGN.md holds the rules for how we build UI (the values themselves live in `lib/const/settings.dart`), read it before touching UI.
 
 Here's the philosophy we work by:
 
