@@ -57,8 +57,30 @@ Assert-ThrowsContaining -ExpectedMessage "only run from branch 'main'" -Action {
 if (-not (Test-PublishesStablePages -SourceDirectory $repoRoot -SyncPaths "updates/windows/stable")) {
     throw "An explicit stable updater path must require the stable branch guard."
 }
-if (Test-PublishesStablePages -SourceDirectory $repoRoot -SyncPaths "updates/windows/prerelease") {
-    throw "An explicit prerelease updater path must remain available on feature branches."
+foreach ($stableSelection in @(
+    ".",
+    "updates/windows",
+    "downloads/windows",
+    "updates/windows/stable/4.6.1+97",
+    "updates/windows/prerelease/../stable"
+)) {
+    if (-not (Test-PublishesStablePages -SourceDirectory $repoRoot -SyncPaths $stableSelection)) {
+        throw "Pages selection '$stableSelection' must require the stable branch guard."
+    }
+}
+foreach ($prereleaseSelection in @(
+    "updates/windows/prerelease",
+    "downloads/windows/prerelease"
+)) {
+    if (Test-PublishesStablePages -SourceDirectory $repoRoot -SyncPaths $prereleaseSelection) {
+        throw "Prerelease-only Pages selection '$prereleaseSelection' must remain available on feature branches."
+    }
+}
+Assert-ThrowsContaining -ExpectedMessage "must stay within the Pages source directory" -Action {
+    Test-PublishesStablePages -SourceDirectory $repoRoot -SyncPaths ".."
+}
+Assert-ThrowsContaining -ExpectedMessage "must be relative to the Pages source directory" -Action {
+    Test-PublishesStablePages -SourceDirectory $repoRoot -SyncPaths $repoRoot
 }
 
 $pagesFixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-release-safety-" + [guid]::NewGuid().ToString("N"))

@@ -144,14 +144,20 @@ function Test-PublishesStablePages {
         [string[]]$SyncPaths = @()
     )
 
-    $explicitStablePath = @($SyncPaths | Where-Object {
-        (($_ -replace '\\', '/').Trim('/')) -match '^(updates|downloads)/windows/stable($|/)'
-    }).Count -gt 0
-    if ($explicitStablePath) {
-        return $true
-    }
-
     if ($SyncPaths.Count -gt 0) {
+        $stableRoots = @(
+            (Resolve-PagesSyncPath -RootDirectory $SourceDirectory -SyncPath "updates/windows/stable"),
+            (Resolve-PagesSyncPath -RootDirectory $SourceDirectory -SyncPath "downloads/windows/stable")
+        )
+
+        foreach ($syncPath in $SyncPaths) {
+            $selectedPath = Resolve-PagesSyncPath -RootDirectory $SourceDirectory -SyncPath $syncPath
+            foreach ($stableRoot in $stableRoots) {
+                if ((Test-ReleasePathsOverlap -FirstPath $selectedPath -SecondPath $stableRoot)) {
+                    return $true
+                }
+            }
+        }
         return $false
     }
 
@@ -160,6 +166,53 @@ function Test-PublishesStablePages {
         (Join-Path $SourceDirectory "downloads\windows\stable")
     )
     return @($stableRoots | Where-Object { Test-Path -LiteralPath $_ }).Count -gt 0
+}
+
+function Resolve-PagesSyncPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RootDirectory,
+        [Parameter(Mandatory = $true)]
+        [string]$SyncPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($SyncPath)) {
+        throw "Pages sync paths cannot be empty. Omit SyncPaths to publish the full source directory."
+    }
+    if ([System.IO.Path]::IsPathRooted($SyncPath)) {
+        throw "Pages sync path '$SyncPath' must be relative to the Pages source directory."
+    }
+
+    $rootPath = [System.IO.Path]::GetFullPath($RootDirectory)
+    $resolvedPath = [System.IO.Path]::GetFullPath((Join-Path $rootPath $SyncPath))
+    $separator = [System.IO.Path]::DirectorySeparatorChar.ToString()
+    $rootPrefix = if ($rootPath.EndsWith($separator)) { $rootPath } else { "$rootPath$separator" }
+    $isRoot = [string]::Equals($resolvedPath, $rootPath, [System.StringComparison]::OrdinalIgnoreCase)
+    $isChild = $resolvedPath.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+    if (-not $isRoot -and -not $isChild) {
+        throw "Pages sync path '$SyncPath' must stay within the Pages source directory."
+    }
+
+    return $resolvedPath
+}
+
+function Test-ReleasePathsOverlap {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FirstPath,
+        [Parameter(Mandatory = $true)]
+        [string]$SecondPath
+    )
+
+    $first = [System.IO.Path]::GetFullPath($FirstPath)
+    $second = [System.IO.Path]::GetFullPath($SecondPath)
+    $separator = [System.IO.Path]::DirectorySeparatorChar.ToString()
+    $firstPrefix = if ($first.EndsWith($separator)) { $first } else { "$first$separator" }
+    $secondPrefix = if ($second.EndsWith($separator)) { $second } else { "$second$separator" }
+
+    return [string]::Equals($first, $second, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $first.StartsWith($secondPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+        $second.StartsWith($firstPrefix, [System.StringComparison]::OrdinalIgnoreCase)
 }
 
 function Get-FlutterRoot {
