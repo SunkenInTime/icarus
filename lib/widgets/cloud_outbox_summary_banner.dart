@@ -62,11 +62,10 @@ class CloudOutboxSummaryBanner extends ConsumerWidget {
             ? 'Syncing cloud work'
             : 'Working offline';
     final detail = hasDurabilityProblem
-        ? 'Icarus could not verify part of the durable cloud outbox. Stay '
-            'signed in and review the affected work.'
+        ? 'Icarus cannot read some saved cloud work on this device. Stay '
+            'signed in and review it.'
         : authBlocked
-            ? 'Cloud authentication is paused. Reconnect this account to '
-                'resume its saved work.'
+            ? 'Reconnect this account before Icarus can send its saved work.'
             : needsAttention
                 ? '$workCount saved ${workCount == 1 ? 'change needs' : 'changes need'} '
                     'review across ${strategyIds.length} '

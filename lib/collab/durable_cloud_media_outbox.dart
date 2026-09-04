@@ -6,24 +6,12 @@ import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/const/hive_boxes.dart';
 
 const durableCloudMediaOutboxRecordVersion = 2;
-const _legacyDurableCloudMediaOutboxRecordVersion = 1;
 const durableCloudMediaOutboxVersionKey = '__media_outbox_record_version__';
 
 Future<void> prepareDurableCloudMediaOutbox() async {
   final box = Hive.box<dynamic>(HiveBoxNames.cloudMediaOutboxBox);
   if (box.get(durableCloudMediaOutboxVersionKey) ==
       durableCloudMediaOutboxRecordVersion) {
-    return;
-  }
-  if (box.get(durableCloudMediaOutboxVersionKey) ==
-      _legacyDurableCloudMediaOutboxRecordVersion) {
-    // Version 1 records predate account ownership. Keep them byte-for-byte so
-    // the queue can surface them as unknown-owner work without ever uploading
-    // or deleting them.
-    await box.put(
-      durableCloudMediaOutboxVersionKey,
-      durableCloudMediaOutboxRecordVersion,
-    );
     return;
   }
   if (box.isNotEmpty) {
@@ -73,10 +61,9 @@ String durableCloudMediaOutboxStorageKey(CloudMediaUploadJob job) {
 }
 
 String durableCloudMediaOutboxStorageKeyFor({
-  required String? accountId,
+  required String accountId,
   required String jobId,
 }) {
-  if (accountId == null || accountId.isEmpty) return jobId;
   return '${Uri.encodeComponent(accountId)}|${Uri.encodeComponent(jobId)}';
 }
 
@@ -144,7 +131,7 @@ class HiveDurableCloudMediaOutboxStore implements DurableCloudMediaOutboxStore {
 class MemoryDurableCloudMediaOutboxStore
     implements DurableCloudMediaOutboxStore {
   MemoryDurableCloudMediaOutboxStore([Map<String, Object?>? initialValues])
-    : values = Map<String, Object?>.from(initialValues ?? const {});
+      : values = Map<String, Object?>.from(initialValues ?? const {});
 
   final Map<String, Object?> values;
 
@@ -203,12 +190,12 @@ class MemoryDurableCloudMediaOutboxStore
 
 final durableCloudMediaOutboxStoreProvider =
     Provider<DurableCloudMediaOutboxStore>(
-      (ref) => HiveDurableCloudMediaOutboxStore(),
-    );
+  (ref) => HiveDurableCloudMediaOutboxStore(),
+);
 
 Map<String, dynamic> _jobToJson(CloudMediaUploadJob job) {
   final accountId = job.accountId;
-  if (accountId == null || accountId.isEmpty) {
+  if (accountId.isEmpty) {
     throw StateError('New media outbox records require an owning account.');
   }
   return <String, dynamic>{
@@ -239,15 +226,12 @@ Map<String, dynamic> _jobToJson(CloudMediaUploadJob job) {
 
 CloudMediaUploadJob _jobFromJson(Map<String, dynamic> json) {
   final version = (json['outboxVersion'] as num?)?.toInt();
-  if (version != _legacyDurableCloudMediaOutboxRecordVersion &&
-      version != durableCloudMediaOutboxRecordVersion) {
+  if (version != durableCloudMediaOutboxRecordVersion) {
     throw FormatException('Unsupported media outbox record version: $version');
   }
   return CloudMediaUploadJob(
     jobId: _nonEmptyString(json['jobId'], field: 'jobId'),
-    accountId: version == _legacyDurableCloudMediaOutboxRecordVersion
-        ? _optionalNonEmptyString(json['accountId'], field: 'accountId')
-        : _nonEmptyString(json['accountId'], field: 'accountId'),
+    accountId: _nonEmptyString(json['accountId'], field: 'accountId'),
     strategyPublicId: _nonEmptyString(
       json['strategyPublicId'],
       field: 'strategyPublicId',
@@ -275,11 +259,6 @@ CloudMediaUploadJob _jobFromJson(Map<String, dynamic> json) {
     lastError: json['lastError'] as String?,
     updatedAt: _requiredDate(json['updatedAt'], field: 'updatedAt'),
   );
-}
-
-String? _optionalNonEmptyString(Object? value, {required String field}) {
-  if (value == null) return null;
-  return _nonEmptyString(value, field: field);
 }
 
 String _nonEmptyString(Object? value, {required String field}) {

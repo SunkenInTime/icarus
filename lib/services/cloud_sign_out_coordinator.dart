@@ -108,15 +108,8 @@ Future<bool> _requestCloudSafeSignOut(
     for (final job in mediaQueue.jobs)
       if (job.accountId == accountId) job.strategyPublicId,
   };
-  final activeUnknownOwnerJobs = mediaQueue.unknownOwnerJobsForStrategy(
-    currentStrategyId,
-  );
-  if (activeUnknownOwnerJobs.isNotEmpty && currentStrategyId != null) {
-    strategyIds.add(currentStrategyId);
-  }
   final workCount = opQueue.accountOutbox.workCount +
-      mediaQueue.jobs.where((job) => job.accountId == accountId).length +
-      activeUnknownOwnerJobs.length;
+      mediaQueue.jobs.where((job) => job.accountId == accountId).length;
   if (!context.mounted) return false;
   final confirmed = await _showSignOutConfirmation(
     context,
@@ -125,7 +118,6 @@ Future<bool> _requestCloudSafeSignOut(
     currentStrategyId: currentStrategyId,
     currentStrategyName: strategy.strategyName,
     strategyNames: ref.read(cloudStrategyNamesProvider),
-    hasLegacyMedia: activeUnknownOwnerJobs.isNotEmpty,
   );
   if (!confirmed) return false;
 
@@ -182,7 +174,6 @@ Future<bool> _showSignOutConfirmation(
   required String? currentStrategyId,
   required String? currentStrategyName,
   required Map<String, String> strategyNames,
-  required bool hasLegacyMedia,
 }) async {
   final hasPendingWork = workCount > 0;
   final strategyLabels = strategyIds
@@ -208,7 +199,7 @@ Future<bool> _showSignOutConfirmation(
                   '${strategyIds.length == 1 ? 'strategy is' : 'strategies are'} '
                   'still waiting: $strategyLabels. The work remains on this '
                   'device and resumes only when this same account signs in '
-                  'again.${hasLegacyMedia ? ' Older preserved media will not upload automatically.' : ''}'
+                  'again.'
               : 'Cloud strategies stay online. Pending work on this device '
                   'will remain tied to this account.',
         ),

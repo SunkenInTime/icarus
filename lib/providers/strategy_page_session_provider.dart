@@ -109,6 +109,7 @@ final strategyPageSessionProvider =
 
 class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
   _RemotePageHydrationKey? _lastHydratedRemotePageKey;
+  RemoteEditorSnapshot? _lastAppliedRemoteSnapshot;
   bool _pendingRemoteReapply = false;
   bool _isResolvingConflicts = false;
 
@@ -298,10 +299,16 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
               .setActivePage(previousPageId);
           final strategyId = strategyState.strategyId;
           if (strategyId != null && previousPageId != null) {
-            ref.read(activePageLiveSyncProvider.notifier).markPageHydrated(
-                  strategyPublicId: strategyId,
-                  pageId: previousPageId,
-                );
+            final snapshot = _lastAppliedRemoteSnapshot;
+            if (snapshot != null &&
+                snapshot.header.publicId == strategyId &&
+                snapshot.activePage?.page.publicId == previousPageId) {
+              ref.read(activePageLiveSyncProvider.notifier).markPageHydrated(
+                    strategyPublicId: strategyId,
+                    pageId: previousPageId,
+                    snapshot: snapshot,
+                  );
+            }
           }
         } catch (_) {
           // Preserve the original switch failure; the live read can recover
@@ -424,9 +431,8 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
 
   /// Adopts the cloud version for every current conflict in this strategy.
   ///
-  /// The snapshot refresh happens before any local intent is discarded. Each
-  /// entity is removed from local projection only after its durable outbox
-  /// record has been deleted.
+  /// The authoritative page is loaded before any local intent is discarded.
+  /// A failed load therefore leaves the durable conflict available to retry.
   Future<bool> useCloudVersionsForRejected() async {
     final strategyState = ref.read(strategyProvider);
     final strategyId = strategyState.strategyId;
@@ -444,7 +450,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       final rejected = Map<EntitySyncKey, QueuedEntityIntent>.from(
         ref.read(strategyOpQueueProvider).attentionByEntityKey,
       );
-      if (rejected.isEmpty) return false;
+      if (rejected.isEmpty) return true;
 
       await ref.read(remoteEditorSnapshotProvider.notifier).refresh();
       final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
@@ -452,14 +458,33 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         return false;
       }
 
+      final targetPageId = _resolveHydrationTargetPage(snapshot);
+      if (targetPageId != null) {
+        final pageSource = CloudStrategyPageSource(
+          ref,
+          strategyId: strategyId,
+          activePageId: () => state.activePageId,
+        );
+        final pageData = await pageSource.loadAuthoritativePage(targetPageId);
+        await _applyLoadedPageData(
+          pageData,
+          strategyId: strategyId,
+          source: StrategySource.cloud,
+          hydrationKey: _buildRemotePageHydrationKey(snapshot, targetPageId),
+          preserveTextDrafts: true,
+          loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
+        );
+      }
+
       final discarded = await ref
           .read(strategyOpQueueProvider.notifier)
           .discardRejected(rejected.keys.toSet());
       if (discarded.isEmpty) return false;
 
-      ref
-          .read(activePageLiveSyncProvider.notifier)
-          .adoptRemoteForEntities(discarded);
+      ref.read(activePageLiveSyncProvider.notifier).adoptRemoteForEntities(
+            discarded,
+            hydratedPageId: targetPageId,
+          );
       for (final entry in rejected.entries) {
         if (discarded.contains(entry.key)) {
           ref
@@ -467,18 +492,14 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
               .clear(entry.value.pending.op.opId);
         }
       }
-
-      final targetPageId = _resolveHydrationTargetPage(snapshot);
-      if (targetPageId != null) {
-        await _rehydrateActivePageFromSource(
-          targetPageId,
-          hydrationKey: _buildRemotePageHydrationKey(snapshot, targetPageId),
-          preserveTextDrafts: true,
-        );
-        ref
-            .read(strategyOpQueueProvider.notifier)
-            .completeRemoteAdoption(discarded);
+      for (final key in discarded) {
+        if (key.kind == EntitySyncKeyKind.element && key.entityId != null) {
+          ref.read(textDraftProvider.notifier).clearDraft(key.entityId!);
+        }
       }
+      ref
+          .read(strategyOpQueueProvider.notifier)
+          .completeRemoteAdoption(discarded);
       _pendingRemoteReapply = false;
       return true;
     } finally {
@@ -500,6 +521,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       isApplyingPage: false,
     );
     _lastHydratedRemotePageKey = null;
+    _lastAppliedRemoteSnapshot = null;
     _pendingRemoteReapply = false;
     _isResolvingConflicts = false;
     ref.read(activePageLiveSyncProvider.notifier).reset();
@@ -542,6 +564,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
       pageData,
       strategyId: strategyId,
       source: source,
+      loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
     );
 
     if (animated && direction != null) {
@@ -571,14 +594,15 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
             pageId: pageId,
           );
     }
-    final pageData =
-        await _resolvePageSource(strategyId, source).loadPage(pageId);
+    final pageSource = _resolvePageSource(strategyId, source);
+    final pageData = await pageSource.loadPage(pageId);
     await _applyLoadedPageData(
       pageData,
       strategyId: strategyId,
       source: source,
       hydrationKey: hydrationKey,
       preserveTextDrafts: preserveTextDrafts,
+      loadedRemoteSnapshot: pageSource.loadedRemoteSnapshot,
     );
   }
 
@@ -588,6 +612,7 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
     required StrategySource source,
     _RemotePageHydrationKey? hydrationKey,
     bool preserveTextDrafts = false,
+    RemoteEditorSnapshot? loadedRemoteSnapshot,
   }) async {
     final preserveHistory = source == StrategySource.cloud &&
         _lastHydratedRemotePageKey?.strategyPublicId == strategyId &&
@@ -618,14 +643,26 @@ class StrategyPageSessionNotifier extends Notifier<StrategyPageSessionState> {
         ref.read(textDraftProvider.notifier).setDraft(entry.key, entry.value);
       }
       if (source == StrategySource.cloud) {
+        if (loadedRemoteSnapshot == null) {
+          throw StateError(
+            'Cloud page loaded without its source snapshot.',
+          );
+        }
         ref.read(activePageLiveSyncProvider.notifier).markPageHydrated(
               strategyPublicId: strategyId,
               pageId: pageData.pageId,
+              snapshot: loadedRemoteSnapshot,
             );
+        _lastAppliedRemoteSnapshot = loadedRemoteSnapshot;
       }
       _updateHydrationBookkeeping(
         pageData.pageId,
-        hydrationKey: hydrationKey,
+        hydrationKey: source == StrategySource.cloud
+            ? _buildRemotePageHydrationKey(
+                loadedRemoteSnapshot!,
+                pageData.pageId,
+              )
+            : hydrationKey,
       );
     } finally {
       state = state.copyWith(

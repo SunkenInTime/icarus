@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -33,20 +35,37 @@ class _DeleteStrategyAlertDialogState
       _failureMessage = null;
     });
 
-    final result = await ref.read(strategyProvider.notifier).deleteStrategy(
-          widget.strategyID,
-          source: widget.source,
-        );
+    CloudLibraryActionResult? result;
+    try {
+      result = await ref.read(strategyProvider.notifier).deleteStrategy(
+            widget.strategyID,
+            source: widget.source,
+          );
+    } catch (error, stackTrace) {
+      AppErrorReporter.reportError(
+        'Failed to delete a strategy.',
+        source: 'strategy_dialog:delete',
+        error: error,
+        stackTrace: stackTrace,
+        promptUser: false,
+      );
+      if (mounted) {
+        setState(() {
+          _failureMessage = "Couldn't delete this strategy. Try again.";
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isDeleting = false);
+    }
     if (!mounted) return;
-    if (result.didSucceed) {
+    if (result?.didSucceed == true) {
       Navigator.of(context).pop();
       return;
     }
-
-    setState(() {
-      _isDeleting = false;
-      _failureMessage = result.userMessage;
-    });
+    if (result != null) {
+      setState(() => _failureMessage =
+          result!.userMessage ?? "Couldn't delete this strategy. Try again.");
+    }
   }
 
   @override

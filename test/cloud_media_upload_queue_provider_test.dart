@@ -1,19 +1,14 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/const/line_provider.dart';
-import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
-import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -47,6 +42,14 @@ class _DisabledCloudCollabMode extends CloudCollabModeNotifier {
   @override
   CloudCollabModeState build() => const CloudCollabModeState(
         featureFlagEnabled: false,
+        forceLocalFallback: false,
+      );
+}
+
+class _EnabledCloudCollabMode extends CloudCollabModeNotifier {
+  @override
+  CloudCollabModeState build() => const CloudCollabModeState(
+        featureFlagEnabled: true,
         forceLocalFallback: false,
       );
 }
@@ -115,6 +118,7 @@ ProviderContainer _container(
   StrategyOpQueueState? opQueueState,
   bool strategyOpen = true,
   bool cloudReady = false,
+  bool cloudEnabled = false,
   String? accountId = 'account-a',
   CloudMediaReferenceSnapshotLoader? referenceSnapshotLoader,
 }) {
@@ -137,7 +141,11 @@ ProviderContainer _container(
         cloudReady ? _CloudReadyAuthProvider.new : _SignedOutAuthProvider.new,
       ),
       cloudMediaAccountIdProvider.overrideWithValue(accountId),
-      cloudCollabModeProvider.overrideWith(_DisabledCloudCollabMode.new),
+      cloudCollabModeProvider.overrideWith(
+        cloudEnabled
+            ? _EnabledCloudCollabMode.new
+            : _DisabledCloudCollabMode.new,
+      ),
       convexConnectionSnapshotProvider.overrideWithValue(cloudReady),
       convexConnectionProvider.overrideWith(
         (ref) => Stream.value(cloudReady),
@@ -190,61 +198,8 @@ RemoteFullStrategySnapshot _fullSnapshot({
   );
 }
 
-Map<String, Object?> _legacyJob({
-  required String jobId,
-  required String strategyPublicId,
-}) {
-  return <String, Object?>{
-    'outboxVersion': 1,
-    'jobId': jobId,
-    'strategyPublicId': strategyPublicId,
-    'assetPublicId': jobId,
-    'fileExtension': '.png',
-    'mimeType': 'image/png',
-    'state': CloudMediaJobState.pendingUpload.name,
-    'referenceDurable': false,
-    'attempts': 0,
-    'updatedAt': DateTime.utc(2026, 9, 3).toIso8601String(),
-  };
-}
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-
-  test('v1 preparation preserves unknown-owner records byte-for-byte',
-      () async {
-    final directory = await Directory.systemTemp.createTemp(
-      'icarus-media-outbox-v1-',
-    );
-    try {
-      Hive.init(directory.path);
-      final box = await Hive.openBox<dynamic>(
-        HiveBoxNames.cloudMediaOutboxBox,
-      );
-      final legacy = _legacyJob(
-        jobId: 'legacy-image',
-        strategyPublicId: 'strategy-a',
-      );
-      await box.put(durableCloudMediaOutboxVersionKey, 1);
-      await box.put('legacy-image', legacy);
-
-      await prepareDurableCloudMediaOutbox();
-
-      expect(
-        box.get(durableCloudMediaOutboxVersionKey),
-        durableCloudMediaOutboxRecordVersion,
-      );
-      expect(box.get('legacy-image'), legacy);
-      final loaded = HiveDurableCloudMediaOutboxStore().load();
-      expect(loaded.issues, isEmpty);
-      expect(loaded.jobs.single.accountId, isNull);
-    } finally {
-      await Hive.close();
-      if (await directory.exists()) {
-        await directory.delete(recursive: true);
-      }
-    }
-  });
 
   test('restart restores unfinished lineup media from the durable outbox',
       () async {
@@ -354,60 +309,6 @@ void main() {
     final remaining = store.load().jobs.single;
     expect(remaining.accountId, 'account-b');
     expect(remaining.assetPublicId, 'shared-image');
-  });
-
-  test('current-strategy v1 work is visible but never reconciled', () async {
-    final store = MemoryDurableCloudMediaOutboxStore({
-      'legacy-image': _legacyJob(
-        jobId: 'legacy-image',
-        strategyPublicId: 'strategy-a',
-      ),
-    });
-    var snapshotReads = 0;
-    final container = _container(
-      store,
-      accountId: 'account-b',
-      cloudReady: true,
-      referenceSnapshotLoader: (_) async {
-        snapshotReads += 1;
-        return _fullSnapshot();
-      },
-    );
-    addTearDown(container.dispose);
-    await container.read(convexConnectionProvider.future);
-    final queue = container.read(cloudMediaUploadQueueProvider.notifier);
-
-    await queue.retryNow(ignoreBackoff: true);
-
-    final state = container.read(cloudMediaUploadQueueProvider);
-    expect(state.jobs, isEmpty);
-    expect(state.unknownOwnerJobsForStrategy('strategy-a'), hasLength(1));
-    expect(state.outboxIsReliable, isTrue);
-    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
-    expect(snapshotReads, 0);
-    expect(store.values, contains('legacy-image'));
-    expect(store.load().jobs.single.accountId, isNull);
-  });
-
-  test('unrelated-strategy v1 work causes no false attention', () async {
-    final store = MemoryDurableCloudMediaOutboxStore({
-      'legacy-image': _legacyJob(
-        jobId: 'legacy-image',
-        strategyPublicId: 'strategy-b',
-      ),
-    });
-    final container = _container(
-      store,
-      accountId: 'account-b',
-      cloudReady: true,
-    );
-    addTearDown(container.dispose);
-    await container.read(convexConnectionProvider.future);
-
-    final state = container.read(cloudMediaUploadQueueProvider);
-    expect(state.unknownOwnerJobsForStrategy('strategy-a'), isEmpty);
-    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.synced);
-    expect(store.values, contains('legacy-image'));
   });
 
   test('restart keeps an interrupted placement staged and non-runnable',
@@ -681,6 +582,42 @@ void main() {
     expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
     expect(mediaStore.values, isEmpty);
     expect(await source.exists(), isTrue);
+  });
+
+  test('missing source job is removed after its reference is deleted',
+      () async {
+    final assetId = 'deleted-image-${DateTime.now().microsecondsSinceEpoch}';
+    final mediaStore = MemoryDurableCloudMediaOutboxStore();
+    await mediaStore.put(
+      CloudMediaUploadJob(
+        jobId: assetId,
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-a',
+        assetPublicId: assetId,
+        fileExtension: '.png',
+        mimeType: 'image/png',
+        state: CloudMediaJobState.pendingUpload,
+        referenceDurable: true,
+        attempts: 3,
+        updatedAt: DateTime.utc(2026, 9, 3),
+      ),
+    );
+    final container = _container(
+      mediaStore,
+      strategyStore: MemoryDurableStrategyOutboxStore(),
+      cloudReady: true,
+      cloudEnabled: true,
+      referenceSnapshotLoader: (_) async => _fullSnapshot(),
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .retryNow(ignoreBackoff: true);
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    expect(container.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+    expect(mediaStore.values, isEmpty);
   });
 
   test('a newly staged job is not pruned before its mutation is admitted',

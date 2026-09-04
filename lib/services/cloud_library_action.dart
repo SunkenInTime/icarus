@@ -21,6 +21,7 @@ class CloudLibraryActionResult {
   );
   static const authenticationRequired = CloudLibraryActionResult._(
     CloudLibraryActionStatus.authenticationRequired,
+    userMessage: 'Reconnect to Icarus Cloud, then try again.',
   );
 
   factory CloudLibraryActionResult.failed(String userMessage) =>

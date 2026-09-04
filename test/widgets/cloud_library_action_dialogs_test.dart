@@ -142,6 +142,35 @@ void main() {
     expect(find.byType(DeleteStrategyAlertDialog), findsNothing);
   });
 
+  testWidgets('thrown strategy delete resets the dialog and can retry',
+      (tester) async {
+    final firstAttempt = Completer<CloudLibraryActionResult>();
+    final strategyProvider = _ControlledStrategyProvider()
+      ..deleteResults.add(firstAttempt.future)
+      ..deleteResults.add(Future.value(CloudLibraryActionResult.succeeded));
+    await _pumpDialogLauncher(
+      tester,
+      overrides: [_strategyProviderOverride(strategyProvider)],
+      dialog: const DeleteStrategyAlertDialog(
+        strategyID: 'strategy-1',
+        name: 'A Split',
+        source: StrategySource.local,
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('delete-strategy-confirm')));
+    firstAttempt.completeError(StateError(_secret));
+    await tester.pumpAndSettle();
+
+    expect(
+        find.text("Couldn't delete this strategy. Try again."), findsOneWidget);
+    expect(find.text(_secret), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('delete-strategy-confirm')));
+    await tester.pumpAndSettle();
+    expect(strategyProvider.deleteCalls, 2);
+    expect(find.byType(DeleteStrategyAlertDialog), findsNothing);
+  });
+
   testWidgets('cloud export failure reports one generic message',
       (tester) async {
     final messages = <String>[];
@@ -235,6 +264,7 @@ void main() {
     );
 
     expect(result.status, CloudLibraryActionStatus.authenticationRequired);
+    expect(result.userMessage, 'Reconnect to Icarus Cloud, then try again.');
     expect(authReports, 1);
     expect(messages, isEmpty);
   });

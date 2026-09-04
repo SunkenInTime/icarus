@@ -235,6 +235,12 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
       },
     );
   }
+
+  void clearInFlight() {
+    state = state.copyWith(
+      inFlightByEntityKey: const <EntitySyncKey, InFlightEntityIntent>{},
+    );
+  }
 }
 
 Future<void> _settle() async {
@@ -622,6 +628,7 @@ void main() {
     container.read(activePageLiveSyncProvider.notifier).markPageHydrated(
           strategyPublicId: 'cloud-strategy',
           pageId: page.publicId,
+          snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
         );
 
     final desired =
@@ -898,6 +905,9 @@ void main() {
     container
         .read(textDraftProvider.notifier)
         .setDraft(textId, 'draft-in-progress');
+    container
+        .read(textDraftProvider.notifier)
+        .setDraft('unrelated-text', 'keep-this-draft');
 
     final resolved = await container
         .read(strategyPageSessionProvider.notifier)
@@ -907,7 +917,7 @@ void main() {
     expect(resolved, isTrue);
     expect(container.read(textProvider).single.text, 'server-winner');
     expect(container.read(textDraftProvider), {
-      textId: 'draft-in-progress',
+      'unrelated-text': 'keep-this-draft',
     });
     expect(
       container.read(strategyOpQueueProvider).attentionByEntityKey,
@@ -947,6 +957,89 @@ void main() {
     );
   });
 
+  test('using cloud with no remaining attention is a silent no-op', () async {
+    final page = _page('page-1', 0);
+    final container = await _cloudContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, text: 'remote'),
+      )),
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+
+    expect(await session.useCloudVersionsForRejected(), isTrue);
+  });
+
+  test('failed cloud hydration keeps the rejected work available', () async {
+    final page = _page('page-1', 0);
+    const textId = 'text-page-1';
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, text: 'before'),
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    container.read(textProvider.notifier).commitText(textId, 'local-edit');
+    await _settle();
+    final rejectedOp = container
+        .read(strategyOpQueueProvider)
+        .pending
+        .map((pending) => pending.op)
+        .firstWhere((op) => op.entityPublicId == textId);
+    final malformedLineup = RemoteLineup(
+      publicId: 'bad-lineup',
+      strategyPublicId: 'cloud-strategy',
+      pagePublicId: page.publicId,
+      payload: const {
+        'kind': 'lineupGroup',
+        'payloadVersion': 1,
+        'data': {'broken': true},
+      },
+      sortIndex: 0,
+      revision: 1,
+      deleted: false,
+    );
+    remote.setSnapshot(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(
+        page,
+        elements: [
+          _textElement(page.publicId, textId, 'server-winner'),
+        ],
+        lineups: [malformedLineup],
+      ),
+    ));
+    queue.reject(rejectedOp);
+    await _settle();
+
+    await expectLater(
+      session.useCloudVersionsForRejected(),
+      throwsA(isA<FormatException>()),
+    );
+
+    final key = EntitySyncKey.element(page.publicId, textId);
+    expect(
+      container.read(strategyOpQueueProvider).attentionByEntityKey,
+      contains(key),
+    );
+    expect(
+      container.read(activePageLiveSyncProvider).overlayByEntityKey,
+      contains(key),
+    );
+  });
+
   test('using cloud for a strategy conflict restores remote map and theme',
       () async {
     final page = _page('page-1', 0);
@@ -968,9 +1061,7 @@ void main() {
         );
 
     container.read(mapProvider.notifier).updateMap(MapValue.ascent);
-    container
-        .read(strategyThemeProvider.notifier)
-        .setProfile('local-theme');
+    container.read(strategyThemeProvider.notifier).setProfile('local-theme');
     await _settle();
     final rejectedOp = container
         .read(strategyOpQueueProvider)
@@ -1088,6 +1179,7 @@ void main() {
     container.read(activePageLiveSyncProvider.notifier).markPageHydrated(
           strategyPublicId: 'cloud-strategy',
           pageId: page.publicId,
+          snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
         );
 
     final desired =
@@ -1132,32 +1224,49 @@ void main() {
           selectFirstPageIfNeeded: true,
         );
     const key = EntitySyncKey.element('page-1', textId);
-    queue.holdInFlight(
-      key,
-      ElementPatchOp(
-        opId: 'first-edit-in-flight',
-        elementPublicId: textId,
-        pagePublicId: page.publicId,
-        payload: _textElement(
-          page.publicId,
-          textId,
-          'first-edit',
-          worldSized: true,
-        ).payload,
-        sortIndex: 0,
-        expectedElementRevision: 1,
-      ),
+    final firstEdit = ElementPatchOp(
+      opId: 'first-edit-in-flight',
+      elementPublicId: textId,
+      pagePublicId: page.publicId,
+      payload: _textElement(
+        page.publicId,
+        textId,
+        'first-edit',
+        worldSized: true,
+      ).payload,
+      sortIndex: 0,
+      expectedElementRevision: 1,
     );
+    queue.holdInFlight(key, firstEdit);
+    container.read(textDraftProvider.notifier).setDraft(textId, 'final-edit');
 
-    final desired =
+    final beforeAck =
         container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
               strategyPublicId: 'cloud-strategy',
               pageId: page.publicId,
-            );
+            )![key] as ElementPatchOp;
+    expect(beforeAck.payload.toString(), contains('final-edit'));
+    expect(beforeAck.expectedElementRevision, 1);
 
-    final finalEdit = desired![key] as ElementPatchOp;
-    expect(finalEdit.payload.toString(), contains('before'));
-    expect(finalEdit.expectedElementRevision, 1);
+    container.read(activePageLiveSyncProvider.notifier).recordAckBatch([
+      AckedEntityIntent(
+        entityKey: key,
+        op: firstEdit,
+        ack: const AppliedOpAck(
+          opId: 'first-edit-in-flight',
+          revision: 2,
+        ),
+      ),
+    ]);
+    queue.clearInFlight();
+
+    final afterAck =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            )![key] as ElementPatchOp;
+    expect(afterAck.payload.toString(), contains('final-edit'));
+    expect(afterAck.expectedElementRevision, 2);
   });
 
   test('a final delete is emitted behind an in-flight local add', () async {
@@ -1176,6 +1285,7 @@ void main() {
     sync.markPageHydrated(
       strategyPublicId: 'cloud-strategy',
       pageId: page.publicId,
+      snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
     );
     container.read(textProvider.notifier).fromHive([
       PlacedText(id: textId, position: const Offset(10, 20))
@@ -1257,6 +1367,7 @@ void main() {
     sync.markPageHydrated(
       strategyPublicId: 'cloud-strategy',
       pageId: page.publicId,
+      snapshot: restarted.read(remoteEditorSnapshotProvider).requireValue!,
     );
 
     final desired = sync.syncLocalPage(
@@ -1286,6 +1397,69 @@ void main() {
     expect(durable.pending.op.opId, 'add-before-restart');
   });
 
+  test('hydration keeps the exact snapshot used to load the canvas', () async {
+    const textId = 'text-page-1';
+    final hydratedPage = _page('page-1', 0);
+    final hydratedSnapshot = _editorSnapshot(
+      pages: [hydratedPage],
+      activePage: _pageSnapshot(
+        hydratedPage,
+        elements: [
+          _textElement(
+            hydratedPage.publicId,
+            textId,
+            'hydrated-value',
+            worldSized: true,
+          ),
+        ],
+      ),
+    );
+    final newerPage = _page('page-1', 0, revision: 2);
+    final container = await _syncContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [newerPage],
+        activePage: _pageSnapshot(
+          newerPage,
+          elements: [
+            _textElement(
+              newerPage.publicId,
+              textId,
+              'newer-remote-value',
+              revision: 2,
+              worldSized: true,
+            ),
+          ],
+        ),
+      )),
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final hydratedText = PlacedText(
+      id: textId,
+      position: const Offset(10, 20),
+    )
+      ..text = 'hydrated-value'
+      ..markSizeAsWorld();
+    container.read(textProvider.notifier).fromHive([hydratedText]);
+
+    final sync = container.read(activePageLiveSyncProvider.notifier);
+    sync.markPageHydrated(
+      strategyPublicId: 'cloud-strategy',
+      pageId: hydratedPage.publicId,
+      snapshot: hydratedSnapshot,
+    );
+    container.read(textDraftProvider.notifier).setDraft(textId, 'local-edit');
+
+    final desired = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: hydratedPage.publicId,
+    );
+
+    final op = desired![EntitySyncKey.element(hydratedPage.publicId, textId)]
+        as ElementPatchOp;
+    expect(op.payload.toString(), contains('local-edit'));
+    expect(op.expectedElementRevision, 1);
+  });
+
   test('side switch authors exactly one Page descriptor operation', () async {
     final page = _page('page-1', 0, revision: 11);
     final container = await _syncContainer(
@@ -1305,6 +1479,7 @@ void main() {
     container.read(activePageLiveSyncProvider.notifier).markPageHydrated(
           strategyPublicId: 'cloud-strategy',
           pageId: page.publicId,
+          snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
         );
 
     container.read(mapProvider.notifier).switchSide();

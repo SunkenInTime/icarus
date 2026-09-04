@@ -55,7 +55,7 @@ class CloudMediaUploadJob {
   });
 
   final String jobId;
-  final String? accountId;
+  final String accountId;
   final String strategyPublicId;
   final String assetPublicId;
   final String fileExtension;

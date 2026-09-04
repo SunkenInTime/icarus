@@ -190,6 +190,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   static const int _maxBatchSize = 40;
   static const int _maxAttempts = 8;
   static const Duration _debounceDelay = Duration(milliseconds: 180);
+  static const Duration _busyBackgroundRetryDelay = Duration(seconds: 1);
   Timer? _debounceTimer;
   Timer? _retryTimer;
   Timer? _backgroundRetryTimer;
@@ -1188,9 +1189,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       return;
     }
     final batchClientId = batch.first.pending.clientId;
+    final isActiveStrategy = _isActive(accountId, strategyPublicId);
     _refreshActiveQueueView(
-      isFlushing: _isActive(accountId, strategyPublicId),
-      clearError: true,
+      isFlushing: isActiveStrategy,
+      clearError: isActiveStrategy,
     );
 
     try {
@@ -1220,11 +1222,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       _finishNetworkLane();
     }
 
-    if (!_isDisposed &&
-        state.queuedByEntityKey.isNotEmpty &&
-        (isBackground || batchSucceeded)) {
-      unawaited(flushNow());
-    } else if (!_isDisposed) {
+    if (!_isDisposed) {
+      if (state.queuedByEntityKey.isNotEmpty &&
+          (isBackground || batchSucceeded)) {
+        unawaited(flushNow());
+      }
       _scheduleBackgroundDrain();
     }
   }
@@ -1913,7 +1915,16 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   Future<void> _drainNextBackgroundStrategy({
     required bool ignoreBackoff,
   }) async {
-    if (_isDisposed || _networkBusy) return;
+    if (_isDisposed) return;
+    if (_networkBusy) {
+      _backgroundRetryTimer = Timer(
+        _busyBackgroundRetryDelay,
+        () => unawaited(_drainNextBackgroundStrategy(
+          ignoreBackoff: ignoreBackoff,
+        )),
+      );
+      return;
+    }
     await _writeTail;
     if (_isDisposed) return;
     final accountId = state.accountId;

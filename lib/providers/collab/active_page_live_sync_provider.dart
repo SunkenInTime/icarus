@@ -131,11 +131,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   void markPageHydrated({
     required String strategyPublicId,
     required String pageId,
+    required RemoteEditorSnapshot snapshot,
   }) {
     setContext(strategyPublicId: strategyPublicId, activePageId: pageId);
-    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
-    final remoteEntities = snapshot == null ||
-            snapshot.header.publicId != strategyPublicId ||
+    final remoteEntities = snapshot.header.publicId != strategyPublicId ||
             snapshot.activePage?.page.publicId != pageId
         ? const <EntitySyncKey, _NormalizedEntity>{}
         : _normalizedRemoteEntities(snapshot, pageId);
@@ -160,20 +159,157 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   }
 
   void recordAckBatch(List<AckedEntityIntent> intents) {
-    state = state.copyWith(lastAckBatch: intents);
+    final overlays = Map<EntitySyncKey, ActivePageOverlayEntry>.from(
+      state.overlayByEntityKey,
+    );
+    final remoteRevisions = Map<EntitySyncKey, int>.from(
+      state.remoteBaseRevisionByEntity,
+    );
+    for (final intent in intents) {
+      final revision = intent.ack.appliedRevision;
+      final key = intent.entityKey;
+      if (revision == null || key.pageId != state.hydratedPageId) {
+        continue;
+      }
+      final accepted = _normalizedAcceptedEntity(
+        key: key,
+        op: intent.op,
+        revision: revision,
+      );
+      if (accepted == null) continue;
+
+      _hydratedBaseByEntityKey[key] = accepted;
+      remoteRevisions[key] = revision;
+      final overlay = overlays[key];
+      if (overlay != null) {
+        overlays[key] = overlay.copyWith(
+          baseRevision: revision,
+          baseDeleted: accepted.deleted,
+        );
+      }
+    }
+    state = state.copyWith(
+      overlayByEntityKey: overlays,
+      remoteBaseRevisionByEntity: remoteRevisions,
+      lastAckBatch: intents,
+    );
+  }
+
+  _NormalizedEntity? _normalizedAcceptedEntity({
+    required EntitySyncKey key,
+    required StrategyOp op,
+    required int revision,
+  }) {
+    final previous = _hydratedBaseByEntityKey[key];
+    return switch (op) {
+      PagePatchOp(:final payload) => _NormalizedEntity(
+          key: key,
+          overlayEntityType: ActivePageOverlayEntityType.pageDescriptor,
+          payload: payload,
+          sortIndex: null,
+          revision: revision,
+          deleted: false,
+        ),
+      PageContentPatchOp(:final settings) => _NormalizedEntity(
+          key: key,
+          overlayEntityType: ActivePageOverlayEntityType.pageContent,
+          payload: <String, dynamic>{'settings': settings},
+          sortIndex: null,
+          revision: revision,
+          deleted: false,
+        ),
+      ElementAddOp(:final payload, :final sortIndex) ||
+      ElementPatchOp(:final payload?, :final sortIndex?) =>
+        _NormalizedEntity(
+          key: key,
+          overlayEntityType: ActivePageOverlayEntityType.element,
+          payload: payload,
+          sortIndex: sortIndex,
+          revision: revision,
+          deleted: false,
+        ),
+      ElementPatchOp(:final payload, :final sortIndex) when previous != null =>
+        _NormalizedEntity(
+          key: key,
+          overlayEntityType: ActivePageOverlayEntityType.element,
+          payload: payload ?? previous.payload,
+          sortIndex: sortIndex ?? previous.sortIndex,
+          revision: revision,
+          deleted: false,
+        ),
+      ElementReorderOp(:final sortIndex) when previous != null =>
+        _NormalizedEntity(
+          key: key,
+          overlayEntityType: ActivePageOverlayEntityType.element,
+          payload: previous.payload,
+          sortIndex: sortIndex,
+          revision: revision,
+          deleted: previous.deleted,
+        ),
+      ElementDeleteOp() when previous != null => _NormalizedEntity(
+          key: key,
+          overlayEntityType: ActivePageOverlayEntityType.element,
+          payload: previous.payload,
+          sortIndex: previous.sortIndex,
+          revision: revision,
+          deleted: true,
+        ),
+      LineupAddOp(:final payload, :final sortIndex) ||
+      LineupPatchOp(:final payload?, :final sortIndex?) =>
+        _NormalizedEntity(
+          key: key,
+          overlayEntityType: ActivePageOverlayEntityType.lineup,
+          payload: payload,
+          sortIndex: sortIndex,
+          revision: revision,
+          deleted: false,
+        ),
+      LineupPatchOp(:final payload, :final sortIndex) when previous != null =>
+        _NormalizedEntity(
+          key: key,
+          overlayEntityType: ActivePageOverlayEntityType.lineup,
+          payload: payload ?? previous.payload,
+          sortIndex: sortIndex ?? previous.sortIndex,
+          revision: revision,
+          deleted: false,
+        ),
+      LineupReorderOp(:final sortIndex) when previous != null =>
+        _NormalizedEntity(
+          key: key,
+          overlayEntityType: ActivePageOverlayEntityType.lineup,
+          payload: previous.payload,
+          sortIndex: sortIndex,
+          revision: revision,
+          deleted: previous.deleted,
+        ),
+      LineupDeleteOp() when previous != null => _NormalizedEntity(
+          key: key,
+          overlayEntityType: ActivePageOverlayEntityType.lineup,
+          payload: previous.payload,
+          sortIndex: previous.sortIndex,
+          revision: revision,
+          deleted: true,
+        ),
+      _ => null,
+    };
   }
 
   /// Stops local projection and reconciliation for explicitly discarded work
   /// until the affected page has loaded the authoritative remote snapshot.
-  void adoptRemoteForEntities(Set<EntitySyncKey> entityKeys) {
+  void adoptRemoteForEntities(
+    Set<EntitySyncKey> entityKeys, {
+    String? hydratedPageId,
+  }) {
     if (entityKeys.isEmpty) return;
     final overlays = Map<EntitySyncKey, ActivePageOverlayEntry>.from(
       state.overlayByEntityKey,
     );
     for (final key in entityKeys) {
       overlays.remove(key);
-      if (key.pageId != null) {
+      if (key.pageId != null && key.pageId != hydratedPageId) {
         _remoteAdoptionPending.add(key);
+      } else {
+        _remoteAdoptionPending.remove(key);
       }
     }
     state = state.copyWith(overlayByEntityKey: overlays);
@@ -320,8 +456,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           desiredPayload: null,
           desiredSortIndex: null,
           deletion: true,
-          baseRevision:
-              existingOverlay?.baseRevision ?? hydratedBase?.revision,
+          baseRevision: existingOverlay?.baseRevision ?? hydratedBase?.revision,
           baseDeleted:
               existingOverlay?.baseDeleted ?? hydratedBase?.deleted ?? false,
           dirtyAt: DateTime.now(),

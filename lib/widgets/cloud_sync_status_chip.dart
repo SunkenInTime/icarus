@@ -160,26 +160,21 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
     final hasOtherStrategyWork = opQueueState.accountOutbox.strategies.values
             .any((summary) => summary.strategyPublicId != activeStrategyId) ||
         mediaQueueState.jobs.any(
-              (job) => job.strategyPublicId != activeStrategyId,
-            );
-    final hasOtherStrategyAttention = opQueueState
-            .accountOutbox.strategies.values
-            .any((summary) =>
+          (job) => job.strategyPublicId != activeStrategyId,
+        );
+    final hasOtherStrategyAttention =
+        opQueueState.accountOutbox.strategies.values.any((summary) =>
                 summary.strategyPublicId != activeStrategyId &&
                 summary.needsAttention) ||
-        mediaQueueState.jobs.any(
-              (job) =>
-                  job.strategyPublicId != activeStrategyId && job.isFailed,
+            mediaQueueState.jobs.any(
+              (job) => job.strategyPublicId != activeStrategyId && job.isFailed,
             );
     final hasActiveStrategyAttention = opQueueState.needsAttention ||
         saveState.cloudSyncError != null ||
         saveState.mediaSyncErrorCount > 0 ||
         mediaQueueState.jobs.any(
           (job) => job.strategyPublicId == activeStrategyId && job.isFailed,
-        ) ||
-        mediaQueueState
-            .unknownOwnerJobsForStrategy(activeStrategyId)
-            .isNotEmpty;
+        );
     final status = switch (ref.watch(cloudSyncStatusProvider)) {
       CloudSyncStatus.synced => _SyncStatus.synced,
       CloudSyncStatus.editing => _SyncStatus.editing,

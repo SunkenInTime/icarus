@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:icarus/collab/convex_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
@@ -28,14 +27,12 @@ class CloudMediaUploadQueueState {
   const CloudMediaUploadQueueState({
     required this.jobs,
     required this.isProcessing,
-    this.unknownOwnerJobs = const <CloudMediaUploadJob>[],
     this.loadIssues = const <DurableCloudMediaOutboxLoadIssue>[],
     this.durableLoaded = true,
     this.durabilityError,
   });
 
   final List<CloudMediaUploadJob> jobs;
-  final List<CloudMediaUploadJob> unknownOwnerJobs;
   final bool isProcessing;
   final List<DurableCloudMediaOutboxLoadIssue> loadIssues;
   final bool durableLoaded;
@@ -49,15 +46,6 @@ class CloudMediaUploadQueueState {
       return const [];
     }
     return jobs
-        .where((job) => job.strategyPublicId == strategyPublicId)
-        .toList(growable: false);
-  }
-
-  List<CloudMediaUploadJob> unknownOwnerJobsForStrategy(
-    String? strategyPublicId,
-  ) {
-    if (strategyPublicId == null) return const [];
-    return unknownOwnerJobs
         .where((job) => job.strategyPublicId == strategyPublicId)
         .toList(growable: false);
   }
@@ -80,7 +68,6 @@ class CloudMediaUploadQueueState {
   }) {
     return CloudMediaUploadQueueState(
       jobs: jobs ?? this.jobs,
-      unknownOwnerJobs: unknownOwnerJobs,
       isProcessing: isProcessing ?? this.isProcessing,
       loadIssues: loadIssues,
       durableLoaded: durableLoaded,
@@ -108,8 +95,8 @@ final cloudMediaUploadQueueProvider =
   CloudMediaUploadQueueNotifier.new,
 );
 
-typedef CloudMediaReferenceSnapshotLoader =
-    Future<RemoteFullStrategySnapshot> Function(String strategyPublicId);
+typedef CloudMediaReferenceSnapshotLoader = Future<RemoteFullStrategySnapshot>
+    Function(String strategyPublicId);
 
 final cloudMediaReferenceSnapshotLoaderProvider =
     Provider<CloudMediaReferenceSnapshotLoader>(
@@ -197,12 +184,8 @@ class CloudMediaUploadQueueNotifier
       });
     }
 
-    final unknownOwnerJobs = loaded.jobs
-        .where((job) => job.accountId == null)
-        .toList(growable: false);
     return CloudMediaUploadQueueState(
       jobs: _readJobs(),
-      unknownOwnerJobs: unknownOwnerJobs,
       isProcessing: false,
       loadIssues: loaded.issues,
       durableLoaded: true,
@@ -363,8 +346,8 @@ class CloudMediaUploadQueueNotifier
       if (ref.read(authProvider).isConvexUserReady &&
           ref.read(convexConnectionSnapshotProvider)) {
         try {
-          serverSnapshot = await ref
-              .read(cloudMediaReferenceSnapshotLoaderProvider)(
+          serverSnapshot =
+              await ref.read(cloudMediaReferenceSnapshotLoaderProvider)(
             strategyPublicId,
           );
         } catch (_) {
@@ -527,12 +510,12 @@ class CloudMediaUploadQueueNotifier
     if (!auth.isAuthenticated ||
         !auth.isConvexUserReady ||
         auth.hasActiveAuthIncident ||
-        !ConvexClient.instance.isConnected) {
+        !ref.read(convexConnectionSnapshotProvider)) {
       _logMedia(
         'process.blocked auth=${auth.isAuthenticated} '
         'userReady=${auth.isConvexUserReady} '
         'authIncident=${auth.hasActiveAuthIncident} '
-        'connected=${ConvexClient.instance.isConnected} '
+        'connected=${ref.read(convexConnectionSnapshotProvider)} '
         '${_describeJob(job)}',
       );
       _scheduleRetryForNextEligibleJob(minimumDelay: _blockedRetryDelay);
@@ -560,6 +543,9 @@ class CloudMediaUploadQueueNotifier
       if (!await file.exists()) {
         _logMedia(
             'upload.local_missing path=${file.path} ${_describeJob(job)}');
+        if (await _deleteJobWhenReferenceIsGone(job)) {
+          return;
+        }
         await _markJobFailed(
           job,
           'Local media file is missing.',
@@ -656,6 +642,57 @@ class CloudMediaUploadQueueNotifier
         showToast: job.attempts == 0,
       );
     }
+  }
+
+  Future<bool> _deleteJobWhenReferenceIsGone(
+    CloudMediaUploadJob job,
+  ) async {
+    final durableOps = ref.read(durableStrategyOutboxStoreProvider).load();
+    if (durableOps.issues.isNotEmpty) return false;
+    final pendingReferences = durableOps.records.any(
+      (record) =>
+          record.accountId == job.accountId &&
+          record.strategyPublicId == job.strategyPublicId &&
+          (_opReferencesAsset(record.pending.op, job.assetPublicId) ||
+              (record.successorPending != null &&
+                  _opReferencesAsset(
+                    record.successorPending!.op,
+                    job.assetPublicId,
+                  ))),
+    );
+    if (pendingReferences ||
+        !ref.read(authProvider).isConvexUserReady ||
+        !ref.read(convexConnectionSnapshotProvider)) {
+      return false;
+    }
+
+    late final RemoteFullStrategySnapshot snapshot;
+    try {
+      snapshot = await ref.read(cloudMediaReferenceSnapshotLoaderProvider)(
+        job.strategyPublicId,
+      );
+    } catch (error) {
+      _logMedia(
+        'missing_source.reference_check_deferred '
+        'strategy=${job.strategyPublicId} error=$error',
+      );
+      return false;
+    }
+    final current = _getJob(job.jobId);
+    if (!_belongsToActiveAccount(job) ||
+        current == null ||
+        current.updatedAt != job.updatedAt ||
+        _snapshotReferencesAsset(snapshot, job.assetPublicId)) {
+      return false;
+    }
+
+    await _deleteJob(job);
+    _refreshState();
+    _logMedia(
+      'missing_source.removed_unreferenced job=${job.jobId} '
+      'strategy=${job.strategyPublicId}',
+    );
+    return true;
   }
 
   Future<http.Response> _putFileWithProgress({
@@ -783,9 +820,8 @@ class CloudMediaUploadQueueNotifier
   void _scheduleRetryForNextEligibleJob({Duration? minimumDelay}) {
     _retryTimer?.cancel();
     final allJobs = _readJobs();
-    final jobs = allJobs
-        .where((job) => job.referenceDurable)
-        .toList(growable: false);
+    final jobs =
+        allJobs.where((job) => job.referenceDurable).toList(growable: false);
     if (jobs.isEmpty) {
       if (allJobs.any((job) => !job.referenceDurable)) {
         _retryTimer = Timer(
@@ -1048,6 +1084,7 @@ class CloudMediaUploadQueueNotifier
 
   CloudMediaUploadJob? _getJob(String jobId) {
     final accountId = ref.read(cloudMediaAccountIdProvider);
+    if (accountId == null || accountId.isEmpty) return null;
     final job = _jobsByStorageKey[durableCloudMediaOutboxStorageKeyFor(
       accountId: accountId,
       jobId: jobId,
@@ -1235,8 +1272,7 @@ class CloudMediaUploadQueueNotifier
       if (totalBytes <= 0) {
         continue;
       }
-      final byteProgress =
-          (sentBytes / totalBytes).clamp(0.0, 1.0).toDouble();
+      final byteProgress = (sentBytes / totalBytes).clamp(0.0, 1.0).toDouble();
       progressUnits += byteProgress * 0.9;
     }
 
@@ -1299,8 +1335,7 @@ class CloudMediaUploadQueueNotifier
                         return LinearProgressIndicator(
                           value: value,
                           minHeight: 4,
-                          backgroundColor:
-                              Colors.white.withValues(alpha: 0.22),
+                          backgroundColor: Colors.white.withValues(alpha: 0.22),
                           valueColor: const AlwaysStoppedAnimation<Color>(
                             Colors.white,
                           ),
@@ -1367,7 +1402,8 @@ class CloudMediaUploadQueueNotifier
       _syncUploadProgressToast();
     }
     if (_uploadProgressToastState == null) return;
-    _uploadProgressToastState!.value = _buildUploadToastState(activeUploadCount);
+    _uploadProgressToastState!.value =
+        _buildUploadToastState(activeUploadCount);
   }
 
   void _logMedia(String message) {
@@ -1382,7 +1418,7 @@ class CloudMediaUploadQueueNotifier
       return 'job=null';
     }
     return 'job=${job.jobId} image=${job.assetPublicId} '
-        'account=${job.accountId ?? 'unknown'} '
+        'account=${job.accountId} '
         'strategy=${job.strategyPublicId} state=${job.state.name} '
         'attempts=${job.attempts} provider=${job.provider ?? 'none'} '
         'hasUploadId=${job.uploadId != null} '

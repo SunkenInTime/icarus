@@ -192,7 +192,7 @@ void main() {
     await _pump(tester, container, const CloudOutboxSummaryBanner());
 
     expect(find.text('Cloud work needs attention'), findsOneWidget);
-    expect(find.textContaining('authentication is paused'), findsOneWidget);
+    expect(find.textContaining('Reconnect this account'), findsOneWidget);
     expect(find.text('Syncing cloud work'), findsNothing);
   });
 }
