@@ -78,6 +78,25 @@ void main() {
       );
     });
 
+    test('production requires a canonical Convex deployment URL', () {
+      for (final invalidUrl in [
+        'https://production-example.invalid',
+        'https://production-example.convex.site',
+        'https://production-example.convex.cloud.example.com',
+        'https://production-example.convex.cloud/api',
+      ]) {
+        expect(
+          () => CloudBuildConfig.resolve(
+            environment: 'production',
+            deploymentUrl: invalidUrl,
+            clientId: 'icarus-production',
+          ),
+          throwsStateError,
+          reason: invalidUrl,
+        );
+      }
+    });
+
     test('production accepts a complete non-development configuration', () {
       final config = CloudBuildConfig.resolve(
         environment: 'production',

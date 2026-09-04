@@ -2,6 +2,9 @@ const String developmentConvexDeploymentUrl =
     'https://majestic-eel-413.convex.cloud';
 const String developmentConvexClientId = 'dev:majestic-eel-413';
 const String _developmentConvexHost = 'majestic-eel-413.convex.cloud';
+final RegExp _convexDeploymentHost = RegExp(
+  r'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.convex\.cloud$',
+);
 
 const String _compiledCloudEnvironment = String.fromEnvironment(
   'ICARUS_CLOUD_ENVIRONMENT',
@@ -93,8 +96,10 @@ class CloudBuildConfig {
             'ICARUS_CONVEX_DEPLOYMENT_URL and ICARUS_CONVEX_CLIENT_ID values.',
           );
         }
-        _requireHttpsUrl(resolvedDeploymentUrl);
-        if (Uri.parse(resolvedDeploymentUrl).host == _developmentConvexHost ||
+        final productionUri = _requireProductionDeploymentUrl(
+          resolvedDeploymentUrl,
+        );
+        if (productionUri.host == _developmentConvexHost ||
             resolvedClientId == developmentConvexClientId) {
           throw StateError(
             'Production cloud builds cannot use the Icarus development '
@@ -119,5 +124,24 @@ class CloudBuildConfig {
     if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
       throw StateError('Convex deployment URL must be an absolute HTTPS URL.');
     }
+  }
+
+  static Uri _requireProductionDeploymentUrl(String value) {
+    final uri = Uri.tryParse(value);
+    final hasCanonicalOrigin = uri != null &&
+        uri.scheme == 'https' &&
+        _convexDeploymentHost.hasMatch(uri.host.toLowerCase()) &&
+        uri.userInfo.isEmpty &&
+        !uri.hasPort &&
+        (uri.path.isEmpty || uri.path == '/') &&
+        !uri.hasQuery &&
+        !uri.hasFragment;
+    if (!hasCanonicalOrigin) {
+      throw StateError(
+        'Production Convex deployment URL must be a canonical '
+        'https://<deployment>.convex.cloud URL.',
+      );
+    }
+    return uri;
   }
 }

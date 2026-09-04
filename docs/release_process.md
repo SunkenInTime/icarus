@@ -52,6 +52,12 @@ release scripts pass them to Flutter through a temporary Dart-defines file and
 delete that file after the build. A missing value, invalid URL, or the known
 development deployment stops the release before Flutter runs.
 
+Use the deployment's canonical `https://<deployment>.convex.cloud` client URL.
+The release validator does not accept custom domains, and `.convex.site` is the
+HTTP Actions URL rather than the client deployment URL. See Convex's
+[deployment URL guide](https://docs.convex.dev/client/react/deployment-urls)
+and [system environment URL definitions](https://docs.convex.dev/production/environment-variables).
+
 Stable desktop, Store, and production backend workflows all enter the protected
 GitHub `Production` environment before they can build or publish. Desktop
 prerelease skips that environment and remains available on feature branches.

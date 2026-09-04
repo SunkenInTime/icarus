@@ -95,6 +95,21 @@ Assert-ThrowsContaining -ExpectedMessage "absolute HTTPS URL" -Action {
         -ProductionConvexDeploymentUrl "https:production-example" `
         -ProductionConvexClientId "icarus-production"
 }
+Assert-ThrowsContaining -ExpectedMessage "canonical https://<deployment>.convex.cloud URL" -Action {
+    Resolve-CloudBuildConfiguration -ReleaseTarget "stable" `
+        -ProductionConvexDeploymentUrl "https://production-example.invalid" `
+        -ProductionConvexClientId "icarus-production"
+}
+Assert-ThrowsContaining -ExpectedMessage "canonical https://<deployment>.convex.cloud URL" -Action {
+    Resolve-CloudBuildConfiguration -ReleaseTarget "store" `
+        -ProductionConvexDeploymentUrl "https://production-example.convex.site" `
+        -ProductionConvexClientId "icarus-production"
+}
+Assert-ThrowsContaining -ExpectedMessage "canonical https://<deployment>.convex.cloud URL" -Action {
+    Resolve-CloudBuildConfiguration -ReleaseTarget "stable" `
+        -ProductionConvexDeploymentUrl "https://production-example.convex.cloud/api" `
+        -ProductionConvexClientId "icarus-production"
+}
 Assert-ThrowsContaining -ExpectedMessage "development Convex deployment" -Action {
     Resolve-CloudBuildConfiguration -ReleaseTarget "stable" `
         -ProductionConvexDeploymentUrl "https://majestic-eel-413.convex.cloud/" `

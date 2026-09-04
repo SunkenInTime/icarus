@@ -120,6 +120,11 @@ function Resolve-CloudBuildConfiguration {
         throw "ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL must be an absolute HTTPS URL."
     }
 
+    $hasCanonicalConvexOrigin = $deploymentUrl -match '^https://[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.convex\.cloud/?$'
+    if (-not $hasCanonicalConvexOrigin) {
+        throw "ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL must be a canonical https://<deployment>.convex.cloud URL."
+    }
+
     if ($parsedUrl.Host -ieq "majestic-eel-413.convex.cloud" -or $clientId -eq "dev:majestic-eel-413") {
         throw "Production cloud configuration cannot use the Icarus development Convex deployment."
     }
