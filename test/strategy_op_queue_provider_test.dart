@@ -875,6 +875,46 @@ void main() {
       expect(utf8.encode(serialized).length, greaterThan(serialized.length));
     });
 
+    test(
+        'an initial durable enqueue failure stays unreliable until the exact '
+        'record is rewritten', () async {
+      final store = _FirstPutFailureStore();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: _RecordingAckRepository(),
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const op = ElementPatchOp(
+        opId: 'initial-write-failure',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'unsaved'},
+        expectedElementRevision: 1,
+      );
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(op, flushImmediately: false);
+
+      var current = container.read(strategyOpQueueProvider);
+      expect(current.pending, isEmpty);
+      expect(current.hasDurabilityFailure, isTrue);
+      expect(current.needsAttention, isTrue);
+      expect(current.outboxIsReliable, isFalse);
+      expect(current.lastError, contains('could not be saved'));
+      expect(store.values, isEmpty);
+
+      await notifier.enqueue(op, flushImmediately: false);
+
+      current = container.read(strategyOpQueueProvider);
+      expect(current.queuedByEntityKey, contains(key));
+      expect(current.hasDurabilityFailure, isFalse);
+      expect(current.outboxIsReliable, isTrue);
+      expect(current.lastError, isNull);
+      expect(store.load().records.single.pending.op.opId, op.opId);
+    });
+
     test('an oversized op is durably parked while independent work lands',
         () async {
       final store = MemoryDurableStrategyOutboxStore();
@@ -2294,6 +2334,19 @@ class _OneShotAckFailureStore extends MemoryDurableStrategyOutboxStore {
       throw StateError('accepted ack removal failed');
     }
     await super.remove(storageKey);
+  }
+}
+
+class _FirstPutFailureStore extends MemoryDurableStrategyOutboxStore {
+  var failNextPut = true;
+
+  @override
+  Future<void> put(DurableOutboxRecord record) async {
+    if (failNextPut) {
+      failNextPut = false;
+      throw StateError('initial write failed');
+    }
+    await super.put(record);
   }
 }
 

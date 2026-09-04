@@ -124,6 +124,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   late Map<String, DurableOutboxRecord> _recordsByStorageKey;
   final Set<EntitySyncKey> _awaitingRemoteAdoption = {};
   final Set<String> _uncertainOversizedParking = {};
+  final Set<String> _uncertainDurableRecords = {};
   String? _uncertainOversizedParkingMessage;
   Future<void> _writeTail = Future<void>.value();
 
@@ -200,7 +201,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     final clientId =
         matching.firstOrNull?.pending.clientId ?? const Uuid().v4();
-    final hasDurabilityFailure = _hasUncertainParkingFor(
+    final hasDurabilityFailure = _hasDurabilityFailureFor(
       accountId: accountId,
       strategyPublicId: strategyPublicId,
     );
@@ -566,7 +567,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       pausedByEntityKey: paused,
       attentionByEntityKey: attention,
       successorByEntityKey: successors,
-      hasDurabilityFailure: _hasUncertainParkingForActiveStrategy,
+      hasDurabilityFailure: _hasDurabilityFailureForActiveStrategy,
       lastError: attentionMessage,
       clearError: attentionMessage == null,
     );
@@ -704,7 +705,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         queuedByEntityKey: queued,
         attentionByEntityKey: attention,
         successorByEntityKey: successors,
-        hasDurabilityFailure: _hasUncertainParkingForActiveStrategy,
+        hasDurabilityFailure: _hasDurabilityFailureForActiveStrategy,
         lastError: attentionMessage,
         clearError: attentionMessage == null,
       );
@@ -753,8 +754,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           continue;
         }
         try {
-          await _store.remove(storageKey);
-          _recordsByStorageKey.remove(storageKey);
+          await _removeRecordByStorageKey(storageKey);
           _uncertainOversizedParking.remove(storageKey);
           attention.remove(key);
           successors.remove(key);
@@ -790,7 +790,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       state = state.copyWith(
         attentionByEntityKey: attention,
         successorByEntityKey: successors,
-        hasDurabilityFailure: _hasUncertainParkingForActiveStrategy,
+        hasDurabilityFailure: _hasDurabilityFailureForActiveStrategy,
         lastError: errorMessage,
         clearError: errorMessage == null,
       );
@@ -874,7 +874,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     state = state.copyWith(
       queuedByEntityKey: queued,
       attentionByEntityKey: attention,
-      hasDurabilityFailure: _hasUncertainParkingForActiveStrategy,
+      hasDurabilityFailure: _hasDurabilityFailureForActiveStrategy,
       lastError: persistenceError == null
           ? attentionMessage
           : _uncertainOversizedParkingMessage,
@@ -1209,8 +1209,25 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   }
 
   Future<void> _putRecord(DurableOutboxRecord record) async {
-    await _store.put(record);
-    _recordsByStorageKey[record.storageKey] = record;
+    try {
+      await _store.put(record);
+      _recordsByStorageKey[record.storageKey] = record;
+      _uncertainDurableRecords.remove(record.storageKey);
+    } catch (_) {
+      _uncertainDurableRecords.add(record.storageKey);
+      rethrow;
+    }
+  }
+
+  Future<void> _removeRecordByStorageKey(String storageKey) async {
+    try {
+      await _store.remove(storageKey);
+      _recordsByStorageKey.remove(storageKey);
+      _uncertainDurableRecords.remove(storageKey);
+    } catch (_) {
+      _uncertainDurableRecords.add(storageKey);
+      rethrow;
+    }
   }
 
   Future<void> _removeRecordIfCurrent(
@@ -1219,8 +1236,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   ) async {
     final record = _recordForActiveKey(key);
     if (record == null || record.pending.op.opId != opId) return;
-    await _store.remove(record.storageKey);
-    _recordsByStorageKey.remove(record.storageKey);
+    await _removeRecordByStorageKey(record.storageKey);
   }
 
   Future<T> _serializeWrite<T>(Future<T> Function() action) {
@@ -1249,11 +1265,47 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         strategyPublicId: state.strategyPublicId,
       );
 
+  bool _hasUncertainDurableRecordFor({
+    required String? accountId,
+    required String? strategyPublicId,
+  }) {
+    if (accountId == null || strategyPublicId == null) return false;
+    final prefix = '${Uri.encodeComponent(accountId)}|'
+        '${Uri.encodeComponent(strategyPublicId)}|';
+    return _uncertainDurableRecords.any((key) => key.startsWith(prefix));
+  }
+
+  bool get _hasUncertainDurableRecordForActiveStrategy =>
+      _hasUncertainDurableRecordFor(
+        accountId: state.accountId,
+        strategyPublicId: state.strategyPublicId,
+      );
+
+  bool _hasDurabilityFailureFor({
+    required String? accountId,
+    required String? strategyPublicId,
+  }) =>
+      _hasUncertainParkingFor(
+        accountId: accountId,
+        strategyPublicId: strategyPublicId,
+      ) ||
+      _hasUncertainDurableRecordFor(
+        accountId: accountId,
+        strategyPublicId: strategyPublicId,
+      );
+
+  bool get _hasDurabilityFailureForActiveStrategy =>
+      _hasDurabilityFailureFor(
+        accountId: state.accountId,
+        strategyPublicId: state.strategyPublicId,
+      );
+
   void _recordPersistenceFailure(Object error, StackTrace stackTrace) {
     log('Durable outbox persistence failed: $error',
         name: 'strategy_outbox', error: error, stackTrace: stackTrace);
     state = state.copyWith(
       isFlushing: false,
+      hasDurabilityFailure: _hasDurabilityFailureForActiveStrategy,
       lastError: 'Cloud work could not be saved to the durable outbox: $error',
     );
   }
@@ -1554,6 +1606,9 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       return _uncertainOversizedParkingMessage ??
           'Cloud work could not be verified in the durable outbox. '
               'Nothing was sent.';
+    }
+    if (_hasUncertainDurableRecordForActiveStrategy) {
+      return 'Cloud work could not be verified in the durable outbox.';
     }
     if (attention.isNotEmpty) {
       final hasOversizedWork = attention.entries.any((entry) {
