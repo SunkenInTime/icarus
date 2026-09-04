@@ -718,8 +718,10 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           return null;
         }
         if (overlay.deletion) {
-          final baseRevision = overlay.baseRevision;
-          if (baseRevision == null) return null;
+          // A delete after a local add has no revision until that add lands.
+          // Zero cannot land early; the outbox rebases the successor from the
+          // accepted add acknowledgment.
+          final baseRevision = overlay.baseRevision ?? 0;
           return ElementDeleteOp(
             opId: const Uuid().v4(),
             elementPublicId: entityId,
@@ -751,8 +753,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           return null;
         }
         if (overlay.deletion) {
-          final baseRevision = overlay.baseRevision;
-          if (baseRevision == null) return null;
+          final baseRevision = overlay.baseRevision ?? 0;
           return LineupDeleteOp(
             opId: const Uuid().v4(),
             lineupPublicId: entityId,

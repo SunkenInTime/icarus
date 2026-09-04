@@ -967,6 +967,142 @@ void main() {
       expect(durable.successorPending!.op.payload, {'value': 'second'});
       expect(durable.latestServerRevision, 2);
     });
+
+    test('keeps a final element delete behind an in-flight add', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.element('page-1', 'element-1');
+
+      await notifier.enqueue(const ElementAddOp(
+        opId: 'element-add-in-flight',
+        elementPublicId: 'element-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'first'},
+        sortIndex: 0,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const ElementAddOp(
+            opId: 'element-add-successor',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'second'},
+            sortIndex: 0,
+          ),
+        },
+      );
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const ElementDeleteOp(
+            opId: 'element-delete-successor',
+            elementPublicId: 'element-1',
+            pagePublicId: 'page-1',
+            expectedElementRevision: 0,
+          ),
+        },
+      );
+
+      final durableBeforeAck = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durableBeforeAck.pending.op.opId, 'element-add-in-flight');
+      expect(durableBeforeAck.successorPending!.op, isA<ElementDeleteOp>());
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'element-add-in-flight',
+        revision: 1,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final finalDelete = repository.calls[1].single as ElementDeleteOp;
+      expect(finalDelete.expectedElementRevision, 1);
+      repository.completeSecond(AppliedOpAck(
+        opId: finalDelete.opId,
+        revision: 2,
+      ));
+      await repository.secondCompleted.future;
+    });
+
+    test('keeps a final lineup delete behind an in-flight add', () async {
+      final store = MemoryDurableStrategyOutboxStore();
+      final repository = _SequencedAckRepository();
+      final container = _cloudQueueContainer(
+        store: store,
+        repository: repository,
+      );
+      addTearDown(container.dispose);
+      final notifier = container.read(strategyOpQueueProvider.notifier)
+        ..setActiveStrategy('strategy-1', accountId: 'account-a');
+      const key = EntitySyncKey.lineup('page-1', 'lineup-1');
+
+      await notifier.enqueue(const LineupAddOp(
+        opId: 'lineup-add-in-flight',
+        lineupPublicId: 'lineup-1',
+        pagePublicId: 'page-1',
+        payload: {'value': 'first'},
+        sortIndex: 0,
+      ));
+      final firstFlush = notifier.flushNow();
+      await repository.firstStarted.future;
+
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const LineupAddOp(
+            opId: 'lineup-add-successor',
+            lineupPublicId: 'lineup-1',
+            pagePublicId: 'page-1',
+            payload: {'value': 'second'},
+            sortIndex: 0,
+          ),
+        },
+      );
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          key: const LineupDeleteOp(
+            opId: 'lineup-delete-successor',
+            lineupPublicId: 'lineup-1',
+            pagePublicId: 'page-1',
+            expectedLineupRevision: 0,
+          ),
+        },
+      );
+
+      final durableBeforeAck = DurableOutboxRecord.fromJson(
+        Map<String, dynamic>.from(store.values.values.single as Map),
+      );
+      expect(durableBeforeAck.pending.op.opId, 'lineup-add-in-flight');
+      expect(durableBeforeAck.successorPending!.op, isA<LineupDeleteOp>());
+
+      repository.completeFirst(const AppliedOpAck(
+        opId: 'lineup-add-in-flight',
+        revision: 1,
+      ));
+      await firstFlush;
+      await repository.secondStarted.future;
+
+      final finalDelete = repository.calls[1].single as LineupDeleteOp;
+      expect(finalDelete.expectedLineupRevision, 1);
+      repository.completeSecond(AppliedOpAck(
+        opId: finalDelete.opId,
+        revision: 2,
+      ));
+      await repository.secondCompleted.future;
+    });
   });
 }
 

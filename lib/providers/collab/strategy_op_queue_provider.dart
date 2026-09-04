@@ -368,7 +368,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           final pending = PendingOp(
             op: successorIntent == null
                 ? desired
-                : _mergeQueuedIntent(successorIntent.pending.op, desired)!,
+                : _mergeQueuedIntent(successorIntent.pending.op, desired) ??
+                    desired,
             clientId: successorIntent?.pending.clientId ?? state.clientId!,
           );
           await _putRecord(_recordFor(
@@ -402,7 +403,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
             continue;
           }
           final pending = PendingOp(
-            op: _mergeQueuedIntent(successorIntent.pending.op, desired)!,
+            op: _mergeQueuedIntent(successorIntent.pending.op, desired) ??
+                desired,
             clientId: successorIntent.pending.clientId,
           );
           await _putRecord(_recordFor(

@@ -948,6 +948,46 @@ void main() {
     expect(finalEdit.expectedElementRevision, 1);
   });
 
+  test('a final delete is emitted behind an in-flight local add', () async {
+    final page = _page('page-1', 0);
+    const textId = 'new-local-text';
+    const key = EntitySyncKey.element('page-1', textId);
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _syncContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page),
+      )),
+      queue: queue,
+    );
+    final sync = container.read(activePageLiveSyncProvider.notifier);
+    sync.markPageHydrated(
+      strategyPublicId: 'cloud-strategy',
+      pageId: page.publicId,
+    );
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: textId, position: const Offset(10, 20))
+        ..text = 'first'
+        ..markSizeAsWorld(),
+    ]);
+
+    final firstDesired = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: page.publicId,
+    );
+    final add = firstDesired![key] as ElementAddOp;
+    queue.holdInFlight(key, add);
+    container.read(textProvider.notifier).removeText(textId);
+
+    final finalDesired = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: page.publicId,
+    );
+
+    final delete = finalDesired![key] as ElementDeleteOp;
+    expect(delete.expectedElementRevision, 0);
+  });
+
   test('side switch authors exactly one Page descriptor operation', () async {
     final page = _page('page-1', 0, revision: 11);
     final container = await _syncContainer(
