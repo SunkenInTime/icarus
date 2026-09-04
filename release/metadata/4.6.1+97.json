@@ -1,0 +1,29 @@
+{
+  "version": "4.6.1+97",
+  "shortVersion": 97,
+  "title": "Icarus Online Beta",
+  "description": "Invite-only cloud strategy sync and sharing for internal testing.",
+  "date": "2026-09-03",
+  "mandatory": false,
+  "channels": [
+    "desktop",
+    "prerelease"
+  ],
+  "platforms": [
+    "windows"
+  ],
+  "changes": [
+    {
+      "message": "Signed-in testers can keep a cloud library and sync strategy changes through the Icarus backend.",
+      "type": "feature"
+    },
+    {
+      "message": "Strategies can be shared with view-only or editor access during the online beta.",
+      "type": "feature"
+    },
+    {
+      "message": "This build is an internal prerelease. Cloud rollback and the complete two-client release check are not finished yet.",
+      "type": "other"
+    }
+  ]
+}

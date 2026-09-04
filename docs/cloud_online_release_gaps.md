@@ -210,8 +210,8 @@ npm run snapshot:convex-contract:check
 npm run audit:convex-contract
 fvm flutter analyze --no-fatal-infos
 fvm flutter test
-fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons
-fvm flutter build macos --no-tree-shake-icons
+fvm flutter build web --no-wasm-dry-run --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
+fvm flutter build macos --no-tree-shake-icons --dart-define=ICARUS_CLOUD_ENVIRONMENT=development
 ```
 
 On the pull request, CI also builds the Windows installer, runs

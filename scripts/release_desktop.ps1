@@ -14,6 +14,8 @@ param(
     [string]$PagesStageRoot = "release\out\gh-pages",
     [string]$MetadataDir = "release\metadata",
     [string]$AppArchiveBaseUrl = "",
+    [string]$ProductionConvexDeploymentUrl = $env:ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL,
+    [string]$ProductionConvexClientId = $env:ICARUS_PRODUCTION_CONVEX_CLIENT_ID,
     [switch]$SkipPubGet
 )
 
@@ -23,6 +25,12 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot "common_release.ps1")
 
 $repoRoot = Get-RepoRoot -ScriptDirectory $PSScriptRoot
+$releaseTarget = if ($Channel -eq "stable") { "stable-desktop" } else { "prerelease-desktop" }
+Assert-ReleaseBranch -RepoRoot $repoRoot -ReleaseTarget $releaseTarget | Out-Null
+Resolve-CloudBuildConfiguration `
+    -ReleaseTarget $Channel `
+    -ProductionConvexDeploymentUrl $ProductionConvexDeploymentUrl `
+    -ProductionConvexClientId $ProductionConvexClientId | Out-Null
 
 if ([string]::IsNullOrWhiteSpace($AppArchiveBaseUrl)) {
     $AppArchiveBaseUrl = "https://sunkenintime.github.io/icarus/updates/windows/$Channel"
@@ -53,7 +61,11 @@ $buildArgs = @(
     "-AppArchiveBaseUrl",
     $AppArchiveBaseUrl,
     "-InitialChangeMessage",
-    $ChangeMessage
+    $ChangeMessage,
+    "-ProductionConvexDeploymentUrl",
+    $ProductionConvexDeploymentUrl,
+    "-ProductionConvexClientId",
+    $ProductionConvexClientId
 )
 
 if ($Mandatory) {
