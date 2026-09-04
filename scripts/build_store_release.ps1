@@ -2,6 +2,8 @@ param(
     [string]$OutputDir = "release\out\store",
     [string]$PostHogProjectToken = $env:POSTHOG_PROJECT_TOKEN,
     [string]$PostHogHost = $(if ($env:POSTHOG_HOST) { $env:POSTHOG_HOST } else { "https://us.i.posthog.com" }),
+    [string]$ProductionConvexDeploymentUrl = $env:ICARUS_PRODUCTION_CONVEX_DEPLOYMENT_URL,
+    [string]$ProductionConvexClientId = $env:ICARUS_PRODUCTION_CONVEX_CLIENT_ID,
     [switch]$SkipPubGet
 )
 
@@ -11,6 +13,11 @@ Set-StrictMode -Version Latest
 . (Join-Path $PSScriptRoot "common_release.ps1")
 
 $repoRoot = Get-RepoRoot -ScriptDirectory $PSScriptRoot
+Assert-ReleaseBranch -RepoRoot $repoRoot -ReleaseTarget "store" | Out-Null
+$cloudBuildConfiguration = Resolve-CloudBuildConfiguration `
+    -ReleaseTarget "store" `
+    -ProductionConvexDeploymentUrl $ProductionConvexDeploymentUrl `
+    -ProductionConvexClientId $ProductionConvexClientId
 $env:FLUTTER_ROOT = Get-FlutterRoot -RepoRoot $repoRoot
 $windowsBuildRoot = Resolve-RepoPath -RepoRoot $repoRoot -RelativePath "build\windows"
 
@@ -25,14 +32,18 @@ try {
     }
 
     $flutterBuildArguments = @("flutter", "build", "windows", "--release")
-    if (-not [string]::IsNullOrWhiteSpace($PostHogProjectToken)) {
-        $dartDefinesPath = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-dart-defines-{0}.json" -f [guid]::NewGuid())
-        Write-JsonFileUtf8 -Path $dartDefinesPath -Value @{
-            POSTHOG_PROJECT_TOKEN = $PostHogProjectToken
-            POSTHOG_HOST = $PostHogHost
-        }
-        $flutterBuildArguments += "--dart-define-from-file=$dartDefinesPath"
+    $dartDefines = [ordered]@{
+        ICARUS_CLOUD_ENVIRONMENT = $cloudBuildConfiguration.Environment
+        ICARUS_CONVEX_DEPLOYMENT_URL = $cloudBuildConfiguration.DeploymentUrl
+        ICARUS_CONVEX_CLIENT_ID = $cloudBuildConfiguration.ClientId
     }
+    if (-not [string]::IsNullOrWhiteSpace($PostHogProjectToken)) {
+        $dartDefines.POSTHOG_PROJECT_TOKEN = $PostHogProjectToken
+        $dartDefines.POSTHOG_HOST = $PostHogHost
+    }
+    $dartDefinesPath = Join-Path ([System.IO.Path]::GetTempPath()) ("icarus-dart-defines-{0}.json" -f [guid]::NewGuid())
+    Write-JsonFileUtf8 -Path $dartDefinesPath -Value $dartDefines
+    $flutterBuildArguments += "--dart-define-from-file=$dartDefinesPath"
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "fvm" -Arguments $flutterBuildArguments
     # Stage the video-export encoder into the build output before packaging.
     Invoke-RepoCommand -WorkingDirectory $repoRoot -Command "powershell" -Arguments @(

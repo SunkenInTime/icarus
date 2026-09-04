@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/app_navigator.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -1251,7 +1252,9 @@ class AuthProvider extends Notifier<AppAuthState> {
           await reinitializeConvexAuth(source: 'incident_prompt_retry');
           break;
         case _AuthIncidentAction.signOut:
-          await signOut();
+          if (navCtx.mounted) {
+            await ref.read(guardedSignOutRequestProvider)(navCtx);
+          }
           break;
         case _AuthIncidentAction.dismiss:
         case null:

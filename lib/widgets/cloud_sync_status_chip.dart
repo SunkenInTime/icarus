@@ -1,16 +1,17 @@
 import 'dart:async';
+import 'dart:developer';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/cloud_sync_error_message.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
-import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
-import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
@@ -37,6 +38,8 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
   final ShadPopoverController _popoverController = ShadPopoverController();
   DateTime? _lastConflictToast;
   Timer? _pendingConflictToast;
+  bool _isResolving = false;
+  String? _resolutionError;
 
   @override
   void dispose() {
@@ -81,15 +84,60 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
   }
 
   Future<void> _retry() async {
+    if (_isResolving) return;
+    setState(() {
+      _isResolving = true;
+      _resolutionError = null;
+    });
     _popoverController.hide();
-    await ref
-        .read(cloudMediaUploadQueueProvider.notifier)
-        .retryNow(ignoreBackoff: true);
-    final opQueue = ref.read(strategyOpQueueProvider.notifier);
-    await opQueue.retryPaused(flushImmediately: false);
-    await opQueue.retryRejected(flushImmediately: false);
-    await opQueue.flushNow();
-    opQueue.clearStaleError();
+    try {
+      await ref
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .retryNow(ignoreBackoff: true);
+      final opQueue = ref.read(strategyOpQueueProvider.notifier);
+      await opQueue.retryPaused(flushImmediately: false);
+      await opQueue.retryRejected(flushImmediately: false);
+      await opQueue.flushNow();
+      opQueue.clearStaleError();
+    } finally {
+      if (mounted) setState(() => _isResolving = false);
+    }
+  }
+
+  Future<void> _useCloudVersions() async {
+    if (_isResolving) return;
+    setState(() {
+      _isResolving = true;
+      _resolutionError = null;
+    });
+    String? resolutionError;
+    try {
+      final resolved = await ref
+          .read(strategyPageSessionProvider.notifier)
+          .useCloudVersionsForRejected();
+      if (resolved) {
+        _popoverController.hide();
+      } else {
+        resolutionError = 'Could not load the cloud version. '
+            'Your saved version was not changed.';
+      }
+    } catch (error, stackTrace) {
+      log(
+        'Failed to use the cloud version: $error',
+        name: 'cloud_conflict_resolution',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      resolutionError = 'Could not load the cloud version. '
+          'Your saved version was not changed.';
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isResolving = false;
+          _resolutionError = resolutionError;
+        });
+      }
+    }
   }
 
   @override
@@ -105,28 +153,35 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
 
     final saveState = ref.watch(strategySaveStateProvider);
     final opQueueState = ref.watch(strategyOpQueueProvider);
-    final hasTextDrafts = ref.watch(
-      textDraftProvider.select((drafts) => drafts.isNotEmpty),
+    final mediaQueueState = ref.watch(cloudMediaUploadQueueProvider);
+    final activeStrategyId = ref.watch(
+      strategyProvider.select((state) => state.strategyId),
     );
-    final isConnected = ref.watch(convexConnectionProvider).valueOrNull ?? true;
-
-    final _SyncStatus status;
-    if (opQueueState.needsAttention ||
+    final hasOtherStrategyWork = opQueueState.accountOutbox.strategies.values
+            .any((summary) => summary.strategyPublicId != activeStrategyId) ||
+        mediaQueueState.jobs.any(
+          (job) => job.strategyPublicId != activeStrategyId,
+        );
+    final hasOtherStrategyAttention =
+        opQueueState.accountOutbox.strategies.values.any((summary) =>
+                summary.strategyPublicId != activeStrategyId &&
+                summary.needsAttention) ||
+            mediaQueueState.jobs.any(
+              (job) => job.strategyPublicId != activeStrategyId && job.isFailed,
+            );
+    final hasActiveStrategyAttention = opQueueState.needsAttention ||
         saveState.cloudSyncError != null ||
-        saveState.mediaSyncErrorCount > 0) {
-      status = _SyncStatus.attention;
-    } else if (!isConnected) {
-      status = _SyncStatus.offline;
-    } else if (hasTextDrafts) {
-      status = _SyncStatus.editing;
-    } else if (saveState.isSaving ||
-        saveState.hasPendingCloudSync ||
-        saveState.hasPendingMediaSync ||
-        !opQueueState.durableLoaded) {
-      status = _SyncStatus.syncing;
-    } else {
-      status = _SyncStatus.synced;
-    }
+        saveState.mediaSyncErrorCount > 0 ||
+        mediaQueueState.jobs.any(
+          (job) => job.strategyPublicId == activeStrategyId && job.isFailed,
+        );
+    final status = switch (ref.watch(cloudSyncStatusProvider)) {
+      CloudSyncStatus.synced => _SyncStatus.synced,
+      CloudSyncStatus.editing => _SyncStatus.editing,
+      CloudSyncStatus.syncing => _SyncStatus.syncing,
+      CloudSyncStatus.offline => _SyncStatus.offline,
+      CloudSyncStatus.attention => _SyncStatus.attention,
+    };
 
     return ShadPopover(
       controller: _popoverController,
@@ -139,8 +194,14 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
       popover: (context) => _SyncStatusPopover(
         status: status,
         saveState: saveState,
-        hasRejectedWork: opQueueState.attentionByEntityKey.isNotEmpty,
+        rejectedCount: opQueueState.attentionByEntityKey.length,
+        hasOtherStrategyWork: hasOtherStrategyWork,
+        hasOtherStrategyAttention: hasOtherStrategyAttention,
+        hasActiveStrategyAttention: hasActiveStrategyAttention,
+        isResolving: _isResolving,
+        resolutionError: _resolutionError,
         onRetry: _retry,
+        onUseCloudVersions: _useCloudVersions,
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -280,14 +341,28 @@ class _SyncStatusPopover extends StatelessWidget {
   const _SyncStatusPopover({
     required this.status,
     required this.saveState,
-    required this.hasRejectedWork,
+    required this.rejectedCount,
+    required this.hasOtherStrategyWork,
+    required this.hasOtherStrategyAttention,
+    required this.hasActiveStrategyAttention,
+    required this.isResolving,
+    required this.resolutionError,
     required this.onRetry,
+    required this.onUseCloudVersions,
   });
 
   final _SyncStatus status;
   final StrategySaveState saveState;
-  final bool hasRejectedWork;
+  final int rejectedCount;
+  final bool hasOtherStrategyWork;
+  final bool hasOtherStrategyAttention;
+  final bool hasActiveStrategyAttention;
+  final bool isResolving;
+  final String? resolutionError;
   final Future<void> Function() onRetry;
+  final Future<void> Function() onUseCloudVersions;
+
+  bool get hasRejectedWork => rejectedCount > 0;
 
   @override
   Widget build(BuildContext context) {
@@ -314,6 +389,16 @@ class _SyncStatusPopover extends StatelessWidget {
               height: 1.35,
             ),
           ),
+          if (resolutionError != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              resolutionError!,
+              style: theme.textTheme.small.copyWith(
+                color: theme.colorScheme.destructive,
+                height: 1.35,
+              ),
+            ),
+          ],
           if (lastSynced != null) ...[
             const SizedBox(height: 8),
             Text(
@@ -324,13 +409,25 @@ class _SyncStatusPopover extends StatelessWidget {
               ),
             ),
           ],
-          if (status == _SyncStatus.attention) ...[
+          if (status == _SyncStatus.attention &&
+              (!hasOtherStrategyAttention || hasActiveStrategyAttention)) ...[
             const SizedBox(height: 12),
+            if (hasRejectedWork) ...[
+              ShadButton.secondary(
+                size: ShadButtonSize.sm,
+                expands: false,
+                onPressed: isResolving ? null : onUseCloudVersions,
+                child: const Text('Use cloud'),
+              ),
+              const SizedBox(height: 8),
+            ],
             ShadButton(
               size: ShadButtonSize.sm,
-              onPressed: onRetry,
-              leading: const Icon(LucideIcons.refreshCw, size: 14),
-              child: Text(hasRejectedWork ? 'Keep my version' : 'Retry sync'),
+              expands: false,
+              onPressed: isResolving ? null : onRetry,
+              child: Text(
+                hasRejectedWork ? 'Keep mine' : 'Retry sync',
+              ),
             ),
           ],
         ],
@@ -361,31 +458,58 @@ class _SyncStatusPopover extends StatelessWidget {
         return 'Finish editing or switch pages to send this change to the '
             'cloud.';
       case _SyncStatus.syncing:
-        return 'Your edits are being sent to the cloud. You can keep '
-            'working — this happens in the background.';
+        return hasOtherStrategyWork
+            ? 'Saved changes from your cloud library are being sent in the '
+                'background.'
+            : 'Your edits are being sent to the cloud. You can keep '
+                'working — this happens in the background.';
       case _SyncStatus.offline:
         return 'Changes are kept on this device and will sync automatically '
             'when your connection returns.';
       case _SyncStatus.attention:
-        return _attentionExplanation;
+        const otherStrategyExplanation =
+            'Saved work in another strategy also needs attention. Open it '
+            'from the Cloud library to review the reason.';
+        if (!hasOtherStrategyAttention) return _attentionExplanation;
+        if (hasActiveStrategyAttention) {
+          return '$_attentionExplanation $otherStrategyExplanation';
+        }
+        return otherStrategyExplanation.replaceFirst(' also', '');
     }
   }
 
   String get _attentionExplanation {
     final mediaErrors = saveState.mediaSyncErrorCount;
     final parts = <String>[];
-    if (hasRejectedWork) {
+    final error = saveState.cloudSyncError;
+    final hasOversizedWork =
+        error?.toLowerCase().contains('too large for cloud sync') ?? false;
+    if (hasRejectedWork && !hasOversizedWork) {
       parts.add(
         'Another edit reached the cloud first. Your version remains saved '
         'on this device.',
       );
+      parts.add(
+        rejectedCount == 1
+            ? 'Choose which version to keep for this conflicting change.'
+            : 'Your choice applies to all $rejectedCount conflicting changes.',
+      );
     }
-    final error = saveState.cloudSyncError;
     final retryUnavailable =
         error?.toLowerCase().contains('cannot be retried automatically') ??
             false;
-    if (error != null && (!hasRejectedWork || retryUnavailable)) {
+    if (error != null &&
+        (!hasRejectedWork || retryUnavailable || hasOversizedWork)) {
       parts.add(friendlyCloudSyncError(error));
+    }
+    if (hasRejectedWork && hasOversizedWork) {
+      parts.add(
+        rejectedCount == 1
+            ? 'Choose whether to keep this local change or use the cloud '
+                'version.'
+            : 'Your choice applies to all $rejectedCount changes that need '
+                'attention.',
+      );
     }
     if (mediaErrors > 0) {
       parts.add(
@@ -397,11 +521,7 @@ class _SyncStatusPopover extends StatelessWidget {
     if (parts.isEmpty) {
       parts.add("Some changes haven't reached the cloud yet.");
     }
-    parts.add(
-      hasRejectedWork
-          ? 'Choose Keep my version to send your retained edit again.'
-          : 'Retry to send them now.',
-    );
+    if (!hasRejectedWork) parts.add('Retry to send them now.');
     return parts.join(' ');
   }
 

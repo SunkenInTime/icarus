@@ -7,6 +7,7 @@ import 'package:cross_file/cross_file.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
@@ -51,6 +52,12 @@ String buildLibraryBackupFileName(DateTime timestamp) {
       '${timestamp.year}-${twoDigit(timestamp.month)}-${twoDigit(timestamp.day)}_'
       '${twoDigit(timestamp.hour)}-${twoDigit(timestamp.minute)}-${twoDigit(timestamp.second)}.zip';
 }
+
+typedef CloudStrategyExporter = Future<bool> Function(String strategyId);
+
+final cloudStrategyExporterProvider = Provider<CloudStrategyExporter>(
+  (ref) => StrategyImportExportService(ref).exportCloudStrategy,
+);
 
 class NewerVersionImportException implements Exception {
   const NewerVersionImportException({
@@ -2426,7 +2433,7 @@ class StrategyImportExportService {
     }
   }
 
-  Future<void> exportCloudStrategy(String strategyId) async {
+  Future<bool> exportCloudStrategy(String strategyId) async {
     final snapshot = await ref
         .read(convexStrategyRepositoryProvider)
         .fetchFullSnapshot(strategyId);
@@ -2438,8 +2445,9 @@ class StrategyImportExportService {
       fileName: '${sanitizeStrategyFileName(strategy.name)}.ica',
       allowedExtensions: ['ica'],
     );
-    if (outputFile == null) return;
+    if (outputFile == null) return false;
     await zipStrategyData(strategy: strategy, outputFilePath: outputFile);
+    return true;
   }
 
   Future<void> exportFile(String id) async {

@@ -20,17 +20,18 @@ import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/providers/update_status_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/services/windows_desktop_update_controller.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/current_path_bar.dart';
 import 'package:icarus/widgets/desktop_update_dialog.dart';
 import 'package:icarus/widgets/demo_tag.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
-import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/dialogs/strategy/create_strategy_dialog.dart';
 import 'package:icarus/widgets/dialogs/web_view_dialog.dart';
 import 'package:icarus/widgets/account_avatar.dart';
+import 'package:icarus/widgets/cloud_outbox_summary_banner.dart';
 import 'package:icarus/widgets/folder_content.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/ica_drop_target.dart';
@@ -464,17 +465,24 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                         child: const Text('Create Strategy'),
                       ),
                     ],
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeOutCubic,
-                child: KeyedSubtree(
-                  key: ValueKey('$workspace/$cloudSection'),
-                  child: FolderContent(
-                    folder: currentFolder,
-                    onCreateStrategy: showCreateDialog,
+              child: Column(
+                children: [
+                  if (isCloudWorkspace) const CloudOutboxSummaryBanner(),
+                  Expanded(
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeOutCubic,
+                      child: KeyedSubtree(
+                        key: ValueKey('$workspace/$cloudSection'),
+                        child: FolderContent(
+                          folder: currentFolder,
+                          onCreateStrategy: showCreateDialog,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
@@ -687,23 +695,9 @@ class _LibraryNavigationRailState extends ConsumerState<LibraryNavigationRail> {
                             ? null
                             : () async {
                                 if (authState.isAuthenticated) {
-                                  // One accidental click on the avatar used
-                                  // to sign out instantly.
-                                  final confirmed =
-                                      await ConfirmAlertDialog.show(
-                                    context: context,
-                                    title: 'Sign out?',
-                                    content:
-                                        'Cloud strategies stay online; your '
-                                        'local strategies stay on this '
-                                        'device.',
-                                    confirmText: 'Sign Out',
-                                  );
-                                  if (!confirmed || !context.mounted) {
-                                    return;
-                                  }
-                                  unawaited(
-                                    ref.read(authProvider.notifier).signOut(),
+                                  await ref
+                                      .read(guardedSignOutRequestProvider)(
+                                    context,
                                   );
                                 } else {
                                   showDialog<void>(

@@ -14,7 +14,12 @@ import {
   strategyOpValidator,
   type StrategyOp as WireStrategyOp,
 } from "./lib/opTypes";
-import { assertSupportedCloudProtocol } from "./lib/cloudProtocol";
+import {
+  assertSupportedCloudProtocol,
+  CLOUD_OPERATION_TOO_LARGE_MESSAGE,
+  cloudOperationExceedsPolicy,
+  cloudProtocolArgs,
+} from "./lib/cloudProtocol";
 import { valuesEqual } from "./lib/canonicalValues";
 import { errorWithCode, invalidPayloadError } from "./lib/errors";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
@@ -775,6 +780,7 @@ async function applyPageOp(
     await ctx.db.delete(existing._id);
     await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
       pageId: existing._id,
+      strategyId: strategy._id,
     });
     const now = Date.now();
     const remaining = sortByNumberField(
@@ -1305,9 +1311,9 @@ async function applyLineupOp(
 
 export const applyBatch = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     clientId: v.string(),
-    clientProtocolVersion: v.number(),
     ops: v.array(strategyOpValidator),
   },
   returns: applyBatchResultValidator,
@@ -1371,38 +1377,47 @@ export const applyBatch = mutation({
       }
 
       let result: OperationResult;
-      try {
-        if (op.entityType === "strategy") {
-          const applied = await applyStrategyOp(ctx, strategy, op);
-          strategy = applied.strategy;
-          result = applied.result;
-        } else if (op.entityType === "page") {
-          const applied = await applyPageOp(ctx, strategy, op);
-          strategy = applied.strategy;
-          result = applied.result;
-        } else if (op.entityType === "pageContent") {
-          result = await applyPageContentOp(ctx, strategy, op);
-        } else if (op.entityType === "element") {
-          result = await applyElementOp(ctx, strategy, op);
-        } else {
-          result = await applyLineupOp(ctx, strategy, op);
-        }
-      } catch (error) {
-        if (!(error instanceof ConvexError)) throw error;
-        const rawCode =
-          typeof error.data?.code === "string"
-            ? error.data.code
-            : "INTERNAL_ERROR";
-        const message =
-          typeof error.data?.message === "string"
-            ? error.data.message
-            : error.message;
+      if (cloudOperationExceedsPolicy(rawOp)) {
         result = {
           status: "failed",
-          code: rawCode,
-          rawCode,
-          message,
+          code: "INVALID_PAYLOAD",
+          rawCode: "INVALID_PAYLOAD",
+          message: CLOUD_OPERATION_TOO_LARGE_MESSAGE,
         };
+      } else {
+        try {
+          if (op.entityType === "strategy") {
+            const applied = await applyStrategyOp(ctx, strategy, op);
+            strategy = applied.strategy;
+            result = applied.result;
+          } else if (op.entityType === "page") {
+            const applied = await applyPageOp(ctx, strategy, op);
+            strategy = applied.strategy;
+            result = applied.result;
+          } else if (op.entityType === "pageContent") {
+            result = await applyPageContentOp(ctx, strategy, op);
+          } else if (op.entityType === "element") {
+            result = await applyElementOp(ctx, strategy, op);
+          } else {
+            result = await applyLineupOp(ctx, strategy, op);
+          }
+        } catch (error) {
+          if (!(error instanceof ConvexError)) throw error;
+          const rawCode =
+            typeof error.data?.code === "string"
+              ? error.data.code
+              : "INTERNAL_ERROR";
+          const message =
+            typeof error.data?.message === "string"
+              ? error.data.message
+              : error.message;
+          result = {
+            status: "failed",
+            code: rawCode,
+            rawCode,
+            message,
+          };
+        }
       }
 
       if (

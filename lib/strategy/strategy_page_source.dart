@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/collab/canonical_json.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/strategy_capabilities.dart';
 import 'package:icarus/const/drawing_element.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -29,6 +30,7 @@ import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:uuid/uuid.dart';
 
 abstract class StrategyPageSource {
+  RemoteEditorSnapshot? get loadedRemoteSnapshot;
   Future<List<String>> listPageIds();
   Future<StrategyEditorPageData> loadPage(String pageId);
   Future<void> flushCurrentPage();
@@ -44,6 +46,9 @@ class LocalStrategyPageSource implements StrategyPageSource {
   final Ref ref;
   final String strategyId;
   final String? Function() activePageId;
+
+  @override
+  RemoteEditorSnapshot? get loadedRemoteSnapshot => null;
 
   @override
   Future<List<String>> listPageIds() async {
@@ -149,6 +154,10 @@ class CloudStrategyPageSource implements StrategyPageSource {
   final Ref ref;
   final String strategyId;
   final String? Function() activePageId;
+  RemoteEditorSnapshot? _loadedRemoteSnapshot;
+
+  @override
+  RemoteEditorSnapshot? get loadedRemoteSnapshot => _loadedRemoteSnapshot;
 
   RemoteEditorSnapshot get _snapshot {
     final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
@@ -166,7 +175,16 @@ class CloudStrategyPageSource implements StrategyPageSource {
   }
 
   @override
-  Future<StrategyEditorPageData> loadPage(String pageId) async {
+  Future<StrategyEditorPageData> loadPage(String pageId) =>
+      _loadPage(pageId, projectLocalWork: true);
+
+  Future<StrategyEditorPageData> loadAuthoritativePage(String pageId) =>
+      _loadPage(pageId, projectLocalWork: false);
+
+  Future<StrategyEditorPageData> _loadPage(
+    String pageId, {
+    required bool projectLocalWork,
+  }) async {
     if (ref
             .read(remoteEditorSnapshotProvider)
             .valueOrNull
@@ -179,6 +197,7 @@ class CloudStrategyPageSource implements StrategyPageSource {
           .setActivePage(pageId);
     }
     final snapshot = _snapshot;
+    _loadedRemoteSnapshot = snapshot;
     final pages = [...snapshot.pages]
       ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
     final page = pages.firstWhere(
@@ -186,11 +205,12 @@ class CloudStrategyPageSource implements StrategyPageSource {
       orElse: () => pages.first,
     );
 
-    final projected =
-        ref.read(activePageLiveSyncProvider.notifier).projectPageState(
+    final projected = projectLocalWork
+        ? ref.read(activePageLiveSyncProvider.notifier).projectPageState(
               strategyPublicId: strategyId,
               pageId: page.publicId,
-            );
+            )
+        : null;
     if (projected != null &&
         (page.publicId == activePageId() ||
             ref
@@ -309,6 +329,13 @@ class CloudStrategyPageSource implements StrategyPageSource {
 
   @override
   Future<void> flushCurrentPage() async {
+    final snapshot = ref.read(remoteEditorSnapshotProvider).valueOrNull;
+    if (snapshot == null ||
+        snapshot.header.publicId != strategyId ||
+        !StrategyCapabilities.fromCloudRole(snapshot.header.role)
+            .canEditPages) {
+      return;
+    }
     final pageId = activePageId();
     if (pageId == null) {
       return;

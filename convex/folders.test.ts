@@ -6,6 +6,7 @@ import {
 import { makeFunctionReference } from "convex/server";
 import { expect, test } from "vitest";
 import type { DataModel } from "./_generated/dataModel";
+import { CURRENT_CLOUD_PROTOCOL_VERSION } from "./lib/cloudProtocol";
 import schema from "./schema";
 import { modules } from "./test.setup";
 
@@ -31,7 +32,9 @@ async function createHarness(): Promise<{
 }> {
   const t = convexTest(schema, modules);
   const owner = t.withIdentity(identity);
-  await owner.mutation(ensureCurrentUser, {});
+  await owner.mutation(ensureCurrentUser, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
+  });
   return { t, owner };
 }
 
@@ -41,6 +44,7 @@ async function seedFolder(
   parentFolderPublicId?: string,
 ) {
   await owner.mutation(createFolder, {
+    clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
     publicId,
     name: publicId,
     parentFolderPublicId,
@@ -69,6 +73,7 @@ test("folder move rejects self-parent without changing the folder", async () => 
 
   await expect(
     owner.mutation(moveFolder, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       folderPublicId: "root",
       parentFolderPublicId: "root",
     }),
@@ -85,6 +90,7 @@ test("folder move rejects a descendant parent without changing the tree", async 
 
   await expect(
     owner.mutation(moveFolder, {
+      clientProtocolVersion: CURRENT_CLOUD_PROTOCOL_VERSION,
       folderPublicId: "root",
       parentFolderPublicId: "grandchild",
     }),

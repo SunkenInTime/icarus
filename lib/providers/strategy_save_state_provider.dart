@@ -94,8 +94,10 @@ class StrategySaveStateNotifier extends Notifier<StrategySaveState> {
         return;
       }
 
-      final failedJobs = next.jobs.where((job) => job.isFailed).length;
-      final hasPendingMedia = next.jobs.isNotEmpty;
+      final strategyId = ref.read(strategyProvider).strategyId;
+      final strategyJobs = next.jobsForStrategy(strategyId);
+      final failedJobs = strategyJobs.where((job) => job.isFailed).length;
+      final hasPendingMedia = strategyJobs.isNotEmpty;
       final hasPendingCloudSync = state.hasPendingCloudSync || hasPendingMedia;
       state = state.copyWith(
         hasPendingMediaSync: hasPendingMedia,

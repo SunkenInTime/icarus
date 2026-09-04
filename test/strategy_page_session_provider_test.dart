@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/line_provider.dart';
@@ -15,6 +16,7 @@ import 'package:icarus/const/transition_data.dart';
 import 'package:icarus/hive/hive_registration.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_provider.dart';
+import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/remote_strategy_snapshot_provider.dart';
 import 'package:icarus/providers/collab/strategy_conflict_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
@@ -28,6 +30,7 @@ import 'package:icarus/providers/text_draft_provider.dart';
 import 'package:icarus/providers/text_provider.dart';
 import 'package:icarus/providers/transition_provider.dart'
     hide PageTransitionState;
+import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 
@@ -111,6 +114,18 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
       state.queuedByEntityKey,
     );
+    final successors = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.successorByEntityKey,
+    );
+    if (desiredOp != null &&
+        state.attentionByEntityKey.containsKey(entityKey)) {
+      successors[entityKey] = QueuedEntityIntent(
+        entityKey: entityKey,
+        pending: PendingOp(op: desiredOp, clientId: 'test-client'),
+      );
+      state = state.copyWith(successorByEntityKey: successors);
+      return;
+    }
     if (desiredOp == null) {
       queued.remove(entityKey);
     } else {
@@ -132,23 +147,59 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
     final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
       state.queuedByEntityKey,
     );
+    final successors = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.successorByEntityKey,
+    );
     if (clearMissing) {
       queued.removeWhere((key, _) =>
           key.pageId == pageId && !desiredOpsByEntityKey.containsKey(key));
     }
     for (final entry in desiredOpsByEntityKey.entries) {
+      if (state.attentionByEntityKey.containsKey(entry.key)) {
+        successors[entry.key] = QueuedEntityIntent(
+          entityKey: entry.key,
+          pending: PendingOp(op: entry.value, clientId: 'test-client'),
+        );
+        continue;
+      }
       queued[entry.key] = QueuedEntityIntent(
         entityKey: entry.key,
         pending: PendingOp(op: entry.value, clientId: 'test-client'),
       );
     }
-    state = state.copyWith(queuedByEntityKey: queued);
+    state = state.copyWith(
+      queuedByEntityKey: queued,
+      successorByEntityKey: successors,
+    );
   }
 
   @override
   Future<void> flushNow() async {
     flushNowCount += 1;
     if (blockFlush) await Completer<void>().future;
+  }
+
+  @override
+  Future<Set<EntitySyncKey>> discardRejected(
+    Set<EntitySyncKey> entityKeys,
+  ) async {
+    final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.attentionByEntityKey,
+    );
+    final successors = Map<EntitySyncKey, QueuedEntityIntent>.from(
+      state.successorByEntityKey,
+    );
+    final discarded = attention.keys.toSet().intersection(entityKeys);
+    for (final key in discarded) {
+      attention.remove(key);
+      successors.remove(key);
+    }
+    state = state.copyWith(
+      attentionByEntityKey: attention,
+      successorByEntityKey: successors,
+      clearError: attention.isEmpty,
+    );
+    return discarded;
   }
 
   void reject(StrategyOp op) {
@@ -184,6 +235,12 @@ class _FakeStrategyOpQueueNotifier extends StrategyOpQueueNotifier {
       },
     );
   }
+
+  void clearInFlight() {
+    state = state.copyWith(
+      inFlightByEntityKey: const <EntitySyncKey, InFlightEntityIntent>{},
+    );
+  }
 }
 
 Future<void> _settle() async {
@@ -210,9 +267,12 @@ RemoteElement _textElement(
   String id,
   String value, {
   int revision = 1,
+  int sortIndex = 0,
+  bool worldSized = false,
   bool deleted = false,
 }) {
   final text = PlacedText(id: id, position: const Offset(10, 20))..text = value;
+  if (worldSized) text.markSizeAsWorld();
   final payload = Map<String, dynamic>.from(text.toJson())
     ..['elementType'] = 'text';
   return RemoteElement(
@@ -221,7 +281,7 @@ RemoteElement _textElement(
     pagePublicId: pageId,
     elementType: 'text',
     payload: cloudElementPayload(kind: 'text', data: payload),
-    sortIndex: 0,
+    sortIndex: sortIndex,
     revision: revision,
     deleted: deleted,
   );
@@ -312,6 +372,7 @@ RemoteEditorSnapshot _editorSnapshot({
   int shellRevision = 1,
   String? mapData,
   String? themeProfileId,
+  String role = 'owner',
 }) {
   final now = DateTime.utc(2026);
   return RemoteEditorSnapshot(
@@ -324,6 +385,7 @@ RemoteEditorSnapshot _editorSnapshot({
         createdAt: now,
         updatedAt: now,
         themeProfileId: themeProfileId,
+        role: role,
       ),
       pages: pages,
     ),
@@ -566,6 +628,7 @@ void main() {
     container.read(activePageLiveSyncProvider.notifier).markPageHydrated(
           strategyPublicId: 'cloud-strategy',
           pageId: page.publicId,
+          snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
         );
 
     final desired =
@@ -790,6 +853,249 @@ void main() {
     expect(container.read(strategyConflictProvider).single.opId, op.opId);
   });
 
+  test(
+      'using cloud after a conflict replaces the canvas without resubmitting it',
+      () async {
+    final page = _page('page-1', 0);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(
+        page,
+        elements: [
+          _textElement(page.publicId, 'text-page-1', 'server-before',
+              worldSized: true),
+        ],
+      ),
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    const textId = 'text-page-1';
+    const key = EntitySyncKey.element('page-1', textId);
+    container.read(textProvider.notifier).commitText(
+          textId,
+          'local-losing-intent',
+        );
+    await _settle();
+    final rejectedOp = container
+        .read(strategyOpQueueProvider)
+        .pending
+        .map((pending) => pending.op)
+        .firstWhere((op) => op.entityPublicId == textId);
+    remote.setSnapshot(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(
+        page,
+        elements: [
+          _textElement(page.publicId, textId, 'server-winner',
+              worldSized: true),
+        ],
+        contentRevision: 2,
+      ),
+    ));
+    queue.reject(rejectedOp);
+    await _settle();
+    container
+        .read(textDraftProvider.notifier)
+        .setDraft(textId, 'draft-in-progress');
+    container
+        .read(textDraftProvider.notifier)
+        .setDraft('unrelated-text', 'keep-this-draft');
+
+    final resolved = await container
+        .read(strategyPageSessionProvider.notifier)
+        .useCloudVersionsForRejected();
+    await _settle();
+
+    expect(resolved, isTrue);
+    expect(container.read(textProvider).single.text, 'server-winner');
+    expect(container.read(textDraftProvider), {
+      'unrelated-text': 'keep-this-draft',
+    });
+    expect(
+      container.read(strategyOpQueueProvider).attentionByEntityKey,
+      isNot(contains(key)),
+    );
+    expect(
+      container.read(activePageLiveSyncProvider).overlayByEntityKey,
+      isNot(contains(key)),
+    );
+    expect(
+      container
+          .read(strategyOpQueueProvider)
+          .pending
+          .map((pending) => pending.op.entityPublicId),
+      isNot(contains(textId)),
+    );
+
+    container.read(textDraftProvider.notifier).clearDraft(textId);
+    final desired =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            );
+    expect(desired, isNotNull);
+    expect(desired, isNot(contains(key)));
+    await queue.syncDesiredOpsForPage(
+      pageId: page.publicId,
+      desiredOpsByEntityKey: desired!,
+      flushImmediately: false,
+    );
+    expect(
+      container
+          .read(strategyOpQueueProvider)
+          .pending
+          .map((pending) => pending.op.entityPublicId),
+      isNot(contains(textId)),
+    );
+  });
+
+  test('using cloud with no remaining attention is a silent no-op', () async {
+    final page = _page('page-1', 0);
+    final container = await _cloudContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, text: 'remote'),
+      )),
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+
+    expect(await session.useCloudVersionsForRejected(), isTrue);
+  });
+
+  test('failed cloud hydration keeps the rejected work available', () async {
+    final page = _page('page-1', 0);
+    const textId = 'text-page-1';
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page, text: 'before'),
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+    container.read(textProvider.notifier).commitText(textId, 'local-edit');
+    await _settle();
+    final rejectedOp = container
+        .read(strategyOpQueueProvider)
+        .pending
+        .map((pending) => pending.op)
+        .firstWhere((op) => op.entityPublicId == textId);
+    final malformedLineup = RemoteLineup(
+      publicId: 'bad-lineup',
+      strategyPublicId: 'cloud-strategy',
+      pagePublicId: page.publicId,
+      payload: const {
+        'kind': 'lineupGroup',
+        'payloadVersion': 1,
+        'data': {'broken': true},
+      },
+      sortIndex: 0,
+      revision: 1,
+      deleted: false,
+    );
+    remote.setSnapshot(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(
+        page,
+        elements: [
+          _textElement(page.publicId, textId, 'server-winner'),
+        ],
+        lineups: [malformedLineup],
+      ),
+    ));
+    queue.reject(rejectedOp);
+    await _settle();
+
+    await expectLater(
+      session.useCloudVersionsForRejected(),
+      throwsA(isA<FormatException>()),
+    );
+
+    final key = EntitySyncKey.element(page.publicId, textId);
+    expect(
+      container.read(strategyOpQueueProvider).attentionByEntityKey,
+      contains(key),
+    );
+    expect(
+      container.read(activePageLiveSyncProvider).overlayByEntityKey,
+      contains(key),
+    );
+  });
+
+  test('using cloud for a strategy conflict restores remote map and theme',
+      () async {
+    final page = _page('page-1', 0);
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page),
+      shellRevision: 3,
+      mapData: Maps.mapNames[MapValue.haven],
+      themeProfileId: 'remote-theme',
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+
+    container.read(mapProvider.notifier).updateMap(MapValue.ascent);
+    container.read(strategyThemeProvider.notifier).setProfile('local-theme');
+    await _settle();
+    final rejectedOp = container
+        .read(strategyOpQueueProvider)
+        .pending
+        .map((pending) => pending.op)
+        .firstWhere((op) => op.entityType == StrategyOpEntityType.strategy);
+    queue.reject(rejectedOp);
+    await _settle();
+
+    final resolved = await container
+        .read(strategyPageSessionProvider.notifier)
+        .useCloudVersionsForRejected();
+    await _settle();
+
+    expect(resolved, isTrue);
+    expect(container.read(mapProvider).currentMap, MapValue.haven);
+    expect(container.read(strategyThemeProvider).profileId, 'remote-theme');
+    expect(
+      container.read(strategyOpQueueProvider).attentionByEntityKey,
+      isNot(contains(const EntitySyncKey.strategy())),
+    );
+
+    await container
+        .read(strategyProvider.notifier)
+        .notifyCloudStrategyMutation(flushImmediately: false);
+    expect(
+      container
+          .read(strategyOpQueueProvider)
+          .pending
+          .map((pending) => pending.op.entityType),
+      isNot(contains(StrategyOpEntityType.strategy)),
+    );
+  });
+
   test('inactive page shell update does not rehydrate the active canvas',
       () async {
     final pageOne = _page('page-1', 0);
@@ -873,6 +1179,7 @@ void main() {
     container.read(activePageLiveSyncProvider.notifier).markPageHydrated(
           strategyPublicId: 'cloud-strategy',
           pageId: page.publicId,
+          snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
         );
 
     final desired =
@@ -890,6 +1197,267 @@ void main() {
           candidate.kind == EntitySyncKeyKind.lineup),
       isEmpty,
     );
+  });
+
+  test('final text is emitted while an earlier edit is in flight', () async {
+    final page = _page('page-1', 0);
+    const textId = 'text-page-1';
+    final remoteText = _textElement(
+      page.publicId,
+      textId,
+      'before',
+      worldSized: true,
+    );
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page, elements: [remoteText]),
+      )),
+      queue: queue,
+    );
+    await container
+        .read(strategyPageSessionProvider.notifier)
+        .initializeForStrategy(
+          strategyId: 'cloud-strategy',
+          source: StrategySource.cloud,
+          selectFirstPageIfNeeded: true,
+        );
+    const key = EntitySyncKey.element('page-1', textId);
+    final firstEdit = ElementPatchOp(
+      opId: 'first-edit-in-flight',
+      elementPublicId: textId,
+      pagePublicId: page.publicId,
+      payload: _textElement(
+        page.publicId,
+        textId,
+        'first-edit',
+        worldSized: true,
+      ).payload,
+      sortIndex: 0,
+      expectedElementRevision: 1,
+    );
+    queue.holdInFlight(key, firstEdit);
+    container.read(textDraftProvider.notifier).setDraft(textId, 'final-edit');
+
+    final beforeAck =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            )![key] as ElementPatchOp;
+    expect(beforeAck.payload.toString(), contains('final-edit'));
+    expect(beforeAck.expectedElementRevision, 1);
+
+    container.read(activePageLiveSyncProvider.notifier).recordAckBatch([
+      AckedEntityIntent(
+        entityKey: key,
+        op: firstEdit,
+        ack: const AppliedOpAck(
+          opId: 'first-edit-in-flight',
+          revision: 2,
+        ),
+      ),
+    ]);
+    queue.clearInFlight();
+
+    final afterAck =
+        container.read(activePageLiveSyncProvider.notifier).syncLocalPage(
+              strategyPublicId: 'cloud-strategy',
+              pageId: page.publicId,
+            )![key] as ElementPatchOp;
+    expect(afterAck.payload.toString(), contains('final-edit'));
+    expect(afterAck.expectedElementRevision, 2);
+  });
+
+  test('a final delete is emitted behind an in-flight local add', () async {
+    final page = _page('page-1', 0);
+    const textId = 'new-local-text';
+    const key = EntitySyncKey.element('page-1', textId);
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _syncContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [page],
+        activePage: _pageSnapshot(page),
+      )),
+      queue: queue,
+    );
+    final sync = container.read(activePageLiveSyncProvider.notifier);
+    sync.markPageHydrated(
+      strategyPublicId: 'cloud-strategy',
+      pageId: page.publicId,
+      snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
+    );
+    container.read(textProvider.notifier).fromHive([
+      PlacedText(id: textId, position: const Offset(10, 20))
+        ..text = 'first'
+        ..markSizeAsWorld(),
+    ]);
+
+    final firstDesired = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: page.publicId,
+    );
+    final add = firstDesired![key] as ElementAddOp;
+    queue.holdInFlight(key, add);
+    container.read(textProvider.notifier).removeText(textId);
+
+    final finalDesired = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: page.publicId,
+    );
+
+    final delete = finalDesired![key] as ElementDeleteOp;
+    expect(delete.expectedElementRevision, 0);
+  });
+
+  test('restart retains a queued add missing from canvas and remote', () async {
+    final page = _page('page-1', 0);
+    const textId = 'queued-before-restart';
+    const key = EntitySyncKey.element('page-1', textId);
+    final add = ElementAddOp(
+      opId: 'add-before-restart',
+      elementPublicId: textId,
+      pagePublicId: page.publicId,
+      payload: _textElement(page.publicId, textId, 'unsent').payload,
+      sortIndex: 0,
+    );
+    final store = MemoryDurableStrategyOutboxStore();
+    final firstContainer = ProviderContainer(overrides: [
+      durableStrategyOutboxStoreProvider.overrideWithValue(store),
+      strategyOutboxSessionProvider.overrideWithValue(
+        const StrategyOutboxSession(
+          accountId: null,
+          isReady: false,
+          hasAuthIncident: false,
+        ),
+      ),
+    ]);
+    firstContainer
+        .read(cloudCollabModeProvider.notifier)
+        .setForceLocalFallback(true);
+    final firstQueue = firstContainer.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('cloud-strategy', accountId: 'account-a');
+    await firstQueue.enqueue(add, flushImmediately: false);
+    expect(store.load().records.single.pending.op.opId, 'add-before-restart');
+    firstContainer.dispose();
+
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(page),
+    ));
+    final restarted = ProviderContainer(overrides: [
+      durableStrategyOutboxStoreProvider.overrideWithValue(store),
+      strategyOutboxSessionProvider.overrideWithValue(
+        const StrategyOutboxSession(
+          accountId: null,
+          isReady: false,
+          hasAuthIncident: false,
+        ),
+      ),
+      remoteEditorSnapshotProvider.overrideWith(() => remote),
+    ]);
+    addTearDown(restarted.dispose);
+    restarted
+        .read(cloudCollabModeProvider.notifier)
+        .setForceLocalFallback(true);
+    final restartedQueue = restarted.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('cloud-strategy', accountId: 'account-a');
+    await restarted.read(remoteEditorSnapshotProvider.future);
+    final sync = restarted.read(activePageLiveSyncProvider.notifier);
+    sync.markPageHydrated(
+      strategyPublicId: 'cloud-strategy',
+      pageId: page.publicId,
+      snapshot: restarted.read(remoteEditorSnapshotProvider).requireValue!,
+    );
+
+    final desired = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: page.publicId,
+    );
+
+    final retained = desired![key] as ElementAddOp;
+    expect(retained.opId, 'add-before-restart');
+    expect(retained.payload, add.payload);
+    await restartedQueue.syncDesiredOpsForPage(
+      pageId: page.publicId,
+      desiredOpsByEntityKey: desired,
+      flushImmediately: false,
+    );
+    expect(
+      restarted
+          .read(strategyOpQueueProvider)
+          .queuedByEntityKey[key]!
+          .pending
+          .op,
+      isA<ElementAddOp>(),
+    );
+    final durable = store.load().records.singleWhere(
+          (record) => record.entityKey == key,
+        );
+    expect(durable.pending.op.opId, 'add-before-restart');
+  });
+
+  test('hydration keeps the exact snapshot used to load the canvas', () async {
+    const textId = 'text-page-1';
+    final hydratedPage = _page('page-1', 0);
+    final hydratedSnapshot = _editorSnapshot(
+      pages: [hydratedPage],
+      activePage: _pageSnapshot(
+        hydratedPage,
+        elements: [
+          _textElement(
+            hydratedPage.publicId,
+            textId,
+            'hydrated-value',
+            worldSized: true,
+          ),
+        ],
+      ),
+    );
+    final newerPage = _page('page-1', 0, revision: 2);
+    final container = await _syncContainer(
+      remote: _FakeRemoteEditorNotifier(_editorSnapshot(
+        pages: [newerPage],
+        activePage: _pageSnapshot(
+          newerPage,
+          elements: [
+            _textElement(
+              newerPage.publicId,
+              textId,
+              'newer-remote-value',
+              revision: 2,
+              worldSized: true,
+            ),
+          ],
+        ),
+      )),
+      queue: _FakeStrategyOpQueueNotifier(),
+    );
+    final hydratedText = PlacedText(
+      id: textId,
+      position: const Offset(10, 20),
+    )
+      ..text = 'hydrated-value'
+      ..markSizeAsWorld();
+    container.read(textProvider.notifier).fromHive([hydratedText]);
+
+    final sync = container.read(activePageLiveSyncProvider.notifier);
+    sync.markPageHydrated(
+      strategyPublicId: 'cloud-strategy',
+      pageId: hydratedPage.publicId,
+      snapshot: hydratedSnapshot,
+    );
+    container.read(textDraftProvider.notifier).setDraft(textId, 'local-edit');
+
+    final desired = sync.syncLocalPage(
+      strategyPublicId: 'cloud-strategy',
+      pageId: hydratedPage.publicId,
+    );
+
+    final op = desired![EntitySyncKey.element(hydratedPage.publicId, textId)]
+        as ElementPatchOp;
+    expect(op.payload.toString(), contains('local-edit'));
+    expect(op.expectedElementRevision, 1);
   });
 
   test('side switch authors exactly one Page descriptor operation', () async {
@@ -911,6 +1479,7 @@ void main() {
     container.read(activePageLiveSyncProvider.notifier).markPageHydrated(
           strategyPublicId: 'cloud-strategy',
           pageId: page.publicId,
+          snapshot: container.read(remoteEditorSnapshotProvider).requireValue!,
         );
 
     container.read(mapProvider.notifier).switchSide();
@@ -1098,6 +1667,98 @@ void main() {
     await _settle();
     expect(container.read(textProvider).single.text, 'local-intent');
     expect(container.read(strategyOpQueueProvider).pending, isNotEmpty);
+  });
+
+  test(
+      'collaborator edits stay based on the page this client actually hydrated',
+      () async {
+    final page = _page('page-1', 0);
+    const localTextId = 'local-text';
+    const collaboratorTextId = 'collaborator-text';
+    final remote = _FakeRemoteEditorNotifier(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(
+        page,
+        elements: [
+          _textElement(
+            page.publicId,
+            localTextId,
+            'shared-before',
+            worldSized: true,
+          ),
+          _textElement(
+            page.publicId,
+            collaboratorTextId,
+            'collaborator-before',
+            sortIndex: 1,
+            worldSized: true,
+          ),
+        ],
+      ),
+    ));
+    final queue = _FakeStrategyOpQueueNotifier();
+    final container = await _cloudContainer(remote: remote, queue: queue);
+    final session = container.read(strategyPageSessionProvider.notifier);
+    await session.initializeForStrategy(
+      strategyId: 'cloud-strategy',
+      source: StrategySource.cloud,
+      selectFirstPageIfNeeded: true,
+    );
+
+    container.read(textProvider.notifier).commitText(
+          localTextId,
+          'this-client-edit',
+        );
+    await _settle();
+
+    remote.setSnapshot(_editorSnapshot(
+      pages: [page],
+      activePage: _pageSnapshot(
+        page,
+        elements: [
+          _textElement(
+            page.publicId,
+            localTextId,
+            'collaborator-winner',
+            revision: 2,
+            worldSized: true,
+          ),
+          _textElement(
+            page.publicId,
+            collaboratorTextId,
+            'collaborator-after',
+            revision: 2,
+            sortIndex: 1,
+            worldSized: true,
+          ),
+        ],
+      ),
+    ));
+    await _settle();
+
+    expect(
+      container
+          .read(textProvider)
+          .firstWhere((text) => text.id == collaboratorTextId)
+          .text,
+      'collaborator-before',
+    );
+
+    await session.flushCurrentPage();
+
+    final elementOps = container
+        .read(strategyOpQueueProvider)
+        .queuedByEntityKey
+        .entries
+        .where((entry) => entry.key.kind == EntitySyncKeyKind.element)
+        .toList(growable: false);
+    expect(elementOps, hasLength(1));
+    expect(elementOps.single.key.entityId, localTextId);
+    expect(elementOps.single.value.pending.op.expectedRevision, 1);
+    expect(
+      elementOps.single.value.pending.op.payload.toString(),
+      contains('this-client-edit'),
+    );
   });
 
   test('local mode page switching keeps its shipped Hive shape', () async {

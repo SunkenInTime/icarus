@@ -7,6 +7,7 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/ability_bar_provider.dart';
 import 'package:icarus/providers/canvas_resize_provider.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/interaction_state_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -123,6 +124,11 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
   @override
   Widget build(BuildContext context) {
     bool isAttack = ref.watch(mapProvider).isAttack;
+    final canEditPages = ref.watch(
+      currentStrategyCapabilitiesProvider.select(
+        (capabilities) => capabilities.canEditPages,
+      ),
+    );
     final transitionPresentation = ref.watch(
       transitionProvider.select(
         (state) => (
@@ -322,16 +328,26 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                     ),
                                   ),
                                 Positioned.fill(
-                                  child: transitionPresentation.hideView
-                                      ? SizedBox.shrink()
-                                      : Opacity(
-                                          opacity: ref.watch(
-                                                      interactionStateProvider) ==
-                                                  InteractionState.lineUpPlacing
-                                              ? 0.2
-                                              : 1.0,
-                                          child: PlacedWidgetBuilder(),
-                                        ),
+                                  child: IgnorePointer(
+                                    key: const ValueKey(
+                                      'strategy-canvas-object-editor',
+                                    ),
+                                    ignoring: !canEditPages,
+                                    child: ExcludeFocus(
+                                      excluding: !canEditPages,
+                                      child: transitionPresentation.hideView
+                                          ? SizedBox.shrink()
+                                          : Opacity(
+                                              opacity: ref.watch(
+                                                          interactionStateProvider) ==
+                                                      InteractionState
+                                                          .lineUpPlacing
+                                                  ? 0.2
+                                                  : 1.0,
+                                              child: PlacedWidgetBuilder(),
+                                            ),
+                                    ),
+                                  ),
                                 ),
                                 Positioned.fill(
                                   child: transitionPresentation.hideView
@@ -368,21 +384,30 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                                                   InteractionState.lineUpPlacing
                                               ? 0.2
                                               : 1.0;
-                                      return Opacity(
-                                        opacity:
-                                            transitionOpacity * lineUpOpacity,
-                                        child: Transform.flip(
-                                            flipX: !isAttack,
-                                            flipY: !isAttack,
-                                            child: InteractivePainter()),
+                                      return IgnorePointer(
+                                        key: const ValueKey(
+                                          'strategy-canvas-drawing-editor',
+                                        ),
+                                        ignoring: !canEditPages,
+                                        child: Opacity(
+                                          opacity:
+                                              transitionOpacity * lineUpOpacity,
+                                          child: Transform.flip(
+                                              flipX: !isAttack,
+                                              flipY: !isAttack,
+                                              child: InteractivePainter()),
+                                        ),
                                       );
                                     },
                                   ),
                                 ),
                                 if (ref.watch(interactionStateProvider) ==
                                     InteractionState.lineUpPlacing)
-                                  const Positioned.fill(
-                                    child: LineupPositionWidget(),
+                                  Positioned.fill(
+                                    child: IgnorePointer(
+                                      ignoring: !canEditPages,
+                                      child: const LineupPositionWidget(),
+                                    ),
                                   ),
                               ],
                             ),
@@ -395,15 +420,21 @@ class _InteractiveMapState extends ConsumerState<InteractiveMap> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            HoveredMapItemNameCard(),
-                            DeleteArea(),
+                          children: [
+                            const HoveredMapItemNameCard(),
+                            IgnorePointer(
+                              ignoring: !canEditPages,
+                              child: const DeleteArea(),
+                            ),
                           ],
                         ),
                       ),
                       Align(
                         alignment: Alignment.bottomRight,
-                        child: const LineupControlButtons(),
+                        child: IgnorePointer(
+                          ignoring: !canEditPages,
+                          child: const LineupControlButtons(),
+                        ),
                       ),
                     ],
                   ),

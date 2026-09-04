@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:icarus/const/settings.dart';
+import 'package:icarus/providers/collab/strategy_capabilities_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 
@@ -19,18 +20,29 @@ class _ImageDropTargetState extends ConsumerState<ImageDropTarget> {
 
   @override
   Widget build(BuildContext context) {
+    final canEditPages = ref.watch(
+      currentStrategyCapabilitiesProvider.select(
+        (capabilities) => capabilities.canEditPages,
+      ),
+    );
+
     return DropTarget(
       onDragEntered: (details) {
+        if (!canEditPages) return;
         setState(() {
           isDragging = true;
         });
       },
       onDragExited: (details) {
+        if (!canEditPages) return;
         setState(() {
           isDragging = false;
         });
       },
       onDragDone: (details) async {
+        if (!ref.read(currentStrategyCapabilitiesProvider).canEditPages) {
+          return;
+        }
         if (kIsWeb) {
           Settings.showToast(
             message: 'This feature is only supported in the Windows version.',

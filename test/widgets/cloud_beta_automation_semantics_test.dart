@@ -5,10 +5,12 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/custom_text_field.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 void main() {
   testWidgets('shared text fields expose live editable semantics',
@@ -158,6 +160,34 @@ void main() {
 
     expect(find.byType(AuthDialog), findsOneWidget);
   });
+
+  testWidgets('library account action uses guarded sign out', (tester) async {
+    var requests = 0;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authProvider.overrideWith(_SignedInAuthProvider.new),
+          guardedSignOutRequestProvider.overrideWithValue((context) async {
+            requests += 1;
+            return true;
+          }),
+        ],
+        child: const ShadApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 220,
+              height: 800,
+              child: LibraryNavigationRail(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const ValueKey('library-account-action')));
+    await tester.pump();
+    expect(requests, 1);
+  });
 }
 
 Semantics _semantics(String label) {
@@ -210,5 +240,22 @@ class _SignedOutAuthProvider extends AuthProvider {
         isConvexUserReady: false,
         convexAuthStatus: ConvexAuthStatus.signedOut,
         user: null,
+      );
+}
+
+class _SignedInAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: User(
+          id: 'account-a',
+          appMetadata: <String, dynamic>{},
+          userMetadata: <String, dynamic>{'full_name': 'Coach'},
+          aud: 'authenticated',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        ),
       );
 }

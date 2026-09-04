@@ -18,4 +18,15 @@ void main() {
 
     expect(message, "Some changes haven't reached the cloud yet.");
   });
+
+  test('does not promise local durability when the outbox is uncertain', () {
+    final message = friendlyCloudSyncError(
+      'Cloud work could not be verified in the durable outbox. '
+      'Nothing was sent.',
+    );
+
+    expect(message, contains('could not verify'));
+    expect(message, contains('Nothing was sent'));
+    expect(message, isNot(contains('remains saved')));
+  });
 }

@@ -13,6 +13,10 @@ import {
 import type { StrategyRole } from "./lib/auth";
 import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
 import {
+  assertSupportedCloudProtocol,
+  cloudProtocolArgs,
+} from "./lib/cloudProtocol";
+import {
   mapThemePaletteValidator,
   strategySettingsValidator,
 } from "./lib/payloadValidators";
@@ -21,6 +25,7 @@ import {
   forbiddenError,
 } from "./lib/errors";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
+import { markDeletedStrategyImageAssetsRef } from "./images";
 import {
   createResultValidator,
   okResultValidator,
@@ -454,6 +459,7 @@ export const getHeader = query({
 
 export const create = mutation({
   args: {
+    ...cloudProtocolArgs,
     publicId: v.string(),
     name: v.string(),
     mapData: v.string(),
@@ -463,6 +469,7 @@ export const create = mutation({
   },
   returns: createResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const user = await requireCurrentUser(ctx);
     return await createStrategyWithInitialPageRecord(ctx, args, user._id, {
       publicId: createPublicId(),
@@ -475,6 +482,7 @@ export const create = mutation({
 
 export const createWithInitialPage = mutation({
   args: {
+    ...cloudProtocolArgs,
     publicId: v.string(),
     name: v.string(),
     mapData: v.string(),
@@ -489,6 +497,7 @@ export const createWithInitialPage = mutation({
   },
   returns: createResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const user = await requireCurrentUser(ctx);
     return await createStrategyWithInitialPageRecord(ctx, args, user._id, {
       publicId: args.initialPagePublicId,
@@ -502,6 +511,7 @@ export const createWithInitialPage = mutation({
 
 export const update = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     expectedRevision: v.number(),
     name: v.optional(v.string()),
@@ -513,6 +523,7 @@ export const update = mutation({
   },
   returns: revisionResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "editor");
 
@@ -563,14 +574,16 @@ export const update = mutation({
 
 export const move = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     expectedRevision: v.number(),
     folderPublicId: v.optional(v.string()),
   },
   returns: revisionResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    await assertStrategyRole(ctx, strategy, "editor");
+    await assertStrategyRole(ctx, strategy, "owner");
 
     if (args.expectedRevision !== strategy.revision) {
       throw conflictError("Strategy revision mismatch");
@@ -598,11 +611,13 @@ export const move = mutation({
 
 const deleteStrategy = mutation({
   args: {
+    ...cloudProtocolArgs,
     strategyPublicId: v.string(),
     expectedRevision: v.number(),
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
     await assertStrategyRole(ctx, strategy, "owner");
     if (args.expectedRevision !== strategy.revision) {
@@ -625,6 +640,7 @@ const deleteStrategy = mutation({
       await ctx.db.delete(page._id);
       await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
         pageId: page._id,
+        strategyId: strategy._id,
       });
     }
 
@@ -652,6 +668,9 @@ const deleteStrategy = mutation({
       await ctx.db.delete(shareLink._id);
     }
 
+    await ctx.scheduler.runAfter(0, markDeletedStrategyImageAssetsRef, {
+      strategyId: strategy._id,
+    });
     await ctx.db.delete(strategy._id);
     return { ok: true } as const;
   },

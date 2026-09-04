@@ -110,10 +110,10 @@ class FolderTab extends ConsumerWidget {
             child: Text(displayName),
           );
         },
-        onAcceptWithDetails: (details) {
+        onAcceptWithDetails: (details) async {
           final item = details.data;
           if (item is StrategyItem) {
-            ref.read(strategyProvider.notifier).moveToFolder(
+            await ref.read(strategyProvider.notifier).moveToFolder(
                   strategyID: item.strategyId,
                   parentID: folder?.id,
                   source: item.strategy == null
@@ -121,7 +121,7 @@ class FolderTab extends ConsumerWidget {
                       : StrategySource.local,
                 );
           } else if (item is FolderItem) {
-            ref.read(folderProvider.notifier).moveToFolder(
+            await ref.read(folderProvider.notifier).moveToFolder(
                   folderID: item.folder.id,
                   parentID: folder?.id,
                   workspace: ref.read(libraryWorkspaceProvider),
