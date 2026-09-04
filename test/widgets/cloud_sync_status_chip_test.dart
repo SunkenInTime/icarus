@@ -74,9 +74,13 @@ class _FixedSaveState extends StrategySaveStateNotifier {
 }
 
 class _AttentionOpQueue extends StrategyOpQueueNotifier {
-  _AttentionOpQueue(this.rejectedCount);
+  _AttentionOpQueue(
+    this.rejectedCount, {
+    this.hasOtherStrategyAttention = false,
+  });
 
   final int rejectedCount;
+  final bool hasOtherStrategyAttention;
   int retryRejectedCount = 0;
   int flushNowCount = 0;
 
@@ -104,6 +108,21 @@ class _AttentionOpQueue extends StrategyOpQueueNotifier {
               ),
             ),
         },
+        accountOutbox: hasOtherStrategyAttention
+            ? const AccountStrategyOutboxSummary(
+                accountId: 'account-a',
+                strategies: {
+                  'closed-strategy': StrategyOutboxSummary(
+                    strategyPublicId: 'closed-strategy',
+                    queuedCount: 0,
+                    inFlightCount: 0,
+                    pausedCount: 1,
+                    attentionCount: 0,
+                    successorCount: 0,
+                  ),
+                },
+              )
+            : const AccountStrategyOutboxSummary(),
         lastError: 'Some saved work needs attention.',
       );
 
@@ -357,6 +376,81 @@ void main() {
     expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
   });
 
+  test('queued work in another strategy prevents a synced status', () {
+    final container = _createContainer(
+      opQueueState: const StrategyOpQueueState(
+        accountId: 'account-a',
+        strategyPublicId: 'cloud-strategy',
+        clientId: 'client-a',
+        durableLoaded: true,
+        accountOutbox: AccountStrategyOutboxSummary(
+          accountId: 'account-a',
+          strategies: {
+            'closed-strategy': StrategyOutboxSummary(
+              strategyPublicId: 'closed-strategy',
+              queuedCount: 1,
+              inFlightCount: 0,
+              pausedCount: 0,
+              attentionCount: 0,
+              successorCount: 0,
+            ),
+          },
+        ),
+      ),
+    );
+    addTearDown(container.dispose);
+
+    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.syncing);
+  });
+
+  testWidgets('inactive attention directs the user to the cloud library',
+      (tester) async {
+    final container = _createContainer(
+      opQueueState: const StrategyOpQueueState(
+        accountId: 'account-a',
+        strategyPublicId: 'cloud-strategy',
+        clientId: 'client-a',
+        durableLoaded: true,
+        accountOutbox: AccountStrategyOutboxSummary(
+          accountId: 'account-a',
+          strategies: {
+            'closed-strategy': StrategyOutboxSummary(
+              strategyPublicId: 'closed-strategy',
+              queuedCount: 0,
+              inFlightCount: 0,
+              pausedCount: 1,
+              attentionCount: 0,
+              successorCount: 0,
+              reason: 'Retry limit reached',
+            ),
+          },
+        ),
+      ),
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home: Scaffold(body: CloudSyncStatusChip()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Needs attention'), findsOneWidget);
+    await tester.tap(find.text('Needs attention'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Saved work in another strategy needs attention. Open it from the '
+        'Cloud library to review the reason.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Retry sync'), findsNothing);
+  });
+
   test('media errors remain visible while offline', () async {
     final container = _createContainer(
       connected: false,
@@ -442,6 +536,42 @@ void main() {
     expect(session.useCloudCount, 1);
     expect(queue.retryRejectedCount, 0);
     expect(queue.flushNowCount, 0);
+  });
+
+  testWidgets(
+      'active conflict controls remain when another strategy needs attention',
+      (tester) async {
+    final queue = _AttentionOpQueue(
+      1,
+      hasOtherStrategyAttention: true,
+    );
+    final session = _ConflictSession();
+    final container = _createConflictContainer(
+      queue: queue,
+      session: session,
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const ShadApp(
+          home: Scaffold(body: CloudSyncStatusChip()),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('Needs attention'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Use cloud'), findsOneWidget);
+    expect(find.text('Keep mine'), findsOneWidget);
+    expect(find.textContaining('Choose which version to keep'), findsOneWidget);
+    expect(
+      find.textContaining('another strategy also needs attention'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Cloud library'), findsOneWidget);
   });
 
   testWidgets('keep mine remains an explicit rejected retry', (tester) async {

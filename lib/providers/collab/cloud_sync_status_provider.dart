@@ -20,8 +20,8 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   final unknownOwnerMediaJobs = mediaQueueState.unknownOwnerJobsForStrategy(
     strategy.source == StrategySource.cloud ? strategy.strategyId : null,
   );
-  final activeMediaErrorCount =
-      activeMediaJobs.where((job) => job.isFailed).length;
+  final accountMediaErrorCount =
+      mediaQueueState.jobs.where((job) => job.isFailed).length;
   final hasTextDrafts = ref.watch(
     textDraftProvider.select((drafts) => drafts.isNotEmpty),
   );
@@ -35,8 +35,9 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
     return CloudSyncStatus.attention;
   }
   if (opQueueState.needsAttention ||
+      opQueueState.accountOutbox.needsAttention ||
       saveState.mediaSyncErrorCount > 0 ||
-      activeMediaErrorCount > 0 ||
+      accountMediaErrorCount > 0 ||
       unknownOwnerMediaJobs.isNotEmpty) {
     return CloudSyncStatus.attention;
   }
@@ -53,6 +54,8 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
       saveState.hasPendingCloudSync ||
       saveState.hasPendingMediaSync ||
       activeMediaJobs.isNotEmpty ||
+      opQueueState.accountOutbox.hasWork ||
+      mediaQueueState.jobs.isNotEmpty ||
       !opQueueState.durableLoaded ||
       !mediaQueueState.durableLoaded) {
     return CloudSyncStatus.syncing;

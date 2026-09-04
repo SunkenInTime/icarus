@@ -15,6 +15,7 @@ import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_settings_provider.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/widgets/account_avatar.dart';
 import 'package:icarus/widgets/dialogs/auth/auth_dialog.dart';
 import 'package:icarus/widgets/map_theme_settings_section.dart';
@@ -306,7 +307,7 @@ class _GlobalSettingsSections extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _AccountSettingsSection(
+        AccountSettingsSection(
           key: sectionKeys[_SettingsSection.globalAccount],
         ),
         const SizedBox(height: 20),
@@ -1026,8 +1027,8 @@ class _ShortcutEmptySearch extends StatelessWidget {
   }
 }
 
-class _AccountSettingsSection extends ConsumerWidget {
-  const _AccountSettingsSection({super.key});
+class AccountSettingsSection extends ConsumerWidget {
+  const AccountSettingsSection({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1191,11 +1192,12 @@ class _SignedInAccountRow extends ConsumerWidget {
             const SizedBox(width: 8),
           ],
           ShadButton.outline(
+            key: const ValueKey('settings-sign-out'),
             size: ShadButtonSize.sm,
             onPressed: authState.isLoading
                 ? null
-                : () {
-                    ref.read(authProvider.notifier).signOut();
+                : () async {
+                    await ref.read(guardedSignOutRequestProvider)(context);
                   },
             child: const Text('Sign Out'),
           ),

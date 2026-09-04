@@ -13,6 +13,77 @@ import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:uuid/uuid.dart';
 
+class StrategyOutboxSession {
+  const StrategyOutboxSession({
+    required this.accountId,
+    required this.isReady,
+    required this.hasAuthIncident,
+  });
+
+  final String? accountId;
+  final bool isReady;
+  final bool hasAuthIncident;
+}
+
+final strategyOutboxSessionProvider = Provider<StrategyOutboxSession>((ref) {
+  final auth = ref.watch(authProvider);
+  return StrategyOutboxSession(
+    accountId: auth.user?.id,
+    isReady: auth.isAuthenticated && auth.isConvexUserReady,
+    hasAuthIncident: auth.hasActiveAuthIncident,
+  );
+});
+
+class StrategyOutboxSummary {
+  const StrategyOutboxSummary({
+    required this.strategyPublicId,
+    required this.queuedCount,
+    required this.inFlightCount,
+    required this.pausedCount,
+    required this.attentionCount,
+    required this.successorCount,
+    this.reason,
+  });
+
+  final String strategyPublicId;
+  final int queuedCount;
+  final int inFlightCount;
+  final int pausedCount;
+  final int attentionCount;
+  final int successorCount;
+  final String? reason;
+
+  int get workCount =>
+      queuedCount +
+      inFlightCount +
+      pausedCount +
+      attentionCount +
+      successorCount;
+  bool get hasRunnableWork => queuedCount > 0 || inFlightCount > 0;
+  bool get needsAttention => pausedCount > 0 || attentionCount > 0;
+}
+
+class AccountStrategyOutboxSummary {
+  const AccountStrategyOutboxSummary({
+    this.accountId,
+    this.strategies = const <String, StrategyOutboxSummary>{},
+  });
+
+  final String? accountId;
+  final Map<String, StrategyOutboxSummary> strategies;
+
+  int get workCount => strategies.values.fold<int>(
+        0,
+        (total, strategy) => total + strategy.workCount,
+      );
+  int get strategyCount => strategies.length;
+  bool get hasWork => workCount > 0;
+  bool get hasRunnableWork =>
+      strategies.values.any((strategy) => strategy.hasRunnableWork);
+  bool get needsAttention =>
+      strategies.values.any((strategy) => strategy.needsAttention);
+}
+
 class StrategyOpQueueState {
   const StrategyOpQueueState({
     this.accountId,
@@ -31,6 +102,7 @@ class StrategyOpQueueState {
     this.lastFlushAt,
     this.lastAcks = const <OpAck>[],
     this.lastAckBatch = const <AckedEntityIntent>[],
+    this.accountOutbox = const AccountStrategyOutboxSummary(),
   });
 
   final String? accountId;
@@ -49,6 +121,7 @@ class StrategyOpQueueState {
   final DateTime? lastFlushAt;
   final List<OpAck> lastAcks;
   final List<AckedEntityIntent> lastAckBatch;
+  final AccountStrategyOutboxSummary accountOutbox;
 
   bool get needsAttention =>
       loadIssues.isNotEmpty ||
@@ -79,6 +152,7 @@ class StrategyOpQueueState {
     DateTime? lastFlushAt,
     List<OpAck>? lastAcks,
     List<AckedEntityIntent>? lastAckBatch,
+    AccountStrategyOutboxSummary? accountOutbox,
   }) {
     return StrategyOpQueueState(
       accountId: accountId,
@@ -98,6 +172,7 @@ class StrategyOpQueueState {
       lastFlushAt: lastFlushAt ?? this.lastFlushAt,
       lastAcks: lastAcks ?? this.lastAcks,
       lastAckBatch: lastAckBatch ?? this.lastAckBatch,
+      accountOutbox: accountOutbox ?? this.accountOutbox,
     );
   }
 }
@@ -117,7 +192,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   static const Duration _debounceDelay = Duration(milliseconds: 180);
   Timer? _debounceTimer;
   Timer? _retryTimer;
+  Timer? _backgroundRetryTimer;
   int _offlineRetryCount = 0;
+  bool _networkBusy = false;
+  ({String accountId, String strategyPublicId})? _drainingStrategy;
   late DurableStrategyOutboxStore _store;
   late Map<String, DurableOutboxRecord> _recordsByStorageKey;
   final Set<EntitySyncKey> _awaitingRemoteAdoption = {};
@@ -136,8 +214,36 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     ref.onDispose(() {
       _retryTimer?.cancel();
       _debounceTimer?.cancel();
+      _backgroundRetryTimer?.cancel();
     });
+    ref.listen<StrategyOutboxSession>(strategyOutboxSessionProvider,
+        (previous, next) {
+      if (previous?.accountId != next.accountId) {
+        setCurrentAccount(next.accountId);
+      }
+      final becameReady = !(previous?.isReady ?? false) && next.isReady;
+      final recovered = (previous?.hasAuthIncident ?? false) &&
+          !next.hasAuthIncident;
+      if (becameReady || recovered) {
+        retryCurrentAccount();
+      }
+    });
+    ref.listen<AsyncValue<bool>>(convexConnectionProvider, (previous, next) {
+      if (previous?.valueOrNull != true && next.valueOrNull == true) {
+        _scheduleBackgroundDrain(ignoreBackoff: true);
+      }
+    });
+    final session = ref.read(strategyOutboxSessionProvider);
+    if (session.accountId != null &&
+        loaded.records
+            .any((record) => record.accountId == session.accountId)) {
+      _backgroundRetryTimer = Timer(
+        Duration.zero,
+        () => retryCurrentAccount(),
+      );
+    }
     return StrategyOpQueueState(
+      accountId: session.accountId,
       clientId: const Uuid().v4(),
       loadIssues: loaded.issues,
       durableLoaded: true,
@@ -145,7 +251,17 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       lastError: loaded.issues.isEmpty
           ? null
           : 'The cloud outbox contains unreadable saved work.',
+      accountOutbox: _accountSummary(session.accountId),
     );
+  }
+
+  void setCurrentAccount(String? accountId) {
+    if (state.accountId == accountId) {
+      _publishAccountSummary();
+      _scheduleBackgroundDrain(ignoreBackoff: true);
+      return;
+    }
+    setActiveStrategy(null, accountId: accountId);
   }
 
   void setActiveStrategy(
@@ -153,7 +269,11 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     required String? accountId,
   }) {
     if (state.strategyPublicId == strategyPublicId &&
-        state.accountId == accountId) return;
+        state.accountId == accountId) {
+      _publishAccountSummary();
+      _scheduleBackgroundDrain(ignoreBackoff: true);
+      return;
+    }
 
     _debounceTimer?.cancel();
     _retryTimer?.cancel();
@@ -167,6 +287,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
                 record.strategyPublicId == strategyPublicId)
             .toList(growable: false);
     final queued = <EntitySyncKey, QueuedEntityIntent>{};
+    final inFlight = <EntitySyncKey, InFlightEntityIntent>{};
     final successors = <EntitySyncKey, QueuedEntityIntent>{};
     final paused = <EntitySyncKey, QueuedEntityIntent>{};
     final attention = <EntitySyncKey, QueuedEntityIntent>{};
@@ -184,9 +305,20 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       }
       switch (record.status) {
         case DurableOutboxStatus.queued:
-        case DurableOutboxStatus.inFlight:
-          // An interrupted request is replayed with its original op/client id.
           queued[record.entityKey] = intent;
+        case DurableOutboxStatus.inFlight:
+          if (_drainingStrategy ==
+              (accountId: accountId, strategyPublicId: strategyPublicId)) {
+            inFlight[record.entityKey] = InFlightEntityIntent(
+              entityKey: record.entityKey,
+              pending: record.pending,
+              sentAt: record.updatedAt,
+            );
+          } else {
+            // An interrupted request is replayed with its original op/client
+            // id after restart.
+            queued[record.entityKey] = intent;
+          }
         case DurableOutboxStatus.paused:
           paused[record.entityKey] = intent;
         case DurableOutboxStatus.attention:
@@ -200,6 +332,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       strategyPublicId: strategyPublicId,
       clientId: clientId,
       queuedByEntityKey: queued,
+      inFlightByEntityKey: inFlight,
       successorByEntityKey: successors,
       pausedByEntityKey: paused,
       attentionByEntityKey: attention,
@@ -212,8 +345,12 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         paused: paused,
         attention: attention,
       ),
+      accountOutbox: _accountSummary(accountId),
     );
-    if (queued.isNotEmpty) _scheduleFlush(flushImmediately: true);
+    if (queued.isNotEmpty && inFlight.isEmpty) {
+      _scheduleFlush(flushImmediately: true);
+    }
+    _scheduleBackgroundDrain(ignoreBackoff: true);
   }
 
   Future<void> enqueue(
@@ -737,23 +874,47 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
 
   Future<void> flushNow() async {
     await _writeTail;
-    if (state.isFlushing) return;
+    if (_networkBusy) return;
+    final accountId = state.accountId;
     final strategyPublicId = state.strategyPublicId;
-    if (strategyPublicId == null || state.queuedByEntityKey.isEmpty) return;
+    if (accountId == null ||
+        strategyPublicId == null ||
+        state.queuedByEntityKey.isEmpty) {
+      return;
+    }
+
+    await _flushStrategy(
+      accountId: accountId,
+      strategyPublicId: strategyPublicId,
+      isBackground: false,
+    );
+  }
+
+  Future<void> _flushStrategy({
+    required String accountId,
+    required String strategyPublicId,
+    required bool isBackground,
+    bool ignoreBackoff = false,
+  }) async {
+    if (_networkBusy) return;
 
     final mode = ref.read(cloudCollabModeProvider);
     if (!mode.featureFlagEnabled || mode.forceLocalFallback) return;
     final auth = ref.read(authProvider);
     if (auth.hasActiveAuthIncident) {
-      state = state.copyWith(
-        lastError: 'Cloud auth incident active. Saved work is paused.',
-      );
+      if (!isBackground && _isActive(accountId, strategyPublicId)) {
+        state = state.copyWith(
+          lastError: 'Cloud auth incident active. Saved work is paused.',
+        );
+      }
       return;
     }
-    if (auth.user?.id != state.accountId) {
-      state = state.copyWith(
-        lastError: 'Cloud outbox belongs to a different account.',
-      );
+    if (auth.user?.id != accountId) {
+      if (!isBackground && _isActive(accountId, strategyPublicId)) {
+        state = state.copyWith(
+          lastError: 'Cloud outbox belongs to a different account.',
+        );
+      }
       return;
     }
     if (!auth.isAuthenticated ||
@@ -764,50 +925,42 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           : (!auth.isConvexUserReady
               ? 'Cloud user setup is not ready.'
               : 'Cloud connection is offline.');
-      _scheduleRetry(
-        state.queuedByEntityKey.values.map((item) => item.pending).toList(),
-        delay: _offlineRetryDelay(),
-      );
-      state = state.copyWith(lastError: message);
+      if (!isBackground && _isActive(accountId, strategyPublicId)) {
+        _scheduleRetry(
+          state.queuedByEntityKey.values.map((item) => item.pending).toList(),
+          delay: _offlineRetryDelay(),
+        );
+        state = state.copyWith(lastError: message);
+      }
       return;
     }
 
-    final candidates = state.queuedByEntityKey.values.toList(growable: false);
-    if (candidates.isEmpty) return;
-    final batchClientId = candidates.first.pending.clientId;
-    final batch = candidates
-        .where((intent) => intent.pending.clientId == batchClientId)
-        .take(_maxBatchSize)
-        .toList(growable: false);
-    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
-      state.queuedByEntityKey,
+    _networkBusy = true;
+    _drainingStrategy = (
+      accountId: accountId,
+      strategyPublicId: strategyPublicId,
     );
-    final inFlight = Map<EntitySyncKey, InFlightEntityIntent>.from(
-      state.inFlightByEntityKey,
-    );
-    final sentAt = DateTime.now();
+    List<DurableOutboxRecord> batch;
+    var batchSucceeded = false;
     try {
-      for (final intent in batch) {
-        await _putRecord(_recordFor(
-          key: intent.entityKey,
-          pending: intent.pending,
-          status: DurableOutboxStatus.inFlight,
-        ));
-        queued.remove(intent.entityKey);
-        inFlight[intent.entityKey] = InFlightEntityIntent(
-          entityKey: intent.entityKey,
-          pending: intent.pending,
-          sentAt: sentAt,
-        );
-      }
+      batch = await _claimBatch(
+        accountId: accountId,
+        strategyPublicId: strategyPublicId,
+        ignoreBackoff: ignoreBackoff || !isBackground,
+      );
     } catch (error, stackTrace) {
       _recordPersistenceFailure(error, stackTrace);
+      _finishNetworkLane();
       return;
     }
-    state = state.copyWith(
-      queuedByEntityKey: queued,
-      inFlightByEntityKey: inFlight,
-      isFlushing: true,
+    if (batch.isEmpty) {
+      _finishNetworkLane();
+      _scheduleBackgroundDrain();
+      return;
+    }
+    final batchClientId = batch.first.pending.clientId;
+    _refreshActiveQueueView(
+      isFlushing: _isActive(accountId, strategyPublicId),
       clearError: true,
     );
 
@@ -818,10 +971,10 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
       final acks = await _repo.applyBatch(
         strategyPublicId: strategyPublicId,
         clientId: batchClientId,
-        ops: batch.map((intent) => intent.pending.op).toList(growable: false),
+        ops: batch.map((record) => record.pending.op).toList(growable: false),
       );
-      await _applyAcks(batch, acks);
-      if (state.queuedByEntityKey.isNotEmpty) unawaited(flushNow());
+      await _applyAcksForRecords(batch, acks);
+      batchSucceeded = true;
     } catch (error, stackTrace) {
       if (isConvexUnauthenticatedError(error)) {
         unawaited(ref.read(authProvider.notifier).reportConvexUnauthenticated(
@@ -833,44 +986,90 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
         log('Failed flushing op queue: $error',
             error: error, stackTrace: stackTrace);
       }
-      await _restoreBatchAfterFailure(batch, lastError: '$error');
+      await _restoreRecordsAfterFailure(batch, lastError: '$error');
+    } finally {
+      _finishNetworkLane();
+    }
+
+    if (state.queuedByEntityKey.isNotEmpty &&
+        (isBackground || batchSucceeded)) {
+      unawaited(flushNow());
+    } else {
+      _scheduleBackgroundDrain();
     }
   }
 
-  Future<void> _applyAcks(
-    List<QueuedEntityIntent> batch,
+  Future<List<DurableOutboxRecord>> _claimBatch({
+    required String accountId,
+    required String strategyPublicId,
+    required bool ignoreBackoff,
+  }) {
+    return _serializeWrite(() async {
+      final now = DateTime.now();
+      final candidates = _recordsByStorageKey.values
+          .where((record) =>
+              record.accountId == accountId &&
+              record.strategyPublicId == strategyPublicId &&
+              (record.status == DurableOutboxStatus.queued ||
+                  record.status == DurableOutboxStatus.inFlight) &&
+              (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
+          .toList(growable: false);
+      if (candidates.isEmpty) return const <DurableOutboxRecord>[];
+      final batchClientId = candidates.first.pending.clientId;
+      final selected = candidates
+          .where((record) => record.pending.clientId == batchClientId)
+          .take(_maxBatchSize)
+          .toList(growable: false);
+      final claimed = <DurableOutboxRecord>[];
+      for (final record in selected) {
+        final current = _recordsByStorageKey[record.storageKey];
+        if (current == null ||
+            current.pending.op.opId != record.pending.op.opId ||
+            (current.status != DurableOutboxStatus.queued &&
+                current.status != DurableOutboxStatus.inFlight)) {
+          continue;
+        }
+        final inFlight = current.copyWith(
+          status: DurableOutboxStatus.inFlight,
+          updatedAt: now,
+          clearError: true,
+        );
+        await _putRecord(inFlight);
+        claimed.add(inFlight);
+      }
+      return claimed;
+    });
+  }
+
+  Future<void> _applyAcksForRecords(
+    List<DurableOutboxRecord> batch,
+    List<OpAck> acks,
+  ) {
+    return _serializeWrite(() => _applyAcksForRecordsLocked(batch, acks));
+  }
+
+  Future<void> _applyAcksForRecordsLocked(
+    List<DurableOutboxRecord> batch,
     List<OpAck> acks,
   ) async {
     final byOpId = {for (final item in batch) item.pending.op.opId: item};
     final ackByOpId = {for (final ack in acks) ack.opId: ack};
-    if (ackByOpId.length != batch.length) {
+    if (ackByOpId.length != batch.length ||
+        !ackByOpId.keys.toSet().containsAll(byOpId.keys)) {
       throw StateError(
         'Server returned an incomplete operation result batch.',
       );
     }
-    final inFlight = Map<EntitySyncKey, InFlightEntityIntent>.from(
-      state.inFlightByEntityKey,
-    );
-    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
-      state.queuedByEntityKey,
-    );
-    final successors = Map<EntitySyncKey, QueuedEntityIntent>.from(
-      state.successorByEntityKey,
-    );
-    final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
-      state.attentionByEntityKey,
-    );
     final acked = <AckedEntityIntent>[];
     for (final ack in acks) {
       final sent = byOpId[ack.opId];
       if (sent == null) continue;
-      inFlight.remove(sent.entityKey);
       acked.add(AckedEntityIntent(
         entityKey: sent.entityKey,
         op: sent.pending.op,
         ack: ack,
       ));
-      final current = _recordForActiveKey(sent.entityKey);
+      final current = _recordsByStorageKey[sent.storageKey];
       if (current?.pending.op.opId != ack.opId) continue;
       final successor = current!.successorPending;
       // Only an accepted predecessor establishes a revision for automatic
@@ -895,12 +1094,6 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           clearError: true,
           clearLatestServerRevision: true,
         ));
-        queued[sent.entityKey] = QueuedEntityIntent(
-          entityKey: sent.entityKey,
-          pending: promoted,
-        );
-        successors.remove(sent.entityKey);
-        attention.remove(sent.entityKey);
       } else if (successor != null) {
         final retained = current.copyWith(
           status: DurableOutboxStatus.attention,
@@ -910,13 +1103,8 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           latestServerRevision: ack.latestRevision,
         );
         await _putRecord(retained);
-        attention[sent.entityKey] = QueuedEntityIntent(
-          entityKey: sent.entityKey,
-          pending: sent.pending,
-        );
       } else if (ack.isAck) {
-        await _removeRecordIfCurrent(sent.entityKey, ack.opId);
-        successors.remove(sent.entityKey);
+        await _removeRecordByStorageKeyIfCurrent(sent.storageKey, ack.opId);
       } else {
         final rejected = current.copyWith(
           status: DurableOutboxStatus.attention,
@@ -925,84 +1113,70 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
           latestServerRevision: ack.latestRevision,
         );
         await _putRecord(rejected);
-        attention[sent.entityKey] = QueuedEntityIntent(
-          entityKey: sent.entityKey,
-          pending: sent.pending,
-        );
       }
     }
-    final attentionMessage = _loadedAttentionMessage(
-      loadIssues: state.loadIssues,
-      paused: state.pausedByEntityKey,
-      attention: attention,
-    );
-    state = state.copyWith(
-      queuedByEntityKey: queued,
-      inFlightByEntityKey: inFlight,
-      successorByEntityKey: successors,
-      attentionByEntityKey: attention,
-      isFlushing: false,
-      lastFlushAt: DateTime.now(),
-      lastAcks: acks,
-      lastAckBatch: acked,
-      lastError: attentionMessage,
-      clearError: attentionMessage == null,
+    final first = batch.first;
+    if (_isActive(first.accountId, first.strategyPublicId)) {
+      _refreshActiveQueueView(
+        isFlushing: false,
+        lastAcks: acks,
+        lastAckBatch: acked,
+        lastFlushAt: DateTime.now(),
+      );
+    } else {
+      _refreshActiveQueueView();
+    }
+  }
+
+  Future<void> _restoreRecordsAfterFailure(
+    List<DurableOutboxRecord> batch, {
+    required String lastError,
+  }) {
+    return _serializeWrite(
+      () => _restoreRecordsAfterFailureLocked(batch, lastError: lastError),
     );
   }
 
-  Future<void> _restoreBatchAfterFailure(
-    List<QueuedEntityIntent> batch, {
+  Future<void> _restoreRecordsAfterFailureLocked(
+    List<DurableOutboxRecord> batch, {
     required String lastError,
   }) async {
-    final queued = Map<EntitySyncKey, QueuedEntityIntent>.from(
-      state.queuedByEntityKey,
-    );
-    final inFlight = Map<EntitySyncKey, InFlightEntityIntent>.from(
-      state.inFlightByEntityKey,
-    );
-    final paused = Map<EntitySyncKey, QueuedEntityIntent>.from(
-      state.pausedByEntityKey,
-    );
     final retrying = <PendingOp>[];
     try {
       for (final sent in batch) {
-        inFlight.remove(sent.entityKey);
-        if (queued.containsKey(sent.entityKey)) continue;
-        final pending = sent.pending.incrementAttempt();
+        final current = _recordsByStorageKey[sent.storageKey];
+        if (current == null ||
+            current.pending.op.opId != sent.pending.op.opId) {
+          continue;
+        }
+        final pending = current.pending.incrementAttempt();
         final isPaused = pending.attempts >= _maxAttempts;
-        await _putRecord(_recordFor(
-          key: sent.entityKey,
+        await _putRecord(current.copyWith(
           pending: pending,
           status: isPaused
               ? DurableOutboxStatus.paused
               : DurableOutboxStatus.queued,
+          updatedAt: DateTime.now(),
           lastError: lastError,
         ));
-        final intent = QueuedEntityIntent(
-          entityKey: sent.entityKey,
-          pending: pending,
-        );
-        if (isPaused) {
-          paused[sent.entityKey] = intent;
-        } else {
-          queued[sent.entityKey] = intent;
-          retrying.add(pending);
-        }
+        if (!isPaused) retrying.add(pending);
       }
     } catch (error, stackTrace) {
       _recordPersistenceFailure(error, stackTrace);
       return;
     }
-    state = state.copyWith(
-      queuedByEntityKey: queued,
-      inFlightByEntityKey: inFlight,
-      pausedByEntityKey: paused,
-      isFlushing: false,
-      lastError: paused.isEmpty
-          ? lastError
-          : '$lastError (retry paused after $_maxAttempts attempts)',
-    );
-    _scheduleRetry(retrying);
+    final draining = _drainingStrategy;
+    if (draining != null &&
+        _isActive(draining.accountId, draining.strategyPublicId)) {
+      _refreshActiveQueueView(
+        isFlushing: false,
+        lastError: lastError,
+        useProvidedError: true,
+      );
+      _scheduleRetry(retrying);
+    } else {
+      _refreshActiveQueueView();
+    }
   }
 
   DurableOutboxRecord _recordFor({
@@ -1044,6 +1218,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   Future<void> _putRecord(DurableOutboxRecord record) async {
     await _store.put(record);
     _recordsByStorageKey[record.storageKey] = record;
+    _publishAccountSummary();
   }
 
   Future<void> _removeRecordIfCurrent(
@@ -1054,6 +1229,178 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     if (record == null || record.pending.op.opId != opId) return;
     await _store.remove(record.storageKey);
     _recordsByStorageKey.remove(record.storageKey);
+    _publishAccountSummary();
+  }
+
+  Future<void> _removeRecordByStorageKeyIfCurrent(
+    String storageKey,
+    String opId,
+  ) async {
+    final record = _recordsByStorageKey[storageKey];
+    if (record == null || record.pending.op.opId != opId) return;
+    await _store.remove(storageKey);
+    _recordsByStorageKey.remove(storageKey);
+    _publishAccountSummary();
+  }
+
+  bool _isActive(String accountId, String strategyPublicId) {
+    return state.accountId == accountId &&
+        state.strategyPublicId == strategyPublicId;
+  }
+
+  void _refreshActiveQueueView({
+    bool? isFlushing,
+    String? lastError,
+    bool useProvidedError = false,
+    DateTime? lastFlushAt,
+    List<OpAck>? lastAcks,
+    List<AckedEntityIntent>? lastAckBatch,
+    bool clearError = false,
+  }) {
+    final accountId = state.accountId;
+    final strategyPublicId = state.strategyPublicId;
+    final queued = <EntitySyncKey, QueuedEntityIntent>{};
+    final inFlight = <EntitySyncKey, InFlightEntityIntent>{};
+    final successors = <EntitySyncKey, QueuedEntityIntent>{};
+    final paused = <EntitySyncKey, QueuedEntityIntent>{};
+    final attention = <EntitySyncKey, QueuedEntityIntent>{};
+    if (accountId != null && strategyPublicId != null) {
+      final isActivelyDraining = _drainingStrategy ==
+          (accountId: accountId, strategyPublicId: strategyPublicId);
+      for (final record in _recordsByStorageKey.values) {
+        if (record.accountId != accountId ||
+            record.strategyPublicId != strategyPublicId) {
+          continue;
+        }
+        final intent = QueuedEntityIntent(
+          entityKey: record.entityKey,
+          pending: record.pending,
+        );
+        final successor = record.successorPending;
+        if (successor != null) {
+          successors[record.entityKey] = QueuedEntityIntent(
+            entityKey: record.entityKey,
+            pending: successor,
+          );
+        }
+        switch (record.status) {
+          case DurableOutboxStatus.queued:
+            queued[record.entityKey] = intent;
+          case DurableOutboxStatus.inFlight:
+            if (isActivelyDraining) {
+              inFlight[record.entityKey] = InFlightEntityIntent(
+                entityKey: record.entityKey,
+                pending: record.pending,
+                sentAt: record.updatedAt,
+              );
+            } else {
+              queued[record.entityKey] = intent;
+            }
+          case DurableOutboxStatus.paused:
+            paused[record.entityKey] = intent;
+          case DurableOutboxStatus.attention:
+            attention[record.entityKey] = intent;
+        }
+      }
+    }
+    final attentionMessage = _loadedAttentionMessage(
+      loadIssues: state.loadIssues,
+      paused: paused,
+      attention: attention,
+    );
+    final effectiveError = attentionMessage ??
+        (useProvidedError ? lastError : (clearError ? null : state.lastError));
+    state = state.copyWith(
+      queuedByEntityKey: queued,
+      inFlightByEntityKey: inFlight,
+      successorByEntityKey: successors,
+      pausedByEntityKey: paused,
+      attentionByEntityKey: attention,
+      accountOutbox: _accountSummary(accountId),
+      isFlushing: isFlushing,
+      lastError: effectiveError,
+      clearError: effectiveError == null,
+      lastFlushAt: lastFlushAt,
+      lastAcks: lastAcks,
+      lastAckBatch: lastAckBatch,
+    );
+  }
+
+  void _finishNetworkLane() {
+    _networkBusy = false;
+    _drainingStrategy = null;
+    if (state.isFlushing) {
+      _refreshActiveQueueView(isFlushing: false);
+    }
+  }
+
+  AccountStrategyOutboxSummary _accountSummary(String? accountId) {
+    if (accountId == null) return const AccountStrategyOutboxSummary();
+    final recordsByStrategy = <String, List<DurableOutboxRecord>>{};
+    for (final record in _recordsByStorageKey.values) {
+      if (record.accountId != accountId) continue;
+      (recordsByStrategy[record.strategyPublicId] ??= <DurableOutboxRecord>[])
+          .add(record);
+    }
+    return AccountStrategyOutboxSummary(
+      accountId: accountId,
+      strategies: <String, StrategyOutboxSummary>{
+        for (final entry in recordsByStrategy.entries)
+          entry.key: StrategyOutboxSummary(
+            strategyPublicId: entry.key,
+            queuedCount: entry.value
+                .where((record) => record.status == DurableOutboxStatus.queued)
+                .length,
+            inFlightCount: entry.value
+                .where(
+                    (record) => record.status == DurableOutboxStatus.inFlight)
+                .length,
+            pausedCount: entry.value
+                .where((record) => record.status == DurableOutboxStatus.paused)
+                .length,
+            attentionCount: entry.value
+                .where(
+                    (record) => record.status == DurableOutboxStatus.attention)
+                .length,
+            successorCount: entry.value
+                .where((record) => record.successorPending != null)
+                .length,
+            reason: entry.value
+                .where((record) => record.lastError?.isNotEmpty ?? false)
+                .map((record) => record.lastError)
+                .firstOrNull,
+          ),
+      },
+    );
+  }
+
+  void _publishAccountSummary() {
+    final summary = _accountSummary(state.accountId);
+    if (_sameAccountSummary(state.accountOutbox, summary)) return;
+    state = state.copyWith(accountOutbox: summary);
+  }
+
+  bool _sameAccountSummary(
+    AccountStrategyOutboxSummary left,
+    AccountStrategyOutboxSummary right,
+  ) {
+    if (left.accountId != right.accountId ||
+        left.strategies.length != right.strategies.length) {
+      return false;
+    }
+    for (final entry in left.strategies.entries) {
+      final other = right.strategies[entry.key];
+      if (other == null ||
+          other.queuedCount != entry.value.queuedCount ||
+          other.inFlightCount != entry.value.inFlightCount ||
+          other.pausedCount != entry.value.pausedCount ||
+          other.attentionCount != entry.value.attentionCount ||
+          other.successorCount != entry.value.successorCount ||
+          other.reason != entry.value.reason) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Future<T> _serializeWrite<T>(Future<T> Function() action) {
@@ -1084,6 +1431,82 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     }
     _debounceTimer?.cancel();
     _debounceTimer = Timer(_debounceDelay, () => unawaited(flushNow()));
+  }
+
+  void retryCurrentAccount() {
+    _scheduleBackgroundDrain(ignoreBackoff: true);
+    if (state.queuedByEntityKey.isNotEmpty) {
+      unawaited(flushNow());
+    }
+  }
+
+  void _scheduleBackgroundDrain({bool ignoreBackoff = false}) {
+    _backgroundRetryTimer?.cancel();
+    final accountId = state.accountId;
+    if (accountId == null) return;
+    final activeStrategyId = state.strategyPublicId;
+    final now = DateTime.now();
+    final candidates = _recordsByStorageKey.values
+        .where((record) =>
+            record.accountId == accountId &&
+            record.strategyPublicId != activeStrategyId &&
+            (record.status == DurableOutboxStatus.queued ||
+                record.status == DurableOutboxStatus.inFlight))
+        .toList(growable: false);
+    if (candidates.isEmpty) return;
+    final nextAttempt = candidates
+        .map(_nextAttemptAt)
+        .reduce((left, right) => left.isBefore(right) ? left : right);
+    final delay = ignoreBackoff || !nextAttempt.isAfter(now)
+        ? Duration.zero
+        : nextAttempt.difference(now);
+    _backgroundRetryTimer = Timer(
+      delay,
+      () => unawaited(_drainNextBackgroundStrategy(
+        ignoreBackoff: ignoreBackoff,
+      )),
+    );
+  }
+
+  Future<void> _drainNextBackgroundStrategy({
+    required bool ignoreBackoff,
+  }) async {
+    if (_networkBusy) return;
+    await _writeTail;
+    final accountId = state.accountId;
+    if (accountId == null) return;
+    final activeStrategyId = state.strategyPublicId;
+    final now = DateTime.now();
+    final candidates = _recordsByStorageKey.values
+        .where((record) =>
+            record.accountId == accountId &&
+            record.strategyPublicId != activeStrategyId &&
+            (record.status == DurableOutboxStatus.queued ||
+                record.status == DurableOutboxStatus.inFlight) &&
+            (ignoreBackoff || !_nextAttemptAt(record).isAfter(now)))
+        .toList(growable: false)
+      ..sort((left, right) => left.updatedAt.compareTo(right.updatedAt));
+    if (candidates.isEmpty) {
+      _scheduleBackgroundDrain();
+      return;
+    }
+    await _flushStrategy(
+      accountId: accountId,
+      strategyPublicId: candidates.first.strategyPublicId,
+      isBackground: true,
+      ignoreBackoff: ignoreBackoff,
+    );
+  }
+
+  DateTime _nextAttemptAt(DurableOutboxRecord record) {
+    final lastAttemptAt = record.pending.lastAttemptAt;
+    if (lastAttemptAt == null || record.status == DurableOutboxStatus.inFlight) {
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+    final exponent = record.pending.attempts.clamp(0, 6);
+    return lastAttemptAt.add(
+      Duration(milliseconds: 300 * (1 << exponent)),
+    );
   }
 
   void _scheduleRetry(List<PendingOp> pending, {Duration? delay}) {

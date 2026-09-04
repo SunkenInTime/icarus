@@ -119,6 +119,14 @@ final cloudStrategiesProvider =
   }
 });
 
+final cloudStrategyNamesProvider = Provider<Map<String, String>>((ref) {
+  final strategies = ref.watch(cloudStrategiesProvider).valueOrNull;
+  if (strategies == null) return const <String, String>{};
+  return <String, String>{
+    for (final entry in strategies) entry.strategy.id: entry.strategy.name,
+  };
+});
+
 bool _isInvalidFolderError(Object error) {
   final message = error.toString().toLowerCase();
   return message.contains('folder not found') || message.contains('forbidden');

@@ -153,6 +153,33 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
 
     final saveState = ref.watch(strategySaveStateProvider);
     final opQueueState = ref.watch(strategyOpQueueProvider);
+    final mediaQueueState = ref.watch(cloudMediaUploadQueueProvider);
+    final activeStrategyId = ref.watch(
+      strategyProvider.select((state) => state.strategyId),
+    );
+    final hasOtherStrategyWork = opQueueState.accountOutbox.strategies.values
+            .any((summary) => summary.strategyPublicId != activeStrategyId) ||
+        mediaQueueState.jobs.any(
+              (job) => job.strategyPublicId != activeStrategyId,
+            );
+    final hasOtherStrategyAttention = opQueueState
+            .accountOutbox.strategies.values
+            .any((summary) =>
+                summary.strategyPublicId != activeStrategyId &&
+                summary.needsAttention) ||
+        mediaQueueState.jobs.any(
+              (job) =>
+                  job.strategyPublicId != activeStrategyId && job.isFailed,
+            );
+    final hasActiveStrategyAttention = opQueueState.needsAttention ||
+        saveState.cloudSyncError != null ||
+        saveState.mediaSyncErrorCount > 0 ||
+        mediaQueueState.jobs.any(
+          (job) => job.strategyPublicId == activeStrategyId && job.isFailed,
+        ) ||
+        mediaQueueState
+            .unknownOwnerJobsForStrategy(activeStrategyId)
+            .isNotEmpty;
     final status = switch (ref.watch(cloudSyncStatusProvider)) {
       CloudSyncStatus.synced => _SyncStatus.synced,
       CloudSyncStatus.editing => _SyncStatus.editing,
@@ -173,6 +200,9 @@ class _CloudSyncStatusChipState extends ConsumerState<CloudSyncStatusChip> {
         status: status,
         saveState: saveState,
         rejectedCount: opQueueState.attentionByEntityKey.length,
+        hasOtherStrategyWork: hasOtherStrategyWork,
+        hasOtherStrategyAttention: hasOtherStrategyAttention,
+        hasActiveStrategyAttention: hasActiveStrategyAttention,
         isResolving: _isResolving,
         resolutionError: _resolutionError,
         onRetry: _retry,
@@ -317,6 +347,9 @@ class _SyncStatusPopover extends StatelessWidget {
     required this.status,
     required this.saveState,
     required this.rejectedCount,
+    required this.hasOtherStrategyWork,
+    required this.hasOtherStrategyAttention,
+    required this.hasActiveStrategyAttention,
     required this.isResolving,
     required this.resolutionError,
     required this.onRetry,
@@ -326,6 +359,9 @@ class _SyncStatusPopover extends StatelessWidget {
   final _SyncStatus status;
   final StrategySaveState saveState;
   final int rejectedCount;
+  final bool hasOtherStrategyWork;
+  final bool hasOtherStrategyAttention;
+  final bool hasActiveStrategyAttention;
   final bool isResolving;
   final String? resolutionError;
   final Future<void> Function() onRetry;
@@ -378,7 +414,8 @@ class _SyncStatusPopover extends StatelessWidget {
               ),
             ),
           ],
-          if (status == _SyncStatus.attention) ...[
+          if (status == _SyncStatus.attention &&
+              (!hasOtherStrategyAttention || hasActiveStrategyAttention)) ...[
             const SizedBox(height: 12),
             if (hasRejectedWork) ...[
               ShadButton.secondary(
@@ -426,13 +463,23 @@ class _SyncStatusPopover extends StatelessWidget {
         return 'Finish editing or switch pages to send this change to the '
             'cloud.';
       case _SyncStatus.syncing:
-        return 'Your edits are being sent to the cloud. You can keep '
-            'working — this happens in the background.';
+        return hasOtherStrategyWork
+            ? 'Saved changes from your cloud library are being sent in the '
+                'background.'
+            : 'Your edits are being sent to the cloud. You can keep '
+                'working — this happens in the background.';
       case _SyncStatus.offline:
         return 'Changes are kept on this device and will sync automatically '
             'when your connection returns.';
       case _SyncStatus.attention:
-        return _attentionExplanation;
+        const otherStrategyExplanation =
+            'Saved work in another strategy also needs attention. Open it '
+            'from the Cloud library to review the reason.';
+        if (!hasOtherStrategyAttention) return _attentionExplanation;
+        if (hasActiveStrategyAttention) {
+          return '$_attentionExplanation $otherStrategyExplanation';
+        }
+        return otherStrategyExplanation.replaceFirst(' also', '');
     }
   }
 

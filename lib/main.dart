@@ -31,6 +31,7 @@ import 'package:icarus/providers/ability_provider.dart';
 import 'package:icarus/providers/agent_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_cache_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/share_link_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/map_provider.dart';
@@ -39,7 +40,9 @@ import 'package:icarus/providers/user_preferences_provider.dart';
 import 'package:icarus/share/share_link_format.dart';
 import 'package:icarus/services/app_error_reporter.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/cloud_sign_out_coordinator.dart';
 import 'package:icarus/services/discord_presence_service.dart';
+import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
@@ -113,7 +116,11 @@ Future<void> main(List<String> args) async {
     () async {
       WidgetsFlutterBinding.ensureInitialized();
 
-      appProviderContainer = ProviderContainer();
+      appProviderContainer = ProviderContainer(overrides: [
+        guardedSignOutRequestProvider.overrideWith(
+          (ref) => ref.watch(cloudSignOutRequestProvider),
+        ),
+      ]);
       await _initializePersistedDebugLog();
       _installGlobalErrorHandlers();
 
@@ -390,6 +397,7 @@ class _MyAppState extends ConsumerState<MyApp> {
   void initState() {
     super.initState();
     ref.read(authProvider);
+    ref.read(strategyOpQueueProvider);
     ref.read(cloudMediaUploadQueueProvider);
     ref.read(cloudMediaCacheProvider);
 

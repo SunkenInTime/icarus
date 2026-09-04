@@ -1212,6 +1212,13 @@ void main() {
     final store = MemoryDurableStrategyOutboxStore();
     final firstContainer = ProviderContainer(overrides: [
       durableStrategyOutboxStoreProvider.overrideWithValue(store),
+      strategyOutboxSessionProvider.overrideWithValue(
+        const StrategyOutboxSession(
+          accountId: null,
+          isReady: false,
+          hasAuthIncident: false,
+        ),
+      ),
     ]);
     firstContainer
         .read(cloudCollabModeProvider.notifier)
@@ -1228,6 +1235,13 @@ void main() {
     ));
     final restarted = ProviderContainer(overrides: [
       durableStrategyOutboxStoreProvider.overrideWithValue(store),
+      strategyOutboxSessionProvider.overrideWithValue(
+        const StrategyOutboxSession(
+          accountId: null,
+          isReady: false,
+          hasAuthIncident: false,
+        ),
+      ),
       remoteEditorSnapshotProvider.overrideWith(() => remote),
     ]);
     addTearDown(restarted.dispose);

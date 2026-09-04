@@ -42,6 +42,13 @@ void main() {
       container?.dispose();
       container = ProviderContainer(overrides: [
         durableStrategyOutboxStoreProvider.overrideWithValue(store),
+        strategyOutboxSessionProvider.overrideWithValue(
+          const StrategyOutboxSession(
+            accountId: null,
+            isReady: false,
+            hasAuthIncident: false,
+          ),
+        ),
       ]);
       container!
           .read(cloudCollabModeProvider.notifier)
@@ -742,6 +749,13 @@ void main() {
     final store = _BlockingStore();
     final container = ProviderContainer(overrides: [
       durableStrategyOutboxStoreProvider.overrideWithValue(store),
+      strategyOutboxSessionProvider.overrideWithValue(
+        const StrategyOutboxSession(
+          accountId: null,
+          isReady: false,
+          hasAuthIncident: false,
+        ),
+      ),
     ]);
     addTearDown(container.dispose);
     final notifier = container.read(strategyOpQueueProvider.notifier)
@@ -768,6 +782,13 @@ void main() {
     final store = _BlockingReplacementStore();
     final container = ProviderContainer(overrides: [
       durableStrategyOutboxStoreProvider.overrideWithValue(store),
+      strategyOutboxSessionProvider.overrideWithValue(
+        const StrategyOutboxSession(
+          accountId: null,
+          isReady: false,
+          hasAuthIncident: false,
+        ),
+      ),
     ]);
     addTearDown(container.dispose);
     final notifier = container.read(strategyOpQueueProvider.notifier)
