@@ -176,15 +176,26 @@ Future<bool> _guardCloudStrategyExit({
     final authState = ref.read(authProvider);
     final mediaQueueState = ref.read(cloudMediaUploadQueueProvider);
     final mediaJobs = mediaQueueState.jobsForStrategy(strategyState.strategyId);
+    final unknownOwnerMediaJobs =
+        mediaQueueState.unknownOwnerJobsForStrategy(strategyState.strategyId);
     final hasPendingMediaJobs = mediaJobs.isNotEmpty;
+    final outboxError = !queueState.outboxIsReliable
+        ? 'Icarus could not confirm that cloud edits are saved on this device.'
+        : (!mediaQueueState.outboxIsReliable
+            ? (mediaQueueState.durabilityError ??
+                'Icarus could not confirm that media work is saved on this device.')
+            : null);
 
     final hasPendingSync = saveState.hasPendingCloudSync ||
         saveState.hasPendingMediaSync ||
         hasPendingMediaJobs ||
+        unknownOwnerMediaJobs.isNotEmpty ||
         queueState.pending.isNotEmpty;
-    final cloudError = saveState.cloudSyncError ?? queueState.lastError;
-    final hasDurablePendingWork =
-        queueState.pending.isNotEmpty || hasPendingMediaJobs;
+    final cloudError =
+        saveState.cloudSyncError ?? queueState.lastError ?? outboxError;
+    final hasDurablePendingWork = queueState.pending.isNotEmpty ||
+        hasPendingMediaJobs ||
+        unknownOwnerMediaJobs.isNotEmpty;
     final hasUncommittedMediaReferences = mediaJobs.any(
       (job) => !job.referenceDurable,
     );
@@ -205,6 +216,7 @@ Future<bool> _guardCloudStrategyExit({
       'opPending=${queueState.pending.length} '
       'opFlushing=${queueState.isFlushing} '
       'mediaJobs=${mediaQueueState.jobs.length} '
+      'unknownOwnerMediaJobs=${unknownOwnerMediaJobs.length} '
       'mediaProcessing=${mediaQueueState.isProcessing} '
       'auth=${authState.isAuthenticated} '
       'userReady=${authState.isConvexUserReady} '
@@ -260,6 +272,7 @@ Future<bool> _guardCloudStrategyExit({
         cloudError: cloudError,
         mediaErrorCount: saveState.mediaSyncErrorCount,
         canLeaveWithDurableWork: canLeaveWithDurableWork,
+        hasUnknownOwnerMediaWork: unknownOwnerMediaJobs.isNotEmpty,
       ),
       allowLeaveAnyway: canLeaveWithDurableWork,
       showRetryAuth: authState.hasActiveAuthIncident,
@@ -311,15 +324,23 @@ String _cloudSyncBlockedMessage({
   required String? cloudError,
   required int mediaErrorCount,
   required bool canLeaveWithDurableWork,
+  required bool hasUnknownOwnerMediaWork,
 }) {
-  final base = !isConnected
-      ? 'Icarus is offline, so these changes have not reached the cloud.'
-      : (cloudError != null
-          ? friendlyCloudSyncError(cloudError)
-          : (mediaErrorCount > 0
-              ? 'Some images have not reached the cloud.'
-              : 'Icarus is still sending cloud edits and images.'));
+  final base = hasUnknownOwnerMediaWork
+      ? 'Icarus found pending media saved before its account ownership could '
+          'be verified. It has not reached the cloud.'
+      : !isConnected
+          ? 'Icarus is offline, so these changes have not reached the cloud.'
+          : (cloudError != null
+              ? friendlyCloudSyncError(cloudError)
+              : (mediaErrorCount > 0
+                  ? 'Some images have not reached the cloud.'
+                  : 'Icarus is still sending cloud edits and images.'));
   if (canLeaveWithDurableWork) {
+    if (hasUnknownOwnerMediaWork) {
+      return '$base The record remains saved on this device and will not be '
+          'sent automatically. You can leave without deleting it.';
+    }
     return '$base The pending work is saved on this device. You can leave '
         'and Icarus will retry it later.';
   }

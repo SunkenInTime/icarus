@@ -107,6 +107,7 @@ void main() {
         jobs: [
           CloudMediaUploadJob(
             jobId: 'restored-image',
+            accountId: 'account-a',
             strategyPublicId: 'cloud-strategy',
             assetPublicId: 'restored-image',
             fileExtension: 'png',
@@ -137,6 +138,7 @@ void main() {
         jobs: [
           CloudMediaUploadJob(
             jobId: 'missing-image',
+            accountId: 'account-a',
             strategyPublicId: 'cloud-strategy',
             assetPublicId: 'missing-image',
             fileExtension: 'png',

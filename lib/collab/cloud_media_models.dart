@@ -33,6 +33,7 @@ String mimeTypeForImageExtension(String extension) {
 class CloudMediaUploadJob {
   CloudMediaUploadJob({
     required this.jobId,
+    required this.accountId,
     required this.strategyPublicId,
     required this.assetPublicId,
     required this.fileExtension,
@@ -54,6 +55,7 @@ class CloudMediaUploadJob {
   });
 
   final String jobId;
+  final String? accountId;
   final String strategyPublicId;
   final String assetPublicId;
   final String fileExtension;
@@ -84,6 +86,7 @@ class CloudMediaUploadJob {
 
   CloudMediaUploadJob copyWith({
     String? jobId,
+    String? accountId,
     String? strategyPublicId,
     String? assetPublicId,
     String? fileExtension,
@@ -105,6 +108,7 @@ class CloudMediaUploadJob {
   }) {
     return CloudMediaUploadJob(
       jobId: jobId ?? this.jobId,
+      accountId: accountId ?? this.accountId,
       strategyPublicId: strategyPublicId ?? this.strategyPublicId,
       assetPublicId: assetPublicId ?? this.assetPublicId,
       fileExtension: fileExtension ?? this.fileExtension,

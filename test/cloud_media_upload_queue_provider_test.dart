@@ -1,14 +1,19 @@
+import 'dart:io';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hive_ce/hive.dart';
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/durable_cloud_media_outbox.dart';
 import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/const/line_provider.dart';
+import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
@@ -110,6 +115,7 @@ ProviderContainer _container(
   StrategyOpQueueState? opQueueState,
   bool strategyOpen = true,
   bool cloudReady = false,
+  String? accountId = 'account-a',
   CloudMediaReferenceSnapshotLoader? referenceSnapshotLoader,
 }) {
   final resolvedOpQueueState = opQueueState ??
@@ -130,6 +136,7 @@ ProviderContainer _container(
       authProvider.overrideWith(
         cloudReady ? _CloudReadyAuthProvider.new : _SignedOutAuthProvider.new,
       ),
+      cloudMediaAccountIdProvider.overrideWithValue(accountId),
       cloudCollabModeProvider.overrideWith(_DisabledCloudCollabMode.new),
       convexConnectionSnapshotProvider.overrideWithValue(cloudReady),
       convexConnectionProvider.overrideWith(
@@ -183,8 +190,61 @@ RemoteFullStrategySnapshot _fullSnapshot({
   );
 }
 
+Map<String, Object?> _legacyJob({
+  required String jobId,
+  required String strategyPublicId,
+}) {
+  return <String, Object?>{
+    'outboxVersion': 1,
+    'jobId': jobId,
+    'strategyPublicId': strategyPublicId,
+    'assetPublicId': jobId,
+    'fileExtension': '.png',
+    'mimeType': 'image/png',
+    'state': CloudMediaJobState.pendingUpload.name,
+    'referenceDurable': false,
+    'attempts': 0,
+    'updatedAt': DateTime.utc(2026, 9, 3).toIso8601String(),
+  };
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test('v1 preparation preserves unknown-owner records byte-for-byte',
+      () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'icarus-media-outbox-v1-',
+    );
+    try {
+      Hive.init(directory.path);
+      final box = await Hive.openBox<dynamic>(
+        HiveBoxNames.cloudMediaOutboxBox,
+      );
+      final legacy = _legacyJob(
+        jobId: 'legacy-image',
+        strategyPublicId: 'strategy-a',
+      );
+      await box.put(durableCloudMediaOutboxVersionKey, 1);
+      await box.put('legacy-image', legacy);
+
+      await prepareDurableCloudMediaOutbox();
+
+      expect(
+        box.get(durableCloudMediaOutboxVersionKey),
+        durableCloudMediaOutboxRecordVersion,
+      );
+      expect(box.get('legacy-image'), legacy);
+      final loaded = HiveDurableCloudMediaOutboxStore().load();
+      expect(loaded.issues, isEmpty);
+      expect(loaded.jobs.single.accountId, isNull);
+    } finally {
+      await Hive.close();
+      if (await directory.exists()) {
+        await directory.delete(recursive: true);
+      }
+    }
+  });
 
   test('restart restores unfinished lineup media from the durable outbox',
       () async {
@@ -211,6 +271,143 @@ void main() {
     expect(state.jobs.single.strategyPublicId, 'strategy-a');
     expect(state.jobs.single.fileExtension, '.png');
     expect(state.jobs.single.referenceDurable, isFalse);
+  });
+
+  test('account B cannot restore or reconcile account A media', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    final accountA = _container(store, accountId: 'account-a');
+    await accountA
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .enqueuePlacedImageUpload(
+          strategyPublicId: 'strategy-a',
+          imagePublicId: 'account-a-image',
+          fileExtension: '.png',
+        );
+    accountA.dispose();
+
+    var snapshotReads = 0;
+    final accountB = _container(
+      store,
+      accountId: 'account-b',
+      cloudReady: true,
+      referenceSnapshotLoader: (_) async {
+        snapshotReads += 1;
+        return _fullSnapshot();
+      },
+    );
+    addTearDown(accountB.dispose);
+    final queue = accountB.read(cloudMediaUploadQueueProvider.notifier);
+
+    await queue.retryNow(ignoreBackoff: true);
+
+    expect(accountB.read(cloudMediaUploadQueueProvider).jobs, isEmpty);
+    expect(snapshotReads, 0);
+    final preserved = store.load().jobs.single;
+    expect(preserved.accountId, 'account-a');
+    expect(preserved.assetPublicId, 'account-a-image');
+    expect(preserved.referenceDurable, isFalse);
+  });
+
+  test('enqueue fails before writing when no account owns the job', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    final container = _container(store, accountId: null);
+    addTearDown(container.dispose);
+
+    await expectLater(
+      container
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .enqueuePlacedImageUpload(
+            strategyPublicId: 'strategy-a',
+            imagePublicId: 'unowned-image',
+            fileExtension: '.png',
+          ),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(store.values, isEmpty);
+  });
+
+  test('account-scoped keys isolate identical asset IDs and removal', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    CloudMediaUploadJob job(String accountId) => CloudMediaUploadJob(
+          jobId: 'shared-image',
+          accountId: accountId,
+          strategyPublicId: 'strategy-a',
+          assetPublicId: 'shared-image',
+          fileExtension: '.png',
+          mimeType: 'image/png',
+          state: CloudMediaJobState.pendingUpload,
+          attempts: 0,
+          updatedAt: DateTime.utc(2026, 9, 3),
+        );
+    final accountAJob = job('account-a');
+    final accountBJob = job('account-b');
+
+    await store.putAll([accountAJob, accountBJob]);
+    expect(
+      store.values.keys,
+      containsAll(['account-a|shared-image', 'account-b|shared-image']),
+    );
+
+    await store.remove(accountAJob);
+
+    final remaining = store.load().jobs.single;
+    expect(remaining.accountId, 'account-b');
+    expect(remaining.assetPublicId, 'shared-image');
+  });
+
+  test('current-strategy v1 work is visible but never reconciled', () async {
+    final store = MemoryDurableCloudMediaOutboxStore({
+      'legacy-image': _legacyJob(
+        jobId: 'legacy-image',
+        strategyPublicId: 'strategy-a',
+      ),
+    });
+    var snapshotReads = 0;
+    final container = _container(
+      store,
+      accountId: 'account-b',
+      cloudReady: true,
+      referenceSnapshotLoader: (_) async {
+        snapshotReads += 1;
+        return _fullSnapshot();
+      },
+    );
+    addTearDown(container.dispose);
+    await container.read(convexConnectionProvider.future);
+    final queue = container.read(cloudMediaUploadQueueProvider.notifier);
+
+    await queue.retryNow(ignoreBackoff: true);
+
+    final state = container.read(cloudMediaUploadQueueProvider);
+    expect(state.jobs, isEmpty);
+    expect(state.unknownOwnerJobsForStrategy('strategy-a'), hasLength(1));
+    expect(state.outboxIsReliable, isTrue);
+    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
+    expect(snapshotReads, 0);
+    expect(store.values, contains('legacy-image'));
+    expect(store.load().jobs.single.accountId, isNull);
+  });
+
+  test('unrelated-strategy v1 work causes no false attention', () async {
+    final store = MemoryDurableCloudMediaOutboxStore({
+      'legacy-image': _legacyJob(
+        jobId: 'legacy-image',
+        strategyPublicId: 'strategy-b',
+      ),
+    });
+    final container = _container(
+      store,
+      accountId: 'account-b',
+      cloudReady: true,
+    );
+    addTearDown(container.dispose);
+    await container.read(convexConnectionProvider.future);
+
+    final state = container.read(cloudMediaUploadQueueProvider);
+    expect(state.unknownOwnerJobsForStrategy('strategy-a'), isEmpty);
+    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.synced);
+    expect(store.values, contains('legacy-image'));
   });
 
   test('restart keeps an interrupted placement staged and non-runnable',
@@ -284,7 +481,7 @@ void main() {
     final state = container.read(cloudMediaUploadQueueProvider);
     expect(state.isProcessing, isFalse);
     expect(state.jobs.single.attempts, 0);
-    expect(store.values, contains('offline-image'));
+    expect(store.values, contains('account-a|offline-image'));
   });
 
   test('lineup staging is atomic when the durable batch write fails', () async {
@@ -314,7 +511,7 @@ void main() {
       throwsA(isA<StateError>()),
     );
 
-    expect(store.values.keys, ['existing-image']);
+    expect(store.values.keys, ['account-a|existing-image']);
     expect(
       container
           .read(cloudMediaUploadQueueProvider)
@@ -343,6 +540,7 @@ void main() {
       for (final assetId in ['lineup-image-1', 'lineup-image-2'])
         CloudMediaUploadJob(
           jobId: assetId,
+          accountId: 'account-a',
           strategyPublicId: 'strategy-a',
           assetPublicId: assetId,
           fileExtension: '.png',
@@ -382,6 +580,7 @@ void main() {
     await mediaStore.put(
       CloudMediaUploadJob(
         jobId: 'acked-image',
+        accountId: 'account-a',
         strategyPublicId: 'strategy-a',
         assetPublicId: 'acked-image',
         fileExtension: '.png',
@@ -455,6 +654,7 @@ void main() {
     await mediaStore.put(
       CloudMediaUploadJob(
         jobId: assetId,
+        accountId: 'account-a',
         strategyPublicId: 'strategy-a',
         assetPublicId: assetId,
         fileExtension: '.png',
@@ -505,7 +705,7 @@ void main() {
     final job = container.read(cloudMediaUploadQueueProvider).jobs.single;
     expect(job.assetPublicId, 'new-image');
     expect(job.referenceDurable, isFalse);
-    expect(mediaStore.values, contains('new-image'));
+    expect(mediaStore.values, contains('account-a|new-image'));
   });
 
   test('restart preserves an uploaded object that still needs attachment',
@@ -514,6 +714,7 @@ void main() {
     await store.put(
       CloudMediaUploadJob(
         jobId: 'pending-attach-image',
+        accountId: 'account-a',
         strategyPublicId: 'strategy-a',
         assetPublicId: 'pending-attach-image',
         fileExtension: '.png',
@@ -555,6 +756,7 @@ void main() {
     mediaQueue.replaceJobs([
       CloudMediaUploadJob(
         jobId: 'other-image',
+        accountId: 'account-a',
         strategyPublicId: 'strategy-b',
         assetPublicId: 'other-image',
         fileExtension: '.png',
