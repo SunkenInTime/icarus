@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
@@ -117,11 +118,17 @@ class _GuardOpQueue extends StrategyOpQueueNotifier {
 }
 
 class _GuardMediaQueue extends CloudMediaUploadQueueNotifier {
+  _GuardMediaQueue([
+    this.initialState = const CloudMediaUploadQueueState(
+      jobs: [],
+      isProcessing: false,
+    ),
+  ]);
+
+  final CloudMediaUploadQueueState initialState;
+
   @override
-  CloudMediaUploadQueueState build() => const CloudMediaUploadQueueState(
-        jobs: [],
-        isProcessing: false,
-      );
+  CloudMediaUploadQueueState build() => initialState;
 }
 
 const _guardEntityKey = EntitySyncKey.strategy();
@@ -721,6 +728,122 @@ void main() {
       await tester.tap(find.text('Stay Here'));
       await tester.pumpAndSettle();
       expect(await guardFuture, isFalse);
+    });
+
+    testWidgets('an unreliable media outbox cannot leave', (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final mediaQueue = _GuardMediaQueue(
+        CloudMediaUploadQueueState(
+          jobs: [
+            CloudMediaUploadJob(
+              jobId: 'image-a',
+              strategyPublicId: 'cloud-strategy',
+              assetPublicId: 'image-a',
+              fileExtension: '.png',
+              mimeType: 'image/png',
+              state: CloudMediaJobState.pendingUpload,
+              attempts: 0,
+              updatedAt: DateTime.utc(2026, 9, 3),
+            ),
+          ],
+          isProcessing: false,
+          durabilityError: 'Media work could not be saved on this device.',
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(
+            () => _GuardOpQueue(
+              const StrategyOpQueueState(
+                accountId: 'account-a',
+                strategyPublicId: 'cloud-strategy',
+                clientId: 'guard-client',
+                durableLoaded: true,
+              ),
+            ),
+          ),
+          cloudMediaUploadQueueProvider.overrideWith(() => mediaQueue),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-unreliable-media',
+        onContinue: () async {},
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Leave Anyway'), findsNothing);
+      expect(find.textContaining('could not confirm'), findsOneWidget);
+      await tester.tap(find.text('Stay Here'));
+      await tester.pumpAndSettle();
+      expect(await guardFuture, isFalse);
+    });
+
+    testWidgets('cloud exit stages an active text draft before leaving',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(
+            () => _GuardOpQueue(
+              const StrategyOpQueueState(
+                accountId: 'account-a',
+                strategyPublicId: 'cloud-strategy',
+                clientId: 'guard-client',
+                durableLoaded: true,
+              ),
+            ),
+          ),
+          cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(container.dispose);
+      container
+          .read(textDraftProvider.notifier)
+          .setDraft('text-a', 'active cloud draft');
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final result = await guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-cloud-draft',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(result, isTrue);
+      expect(continueCalls, 1);
+      expect(notifier.forceSaveCalls, 1);
+      expect(container.read(textDraftProvider), isEmpty);
     });
 
     testWidgets('active cloud flush completes and exits without a dialog',

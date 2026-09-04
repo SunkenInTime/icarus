@@ -7,6 +7,10 @@ import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/providers/strategy_save_state_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 
 class _SignedOutAuthProvider extends AuthProvider {
   @override
@@ -25,6 +29,38 @@ class _DisabledCloudCollabMode extends CloudCollabModeNotifier {
         featureFlagEnabled: false,
         forceLocalFallback: false,
       );
+}
+
+class _ActiveCloudStrategy extends StrategyProvider {
+  @override
+  StrategyState build() => const StrategyState(
+        strategyId: 'strategy-a',
+        strategyName: 'Strategy A',
+        source: StrategySource.cloud,
+        isOpen: true,
+      );
+}
+
+class _SettledOpQueue extends StrategyOpQueueNotifier {
+  @override
+  StrategyOpQueueState build() => const StrategyOpQueueState(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-a',
+        clientId: 'client-a',
+        durableLoaded: true,
+      );
+}
+
+class _MutableMediaQueue extends CloudMediaUploadQueueNotifier {
+  @override
+  CloudMediaUploadQueueState build() => const CloudMediaUploadQueueState(
+        jobs: [],
+        isProcessing: false,
+      );
+
+  void replaceJobs(List<CloudMediaUploadJob> jobs) {
+    state = CloudMediaUploadQueueState(jobs: jobs, isProcessing: false);
+  }
 }
 
 ProviderContainer _container(MemoryDurableCloudMediaOutboxStore store) {
@@ -141,5 +177,37 @@ void main() {
     expect(job.uploadId, 'upload-a');
     expect(job.objectKey, contains('pending-attach-image.png'));
     expect(job.etag, 'etag-a');
+  });
+
+  test('media from another strategy does not affect the active save state', () {
+    final mediaQueue = _MutableMediaQueue();
+    final container = ProviderContainer(
+      overrides: [
+        strategyProvider.overrideWith(_ActiveCloudStrategy.new),
+        strategyOpQueueProvider.overrideWith(_SettledOpQueue.new),
+        cloudMediaUploadQueueProvider.overrideWith(() => mediaQueue),
+      ],
+    );
+    addTearDown(container.dispose);
+    container.read(strategySaveStateProvider);
+
+    mediaQueue.replaceJobs([
+      CloudMediaUploadJob(
+        jobId: 'other-image',
+        strategyPublicId: 'strategy-b',
+        assetPublicId: 'other-image',
+        fileExtension: '.png',
+        mimeType: 'image/png',
+        state: CloudMediaJobState.failed,
+        attempts: 1,
+        lastError: 'Local media file is missing.',
+        updatedAt: DateTime.utc(2026, 9, 3),
+      ),
+    ]);
+
+    final saveState = container.read(strategySaveStateProvider);
+    expect(saveState.hasPendingMediaSync, isFalse);
+    expect(saveState.mediaSyncErrorCount, 0);
+    expect(saveState.isDirty, isFalse);
   });
 }
