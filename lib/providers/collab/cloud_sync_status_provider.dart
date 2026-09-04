@@ -3,7 +3,9 @@ import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
 import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
+import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/providers/text_draft_provider.dart';
+import 'package:icarus/strategy/strategy_page_models.dart';
 
 enum CloudSyncStatus { synced, editing, syncing, offline, attention }
 
@@ -11,6 +13,12 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   final saveState = ref.watch(strategySaveStateProvider);
   final opQueueState = ref.watch(strategyOpQueueProvider);
   final mediaQueueState = ref.watch(cloudMediaUploadQueueProvider);
+  final strategy = ref.watch(strategyProvider);
+  final activeMediaJobs = mediaQueueState.jobsForStrategy(
+    strategy.source == StrategySource.cloud ? strategy.strategyId : null,
+  );
+  final activeMediaErrorCount =
+      activeMediaJobs.where((job) => job.isFailed).length;
   final hasTextDrafts = ref.watch(
     textDraftProvider.select((drafts) => drafts.isNotEmpty),
   );
@@ -23,7 +31,9 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   if (hasDurabilityProblem) {
     return CloudSyncStatus.attention;
   }
-  if (opQueueState.needsAttention || saveState.mediaSyncErrorCount > 0) {
+  if (opQueueState.needsAttention ||
+      saveState.mediaSyncErrorCount > 0 ||
+      activeMediaErrorCount > 0) {
     return CloudSyncStatus.attention;
   }
   if (!isConnected) {
@@ -38,6 +48,7 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   if (saveState.isSaving ||
       saveState.hasPendingCloudSync ||
       saveState.hasPendingMediaSync ||
+      activeMediaJobs.isNotEmpty ||
       !opQueueState.durableLoaded ||
       !mediaQueueState.durableLoaded) {
     return CloudSyncStatus.syncing;

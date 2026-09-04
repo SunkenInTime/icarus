@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
@@ -44,6 +45,15 @@ class _EmptyMediaQueue extends CloudMediaUploadQueueNotifier {
       );
 }
 
+class _FixedMediaQueue extends CloudMediaUploadQueueNotifier {
+  _FixedMediaQueue(this.initialState);
+
+  final CloudMediaUploadQueueState initialState;
+
+  @override
+  CloudMediaUploadQueueState build() => initialState;
+}
+
 class _FixedOpQueue extends StrategyOpQueueNotifier {
   _FixedOpQueue(this.initialState);
 
@@ -65,6 +75,7 @@ class _FixedSaveState extends StrategySaveStateNotifier {
 ProviderContainer _createContainer({
   bool connected = true,
   StrategyOpQueueState? opQueueState,
+  CloudMediaUploadQueueState? mediaQueueState,
   StrategySaveState? saveState,
 }) {
   return ProviderContainer(
@@ -75,7 +86,11 @@ ProviderContainer _createContainer({
             ? _SettledOpQueue.new
             : () => _FixedOpQueue(opQueueState),
       ),
-      cloudMediaUploadQueueProvider.overrideWith(_EmptyMediaQueue.new),
+      cloudMediaUploadQueueProvider.overrideWith(
+        mediaQueueState == null
+            ? _EmptyMediaQueue.new
+            : () => _FixedMediaQueue(mediaQueueState),
+      ),
       convexConnectionProvider.overrideWith((ref) => Stream.value(connected)),
       if (saveState != null)
         strategySaveStateProvider.overrideWith(
@@ -86,6 +101,61 @@ ProviderContainer _createContainer({
 }
 
 void main() {
+  test('restored active-strategy media renders as syncing', () {
+    final container = _createContainer(
+      mediaQueueState: CloudMediaUploadQueueState(
+        jobs: [
+          CloudMediaUploadJob(
+            jobId: 'restored-image',
+            strategyPublicId: 'cloud-strategy',
+            assetPublicId: 'restored-image',
+            fileExtension: 'png',
+            mimeType: 'image/png',
+            state: CloudMediaJobState.pendingUpload,
+            referenceDurable: false,
+            attempts: 0,
+            updatedAt: DateTime.utc(2026),
+          ),
+        ],
+        isProcessing: false,
+      ),
+    );
+    addTearDown(container.dispose);
+
+    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.syncing);
+    expect(
+      container.read(cloudSyncStatusProvider),
+      isNot(CloudSyncStatus.synced),
+    );
+  });
+
+  test('restored active-strategy media errors remain visible offline',
+      () async {
+    final container = _createContainer(
+      connected: false,
+      mediaQueueState: CloudMediaUploadQueueState(
+        jobs: [
+          CloudMediaUploadJob(
+            jobId: 'missing-image',
+            strategyPublicId: 'cloud-strategy',
+            assetPublicId: 'missing-image',
+            fileExtension: 'png',
+            mimeType: 'image/png',
+            state: CloudMediaJobState.failed,
+            attempts: 1,
+            lastError: 'Local media file is missing.',
+            updatedAt: DateTime.utc(2026),
+          ),
+        ],
+        isProcessing: false,
+      ),
+    );
+    addTearDown(container.dispose);
+    await container.read(convexConnectionProvider.future);
+
+    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
+  });
+
   testWidgets('an active text draft can never appear synced', (tester) async {
     final container = _createContainer();
     addTearDown(container.dispose);
