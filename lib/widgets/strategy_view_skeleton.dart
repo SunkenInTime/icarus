@@ -171,11 +171,13 @@ class _SkeletonTopBar extends StatelessWidget {
 
   Widget _buildBar(BuildContext context, String? title) {
     return Padding(
-      padding: const EdgeInsets.only(left: 15, top: 15, bottom: 10, right: 15),
+      padding: const EdgeInsets.only(left: 15, bottom: 10, right: 15),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const _SkeletonBlock(width: 40, height: 40, radius: 8),
               const SizedBox(width: 5),
@@ -184,7 +186,7 @@ class _SkeletonTopBar extends StatelessWidget {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 280),

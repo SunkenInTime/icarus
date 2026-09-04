@@ -226,15 +226,18 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                 const MacTrafficLightInset(),
                 Expanded(
                   child: Padding(
-            padding:
-                const EdgeInsets.only(left: 15, top: 15, bottom: 10, right: 15),
+            // No top padding: the 40px controls then share the traffic
+            // lights' centre line; only the taller map card hangs below it.
+            padding: const EdgeInsets.only(left: 15, bottom: 10, right: 15),
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final showDiscordLabel = constraints.maxWidth >= 1000;
                 return Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         ShadIconButton.ghost(
                           foregroundColor: Colors.white,
