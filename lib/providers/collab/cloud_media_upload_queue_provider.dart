@@ -259,6 +259,7 @@ class CloudMediaUploadQueueNotifier
         width: width,
         height: height,
         state: CloudMediaJobState.pendingUpload,
+        referenceDurable: false,
         attempts: 0,
         updatedAt: DateTime.now(),
       ),

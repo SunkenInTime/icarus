@@ -248,12 +248,12 @@ void main() {
       expect(store.values, contains('broken'));
     });
 
-    test('protocol-v2 outbox records fail closed instead of converting', () {
-      final legacy = record(status: DurableOutboxStatus.queued).toJson()
-        ..['outboxVersion'] = 1;
+    test('unknown future outbox records fail closed instead of converting', () {
+      final future = record(status: DurableOutboxStatus.queued).toJson()
+        ..['outboxVersion'] = durableOutboxRecordVersion + 1;
 
       expect(
-        () => DurableOutboxRecord.fromJson(legacy),
+        () => DurableOutboxRecord.fromJson(future),
         throwsA(isA<FormatException>()),
       );
     });

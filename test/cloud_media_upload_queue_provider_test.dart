@@ -363,6 +363,33 @@ void main() {
     expect(restored.single.assetPublicId, 'unvisited-page-image');
     expect(restored.single.width, 640);
     expect(restored.single.height, 360);
+    expect(restored.single.referenceDurable, isFalse);
+  });
+
+  test('local-file job waits for a durable strategy reference', () async {
+    final store = MemoryDurableCloudMediaOutboxStore();
+    final container = _container(
+      store,
+      strategyStore: MemoryDurableStrategyOutboxStore(),
+      cloudReady: true,
+      cloudEnabled: true,
+      referenceSnapshotLoader: (_) async => _fullSnapshot(),
+    );
+    addTearDown(container.dispose);
+
+    await container
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .enqueueJobForLocalFile(
+          strategyPublicId: 'strategy-a',
+          assetPublicId: 'not-admitted-image',
+          fileExtension: '.png',
+        );
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+
+    final job = container.read(cloudMediaUploadQueueProvider).jobs.single;
+    expect(job.referenceDurable, isFalse);
+    expect(job.attempts, 0);
+    expect(container.read(cloudMediaUploadQueueProvider).isProcessing, isFalse);
   });
 
   test('blocked uploads yield and keep their durable job pending', () async {
