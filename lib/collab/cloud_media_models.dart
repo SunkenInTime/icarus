@@ -33,6 +33,7 @@ String mimeTypeForImageExtension(String extension) {
 class CloudMediaUploadJob {
   CloudMediaUploadJob({
     required this.jobId,
+    required this.accountId,
     required this.strategyPublicId,
     required this.assetPublicId,
     required this.fileExtension,
@@ -40,6 +41,7 @@ class CloudMediaUploadJob {
     required this.state,
     required this.attempts,
     required this.updatedAt,
+    this.referenceDurable = true,
     this.width,
     this.height,
     this.byteSize,
@@ -53,6 +55,7 @@ class CloudMediaUploadJob {
   });
 
   final String jobId;
+  final String? accountId;
   final String strategyPublicId;
   final String assetPublicId;
   final String fileExtension;
@@ -67,6 +70,7 @@ class CloudMediaUploadJob {
   final String? etag;
   final DateTime? uploadUrlExpiresAt;
   final CloudMediaJobState state;
+  final bool referenceDurable;
   final int attempts;
   final String? lastError;
   final DateTime updatedAt;
@@ -82,6 +86,7 @@ class CloudMediaUploadJob {
 
   CloudMediaUploadJob copyWith({
     String? jobId,
+    String? accountId,
     String? strategyPublicId,
     String? assetPublicId,
     String? fileExtension,
@@ -96,12 +101,14 @@ class CloudMediaUploadJob {
     Object? etag = _noChange,
     Object? uploadUrlExpiresAt = _noChange,
     CloudMediaJobState? state,
+    bool? referenceDurable,
     int? attempts,
     Object? lastError = _noChange,
     DateTime? updatedAt,
   }) {
     return CloudMediaUploadJob(
       jobId: jobId ?? this.jobId,
+      accountId: accountId ?? this.accountId,
       strategyPublicId: strategyPublicId ?? this.strategyPublicId,
       assetPublicId: assetPublicId ?? this.assetPublicId,
       fileExtension: fileExtension ?? this.fileExtension,
@@ -125,6 +132,7 @@ class CloudMediaUploadJob {
           ? this.uploadUrlExpiresAt
           : uploadUrlExpiresAt as DateTime?,
       state: state ?? this.state,
+      referenceDurable: referenceDurable ?? this.referenceDurable,
       attempts: attempts ?? this.attempts,
       lastError: identical(lastError, _noChange)
           ? this.lastError

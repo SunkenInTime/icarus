@@ -169,6 +169,23 @@ class PlacedImageProvider extends Notifier<ImageState> {
       tagColorValue: tagColorValue,
     );
 
+    if (strategySource == StrategySource.cloud && strategyId != null) {
+      AppErrorReporter.reportInfo(
+        'Image enqueueing cloud upload: image=${placedImage.id} '
+        'strategy=$strategyId extension=$fileExtension',
+        source: 'cloud_media.image_provider',
+      );
+      await ref
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .enqueuePlacedImageUpload(
+            strategyPublicId: strategyId,
+            imagePublicId: placedImage.id,
+            fileExtension: fileExtension,
+            width: null,
+            height: null,
+          );
+    }
+
     final action = UserAction(
       type: ActionType.addition,
       id: placedImage.id,
@@ -188,20 +205,12 @@ class PlacedImageProvider extends Notifier<ImageState> {
     );
 
     if (strategySource == StrategySource.cloud && strategyId != null) {
-      AppErrorReporter.reportInfo(
-        'Image enqueueing cloud upload: image=${placedImage.id} '
-        'strategy=$strategyId extension=$fileExtension',
-        source: 'cloud_media.image_provider',
-      );
       await ref
           .read(cloudMediaUploadQueueProvider.notifier)
-          .enqueuePlacedImageUpload(
-            strategyPublicId: strategyId,
-            imagePublicId: placedImage.id,
-            fileExtension: fileExtension,
-            width: null,
-            height: null,
-          );
+          .commitStagedMediaReferences(
+        strategyPublicId: strategyId,
+        assetPublicIds: [placedImage.id],
+      );
     }
   }
 

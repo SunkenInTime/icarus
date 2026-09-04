@@ -4,12 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive_ce/hive.dart';
+import 'package:icarus/collab/cloud_media_models.dart';
+import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/const/app_provider_container.dart';
 import 'package:icarus/const/coordinate_system.dart';
 import 'package:icarus/const/hive_boxes.dart';
 import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/hive/hive_registration.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
+import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/in_app_debug_provider.dart';
 import 'package:icarus/providers/user_preferences_provider.dart';
@@ -78,6 +85,64 @@ class _ThrowingSaveStrategyProvider extends StrategyProvider {
     throw StateError('save failed');
   }
 }
+
+class _GuardAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: null,
+      );
+}
+
+class _GuardOpQueue extends StrategyOpQueueNotifier {
+  _GuardOpQueue(this.initialState);
+
+  final StrategyOpQueueState initialState;
+
+  @override
+  StrategyOpQueueState build() => initialState;
+
+  StrategyOpQueueState get currentState => state;
+
+  void settle() {
+    state = StrategyOpQueueState(
+      accountId: initialState.accountId,
+      strategyPublicId: initialState.strategyPublicId,
+      clientId: initialState.clientId,
+      durableLoaded: true,
+    );
+  }
+}
+
+class _GuardMediaQueue extends CloudMediaUploadQueueNotifier {
+  _GuardMediaQueue([
+    this.initialState = const CloudMediaUploadQueueState(
+      jobs: [],
+      isProcessing: false,
+    ),
+  ]);
+
+  final CloudMediaUploadQueueState initialState;
+
+  @override
+  CloudMediaUploadQueueState build() => initialState;
+}
+
+const _guardEntityKey = EntitySyncKey.strategy();
+const _guardPendingIntent = QueuedEntityIntent(
+  entityKey: _guardEntityKey,
+  pending: PendingOp(
+    op: StrategyPatchOp(
+      opId: 'guard-op',
+      payload: <String, dynamic>{'name': 'pending'},
+      expectedStrategyRevision: 1,
+    ),
+    clientId: 'guard-client',
+  ),
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -505,6 +570,536 @@ void main() {
       expect(logs, isNotEmpty);
       expect(logs.last.message, 'Failed to save strategy before leaving.');
       expect(logs.last.source, 'guard-test-error');
+    });
+
+    testWidgets('offline durable work can leave and remains queued',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final opQueue = _GuardOpQueue(
+        StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'guard-client',
+          queuedByEntityKey: {_guardEntityKey: _guardPendingIntent},
+          durableLoaded: true,
+          lastError: 'Cloud connection is offline.',
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(() => opQueue),
+          cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-cloud-offline',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Leave Anyway'), findsOneWidget);
+      expect(
+        find.textContaining('have not reached the cloud'),
+        findsOneWidget,
+      );
+      expect(opQueue.currentState.pending, hasLength(1));
+      await tester.tap(find.text('Leave Anyway'));
+      await tester.pumpAndSettle();
+
+      expect(await guardFuture, isTrue);
+      expect(continueCalls, 1);
+      expect(opQueue.currentState.pending, hasLength(1));
+    });
+
+    testWidgets('paused viewer work has a leave-anyway path', (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final opQueue = _GuardOpQueue(
+        StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'guard-client',
+          pausedByEntityKey: {_guardEntityKey: _guardPendingIntent},
+          durableLoaded: true,
+          lastError: 'This viewer edit cannot be retried automatically.',
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(() => opQueue),
+          cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(true),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-cloud-viewer',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Leave Anyway'), findsOneWidget);
+      await tester.tap(find.text('Leave Anyway'));
+      await tester.pumpAndSettle();
+
+      expect(await guardFuture, isTrue);
+      expect(continueCalls, 1);
+      expect(opQueue.currentState.pausedByEntityKey, isNotEmpty);
+    });
+
+    testWidgets('non-durable cloud work cannot leave', (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final opQueue = _GuardOpQueue(
+        StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'guard-client',
+          queuedByEntityKey: {_guardEntityKey: _guardPendingIntent},
+          durableLoaded: true,
+          hasDurabilityFailure: true,
+          lastError: 'Cloud work could not be saved to the durable outbox.',
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(() => opQueue),
+          cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(true),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-cloud-nondurable',
+        onContinue: () async {},
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Leave Anyway'), findsNothing);
+      expect(find.text('Stay Here'), findsOneWidget);
+      await tester.tap(find.text('Stay Here'));
+      await tester.pumpAndSettle();
+      expect(await guardFuture, isFalse);
+    });
+
+    testWidgets('an unreliable media outbox cannot leave', (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final mediaQueue = _GuardMediaQueue(
+        CloudMediaUploadQueueState(
+          jobs: [
+            CloudMediaUploadJob(
+              jobId: 'image-a',
+              accountId: 'account-a',
+              strategyPublicId: 'cloud-strategy',
+              assetPublicId: 'image-a',
+              fileExtension: '.png',
+              mimeType: 'image/png',
+              state: CloudMediaJobState.pendingUpload,
+              attempts: 0,
+              updatedAt: DateTime.utc(2026, 9, 3),
+            ),
+          ],
+          isProcessing: false,
+          durabilityError: 'Media work could not be saved on this device.',
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(
+            () => _GuardOpQueue(
+              const StrategyOpQueueState(
+                accountId: 'account-a',
+                strategyPublicId: 'cloud-strategy',
+                clientId: 'guard-client',
+                durableLoaded: true,
+              ),
+            ),
+          ),
+          cloudMediaUploadQueueProvider.overrideWith(() => mediaQueue),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-unreliable-media',
+        onContinue: () async {},
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Leave Anyway'), findsNothing);
+      expect(find.textContaining('could not confirm'), findsOneWidget);
+      await tester.tap(find.text('Stay Here'));
+      await tester.pumpAndSettle();
+      expect(await guardFuture, isFalse);
+    });
+
+    testWidgets(
+        'current-strategy unknown-owner media can leave but never claims retry',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final mediaQueue = _GuardMediaQueue(
+        CloudMediaUploadQueueState(
+          jobs: const [],
+          unknownOwnerJobs: [
+            CloudMediaUploadJob(
+              jobId: 'legacy-image',
+              accountId: null,
+              strategyPublicId: 'cloud-strategy',
+              assetPublicId: 'legacy-image',
+              fileExtension: '.png',
+              mimeType: 'image/png',
+              state: CloudMediaJobState.pendingUpload,
+              attempts: 0,
+              updatedAt: DateTime.utc(2026, 9, 3),
+            ),
+          ],
+          isProcessing: false,
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(
+            () => _GuardOpQueue(
+              const StrategyOpQueueState(
+                accountId: 'account-b',
+                strategyPublicId: 'cloud-strategy',
+                clientId: 'guard-client',
+                durableLoaded: true,
+              ),
+            ),
+          ),
+          cloudMediaUploadQueueProvider.overrideWith(() => mediaQueue),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-unknown-owner',
+        onContinue: () async {
+          continueCalls += 1;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Leave Anyway'), findsOneWidget);
+      expect(find.textContaining('will not be sent automatically'),
+          findsOneWidget);
+      await tester.tap(find.text('Leave Anyway'));
+      await tester.pumpAndSettle();
+      expect(await guardFuture, isTrue);
+      expect(continueCalls, 1);
+    });
+
+    testWidgets('unrelated unknown-owner media does not block exit',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final mediaQueue = _GuardMediaQueue(
+        CloudMediaUploadQueueState(
+          jobs: const [],
+          unknownOwnerJobs: [
+            CloudMediaUploadJob(
+              jobId: 'legacy-image',
+              accountId: null,
+              strategyPublicId: 'other-strategy',
+              assetPublicId: 'legacy-image',
+              fileExtension: '.png',
+              mimeType: 'image/png',
+              state: CloudMediaJobState.pendingUpload,
+              attempts: 0,
+              updatedAt: DateTime.utc(2026, 9, 3),
+            ),
+          ],
+          isProcessing: false,
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(
+            () => _GuardOpQueue(
+              const StrategyOpQueueState(
+                accountId: 'account-b',
+                strategyPublicId: 'cloud-strategy',
+                clientId: 'guard-client',
+                durableLoaded: true,
+              ),
+            ),
+          ),
+          cloudMediaUploadQueueProvider.overrideWith(() => mediaQueue),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final result = await guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-unrelated-unknown-owner',
+        onContinue: () async {
+          continueCalls += 1;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(result, isTrue);
+      expect(continueCalls, 1);
+      expect(find.text('Cloud sync pending'), findsNothing);
+    });
+
+    testWidgets('media without a durable strategy reference cannot leave',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final mediaQueue = _GuardMediaQueue(
+        CloudMediaUploadQueueState(
+          jobs: [
+            CloudMediaUploadJob(
+              jobId: 'staged-image',
+              accountId: 'account-a',
+              strategyPublicId: 'cloud-strategy',
+              assetPublicId: 'staged-image',
+              fileExtension: '.png',
+              mimeType: 'image/png',
+              state: CloudMediaJobState.pendingUpload,
+              referenceDurable: false,
+              attempts: 0,
+              updatedAt: DateTime.utc(2026, 9, 3),
+            ),
+          ],
+          isProcessing: false,
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(
+            () => _GuardOpQueue(
+              const StrategyOpQueueState(
+                accountId: 'account-a',
+                strategyPublicId: 'cloud-strategy',
+                clientId: 'guard-client',
+                durableLoaded: true,
+              ),
+            ),
+          ),
+          cloudMediaUploadQueueProvider.overrideWith(() => mediaQueue),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-staged-media',
+        onContinue: () async {},
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Leave Anyway'), findsNothing);
+      await tester.tap(find.text('Stay Here'));
+      await tester.pumpAndSettle();
+      expect(await guardFuture, isFalse);
+    });
+
+    testWidgets('cloud exit stages an active text draft before leaving',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(
+            () => _GuardOpQueue(
+              const StrategyOpQueueState(
+                accountId: 'account-a',
+                strategyPublicId: 'cloud-strategy',
+                clientId: 'guard-client',
+                durableLoaded: true,
+              ),
+            ),
+          ),
+          cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(container.dispose);
+      container
+          .read(textDraftProvider.notifier)
+          .setDraft('text-a', 'active cloud draft');
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final result = await guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-cloud-draft',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pumpAndSettle();
+
+      expect(result, isTrue);
+      expect(continueCalls, 1);
+      expect(notifier.forceSaveCalls, 1);
+      expect(container.read(textDraftProvider), isEmpty);
+    });
+
+    testWidgets('active cloud flush completes and exits without a dialog',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final opQueue = _GuardOpQueue(
+        StrategyOpQueueState(
+          accountId: 'account-a',
+          strategyPublicId: 'cloud-strategy',
+          clientId: 'guard-client',
+          queuedByEntityKey: {_guardEntityKey: _guardPendingIntent},
+          durableLoaded: true,
+          isFlushing: true,
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(() => opQueue),
+          cloudMediaUploadQueueProvider.overrideWith(_GuardMediaQueue.new),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(true),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      var continueCalls = 0;
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-cloud-flush',
+        onContinue: () async {
+          continueCalls++;
+        },
+      );
+      await tester.pump();
+      opQueue.settle();
+      await tester.pump(const Duration(milliseconds: 150));
+
+      expect(await guardFuture, isTrue);
+      expect(continueCalls, 1);
+      expect(find.text('Cloud sync pending'), findsNothing);
     });
   });
 }

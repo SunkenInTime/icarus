@@ -8,11 +8,15 @@ import 'package:http/http.dart' as http;
 import 'package:icarus/collab/cloud_media_models.dart';
 import 'package:icarus/collab/collab_models.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
+import 'package:icarus/collab/durable_cloud_media_outbox.dart';
+import 'package:icarus/collab/durable_strategy_outbox.dart';
 import 'package:icarus/const/line_provider.dart';
 import 'package:icarus/const/placed_classes.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/auth_provider.dart';
 import 'package:icarus/providers/collab/cloud_collab_provider.dart';
+import 'package:icarus/providers/collab/convex_connection_provider.dart';
+import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/image_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/services/app_error_reporter.dart';
@@ -24,16 +28,36 @@ class CloudMediaUploadQueueState {
   const CloudMediaUploadQueueState({
     required this.jobs,
     required this.isProcessing,
+    this.unknownOwnerJobs = const <CloudMediaUploadJob>[],
+    this.loadIssues = const <DurableCloudMediaOutboxLoadIssue>[],
+    this.durableLoaded = true,
+    this.durabilityError,
   });
 
   final List<CloudMediaUploadJob> jobs;
+  final List<CloudMediaUploadJob> unknownOwnerJobs;
   final bool isProcessing;
+  final List<DurableCloudMediaOutboxLoadIssue> loadIssues;
+  final bool durableLoaded;
+  final String? durabilityError;
+
+  bool get outboxIsReliable =>
+      durableLoaded && loadIssues.isEmpty && durabilityError == null;
 
   List<CloudMediaUploadJob> jobsForStrategy(String? strategyPublicId) {
     if (strategyPublicId == null) {
       return const [];
     }
     return jobs
+        .where((job) => job.strategyPublicId == strategyPublicId)
+        .toList(growable: false);
+  }
+
+  List<CloudMediaUploadJob> unknownOwnerJobsForStrategy(
+    String? strategyPublicId,
+  ) {
+    if (strategyPublicId == null) return const [];
+    return unknownOwnerJobs
         .where((job) => job.strategyPublicId == strategyPublicId)
         .toList(growable: false);
   }
@@ -51,10 +75,18 @@ class CloudMediaUploadQueueState {
   CloudMediaUploadQueueState copyWith({
     List<CloudMediaUploadJob>? jobs,
     bool? isProcessing,
+    String? durabilityError,
+    bool clearDurabilityError = false,
   }) {
     return CloudMediaUploadQueueState(
       jobs: jobs ?? this.jobs,
+      unknownOwnerJobs: unknownOwnerJobs,
       isProcessing: isProcessing ?? this.isProcessing,
+      loadIssues: loadIssues,
+      durableLoaded: durableLoaded,
+      durabilityError: clearDurabilityError
+          ? null
+          : (durabilityError ?? this.durabilityError),
     );
   }
 }
@@ -76,8 +108,21 @@ final cloudMediaUploadQueueProvider =
   CloudMediaUploadQueueNotifier.new,
 );
 
+typedef CloudMediaReferenceSnapshotLoader =
+    Future<RemoteFullStrategySnapshot> Function(String strategyPublicId);
+
+final cloudMediaReferenceSnapshotLoaderProvider =
+    Provider<CloudMediaReferenceSnapshotLoader>(
+  (ref) => ref.watch(convexStrategyRepositoryProvider).fetchFullSnapshot,
+);
+
+final cloudMediaAccountIdProvider = Provider<String?>(
+  (ref) => ref.watch(authProvider.select((state) => state.user?.id)),
+);
+
 class CloudMediaUploadQueueNotifier
     extends Notifier<CloudMediaUploadQueueState> {
+  static const Duration _blockedRetryDelay = Duration(seconds: 30);
   Timer? _retryTimer;
   Timer? _uploadCompletionDismissTimer;
   ToastificationItem? _uploadProgressToast;
@@ -87,14 +132,30 @@ class CloudMediaUploadQueueNotifier
   final Map<String, int> _uploadBytesTotalByJob = {};
   final Set<String> _uploadCompletingJobs = {};
   final Set<String> _uploadCompletedJobs = {};
-  final Map<String, CloudMediaUploadJob> _jobsById = {};
+  final Map<String, CloudMediaUploadJob> _jobsByStorageKey = {};
+  final Set<String> _restoredStagedJobIds = {};
+  bool _disposed = false;
+  late DurableCloudMediaOutboxStore _store;
 
   ConvexStrategyRepository get _repo =>
       ref.read(convexStrategyRepositoryProvider);
 
   @override
   CloudMediaUploadQueueState build() {
+    _store = ref.read(durableCloudMediaOutboxStoreProvider);
+    final loaded = _store.load();
+    _jobsByStorageKey.addEntries(
+      loaded.jobs.map(
+        (job) => MapEntry(durableCloudMediaOutboxStorageKey(job), job),
+      ),
+    );
+    _restoredStagedJobIds.addAll(
+      loaded.jobs
+          .where((job) => !job.referenceDurable)
+          .map(durableCloudMediaOutboxStorageKey),
+    );
     ref.onDispose(() {
+      _disposed = true;
       _retryTimer?.cancel();
       _uploadCompletionDismissTimer?.cancel();
       final toast = _uploadProgressToast;
@@ -114,9 +175,40 @@ class CloudMediaUploadQueueNotifier
       }
     });
 
-    return const CloudMediaUploadQueueState(
-      jobs: [],
+    ref.listen<String?>(cloudMediaAccountIdProvider, (previous, next) {
+      if (previous == next) return;
+      _refreshState();
+      if (next != null && next.isNotEmpty) {
+        retryNow(ignoreBackoff: true);
+      }
+    });
+
+    ref.listen<AsyncValue<bool>>(convexConnectionProvider, (previous, next) {
+      final reconnected =
+          previous?.valueOrNull != true && next.valueOrNull == true;
+      if (reconnected) {
+        retryNow(ignoreBackoff: true);
+      }
+    });
+
+    if (_jobsByStorageKey.isNotEmpty) {
+      scheduleMicrotask(() {
+        if (!_disposed) retryNow(ignoreBackoff: true);
+      });
+    }
+
+    final unknownOwnerJobs = loaded.jobs
+        .where((job) => job.accountId == null)
+        .toList(growable: false);
+    return CloudMediaUploadQueueState(
+      jobs: _readJobs(),
+      unknownOwnerJobs: unknownOwnerJobs,
       isProcessing: false,
+      loadIssues: loaded.issues,
+      durableLoaded: true,
+      durabilityError: loaded.issues.isEmpty
+          ? null
+          : 'The media outbox contains unreadable saved work.',
     );
   }
 
@@ -140,10 +232,12 @@ class CloudMediaUploadQueueNotifier
       return;
     }
 
+    final accountId = _requireActiveAccountId();
     final normalizedExtension = normalizeImageExtension(fileExtension ?? '');
     await _upsertJob(
       CloudMediaUploadJob(
         jobId: imagePublicId,
+        accountId: accountId,
         strategyPublicId: resolvedStrategyId,
         assetPublicId: imagePublicId,
         fileExtension: normalizedExtension,
@@ -151,14 +245,14 @@ class CloudMediaUploadQueueNotifier
         width: width,
         height: height,
         state: CloudMediaJobState.pendingUpload,
+        referenceDurable: false,
         attempts: 0,
         updatedAt: DateTime.now(),
       ),
     );
     _logMedia(
-      'enqueue.placed_image ${_describeJob(_getJob(imagePublicId))}',
+      'enqueue.placed_image_staged ${_describeJob(_getJob(imagePublicId))}',
     );
-    retryNow(ignoreBackoff: true);
   }
 
   Future<void> enqueueJobForLocalFile({
@@ -169,10 +263,12 @@ class CloudMediaUploadQueueNotifier
     int? width,
     int? height,
   }) async {
+    final accountId = _requireActiveAccountId();
     final normalizedExtension = normalizeImageExtension(fileExtension);
     await _upsertJob(
       CloudMediaUploadJob(
         jobId: assetPublicId,
+        accountId: accountId,
         strategyPublicId: strategyPublicId,
         assetPublicId: assetPublicId,
         fileExtension: normalizedExtension,
@@ -192,27 +288,123 @@ class CloudMediaUploadQueueNotifier
     required String strategyPublicId,
     required Iterable<SimpleImageData> images,
   }) async {
-    for (final image in images) {
-      final normalizedExtension = normalizeImageExtension(image.fileExtension);
-      await _upsertJob(
+    final accountId = _requireActiveAccountId();
+    final imageList = images.toList(growable: false);
+    final jobs = <CloudMediaUploadJob>[
+      for (final image in imageList)
         CloudMediaUploadJob(
           jobId: image.id,
+          accountId: accountId,
           strategyPublicId: strategyPublicId,
           assetPublicId: image.id,
-          fileExtension: normalizedExtension,
-          mimeType: mimeTypeForImageExtension(normalizedExtension),
+          fileExtension: normalizeImageExtension(image.fileExtension),
+          mimeType: mimeTypeForImageExtension(image.fileExtension),
           state: CloudMediaJobState.pendingUpload,
+          referenceDurable: false,
           attempts: 0,
           updatedAt: DateTime.now(),
         ),
-      );
+    ];
+    await _upsertJobsAtomically(jobs);
+    for (final image in imageList) {
       _logMedia('enqueue.lineup_image ${_describeJob(_getJob(image.id))}');
     }
-    retryNow(ignoreBackoff: true);
+  }
+
+  Future<void> commitStagedMediaReferences({
+    required String strategyPublicId,
+    required Iterable<String> assetPublicIds,
+  }) async {
+    final accountId = _requireActiveAccountId();
+    final requestedIds = assetPublicIds.toSet();
+    final staged = _readJobs()
+        .where(
+          (job) =>
+              job.accountId == accountId &&
+              job.strategyPublicId == strategyPublicId &&
+              requestedIds.contains(job.assetPublicId) &&
+              !job.referenceDurable,
+        )
+        .toList(growable: false);
+    if (staged.isEmpty) return;
+
+    await ref
+        .read(strategyProvider.notifier)
+        .notifyCloudMutation(flushImmediately: false);
+    final opQueueState = ref.read(strategyOpQueueProvider);
+    if (!opQueueState.outboxIsReliable) {
+      throw StateError(
+        'The strategy reference could not be saved to the durable outbox.',
+      );
+    }
+    final durableOps = ref.read(durableStrategyOutboxStoreProvider).load();
+    if (durableOps.issues.isNotEmpty) {
+      throw StateError(
+        'The strategy reference outbox contains unreadable saved work.',
+      );
+    }
+    final pendingOps = <StrategyOp>[
+      for (final record in durableOps.records)
+        if (record.accountId == accountId &&
+            record.strategyPublicId == strategyPublicId) ...[
+          record.pending.op,
+          if (record.successorPending case final successor?) successor.op,
+        ],
+    ];
+    final missingReferences = staged
+        .where(
+          (job) => !pendingOps.any(
+            (op) => _opReferencesAsset(op, job.assetPublicId),
+          ),
+        )
+        .toList(growable: false);
+    if (missingReferences.isNotEmpty) {
+      RemoteFullStrategySnapshot? serverSnapshot;
+      if (ref.read(authProvider).isConvexUserReady &&
+          ref.read(convexConnectionSnapshotProvider)) {
+        try {
+          serverSnapshot = await ref
+              .read(cloudMediaReferenceSnapshotLoaderProvider)(
+            strategyPublicId,
+          );
+        } catch (_) {
+          serverSnapshot = null;
+        }
+      }
+      if (serverSnapshot == null ||
+          missingReferences.any(
+            (job) =>
+                !_snapshotReferencesAsset(serverSnapshot!, job.assetPublicId),
+          )) {
+        _scheduleRetryForNextEligibleJob(
+          minimumDelay: _blockedRetryDelay,
+        );
+        throw StateError(
+          'The strategy reference was not admitted to the durable outbox.',
+        );
+      }
+    }
+
+    if (ref.read(cloudMediaAccountIdProvider) != accountId) {
+      throw StateError('The active account changed before media was queued.');
+    }
+
+    await _putJobsAtomically([
+      for (final job in staged)
+        job.copyWith(
+          referenceDurable: true,
+          updatedAt: DateTime.now(),
+        ),
+    ]);
+    _refreshState();
+    await retryNow(ignoreBackoff: true);
   }
 
   Future<void> retryNow({bool ignoreBackoff = false}) async {
+    if (_disposed) return;
     _retryTimer?.cancel();
+    await _reconcileStagedJobReferences();
+    if (_disposed) return;
     _logMedia(
       'retry_now ignoreBackoff=$ignoreBackoff jobs=${_readJobs().length}',
     );
@@ -220,7 +412,6 @@ class CloudMediaUploadQueueNotifier
   }
 
   Future<void> setActiveStrategy(String? strategyPublicId) async {
-    _retryTimer?.cancel();
     _refreshState();
     if (strategyPublicId != null) {
       await retryNow(ignoreBackoff: true);
@@ -266,47 +457,9 @@ class CloudMediaUploadQueueNotifier
         .where((job) => job.strategyPublicId == strategyPublicId)
         .toList(growable: false);
     for (final job in jobs) {
-      _deleteJob(job.jobId);
+      await _deleteJob(job);
     }
     _refreshState();
-  }
-
-  Future<void> cancelUpload(String assetPublicId) async {
-    final job = _getJob(assetPublicId);
-    if (job == null) {
-      return;
-    }
-    _deleteJob(job.jobId);
-    _refreshState();
-
-    try {
-      final file = await PlacedImageProvider.getImageFile(
-        strategyID: job.strategyPublicId,
-        imageID: job.assetPublicId,
-        fileExtension: job.fileExtension,
-      );
-      if (await file.exists()) {
-        await file.delete();
-      }
-    } catch (error, stackTrace) {
-      AppErrorReporter.reportError(
-        'Failed to delete canceled media upload file.',
-        error: error,
-        stackTrace: stackTrace,
-        source: 'cloud_media.upload_queue',
-      );
-    }
-
-    ref.read(placedImageProvider.notifier).removeImage(job.assetPublicId);
-  }
-
-  Future<void> cancelUploadsForStrategy(String strategyPublicId) async {
-    final jobs = _readJobs()
-        .where((job) => job.strategyPublicId == strategyPublicId)
-        .toList(growable: false);
-    for (final job in jobs) {
-      await cancelUpload(job.assetPublicId);
-    }
   }
 
   Future<void> _processNextJob({bool ignoreBackoff = false}) async {
@@ -325,14 +478,15 @@ class CloudMediaUploadQueueNotifier
 
     state = state.copyWith(isProcessing: true);
     _logMedia('process.start ${_describeJob(nextJob)}');
+    late final bool madeProgress;
     try {
-      await _processJob(nextJob);
+      madeProgress = await _processJob(nextJob);
     } finally {
       _refreshState(isProcessing: false);
       _logMedia('process.finish jobs=${state.jobs.length}');
     }
 
-    if (_readJobs().isNotEmpty) {
+    if (madeProgress && _readJobs().isNotEmpty) {
       // Only bypass backoff for the initial user-triggered kick. Follow-up
       // attempts must honor retry timing so transient attach failures do not
       // hammer Convex in a tight loop.
@@ -345,6 +499,9 @@ class CloudMediaUploadQueueNotifier
       ..sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
     final now = DateTime.now();
     for (final job in jobs) {
+      if (!job.referenceDurable) {
+        continue;
+      }
       if (ignoreBackoff || !_nextAttemptAt(job).isAfter(now)) {
         return job;
       }
@@ -352,7 +509,11 @@ class CloudMediaUploadQueueNotifier
     return null;
   }
 
-  Future<void> _processJob(CloudMediaUploadJob job) async {
+  Future<bool> _processJob(CloudMediaUploadJob job) async {
+    if (!_belongsToActiveAccount(job)) {
+      _logMedia('process.blocked account_mismatch ${_describeJob(job)}');
+      return false;
+    }
     final mode = ref.read(cloudCollabModeProvider);
     final auth = ref.read(authProvider);
     if (!mode.featureFlagEnabled || mode.forceLocalFallback) {
@@ -360,8 +521,8 @@ class CloudMediaUploadQueueNotifier
         'process.blocked featureFlag=${mode.featureFlagEnabled} '
         'forceLocalFallback=${mode.forceLocalFallback} ${_describeJob(job)}',
       );
-      _scheduleRetryForNextEligibleJob();
-      return;
+      _scheduleRetryForNextEligibleJob(minimumDelay: _blockedRetryDelay);
+      return false;
     }
     if (!auth.isAuthenticated ||
         !auth.isConvexUserReady ||
@@ -374,19 +535,21 @@ class CloudMediaUploadQueueNotifier
         'connected=${ConvexClient.instance.isConnected} '
         '${_describeJob(job)}',
       );
-      _scheduleRetryForNextEligibleJob();
-      return;
+      _scheduleRetryForNextEligibleJob(minimumDelay: _blockedRetryDelay);
+      return false;
     }
 
     if (!job.hasUploadedRemoteObject) {
       await _uploadJobBlob(job);
-      return;
+      return true;
     }
 
     await _attachUploadedJob(job);
+    return true;
   }
 
   Future<void> _uploadJobBlob(CloudMediaUploadJob job) async {
+    if (!_belongsToActiveAccount(job)) return;
     try {
       _logMedia('upload.local_lookup ${_describeJob(job)}');
       final file = await PlacedImageProvider.getImageFile(
@@ -406,6 +569,10 @@ class CloudMediaUploadQueueNotifier
       }
 
       final byteSize = await file.length();
+      if (!_belongsToActiveAccount(job)) {
+        _logMedia('upload.deferred account_changed ${_describeJob(job)}');
+        return;
+      }
       _setUploadByteProgress(
         job.jobId,
         sentBytes: 0,
@@ -438,6 +605,11 @@ class CloudMediaUploadQueueNotifier
         );
       }
 
+      if (!_belongsToActiveAccount(job)) {
+        _logMedia('upload.deferred account_changed ${_describeJob(job)}');
+        return;
+      }
+
       _logMedia('upload.put.start bytes=$byteSize ${_describeJob(job)}');
       final response = await _putFileWithProgress(
         job: job,
@@ -456,8 +628,7 @@ class CloudMediaUploadQueueNotifier
         'etag=${response.headers['etag']} ${_describeJob(job)}',
       );
 
-      _putJob(
-        job.jobId,
+      await _putJob(
         job.copyWith(
           provider: intent.provider,
           uploadId: intent.uploadId,
@@ -530,6 +701,7 @@ class CloudMediaUploadQueueNotifier
   }
 
   Future<void> _attachUploadedJob(CloudMediaUploadJob job) async {
+    if (!_belongsToActiveAccount(job)) return;
     try {
       _logMedia('attach.start ${_describeJob(job)}');
       if ((job.provider == 'r2' || job.uploadId != null) &&
@@ -556,7 +728,7 @@ class CloudMediaUploadQueueNotifier
         width: job.width,
         height: job.height,
       );
-      _deleteJob(job.jobId);
+      await _deleteJob(job);
       if (_uploadProgressToast != null) {
         _markUploadComplete(job.jobId);
       }
@@ -578,8 +750,7 @@ class CloudMediaUploadQueueNotifier
     String errorMessage, {
     required bool showToast,
   }) async {
-    _putJob(
-      job.jobId,
+    await _putJob(
       job.copyWith(
         state: CloudMediaJobState.failed,
         attempts: job.attempts + 1,
@@ -609,10 +780,19 @@ class CloudMediaUploadQueueNotifier
     return job.updatedAt.add(Duration(seconds: cappedSeconds));
   }
 
-  void _scheduleRetryForNextEligibleJob() {
+  void _scheduleRetryForNextEligibleJob({Duration? minimumDelay}) {
     _retryTimer?.cancel();
-    final jobs = _readJobs();
+    final allJobs = _readJobs();
+    final jobs = allJobs
+        .where((job) => job.referenceDurable)
+        .toList(growable: false);
     if (jobs.isEmpty) {
+      if (allJobs.any((job) => !job.referenceDurable)) {
+        _retryTimer = Timer(
+          minimumDelay ?? _blockedRetryDelay,
+          () => unawaited(retryNow()),
+        );
+      }
       return;
     }
 
@@ -629,69 +809,322 @@ class CloudMediaUploadQueueNotifier
       return;
     }
 
-    final delay =
+    var delay =
         earliest.isAfter(now) ? earliest.difference(now) : Duration.zero;
+    if (minimumDelay != null && delay < minimumDelay) {
+      delay = minimumDelay;
+    }
     _logMedia(
         'retry.scheduled delayMs=${delay.inMilliseconds} jobs=${jobs.length}');
-    _retryTimer = Timer(delay, () {
-      unawaited(_processNextJob(ignoreBackoff: false));
-    });
+    _retryTimer = Timer(delay, () => unawaited(retryNow()));
+  }
+
+  Future<void> _reconcileStagedJobReferences() async {
+    final accountId = ref.read(cloudMediaAccountIdProvider);
+    if (accountId == null || accountId.isEmpty) return;
+    final staged = _readJobs()
+        .where(
+          (job) => job.accountId == accountId && !job.referenceDurable,
+        )
+        .toList(growable: false);
+    if (staged.isEmpty) return;
+
+    final durableOps = ref.read(durableStrategyOutboxStoreProvider).load();
+    final pendingOps =
+        <({String accountId, String strategyPublicId, StrategyOp op})>[
+      for (final record in durableOps.records) ...[
+        (
+          accountId: record.accountId,
+          strategyPublicId: record.strategyPublicId,
+          op: record.pending.op,
+        ),
+        if (record.successorPending case final successor?)
+          (
+            accountId: record.accountId,
+            strategyPublicId: record.strategyPublicId,
+            op: successor.op,
+          ),
+      ],
+    ];
+    final readyFromDurableOps = staged
+        .where(
+          (job) => pendingOps.any(
+            (pending) =>
+                pending.accountId == accountId &&
+                pending.strategyPublicId == job.strategyPublicId &&
+                _opReferencesAsset(pending.op, job.assetPublicId),
+          ),
+        )
+        .map(
+          (job) => job.copyWith(
+            referenceDurable: true,
+            updatedAt: DateTime.now(),
+          ),
+        )
+        .toList(growable: false);
+    if (readyFromDurableOps.isNotEmpty) {
+      if (ref.read(cloudMediaAccountIdProvider) != accountId) return;
+      await _putJobsAtomically(readyFromDurableOps);
+      _refreshState();
+    }
+
+    if (durableOps.issues.isNotEmpty) return;
+    final unresolved = _readJobs()
+        .where((job) => !job.referenceDurable)
+        .toList(growable: false);
+    if (unresolved.isEmpty ||
+        !ref.read(authProvider).isConvexUserReady ||
+        !ref.read(convexConnectionSnapshotProvider)) {
+      return;
+    }
+
+    final byStrategy = <String, List<CloudMediaUploadJob>>{};
+    for (final job in unresolved) {
+      (byStrategy[job.strategyPublicId] ??= []).add(job);
+    }
+    for (final entry in byStrategy.entries) {
+      late final RemoteFullStrategySnapshot snapshot;
+      try {
+        snapshot = await ref
+            .read(cloudMediaReferenceSnapshotLoaderProvider)(entry.key);
+      } catch (error) {
+        _logMedia(
+          'reference_reconcile.deferred strategy=${entry.key} error=$error',
+        );
+        continue;
+      }
+
+      if (ref.read(cloudMediaAccountIdProvider) != accountId) return;
+
+      final referenced = entry.value
+          .where(
+            (job) => _snapshotReferencesAsset(snapshot, job.assetPublicId),
+          )
+          .map(
+            (job) => job.copyWith(
+              referenceDurable: true,
+              updatedAt: DateTime.now(),
+            ),
+          )
+          .toList(growable: false);
+      await _putJobsAtomically(referenced);
+      if (ref.read(cloudMediaAccountIdProvider) != accountId) return;
+      final referencedIds = referenced.map((job) => job.jobId).toSet();
+      for (final orphan in entry.value) {
+        if (!referencedIds.contains(orphan.jobId) &&
+            _restoredStagedJobIds.contains(
+              durableCloudMediaOutboxStorageKey(orphan),
+            )) {
+          await _deleteJob(orphan);
+          _logMedia(
+            'reference_reconcile.removed_orphan job=${orphan.jobId} '
+            'strategy=${orphan.strategyPublicId}',
+          );
+        }
+      }
+      _refreshState();
+    }
+  }
+
+  bool _snapshotReferencesAsset(
+    RemoteFullStrategySnapshot snapshot,
+    String assetPublicId,
+  ) {
+    for (final elements in snapshot.elementsByPage.values) {
+      if (elements.any(
+        (element) =>
+            !element.deleted &&
+            element.elementType == 'image' &&
+            element.publicId == assetPublicId,
+      )) {
+        return true;
+      }
+    }
+    for (final lineups in snapshot.lineupsByPage.values) {
+      if (lineups.any(
+        (lineup) =>
+            !lineup.deleted &&
+            _jsonContainsAssetId(lineup.payload, assetPublicId),
+      )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _opReferencesAsset(StrategyOp op, String assetPublicId) {
+    if (op is ElementAddOp) {
+      return op.elementPublicId == assetPublicId;
+    }
+    if (op is ElementPatchOp) {
+      return op.elementPublicId == assetPublicId;
+    }
+    if (op is LineupAddOp) {
+      return _jsonContainsAssetId(op.payload, assetPublicId);
+    }
+    if (op is LineupPatchOp) {
+      return _jsonContainsAssetId(op.payload, assetPublicId);
+    }
+    return false;
+  }
+
+  bool _jsonContainsAssetId(Object? value, String assetPublicId) {
+    if (value is Map) {
+      if (value['id'] == assetPublicId) return true;
+      return value.values.any(
+        (child) => _jsonContainsAssetId(child, assetPublicId),
+      );
+    }
+    if (value is Iterable) {
+      return value.any(
+        (child) => _jsonContainsAssetId(child, assetPublicId),
+      );
+    }
+    return false;
   }
 
   Future<void> _upsertJob(CloudMediaUploadJob nextJob) async {
-    final existing = _getJob(nextJob.jobId);
-    if (existing != null) {
-      final merged = existing.isFailed
-          ? existing.copyWith(
-              strategyPublicId: nextJob.strategyPublicId,
-              assetPublicId: nextJob.assetPublicId,
-              fileExtension: nextJob.fileExtension,
-              mimeType: nextJob.mimeType,
-              width: nextJob.width,
-              height: nextJob.height,
-              byteSize: nextJob.byteSize,
-              state: CloudMediaJobState.pendingUpload,
-              attempts: 0,
-              provider: null,
-              uploadId: null,
-              objectKey: null,
-              storageId: null,
-              etag: null,
-              uploadUrlExpiresAt: null,
-              lastError: null,
-              updatedAt: DateTime.now(),
-            )
-          : existing.copyWith(
-              strategyPublicId: nextJob.strategyPublicId,
-              assetPublicId: nextJob.assetPublicId,
-              fileExtension: nextJob.fileExtension,
-              mimeType: nextJob.mimeType,
-              width: nextJob.width,
-              height: nextJob.height,
-              byteSize: nextJob.byteSize,
-              updatedAt: DateTime.now(),
-            );
-      _putJob(nextJob.jobId, merged);
-    } else {
-      _putJob(nextJob.jobId, nextJob);
-    }
+    await _putJob(_mergeJob(nextJob));
     _refreshState();
   }
 
+  Future<void> _upsertJobsAtomically(
+    Iterable<CloudMediaUploadJob> nextJobs,
+  ) async {
+    final mergedById = <String, CloudMediaUploadJob>{};
+    for (final nextJob in nextJobs) {
+      mergedById[nextJob.jobId] = _mergeJob(nextJob);
+    }
+    await _putJobsAtomically(mergedById.values);
+    _refreshState();
+  }
+
+  CloudMediaUploadJob _mergeJob(CloudMediaUploadJob nextJob) {
+    final existing =
+        _jobsByStorageKey[durableCloudMediaOutboxStorageKey(nextJob)];
+    if (existing == null) return nextJob;
+    if (existing.isFailed) {
+      return existing.copyWith(
+        strategyPublicId: nextJob.strategyPublicId,
+        assetPublicId: nextJob.assetPublicId,
+        fileExtension: nextJob.fileExtension,
+        mimeType: nextJob.mimeType,
+        width: nextJob.width,
+        height: nextJob.height,
+        byteSize: nextJob.byteSize,
+        state: nextJob.state,
+        referenceDurable: nextJob.referenceDurable,
+        attempts: 0,
+        provider: null,
+        uploadId: null,
+        objectKey: null,
+        storageId: null,
+        etag: null,
+        uploadUrlExpiresAt: null,
+        lastError: null,
+        updatedAt: DateTime.now(),
+      );
+    }
+    return existing.copyWith(
+      strategyPublicId: nextJob.strategyPublicId,
+      assetPublicId: nextJob.assetPublicId,
+      fileExtension: nextJob.fileExtension,
+      mimeType: nextJob.mimeType,
+      width: nextJob.width,
+      height: nextJob.height,
+      byteSize: nextJob.byteSize,
+      referenceDurable: existing.referenceDurable || nextJob.referenceDurable,
+      updatedAt: DateTime.now(),
+    );
+  }
+
   List<CloudMediaUploadJob> _readJobs() {
-    return _jobsById.values.toList(growable: false);
+    final accountId = ref.read(cloudMediaAccountIdProvider);
+    if (accountId == null || accountId.isEmpty) return const [];
+    return _jobsByStorageKey.values
+        .where((job) => job.accountId == accountId)
+        .toList(growable: false);
   }
 
   CloudMediaUploadJob? _getJob(String jobId) {
-    return _jobsById[jobId];
+    final accountId = ref.read(cloudMediaAccountIdProvider);
+    final job = _jobsByStorageKey[durableCloudMediaOutboxStorageKeyFor(
+      accountId: accountId,
+      jobId: jobId,
+    )];
+    return job != null && _belongsToActiveAccount(job) ? job : null;
   }
 
-  void _putJob(String jobId, CloudMediaUploadJob job) {
-    _jobsById[jobId] = job;
+  String _requireActiveAccountId() {
+    final accountId = ref.read(cloudMediaAccountIdProvider);
+    if (accountId == null || accountId.isEmpty) {
+      throw StateError(
+        'Cloud media cannot be queued without an authenticated account.',
+      );
+    }
+    return accountId;
   }
 
-  void _deleteJob(String jobId) {
-    _jobsById.remove(jobId);
+  bool _belongsToActiveAccount(CloudMediaUploadJob job) {
+    final accountId = ref.read(cloudMediaAccountIdProvider);
+    return accountId != null &&
+        accountId.isNotEmpty &&
+        job.accountId == accountId;
+  }
+
+  Future<void> _putJob(CloudMediaUploadJob job) async {
+    try {
+      await _store.put(job);
+      _jobsByStorageKey[durableCloudMediaOutboxStorageKey(job)] = job;
+    } catch (error, stackTrace) {
+      _recordDurabilityFailure(error, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<void> _putJobsAtomically(
+    Iterable<CloudMediaUploadJob> jobs,
+  ) async {
+    final jobList = jobs.toList(growable: false);
+    if (jobList.isEmpty) return;
+    try {
+      await _store.putAll(jobList);
+      for (final job in jobList) {
+        final storageKey = durableCloudMediaOutboxStorageKey(job);
+        _jobsByStorageKey[storageKey] = job;
+        if (job.referenceDurable) {
+          _restoredStagedJobIds.remove(storageKey);
+        }
+      }
+    } catch (error, stackTrace) {
+      _recordDurabilityFailure(error, stackTrace);
+      rethrow;
+    }
+  }
+
+  Future<void> _deleteJob(CloudMediaUploadJob job) async {
+    try {
+      await _store.remove(job);
+      final storageKey = durableCloudMediaOutboxStorageKey(job);
+      _jobsByStorageKey.remove(storageKey);
+      _restoredStagedJobIds.remove(storageKey);
+    } catch (error, stackTrace) {
+      _recordDurabilityFailure(error, stackTrace);
+      rethrow;
+    }
+  }
+
+  void _recordDurabilityFailure(Object error, StackTrace stackTrace) {
+    AppErrorReporter.reportError(
+      'Failed to update the durable media outbox.',
+      error: error,
+      stackTrace: stackTrace,
+      source: 'cloud_media.upload_queue',
+    );
+    state = state.copyWith(
+      durabilityError: 'Media work could not be saved on this device.',
+      isProcessing: false,
+    );
   }
 
   void _refreshState({bool? isProcessing}) {
@@ -704,11 +1137,19 @@ class CloudMediaUploadQueueNotifier
 
   void _syncUploadProgressToast() {
     final activeUploadCount = state.jobs
-        .where((job) => job.state != CloudMediaJobState.failed)
+        .where(
+          (job) =>
+              job.state != CloudMediaJobState.failed && job.referenceDurable,
+        )
         .length;
 
     if (activeUploadCount > 0) {
       if (_uploadProgressToast == null) {
+        final uploadHasStarted = _uploadBytesTotalByJob.isNotEmpty ||
+            _uploadCompletingJobs.isNotEmpty;
+        if (!uploadHasStarted) {
+          return;
+        }
         _uploadCompletionDismissTimer?.cancel();
         _uploadProgressTotalJobs = activeUploadCount;
         _uploadProgressToastState = ValueNotifier<_UploadProgressToastState>(
@@ -774,7 +1215,10 @@ class CloudMediaUploadQueueNotifier
   double _currentUploadProgress(int totalJobs) {
     var progressUnits = _uploadCompletedJobs.length.toDouble();
     final activeJobIds = state.jobs
-        .where((job) => job.state != CloudMediaJobState.failed)
+        .where(
+          (job) =>
+              job.state != CloudMediaJobState.failed && job.referenceDurable,
+        )
         .map((job) => job.jobId);
 
     for (final jobId in activeJobIds) {
@@ -911,11 +1355,18 @@ class CloudMediaUploadQueueNotifier
 
   void _publishUploadProgressToast() {
     final activeUploadCount = state.jobs
-        .where((job) => job.state != CloudMediaJobState.failed)
+        .where(
+          (job) =>
+              job.state != CloudMediaJobState.failed && job.referenceDurable,
+        )
         .length;
-    if (_uploadProgressToastState == null || activeUploadCount <= 0) {
+    if (activeUploadCount <= 0) {
       return;
     }
+    if (_uploadProgressToastState == null) {
+      _syncUploadProgressToast();
+    }
+    if (_uploadProgressToastState == null) return;
     _uploadProgressToastState!.value = _buildUploadToastState(activeUploadCount);
   }
 
@@ -931,6 +1382,7 @@ class CloudMediaUploadQueueNotifier
       return 'job=null';
     }
     return 'job=${job.jobId} image=${job.assetPublicId} '
+        'account=${job.accountId ?? 'unknown'} '
         'strategy=${job.strategyPublicId} state=${job.state.name} '
         'attempts=${job.attempts} provider=${job.provider ?? 'none'} '
         'hasUploadId=${job.uploadId != null} '
