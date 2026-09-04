@@ -204,6 +204,14 @@ class PlacedImageProvider extends Notifier<ImageState> {
       source: 'cloud_media.image_provider',
     );
 
+    if (strategySource == StrategySource.cloud && strategyId != null) {
+      await ref
+          .read(cloudMediaUploadQueueProvider.notifier)
+          .commitStagedMediaReferences(
+        strategyPublicId: strategyId,
+        assetPublicIds: [placedImage.id],
+      );
+    }
   }
 
   void removeImageAsAction(String id) {

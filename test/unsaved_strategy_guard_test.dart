@@ -794,6 +794,70 @@ void main() {
       expect(await guardFuture, isFalse);
     });
 
+    testWidgets('media without a durable strategy reference cannot leave',
+        (tester) async {
+      notifier = _FakeGuardStrategyProvider(
+        initialState: const StrategyState(
+          strategyId: 'cloud-strategy',
+          strategyName: 'Cloud Strategy',
+          source: StrategySource.cloud,
+          isOpen: true,
+        ),
+        flushResult: true,
+      );
+      final mediaQueue = _GuardMediaQueue(
+        CloudMediaUploadQueueState(
+          jobs: [
+            CloudMediaUploadJob(
+              jobId: 'staged-image',
+              strategyPublicId: 'cloud-strategy',
+              assetPublicId: 'staged-image',
+              fileExtension: '.png',
+              mimeType: 'image/png',
+              state: CloudMediaJobState.pendingUpload,
+              referenceDurable: false,
+              attempts: 0,
+              updatedAt: DateTime.utc(2026, 9, 3),
+            ),
+          ],
+          isProcessing: false,
+        ),
+      );
+      container = ProviderContainer(
+        overrides: [
+          strategyProvider.overrideWith(() => notifier),
+          strategyOpQueueProvider.overrideWith(
+            () => _GuardOpQueue(
+              const StrategyOpQueueState(
+                accountId: 'account-a',
+                strategyPublicId: 'cloud-strategy',
+                clientId: 'guard-client',
+                durableLoaded: true,
+              ),
+            ),
+          ),
+          cloudMediaUploadQueueProvider.overrideWith(() => mediaQueue),
+          authProvider.overrideWith(_GuardAuthProvider.new),
+          convexConnectionSnapshotProvider.overrideWithValue(false),
+        ],
+      );
+      addTearDown(container.dispose);
+      await pumpHarness(tester);
+
+      final guardFuture = guardUnsavedStrategyExit(
+        context: context,
+        ref: ref,
+        source: 'guard-test-staged-media',
+        onContinue: () async {},
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Leave Anyway'), findsNothing);
+      await tester.tap(find.text('Stay Here'));
+      await tester.pumpAndSettle();
+      expect(await guardFuture, isFalse);
+    });
+
     testWidgets('cloud exit stages an active text draft before leaving',
         (tester) async {
       notifier = _FakeGuardStrategyProvider(

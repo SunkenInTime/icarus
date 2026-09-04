@@ -49,6 +49,7 @@ class DurableCloudMediaOutboxLoadResult {
 abstract class DurableCloudMediaOutboxStore {
   DurableCloudMediaOutboxLoadResult load();
   Future<void> put(CloudMediaUploadJob job);
+  Future<void> putAll(Iterable<CloudMediaUploadJob> jobs);
   Future<void> remove(String jobId);
 }
 
@@ -95,6 +96,17 @@ class HiveDurableCloudMediaOutboxStore implements DurableCloudMediaOutboxStore {
       jsonDecode(jsonEncode(_jobToJson(job))) as Map,
     );
     return _box.put(job.jobId, jsonSafe);
+  }
+
+  @override
+  Future<void> putAll(Iterable<CloudMediaUploadJob> jobs) {
+    final values = <String, Map<String, dynamic>>{
+      for (final job in jobs)
+        job.jobId: Map<String, dynamic>.from(
+          jsonDecode(jsonEncode(_jobToJson(job))) as Map,
+        ),
+    };
+    return _box.putAll(values);
   }
 
   @override
@@ -145,6 +157,17 @@ class MemoryDurableCloudMediaOutboxStore
   }
 
   @override
+  Future<void> putAll(Iterable<CloudMediaUploadJob> jobs) async {
+    final encoded = <String, Map<String, dynamic>>{
+      for (final job in jobs)
+        job.jobId: Map<String, dynamic>.from(
+          jsonDecode(jsonEncode(_jobToJson(job))) as Map,
+        ),
+    };
+    values.addAll(encoded);
+  }
+
+  @override
   Future<void> remove(String jobId) async {
     values.remove(jobId);
   }
@@ -173,6 +196,7 @@ Map<String, dynamic> _jobToJson(CloudMediaUploadJob job) => <String, dynamic>{
   if (job.uploadUrlExpiresAt != null)
     'uploadUrlExpiresAt': job.uploadUrlExpiresAt!.toUtc().toIso8601String(),
   'state': job.state.name,
+  'referenceDurable': job.referenceDurable,
   'attempts': job.attempts,
   if (job.lastError != null) 'lastError': job.lastError,
   'updatedAt': job.updatedAt.toUtc().toIso8601String(),
@@ -207,6 +231,7 @@ CloudMediaUploadJob _jobFromJson(Map<String, dynamic> json) {
     state: CloudMediaJobState.values.byName(
       _nonEmptyString(json['state'], field: 'state'),
     ),
+    referenceDurable: json['referenceDurable'] as bool? ?? true,
     attempts: (json['attempts'] as num?)?.toInt() ?? 0,
     lastError: json['lastError'] as String?,
     updatedAt: _requiredDate(json['updatedAt'], field: 'updatedAt'),

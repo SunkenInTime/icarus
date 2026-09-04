@@ -36,6 +36,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   final TextEditingController _youtubeLinkController = TextEditingController();
   final TextEditingController _notesController = TextEditingController();
   final List<SimpleImageData> _imagePaths = [];
+  final Set<String> _initialImageIds = {};
 
   Future<void> _enqueueLineupMediaJobs({
     required List<SimpleImageData> images,
@@ -46,15 +47,29 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       return;
     }
 
-    for (final image in images) {
-      await ref
-          .read(cloudMediaUploadQueueProvider.notifier)
-          .enqueueJobForLocalFile(
-            strategyPublicId: strategyState.strategyId!,
-            assetPublicId: image.id,
-            fileExtension: image.fileExtension,
-          );
+    await ref
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .enqueueLineupMediaJobs(
+          strategyPublicId: strategyState.strategyId!,
+          images: images,
+        );
+  }
+
+  Future<void> _commitLineupMediaJobs({
+    required List<SimpleImageData> images,
+  }) async {
+    final strategyState = ref.read(strategyProvider);
+    if (strategyState.source != StrategySource.cloud ||
+        strategyState.strategyId == null ||
+        images.isEmpty) {
+      return;
     }
+    await ref
+        .read(cloudMediaUploadQueueProvider.notifier)
+        .commitStagedMediaReferences(
+          strategyPublicId: strategyState.strategyId!,
+          assetPublicIds: images.map((image) => image.id),
+        );
   }
 
   bool get _isEditing =>
@@ -72,6 +87,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
         _youtubeLinkController.text = item.youtubeLink;
         _notesController.text = item.notes;
         _imagePaths.addAll(item.images);
+        _initialImageIds.addAll(item.images.map((image) => image.id));
       }
     }
   }
@@ -84,8 +100,30 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
   }
 
   Future<void> _save() async {
+    final lineUpState = ref.read(lineUpProvider);
+    final notifier = ref.read(lineUpProvider.notifier);
+    final existingItem = _isEditing
+        ? notifier.getItemById(
+            groupId: widget.lineUpGroupId!,
+            itemId: widget.lineUpItemId!,
+          )
+        : null;
+    if (_isEditing && existingItem == null) {
+      return;
+    }
+    if (!_isEditing && lineUpState.currentAbility == null) {
+      return;
+    }
+    if (!_isEditing &&
+        lineUpState.currentGroupId == null &&
+        lineUpState.currentAgent == null) {
+      return;
+    }
+    final imagesNeedingUpload = _imagePaths
+        .where((image) => !_initialImageIds.contains(image.id))
+        .toList(growable: false);
     try {
-      await _enqueueLineupMediaJobs(images: _imagePaths);
+      await _enqueueLineupMediaJobs(images: imagesNeedingUpload);
     } catch (_) {
       Settings.showToast(
         message: 'Could not queue these images for cloud sync. '
@@ -95,34 +133,22 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
       return;
     }
 
-    final lineUpState = ref.read(lineUpProvider);
-    final notifier = ref.read(lineUpProvider.notifier);
-
     if (_isEditing) {
-      final existingItem = notifier.getItemById(
-        groupId: widget.lineUpGroupId!,
-        itemId: widget.lineUpItemId!,
+      ref.read(actionProvider.notifier).performTransaction(
+        groups: const [ActionGroup.lineUp],
+        mutation: () {
+          notifier.updateItem(
+            groupId: widget.lineUpGroupId!,
+            item: existingItem!.copyWith(
+              youtubeLink: _youtubeLinkController.text,
+              notes: _notesController.text,
+              images: _imagePaths,
+            ),
+          );
+        },
       );
-      if (existingItem != null) {
-        ref.read(actionProvider.notifier).performTransaction(
-          groups: const [ActionGroup.lineUp],
-          mutation: () {
-            notifier.updateItem(
-              groupId: widget.lineUpGroupId!,
-              item: existingItem.copyWith(
-                youtubeLink: _youtubeLinkController.text,
-                notes: _notesController.text,
-                images: _imagePaths,
-              ),
-            );
-          },
-        );
-      }
     } else {
-      final currentAbility = lineUpState.currentAbility;
-      if (currentAbility == null) {
-        return;
-      }
+      final currentAbility = lineUpState.currentAbility!;
 
       final item = LineUpItem(
         id: const Uuid().v4(),
@@ -147,10 +173,7 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
           },
         );
       } else {
-        final currentAgent = lineUpState.currentAgent;
-        if (currentAgent == null) {
-          return;
-        }
+        final currentAgent = lineUpState.currentAgent!;
 
         final groupId = const Uuid().v4();
         notifier.addGroup(
@@ -175,6 +198,16 @@ class _CreateLineupDialogState extends ConsumerState<CreateLineupDialog> {
             'has_images': _imagePaths.isNotEmpty,
           },
         ),
+      );
+    }
+
+    try {
+      await _commitLineupMediaJobs(images: imagesNeedingUpload);
+    } catch (_) {
+      Settings.showToast(
+        message: 'The lineup is kept in the editor, but its cloud work is '
+            'still pending. Use Save before leaving.',
+        backgroundColor: Settings.tacticalVioletTheme.destructive,
       );
     }
 

@@ -185,7 +185,11 @@ Future<bool> _guardCloudStrategyExit({
     final cloudError = saveState.cloudSyncError ?? queueState.lastError;
     final hasDurablePendingWork =
         queueState.pending.isNotEmpty || hasPendingMediaJobs;
+    final hasUncommittedMediaReferences = mediaJobs.any(
+      (job) => !job.referenceDurable,
+    );
     final hasUnstagedWork = ref.read(textDraftProvider).isNotEmpty ||
+        hasUncommittedMediaReferences ||
         (saveState.isDirty && !hasDurablePendingWork);
     final canLeaveWithDurableWork = hasDurablePendingWork &&
         !hasUnstagedWork &&
@@ -207,6 +211,7 @@ Future<bool> _guardCloudStrategyExit({
       'authIncident=${authState.hasActiveAuthIncident} '
       'connected=$isConnected '
       'durablePending=$hasDurablePendingWork '
+      'uncommittedMediaReferences=$hasUncommittedMediaReferences '
       'canLeaveWithDurableWork=$canLeaveWithDurableWork '
       'cloudError=${cloudError ?? 'none'}',
       source: 'cloud_media.exit_guard',

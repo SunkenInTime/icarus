@@ -40,6 +40,7 @@ class CloudMediaUploadJob {
     required this.state,
     required this.attempts,
     required this.updatedAt,
+    this.referenceDurable = true,
     this.width,
     this.height,
     this.byteSize,
@@ -67,6 +68,7 @@ class CloudMediaUploadJob {
   final String? etag;
   final DateTime? uploadUrlExpiresAt;
   final CloudMediaJobState state;
+  final bool referenceDurable;
   final int attempts;
   final String? lastError;
   final DateTime updatedAt;
@@ -96,6 +98,7 @@ class CloudMediaUploadJob {
     Object? etag = _noChange,
     Object? uploadUrlExpiresAt = _noChange,
     CloudMediaJobState? state,
+    bool? referenceDurable,
     int? attempts,
     Object? lastError = _noChange,
     DateTime? updatedAt,
@@ -125,6 +128,7 @@ class CloudMediaUploadJob {
           ? this.uploadUrlExpiresAt
           : uploadUrlExpiresAt as DateTime?,
       state: state ?? this.state,
+      referenceDurable: referenceDurable ?? this.referenceDurable,
       attempts: attempts ?? this.attempts,
       lastError: identical(lastError, _noChange)
           ? this.lastError
