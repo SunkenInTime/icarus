@@ -23,12 +23,13 @@ final cloudSyncStatusProvider = Provider<CloudSyncStatus>((ref) {
   if (hasDurabilityProblem) {
     return CloudSyncStatus.attention;
   }
+  if (opQueueState.needsAttention || saveState.mediaSyncErrorCount > 0) {
+    return CloudSyncStatus.attention;
+  }
   if (!isConnected) {
     return CloudSyncStatus.offline;
   }
-  if (opQueueState.needsAttention ||
-      saveState.cloudSyncError != null ||
-      saveState.mediaSyncErrorCount > 0) {
+  if (saveState.cloudSyncError != null) {
     return CloudSyncStatus.attention;
   }
   if (hasTextDrafts) {

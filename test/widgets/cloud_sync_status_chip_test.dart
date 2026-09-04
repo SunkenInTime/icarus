@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:icarus/collab/collab_models.dart';
+import 'package:icarus/providers/collab/active_page_live_sync_models.dart';
 import 'package:icarus/providers/collab/cloud_media_upload_queue_provider.dart';
 import 'package:icarus/providers/collab/cloud_sync_status_provider.dart';
 import 'package:icarus/providers/collab/convex_connection_provider.dart';
@@ -42,6 +44,15 @@ class _EmptyMediaQueue extends CloudMediaUploadQueueNotifier {
       );
 }
 
+class _FixedOpQueue extends StrategyOpQueueNotifier {
+  _FixedOpQueue(this.initialState);
+
+  final StrategyOpQueueState initialState;
+
+  @override
+  StrategyOpQueueState build() => initialState;
+}
+
 class _FixedSaveState extends StrategySaveStateNotifier {
   _FixedSaveState(this.initialState);
 
@@ -53,12 +64,17 @@ class _FixedSaveState extends StrategySaveStateNotifier {
 
 ProviderContainer _createContainer({
   bool connected = true,
+  StrategyOpQueueState? opQueueState,
   StrategySaveState? saveState,
 }) {
   return ProviderContainer(
     overrides: [
       strategyProvider.overrideWith(_CloudStrategyProvider.new),
-      strategyOpQueueProvider.overrideWith(_SettledOpQueue.new),
+      strategyOpQueueProvider.overrideWith(
+        opQueueState == null
+            ? _SettledOpQueue.new
+            : () => _FixedOpQueue(opQueueState),
+      ),
       cloudMediaUploadQueueProvider.overrideWith(_EmptyMediaQueue.new),
       convexConnectionProvider.overrideWith((ref) => Stream.value(connected)),
       if (saveState != null)
@@ -148,6 +164,56 @@ void main() {
     await container.read(convexConnectionProvider.future);
 
     expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.offline);
+  });
+
+  test('real queue attention remains visible while offline', () async {
+    const entityKey = EntitySyncKey.strategy();
+    const intent = QueuedEntityIntent(
+      entityKey: entityKey,
+      pending: PendingOp(
+        op: StrategyPatchOp(
+          opId: 'conflicted-op',
+          payload: <String, dynamic>{'name': 'conflicted'},
+          expectedStrategyRevision: 1,
+        ),
+        clientId: 'client-a',
+      ),
+    );
+    final container = _createContainer(
+      connected: false,
+      opQueueState: StrategyOpQueueState(
+        accountId: 'account-a',
+        strategyPublicId: 'cloud-strategy',
+        clientId: 'client-a',
+        attentionByEntityKey: <EntitySyncKey, QueuedEntityIntent>{
+          entityKey: intent,
+        },
+        durableLoaded: true,
+      ),
+    );
+    addTearDown(container.dispose);
+    await container.read(convexConnectionProvider.future);
+
+    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
+  });
+
+  test('media errors remain visible while offline', () async {
+    final container = _createContainer(
+      connected: false,
+      saveState: const StrategySaveState(
+        isDirty: false,
+        isSaving: false,
+        hasPendingCloudSync: true,
+        cloudSyncError: null,
+        hasPendingMediaSync: true,
+        mediaSyncErrorCount: 1,
+        lastPersistedAt: null,
+      ),
+    );
+    addTearDown(container.dispose);
+    await container.read(convexConnectionProvider.future);
+
+    expect(container.read(cloudSyncStatusProvider), CloudSyncStatus.attention);
   });
 
   testWidgets('offline flush errors render Offline instead of Needs attention',
