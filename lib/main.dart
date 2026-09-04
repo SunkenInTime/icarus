@@ -47,6 +47,7 @@ import 'package:icarus/services/guarded_sign_out.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
+import 'package:icarus/startup/hive_store_launch.dart';
 import 'package:icarus/strategy_view.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
 import 'package:icarus/widgets/global_shortcuts.dart';
@@ -128,22 +129,43 @@ Future<void> main(List<String> args) async {
         isReleaseMode: kReleaseMode,
       );
 
+      final launch = HiveStoreLaunch.parse(args);
+      final PreparedHiveStore? alternateHiveStore;
+      if (kIsWeb) {
+        launch.validateForWeb();
+        alternateHiveStore = null;
+      } else {
+        alternateHiveStore = await launch.prepareAlternateStore(
+          getDefaultHiveDirectory: getApplicationSupportDirectory,
+        );
+      }
+
       await registerDeepLinkProtocol('icarus');
       await _initializeDeepLinkHandling();
       if (kIsWeb && isIcarusShareUri(Uri.base)) {
         _publishDeepLink(Uri.base, source: 'web_location');
       }
 
-      await ensureIcarusSingleInstance(args);
+      await ensureIcarusSingleInstance(
+        launch.fileOpenArgs,
+        instanceId: alternateHiveStore?.windowsSingleInstanceId ??
+            HiveStoreLaunch.defaultWindowsSingleInstanceId,
+      );
 
       if (kIsWeb) {
         // On web, Hive uses IndexedDB; no path needed.
         await Hive.initFlutter();
       } else {
-        // On mobile/desktop, you can still choose an explicit directory.
-        final dir = await getApplicationSupportDirectory();
+        final hiveDirectoryPath = alternateHiveStore?.hiveDirectoryPath ??
+            (await getApplicationSupportDirectory()).path;
         await getTemporaryDirectory();
-        await Hive.initFlutter(dir.path);
+        await Hive.initFlutter(hiveDirectoryPath);
+        if (alternateHiveStore != null) {
+          AppErrorReporter.reportInfo(
+            'Using alternate Hive store: $hiveDirectoryPath',
+            source: 'main.hiveStore',
+          );
+        }
       }
 
       staticDrawingCursor = await CustomMouseCursor.icon(
@@ -200,7 +222,7 @@ Future<void> main(List<String> args) async {
       runApp(
         UncontrolledProviderScope(
           container: appProviderContainer,
-          child: MyApp(data: args),
+          child: MyApp(data: launch.fileOpenArgs),
         ),
       );
     },

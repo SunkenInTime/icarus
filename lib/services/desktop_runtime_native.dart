@@ -7,14 +7,17 @@ import 'package:windows_single_instance/windows_single_instance.dart';
 
 bool get isWindowsRuntime => Platform.isWindows;
 
-Future<void> ensureIcarusSingleInstance(List<String> args) async {
+Future<void> ensureIcarusSingleInstance(
+  List<String> args, {
+  required String instanceId,
+}) async {
   if (!Platform.isWindows) {
     return;
   }
 
   await WindowsSingleInstance.ensureSingleInstance(
     args,
-    'icarus_single_instance',
+    instanceId,
     onSecondWindow: publishSecondInstanceArgs,
   );
 }
