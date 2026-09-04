@@ -225,10 +225,10 @@ class _StrategyViewState extends ConsumerState<StrategyView>
                   final showDiscordLabel = constraints.maxWidth >= 1000;
                   return Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: editorHeaderCrossAxisAlignment,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Row(
-                        crossAxisAlignment: editorHeaderCrossAxisAlignment,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           ShadIconButton.ghost(
                             foregroundColor: Colors.white,

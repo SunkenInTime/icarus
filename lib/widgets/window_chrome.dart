@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -8,8 +9,28 @@ import 'package:window_manager/window_manager.dart';
 /// `macos/Runner/MainFlutterWindow.swift` centers the traffic lights on it.
 const double kWindowStripHeight = 40;
 
+/// Height of the editor's header band: the 65px map card.
+const double kEditorHeaderHeight = 65;
+
 /// Room reserved on the left for the native macOS traffic lights.
 const double kMacTrafficLightInset = 78;
+
+/// Talks to `MainFlutterWindow.swift`, which centers the traffic lights on
+/// whatever band height the current screen reports.
+const MethodChannel _chromeChannel = MethodChannel('icarus/window_chrome');
+
+int _editorHeadersMounted = 0;
+
+Future<void> _syncMacTitleStripHeight() async {
+  if (!_isMacOS) return;
+  final height =
+      _editorHeadersMounted > 0 ? kEditorHeaderHeight : kWindowStripHeight;
+  try {
+    await _chromeChannel.invokeMethod<void>('setTitleStripHeight', height);
+  } on MissingPluginException {
+    // Running without the macOS runner (tests, other hosts).
+  }
+}
 
 bool get _isMacOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
 
@@ -17,9 +38,6 @@ bool get _drawsCaptionButtons =>
     !kIsWeb &&
     (defaultTargetPlatform == TargetPlatform.windows ||
         defaultTargetPlatform == TargetPlatform.linux);
-
-CrossAxisAlignment get editorHeaderCrossAxisAlignment =>
-    _drawsCaptionButtons ? CrossAxisAlignment.center : CrossAxisAlignment.start;
 
 /// True on desktop builds, where the native title bar is hidden and the app
 /// owns that space.
@@ -41,26 +59,51 @@ class WindowDragArea extends StatelessWidget {
   }
 }
 
-/// On Windows and Linux, centers the editor controls and caption buttons on
-/// the map card's 65px band. macOS keeps controls on its 40px traffic-light
-/// strip. The canvas gap stays below either layout.
-class EditorWindowHeader extends StatelessWidget {
+/// The editor's header: controls and the map card centered on one band,
+/// with the traffic lights (macOS) or caption buttons (Windows, Linux) on
+/// that same line. On macOS the window is told the band's height so the
+/// lights move down to meet it, and back up when the editor closes.
+class EditorWindowHeader extends StatefulWidget {
   const EditorWindowHeader({super.key, required this.child});
 
   final Widget child;
+
+  @override
+  State<EditorWindowHeader> createState() => _EditorWindowHeaderState();
+}
+
+class _EditorWindowHeaderState extends State<EditorWindowHeader> {
+  @override
+  void initState() {
+    super.initState();
+    _editorHeadersMounted++;
+    _syncMacTitleStripHeight();
+  }
+
+  @override
+  void dispose() {
+    // The skeleton and the real header swap within one frame, so count
+    // mounts instead of assuming this was the last one.
+    _editorHeadersMounted--;
+    _syncMacTitleStripHeight();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return WindowDragArea(
       child: Padding(
         padding: const EdgeInsets.only(bottom: 10),
-        child: Row(
-          crossAxisAlignment: editorHeaderCrossAxisAlignment,
-          children: [
-            const MacTrafficLightInset(),
-            Expanded(child: child),
-            const WindowCaptionButtons(),
-          ],
+        child: SizedBox(
+          height: kEditorHeaderHeight,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const MacTrafficLightInset(),
+              Expanded(child: widget.child),
+              const WindowCaptionButtons(),
+            ],
+          ),
         ),
       ),
     );

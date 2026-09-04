@@ -165,10 +165,10 @@ class _SkeletonTopBar extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 15),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: editorHeaderCrossAxisAlignment,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Row(
-            crossAxisAlignment: editorHeaderCrossAxisAlignment,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const _SkeletonBlock(width: 40, height: 40, radius: 8),
               const SizedBox(width: 5),

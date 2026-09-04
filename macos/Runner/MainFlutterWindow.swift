@@ -4,9 +4,13 @@ import FlutterMacOS
 /// Icarus draws its own title strip, so the window keeps only the native
 /// traffic lights and lets the Flutter view extend under the title bar.
 class MainFlutterWindow: NSWindow {
-  /// Matches `kWindowStripHeight` in lib/widgets/window_chrome.dart.
-  private let titleStripHeight: CGFloat = 40
+  /// Height of the band the traffic lights are centered on. Starts at the
+  /// library strip's height (`kWindowStripHeight` in
+  /// lib/widgets/window_chrome.dart); screens with a taller header, like the
+  /// editor, update it over the `icarus/window_chrome` channel.
+  private var titleStripHeight: CGFloat = 40
   private var layoutObservers: [NSObjectProtocol] = []
+  private var chromeChannel: FlutterMethodChannel?
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()
@@ -19,6 +23,27 @@ class MainFlutterWindow: NSWindow {
     styleMask.insert(.fullSizeContentView)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+
+    let channel = FlutterMethodChannel(
+      name: "icarus/window_chrome",
+      binaryMessenger: flutterViewController.engine.binaryMessenger
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else { return }
+      switch call.method {
+      case "setTitleStripHeight":
+        guard let height = call.arguments as? Double else {
+          result(FlutterError(code: "bad-args", message: "height missing", details: nil))
+          return
+        }
+        self.titleStripHeight = CGFloat(height)
+        self.centerTrafficLights()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+    chromeChannel = channel
 
     super.awakeFromNib()
 
