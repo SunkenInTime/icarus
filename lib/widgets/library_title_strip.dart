@@ -18,7 +18,15 @@ import 'package:icarus/widgets/window_chrome.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 const double _controlHeight = 28;
-const double _menuWidth = 200;
+// Action menus hug their labels; the account menu keeps room for email text.
+const double _sortMenuWidth = 132;
+const double _newMenuWidth = 140;
+const double _accountMenuWidth = 200;
+const double _menuItemHorizontalPadding = 8;
+const double _menuIconWidth = 18;
+const double _menuItemGap = 8;
+const double _menuLabelLeftInset =
+    _menuItemHorizontalPadding + _menuIconWidth + _menuItemGap;
 
 /// The library's only chrome: tabs on the left, search / sort / New / account
 /// on the right, all inside the window's title strip.
@@ -123,6 +131,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
                 hintText: 'Search',
               ),
             ),
+            const SizedBox(width: 4),
             _buildSortMenu(),
             const SizedBox(width: 8),
             if (tab == LibraryTab.shared)
@@ -157,7 +166,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         overlayAlignment: Alignment.bottomRight,
       ),
       popover: (context) => SizedBox(
-        width: _menuWidth,
+        width: _sortMenuWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -218,7 +227,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         overlayAlignment: Alignment.bottomRight,
       ),
       popover: (context) => SizedBox(
-        width: _menuWidth,
+        width: _newMenuWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -312,7 +321,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
         overlayAlignment: Alignment.bottomRight,
       ),
       popover: (context) => SizedBox(
-        width: _menuWidth,
+        width: _accountMenuWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -451,13 +460,16 @@ class _MenuItem extends StatelessWidget {
     return ShadButton.ghost(
       height: 32,
       mainAxisAlignment: MainAxisAlignment.start,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(
+        horizontal: _menuItemHorizontalPadding,
+      ),
+      gap: _menuItemGap,
       onPressed: () {
         menu.hide();
         onPressed();
       },
       leading: SizedBox(
-        width: 18,
+        width: _menuIconWidth,
         child: icon == null ? null : Icon(icon, size: 16),
       ),
       child: Flexible(
@@ -479,14 +491,17 @@ class _MenuLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.3,
-          color: Settings.tacticalVioletTheme.mutedForeground,
+      padding: const EdgeInsets.fromLTRB(_menuLabelLeftInset, 6, 8, 4),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
+            color: Settings.tacticalVioletTheme.mutedForeground,
+          ),
         ),
       ),
     );
