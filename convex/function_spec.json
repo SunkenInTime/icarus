@@ -39813,6 +39813,25 @@
       "args": {
         "type": "object",
         "value": {
+          "limit": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "images.js:claimDeletedImageAssets",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
           "assetPublicId": {
             "fieldType": {
               "type": "string"
@@ -40116,6 +40135,32 @@
       "args": {
         "type": "object",
         "value": {
+          "assetId": {
+            "fieldType": {
+              "tableName": "imageAssets",
+              "type": "id"
+            },
+            "optional": false
+          },
+          "r2ObjectDeleted": {
+            "fieldType": {
+              "type": "boolean"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "images.js:finalizeDeletedImageAsset",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
           "assetPublicId": {
             "fieldType": {
               "type": "string"
@@ -40289,6 +40334,26 @@
       },
       "visibility": {
         "kind": "public"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "assetId": {
+            "fieldType": {
+              "tableName": "imageAssets",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Query",
+      "identifier": "images.js:getDeletedImageAssetTarget",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
       }
     },
     {
@@ -40527,37 +40592,6 @@
       "args": {
         "type": "object",
         "value": {
-          "limit": {
-            "fieldType": {
-              "type": "number"
-            },
-            "optional": true
-          },
-          "staleBefore": {
-            "fieldType": {
-              "type": "number"
-            },
-            "optional": false
-          },
-          "strategyPublicId": {
-            "fieldType": {
-              "type": "string"
-            },
-            "optional": false
-          }
-        }
-      },
-      "functionType": "Query",
-      "identifier": "images.js:listStaleUploadDeletionTargets",
-      "returns": null,
-      "visibility": {
-        "kind": "internal"
-      }
-    },
-    {
-      "args": {
-        "type": "object",
-        "value": {
           "assetIds": {
             "fieldType": {
               "type": "array",
@@ -40578,6 +40612,62 @@
       },
       "functionType": "Mutation",
       "identifier": "images.js:markDeletedAssetRefsForStrategy",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "assetPublicIds": {
+            "fieldType": {
+              "type": "array",
+              "value": {
+                "type": "string"
+              }
+            },
+            "optional": false
+          },
+          "pageId": {
+            "fieldType": {
+              "tableName": "pages",
+              "type": "id"
+            },
+            "optional": false
+          },
+          "strategyId": {
+            "fieldType": {
+              "tableName": "strategies",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "images.js:markDeletedPageImageAssets",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "strategyId": {
+            "fieldType": {
+              "tableName": "strategies",
+              "type": "id"
+            },
+            "optional": false
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "images.js:markDeletedStrategyImageAssets",
       "returns": null,
       "visibility": {
         "kind": "internal"
@@ -40691,18 +40781,79 @@
             "fieldType": {
               "type": "number"
             },
-            "optional": false
-          },
-          "strategyPublicId": {
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "images.js:markStaleImageUploadsDeleted",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "assetIds": {
             "fieldType": {
-              "type": "string"
+              "type": "array",
+              "value": {
+                "tableName": "imageAssets",
+                "type": "id"
+              }
             },
             "optional": false
+          },
+          "retryAfterMs": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "images.js:releaseImageAssetDeletionClaims",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "delayMs": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
+          }
+        }
+      },
+      "functionType": "Mutation",
+      "identifier": "images.js:scheduleDeletedImageAssetSweep",
+      "returns": null,
+      "visibility": {
+        "kind": "internal"
+      }
+    },
+    {
+      "args": {
+        "type": "object",
+        "value": {
+          "limit": {
+            "fieldType": {
+              "type": "number"
+            },
+            "optional": true
           }
         }
       },
       "functionType": "Action",
-      "identifier": "images.js:sweepStaleUploadsForStrategy",
+      "identifier": "images.js:sweepDeletedImageAssets",
       "returns": null,
       "visibility": {
         "kind": "internal"
@@ -47712,6 +47863,13 @@
           "pageId": {
             "fieldType": {
               "tableName": "pages",
+              "type": "id"
+            },
+            "optional": false
+          },
+          "strategyId": {
+            "fieldType": {
+              "tableName": "strategies",
               "type": "id"
             },
             "optional": false

@@ -177,6 +177,7 @@ export default defineSchema({
     etag: v.optional(v.string()),
     uploadedAt: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
+    cleanupClaimedAt: v.optional(v.number()),
     createdAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
     // Legacy rows may still have a storagePath that can help infer the extension.
@@ -197,6 +198,7 @@ export default defineSchema({
       "uploadStatus",
     ])
     .index("by_uploadStatus_and_updatedAt", ["uploadStatus", "updatedAt"])
+    .index("by_storageId", ["storageId"])
     .index("by_objectKey", ["objectKey"]),
   operationEvents: defineTable({
     strategyId: v.id("strategies"),
