@@ -73,6 +73,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
   // Live reads can advance while local work blocks rehydration. Outbound diffs
   // must stay based on the server state that was actually loaded into canvas.
   final Map<EntitySyncKey, _NormalizedEntity> _hydratedBaseByEntityKey = {};
+  final Set<EntitySyncKey> _remoteAdoptionPending = {};
 
   @override
   ActivePageLiveSyncState build() {
@@ -81,6 +82,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
 
   void reset() {
     _hydratedBaseByEntityKey.clear();
+    _remoteAdoptionPending.clear();
     state = const ActivePageLiveSyncState();
   }
 
@@ -97,6 +99,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         activePageId != state.activePageId;
     if (strategyChanged) {
       _hydratedBaseByEntityKey.clear();
+      _remoteAdoptionPending.clear();
     }
     state = state.copyWith(
       strategyPublicId: strategyPublicId,
@@ -138,6 +141,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
         : _normalizedRemoteEntities(snapshot, pageId);
     _hydratedBaseByEntityKey.removeWhere((key, _) => key.pageId == pageId);
     _hydratedBaseByEntityKey.addAll(remoteEntities);
+    _remoteAdoptionPending.removeWhere((key) => key.pageId == pageId);
     final remoteRevisions = Map<EntitySyncKey, int>.from(
       state.remoteBaseRevisionByEntity,
     )..removeWhere((key, _) => key.pageId == pageId);
@@ -157,6 +161,22 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
 
   void recordAckBatch(List<AckedEntityIntent> intents) {
     state = state.copyWith(lastAckBatch: intents);
+  }
+
+  /// Stops local projection and reconciliation for explicitly discarded work
+  /// until the affected page has loaded the authoritative remote snapshot.
+  void adoptRemoteForEntities(Set<EntitySyncKey> entityKeys) {
+    if (entityKeys.isEmpty) return;
+    final overlays = Map<EntitySyncKey, ActivePageOverlayEntry>.from(
+      state.overlayByEntityKey,
+    );
+    for (final key in entityKeys) {
+      overlays.remove(key);
+      if (key.pageId != null) {
+        _remoteAdoptionPending.add(key);
+      }
+    }
+    state = state.copyWith(overlayByEntityKey: overlays);
   }
 
   Map<EntitySyncKey, StrategyOp>? syncLocalPage({
@@ -194,6 +214,7 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
           .where((key) => key.pageId == pageId),
       ...queueState.successorByEntityKey.keys
           .where((key) => key.pageId == pageId),
+      ..._remoteAdoptionPending.where((key) => key.pageId == pageId),
     };
 
     final nextOverlay = Map<EntitySyncKey, ActivePageOverlayEntry>.from(
@@ -202,6 +223,11 @@ class ActivePageLiveSyncNotifier extends Notifier<ActivePageLiveSyncState> {
     final retainedDesiredOps = <EntitySyncKey, StrategyOp>{};
 
     for (final key in pageKeys) {
+      if (_remoteAdoptionPending.contains(key)) {
+        nextOverlay.remove(key);
+        _debugLog('overlay.remove $key reason=adopting_remote');
+        continue;
+      }
       final remote = remoteEntities[key];
       final local = localEntities[key];
       final hydratedBase = _hydratedBaseByEntityKey[key];

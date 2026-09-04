@@ -334,6 +334,165 @@ void main() {
       expect(store.values, hasLength(1));
     });
 
+    test(
+        'cloud adoption discards only selected rejected work and survives restart',
+        () async {
+      const selectedKey = EntitySyncKey.element('page-1', 'element-1');
+      const otherAttentionKey =
+          EntitySyncKey.element('page-1', 'element-2');
+      const queuedKey = EntitySyncKey.element('page-1', 'element-3');
+      final selected = record(status: DurableOutboxStatus.attention).copyWith(
+        successorPending: PendingOp(
+          op: elementOp(
+            opId: 'selected-successor',
+            value: 'newer local intent',
+          ),
+          clientId: 'stable-client',
+        ),
+        latestServerRevision: 7,
+      );
+      final otherAttention = DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: otherAttentionKey,
+        pending: PendingOp(
+          op: elementOp(opId: 'other-rejected', elementId: 'element-2'),
+          clientId: 'stable-client',
+        ),
+        status: DurableOutboxStatus.attention,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+        latestServerRevision: 4,
+      );
+      final queued = DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: queuedKey,
+        pending: PendingOp(
+          op: elementOp(opId: 'unrelated-queued', elementId: 'element-3'),
+          clientId: 'stable-client',
+        ),
+        status: DurableOutboxStatus.queued,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      final otherStrategy = DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-2',
+        entityKey: selectedKey,
+        pending: PendingOp(
+          op: elementOp(opId: 'other-strategy'),
+          clientId: 'stable-client',
+        ),
+        status: DurableOutboxStatus.attention,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      await store.put(selected);
+      await store.put(otherAttention);
+      await store.put(queued);
+      await store.put(otherStrategy);
+      var notifier = start();
+
+      final discarded = await notifier.discardRejected({selectedKey});
+
+      expect(discarded, {selectedKey});
+      var current = container!.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(otherAttentionKey));
+      expect(current.attentionByEntityKey, isNot(contains(selectedKey)));
+      expect(current.successorByEntityKey, isEmpty);
+      expect(current.queuedByEntityKey, contains(queuedKey));
+      expect(
+        store.load().records.map((record) => record.pending.op.opId),
+        containsAll(<String>[
+          'other-rejected',
+          'unrelated-queued',
+          'other-strategy',
+        ]),
+      );
+      expect(
+        store.load().records.map((record) => record.pending.op.opId),
+        isNot(contains('op-1')),
+      );
+      expect(
+        store.load().records
+            .expand((record) => <String>[
+                  record.pending.op.opId,
+                  if (record.successorPending != null)
+                    record.successorPending!.op.opId,
+                ]),
+        isNot(contains('selected-successor')),
+      );
+
+      await notifier.syncDesiredOpsForPage(
+        pageId: 'page-1',
+        desiredOpsByEntityKey: {
+          selectedKey: elementOp(opId: 'stale-reconciliation'),
+        },
+        clearMissing: false,
+        flushImmediately: false,
+      );
+      expect(
+        container!.read(strategyOpQueueProvider).queuedByEntityKey,
+        isNot(contains(selectedKey)),
+      );
+
+      notifier = start();
+      current = container!.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(otherAttentionKey));
+      expect(current.attentionByEntityKey, isNot(contains(selectedKey)));
+      expect(current.queuedByEntityKey, contains(queuedKey));
+      expect(current.pending.map((pending) => pending.op.opId),
+          isNot(contains('selected-successor')));
+
+      notifier.setActiveStrategy('strategy-2', accountId: 'account-a');
+      expect(
+        container!
+            .read(strategyOpQueueProvider)
+            .attentionByEntityKey[selectedKey]!
+            .pending
+            .op
+            .opId,
+        'other-strategy',
+      );
+    });
+
+    test('partial cloud adoption leaves a failed durable delete in attention',
+        () async {
+      const firstKey = EntitySyncKey.element('page-1', 'element-1');
+      const secondKey = EntitySyncKey.element('page-1', 'element-2');
+      final failingStore = _FailingSelectedRemovalStore();
+      store = failingStore;
+      await store.put(record(status: DurableOutboxStatus.attention));
+      final second = DurableOutboxRecord(
+        accountId: 'account-a',
+        strategyPublicId: 'strategy-1',
+        entityKey: secondKey,
+        pending: PendingOp(
+          op: elementOp(opId: 'second', elementId: 'element-2'),
+          clientId: 'stable-client',
+        ),
+        status: DurableOutboxStatus.attention,
+        createdAt: DateTime(2026),
+        updatedAt: DateTime(2026),
+      );
+      await store.put(second);
+      failingStore.failStorageKey = second.storageKey;
+      final notifier = start();
+
+      final discarded = await notifier.discardRejected({firstKey, secondKey});
+
+      expect(discarded, {firstKey});
+      final current = container!.read(strategyOpQueueProvider);
+      expect(current.attentionByEntityKey, contains(secondKey));
+      expect(current.attentionByEntityKey, isNot(contains(firstKey)));
+      expect(current.lastError, contains('could not be removed'));
+      expect(
+        store.load().records.map((record) => record.entityKey),
+        unorderedEquals([secondKey]),
+      );
+    });
+
     test('explicit rejected retry uses durable latest server revision',
         () async {
       final saved = record(status: DurableOutboxStatus.attention).copyWith(
@@ -643,6 +802,60 @@ void main() {
     final afterWrite = container.read(strategyOpQueueProvider).pending.single;
     expect(afterWrite.op.opId, isNot(anyOf('first', 'desired')));
     expect(afterWrite.op.payload, {'value': 'b'});
+  });
+
+  test('cloud adoption leaves unrelated in-flight work untouched', () async {
+    const rejectedKey = EntitySyncKey.element('page-1', 'element-1');
+    final store = MemoryDurableStrategyOutboxStore();
+    await store.put(DurableOutboxRecord(
+      accountId: 'account-a',
+      strategyPublicId: 'strategy-1',
+      entityKey: rejectedKey,
+      pending: const PendingOp(
+        op: ElementPatchOp(
+          opId: 'rejected',
+          elementPublicId: 'element-1',
+          pagePublicId: 'page-1',
+          payload: {'value': 'mine'},
+          expectedElementRevision: 1,
+        ),
+        clientId: 'stable-client',
+      ),
+      status: DurableOutboxStatus.attention,
+      createdAt: DateTime(2026),
+      updatedAt: DateTime(2026),
+    ));
+    final repository = _SequencedAckRepository();
+    final container = _cloudQueueContainer(
+      store: store,
+      repository: repository,
+    );
+    addTearDown(container.dispose);
+    final notifier = container.read(strategyOpQueueProvider.notifier)
+      ..setActiveStrategy('strategy-1', accountId: 'account-a');
+    const inFlightKey = EntitySyncKey.element('page-1', 'element-2');
+    await notifier.enqueue(const ElementPatchOp(
+      opId: 'unrelated-in-flight',
+      elementPublicId: 'element-2',
+      pagePublicId: 'page-1',
+      payload: {'value': 'other'},
+      expectedElementRevision: 1,
+    ));
+    final flush = notifier.flushNow();
+    await repository.firstStarted.future;
+
+    final discarded = await notifier.discardRejected({rejectedKey});
+
+    expect(discarded, {rejectedKey});
+    expect(
+      container.read(strategyOpQueueProvider).inFlightByEntityKey,
+      contains(inFlightKey),
+    );
+    repository.completeFirst(const AppliedOpAck(
+      opId: 'unrelated-in-flight',
+      revision: 2,
+    ));
+    await flush;
   });
 
   group('acknowledgement persistence recovery', () {
@@ -1512,6 +1725,18 @@ class _OneShotAckFailureStore extends MemoryDurableStrategyOutboxStore {
     if (failRemove) {
       failRemove = false;
       throw StateError('accepted ack removal failed');
+    }
+    await super.remove(storageKey);
+  }
+}
+
+class _FailingSelectedRemovalStore extends MemoryDurableStrategyOutboxStore {
+  String? failStorageKey;
+
+  @override
+  Future<void> remove(String storageKey) async {
+    if (storageKey == failStorageKey) {
+      throw StateError('selected removal failed');
     }
     await super.remove(storageKey);
   }

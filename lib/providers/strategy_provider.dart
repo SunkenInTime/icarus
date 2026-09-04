@@ -413,6 +413,10 @@ class StrategyProvider extends Notifier<StrategyState> {
     _cloudMutationSyncScheduled = false;
   }
 
+  void consumeScheduledCloudStrategySync() {
+    _cloudStrategyMutationSyncScheduled = false;
+  }
+
   void _scheduleCloudStrategySync() {
     if (_cloudStrategyMutationSyncScheduled) {
       return;

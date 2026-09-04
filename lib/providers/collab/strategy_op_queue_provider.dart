@@ -112,6 +112,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
   int _offlineRetryCount = 0;
   late DurableStrategyOutboxStore _store;
   late Map<String, DurableOutboxRecord> _recordsByStorageKey;
+  final Set<EntitySyncKey> _awaitingRemoteAdoption = {};
   Future<void> _writeTail = Future<void>.value();
 
   ConvexStrategyRepository get _repo =>
@@ -147,6 +148,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
 
     _debounceTimer?.cancel();
     _retryTimer?.cancel();
+    _awaitingRemoteAdoption.clear();
     _offlineRetryCount = 0;
     final matching = accountId == null || strategyPublicId == null
         ? const <DurableOutboxRecord>[]
@@ -323,6 +325,7 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     var changed = false;
     try {
       for (final key in keys) {
+        if (_awaitingRemoteAdoption.contains(key)) continue;
         final desired = desiredOps[key];
         final existing = queued[key];
         final inFlightIntent = state.inFlightByEntityKey[key];
@@ -647,6 +650,79 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     });
   }
 
+  /// Discards selected server-rejected intents after an explicit user choice.
+  ///
+  /// Each durable record contains both the rejected predecessor and any newer
+  /// successor for that entity. Removing the record discards both, without
+  /// changing unrelated queued, in-flight, paused, or rejected work.
+  Future<Set<EntitySyncKey>> discardRejected(
+    Set<EntitySyncKey> entityKeys,
+  ) {
+    return _serializeWrite(() async {
+      final attention = Map<EntitySyncKey, QueuedEntityIntent>.from(
+        state.attentionByEntityKey,
+      );
+      final successors = Map<EntitySyncKey, QueuedEntityIntent>.from(
+        state.successorByEntityKey,
+      );
+      final discarded = <EntitySyncKey>{};
+      Object? persistenceError;
+      StackTrace? persistenceStackTrace;
+
+      for (final key in entityKeys) {
+        final rejected = attention[key];
+        final record = _recordForActiveKey(key);
+        if (rejected == null ||
+            record == null ||
+            record.status != DurableOutboxStatus.attention ||
+            record.pending.op.opId != rejected.pending.op.opId) {
+          continue;
+        }
+        try {
+          await _store.remove(record.storageKey);
+          _recordsByStorageKey.remove(record.storageKey);
+          attention.remove(key);
+          successors.remove(key);
+          _awaitingRemoteAdoption.add(key);
+          discarded.add(key);
+        } catch (error, stackTrace) {
+          persistenceError = error;
+          persistenceStackTrace = stackTrace;
+          break;
+        }
+      }
+
+      if (persistenceError != null) {
+        log(
+          'Durable outbox persistence failed: $persistenceError',
+          name: 'strategy_outbox',
+          error: persistenceError,
+          stackTrace: persistenceStackTrace,
+        );
+      }
+      final attentionMessage = _loadedAttentionMessage(
+        loadIssues: state.loadIssues,
+        paused: state.pausedByEntityKey,
+        attention: attention,
+      );
+      final errorMessage = persistenceError == null
+          ? attentionMessage
+          : 'Cloud work could not be removed from the durable outbox: '
+              '$persistenceError';
+      state = state.copyWith(
+        attentionByEntityKey: attention,
+        successorByEntityKey: successors,
+        lastError: errorMessage,
+        clearError: errorMessage == null,
+      );
+      return Set<EntitySyncKey>.unmodifiable(discarded);
+    });
+  }
+
+  void completeRemoteAdoption(Set<EntitySyncKey> entityKeys) {
+    _awaitingRemoteAdoption.removeAll(entityKeys);
+  }
+
   Future<void> flushNow() async {
     await _writeTail;
     if (state.isFlushing) return;
@@ -968,12 +1044,14 @@ class StrategyOpQueueNotifier extends Notifier<StrategyOpQueueState> {
     _recordsByStorageKey.remove(record.storageKey);
   }
 
-  Future<void> _serializeWrite(Future<void> Function() action) {
+  Future<T> _serializeWrite<T>(Future<T> Function() action) {
     final next = _writeTail.then((_) => action());
-    _writeTail = next.catchError((Object error, StackTrace stackTrace) {
-      log('Outbox write failed: $error',
-          name: 'strategy_outbox', error: error, stackTrace: stackTrace);
-    });
+    _writeTail = next.then<void>((_) {}).catchError(
+      (Object error, StackTrace stackTrace) {
+        log('Outbox write failed: $error',
+            name: 'strategy_outbox', error: error, stackTrace: stackTrace);
+      },
+    );
     return next;
   }
 
