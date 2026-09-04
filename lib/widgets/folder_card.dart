@@ -6,10 +6,11 @@ import 'package:icarus/const/maps.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_context_menu_provider.dart';
+import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
-import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/widgets/dialogs/delete_folder_alert_dialog.dart';
 import 'package:icarus/widgets/drag_tilt_feedback.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
@@ -282,11 +283,11 @@ class _FolderCardState extends ConsumerState<FolderCard>
       }
 
       if (item is StrategyItem) {
-        ref
+        await ref
             .read(strategyProvider.notifier)
             .moveToFolder(strategyID: item.strategy!.id, parentID: _folder.id);
       } else if (item is FolderItem) {
-        ref
+        await ref
             .read(folderProvider.notifier)
             .moveToFolder(folderID: item.folder.id, parentID: _folder.id);
       }
@@ -673,19 +674,14 @@ class _FolderCardState extends ConsumerState<FolderCard>
         child: const Text('Delete', style: TextStyle(color: Colors.redAccent)),
         onPressed: () async {
           _closeMenus();
-          ConfirmAlertDialog.show(
+          if (widget.isDemo) return;
+          await showShadDialog<void>(
             context: context,
-            title: "Are you sure you want to delete '${_folder.name}' folder?",
-            content:
-                "This will also delete all strategies and subfolders within it.",
-            confirmText: "Delete",
-            isDestructive: true,
-          ).then((confirmed) {
-            if (confirmed) {
-              if (widget.isDemo) return;
-              ref.read(folderProvider.notifier).deleteFolder(_folder.id);
-            }
-          });
+            builder: (_) => DeleteFolderAlertDialog(
+              folder: _folder,
+              workspace: ref.read(libraryWorkspaceProvider),
+            ),
+          );
         },
       ),
     ];

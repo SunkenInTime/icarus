@@ -7,6 +7,7 @@ import 'package:icarus/const/settings.dart';
 import 'package:icarus/providers/library_context_menu_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/cloud_strategy_export.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -497,7 +498,7 @@ class _StrategyTileState extends ConsumerState<StrategyTile> {
     }
 
     if (_isCloud) {
-      await StrategyImportExportService(ref).exportCloudStrategy(_strategyId);
+      await runCloudStrategyExport(ref, _strategyId);
       return;
     }
 

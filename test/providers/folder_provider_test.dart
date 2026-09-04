@@ -5,8 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:icarus/collab/convex_strategy_repository.dart';
 import 'package:icarus/collab/generated/generated.dart';
 import 'package:icarus/collab/transport/convex_transport.dart';
+import 'package:icarus/providers/auth_provider.dart';
+import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/folder_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
+import 'package:icarus/providers/pinned_items_provider.dart';
 
 void main() {
   test('failed cloud folder deletion preserves the selected folder', () async {
@@ -50,9 +53,33 @@ ProviderContainer _createContainer(ConvexStrategyRepository repository) {
   return ProviderContainer(
     overrides: [
       libraryWorkspaceProvider.overrideWith(_CloudWorkspaceNotifier.new),
+      pinnedItemsProvider.overrideWith(_MemoryPinnedItemsProvider.new),
       convexStrategyRepositoryProvider.overrideWithValue(repository),
+      authProvider.overrideWith(_ReadyAuthProvider.new),
+      cloudFoldersProvider.overrideWith((_) => Stream.value(const [])),
+      cloudAllFoldersProvider.overrideWith((_) => Stream.value(const [])),
+      cloudStrategiesProvider.overrideWith((_) => Stream.value(const [])),
     ],
   );
+}
+
+class _MemoryPinnedItemsProvider extends PinnedItemsProvider {
+  @override
+  Map<String, int> build() => const {};
+
+  @override
+  Future<void> removePin(String id) async {}
+}
+
+class _ReadyAuthProvider extends AuthProvider {
+  @override
+  AppAuthState build() => const AppAuthState(
+        isLoading: false,
+        isAuthenticated: true,
+        isConvexUserReady: true,
+        convexAuthStatus: ConvexAuthStatus.ready,
+        user: null,
+      );
 }
 
 class _CloudWorkspaceNotifier extends LibraryWorkspaceNotifier {

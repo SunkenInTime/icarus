@@ -37,6 +37,53 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
   FolderColor _selectedColor = FolderColor.red;
   Color? _customColor;
   _FolderIconFilter _iconFilter = _FolderIconFilter.all;
+  bool _isSubmitting = false;
+  String? _failureMessage;
+
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+    setState(() {
+      _isSubmitting = true;
+      _failureMessage = null;
+    });
+
+    final name = _folderNameController.text.isEmpty
+        ? 'New Folder'
+        : _folderNameController.text;
+    if (widget.folder != null) {
+      final result = await ref.read(folderProvider.notifier).editFolder(
+            folder: widget.folder!,
+            newName: name,
+            newIconId: _selectedIconId,
+            newColor: _selectedColor,
+            newCustomColor: _customColor,
+          );
+      if (!mounted) return;
+      if (result.didSucceed) {
+        Navigator.of(context).pop();
+        return;
+      }
+      setState(() {
+        _isSubmitting = false;
+        _failureMessage = result.userMessage;
+      });
+      return;
+    }
+
+    try {
+      await ref.read(folderProvider.notifier).createFolder(
+            name: name,
+            iconId: _selectedIconId,
+            color: _selectedColor,
+            customColor: _customColor,
+          );
+    } catch (_) {
+      if (mounted) setState(() => _isSubmitting = false);
+      return;
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
   @override
   void dispose() {
     _folderNameController.dispose();
@@ -74,47 +121,28 @@ class _FolderEditDialogState extends ConsumerState<FolderEditDialog> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: ShadButton(
-            leading: const Icon(Icons.check),
-            onPressed: () async {
-              if (widget.folder != null) {
-                ref.read(folderProvider.notifier).editFolder(
-                      folder: widget.folder!,
-                      newName: _folderNameController.text.isEmpty
-                          ? "New Folder"
-                          : _folderNameController.text,
-                      newIconId: _selectedIconId,
-                      newColor: _selectedColor,
-                      newCustomColor: _customColor,
-                    );
-                if (context.mounted) Navigator.of(context).pop();
-                return;
-              }
-              try {
-                await ref.read(folderProvider.notifier).createFolder(
-                      name: _folderNameController.text.isEmpty
-                          ? "New Folder"
-                          : _folderNameController.text,
-                      iconId: _selectedIconId,
-                      color: _selectedColor,
-                      customColor: _customColor,
-                    );
-              } catch (_) {
-                // Cloud folder creation failed (already toasted by the
-                // provider) — keep the dialog open so the user can retry.
-                return;
-              }
-
-              if (context.mounted) Navigator.of(context).pop();
-            },
-            child: const Text("Done"),
+            key: const ValueKey('folder-edit-submit'),
+            leading: _isSubmitting ? null : const Icon(Icons.check),
+            onPressed: _isSubmitting ? null : _submit,
+            child: Text(_isSubmitting ? 'Saving...' : 'Done'),
           ),
-        )
+        ),
       ],
       child: SizedBox(
         width: 358,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (_failureMessage != null) ...[
+              Text(
+                _failureMessage!,
+                key: const ValueKey('folder-edit-failure'),
+                style: TextStyle(
+                  color: Settings.tacticalVioletTheme.destructive,
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             Container(
               height: 220,
               width: 358,
