@@ -12,6 +12,7 @@ import 'package:icarus/providers/collab/remote_library_provider.dart';
 import 'package:icarus/providers/library_workspace_provider.dart';
 import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:uuid/uuid.dart';
@@ -144,26 +145,32 @@ class FolderProvider extends Notifier<String?> {
         .firstOrNull;
   }
 
-  Future<void> deleteFolder(
+  Future<CloudLibraryActionResult> deleteFolder(
     String folderID, {
     LibraryWorkspace? workspace,
   }) async {
     final targetWorkspace = workspace ?? _currentWorkspace;
     if (targetWorkspace == LibraryWorkspace.cloud) {
-      try {
-        await ref.read(convexStrategyRepositoryProvider).deleteFolder(folderID);
-      } catch (error, stackTrace) {
-        await _maybeReportCloudUnauthenticated(
-          source: 'folder:delete',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        return;
-      }
+      final result = await _runCloudAction(
+        action: () async {
+          await ref
+              .read(convexStrategyRepositoryProvider)
+              .deleteFolder(folderID);
+          return true;
+        },
+        source: 'folder:delete',
+        failureMessage: "Couldn't delete this cloud folder. Try again.",
+      );
+      if (!result.didSucceed) return result;
+
+      await ref.read(pinnedItemsProvider.notifier).removePin(folderID);
       if (_currentFolderIdForWorkspace(LibraryWorkspace.cloud) == folderID) {
         updateWorkspaceFolderId(LibraryWorkspace.cloud, null);
       }
-      return;
+      ref.invalidate(cloudFoldersProvider);
+      ref.invalidate(cloudAllFoldersProvider);
+      ref.invalidate(cloudStrategiesProvider);
+      return result;
     }
 
     await ref.read(pinnedItemsProvider.notifier).removePin(folderID);
@@ -186,9 +193,10 @@ class FolderProvider extends Notifier<String?> {
     }
 
     await Hive.box<Folder>(HiveBoxNames.foldersBox).delete(folderID);
+    return CloudLibraryActionResult.succeeded;
   }
 
-  void editFolder({
+  Future<CloudLibraryActionResult> editFolder({
     required Folder folder,
     required String newName,
     required int newIconId,
@@ -201,30 +209,31 @@ class FolderProvider extends Notifier<String?> {
       final newIcon = FolderIconRegistry.resolve(newIconId).iconData;
       final iconFontFamily = newIcon?.fontFamily;
       final iconFontPackage = newIcon?.fontPackage;
-      try {
-        await ref.read(convexStrategyRepositoryProvider).updateFolder(
-              folderPublicId: folder.id,
-              name: newName,
-              iconId: newIconId,
-              iconCodePoint: newIcon?.codePoint,
-              iconFontFamily: iconFontFamily,
-              clearIconFontFamily: iconFontFamily == null,
-              iconFontPackage: iconFontPackage,
-              clearIconFontPackage: iconFontPackage == null,
-              color: newColor.name,
-              customColorValue: newCustomColor?.toARGB32(),
-              clearCustomColorValue: newCustomColor == null,
-            );
-        ref.invalidate(cloudFoldersProvider);
-        ref.invalidate(cloudAllFoldersProvider);
-      } catch (error, stackTrace) {
-        await _maybeReportCloudUnauthenticated(
-          source: 'folder:update',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      }
-      return;
+      final result = await _runCloudAction(
+        action: () async {
+          await ref.read(convexStrategyRepositoryProvider).updateFolder(
+                folderPublicId: folder.id,
+                name: newName,
+                iconId: newIconId,
+                iconCodePoint: newIcon?.codePoint,
+                iconFontFamily: iconFontFamily,
+                clearIconFontFamily: iconFontFamily == null,
+                iconFontPackage: iconFontPackage,
+                clearIconFontPackage: iconFontPackage == null,
+                color: newColor.name,
+                customColorValue: newCustomColor?.toARGB32(),
+                clearCustomColorValue: newCustomColor == null,
+              );
+          return true;
+        },
+        source: 'folder:update',
+        failureMessage: "Couldn't update this cloud folder. Try again.",
+      );
+      if (!result.didSucceed) return result;
+
+      ref.invalidate(cloudFoldersProvider);
+      ref.invalidate(cloudAllFoldersProvider);
+      return result;
     }
 
     folder.name = newName;
@@ -232,28 +241,33 @@ class FolderProvider extends Notifier<String?> {
     folder.customColor = newCustomColor;
     folder.color = newColor;
     await folder.save();
+    return CloudLibraryActionResult.succeeded;
   }
 
-  void moveToFolder({
+  Future<CloudLibraryActionResult> moveToFolder({
     required String folderID,
     String? parentID,
     LibraryWorkspace? workspace,
   }) async {
     final targetWorkspace = workspace ?? _currentWorkspace;
     if (targetWorkspace == LibraryWorkspace.cloud) {
-      try {
-        await ref.read(convexStrategyRepositoryProvider).moveFolder(
-              folderPublicId: folderID,
-              parentFolderPublicId: parentID,
-            );
-      } catch (error, stackTrace) {
-        await _maybeReportCloudUnauthenticated(
-          source: 'folder:move',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      }
-      return;
+      final result = await _runCloudAction(
+        action: () async {
+          await ref.read(convexStrategyRepositoryProvider).moveFolder(
+                folderPublicId: folderID,
+                parentFolderPublicId: parentID,
+              );
+          return true;
+        },
+        source: 'folder:move',
+        failureMessage: "Couldn't move this cloud folder. Try again.",
+        showFailureMessage: true,
+      );
+      if (!result.didSucceed) return result;
+
+      ref.invalidate(cloudFoldersProvider);
+      ref.invalidate(cloudAllFoldersProvider);
+      return result;
     }
 
     final folder = findLocalFolderByID(folderID);
@@ -262,6 +276,28 @@ class FolderProvider extends Notifier<String?> {
       folder.parentID = parentID;
       await folder.save();
     }
+    return CloudLibraryActionResult.succeeded;
+  }
+
+  Future<CloudLibraryActionResult> _runCloudAction({
+    required Future<bool> Function() action,
+    required String source,
+    required String failureMessage,
+    bool showFailureMessage = false,
+  }) {
+    return ref.read(cloudLibraryActionReporterProvider).run(
+          action: action,
+          source: source,
+          failureMessage: failureMessage,
+          showFailureMessage: showFailureMessage,
+          reportAuthenticationFailure: (error, stackTrace) => ref
+              .read(authProvider.notifier)
+              .reportConvexUnauthenticated(
+                source: source,
+                error: error,
+                stackTrace: stackTrace,
+              ),
+        );
   }
 
   LibraryWorkspace get _currentWorkspace => ref.read(libraryWorkspaceProvider);

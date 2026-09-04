@@ -9,7 +9,7 @@ import 'package:icarus/providers/pinned_items_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
-import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/widgets/dialogs/delete_folder_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/drag_tilt_feedback.dart';
 import 'package:icarus/widgets/drop_insertion_indicator.dart';
@@ -202,7 +202,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
           }
 
           if (item is StrategyItem) {
-            ref.read(strategyProvider.notifier).moveToFolder(
+            await ref.read(strategyProvider.notifier).moveToFolder(
                   strategyID: item.strategyId,
                   parentID: widget.folder.id,
                   source: item.strategy == null
@@ -210,7 +210,7 @@ class _FolderPillState extends ConsumerState<FolderPill>
                       : StrategySource.local,
                 );
           } else if (item is FolderItem) {
-            ref.read(folderProvider.notifier).moveToFolder(
+            await ref.read(folderProvider.notifier).moveToFolder(
                   folderID: item.folder.id,
                   parentID: widget.folder.id,
                   workspace: ref.read(libraryWorkspaceProvider),
@@ -442,23 +442,14 @@ class _FolderPillState extends ConsumerState<FolderPill>
             ? null
             : () async {
                 _closeMenus();
-                ConfirmAlertDialog.show(
+                if (widget.isDemo) return;
+                await showShadDialog<void>(
                   context: context,
-                  title:
-                      "Are you sure you want to delete '${widget.folder.name}' folder?",
-                  content:
-                      "This will also delete all strategies and subfolders within it.",
-                  confirmText: "Delete",
-                  isDestructive: true,
-                ).then((confirmed) {
-                  if (confirmed) {
-                    if (widget.isDemo) return;
-                    ref.read(folderProvider.notifier).deleteFolder(
-                          widget.folder.id,
-                          workspace: ref.read(libraryWorkspaceProvider),
-                        );
-                  }
-                });
+                  builder: (_) => DeleteFolderAlertDialog(
+                    folder: widget.folder,
+                    workspace: ref.read(libraryWorkspaceProvider),
+                  ),
+                );
               },
       ),
     ];

@@ -14,6 +14,7 @@ import 'package:icarus/providers/map_provider.dart';
 import 'package:icarus/providers/screenshot_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_provider.dart';
+import 'package:icarus/services/cloud_strategy_export.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -80,7 +81,7 @@ class _SaveAndLoadButtonState extends ConsumerState<SaveAndLoadButton> {
                 final exporter = StrategyImportExportService(ref);
                 switch (strategy.source!) {
                   case StrategySource.cloud:
-                    await exporter.exportCloudStrategy(strategyId);
+                    await runCloudStrategyExport(ref, strategyId);
                   case StrategySource.local:
                     await exporter.exportFile(strategyId);
                 }

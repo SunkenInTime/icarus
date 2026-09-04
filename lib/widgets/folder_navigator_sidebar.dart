@@ -12,7 +12,7 @@ import 'package:icarus/providers/strategy_provider.dart';
 import 'package:icarus/strategy/strategy_import_export.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
 import 'package:icarus/widgets/custom_search_field.dart';
-import 'package:icarus/widgets/dialogs/confirm_alert_dialog.dart';
+import 'package:icarus/widgets/dialogs/delete_folder_alert_dialog.dart';
 import 'package:icarus/widgets/dialogs/share_links_dialog.dart';
 import 'package:icarus/widgets/folder_edit_dialog.dart';
 import 'package:icarus/widgets/folder_navigator.dart';
@@ -362,10 +362,10 @@ class _SidebarRootItem extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DragTarget<GridItem>(
-      onAcceptWithDetails: (details) {
+      onAcceptWithDetails: (details) async {
         final item = details.data;
         if (item is StrategyItem) {
-          ref.read(strategyProvider.notifier).moveToFolder(
+          await ref.read(strategyProvider.notifier).moveToFolder(
                 strategyID: item.strategyId,
                 parentID: null,
                 source: item.strategy == null
@@ -373,7 +373,7 @@ class _SidebarRootItem extends ConsumerWidget {
                     : StrategySource.local,
               );
         } else if (item is FolderItem) {
-          ref.read(folderProvider.notifier).moveToFolder(
+          await ref.read(folderProvider.notifier).moveToFolder(
                 folderID: item.folder.id,
                 parentID: null,
                 workspace: ref.read(libraryWorkspaceProvider),
@@ -545,10 +545,10 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
             }
             return true;
           },
-          onAcceptWithDetails: (details) {
+          onAcceptWithDetails: (details) async {
             final item = details.data;
             if (item is StrategyItem) {
-              ref.read(strategyProvider.notifier).moveToFolder(
+              await ref.read(strategyProvider.notifier).moveToFolder(
                     strategyID: item.strategyId,
                     parentID: folder.id,
                     source: item.strategy == null
@@ -556,7 +556,7 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
                         : StrategySource.local,
                   );
             } else if (item is FolderItem) {
-              ref.read(folderProvider.notifier).moveToFolder(
+              await ref.read(folderProvider.notifier).moveToFolder(
                     folderID: item.folder.id,
                     parentID: folder.id,
                     workspace: ref.read(libraryWorkspaceProvider),
@@ -708,21 +708,13 @@ class _FolderSidebarItemState extends ConsumerState<_FolderSidebarItem> {
         onPressed: !canManage
             ? null
             : () async {
-                final confirmed = await ConfirmAlertDialog.show(
+                await showShadDialog<void>(
                   context: context,
-                  title: "Delete '${folder.name}'?",
-                  content:
-                      'This also removes every strategy and subfolder inside it.',
-                  confirmText: 'Delete',
-                  isDestructive: true,
+                  builder: (_) => DeleteFolderAlertDialog(
+                    folder: folder,
+                    workspace: ref.read(libraryWorkspaceProvider),
+                  ),
                 );
-                if (!confirmed) {
-                  return;
-                }
-                ref.read(folderProvider.notifier).deleteFolder(
-                      folder.id,
-                      workspace: ref.read(libraryWorkspaceProvider),
-                    );
               },
         child: Text(
           'Delete',

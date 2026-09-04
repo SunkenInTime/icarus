@@ -43,6 +43,7 @@ import 'package:icarus/providers/collab/strategy_op_queue_provider.dart';
 import 'package:icarus/providers/strategy_page_session_provider.dart';
 import 'package:icarus/providers/strategy_save_state_provider.dart';
 import 'package:icarus/services/analytics_service.dart';
+import 'package:icarus/services/cloud_library_action.dart';
 import 'package:icarus/strategy/strategy_migrator.dart';
 import 'package:icarus/strategy/strategy_models.dart';
 import 'package:icarus/strategy/strategy_page_models.dart';
@@ -1455,42 +1456,55 @@ class StrategyProvider extends Notifier<StrategyState> {
     await strategyBox.put(duplicatedStrategy.id, duplicatedStrategy);
   }
 
-  Future<void> deleteStrategy(
+  Future<CloudLibraryActionResult> deleteStrategy(
     String strategyID, {
     StrategySource? source,
   }) async {
-    await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
     final resolvedSource = source ?? _resolveLibraryMutationSource();
     if (resolvedSource == StrategySource.cloud) {
-      try {
-        final shell = await ref
-            .read(convexStrategyRepositoryProvider)
-            .fetchShell(strategyID);
-        await ref.read(convexStrategyRepositoryProvider).deleteStrategy(
-              strategyPublicId: strategyID,
-              expectedRevision: shell.header.revision,
-            );
-      } catch (error, stackTrace) {
-        final handled = await _reportCloudUnauthenticated(
-          source: 'strategy:delete',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        if (!handled) rethrow;
-      }
+      const sourceName = 'strategy:delete';
+      final result = await ref.read(cloudLibraryActionReporterProvider).run(
+            action: () async {
+              final shell = await ref
+                  .read(convexStrategyRepositoryProvider)
+                  .fetchShell(strategyID);
+              await ref.read(convexStrategyRepositoryProvider).deleteStrategy(
+                    strategyPublicId: strategyID,
+                    expectedRevision: shell.header.revision,
+                  );
+              return true;
+            },
+            source: sourceName,
+            failureMessage:
+                "Couldn't delete this cloud strategy. Try again.",
+            reportAuthenticationFailure: (error, stackTrace) => ref
+                .read(authProvider.notifier)
+                .reportConvexUnauthenticated(
+                  source: sourceName,
+                  error: error,
+                  stackTrace: stackTrace,
+                ),
+          );
+      if (!result.didSucceed) return result;
+
+      await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
       ref.invalidate(cloudStrategiesProvider);
-      return;
+      return result;
     }
 
+    await ref.read(pinnedItemsProvider.notifier).removePin(strategyID);
     await Hive.box<StrategyData>(HiveBoxNames.strategiesBox).delete(strategyID);
 
     final directory = await getApplicationSupportDirectory();
 
     final customDirectory = Directory(path.join(directory.path, strategyID));
 
-    if (!await customDirectory.exists()) return;
+    if (!await customDirectory.exists()) {
+      return CloudLibraryActionResult.succeeded;
+    }
 
     await customDirectory.delete(recursive: true);
+    return CloudLibraryActionResult.succeeded;
   }
 
   Future<void> saveToHive(String id) async {
@@ -1689,42 +1703,54 @@ class StrategyProvider extends Notifier<StrategyState> {
     return StrategySettings();
   }
 
-  void moveToFolder({
+  Future<CloudLibraryActionResult> moveToFolder({
     required String strategyID,
     required String? parentID,
     StrategySource? source,
-  }) {
+  }) async {
     final resolvedSource = source ?? _resolveLibraryMutationSource();
     if (resolvedSource == StrategySource.cloud) {
-      unawaited(() async {
-        try {
-          final shell = await ref
-              .read(convexStrategyRepositoryProvider)
-              .fetchShell(strategyID);
-          await ref.read(convexStrategyRepositoryProvider).moveStrategy(
-                strategyPublicId: strategyID,
-                folderPublicId: parentID,
-                expectedRevision: shell.header.revision,
-              );
-        } catch (error, stackTrace) {
-          await _reportCloudUnauthenticated(
-            source: 'strategy:move',
-            error: error,
-            stackTrace: stackTrace,
+      const sourceName = 'strategy:move';
+      final result = await ref.read(cloudLibraryActionReporterProvider).run(
+            action: () async {
+              final shell = await ref
+                  .read(convexStrategyRepositoryProvider)
+                  .fetchShell(strategyID);
+              await ref.read(convexStrategyRepositoryProvider).moveStrategy(
+                    strategyPublicId: strategyID,
+                    folderPublicId: parentID,
+                    expectedRevision: shell.header.revision,
+                  );
+              return true;
+            },
+            source: sourceName,
+            failureMessage: "Couldn't move this cloud strategy. Try again.",
+            showFailureMessage: true,
+            reportAuthenticationFailure: (error, stackTrace) => ref
+                .read(authProvider.notifier)
+                .reportConvexUnauthenticated(
+                  source: sourceName,
+                  error: error,
+                  stackTrace: stackTrace,
+                ),
           );
-        }
-      }());
+      if (!result.didSucceed) return result;
+
       ref.invalidate(cloudStrategiesProvider);
-      return;
+      return result;
     }
     final strategyBox = Hive.box<StrategyData>(HiveBoxNames.strategiesBox);
     final strategy = strategyBox.get(strategyID);
 
     if (strategy != null) {
       strategy.folderID = parentID;
-      strategy.save();
+      await strategy.save();
+      return CloudLibraryActionResult.succeeded;
     } else {
       log("Strategy with ID $strategyID not found.");
+      return CloudLibraryActionResult.failed(
+        "Couldn't move this strategy. Try again.",
+      );
     }
   }
 }
