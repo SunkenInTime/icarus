@@ -25,6 +25,7 @@ import {
   forbiddenError,
 } from "./lib/errors";
 import { purgeDeletedPageOrphansRef } from "./maintenance";
+import { markDeletedStrategyImageAssetsRef } from "./images";
 import {
   createResultValidator,
   okResultValidator,
@@ -639,6 +640,7 @@ const deleteStrategy = mutation({
       await ctx.db.delete(page._id);
       await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
         pageId: page._id,
+        strategyId: strategy._id,
       });
     }
 
@@ -666,6 +668,9 @@ const deleteStrategy = mutation({
       await ctx.db.delete(shareLink._id);
     }
 
+    await ctx.scheduler.runAfter(0, markDeletedStrategyImageAssetsRef, {
+      strategyId: strategy._id,
+    });
     await ctx.db.delete(strategy._id);
     return { ok: true } as const;
   },

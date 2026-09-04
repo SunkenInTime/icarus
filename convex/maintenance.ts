@@ -1,6 +1,11 @@
 import { makeFunctionReference } from "convex/server";
 import { internalMutation } from "./_generated/server";
 import { v } from "convex/values";
+import {
+  collectAssetIdFromElementPayload,
+  collectAssetIdsFromLineupPayload,
+} from "./lib/imageAssets";
+import { captureDeletedPageImageAssets } from "./images";
 
 const MAINTENANCE_BATCH_SIZE = 200;
 const DAYS_30_MS = 30 * 24 * 60 * 60 * 1000;
@@ -20,16 +25,13 @@ export const purgeOldTombstonesRef = makeFunctionReference<"mutation">(
 export const purgeDeletedPageOrphans = internalMutation({
   args: {
     pageId: v.id("pages"),
+    strategyId: v.id("strategies"),
   },
   handler: async (ctx, args) => {
     const elements = await ctx.db
       .query("elements")
       .withIndex("by_pageId", (q) => q.eq("pageId", args.pageId))
       .take(MAINTENANCE_BATCH_SIZE);
-    for (const element of elements) {
-      await ctx.db.delete(element._id);
-    }
-
     const remainingSlots = MAINTENANCE_BATCH_SIZE - elements.length;
     const lineups =
       remainingSlots > 0
@@ -38,6 +40,30 @@ export const purgeDeletedPageOrphans = internalMutation({
             .withIndex("by_pageId", (q) => q.eq("pageId", args.pageId))
             .take(remainingSlots)
         : [];
+
+    const assetPublicIds = new Set<string>();
+    for (const element of elements) {
+      const assetPublicId = collectAssetIdFromElementPayload(element.payload);
+      if (assetPublicId !== null) {
+        assetPublicIds.add(assetPublicId);
+      }
+    }
+    for (const lineup of lineups) {
+      for (const assetPublicId of collectAssetIdsFromLineupPayload(
+        lineup.payload,
+      )) {
+        assetPublicIds.add(assetPublicId);
+      }
+    }
+    await captureDeletedPageImageAssets(ctx, {
+      strategyId: args.strategyId,
+      pageId: args.pageId,
+      assetPublicIds,
+    });
+
+    for (const element of elements) {
+      await ctx.db.delete(element._id);
+    }
     for (const lineup of lineups) {
       await ctx.db.delete(lineup._id);
     }
@@ -50,7 +76,7 @@ export const purgeDeletedPageOrphans = internalMutation({
       await ctx.scheduler.runAfter(
         0,
         purgeDeletedPageOrphansRef,
-        { pageId: args.pageId },
+        { pageId: args.pageId, strategyId: args.strategyId },
       );
     }
   },

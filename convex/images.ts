@@ -8,7 +8,6 @@ import {
   getViewerAssetForStrategy,
   inferProvider,
   inferUploadStatus,
-  isVisibleAsset,
   serializeAssetForViewer,
   type Provider,
   type UploadStatus,
@@ -48,6 +47,7 @@ import {
   imageProviderValidator,
   okResultValidator,
 } from "./lib/publicValidators";
+import { makeFunctionReference } from "convex/server";
 
 type AnyCtx = MutationCtx | QueryCtx;
 
@@ -55,9 +55,41 @@ type DeletionTarget = {
   assetId: Id<"imageAssets">;
   provider: Provider;
   objectKey: string | null;
+  sharedTarget: boolean;
 };
 
 const maxDeletionBatch = 100;
+const physicalDeletionBatch = 25;
+const pageAssetIdBatch = 50;
+const staleUploadAgeMs = 24 * 60 * 60 * 1000;
+const staleDeletionClaimAgeMs = 15 * 60 * 1000;
+const deletionRetryDelayMs = 60 * 1000;
+
+export const markDeletedPageImageAssetsRef = makeFunctionReference<"mutation">(
+  "images:markDeletedPageImageAssets",
+);
+export const markDeletedStrategyImageAssetsRef =
+  makeFunctionReference<"mutation">("images:markDeletedStrategyImageAssets");
+export const markStaleImageUploadsDeletedRef =
+  makeFunctionReference<"mutation">("images:markStaleImageUploadsDeleted");
+export const sweepDeletedImageAssetsRef = makeFunctionReference<"action">(
+  "images:sweepDeletedImageAssets",
+);
+const claimDeletedImageAssetsRef = makeFunctionReference<"mutation">(
+  "images:claimDeletedImageAssets",
+);
+const getDeletedImageAssetTargetRef = makeFunctionReference<"query">(
+  "images:getDeletedImageAssetTarget",
+);
+const finalizeDeletedImageAssetRef = makeFunctionReference<"mutation">(
+  "images:finalizeDeletedImageAsset",
+);
+const scheduleDeletedImageAssetSweepRef = makeFunctionReference<"mutation">(
+  "images:scheduleDeletedImageAssetSweep",
+);
+const releaseImageAssetDeletionClaimsRef = makeFunctionReference<"mutation">(
+  "images:releaseImageAssetDeletionClaims",
+);
 
 function createUploadAttemptPublicId(): string {
   return crypto.randomUUID();
@@ -66,6 +98,7 @@ function createUploadAttemptPublicId(): string {
 async function collectReferencedAssetIdsForStrategy(
   ctx: AnyCtx,
   strategyId: Doc<"strategies">["_id"],
+  excludedPageId?: Id<"pages">,
 ): Promise<Set<string>> {
   const assetIds = new Set<string>();
 
@@ -73,7 +106,11 @@ async function collectReferencedAssetIdsForStrategy(
     .query("elements")
     .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId));
   for await (const element of elementQuery) {
-    if (element.deleted || element.elementType !== "image") {
+    if (
+      element.deleted ||
+      element.pageId === excludedPageId ||
+      element.elementType !== "image"
+    ) {
       continue;
     }
     const assetId = collectAssetIdFromElementPayload(element.payload);
@@ -86,7 +123,7 @@ async function collectReferencedAssetIdsForStrategy(
     .query("lineups")
     .withIndex("by_strategyId", (q) => q.eq("strategyId", strategyId));
   for await (const lineup of lineupQuery) {
-    if (lineup.deleted) {
+    if (lineup.deleted || lineup.pageId === excludedPageId) {
       continue;
     }
     for (const assetId of collectAssetIdsFromLineupPayload(lineup.payload)) {
@@ -112,20 +149,7 @@ async function getDeletionCandidateForStrategy(
   const ownedCandidate =
     strategyCandidates.find((asset) => inferUploadStatus(asset) !== "deleted") ??
     null;
-  if (ownedCandidate !== null) {
-    return ownedCandidate;
-  }
-
-  const legacyCandidates = await ctx.db
-    .query("imageAssets")
-    .withIndex("by_publicId", (q) => q.eq("publicId", assetPublicId))
-    .order("desc")
-    .take(20);
-  return (
-    legacyCandidates.find(
-      (asset) => asset.strategyId === undefined && isVisibleAsset(asset),
-    ) ?? null
-  );
+  return ownedCandidate;
 }
 
 async function strategyReferencesAsset(
@@ -140,27 +164,50 @@ async function strategyReferencesAsset(
   return referencedAssetIds.has(assetPublicId);
 }
 
-function deletionTargetForAsset(asset: Doc<"imageAssets">): DeletionTarget {
-  return {
-    assetId: asset._id,
-    provider: inferProvider(asset),
-    objectKey: asset.objectKey ?? null,
-  };
-}
-
 async function markImageAssetDeleted(
   ctx: MutationCtx,
   asset: Doc<"imageAssets">,
   now: number,
 ): Promise<void> {
-  if (asset.storageId !== undefined) {
-    await ctx.storage.delete(asset.storageId);
-  }
   await ctx.db.patch(asset._id, {
     uploadStatus: "deleted",
     deletedAt: now,
+    cleanupClaimedAt: undefined,
     updatedAt: now,
   });
+}
+
+async function schedulePhysicalDeletion(
+  ctx: MutationCtx,
+  delayMs = 0,
+): Promise<void> {
+  await ctx.scheduler.runAfter(delayMs, sweepDeletedImageAssetsRef, {});
+}
+
+function chunks<T>(values: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    result.push(values.slice(index, index + size));
+  }
+  return result;
+}
+
+export async function captureDeletedPageImageAssets(
+  ctx: MutationCtx,
+  args: {
+    strategyId: Id<"strategies">;
+    pageId: Id<"pages">;
+    assetPublicIds: Iterable<string>;
+  },
+): Promise<void> {
+  const assetPublicIds = [...new Set(args.assetPublicIds)];
+  for (const assetIdChunk of chunks(assetPublicIds, pageAssetIdBatch)) {
+    await ctx.scheduler.runAfter(0, markDeletedPageImageAssetsRef, {
+      strategyId: args.strategyId,
+      pageId: args.pageId,
+      assetPublicIds: assetIdChunk,
+    });
+  }
 }
 
 export const generateUploadUrl = action({
@@ -384,24 +431,17 @@ export const completeUpload = action({
       throw invalidPayloadError("Uploaded image failed size or MIME validation.");
     }
 
-    const result: { ok: true; replaced: DeletionTarget[] } =
-      await ctx.runMutation(internal.images.markR2UploadActive, {
-        strategyPublicId: args.strategyPublicId,
-        assetPublicId: args.assetPublicId,
-        uploadId: intent.uploadId,
-        byteSize: actualByteSize,
-        etag: metadata.etag ?? args.etag,
-        mimeType: actualMimeType,
-        fileExtension: args.fileExtension ?? intent.fileExtension,
-        width: args.width,
-        height: args.height,
-      });
-
-    for (const target of result.replaced) {
-      if (target.provider === "r2" && target.objectKey !== null) {
-        await deleteR2Object(config, target.objectKey);
-      }
-    }
+    await ctx.runMutation(internal.images.markR2UploadActive, {
+      strategyPublicId: args.strategyPublicId,
+      assetPublicId: args.assetPublicId,
+      uploadId: intent.uploadId,
+      byteSize: actualByteSize,
+      etag: metadata.etag ?? args.etag,
+      mimeType: actualMimeType,
+      fileExtension: args.fileExtension ?? intent.fileExtension,
+      width: args.width,
+      height: args.height,
+    });
 
     return {
       ok: true as const,
@@ -432,7 +472,8 @@ export const getR2UploadIntentForCompletion = internalQuery({
       asset.strategyId !== strategy._id ||
       asset.publicId !== args.assetPublicId ||
       inferProvider(asset) !== "r2" ||
-      asset.objectKey === undefined
+      asset.objectKey === undefined ||
+      inferUploadStatus(asset) === "deleted"
     ) {
       throw errorWithCode("UPLOAD_INTENT_NOT_FOUND", "Upload intent not found.");
     }
@@ -476,7 +517,8 @@ export const markR2UploadActive = internalMutation({
       asset.strategyId !== strategy._id ||
       asset.publicId !== args.assetPublicId ||
       inferProvider(asset) !== "r2" ||
-      asset.objectKey === undefined
+      asset.objectKey === undefined ||
+      inferUploadStatus(asset) === "deleted"
     ) {
       throw errorWithCode("UPLOAD_INTENT_NOT_FOUND", "Upload intent not found.");
     }
@@ -503,15 +545,18 @@ export const markR2UploadActive = internalMutation({
           .eq("uploadStatus", "active"),
       )
       .take(20);
-    const replaced: DeletionTarget[] = [];
+    let replaced = 0;
     for (const olderAsset of olderActiveAssets) {
       if (olderAsset._id === asset._id) {
         continue;
       }
-      replaced.push(deletionTargetForAsset(olderAsset));
       await markImageAssetDeleted(ctx, olderAsset, now);
+      replaced += 1;
     }
 
+    if (replaced > 0) {
+      await schedulePhysicalDeletion(ctx);
+    }
     return { ok: true as const, replaced };
   },
 });
@@ -581,7 +626,8 @@ export const completeLegacyUpload = internalMutation({
       });
       if (
         previousStorageId !== undefined &&
-        previousStorageId !== args.storageId
+        previousStorageId !== args.storageId &&
+        !(await hasSharedDeletionTarget(ctx, existing))
       ) {
         await ctx.storage.delete(previousStorageId);
       }
@@ -680,14 +726,10 @@ export const deleteAssetRef = action({
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
-    const target: DeletionTarget = await ctx.runQuery(
+    const target: { assetId: Id<"imageAssets"> } = await ctx.runQuery(
       internal.images.getAssetDeletionTarget,
       args,
     );
-
-    if (target.provider === "r2" && target.objectKey !== null) {
-      await deleteR2Object(getR2Config(), target.objectKey);
-    }
 
     await ctx.runMutation(internal.images.markDeletedAssetRefsForStrategy, {
       strategyPublicId: args.strategyPublicId,
@@ -715,14 +757,11 @@ export const getAssetDeletionTarget = internalQuery({
       throw notFoundError("Asset", args.assetPublicId);
     }
 
-    if (
-      asset.strategyId === undefined &&
-      !(await strategyReferencesAsset(ctx, strategy._id, args.assetPublicId))
-    ) {
-      throw notFoundError("Asset", args.assetPublicId);
+    if (await strategyReferencesAsset(ctx, strategy._id, args.assetPublicId)) {
+      throw conflictError("Asset is still referenced by this Strategy.");
     }
 
-    return deletionTargetForAsset(asset);
+    return { assetId: asset._id };
   },
 });
 
@@ -737,18 +776,381 @@ export const markDeletedAssetRefsForStrategy = internalMutation({
 
     const now = Date.now();
     let deleted = 0;
+    let shouldSweep = false;
+    const referencedAssetIds = await collectReferencedAssetIdsForStrategy(
+      ctx,
+      strategy._id,
+    );
     for (const assetId of args.assetIds.slice(0, maxDeletionBatch)) {
       const asset = await ctx.db.get(assetId);
-      if (asset === null || inferUploadStatus(asset) === "deleted") {
+      if (asset === null) {
         continue;
       }
-      if (asset.strategyId !== undefined && asset.strategyId !== strategy._id) {
+      if (
+        asset.strategyId !== strategy._id ||
+        referencedAssetIds.has(asset.publicId)
+      ) {
         continue;
       }
-      await markImageAssetDeleted(ctx, asset, now);
-      deleted += 1;
+      shouldSweep = true;
+      if (inferUploadStatus(asset) !== "deleted") {
+        await markImageAssetDeleted(ctx, asset, now);
+        deleted += 1;
+      }
+    }
+    if (shouldSweep) {
+      await schedulePhysicalDeletion(ctx);
     }
     return { ok: true, deleted };
+  },
+});
+
+export const markDeletedPageImageAssets = internalMutation({
+  args: {
+    strategyId: v.id("strategies"),
+    pageId: v.id("pages"),
+    assetPublicIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const candidateIds = new Set(
+      args.assetPublicIds.slice(0, pageAssetIdBatch),
+    );
+    const remainingReferences = await collectReferencedAssetIdsForStrategy(
+      ctx,
+      args.strategyId,
+      args.pageId,
+    );
+    for (const referencedId of remainingReferences) {
+      candidateIds.delete(referencedId);
+    }
+
+    const assets: Doc<"imageAssets">[] = [];
+    for (const assetPublicId of candidateIds) {
+      const remainingSlots = maxDeletionBatch - assets.length;
+      if (remainingSlots <= 0) {
+        break;
+      }
+      const matches = await ctx.db
+        .query("imageAssets")
+        .withIndex("by_strategyId_and_publicId", (q) =>
+          q.eq("strategyId", args.strategyId).eq("publicId", assetPublicId),
+        )
+        .filter((q) => q.neq(q.field("uploadStatus"), "deleted"))
+        .take(remainingSlots);
+      assets.push(...matches);
+    }
+
+    const now = Date.now();
+    for (const asset of assets) {
+      await markImageAssetDeleted(ctx, asset, now);
+    }
+    if (assets.length > 0) {
+      await schedulePhysicalDeletion(ctx);
+    }
+    if (assets.length === maxDeletionBatch) {
+      await ctx.scheduler.runAfter(0, markDeletedPageImageAssetsRef, args);
+    }
+    return { ok: true as const, deleted: assets.length };
+  },
+});
+
+export const markDeletedStrategyImageAssets = internalMutation({
+  args: {
+    strategyId: v.id("strategies"),
+  },
+  handler: async (ctx, args) => {
+    const assets = await ctx.db
+      .query("imageAssets")
+      .withIndex("by_strategyId", (q) => q.eq("strategyId", args.strategyId))
+      .filter((q) => q.neq(q.field("uploadStatus"), "deleted"))
+      .take(maxDeletionBatch);
+    const now = Date.now();
+    for (const asset of assets) {
+      await markImageAssetDeleted(ctx, asset, now);
+    }
+    if (assets.length > 0) {
+      await schedulePhysicalDeletion(ctx);
+    }
+    if (assets.length === maxDeletionBatch) {
+      await ctx.scheduler.runAfter(0, markDeletedStrategyImageAssetsRef, args);
+    }
+    return { ok: true as const, deleted: assets.length };
+  },
+});
+
+export const markStaleImageUploadsDeleted = internalMutation({
+  args: {
+    staleBefore: v.optional(v.number()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const staleBefore = args.staleBefore ?? Date.now() - staleUploadAgeMs;
+    const limit = Math.max(
+      1,
+      Math.min(args.limit ?? maxDeletionBatch, maxDeletionBatch),
+    );
+    const stuckClaims = await ctx.db
+      .query("imageAssets")
+      .withIndex("by_uploadStatus_and_updatedAt", (q) =>
+        q.eq("uploadStatus", "deleted"),
+      )
+      .filter((q) =>
+        q.and(
+          q.neq(q.field("strategyId"), undefined),
+          q.neq(q.field("cleanupClaimedAt"), undefined),
+          q.lte(
+            q.field("cleanupClaimedAt"),
+            Date.now() - staleDeletionClaimAgeMs,
+          ),
+        ),
+      )
+      .take(limit);
+    for (const asset of stuckClaims) {
+      await ctx.db.patch(asset._id, { cleanupClaimedAt: undefined });
+    }
+
+    const assets: Doc<"imageAssets">[] = [];
+    for (const status of ["pending", "failed"] as UploadStatus[]) {
+      const remainingSlots = limit - stuckClaims.length - assets.length;
+      if (remainingSlots <= 0) {
+        break;
+      }
+      const matches = await ctx.db
+        .query("imageAssets")
+        .withIndex("by_uploadStatus_and_updatedAt", (q) =>
+          q.eq("uploadStatus", status).lte("updatedAt", staleBefore),
+        )
+        .filter((q) => q.neq(q.field("strategyId"), undefined))
+        .take(remainingSlots);
+      assets.push(...matches);
+      }
+
+    const now = Date.now();
+    for (const asset of assets) {
+      await markImageAssetDeleted(ctx, asset, now);
+    }
+    if (assets.length > 0 || stuckClaims.length > 0) {
+      await schedulePhysicalDeletion(ctx);
+    }
+    if (assets.length + stuckClaims.length === limit) {
+      await ctx.scheduler.runAfter(0, markStaleImageUploadsDeletedRef, {
+        staleBefore,
+        limit,
+      });
+    }
+    return {
+      ok: true as const,
+      deleted: assets.length,
+      released: stuckClaims.length,
+    };
+  },
+    });
+
+async function hasSharedDeletionTarget(
+  ctx: QueryCtx | MutationCtx,
+  asset: Doc<"imageAssets">,
+): Promise<boolean> {
+  if (inferProvider(asset) === "r2") {
+    if (asset.objectKey === undefined) {
+      return false;
+    }
+    const matches = await ctx.db
+      .query("imageAssets")
+      .withIndex("by_objectKey", (q) => q.eq("objectKey", asset.objectKey))
+      .take(2);
+    return matches.some((candidate) => candidate._id !== asset._id);
+  }
+  if (asset.storageId === undefined) {
+    return false;
+  }
+  const matches = await ctx.db
+    .query("imageAssets")
+    .withIndex("by_storageId", (q) => q.eq("storageId", asset.storageId))
+    .take(2);
+  return matches.some((candidate) => candidate._id !== asset._id);
+}
+
+export const claimDeletedImageAssets = internalMutation({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(
+      1,
+      Math.min(args.limit ?? physicalDeletionBatch, physicalDeletionBatch),
+    );
+    const assets = await ctx.db
+      .query("imageAssets")
+      .withIndex("by_uploadStatus_and_updatedAt", (q) =>
+        q.eq("uploadStatus", "deleted"),
+      )
+      .filter((q) =>
+        q.and(
+          q.neq(q.field("strategyId"), undefined),
+          q.eq(q.field("cleanupClaimedAt"), undefined),
+        ),
+      )
+      .take(limit);
+    const now = Date.now();
+    for (const asset of assets) {
+      await ctx.db.patch(asset._id, { cleanupClaimedAt: now });
+    }
+    return assets.map((asset) => asset._id);
+  },
+});
+
+export const getDeletedImageAssetTarget = internalQuery({
+  args: {
+    assetId: v.id("imageAssets"),
+  },
+  handler: async (ctx, args): Promise<DeletionTarget | null> => {
+    const asset = await ctx.db.get(args.assetId);
+    if (
+      asset === null ||
+      inferUploadStatus(asset) !== "deleted" ||
+      asset.cleanupClaimedAt === undefined
+    ) {
+      return null;
+    }
+    return {
+      assetId: asset._id,
+      provider: inferProvider(asset),
+      objectKey: asset.objectKey ?? null,
+      sharedTarget: await hasSharedDeletionTarget(ctx, asset),
+    };
+  },
+});
+
+export const finalizeDeletedImageAsset = internalMutation({
+  args: {
+    assetId: v.id("imageAssets"),
+    r2ObjectDeleted: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const asset = await ctx.db.get(args.assetId);
+    if (asset === null) {
+      return { ok: true as const, finalized: true };
+    }
+    if (inferUploadStatus(asset) !== "deleted") {
+      return { ok: true as const, finalized: false };
+    }
+
+    const sharedTarget = await hasSharedDeletionTarget(ctx, asset);
+    if (inferProvider(asset) === "r2") {
+      if (
+        asset.objectKey !== undefined &&
+        !sharedTarget &&
+        !args.r2ObjectDeleted
+      ) {
+        return { ok: true as const, finalized: false };
+      }
+    } else if (asset.storageId !== undefined && !sharedTarget) {
+      await ctx.storage.delete(asset.storageId);
+    }
+    await ctx.db.delete(asset._id);
+    return { ok: true as const, finalized: true };
+  },
+});
+
+export const scheduleDeletedImageAssetSweep = internalMutation({
+  args: {
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const delayMs = Math.max(0, Math.min(args.delayMs ?? 0, 60 * 60 * 1000));
+    await schedulePhysicalDeletion(ctx, delayMs);
+    return { ok: true as const };
+  },
+});
+
+export const releaseImageAssetDeletionClaims = internalMutation({
+  args: {
+    assetIds: v.array(v.id("imageAssets")),
+    retryAfterMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    for (const assetId of args.assetIds.slice(0, physicalDeletionBatch)) {
+      const asset = await ctx.db.get(assetId);
+      if (
+        asset !== null &&
+        inferUploadStatus(asset) === "deleted" &&
+        asset.cleanupClaimedAt !== undefined
+      ) {
+        await ctx.db.patch(asset._id, { cleanupClaimedAt: undefined });
+      }
+    }
+    await schedulePhysicalDeletion(
+    ctx,
+      Math.max(0, args.retryAfterMs ?? deletionRetryDelayMs),
+    );
+    return { ok: true as const };
+  },
+});
+
+export const sweepDeletedImageAssets = internalAction({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(
+      1,
+      Math.min(args.limit ?? physicalDeletionBatch, physicalDeletionBatch),
+    );
+    const assetIds: Id<"imageAssets">[] = await ctx.runMutation(
+      claimDeletedImageAssetsRef,
+      { limit },
+    );
+    let deleted = 0;
+    let failed = 0;
+    const failedAssetIds: Id<"imageAssets">[] = [];
+    let config: ReturnType<typeof getR2Config> | null = null;
+
+    for (const assetId of assetIds) {
+      try {
+        const target: DeletionTarget | null = await ctx.runQuery(
+          getDeletedImageAssetTargetRef,
+          { assetId },
+        );
+        if (target === null) {
+          continue;
+        }
+        let r2ObjectDeleted = false;
+      if (
+        target.provider === "r2" &&
+          target.objectKey !== null &&
+          !target.sharedTarget
+      ) {
+          config ??= getR2Config();
+        await deleteR2Object(config, target.objectKey);
+          r2ObjectDeleted = true;
+        }
+        const result: { finalized: boolean } = await ctx.runMutation(
+          finalizeDeletedImageAssetRef,
+          { assetId, r2ObjectDeleted },
+        );
+        if (result.finalized) {
+          deleted += 1;
+        } else {
+          failed += 1;
+          failedAssetIds.push(assetId);
+        }
+      } catch {
+        failed += 1;
+        failedAssetIds.push(assetId);
+      }
+    }
+
+    if (failedAssetIds.length > 0) {
+      await ctx.runMutation(releaseImageAssetDeletionClaimsRef, {
+        assetIds: failedAssetIds,
+        retryAfterMs: deletionRetryDelayMs,
+      });
+    } else if (assetIds.length === limit) {
+      await ctx.runMutation(scheduleDeletedImageAssetSweepRef, {
+        delayMs: 0,
+      });
+    }
+    return { ok: true as const, deleted, failed };
   },
 });
 
@@ -767,7 +1169,7 @@ export const listPotentiallyStale = internalQuery({
       strategy._id,
     );
     const assets = await ctx.db
-      .query("imageAssets")
+        .query("imageAssets")
       .withIndex("by_strategyId", (q) => q.eq("strategyId", strategy._id))
       .order("desc")
       .take(limit);
@@ -779,90 +1181,12 @@ export const listPotentiallyStale = internalQuery({
       }
       if (status === "pending" || status === "failed") {
         return true;
-      }
+    }
       return !referencedAssetIds.has(asset.publicId);
     });
 
     return await Promise.all(
       candidates.map((asset) => serializeAssetForViewer(ctx, asset)),
     );
-  },
-});
-
-export const sweepStaleUploadsForStrategy = internalAction({
-  args: {
-    strategyPublicId: v.string(),
-    staleBefore: v.number(),
-    limit: v.optional(v.number()),
-  },
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{
-    ok: true;
-    deleted: number;
-  }> => {
-    const targets: DeletionTarget[] = await ctx.runQuery(
-      internal.images.listStaleUploadDeletionTargets,
-      args,
-    );
-    const config = targets.some(
-      (target) => target.provider === "r2" && target.objectKey !== null,
-    )
-      ? getR2Config()
-      : null;
-
-    for (const target of targets) {
-      if (
-        config !== null &&
-        target.provider === "r2" &&
-        target.objectKey !== null
-      ) {
-        await deleteR2Object(config, target.objectKey);
-      }
-    }
-
-    const result: { ok: boolean; deleted: number } = await ctx.runMutation(
-      internal.images.markDeletedAssetRefsForStrategy,
-      {
-        strategyPublicId: args.strategyPublicId,
-        assetIds: targets.map((target) => target.assetId),
-      },
-    );
-    return { ok: true, deleted: result.deleted };
-  },
-});
-
-export const listStaleUploadDeletionTargets = internalQuery({
-  args: {
-    strategyPublicId: v.string(),
-    staleBefore: v.number(),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const strategy = await getStrategyByPublicId(ctx, args.strategyPublicId);
-    await assertStrategyRole(ctx, strategy, "editor");
-    const limit = Math.max(1, Math.min(args.limit ?? 50, maxDeletionBatch));
-
-    const targets: DeletionTarget[] = [];
-    for (const status of ["pending", "failed"] as UploadStatus[]) {
-      const candidates = await ctx.db
-        .query("imageAssets")
-        .withIndex("by_strategyId_and_uploadStatus_and_updatedAt", (q) =>
-          q
-            .eq("strategyId", strategy._id)
-            .eq("uploadStatus", status)
-            .lte("updatedAt", args.staleBefore),
-        )
-        .take(limit - targets.length);
-      for (const asset of candidates) {
-        targets.push(deletionTargetForAsset(asset));
-      }
-      if (targets.length >= limit) {
-        break;
-      }
-    }
-
-    return targets;
   },
 });

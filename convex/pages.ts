@@ -230,6 +230,7 @@ const deletePage = mutation({
     await ctx.db.delete(page._id);
     await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
       pageId: page._id,
+      strategyId: strategy._id,
     });
 
     const ordered = sortByNumberField(

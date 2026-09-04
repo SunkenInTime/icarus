@@ -780,6 +780,7 @@ async function applyPageOp(
     await ctx.db.delete(existing._id);
     await ctx.scheduler.runAfter(0, purgeDeletedPageOrphansRef, {
       pageId: existing._id,
+      strategyId: strategy._id,
     });
     const now = Date.now();
     const remaining = sortByNumberField(
