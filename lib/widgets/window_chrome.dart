@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:icarus/const/settings.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -33,11 +34,11 @@ Future<void> _syncMacTitleStripHeight() async {
 }
 
 bool get _isMacOS => !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+bool get _isWindows =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
 
 bool get _drawsCaptionButtons =>
-    !kIsWeb &&
-    (defaultTargetPlatform == TargetPlatform.windows ||
-        defaultTargetPlatform == TargetPlatform.linux);
+    _isWindows || (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux);
 
 /// True on desktop builds, where the native title bar is hidden and the app
 /// owns that space.
@@ -62,7 +63,8 @@ class WindowDragArea extends StatelessWidget {
 /// The editor's header: controls and the map card centered on one band,
 /// with the traffic lights (macOS) or caption buttons (Windows, Linux) on
 /// that same line. On macOS the window is told the band's height so the
-/// lights move down to meet it, and back up when the editor closes.
+/// lights move down to meet it, and back up when the editor closes. Windows
+/// and Linux split the canvas gap evenly above and below the band.
 class EditorWindowHeader extends StatefulWidget {
   const EditorWindowHeader({super.key, required this.child});
 
@@ -93,7 +95,9 @@ class _EditorWindowHeaderState extends State<EditorWindowHeader> {
   Widget build(BuildContext context) {
     return WindowDragArea(
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 10),
+        padding: _drawsCaptionButtons
+            ? const EdgeInsets.symmetric(vertical: 5)
+            : const EdgeInsets.only(bottom: 10),
         child: SizedBox(
           height: kEditorHeaderHeight,
           child: Row(
@@ -105,6 +109,26 @@ class _EditorWindowHeaderState extends State<EditorWindowHeader> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The compact Icarus lockup at the start of the Windows library strip.
+class WindowsIcarusWordmark extends StatelessWidget {
+  const WindowsIcarusWordmark({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_isWindows) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(left: 10, right: 4),
+      child: SvgPicture.asset(
+        'assets/brand/icarus-wordmark.svg',
+        height: 14,
+        semanticsLabel: 'Icarus',
       ),
     );
   }
@@ -151,7 +175,8 @@ class _MacTrafficLightInsetState extends State<MacTrafficLightInset>
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(width: _isMacOS && !_fullScreen ? kMacTrafficLightInset : 0);
+    return SizedBox(
+        width: _isMacOS && !_fullScreen ? kMacTrafficLightInset : 0);
   }
 }
 
@@ -227,8 +252,9 @@ class _WindowCaptionButtonsState extends State<WindowCaptionButtons>
   }
 }
 
-/// The strip that stands in for the native title bar: traffic-light inset,
-/// the screen's own controls, caption buttons, all draggable.
+/// The frame that stands in for the native title bar. The screen places a
+/// [WindowDragArea] only in its empty space so controls receive taps without
+/// waiting for the title bar's double-click gesture.
 class AppWindowStrip extends StatelessWidget {
   const AppWindowStrip({super.key, required this.child});
 
@@ -236,23 +262,22 @@ class AppWindowStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return WindowDragArea(
-      child: Container(
-        height: kWindowStripHeight,
-        decoration: BoxDecoration(
-          color: Settings.tacticalVioletTheme.card,
-          border: Border(
-            bottom: BorderSide(color: Settings.tacticalVioletTheme.border),
-          ),
+    return Container(
+      key: const ValueKey('app-window-strip'),
+      height: kWindowStripHeight,
+      decoration: BoxDecoration(
+        color: Settings.tacticalVioletTheme.card,
+        border: Border(
+          bottom: BorderSide(color: Settings.tacticalVioletTheme.border),
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const MacTrafficLightInset(),
-            Expanded(child: child),
-            const WindowCaptionButtons(),
-          ],
-        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const MacTrafficLightInset(),
+          Expanded(child: child),
+          const WindowCaptionButtons(),
+        ],
       ),
     );
   }

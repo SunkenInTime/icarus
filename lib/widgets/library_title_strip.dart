@@ -71,6 +71,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
     return AppWindowStrip(
       child: Row(
         children: [
+          const WindowsIcarusWordmark(),
           const SizedBox(width: 6),
           _TabButton(
             key: const ValueKey('library-tab-library'),
@@ -105,7 +106,12 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             const SizedBox(width: 8),
             const DemoTag(),
           ],
-          const Spacer(),
+          const Expanded(
+            child: WindowDragArea(
+              key: ValueKey('library-window-drag-area'),
+              child: SizedBox.expand(),
+            ),
+          ),
           if (tab != LibraryTab.community) ...[
             const SizedBox(
               height: _controlHeight,
@@ -169,7 +175,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
               ),
             const _MenuDivider(),
             _MenuItem(
-                menu: _sortController,
+              menu: _sortController,
               icon: isAscending
                   ? LucideIcons.arrowUpNarrowWide
                   : LucideIcons.arrowDownWideNarrow,
@@ -219,14 +225,14 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _MenuItem(
-                menu: _newController,
+              menu: _newController,
               key: const ValueKey('library-new-strategy'),
               icon: Icons.note_add_outlined,
               label: 'New Strategy',
               onPressed: widget.onCreateStrategy,
             ),
             _MenuItem(
-                menu: _newController,
+              menu: _newController,
               key: const ValueKey('library-new-folder'),
               icon: LucideIcons.folderPlus,
               label: 'New Folder',
@@ -336,7 +342,7 @@ class _LibraryTitleStripState extends ConsumerState<LibraryTitleStrip> {
             ),
             const _MenuDivider(),
             _MenuItem(
-                menu: _accountController,
+              menu: _accountController,
               icon: LucideIcons.logOut,
               label: 'Sign Out',
               onPressed: _confirmSignOut,

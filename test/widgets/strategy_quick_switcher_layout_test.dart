@@ -79,9 +79,11 @@ void main() {
       find.byKey(const ValueKey('map-card-reference')),
     );
     final captionButtons = tester.getRect(find.byType(WindowCaptionButtons));
+    final header = tester.getRect(find.byType(EditorWindowHeader));
 
     expect(control.center.dy, mapCard.center.dy);
     expect(captionButtons.center.dy, mapCard.center.dy);
+    expect(mapCard.top - header.top, header.bottom - mapCard.bottom);
     expect(control.height, 40);
     expect(tester.takeException(), isNull);
   });

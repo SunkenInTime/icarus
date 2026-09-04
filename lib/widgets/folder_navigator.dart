@@ -337,17 +337,13 @@ class _FolderNavigatorState extends ConsumerState<FolderNavigator> {
                             child: const Text('Create Strategy'),
                           ),
                         ],
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeOutCubic,
-                    child: KeyedSubtree(
-                      key: ValueKey(tab),
-                      child: FolderContent(
-                        folder: currentFolder,
-                        onCreateStrategy: showCreateDialog,
-                      ),
-                    ),
+                  // Tabs are navigation, so the destination appears on the
+                  // next frame. FolderContent owns loading transitions after
+                  // the selected destination is already visible.
+                  child: FolderContent(
+                    key: ValueKey('library-tab-body-${tab.name}'),
+                    folder: currentFolder,
+                    onCreateStrategy: showCreateDialog,
                   ),
                 ),
               ),
