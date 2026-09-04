@@ -4549,6 +4549,7 @@ List<ElementsListForPageResultItem> decodeElementsListForStrategyResult(
     .toList(growable: false);
 
 ConvexObject encodeFoldersCreateArgs({
+  required double clientProtocolVersion,
   ConvexOptional<String> color = const ConvexOptional.absent(),
   ConvexOptional<double> customColorValue = const ConvexOptional.absent(),
   ConvexOptional<double> iconCodePoint = const ConvexOptional.absent(),
@@ -4559,6 +4560,10 @@ ConvexObject encodeFoldersCreateArgs({
   ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
   required String publicId,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'folders.js:create.args.clientProtocolVersion',
+  ),
   if (color.isPresent) 'color': ConvexString(color.value),
   if (customColorValue.isPresent)
     'customColorValue': _encodeNumber(
@@ -4588,8 +4593,16 @@ ConvexValue decodeFoldersCreateResult(ConvexValue value) => _decodeRaw(
   _validateFoldersCreateResult,
 );
 
-ConvexObject encodeFoldersDeleteArgs({required String folderPublicId}) =>
-    ConvexObject({'folderPublicId': ConvexString(folderPublicId)});
+ConvexObject encodeFoldersDeleteArgs({
+  required double clientProtocolVersion,
+  required String folderPublicId,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'folders.js:delete.args.clientProtocolVersion',
+  ),
+  'folderPublicId': ConvexString(folderPublicId),
+});
 
 FoldersDeleteResult decodeFoldersDeleteResult(ConvexValue value) =>
     FoldersDeleteResult.decode(value, 'folders.js:delete.returns');
@@ -4613,9 +4626,14 @@ List<FoldersListTreeResultItem> decodeFoldersListTreeResult(
     .toList(growable: false);
 
 ConvexObject encodeFoldersMoveArgs({
+  required double clientProtocolVersion,
   required String folderPublicId,
   ConvexOptional<String> parentFolderPublicId = const ConvexOptional.absent(),
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'folders.js:move.args.clientProtocolVersion',
+  ),
   'folderPublicId': ConvexString(folderPublicId),
   if (parentFolderPublicId.isPresent)
     'parentFolderPublicId': ConvexString(parentFolderPublicId.value),
@@ -4628,6 +4646,7 @@ ConvexObject encodeFoldersUpdateArgs({
   ConvexOptional<bool> clearCustomColorValue = const ConvexOptional.absent(),
   ConvexOptional<bool> clearIconFontFamily = const ConvexOptional.absent(),
   ConvexOptional<bool> clearIconFontPackage = const ConvexOptional.absent(),
+  required double clientProtocolVersion,
   ConvexOptional<String> color = const ConvexOptional.absent(),
   ConvexOptional<double> customColorValue = const ConvexOptional.absent(),
   required String folderPublicId,
@@ -4643,6 +4662,10 @@ ConvexObject encodeFoldersUpdateArgs({
     'clearIconFontFamily': ConvexBoolean(clearIconFontFamily.value),
   if (clearIconFontPackage.isPresent)
     'clearIconFontPackage': ConvexBoolean(clearIconFontPackage.value),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'folders.js:update.args.clientProtocolVersion',
+  ),
   if (color.isPresent) 'color': ConvexString(color.value),
   if (customColorValue.isPresent)
     'customColorValue': _encodeNumber(
@@ -4796,11 +4819,16 @@ List<ImagesListForStrategyResultItem> decodeImagesListForStrategyResult(
     .toList(growable: false);
 
 ConvexObject encodeInvitesCreateArgs({
+  required double clientProtocolVersion,
   ConvexOptional<double> expiresAt = const ConvexOptional.absent(),
   required InvitesCreateArgsRole role,
   required String strategyPublicId,
   required String token,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'invites.js:create.args.clientProtocolVersion',
+  ),
   if (expiresAt.isPresent)
     'expiresAt': _encodeNumber(
       expiresAt.value,
@@ -4826,16 +4854,29 @@ ConvexObject encodeInvitesGetArgs({
 ConvexValue decodeInvitesGetResult(ConvexValue value) =>
     _decodeRaw(value, 'invites.js:get.returns', _validateInvitesGetResult);
 
-ConvexObject encodeInvitesRedeemArgs({required String token}) =>
-    ConvexObject({'token': ConvexString(token)});
+ConvexObject encodeInvitesRedeemArgs({
+  required double clientProtocolVersion,
+  required String token,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'invites.js:redeem.args.clientProtocolVersion',
+  ),
+  'token': ConvexString(token),
+});
 
 InvitesRedeemResult decodeInvitesRedeemResult(ConvexValue value) =>
     InvitesRedeemResult.decode(value, 'invites.js:redeem.returns');
 
 ConvexObject encodeInvitesRevokeArgs({
+  required double clientProtocolVersion,
   required String strategyPublicId,
   required String token,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'invites.js:revoke.args.clientProtocolVersion',
+  ),
   'strategyPublicId': ConvexString(strategyPublicId),
   'token': ConvexString(token),
 });
@@ -4915,6 +4956,7 @@ PageGetSnapshotResult decodePageGetSnapshotResult(ConvexValue value) =>
     PageGetSnapshotResult.decode(value, 'page.js:getSnapshot.returns');
 
 ConvexObject encodePagesAddArgs({
+  required double clientProtocolVersion,
   required double expectedRevision,
   required bool isAttack,
   ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
@@ -4925,6 +4967,10 @@ ConvexObject encodePagesAddArgs({
   required double sortIndex,
   required String strategyPublicId,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'pages.js:add.args.clientProtocolVersion',
+  ),
   'expectedRevision': _encodeNumber(
     expectedRevision,
     'pages.js:add.args.expectedRevision',
@@ -4943,10 +4989,15 @@ ConvexValue decodePagesAddResult(ConvexValue value) =>
     _decodeRaw(value, 'pages.js:add.returns', _validatePagesAddResult);
 
 ConvexObject encodePagesDeleteArgs({
+  required double clientProtocolVersion,
   required double expectedRevision,
   required String pagePublicId,
   required String strategyPublicId,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'pages.js:delete.args.clientProtocolVersion',
+  ),
   'expectedRevision': _encodeNumber(
     expectedRevision,
     'pages.js:delete.args.expectedRevision',
@@ -4974,12 +5025,17 @@ List<PageGetSnapshotResultPage> decodePagesListForStrategyResult(
     .toList(growable: false);
 
 ConvexObject encodePagesRenameArgs({
+  required double clientProtocolVersion,
   required double expectedRevision,
   ConvexOptional<bool> isAutoNamed = const ConvexOptional.absent(),
   required String name,
   required String pagePublicId,
   required String strategyPublicId,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'pages.js:rename.args.clientProtocolVersion',
+  ),
   'expectedRevision': _encodeNumber(
     expectedRevision,
     'pages.js:rename.args.expectedRevision',
@@ -4994,10 +5050,15 @@ ConvexValue decodePagesRenameResult(ConvexValue value) =>
     _decodeRaw(value, 'pages.js:rename.returns', _validatePagesAddResult);
 
 ConvexObject encodePagesReorderArgs({
+  required double clientProtocolVersion,
   required double expectedRevision,
   required List<String> orderedPagePublicIds,
   required String strategyPublicId,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'pages.js:reorder.args.clientProtocolVersion',
+  ),
   'expectedRevision': _encodeNumber(
     expectedRevision,
     'pages.js:reorder.args.expectedRevision',
@@ -5014,11 +5075,16 @@ ConvexValue decodePagesReorderResult(ConvexValue value) =>
     _decodeRaw(value, 'pages.js:reorder.returns', _validatePagesAddResult);
 
 ConvexObject encodeSharesCreateArgs({
+  required double clientProtocolVersion,
   required InvitesCreateArgsRole role,
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
   required String token,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'shares.js:create.args.clientProtocolVersion',
+  ),
   'role': ConvexString(role.wireName),
   'targetPublicId': ConvexString(targetPublicId),
   'targetType': ConvexString(targetType.wireName),
@@ -5046,17 +5112,30 @@ List<SharesListResultItem> decodeSharesListResult(ConvexValue value) =>
         )
         .toList(growable: false);
 
-ConvexObject encodeSharesRedeemArgs({required String token}) =>
-    ConvexObject({'token': ConvexString(token)});
+ConvexObject encodeSharesRedeemArgs({
+  required double clientProtocolVersion,
+  required String token,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'shares.js:redeem.args.clientProtocolVersion',
+  ),
+  'token': ConvexString(token),
+});
 
 SharesRedeemResult decodeSharesRedeemResult(ConvexValue value) =>
     SharesRedeemResult.decode(value, 'shares.js:redeem.returns');
 
 ConvexObject encodeSharesRevokeArgs({
+  required double clientProtocolVersion,
   required String targetPublicId,
   required SharesCreateArgsTargetType targetType,
   required String token,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'shares.js:revoke.args.clientProtocolVersion',
+  ),
   'targetPublicId': ConvexString(targetPublicId),
   'targetType': ConvexString(targetType.wireName),
   'token': ConvexString(token),
@@ -5066,6 +5145,7 @@ FoldersDeleteResult decodeSharesRevokeResult(ConvexValue value) =>
     FoldersDeleteResult.decode(value, 'shares.js:revoke.returns');
 
 ConvexObject encodeStrategiesCreateArgs({
+  required double clientProtocolVersion,
   ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
   required String mapData,
   required String name,
@@ -5077,6 +5157,10 @@ ConvexObject encodeStrategiesCreateArgs({
       const ConvexOptional.absent(),
   ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:create.args.clientProtocolVersion',
+  ),
   if (folderPublicId.isPresent)
     'folderPublicId': ConvexString(folderPublicId.value),
   'mapData': ConvexString(mapData),
@@ -5097,6 +5181,7 @@ ConvexValue decodeStrategiesCreateResult(ConvexValue value) => _decodeRaw(
 );
 
 ConvexObject encodeStrategiesCreateWithInitialPageArgs({
+  required double clientProtocolVersion,
   ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
   required bool initialPageIsAttack,
   ConvexOptional<bool> initialPageIsAutoNamed = const ConvexOptional.absent(),
@@ -5115,6 +5200,10 @@ ConvexObject encodeStrategiesCreateWithInitialPageArgs({
       const ConvexOptional.absent(),
   ConvexOptional<String> themeProfileId = const ConvexOptional.absent(),
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:createWithInitialPage.args.clientProtocolVersion',
+  ),
   if (folderPublicId.isPresent)
     'folderPublicId': ConvexString(folderPublicId.value),
   'initialPageIsAttack': ConvexBoolean(initialPageIsAttack),
@@ -5145,9 +5234,14 @@ ConvexValue decodeStrategiesCreateWithInitialPageResult(ConvexValue value) =>
     );
 
 ConvexObject encodeStrategiesDeleteArgs({
+  required double clientProtocolVersion,
   required double expectedRevision,
   required String strategyPublicId,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:delete.args.clientProtocolVersion',
+  ),
   'expectedRevision': _encodeNumber(
     expectedRevision,
     'strategies.js:delete.args.expectedRevision',
@@ -5200,10 +5294,15 @@ List<StrategiesListForFolderResultItem> decodeStrategiesListSharedWithMeResult(
     .toList(growable: false);
 
 ConvexObject encodeStrategiesMoveArgs({
+  required double clientProtocolVersion,
   required double expectedRevision,
   ConvexOptional<String> folderPublicId = const ConvexOptional.absent(),
   required String strategyPublicId,
 }) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:move.args.clientProtocolVersion',
+  ),
   'expectedRevision': _encodeNumber(
     expectedRevision,
     'strategies.js:move.args.expectedRevision',
@@ -5220,6 +5319,7 @@ ConvexObject encodeStrategiesUpdateArgs({
   ConvexOptional<bool> clearThemeOverridePalette =
       const ConvexOptional.absent(),
   ConvexOptional<bool> clearThemeProfileId = const ConvexOptional.absent(),
+  required double clientProtocolVersion,
   required double expectedRevision,
   ConvexOptional<String> mapData = const ConvexOptional.absent(),
   ConvexOptional<String> name = const ConvexOptional.absent(),
@@ -5235,6 +5335,10 @@ ConvexObject encodeStrategiesUpdateArgs({
     'clearThemeOverridePalette': ConvexBoolean(clearThemeOverridePalette.value),
   if (clearThemeProfileId.isPresent)
     'clearThemeProfileId': ConvexBoolean(clearThemeProfileId.value),
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'strategies.js:update.args.clientProtocolVersion',
+  ),
   'expectedRevision': _encodeNumber(
     expectedRevision,
     'strategies.js:update.args.expectedRevision',
@@ -5270,7 +5374,14 @@ ConvexObject encodeStrategyGetShellArgs({required String strategyPublicId}) =>
 StrategyGetShellResult decodeStrategyGetShellResult(ConvexValue value) =>
     StrategyGetShellResult.decode(value, 'strategy.js:getShell.returns');
 
-ConvexObject encodeUsersEnsureCurrentUserArgs() => ConvexObject({});
+ConvexObject encodeUsersEnsureCurrentUserArgs({
+  required double clientProtocolVersion,
+}) => ConvexObject({
+  'clientProtocolVersion': _encodeNumber(
+    clientProtocolVersion,
+    'users.js:ensureCurrentUser.args.clientProtocolVersion',
+  ),
+});
 
 FoldersDeleteResult decodeUsersEnsureCurrentUserResult(ConvexValue value) =>
     FoldersDeleteResult.decode(value, 'users.js:ensureCurrentUser.returns');

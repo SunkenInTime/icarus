@@ -455,7 +455,10 @@ class _SyncStatusPopover extends StatelessWidget {
   String get _attentionExplanation {
     final mediaErrors = saveState.mediaSyncErrorCount;
     final parts = <String>[];
-    if (hasRejectedWork) {
+    final error = saveState.cloudSyncError;
+    final hasOversizedWork =
+        error?.toLowerCase().contains('too large for cloud sync') ?? false;
+    if (hasRejectedWork && !hasOversizedWork) {
       parts.add(
         'Another edit reached the cloud first. Your version remains saved '
         'on this device.',
@@ -466,12 +469,21 @@ class _SyncStatusPopover extends StatelessWidget {
             : 'Your choice applies to all $rejectedCount conflicting changes.',
       );
     }
-    final error = saveState.cloudSyncError;
     final retryUnavailable =
         error?.toLowerCase().contains('cannot be retried automatically') ??
             false;
-    if (error != null && (!hasRejectedWork || retryUnavailable)) {
+    if (error != null &&
+        (!hasRejectedWork || retryUnavailable || hasOversizedWork)) {
       parts.add(friendlyCloudSyncError(error));
+    }
+    if (hasRejectedWork && hasOversizedWork) {
+      parts.add(
+        rejectedCount == 1
+            ? 'Choose whether to keep this local change or use the cloud '
+                'version.'
+            : 'Your choice applies to all $rejectedCount changes that need '
+                'attention.',
+      );
     }
     if (mediaErrors > 0) {
       parts.add(

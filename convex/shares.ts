@@ -10,6 +10,10 @@ import {
 } from "./lib/auth";
 import { getFolderByPublicId, getStrategyByPublicId } from "./lib/entities";
 import {
+  assertSupportedCloudProtocol,
+  cloudProtocolArgs,
+} from "./lib/cloudProtocol";
+import {
   notFoundError,
   errorWithCode,
   conflictError,
@@ -83,6 +87,7 @@ export const list = query({
 
 export const create = mutation({
   args: {
+    ...cloudProtocolArgs,
     targetType: targetTypeValidator,
     targetPublicId: v.string(),
     token: v.string(),
@@ -90,6 +95,7 @@ export const create = mutation({
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const user = await requireCurrentUser(ctx);
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
 
@@ -124,12 +130,14 @@ export const create = mutation({
 
 export const revoke = mutation({
   args: {
+    ...cloudProtocolArgs,
     targetType: targetTypeValidator,
     targetPublicId: v.string(),
     token: v.string(),
   },
   returns: okResultValidator,
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const resolved = await resolveTarget(ctx, args.targetType, args.targetPublicId);
 
     if (resolved.strategy !== null) {
@@ -165,6 +173,7 @@ export const revoke = mutation({
 
 export const redeem = mutation({
   args: {
+    ...cloudProtocolArgs,
     token: v.string(),
   },
   returns: v.union(
@@ -183,6 +192,7 @@ export const redeem = mutation({
     }),
   ),
   handler: async (ctx, args) => {
+    assertSupportedCloudProtocol(args.clientProtocolVersion);
     const user = await requireCurrentUser(ctx);
     const link = await ctx.db
       .query("shareLinks")

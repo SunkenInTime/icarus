@@ -5,6 +5,10 @@ String friendlyCloudSyncError(String raw) {
         'device; keep this strategy open and recover the outbox before '
         'continuing.';
   }
+  if (lower.contains('could not be verified in the durable outbox')) {
+    return 'Icarus could not verify that this change was saved on this '
+        'device. Nothing was sent. Keep this strategy open and retry.';
+  }
   if (lower.contains('forbidden')) {
     return 'This account does not have permission to save these changes. '
         'They remain on this device. Ask the owner for edit access, then '
@@ -13,6 +17,10 @@ String friendlyCloudSyncError(String raw) {
   if (lower.contains('retry paused')) {
     return 'A saved cloud change is paused after repeated failures. Retry '
         'when the connection and account are healthy.';
+  }
+  if (lower.contains('too large for cloud sync')) {
+    return 'A saved change is too large for cloud sync. It remains saved on '
+        'this device. Reduce it, then choose Keep mine to retry.';
   }
   if (lower.contains('needs attention')) {
     return 'Another edit reached the cloud first. Your version remains '

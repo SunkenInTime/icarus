@@ -27,7 +27,9 @@ class ConvexStrategyRepository {
   final IcarusConvexApi _api;
 
   Future<void> ensureCurrentUser() async {
-    await _api.users.ensureCurrentUser();
+    await _api.users.ensureCurrentUser(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+    );
   }
 
   Stream<List<CloudFolderEntry>> watchAllFolders() {
@@ -194,6 +196,19 @@ class ConvexStrategyRepository {
     required List<StrategyOp> ops,
   }) async {
     if (ops.isEmpty) return const [];
+    for (final op in ops) {
+      if (cloudOperationExceedsPolicy(op)) {
+        throw StateError(cloudOperationTooLargeMessage);
+      }
+    }
+    if (serializedCloudBatchUtf8Bytes(
+          strategyPublicId: strategyPublicId,
+          clientId: clientId,
+          ops: ops,
+        ) >
+        maxCloudBatchBytes) {
+      throw StateError('Cloud operation batch exceeds the payload policy.');
+    }
 
     final typedOps = ops.indexed
         .map(
@@ -224,6 +239,7 @@ class ConvexStrategyRepository {
     int? customColorValue,
   }) async {
     await _api.folders.create(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       publicId: publicId,
       name: name,
       parentFolderPublicId: _optional(parentFolderPublicId),
@@ -250,6 +266,7 @@ class ConvexStrategyRepository {
     bool clearCustomColorValue = false,
   }) async {
     await _api.folders.update(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       folderPublicId: folderPublicId,
       name: _optional(name),
       iconId: _optionalNumber(iconId),
@@ -265,7 +282,10 @@ class ConvexStrategyRepository {
   }
 
   Future<void> deleteFolder(String folderPublicId) async {
-    await _api.folders.delete(folderPublicId: folderPublicId);
+    await _api.folders.delete(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      folderPublicId: folderPublicId,
+    );
   }
 
   Future<void> moveFolder({
@@ -273,6 +293,7 @@ class ConvexStrategyRepository {
     String? parentFolderPublicId,
   }) async {
     await _api.folders.move(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       folderPublicId: folderPublicId,
       parentFolderPublicId: _optional(parentFolderPublicId),
     );
@@ -287,6 +308,7 @@ class ConvexStrategyRepository {
     Map<String, dynamic>? themeOverridePalette,
   }) async {
     await _api.strategies.create(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       publicId: publicId,
       name: name,
       mapData: mapData,
@@ -310,6 +332,7 @@ class ConvexStrategyRepository {
     Map<String, dynamic>? initialPageSettings,
   }) async {
     await _api.strategies.createWithInitialPage(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       publicId: publicId,
       name: name,
       mapData: mapData,
@@ -330,6 +353,7 @@ class ConvexStrategyRepository {
     required int expectedRevision,
   }) async {
     await _api.strategies.update(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       strategyPublicId: strategyPublicId,
       name: ConvexOptional.present(name),
       expectedRevision: expectedRevision.toDouble(),
@@ -341,6 +365,7 @@ class ConvexStrategyRepository {
     required int expectedRevision,
   }) async {
     await _api.strategies.delete(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       strategyPublicId: strategyPublicId,
       expectedRevision: expectedRevision.toDouble(),
     );
@@ -352,6 +377,7 @@ class ConvexStrategyRepository {
     required int expectedRevision,
   }) async {
     await _api.strategies.move(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       strategyPublicId: strategyPublicId,
       folderPublicId: _optional(folderPublicId),
       expectedRevision: expectedRevision.toDouble(),
@@ -369,6 +395,7 @@ class ConvexStrategyRepository {
     Map<String, dynamic>? settings,
   }) async {
     await _api.pages.add(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       strategyPublicId: strategyPublicId,
       pagePublicId: pagePublicId,
       name: name,
@@ -410,6 +437,7 @@ class ConvexStrategyRepository {
     required String role,
   }) async {
     await _api.shares.create(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       targetType: _shareTargetType(targetType),
       targetPublicId: targetPublicId,
       token: token,
@@ -423,6 +451,7 @@ class ConvexStrategyRepository {
     required String token,
   }) async {
     await _api.shares.revoke(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
       targetType: _shareTargetType(targetType),
       targetPublicId: targetPublicId,
       token: token,
@@ -430,7 +459,10 @@ class ConvexStrategyRepository {
   }
 
   Future<ShareRedemption> redeemShareLink(String token) async {
-    final result = await _api.shares.redeem(token: token);
+    final result = await _api.shares.redeem(
+      clientProtocolVersion: currentCloudProtocolVersion.toDouble(),
+      token: token,
+    );
     return switch (result) {
       SharesRedeemResultFolder(:final folderPublicId, :final role) =>
         ShareRedemption(
