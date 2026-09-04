@@ -217,82 +217,69 @@ class _StrategyViewState extends ConsumerState<StrategyView>
     return Scaffold(
       body: Column(
         children: [
-          // The native title bar is hidden (see window_chrome.dart), so the
-          // editor's top row doubles as the window's drag handle.
-          WindowDragArea(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const MacTrafficLightInset(),
-                Expanded(
-                  child: Padding(
-            // No top padding: the 40px controls then share the traffic
-            // lights' centre line; only the taller map card hangs below it.
-            padding: const EdgeInsets.only(left: 15, bottom: 10, right: 15),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final showDiscordLabel = constraints.maxWidth >= 1000;
-                return Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ShadIconButton.ghost(
-                          foregroundColor: Colors.white,
-                          onPressed: _leaveToLibrary,
-                          icon: const Icon(Icons.home),
-                        ),
-                        const SizedBox(width: 5),
-                        const MapSelector(),
-                        if (kIsWeb)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 8.0),
-                            child: DemoTag(),
+          EditorWindowHeader(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 15),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final showDiscordLabel = constraints.maxWidth >= 1000;
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: editorHeaderCrossAxisAlignment,
+                    children: [
+                      Row(
+                        crossAxisAlignment: editorHeaderCrossAxisAlignment,
+                        children: [
+                          ShadIconButton.ghost(
+                            foregroundColor: Colors.white,
+                            onPressed: _leaveToLibrary,
+                            icon: const Icon(Icons.home),
                           ),
-                      ],
-                    ),
-                    const StrategyQuickSwitcher(),
-                    if (showDiscordLabel)
-                      TextButton(
-                        style: TextButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          enabledMouseCursor: SystemMouseCursors.click,
-                        ),
-                        onPressed: () async {
-                          await launchUrl(Settings.dicordLink);
-                        },
-                        child: const Row(
-                          children: [
-                            Text("Have any bugs? Join the Discord"),
-                            SizedBox(width: 10),
-                            Icon(
-                              CustomIcons.discord,
-                              color: Colors.white,
+                          const SizedBox(width: 5),
+                          const MapSelector(),
+                          if (kIsWeb)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8.0),
+                              child: DemoTag(),
                             ),
-                          ],
-                        ),
-                      )
-                    else
-                      Tooltip(
-                        message: 'Have any bugs? Join the Discord',
-                        child: ShadIconButton.ghost(
-                          foregroundColor: Colors.white,
+                        ],
+                      ),
+                      const StrategyQuickSwitcher(),
+                      if (showDiscordLabel)
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            enabledMouseCursor: SystemMouseCursors.click,
+                          ),
                           onPressed: () async {
                             await launchUrl(Settings.dicordLink);
                           },
-                          icon: const Icon(CustomIcons.discord),
+                          child: const Row(
+                            children: [
+                              Text("Have any bugs? Join the Discord"),
+                              SizedBox(width: 10),
+                              Icon(
+                                CustomIcons.discord,
+                                color: Colors.white,
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Tooltip(
+                          message: 'Have any bugs? Join the Discord',
+                          child: ShadIconButton.ghost(
+                            foregroundColor: Colors.white,
+                            onPressed: () async {
+                              await launchUrl(Settings.dicordLink);
+                            },
+                            icon: const Icon(CustomIcons.discord),
+                          ),
                         ),
-                      ),
-                  ],
-                );
-              },
-            ),
-                  ),
-                ),
-                const WindowCaptionButtons(),
-              ],
+                    ],
+                  );
+                },
+              ),
             ),
           ),
           const Expanded(

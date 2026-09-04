@@ -157,27 +157,18 @@ class _SkeletonTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = strategyName?.trim();
-    return WindowDragArea(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const MacTrafficLightInset(),
-          Expanded(child: _buildBar(context, title)),
-          const WindowCaptionButtons(),
-        ],
-      ),
-    );
+    return EditorWindowHeader(child: _buildBar(context, title));
   }
 
   Widget _buildBar(BuildContext context, String? title) {
     return Padding(
-      padding: const EdgeInsets.only(left: 15, bottom: 10, right: 15),
+      padding: const EdgeInsets.symmetric(horizontal: 15),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: editorHeaderCrossAxisAlignment,
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: editorHeaderCrossAxisAlignment,
             children: [
               const _SkeletonBlock(width: 40, height: 40, radius: 8),
               const SizedBox(width: 5),

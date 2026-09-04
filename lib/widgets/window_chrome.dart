@@ -18,6 +18,9 @@ bool get _drawsCaptionButtons =>
     (defaultTargetPlatform == TargetPlatform.windows ||
         defaultTargetPlatform == TargetPlatform.linux);
 
+CrossAxisAlignment get editorHeaderCrossAxisAlignment =>
+    _drawsCaptionButtons ? CrossAxisAlignment.center : CrossAxisAlignment.start;
+
 /// True on desktop builds, where the native title bar is hidden and the app
 /// owns that space.
 bool get hasCustomWindowChrome => _isMacOS || _drawsCaptionButtons;
@@ -35,6 +38,32 @@ class WindowDragArea extends StatelessWidget {
       return child;
     }
     return DragToMoveArea(child: child);
+  }
+}
+
+/// On Windows and Linux, centers the editor controls and caption buttons on
+/// the map card's 65px band. macOS keeps controls on its 40px traffic-light
+/// strip. The canvas gap stays below either layout.
+class EditorWindowHeader extends StatelessWidget {
+  const EditorWindowHeader({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return WindowDragArea(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          crossAxisAlignment: editorHeaderCrossAxisAlignment,
+          children: [
+            const MacTrafficLightInset(),
+            Expanded(child: child),
+            const WindowCaptionButtons(),
+          ],
+        ),
+      ),
+    );
   }
 }
 
